@@ -2,7 +2,7 @@ import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
-import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
+import { CapabilityActionReceiptSchema, type CloudResourceRef } from "../../contracts/capabilities";
 import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
@@ -718,6 +718,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const createConversation = async (
     input: {
       requestId?: string;
+      /** A place chat: created with its first message as `draft`, never with a title or launch settings. */
+      place?: CloudResourceRef;
       title?: string;
       projectId?: string;
       draft?: { content: AiDraftContentPart[] };

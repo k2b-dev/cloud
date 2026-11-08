@@ -2,6 +2,7 @@ import type {
   AiConversation,
   AiConversationPage,
   AiConversationTimelineEntry,
+  AiDraftContentPart,
   AiOpenQuestion,
   AiOpenQuestions,
   AiProject,
@@ -765,7 +766,15 @@ export default function AssistantWorkspace(props: Props) {
     if (href === current) return;
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
-  const creationRequests = new Map<string, { requestId: string; title: string; projectId?: string }>();
+  // A place chat starts with its first message: its request carries the place and that message, never a title (O2).
+  type CreationRequest = {
+    requestId: string;
+    title?: string;
+    projectId?: string;
+    place?: CloudResourceRef;
+    draft?: { content: AiDraftContentPart[] };
+  };
+  const creationRequests = new Map<string, CreationRequest>();
   const [rejectedCreations, setRejectedCreations] = createSignal<ReadonlySet<string>>(new Set());
   const [creationVersion, setCreationVersion] = createSignal(0);
   const hasUnknownCreations = () => (creationVersion(), creationRequests.size > 0 && !newConversation.loading());
@@ -798,13 +807,20 @@ export default function AssistantWorkspace(props: Props) {
   };
   const newConversation = mutation.create<
     AiConversation | null,
-    { focus: boolean; projectId?: string; navigate?: boolean | (() => boolean) }
+    {
+      focus: boolean;
+      projectId?: string;
+      navigate?: boolean | (() => boolean);
+      place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] };
+    }
   >({
-    mutation: async ({ focus, projectId, navigate: shouldNavigate = true }) => {
+    mutation: async ({ focus, projectId, navigate: shouldNavigate = true, place }) => {
       const key = projectId ? projectComposerKey(projectId) : "__new__";
       let request = creationRequests.get(key);
       if (!request) {
-        request = { requestId: crypto.randomUUID(), title: t().newChat, ...(projectId ? { projectId } : {}) };
+        request = place
+          ? { requestId: crypto.randomUUID(), place: { ...place.ref }, draft: { content: place.draft } }
+          : { requestId: crypto.randomUUID(), title: t().newChat, ...(projectId ? { projectId } : {}) };
         creationRequests.set(key, request);
         setCreationVersion((version) => version + 1);
       }
@@ -846,9 +862,14 @@ export default function AssistantWorkspace(props: Props) {
       return conversation;
     },
   });
-  const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
+  const createConversation = async (
+    focus: boolean,
+    projectId?: string,
+    shouldNavigate: boolean | (() => boolean) = true,
+    place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] },
+  ) => {
     if (newConversation.loading() || composerPicking() > 0) return null;
-    await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
+    await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}) });
     return newConversation.data();
   };
   type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
@@ -1024,6 +1045,8 @@ export default function AssistantWorkspace(props: Props) {
     mentionsFor(key);
     if (!session(key).dirty || session(key).conflict) return;
     if (!chat.activeConversationId() && !text && !files.length) return;
+    // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then.
+    if (!chat.activeConversationId() && emptyPlace()) return;
     const target = chat.activeConversationId();
     const timer = window.setTimeout(async () => {
       if (composerSessionKey() !== key || session(key).conflict) return;
@@ -1324,8 +1347,15 @@ export default function AssistantWorkspace(props: Props) {
     setComposerSubmitting(true);
     try {
       if (!chat.activeConversationId()) {
-        const conversation = await createConversation(false);
+        // At a place, the first message creates the person's chat there; a chat another tab created meanwhile is reused
+        // with its history.
+        const place = emptyPlace();
+        const conversation = place
+          ? await createConversation(false, undefined, true, { ref: place.ref, draft: placeDraft(input) })
+          : await createConversation(false);
         if (!conversation || chat.activeConversationId() !== conversation.id) return false;
+        if (place) await chat.refreshActiveConversation();
+        if (place) pagePlace.update({ ...place, conversationId: conversation.id });
       }
       const target = chat.activeConversationId()!;
       const sent = await serializeComposer(target, async () => {
@@ -2656,6 +2686,12 @@ export default function AssistantWorkspace(props: Props) {
   // Gustav at a place (side panel only). The page's place loads on every accepted page context; the bar describes the
   // open chat's place, or the page's place while the panel waits for the first message there.
   const placeT = () => placeMessages.resolve([locale()]).t;
+  /** The first message as the place chat's initial draft: its text and references; files follow with the normal send. */
+  const placeDraft = (input: AiComposerSendInput): AiDraftContentPart[] => {
+    const parts = (input.draftContent ?? []).filter((part) => part.type === "text" || part.type === "resource");
+    if (parts.some((part) => part.type === "resource" || part.text.trim())) return parts;
+    return [{ type: "text", text: input.message?.trim() || "…" }];
+  };
   const loadPlace = props.loadPlace ?? fetchAssistantPlace;
   const openChatPlace = () => {
     const id = chat.activeConversationId();
