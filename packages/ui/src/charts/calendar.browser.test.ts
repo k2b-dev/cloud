@@ -6,6 +6,17 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { renderCalendarSvg } from "./core/calendar";
 
+// Resolve the CSS length in the SVG's query-container context, not in the host.
+const scrollRange = (container: Element) => {
+  const svg = container.querySelector("svg[data-calendar]")!;
+  const probe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  probe.style.width = "var(--k2b-calendar-overflow)";
+  probe.style.height = "0px";
+  svg.append(probe);
+  const css = Number.parseFloat(getComputedStyle(probe).width);
+  probe.remove();
+  return { css, dom: container.scrollWidth - container.clientWidth };
+};
 const root = resolve(import.meta.dir, "../..");
 const spec = {
   kind: "heatmap" as const,
@@ -66,6 +77,9 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         );
         await settled(page);
         const before = await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML);
+        const serverPinned = await page
+          .locator("#mount [data-calendar-pinned] text")
+          .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON()));
         await page.locator("#mount").evaluate((e) => e.replaceChildren());
         await page.addScriptTag({ content: bundle });
         await settled(page);
@@ -87,6 +101,18 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
           .first()
           .evaluate((e) => getComputedStyle(e).fill);
         const chart = page.locator("#mount .k2b-chart");
+        expect(
+          await chart.locator("[data-calendar-pinned] text").evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON())),
+        ).toEqual(serverPinned);
+        // Reproduce a host that changes the nearest query box while leaving the
+        // scrollport unchanged. Its CSS estimate differs from the DOM by 34px.
+        if (width === 390) {
+          await page.locator("section.k2b-ui").evaluate((e) => (e.style.containerType = "inline-size"));
+          await chart.evaluate((e) => (e.style.containerType = "normal"));
+          await settled(page);
+        }
+        const newestRange = await chart.evaluate(scrollRange);
+        expect(newestRange.css).toBe(newestRange.dom);
         const visible = await chart.boundingBox(),
           last = await chart.locator("[data-chart-datum]").last().boundingBox();
         expect(last!.x).toBeGreaterThanOrEqual(visible!.x);
@@ -113,6 +139,8 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         const newestScroll = await chart.evaluate((e) => e.scrollLeft);
         await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
         await settled(page);
+        const originRange = await chart.evaluate(scrollRange);
+        expect(originRange.css).toBe(originRange.dom);
         const weekdayBox = await chart.locator("[data-calendar-weekdays] text").first().boundingBox();
         expect(weekdayBox!.x).toBeGreaterThanOrEqual(visible!.x);
         expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + visible!.width);
@@ -122,7 +150,18 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
             (nodes, right) => Math.min(...nodes.map((e) => e.getBoundingClientRect().left).filter((x) => x >= right)),
             weekdayBox!.x + weekdayBox!.width,
           );
-        expect(firstVisible - weekdayBox!.x - weekdayBox!.width).toBeLessThanOrEqual(8);
+        const originGeometry = await chart.evaluate((e) => {
+          const label = e.querySelector<SVGGraphicsElement>("[data-calendar-weekdays] text")!,
+            mask = e.querySelector("[data-calendar-weekdays] > rect")!,
+            point = new DOMPoint(-3, 0).matrixTransform(label.getScreenCTM()!);
+          return {
+            scrollLeft: e.scrollLeft,
+            label: label.getBoundingClientRect().toJSON(),
+            anchorX: point.x,
+            mask: mask.getBoundingClientRect().toJSON(),
+          };
+        });
+        expect(firstVisible - weekdayBox!.x - weekdayBox!.width, JSON.stringify({ originRange, originGeometry })).toBeLessThanOrEqual(8);
         // The opaque rail is painted after the cells, so partial columns cannot
         // show through the pinned weekday labels during touch/trackpad scrolling.
         expect(
@@ -135,6 +174,16 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
             };
           }),
         ).toEqual({ fill: "rgb(255, 255, 255)", afterCells: true });
+        if (width === 390) {
+          await chart.evaluate((e) => e.style.removeProperty("container-type"));
+          await page.locator("section.k2b-ui").evaluate((e) => e.style.removeProperty("container-type"));
+          await chart.evaluate((e) => (e.style.width = "280.375px"));
+          await settled(page);
+          const resizedRange = await chart.evaluate(scrollRange);
+          expect(resizedRange.css).toBe(resizedRange.dom);
+          await chart.evaluate((e) => e.style.removeProperty("width"));
+          await settled(page);
+        }
         await chart.evaluate((e, scroll) => (e.scrollLeft = scroll), newestScroll);
         await settled(page);
         const monthBoxes = await chart

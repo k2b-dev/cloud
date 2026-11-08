@@ -18523,7 +18523,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui svg[data-calendar] {
   --k2b-calendar-width: clamp(var(--k2b-calendar-min), 100cqw, var(--k2b-calendar-max));
   --k2b-calendar-inverse: tan(atan2(var(--k2b-calendar-base), var(--k2b-calendar-width)));
-  --k2b-calendar-overflow: max(0px, calc(var(--k2b-calendar-width) - 100cqw));
+  /* CSS owns the server frame; after mount use the scrollport's actual range. */
+  --k2b-calendar-overflow: var(--k2b-calendar-measured-overflow, max(0px, calc(var(--k2b-calendar-width) - 100cqw)));
   --k2b-calendar-rail: mod(calc(-1 * (var(--k2b-calendar-overflow) + var(--k2b-calendar-scroll, 0px))), calc(var(--k2b-calendar-step) * var(--k2b-calendar-width)));
 }
 /* Pin headers and the rail in SVG coordinates, before or after mounting. */

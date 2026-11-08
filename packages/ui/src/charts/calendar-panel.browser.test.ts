@@ -116,6 +116,9 @@ for (const width of [390, 800, 1440, 1920])
         expect(gaps.day).toBeLessThanOrEqual(8);
         expect(gaps.legend).toBeGreaterThan(0);
         expect(gaps.legend).toBeLessThanOrEqual(10);
+        const serverPinned = await serverChart
+          .locator("[data-calendar-pinned] text")
+          .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON()));
         const svg = await page.locator(".k2b-chart__svg > svg").evaluate((e) => e.outerHTML);
         const box = (e: Element) => {
           const b = e.getBoundingClientRect();
@@ -133,6 +136,9 @@ for (const width of [390, 800, 1440, 1920])
         expect(await viewport.evaluate(box)).toEqual(initialViewport);
         const chart = page.locator(".k2b-chart"),
           drawing = page.locator(".k2b-chart__svg");
+        expect(
+          await chart.locator("[data-calendar-pinned] text").evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON())),
+        ).toEqual(serverPinned);
         const cell = await chart.locator("[data-chart-datum] rect").last().boundingBox();
         const chartBox = await chart.boundingBox(),
           drawingBox = await drawing.boundingBox();
