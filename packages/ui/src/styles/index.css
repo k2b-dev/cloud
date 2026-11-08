@@ -2255,6 +2255,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-split-button__primary-menu { gap: 0; }
 
+/* A split button given extra width grows its main action; at its natural width nothing changes. */
+.k2b-ui .k2b-split-button > :is(.k2b-split-button__primary, .k2b-split-button__primary-menu) { flex: 1 1 auto; }
+.k2b-ui .k2b-split-button__primary-menu > .k2b-split-button__primary { flex: 1 1 auto; }
+
 .k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger {
   margin-inline-start: -1px;
   border-inline-start-color: color-mix(in srgb, currentColor 24%, transparent);
@@ -10049,6 +10053,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-family: var(--k2b-font-mono);
   font-size: 0.75rem;
   text-align: right;
+}
+
+.k2b-ui .k2b-slider[data-changed] output {
+  color: var(--k2b-action);
+}
+
+/* The reset keeps its place while hidden, so moving a slider never shifts the row. */
+.k2b-ui .k2b-slider__reset {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-inline-end: -0.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.375rem;
+  color: var(--k2b-text-muted);
+  background: transparent;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-slider__reset[data-on] {
+  visibility: visible;
+}
+
+.k2b-ui .k2b-slider__reset:hover:not(:disabled) {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-slider__reset:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.k2b-ui .k2b-slider__reset:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-color-input {
