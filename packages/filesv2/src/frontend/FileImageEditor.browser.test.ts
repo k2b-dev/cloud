@@ -572,6 +572,8 @@ describe("Files photo editing", () => {
       expect(uploads).toEqual([]);
       expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
       expect(await page.locator(".filesv2-image-save-actions button").first().innerText()).toBe("Save");
+      await settled(page);
+      if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/files-host-transient-save-error-light-1440.png` });
       await retry.click();
       await page.waitForFunction(() => window.fileImages.saved.length === 1);
       expect(uploads).toHaveLength(1);
