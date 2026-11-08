@@ -79,7 +79,8 @@ export default app;
 ```
 
 Blocks take typed props: an unknown prop or a value of the wrong type is a
-type error in your editor and in `cld code check`. Data, such as a table's
+type error in your editor and in `cld code check`. An optional prop set to
+`undefined`, such as `error={errors.name}`, counts as absent. Data, such as a table's
 `rows` or a chart's `data`, is a prop; the parts of a block are its children.
 A part outside its block, or another element among a block's parts, fails
 `cld code check` with `code_page_child`; one kept in a variable fails when the
