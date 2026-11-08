@@ -68,6 +68,7 @@ import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { confirmSharedDraftRecipients } from "./mail-draft-document-confirmation";
+import { mailDraftPeers } from "./mail-draft-document-presence";
 import { mailDraftJournalKey, serializeMailDraftContent } from "./mail-draft-journal";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
@@ -1492,6 +1493,19 @@ export default function MailComposer(props: {
             : t().inlineNew;
     };
     // F4: a reply offers to attach the quoted message it answers; a forward already carries it.
+    // A shared draft names who writes along, with their caret colour; the carets themselves come from the editor.
+    const [sharedPeers, setSharedPeers] = createSignal<{ name: string; color: string }[]>([]);
+    createEffect(() => {
+      const client = shared();
+      if (!client) return setSharedPeers([]);
+      const changed = () => {
+        const peers = mailDraftPeers(client.doc.getText("codemirror"), client.awareness);
+        setSharedPeers([...new Map(peers.map((peer) => [peer.name, { name: peer.name, color: peer.color }])).values()]);
+      };
+      client.awareness.on("change", changed);
+      onCleanup(() => client.awareness.off("change", changed));
+      changed();
+    });
     createEffect(() => {
       if (!host.summary) return;
       const recipients = parseMailRecipients(to()).map((recipient) => recipient.name || recipient.address);
@@ -1594,6 +1608,28 @@ export default function MailComposer(props: {
             <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
               {t().ccBcc}
             </Button>
+          </Show>
+          <Show when={sharedPeers().length > 0}>
+            <span class="mail-inline-draft-peers" data-mail-draft-peers>
+              <For each={sharedPeers().slice(0, 3)}>
+                {(peer) => (
+                  <span class="mail-inline-draft-peer" style={{ "--mail-peer-color": peer.color }} aria-hidden="true">
+                    {peer.name
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((part) => part[0]!.toUpperCase())
+                      .join("")}
+                  </span>
+                )}
+              </For>
+              {t().writingAlong({
+                names: sharedPeers()
+                  .map((peer) => peer.name)
+                  .join(", "),
+                count: sharedPeers().length,
+              })}
+            </span>
           </Show>
           <span class="mail-inline-draft-head-tools">
             <Dropdown.Root position="bottom-right" width="16rem" items={draftMenu()}>

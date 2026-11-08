@@ -310,6 +310,8 @@ export const mailComposerMessages = i18n.define({
       removeQuote: "Remove",
       suggestionFromGustav: "Suggestion from Gustav",
       suggestionHint: "Type to take it over, or send it as it is",
+      writingAlong: ({ names, count }: { names: string; count: number }) =>
+        count === 1 ? `${names} is writing too` : `${names} are writing too`,
       closedUnsaved:
         "The last changes of a shared draft you closed reached neither the server nor this device. Open the draft again and check its text.",
     },
@@ -624,6 +626,7 @@ export const mailComposerMessages = i18n.define({
       removeQuote: "Entfernen",
       suggestionFromGustav: "Vorschlag von Gustav",
       suggestionHint: "Tippe, um ihn zu übernehmen, oder sende ihn so",
+      writingAlong: ({ names, count }) => (count === 1 ? `${names} schreibt mit` : `${names} schreiben mit`),
       closedUnsaved:
         "Die letzten Änderungen eines gemeinsamen Entwurfs, den du geschlossen hast, erreichten weder den Server noch dieses Gerät. Öffne den Entwurf erneut und prüfe den Text.",
     },

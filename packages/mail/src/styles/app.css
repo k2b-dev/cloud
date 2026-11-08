@@ -1639,6 +1639,28 @@
   min-width: min(100%, 12rem);
   flex: 1 1 12rem;
 }
+/* Shared drafts: who writes along, with the colour of their caret in the text. */
+.k2b-ui .mail-inline-draft-peers {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+  white-space: nowrap;
+}
+.k2b-ui .mail-inline-draft-peer {
+  display: inline-grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border-radius: 9999px;
+  background: var(--mail-peer-color);
+  color: #fff;
+  font-size: 0.5625rem;
+  font-weight: 600;
+}
 .k2b-ui .mail-inline-draft-head-tools {
   display: inline-flex;
   align-items: center;
