@@ -237,7 +237,6 @@ const table = pageLeaf.options[2].extend({
   rows: collection,
   rowId: BlockPathSchema.optional(),
   rowHref: BlockPathSchema.optional(),
-  choose: fieldName.optional(),
 });
 const detail = pageLeaf.options[4].extend({ items: z.array(detailItem).min(1).max(BLOCK_LIMITS.details) });
 const cards = z.strictObject({

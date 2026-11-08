@@ -131,7 +131,7 @@ export function validateBlocks(value: unknown, host: BlockHost, ctx: BlockContex
     }
     if (node.kind === "Table") {
       if (host === "page") {
-        if (node.columns.some((column) => column.path !== undefined) || node.rowId || node.rowHref || node.choose)
+        if (node.columns.some((column) => column.path !== undefined) || node.rowId || node.rowHref)
           throw new Error("blocks_host");
         const columns = new Set(node.columns.map((column) => column.key));
         if (
@@ -154,10 +154,6 @@ export function validateBlocks(value: unknown, host: BlockHost, ctx: BlockContex
             validateBlockLink(href, host, ctx);
           }
         }
-      }
-      if (node.choose) {
-        if (host !== "result" || !node.rowId) throw new Error("blocks_host");
-        selectors.push(node.choose);
       }
     }
     if (node.kind === "Cards") {
