@@ -84,32 +84,44 @@ inside inline code or fenced code blocks.
 ## Slash commands
 
 `SlashCommands` adds commands behind `/` to an editor. Place it beside the editor and pass the editor's textarea from
-`textareaRef`; it takes the same `CommandItem[]` as [CommandMenu](/en/ui/actions/command-menu): actions, text
-snippets, and second lists such as people or tags. Editors without it carry none of its code.
+`textareaRef`; it takes the same entries as [CommandMenu](/en/ui/actions/command-menu): commands that get the
+composer's text, text snippets, and further lists such as people or tags, as a list or as a function of the context,
+such as templates only when the slash starts the text. Editors without it carry none of its code.
 
 ```tsx
 const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+const [composer, setComposer] = createSignal<HTMLDivElement>();
 
-<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
-<SlashCommands textarea={textarea()} items={commands} />
+<div ref={setComposer} class="composer">
+  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
+</div>
 ```
 
-Typing `/` at the start of a line or after a space opens the entries at the slash; the typed word filters them by
-label, hint, and keywords, without regard to case or accents. A `/` inside a word or after punctuation, as in
-`and/or` or `https://`, opens nothing.
+Typing `/` at the start of a line or after a space opens the entries docked above the composer, exactly as wide as
+it; near the top of the window they dock below it. The typed word filters them by label, description, hint, and
+keywords, without regard to case or accents. A `/` inside a word or after punctuation, as in `and/or` or
+`https://`, opens nothing.
 
-- An entry with `onSelect` removes the typed `/query` from the text, then runs.
+- An entry with `onSelect` removes the typed `/query` from the text, then runs with the context: the query, the text
+  without the `/query`, the text before the slash, whether it stands at the start of the text or a line, the path of
+  entries chosen so far, `insert(text)` at the caret as typing would, and an abort `signal`. A returned promise
+  keeps the list open with the entry busy; a rejection shows its message on the entry. See
+  [Context](/en/ui/actions/command-menu#context).
 - An entry with `text` puts its text in place of `/query`.
-- An entry with `next` opens its list in the same popover; the typed word gives way to a bare `/`, and typing filters
-  the second list. <kbd>Esc</kbd>, or <kbd>Backspace</kbd> after the bare `/`, goes back.
-- <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd> mark entries while the list is open, <kbd>Enter</kbd> and
-  <kbd>Tab</kbd> choose, and <kbd>Esc</kbd> in the first list closes it and keeps the text. It stays closed until
-  the next `/`.
+- An entry with `next` opens its list in the same place: the typed `/query` leaves the text, the list gets its own
+  search field, and the focus moves there. Typing filters the list, the first match is marked, and <kbd>Enter</kbd>
+  chooses it: `/zuw` <kbd>Enter</kbd> `val` <kbd>Enter</kbd> assigns Valentin and puts the caret back where the slash
+  stood. <kbd>Esc</kbd>, or <kbd>Backspace</kbd> in the empty field, goes back; back in the first list, the `/query`
+  returns. While entries load, <kbd>Enter</kbd> waits for that query and takes its first match.
+- <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd> mark the entries that can be chosen while the list is open,
+  <kbd>Enter</kbd> and <kbd>Tab</kbd> choose, and <kbd>Esc</kbd> stops a running command or, in the first list,
+  closes it and keeps the text. It stays closed until the next `/`.
 - A word without matches closes the list, so <kbd>Enter</kbd> starts a new line as usual.
 
-The editor leaves a key to `SlashCommands` when it marked it handled with `preventDefault`.
-The list hangs at the slash and keeps a fixed width, so typing and second lists move neither the list nor the editor.
-`SlashCommands` and `completions` work side by side; give `/` to only one of them.
+The editor leaves a key to `SlashCommands` when it marked it handled with `preventDefault`. The list floats in the
+top layer, so it never moves the composer or the text. `SlashCommands` and `completions` work side by side; give `/`
+to only one of them.
 
 ## Editing behavior
 

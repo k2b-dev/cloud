@@ -731,8 +731,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                           when={shownCount(appId) < SEARCH_APP_RESULT_LIMIT}
                           fallback={t().refineForMore({ app: appName(appId), count: shownCount(appId) })}
                         >
-                          <Button variant="text" size="xs" onClick={() => loadMore(appId)}>
+                          <Button variant="link" size="xs" onClick={() => loadMore(appId)}>
                             {t().loadMore({ app: appName(appId) })}
+                            <i class="ti ti-chevron-down" aria-hidden="true" />
                           </Button>
                         </Show>
                       </p>

@@ -299,7 +299,12 @@ A saved stats view is `{view: "stats", title, subtitle?, items}`. Each item has
 `label` and `value` (a finite number, or short text for a state such as `"OK"`),
 optional number `format`, `sub`, finite `delta`, `better: "up" | "down"`, and
 `sparkline` (2..480 finite numbers, oldest first). Format and delta require a
-numeric value; better requires delta. Delta is in the value's units. The host
+numeric value; better requires a numeric delta. A numeric delta stays in the
+value's units. Alternatively, use `delta: {value, unit?: "ratio" | "points", better?}`:
+`0.082` is `+8.2 %` as a ratio, and `0.031` is `+3.1 pts` as points.
+`compare: {label, value}` adds the previous numeric value, formatted like the
+figure. Changes use the shared StatCell badge with an arrow and a spoken label.
+The optional comparison flag in summaries reserves its support line before loading. The host
 chooses improvement colors from better; no direction or zero stays neutral. The
 sparkline tooltip names each point after the item label and uses the item
 `format`.
@@ -867,3 +872,11 @@ latest checkpoint independently of history pagination. Compaction preserves an
 exact plan checkpoint alongside its summary; fork and retry follow the selected
 history rather than importing a later plan. A plan records intended and completed
 work; it neither executes actions nor grants permission.
+
+## Portable view descriptions
+
+Notebooks and `cloud.chart()` use the same description and validator. Cloud
+owns adjacent `{block: "stats" | "table" | "group" | "details" | "explorer", ...}`
+nodes, including Cloud reference cells. Existing saved `{view, ...}` envelopes
+remain valid; `cloudAiViewDescription()` from `@k2b/cloud/ai` converts validated
+views to nodes without changing their chart or table data.
