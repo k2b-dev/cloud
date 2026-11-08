@@ -14079,17 +14079,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-top: 0.875rem;
 }
 
+/* The facts give way first: on a wide card they shrink and fade instead of
+   wrapping the row, so editing and approving keep one row of the same height. */
 .k2b-ui .k2b-chat-decision__meta {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex: 1 1 0;
   align-items: center;
   gap: 0.25rem 0.75rem;
+  min-width: 0;
+  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.78125rem;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 1rem), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 1rem), transparent);
 }
 
 .k2b-ui .k2b-chat-decision__fact {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 0.3125rem;
 }
@@ -14149,7 +14157,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui .k2b-chat-decision__meta {
     order: 2;
-    width: 100%;
+    flex-basis: 100%;
     justify-content: center;
   }
 }

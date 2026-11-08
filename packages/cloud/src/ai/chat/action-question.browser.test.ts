@@ -106,6 +106,8 @@ describe("ApprovalCard draft and host parity", () => {
       try {
         const card = decision(page);
         const before = (await card.boundingBox())!;
+        const sentenceHeight = () => card.locator(".k2b-chat-decision__sentence").evaluate((node) => node.getBoundingClientRect().height);
+        const sentenceBefore = await sentenceHeight();
         expect(before.width).toBe(764);
         const geometry = () =>
           card.evaluate((node) => {
@@ -133,7 +135,11 @@ describe("ApprovalCard draft and host parity", () => {
         );
         await settled(page);
         const after = (await card.boundingBox())!;
-        for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(after[key] - before[key])).toBeLessThanOrEqual(1);
+        // The question may be worded longer than the draft's intent and then grows downwards only; every other part,
+        // the fields and the answer row above all, keeps its size.
+        const grown = (await sentenceHeight()) - sentenceBefore;
+        for (const key of ["x", "y", "width"] as const) expect(Math.abs(after[key] - before[key])).toBeLessThanOrEqual(1);
+        expect(Math.abs(after.height - before.height - grown)).toBeLessThanOrEqual(1);
         expect(await geometry()).toEqual(stable);
         expect(errors).toEqual([]);
       } finally {
