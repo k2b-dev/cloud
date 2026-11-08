@@ -73,15 +73,21 @@ describe("Tabler icon preset", () => {
 });
 
 // The filled glyphs are masks, not font glyphs: each must paint, fill more than its outline counterpart, and sit on
-// the same box and centre as that Tabler glyph.
+// the same box and centre as that Tabler glyph. The names kept for stored values must paint their replacement.
 const filled = ["circle", "cloud", "pin", "player-play", "point", "star"] as const;
+const aliases = [
+  ["app", "app-window"],
+  ["mail-pencil", "file-pencil"],
+  ["clock-send", "calendar-time"],
+  ["user-send", "user-share"],
+] as const;
 const sizes = [16, 20, 24] as const;
 const filledPage = `<!doctype html><html><head><meta charset="utf-8"><style>${preset}</style></head>
 <body style="margin:0;background:#fff;color:#000"><section id="measure" style="display:grid;gap:12px;width:max-content;padding:8px">
 ${sizes
   .map(
     (px) =>
-      `<div style="display:flex;align-items:flex-start;gap:${px / 2}px;font-size:${px}px;line-height:1">${filled.map((name) => `<i class="ti ti-${name}" data-size="${px}"></i><i class="ti ti-${name}-filled" data-size="${px}"></i>`).join("")}</div>`,
+      `<div style="display:flex;align-items:flex-start;gap:${px / 2}px;font-size:${px}px;line-height:1">${filled.map((name) => `<i class="ti ti-${name}" data-size="${px}" data-pair="filled"></i><i class="ti ti-${name}-filled" data-size="${px}" data-pair="filled"></i>`).join("")}${aliases.map(([alias, glyph]) => `<i class="ti ti-${glyph}" data-size="${px}" data-pair="alias"></i><i class="ti ti-${alias}" data-size="${px}" data-pair="alias"></i>`).join("")}</div>`,
   )
   .join("")}
 </section></body></html>`;
@@ -142,7 +148,7 @@ describe("filled glyphs", () => {
               ink.bottom = Math.max(ink.bottom, (y + 1) / scale);
               ink.right = Math.max(ink.right, (x + 1) / scale);
             }
-            return { name: icon.className, size: icon.dataset.size, width: box.width, height: box.height, ...ink };
+            return { name: icon.className, size: icon.dataset.size, pair: icon.dataset.pair, width: box.width, height: box.height, ...ink };
           });
         },
         { png, origin },
@@ -151,6 +157,12 @@ describe("filled glyphs", () => {
       for (let index = 0; index < icons.length; index += 2) {
         const [outline, fill] = [icons[index]!, icons[index + 1]!];
         const label = `${fill.name} at ${fill.size}px`;
+        if (fill.pair === "alias") {
+          // A kept name paints exactly the glyph that replaced it, never an empty box.
+          expect([label, outline.weight > 5, Math.abs(fill.weight - outline.weight) < outline.weight / 100]).toEqual([label, true, true]);
+          expect({ ...fill, name: "", weight: 0 }).toEqual({ ...outline, name: "", weight: 0 });
+          continue;
+        }
         expect([label, fill.width, fill.height]).toEqual([label, outline.width, outline.height]);
         expect([label, fill.weight > outline.weight]).toEqual([label, true]);
         expect([label, Math.abs(fill.left + fill.right - outline.left - outline.right) / 2 <= 1]).toEqual([label, true]);

@@ -14,6 +14,28 @@
 }
 
 /*
+ * Names that Tabler never had but that Cloud once stored: the default icon of
+ * a known app and the icons of mail drafts, scheduled mails, and sender
+ * identities in saved references. They keep rendering as the glyph that
+ * replaced them; new code uses that glyph's own name.
+ */
+.ti-app::before {
+  content: "\efe6"; /* ti-app-window */
+}
+
+.ti-mail-pencil::before {
+  content: "\f039"; /* ti-file-pencil */
+}
+
+.ti-clock-send::before {
+  content: "\ee21"; /* ti-calendar-time */
+}
+
+.ti-user-send::before {
+  content: "\f9d8"; /* ti-user-share */
+}
+
+/*
  * Since Tabler 3 the filled glyphs live in a second font of their own. The
  * preset adds the few that Cloud uses under their Tabler 2 class names, each
  * drawn from Tabler's filled SVG, instead of loading that whole font. The
