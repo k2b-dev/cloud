@@ -101,6 +101,10 @@ Object.defineProperty(globalThis, "__artifactInit", {
           return rpc("http.fetch", [{ ...request, headers, ...(request.body === undefined ? {} : { body: btoa(binary) }) }]);
         },
       });
+    Object.defineProperty(globalThis, "__artifactSdkStream", {
+      value: (name: string, input: unknown, options: unknown, direction: "read" | "write") =>
+        rpc("capabilities.run", [name, input, options, direction], controller.signal),
+    });
     Object.defineProperty(globalThis, "cloud", {
       value: createCloud(
         rpc,

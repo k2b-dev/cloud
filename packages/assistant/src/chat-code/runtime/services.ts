@@ -1,4 +1,9 @@
-import { CapabilityIdempotencyKeySchema, CapabilityInvocationBodySchema } from "@k2b/cloud/contracts";
+import {
+  CapabilityFileMetadataSchema,
+  CapabilityIdempotencyKeySchema,
+  CapabilityInvocationBodySchema,
+  capabilityResultSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { LIMITS } from "../contracts";
 import { CloudError } from "./errors";
@@ -44,7 +49,22 @@ export const fetchChunk = (base: string) => async (name: string, signal: AbortSi
 export function createServiceCalls(services: RuntimeServices) {
   const chunk = services.chunk;
   const streams = new Map<string, RuntimeStream>();
+  const spent = new Set<string>();
+  const fileRef = CapabilityFileMetadataSchema.extend({ id: z.string().min(1).max(8192) }).strict();
   let streamBytes = 0;
+  const checkStream = (ref: RuntimeStream, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (Date.parse(ref.expiresAt) <= Date.now()) throw new CloudError("denied", "File reference expired.");
+    if (ref.size > LIMITS.inputFileBytes) throw new CloudError("limit", "Stream exceeds the 50 MiB code-run file budget.");
+  };
+  const reserveBytes = (size: number) => {
+    if (streamBytes + size > LIMITS.inputBytes) throw new CloudError("limit", "Stream transfers exceed the 250 MiB run budget.");
+    streamBytes += size;
+  };
+  const transfer = (ref: RuntimeStream, verb: string, body: Blob | undefined, signal: AbortSignal) => {
+    checkStream(ref, signal);
+    return (services.stream ?? runStream)(ref, verb, body, signal);
+  };
   return async (method: string, args: unknown[], signal: AbortSignal): Promise<unknown> => {
     switch (method) {
       case "runtime.chunk": {
@@ -56,17 +76,59 @@ export function createServiceCalls(services: RuntimeServices) {
       case "capabilities.run": {
         if (!services.capability) throw new CloudError("unavailable", "Capability execution unavailable");
         if (typeof args[0] !== "string") throw new CloudError("invalid", "cloud.capabilities.run(name, input) needs a capability name.");
+        // The compiler marks SDK streams on the existing RPC; raw calls keep their envelope.
+        const direction = args[3] === undefined ? undefined : z.enum(["read", "write"]).parse(args[3]);
+        let input = args[1];
+        let source: RuntimeStream | undefined;
+        if (direction === "write") {
+          const object = z.record(z.string(), z.unknown()).parse(input);
+          const file = fileRef.parse(object.file);
+          source = streams.get(file.id);
+          if (
+            !source ||
+            source.direction !== "read" ||
+            source.name !== file.name ||
+            source.mediaType !== file.mediaType ||
+            source.size !== file.size
+          )
+            throw new CloudError("denied", "File reference was not issued to this run or its metadata changed.");
+          checkStream(source, signal);
+          if (spent.has(file.id))
+            throw new CloudError("denied", "File reference was already used; inspect the prior write before retrying.");
+          reserveBytes(source.size * 2);
+          // Reserve before any awaited preparation or transfer, including concurrent calls and uncertain outcomes.
+          spent.add(file.id);
+          const { id: _id, ...metadata } = file;
+          input = { ...object, file: metadata };
+        }
         const result = await services.capability(
           args[0],
-          args[1],
+          input,
           signal,
           args[2] === undefined ? undefined : RuntimeSdkCallOptions.parse(args[2]),
         );
         if (result && typeof result === "object" && "stream" in result && result.stream) {
           const ref = RuntimeStream.parse(result.stream);
           if (streams.size >= LIMITS.files) throw new CloudError("limit", "Too many capability streams in this run.");
+          if (direction) {
+            checkStream(ref, signal);
+            if (ref.direction !== direction) throw new CloudError("invalid", "Wrong SDK stream direction.");
+          }
           streams.set(ref.id, ref);
+          if (direction === "read") {
+            return {
+              data: { id: ref.id, ...(ref.name === undefined ? {} : { name: ref.name }), mediaType: ref.mediaType, size: ref.size },
+            };
+          }
+          if (direction === "write" && source) {
+            if (ref.size !== source.size || ref.mediaType !== source.mediaType)
+              throw new CloudError("invalid", "Write stream differs from the source file.");
+            const body = await transfer(source, "read", undefined, signal);
+            if (!(body instanceof Blob) || body.size !== source.size) throw new CloudError("invalid", "Incomplete source file.");
+            return capabilityResultSchema(z.unknown()).parse(await transfer(ref, "write", body, signal));
+          }
         }
+        if (direction) throw new CloudError("unavailable", "Capability did not offer the expected file stream.");
         return result;
       }
       case "capabilities.stream": {
@@ -78,10 +140,9 @@ export function createServiceCalls(services: RuntimeServices) {
           throw new CloudError("invalid", "Unknown stream operation.");
         if ((verb === "read") !== (ref.direction === "read")) throw new CloudError("invalid", "Wrong stream direction.");
         if (verb === "read" || verb === "write") {
-          if (streamBytes + ref.size > LIMITS.inputBytes) throw new CloudError("limit", "Stream transfers exceed the 250 MiB run budget.");
-          streamBytes += ref.size;
+          reserveBytes(ref.size);
         }
-        return (services.stream ?? runStream)(ref, verb, args[2] instanceof Blob ? args[2] : undefined, signal);
+        return transfer(ref, verb, args[2] instanceof Blob ? args[2] : undefined, signal);
       }
       case "http.fetch":
         if (!services.http) throw new CloudError("unavailable", "Server HTTP unavailable");
