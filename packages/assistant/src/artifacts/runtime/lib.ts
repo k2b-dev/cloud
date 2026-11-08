@@ -21,7 +21,8 @@ import {
   funnelLayout,
   hbarLayout,
   isChartDatum,
-  line,
+  lineBase,
+  lineDetailsEnabled,
   pie,
   renderBarChartSvg,
   sparkline,
@@ -125,7 +126,7 @@ function drawChart(
         break;
       }
       case "line":
-        svg = line({ ...mapped, ...common });
+        svg = lineDetailsEnabled(mapped) ? rareChartSvg(mapped, common, locale) : lineBase({ ...mapped, ...common });
         break;
       case "pie":
         svg = pie({ ...mapped, ...common });
@@ -140,7 +141,7 @@ function drawChart(
         svg = sparkline({ ...mapped, ...common });
         break;
       default:
-        svg = rareChartSvg(mapped, common);
+        svg = rareChartSvg(mapped, common, locale);
     }
     if (svg === undefined) return { svg, table: { columns: [], rows: [] } };
     // Walk marks in emitted order, exactly as the chat builds its table and tooltips.
@@ -165,7 +166,7 @@ function drawChart(
           opening = opening.replace(/ data-chart-datum="[^"]*"/, () => ` data-chart-datum="${escapeXml(JSON.stringify(datum))}"`);
         }
         const row = rows.add(datum);
-        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input.kind);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input);
         const text = [tooltip.title, ...tooltip.rows.map((row) => `${row.label}: ${row.value}`)].filter(Boolean).join(" · ");
         // Single-quoted XML attributes keep compact JSON quotes literal, saving space on dense charts.
         const encodedTooltip = escapeXml(JSON.stringify(tooltip)).replace(/&quot;/g, '"');

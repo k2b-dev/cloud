@@ -31,6 +31,10 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
       .join("\n");
   // Only requested kind assets and shared helpers enter a frame over its host channel.
   expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("k2b-line-forecast");
+  expect(normal).not.toContain("k2b-line-negative-zone");
+  expect(normal).not.toContain("k2b-line-threshold");
+  expect(rare).toContain("k2b-line-forecast-band");
   expect(normal).not.toContain("k2b-waterfall-bar");
   expect(rare).toContain("k2b-waterfall-bar");
   expect(normal).toContain("Waterfall balances must be finite");
@@ -51,13 +55,14 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // 8,040 B largest kind, 14,842 B shared, 68,456 B total measured.
+  // New line part: 12,744 B on top of main's 68,456 B measured total.
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  // Pareto +299 B, treemap +34 B and heatmap +87 B; retain exactly main's host headroom.
-  expect(total).toBeLessThan(68_520);
+  // Pareto +299 B, treemap +34 B, heatmap +87 B and the line part +12,744 B; retain exactly main's host headroom.
+  expect(total).toBeLessThan(81_264);
   const markers = {
+    line: "k2b-line-forecast-band",
     area: "k2b-area-layer",
     waterfall: "k2b-waterfall-bar",
     heatmap: "data-calendar-weekdays",

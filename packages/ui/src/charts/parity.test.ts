@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import multiSeriesSvg from "../../test/charts/legacy-line-multi-series.json";
 import legacySvg from "../../test/charts/legacy-svg.json";
-import { chartRenderHeight, charts, layout, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
+import { lineCompatibilitySpecs } from "../../test/charts/line-compatibility-specs";
+import { chartRenderHeight, charts, layout, lineBase, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
 import { chartParity, chartParityMarkdown } from "./parity";
 
 const root = resolve(import.meta.dir, "../../../..");
@@ -26,7 +28,7 @@ test("every parity row names an existing test or live demo", () => {
 test("every parity spec preserves legacy SVG output", () => {
   for (const row of chartParity) {
     const spec = row.legacySpec ?? row.spec;
-    const expected = legacy.cases[row.id];
+    const expected = legacy.cases[row.legacyId ?? row.id];
     if (!expected) throw new Error(`Missing frozen pre-port SVG: ${row.id}`);
     const height = chartRenderHeight(spec);
     expect(height, row.id).toBe(expected.height);
@@ -56,4 +58,15 @@ test("the parity catalog has no open rows", () => {
 test("published parity table is generated from the registry", () => {
   const doc = readFileSync(resolve(root, "docs-site/docs/en/contributing/chart-renderer-parity.md"), "utf8");
   expect(doc).toContain(chartParityMarkdown());
+});
+
+// Additional, immutable oracle captured from origin/main at 73c8c2b83e; original fixtures remain untouched.
+test("legacy three- and five-series legends and drawings stay byte-identical to main", () => {
+  for (const [index, spec] of lineCompatibilitySpecs.entries()) {
+    const expected = multiSeriesSvg[index]!;
+    expect(charts.line(spec)).toBe(expected.raw);
+    expect(lineBase(spec)).toBe(expected.raw);
+    expect(renderChartSvg({ kind: "line", ...spec }, 480, 280)).toBe(expected.ui);
+    expect(charts.line(spec)).not.toContain("data-chart-legend-value");
+  }
 });

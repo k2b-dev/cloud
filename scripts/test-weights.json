@@ -290,6 +290,7 @@
     "@k2b/ui src/content/flow-amount.browser.test.ts": 2.8,
     "@k2b/ui src/content/help-blocks.browser.test.ts": 2.6,
     "@k2b/ui src/content/lightbox-keys.browser.test.ts": 2.9,
+    "@k2b/ui src/content/line-forecast.browser.test.ts": 26.1,
     "@k2b/ui src/content/map-view.browser.test.ts": 37.4,
     "@k2b/ui src/content/markdown-callouts.browser.test.ts": 1.2,
     "@k2b/ui src/content/markdown-links.browser.test.ts": 1.9,

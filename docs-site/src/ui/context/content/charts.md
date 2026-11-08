@@ -308,7 +308,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 
 | Kind | Required payload | Additional options and defaults |
 | --- | --- | --- |
-| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`. |
+| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`, `legendValues=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`. |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
 | `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. Aligned `x` and `series` support `layout="grouped"` or `"stacked"`; `normalize` shows 100% shares. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
@@ -1152,6 +1152,13 @@ as dots; Antarctica appears only in the list. Values that are not positive finit
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
 
+### Line outlooks and reference marks
+
+Line annotations (`forecast`, `zero`, `threshold`, `marker`) opt in to the detailed line presentation, including cursor values. Use `legendValues: true` to enable cursor values alone. Existing line descriptions keep their original drawing, legends and tooltips.
+
+A line can add `forecast: {from, band?}` without changing existing saved JSON. The Chat tool accepts `y: null` only when `forecast`, `zero: true`, `threshold`, `marker` or `legendValues: true` enables line details; scatter and lines without these options still require numeric Y values. `from` is an existing X coordinate in the first series; ISO dates are accepted in portable JSON. The line is dashed from that coordinate. Optional `[lower, upper]` bounds belong to the first series, ordered by X from `from`, and have exactly that suffix's length. Lower bounds cannot exceed upper bounds. A missing observation remains a gap in both the line and its forecast band. An isolated observation keeps a visible point and a narrow confidence band.
+
+Use `zero: true` to include zero and tint the area under zero red. `threshold: {value, label}` draws a labelled dashed warning line, and `marker: {at, label}` marks a coordinate such as Today. Labels come from the application; a marker must be inside an explicit `xAxis.domain`. Forecast tooltips keep the existing title and value/error rows and append their lower and upper bounds. `step: "before" | "after"` adds steps; existing smooth and area options remain available. The legend starts at `marker.at` when a marker is present; otherwise it starts at the latest X. Inspection replaces that resting value, with a dash for a missing observation. Both forecast bounds follow the line’s interpolation (`smooth`, straight or explicit steps). Detailed portable lines with ISO dates (or an explicit date format) use UTC calendar ticks over the exact data range; supplied `xAxis.domain` bounds are preserved. The pure renderer accepts the existing `timeAxis: {timeZone, locale?}` option for detailed lines too. Edge date labels point into the plot to stay clear of Y ticks. Ordinary lines retain their existing axis rendering. The threshold label sits in the upper plot margin so the line and band stay clear. Hover, keyboard and tap share the same inspection state. Outlooks keep full number labels readable at phone width.
 
 ## Treemap and Pareto
 
@@ -1226,6 +1233,7 @@ Values print when bars have at least 46 CSS pixels and the text fits its slot. S
 so server, PDF and app-frame hosts do not require `.k2b-ui` to see them.
 Portable JSON accepts `format: { style: "currency", currency: "EUR", decimals: 0 }`;
 the component and renderer accept a `format(value)` function.
+
 ## Calendar heatmaps
 
 `Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
@@ -1281,6 +1289,8 @@ does not add its renderer to pages that only show stat trends.
 
 Use `kind="funnel"` with `data: [{ label, value }]` for a sequence of counts. Each step shows its value and share of the start; the tooltip also gives its share of the previous step. Values must be nonnegative, and steps may rise above the starting count. A zero or missing denominator shows `–`; missing steps stay gaps. Geometry fits the largest step, so rising counts stay inside the plot.
 
-Use `kind="bar" layout="rows"` for a ranked list of nonnegative values. Rows sort descending, with stable order for ties. `share` prints each row's share of the entire input. `limit` shows that many rows and a final “n more · total” summary; the data table retains every source row. `tone="in" | "out"` records flow direction and uses the theme’s incoming or outgoing flow color, falling back to the neutral chart palette. Automatic rows in existing data-only bars retain their original layout.
+Use `kind="bar" layout="rows"` for category values, including negative values. If any value is negative, rows retain source order and bars diverge around zero. Ordered categories (`xAxis.ordered`), reference lines, `colorByBar`, explicit `showValues`, axis labels and value-axis domain, scale or ticks also keep the original row drawing. These options preserve the drawing of saved Cloud 0.69 charts.
+
+Unordered nonnegative values without those drawing options use a ranked list. Rows sort descending, with stable order for ties. `share` prints each row's share of the entire input. `limit` shows that many rows and a final “n more · total” summary; the data table retains every source row. `tone="in" | "out"` records flow direction and uses the theme’s incoming or outgoing flow color, falling back to the neutral chart palette. The portable schema rejects `share`, `limit` or `tone` on signed data with “Share, limit and tone need nonnegative values.” Automatic rows in existing data-only bars retain their original layout.
 
 Both descriptions accept `format: NumberFormat` for source values. Percentage calculations keep their own format. The inherited locale formats shares and the remainder label. They use the same category band, keyboard inspection, touch guard and fixed host states as other category charts.
