@@ -1,6 +1,6 @@
 import { type JSX, Show, splitProps } from "solid-js";
 import { Button, type ButtonProps } from "./Button";
-import { Dropdown, type DropdownItem, type DropdownPosition } from "./Dropdown";
+import { Dropdown, type DropdownItem, type DropdownPosition, type DropdownProps } from "./Dropdown";
 
 export type SplitButtonProps = Omit<ButtonProps, "align"> & {
   /** Actions shown from the secondary menu trigger. */
@@ -16,6 +16,10 @@ export type SplitButtonProps = Omit<ButtonProps, "align"> & {
   menuPosition?: DropdownPosition | (() => DropdownPosition);
   /** Exact width of both menus as a CSS length. Without it the menus size to their entries. */
   menuWidth?: string;
+  /** `sheet` opens both menus as a bottom sheet on phones, as `Dropdown` does. Defaults to `menu`. */
+  phone?: DropdownProps["phone"];
+  /** One quiet sentence below the secondary menu's entries that explains them all, as `Dropdown`'s `note`. */
+  menuNote?: string;
 };
 
 /** One primary button action with a separate menu of related alternatives. */
@@ -32,6 +36,8 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
     "menuLabel",
     "menuPosition",
     "menuWidth",
+    "menuNote",
+    "phone",
     "size",
     "variant",
   ]);
@@ -43,6 +49,8 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
       disabled={disabled()}
       items={local.items}
       label={local.menuLabel}
+      note={local.menuNote}
+      phone={local.phone}
       position={local.menuPosition ?? "bottom-left"}
       width={local.menuWidth}
     >
@@ -66,6 +74,7 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
             items={items()}
             disabled={disabled()}
             class="k2b-split-button__primary-menu"
+            phone={local.phone}
             position={local.menuPosition ?? "bottom-left"}
             width={local.menuWidth}
           >

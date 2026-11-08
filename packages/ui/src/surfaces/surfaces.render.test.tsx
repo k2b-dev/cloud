@@ -52,6 +52,30 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(info).not.toContain("k2b-sr-only");
   });
 
+  test("NoticeCard with a tile and an action renders one row: decorative tile, text, then the action", () => {
+    const html = renderToString(() =>
+      createComponent(NoticeCard, {
+        tile: "ti ti-photo-shield",
+        tileColor: "var(--k2b-reference-image)",
+        "aria-label": "External images",
+        children: "External images blocked",
+        action: "Load images",
+      }),
+    );
+    expect(html).toContain("data-row");
+    expect(html).toContain('aria-label="External images"');
+    expect(html).toMatch(
+      /<span class="k2b-notice-card__tile k2b-icon-tile" style="color:\s?var\(--k2b-reference-image\)" aria-hidden="true"><i class="ti ti-photo-shield"><\/i><\/span><div class="k2b-notice-card__content">.*External images blocked.*<\/div><div class="k2b-notice-card__action">Load images<\/div><\/article>/,
+    );
+    // An action alone also makes a row, without a tile; a plain notice stays a calm block.
+    const actionOnly = renderToString(() => createComponent(NoticeCard, { children: "Release note", action: "Open" }));
+    expect(actionOnly).toContain("data-row");
+    expect(actionOnly).not.toContain("k2b-notice-card__tile");
+    const calm = renderToString(() => createComponent(NoticeCard, { title: "Release note" }));
+    expect(calm).not.toContain("data-row");
+    expect(calm).not.toContain("k2b-notice-card__action");
+  });
+
   test("NoticeCard keeps its calm markup without a Markdown callout icon", () => {
     const html = renderToString(() => createComponent(NoticeCard, { tone: "warning", title: "x", children: "Body" }));
     expect(html).toContain('data-tone="warning"');

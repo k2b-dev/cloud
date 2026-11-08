@@ -21,13 +21,13 @@ Use `InlineGuidance` for small state-specific copy such as why an action is disa
 ## Import
 
 ```tsx
-import { ButtonLink, InlineGuidance, NoticeCard } from "@k2b/ui";
+import { Button, ButtonLink, InlineGuidance, NoticeCard, SplitButton } from "@k2b/ui";
 ```
 
 ## Composition
 
 `NoticeCard` accepts `title`, optional `detail`, optional `meta`, `tone`,
-optional `icon`, `class`, and `bodyClass`. Children render below the title and detail, for
+optional `icon` or `tile`, optional `action`, `class`, and `bodyClass`. Children render below the title and detail, for
 example a list or the controls for the next step. Without a title, the
 children are the whole notice. Children that render nothing, such as a `Show`
 whose condition is false, add no body and no space.
@@ -86,6 +86,47 @@ forced-colors mode a system border outlines every notice.
 
 Controls for the next step, such as **Retry** or **Open settings**, can sit
 in the notice body below the text. Keep them to one row of buttons.
+
+### One row with an action
+
+`action` puts the one next step at the end of the notice instead of below
+it, such as **Load images** or **Retry** above the content it unlocks. The
+notice becomes a single row at least 48 px high, with the control radius:
+the text, then the action, both centred. The action never wraps below the
+text; the text takes the width that is left, so keep it to one short line
+and truncate it on narrow screens rather than letting the row grow. A
+`SplitButton` with `size="sm"` fits the row, so related alternatives wait
+one click behind the main action.
+
+`tile` adds a Tabler icon on a soft square tile at the start of the row, 32 px
+(28 px on phones), for the subject the notice is about. The glyph takes
+`tileColor`, a CSS colour such as a subject token, or else the tone's ink.
+The tile is decorative and hidden from assistive technology; the text names
+the state. `tile` and `icon` exclude each other: `icon` marks a tone, a tile
+names a subject.
+
+When a notice changes state in place, such as blocked, loading, and failed,
+keep the same row: the height stays at 48 px, so the content below never
+moves. Give the row an accessible name with `aria-label` when it is a region
+of its own.
+
+```tsx
+<NoticeCard
+  aria-label="External images"
+  tile="ti ti-photo-shield"
+  tileColor="var(--k2b-reference-image)"
+  action={
+    <SplitButton variant="secondary" size="sm" phone="sheet" onClick={load} menuLabel="More image options" items={rules}>
+      Load images
+    </SplitButton>
+  }
+>
+  <p class="truncate"><strong>External images blocked</strong> · Protects against tracking</p>
+</NoticeCard>
+<NoticeCard tone="danger" tile="ti ti-photo-x" action={<Button variant="secondary" size="sm" onClick={load}>Retry</Button>}>
+  <p role="alert"><strong>Images could not be loaded</strong></p>
+</NoticeCard>
+```
 
 `InlineGuidance` accepts `children`, an optional `tone`, and an optional icon. It is borderless and has no default icon unless `loading` is true. Its tones use the shared `neutral`, `info`, `success`, `warning`, and `danger` vocabulary. Put a native link or `ButtonLink variant="text"` inside the guidance when a real next step exists.
 
