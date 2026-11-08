@@ -1,3 +1,5 @@
+import type { ChartShowcaseExample } from "./types";
+
 export const dotsExamples = [
   {
     id: "dots-nested",
@@ -73,4 +75,38 @@ export const dotsExamples = [
       },
     ],
   },
-];
+  {
+    id: "dots-shares",
+    kind: "dots",
+    question: "compare",
+    title: "Newsletter shares",
+    summary: "Each month shows a share of recipients; the legend shows the latest month or the category at the cursor.",
+    spec: {
+      kind: "bar",
+      title: "Newsletter shares",
+      layout: "nested",
+      marks: "dots",
+      total: 1,
+      dots: 20,
+      x: ["Jan", "Feb", "Mar"],
+      series: [
+        { label: "Opened", data: [0.45, 0.55, 0.6] },
+        { label: "Clicked", data: [0.15, 0.2, 0.25] },
+      ],
+      format: { style: "percent" },
+    },
+    height: 254,
+    width: "half",
+    useFor: ["Nested engagement rates over time"],
+    avoidFor: ["Adding percentages across months"],
+    a11y: ["Keyboard inspection reads the month's exact shares; Escape restores the latest values in the legend."],
+    options: [
+      { name: "format.style", type: '"percent"', description: "The portable renderer uses latest-category legend values automatically." },
+      {
+        name: "legendValues",
+        type: '"total" | "latest"',
+        description: "Direct Chart.Bar calls with a custom share formatter use latest; count series default to total.",
+      },
+    ],
+  },
+] satisfies ChartShowcaseExample[];

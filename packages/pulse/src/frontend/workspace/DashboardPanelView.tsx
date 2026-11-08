@@ -1,10 +1,16 @@
 import {
+  BalanceSummary,
+  BudgetList,
   Button,
   Chart,
   type ChartCursor,
   ChartExplorer,
   type ChartSnapshot,
+  createDataTableView,
+  DashboardPanel as DashboardFrame,
   DataTable,
+  type DataTableColumn,
+  DataTableTools,
   Disclosure,
   IconButton,
   Skeleton,
@@ -14,15 +20,18 @@ import {
 import { createMemo, createSignal, For, lazy, Show, Suspense } from "solid-js";
 import type { DashboardPanel } from "../../dashboard-contracts";
 import { readOverviewNumber } from "../../overview-number";
+import { sqlTimestamp } from "../../sql-result-values";
 import { usePulseMessages } from "../use-messages";
 import type { DashboardPanelResult, PublicDashboardPanel } from "./dashboard-client";
 import {
   type DashboardLineRow,
   dashboardCategories,
   dashboardCell,
+  dashboardChartRenderOptions,
   dashboardCountries,
   dashboardDateTime,
   dashboardLineExplorer,
+  dashboardMoneyDescription,
 } from "./dashboard-data";
 
 // A line panel keeps its explorer, header and height while it has no points to draw.
@@ -62,17 +71,46 @@ export default function DashboardPanelView(props: {
     </IconButton>
   );
   const data = () => props.result?.lastGood?.data;
-  const line = createMemo(() =>
-    data() && props.panel.kind === "line"
-      ? dashboardLineExplorer(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }, props.result?.lastGood ?? undefined)
-      : null,
-  );
+  const lineResult = createMemo(() => {
+    if (!data() || props.panel.kind !== "line") return { value: null, error: false };
+    try {
+      return {
+        value: dashboardLineExplorer(
+          props.panel,
+          data()!,
+          { locale: locale(), timeZone: props.timeZone },
+          props.result?.lastGood ?? undefined,
+        ),
+        error: false,
+      };
+    } catch {
+      return { value: null, error: true };
+    }
+  });
+  const line = () => lineResult().value;
   const categoryResult = createMemo(() => {
     if (!data() || !["bar", "funnel"].includes(props.panel.kind)) return { data: [], error: false };
     try {
       return { data: dashboardCategories(props.panel, data()!, locale()), error: false };
     } catch {
       return { data: [], error: true };
+    }
+  });
+  const catalog = createMemo(() => {
+    if (!data()?.rows.length || ["number", "line", "bar", "funnel", "table", "map", "budget", "balance"].includes(props.panel.kind))
+      return { options: null, error: false };
+    try {
+      return { options: dashboardChartRenderOptions(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }), error: false };
+    } catch {
+      return { options: null, error: true };
+    }
+  });
+  const money = createMemo(() => {
+    if (!data()?.rows.length || !["budget", "balance"].includes(props.panel.kind)) return { description: null, error: false };
+    try {
+      return { description: dashboardMoneyDescription(props.panel, data()!, locale()), error: false };
+    } catch {
+      return { description: null, error: true };
     }
   });
   const countryResult = createMemo(() => {
@@ -91,7 +129,13 @@ export default function DashboardPanelView(props: {
     return result?.ok ? result.data : null;
   };
   const categories = () => categoryResult().data;
-  const malformed = () => categoryResult().error || countryResult().error || (numberResult() !== null && !numberResult()?.ok);
+  const malformed = () =>
+    lineResult().error ||
+    categoryResult().error ||
+    catalog().error ||
+    money().error ||
+    countryResult().error ||
+    (numberResult() !== null && !numberResult()?.ok);
   const failure = () =>
     malformed()
       ? t().dashboardInvalidResult
@@ -104,19 +148,48 @@ export default function DashboardPanelView(props: {
             : t().dashboardPanelFailureDetail;
   const lastAt = () => props.result?.lastGood?.at;
   const stamp = () => (lastAt() ? dashboardDateTime({ locale: locale(), timeZone: props.timeZone }).format(new Date(lastAt()!)) : "");
+  // A table reads its columns by what they hold: times in the base's zone, numbers right-aligned in the reader's
+  // language, everything else as text that wraps. Search and order work on what the reader sees.
+  const tableColumns = createMemo((): DataTableColumn<unknown[]>[] => {
+    const result = props.panel.kind === "table" ? data() : undefined;
+    return (result?.columns ?? []).map((column, index) => {
+      const first = result!.rows.find((row) => row[index] !== null && row[index] !== undefined)?.[index];
+      const date = /^(?:Nullable\()?Date/.test(column.type);
+      return {
+        id: column.name,
+        header: column.name,
+        sortable: true,
+        type: date ? "date" : typeof first === "number" ? "number" : "text",
+        timeZone: props.timeZone,
+        value: (row: unknown[]) => {
+          const value = row[index];
+          if (!date || value === null || value === undefined || /^\d{4}-\d{2}-\d{2}$/.test(String(value))) return value;
+          const time = sqlTimestamp(value, column.type, props.timeZone);
+          return Number.isFinite(time) ? time : value;
+        },
+      };
+    });
+  });
+  const table = createDataTableView<unknown[]>({
+    rows: () => (props.panel.kind === "table" ? (data()?.rows ?? []) : []),
+    columns: tableColumns,
+  });
+  let tableTools: HTMLDivElement | undefined;
   const Table = () => (
     <DataTable
       ariaLabel={props.panel.title}
       class="pulse-dashboard__table"
       density="compact"
-      surface="paper"
-      rows={data()?.rows ?? []}
-      renderCell={({ value }) => dashboardCell(value, locale())}
-      columns={(data()?.columns ?? []).map((column, index) => ({
-        id: column.name,
-        header: column.name,
-        value: (row: unknown[]) => row[index],
-      }))}
+      surface="plain"
+      rows={table.rows()}
+      columns={tableColumns()}
+      sort={table.sort()}
+      onSortChange={table.setSort}
+      query={table.query()}
+      onClearQuery={() => {
+        table.setQuery("");
+        tableTools?.querySelector("input")?.focus();
+      }}
     />
   );
   // Loading and failure take the place of the panel's content, at its height.
@@ -180,11 +253,11 @@ export default function DashboardPanelView(props: {
     },
   ];
   return (
-    <article
+    <DashboardFrame
       class="pulse-dashboard__panel"
       data-panel={props.panel.id}
       data-kind={props.panel.kind}
-      data-width={props.panel.width}
+      width={props.panel.width}
       aria-label={props.panel.title}
       aria-busy={props.pending}
     >
@@ -220,12 +293,25 @@ export default function DashboardPanelView(props: {
             height="13.5rem"
             tableRows={100}
             renderDetails={false}
+            // The panel's padding: in the table view the table runs to its frame instead of adding a second one.
+            inset="0.875rem 1rem"
           />
         </div>
       </Show>
       <Show when={props.panel.kind !== "number" && props.panel.kind !== "line"}>
         <div class="pulse-dashboard__panel-head">
           <h3>{props.panel.title}</h3>
+          <Show when={props.panel.kind === "table"}>
+            {/* In the head from the first frame, disabled until rows arrive, so nothing below moves. */}
+            <div ref={tableTools} class="pulse-dashboard__table-tools">
+              <DataTableTools
+                label={props.panel.title}
+                query={table.query()}
+                onQueryChange={table.setQuery}
+                disabled={!data()?.rows.length}
+              />
+            </div>
+          </Show>
           <Show when={props.private && "sql" in props.panel}>
             <SqlButton />
           </Show>
@@ -312,7 +398,7 @@ export default function DashboardPanelView(props: {
               <Chart
                 kind="barGauge"
                 data={categories()}
-                max={Math.max(1, ...categories().map((row) => row.value))}
+                max={Math.max(1, ...categories().map((row) => row.value ?? 0))}
                 min={0}
                 interactive
                 labels={{ interactiveChart: `${props.panel.title} · ${t().dashboardFunnel}` }}
@@ -335,6 +421,23 @@ export default function DashboardPanelView(props: {
                 })}
               />
             </div>
+          </Show>
+          <Show when={catalog().options}>
+            {(options) => (
+              <div class="pulse-dashboard__plot">
+                <Chart {...options()} interactive labels={{ interactiveChart: props.panel.title }} />
+              </div>
+            )}
+          </Show>
+          <Show when={money().description}>
+            {(description) => (
+              <div class="pulse-dashboard__money">
+                {(() => {
+                  const block = description();
+                  return block.block === "budget" ? <BudgetList {...block} /> : <BalanceSummary {...block} />;
+                })()}
+              </div>
+            )}
           </Show>
           <Show when={props.panel.kind === "map"}>
             <div class="pulse-dashboard__map">
@@ -402,6 +505,6 @@ export default function DashboardPanelView(props: {
           </Disclosure>
         </div>
       </Show>
-    </article>
+    </DashboardFrame>
   );
 }

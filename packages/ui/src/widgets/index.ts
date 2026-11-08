@@ -1,3 +1,5 @@
+export * from "./Dashboard";
+export * from "./DashboardFrame";
 export * from "./Widget";
 export * from "./WidgetHero";
 export * from "./WidgetList";

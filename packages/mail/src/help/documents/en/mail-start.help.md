@@ -59,7 +59,8 @@ The sidebar contains your mailboxes, with pinned mailboxes first. The open mailb
 - **More** for Archive, Trash, and Junk. It stays open while one of these folders is current.
 - Standard folders show their usual name in your language, for example **Sent** for "Sent Items". A folder with a name of its own keeps that name. The folder settings also show the name on the mail server.
 - Custom provider folders and their nested hierarchy, with unread counts.
-- **Hidden mailboxes**, **New mailbox**, and **Recently deleted mailboxes** remain available below the mailbox list.
+- **Hidden** after the mailbox list folds your hidden mailboxes into one row. Select it to show them.
+- **…** beside **Mailboxes** holds **New mailbox** and **Deleted mailboxes**. Point at the heading or press Tab to show it.
 
 The head contains:
 

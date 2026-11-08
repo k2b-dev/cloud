@@ -39,8 +39,9 @@
     padding-left: 0.5rem;
   }
 
-  /* The row whose quick look is open keeps its hover tone while the pointer is in the card. */
-  .mail-list-entry-peek {
+  /* The row whose quick look or menu is open keeps its hover tone while the pointer is elsewhere. */
+  .mail-list-entry-peek,
+  .mail-list-entry-menu-open {
     background: var(--ui-hover);
   }
 
@@ -161,6 +162,47 @@
     flex: 1 1 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--k2b-text-muted);
+  }
+
+  /* Image thumbnails in the columns view: fixed boxes, so a loading or failed image moves nothing. Only a list with
+     room for them beside a readable subject shows them, measured like its columns; hidden thumbnails never load. */
+  .mail-row-thumbnails {
+    display: none;
+    flex: none;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  @container mail-columns (width >= 52rem) {
+    .mail-row-thumbnails {
+      display: inline-flex;
+    }
+  }
+
+  .mail-row-thumbnail {
+    display: inline-flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 0.375rem;
+    background: var(--k2b-surface-muted);
+    color: var(--k2b-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .mail-row-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .mail-row-thumbnail-more {
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
     color: var(--k2b-text-muted);
   }
 
@@ -748,12 +790,17 @@
     --mail-other-mailbox-ink: var(--k2b-neutral-400);
   }
 
-  .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
+  /* The row that folds the hidden mailboxes is as quiet as the mailboxes it stands for. */
+  .k2b-ui
+    :is(.mail-sidebar-mailbox:not([data-open="true"]), .mail-sidebar-hidden-toggle)
+    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon, .k2b-app-workspace__sidebar-item-meta) {
     color: var(--mail-other-mailbox-ink);
     font-weight: 400;
   }
 
-  .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]):is(:hover, :focus-within) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
+  .k2b-ui
+    :is(.mail-sidebar-mailbox:not([data-open="true"]), .mail-sidebar-hidden-toggle):is(:hover, :focus-within)
+    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
     color: var(--k2b-text-secondary);
   }
 
@@ -801,17 +848,6 @@
     padding-inline: 0.5rem;
     color: var(--k2b-text-muted);
     font-size: 0.75rem;
-  }
-
-  .mail-sidebar-deleted {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.25rem 0.5rem;
-    padding: 0.25rem 0.5rem;
-    color: var(--color-zinc-500);
-    font-size: 0.6875rem;
   }
 
   .mail-list-preview {

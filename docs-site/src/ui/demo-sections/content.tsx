@@ -1,11 +1,14 @@
 import {
   announce,
+  BalanceSummary,
   Button,
   Chart,
   CodeDisplay,
+  createDataTableView,
   DataTable,
   type DataTableColumn,
   type DataTableSort,
+  DataTableTools,
   DocCode,
   DocConceptGrid,
   DocLead,
@@ -19,6 +22,7 @@ import {
   type FileSource,
   FileView,
   FilterChip,
+  FlowAmount,
   Format,
   InlineGuidance,
   installInputModeController,
@@ -48,6 +52,7 @@ import {
   PanelDialog,
   Paper,
   PdfPreview,
+  PdfViewer,
   Placeholder,
   panelDialogFixedOptions,
   panelDialogOptions,
@@ -76,7 +81,8 @@ import {
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
-import { BarChartStatesDemo, ChartDemo, CountryMapDemo } from "./charts";
+import { BarChartStatesDemo, ChartDemo, ChartFrameStatesDemo, CountryMapDemo, ReferenceLineStylesDemo } from "./charts";
+import { tableExamples } from "./charts/examples/table";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
@@ -312,7 +318,7 @@ const TableDemo = () => {
         { kind: "component", name: "DataTable", from: "@k2b/ui" },
         { kind: "component", name: "Pagination", from: "@k2b/ui" },
       ]}
-      description="The basic form renders exact typed records between a grey head, row lines, and lighter column lines. A selected row is a fill only. Sorting, selection, totals, and pagination stay application-owned."
+      description="The basic form renders exact typed records between a grey head, row lines, and lighter column lines. Numbers read in the inherited locale and line up right with tabular figures. A selected row is a fill only. Sorting, selection, totals, and pagination stay application-owned."
       code={`<DataTable
   rows={ordered()}
   columns={columns}
@@ -369,6 +375,66 @@ const orderStatus = {
   shipped: { label: "Shipped", tone: "warning" },
   delivered: { label: "Delivered", tone: "ok" },
 } as const;
+
+type Campaign = Record<string, string | number | null>;
+// The showcase entry is the one description: the demo renders the same columns and rows as its JSON.
+const campaignSpec = tableExamples[0]!.spec;
+const campaignColumns: DataTableColumn<Campaign>[] = campaignSpec.columns.map(({ label, ...column }) => ({
+  ...column,
+  header: label,
+  value: column.id,
+  sortable: true,
+})) as DataTableColumn<Campaign>[];
+const TypedTableDemo = () => {
+  const view = createDataTableView<Campaign>({ rows: () => campaignSpec.rows, columns: () => campaignColumns });
+  return (
+    <DemoCard
+      id="tables-typed"
+      chip={[
+        { kind: "component", name: "DataTable", from: "@k2b/ui" },
+        { kind: "component", name: "DataTableTools", from: "@k2b/ui" },
+        { kind: "component", name: "createDataTableView", from: "@k2b/ui" },
+      ]}
+      description="Typed columns: text wraps, numbers and amounts align right, a status shows its badge, a bar its share. Search and group choice sit in the frame's head. Narrow the frame below 560 px: dates and recipients leave, and each row's details button shows them. Search for something absent to see the way back."
+      code={`const view = createDataTableView({ rows: () => campaigns, columns: () => columns });
+
+<DataTableTools label="Campaigns" query={view.query()} onQueryChange={view.setQuery}
+  groups={[{ id: "status", label: "Status" }]} groupBy={view.groupBy()} onGroupByChange={view.setGroupBy} />
+<DataTable surface="plain" columns={columns} rows={view.rows()}
+  sort={view.sort()} onSortChange={view.setSort} groupBy={view.groupBy() ?? undefined}
+  query={view.query()} onClearQuery={() => view.setQuery("")} />`}
+    >
+      <Paper as="section" class="ui-typed-table-demo" aria-labelledby="tables-typed-title">
+        <header class="ui-typed-table-demo__head">
+          <div>
+            <h3 id="tables-typed-title">Campaigns</h3>
+            <p>7 in the period · invented figures</p>
+          </div>
+          <DataTableTools
+            label="Campaigns"
+            query={view.query()}
+            onQueryChange={view.setQuery}
+            groups={campaignSpec.groupBy}
+            groupBy={view.groupBy()}
+            onGroupByChange={view.setGroupBy}
+          />
+        </header>
+        <DataTable
+          surface="plain"
+          ariaLabelledBy="tables-typed-title"
+          columns={campaignColumns}
+          rows={view.rows()}
+          sort={view.sort()}
+          onSortChange={view.setSort}
+          groupBy={view.groupBy() ?? undefined}
+          query={view.query()}
+          onClearQuery={() => view.setQuery("")}
+          empty={campaignSpec.empty}
+        />
+      </Paper>
+    </DemoCard>
+  );
+};
 
 const ProfessionalTableDemo = () => {
   const [query, setQuery] = createSignal("");
@@ -1399,6 +1465,34 @@ const gallery = [
     alt: "Purple field",
   },
 ];
+/** A two-page sample PDF built in the browser, so the demo shows pdf.js drawing a real document. */
+const samplePdf = (): Blob => {
+  const objects = [
+    "",
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  for (const [page, title] of ["Sample report", "Appendix"].entries()) {
+    const stream = `BT /F1 28 Tf 72 740 Td (${title}) Tj ET\nBT /F1 12 Tf 72 700 Td (Page ${page + 1} of 2, drawn by pdf.js.) Tj ET`;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
+    );
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  }
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = body.length;
+    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xref = body.length;
+  body += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id++) body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Blob([body], { type: "application/pdf" });
+};
+
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
   const openPreview = () =>
@@ -1435,15 +1529,17 @@ const MediaDemo = () => {
       chip={[
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
         { kind: "component", name: "PdfPreview", from: "@k2b/ui" },
+        { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
       ]}
-      description="Application-owned media, a standalone PDF preview, and a composed dialog with header actions and an actionable error."
+      description="Application-owned media, a standalone PDF preview drawn by pdf.js, the viewer on its own with zoom and selectable text, and a composed dialog with header actions and an actionable error."
       code={`const [open, setOpen] = createSignal(false);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
 <Show when={open()}>
   <Lightbox images={images} initialIndex={0} onClose={() => setOpen(false)} />
 </Show>
-<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />`}
+<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />
+<PdfViewer data={pdfBlob} title="Report" />`}
     >
       <div class="ui-demo-row">
         <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -1457,11 +1553,10 @@ const MediaDemo = () => {
         <Lightbox images={gallery} initialIndex={0} onClose={() => setOpen(false)} />
       </Show>
       <div class="ui-pdf-demo">
-        <PdfPreview
-          request={async () => new Blob(["%PDF-1.4\n%%EOF"], { type: "application/pdf" })}
-          title="Sample report"
-          emptyText="Generate the local sample to inspect it."
-        />
+        <PdfPreview request={async () => samplePdf()} title="Sample report" emptyText="Generate the local sample to inspect it." />
+      </div>
+      <div class="ui-pdf-viewer-demo">
+        <PdfViewer data={samplePdf()} title="Sample report" />
       </div>
     </DemoCard>
   );
@@ -1863,7 +1958,8 @@ const IntlValues = () => {
       </p>
       <p style="margin:0">
         <Format.Number value={1234567.89} decimals={2} /> · <Format.Currency value={1999.5} currency="EUR" /> ·{" "}
-        <Format.Percent value={0.421} /> · <Format.Bytes value={1536} />
+        <Format.Currency value={1999.5} currency="EUR" signDisplay="exceptZero" /> · <Format.Percent value={0.421} /> ·{" "}
+        <Format.Bytes value={1536} />
       </p>
       <p style="margin:0">
         <Format.DateTime value="2026-07-28T09:00:00Z" timeZone="Europe/Berlin" /> ·{" "}
@@ -1885,6 +1981,33 @@ const IntlValues = () => {
   );
 };
 
+const MoneyDemo = () => (
+  <DemoCard
+    id="money"
+    chip={[
+      { kind: "component", name: "FlowAmount", from: "@k2b/ui" },
+      { kind: "component", name: "BalanceSummary", from: "@k2b/ui" },
+    ]}
+    description="Money with a direction carries no sign: incoming is turquoise on a ringed surface with an arrow down-left, outgoing is violet with an arrow up-right, zero is grey with “=”. Screen readers hear the direction as a word. BalanceSummary puts a period on one line: start, in, out, end."
+    code={`<FlowAmount value={31240.5} currency="EUR" />
+<FlowAmount value={-30500} currency="EUR" />
+<FlowAmount value={0} currency="EUR" />
+<FlowAmount value={-1204.8} currency="EUR" size="lg" labels={{ out: "Expense" }} />
+<BalanceSummary start={18800} in={29260} out={29520} currency="EUR" />`}
+  >
+    <div style="display:grid;gap:20px">
+      <div style="display:flex;flex-wrap:wrap;gap:14px 26px;align-items:center">
+        <FlowAmount value={31240.5} currency="EUR" />
+        <FlowAmount value={-30500} currency="EUR" />
+        <FlowAmount value={0} currency="EUR" />
+        <FlowAmount value={4820} currency="EUR" size="lg" />
+        <FlowAmount value={-1204.8} currency="EUR" size="lg" labels={{ out: "Expense" }} />
+      </div>
+      <BalanceSummary start={18800} in={29260} out={29520} currency="EUR" />
+    </div>
+  </DemoCard>
+);
+
 const IntlDemo = () => (
   <DemoCard
     id="intl"
@@ -1892,6 +2015,7 @@ const IntlDemo = () => (
     description="One inherited render locale for unstyled semantic formatters. The German block wraps the same values in a LocaleProvider; date and time components take an explicit timezone and default to UTC."
     code={`<LocaleProvider locale="de">
   <Format.Currency value={1999.5} currency="EUR" />
+  <Format.Currency value={balanceChange} currency="EUR" signDisplay="exceptZero" />
   <Format.DateTime value={order.createdAt} timeZone="Europe/Berlin" />
   <Format.RelativeTime value={order.updatedAt} />
   <Format.RelativeDate value="2026-09-17" base="2026-09-16T22:30:00Z" timeZone="Europe/Berlin" />
@@ -2033,6 +2157,8 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
       <BarChartStatesDemo />
+      <ChartFrameStatesDemo />
+      <ReferenceLineStylesDemo />
       <CountryMapDemo />
       <DemoCard
         id="line-top-legend"
@@ -2061,6 +2187,7 @@ const demos: DemoSection = {
   tables: () => (
     <DemoGrid columns="one">
       <TableDemo />
+      <TypedTableDemo />
       <ProfessionalTableDemo />
     </DemoGrid>
   ),
@@ -2131,6 +2258,11 @@ const demos: DemoSection = {
   markdown: (props) => (
     <DemoGrid columns="one">
       <MarkdownDemo html={props.markdownHtml} />
+    </DemoGrid>
+  ),
+  money: () => (
+    <DemoGrid columns="one">
+      <MoneyDemo />
     </DemoGrid>
   ),
   intl: () => (

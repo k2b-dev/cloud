@@ -21,6 +21,7 @@
     color-scheme: light;
 
     --k2b-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --k2b-row-measure: 40rem;
     --k2b-font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --k2b-radius-control: 0.5rem;
     --k2b-radius-surface: 0.75rem;
@@ -35,6 +36,14 @@
     --stdlib-chart-c6: #06b6d4;
     --stdlib-chart-c7: #84cc16;
     --stdlib-chart-c8: #f97316;
+    /* Money with a direction, as in the full stylesheet: turquoise comes in, violet goes out. */
+    --k2b-flow-in-text: light-dark(#0e7490, #67e8f9);
+    --k2b-flow-in-surface: light-dark(#ecfeff, rgb(8 51 68 / 0.55));
+    --k2b-flow-in-ring: light-dark(#a5f3fc, #155e75);
+    --k2b-flow-in-mark: light-dark(#0891b2, #22d3ee);
+    --k2b-flow-out-text: light-dark(#6d28d9, #c4b5fd);
+    --k2b-flow-out-surface: light-dark(#f5f3ff, rgb(46 16 101 / 0.55));
+    --k2b-flow-out-mark: light-dark(#8b5cf6, #a78bfa);
 
     --k2b-surface: light-dark(#ffffff, #11151b);
     --k2b-surface-canvas: light-dark(#fafafa, #090d12);
@@ -1004,10 +1013,11 @@
   .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
     flex: none;
     height: var(--k2b-chart-height);
+    max-width: var(--k2b-row-measure, 40rem);
   }
 
   .k2b-chart-category-band { stroke: none; }
-  .k2b-chart [data-inspected] > .k2b-chart-category-band { fill: color-mix(in srgb, currentColor 5%, transparent); }
+  .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
   .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
   .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
 
@@ -1078,14 +1088,51 @@
     pointer-events: none;
   }
 
-  .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  /* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row of a category chart gets a
+     light band behind it instead (data-inspecting="category"). */
+  .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
     stroke: var(--k2b-chart-inspection-color);
+    vector-effect: non-scaling-stroke;
+  }
+  .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
+    stroke-width: 1.5px;
+  }
+  /* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
+  .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
     stroke-width: 2px;
+  }
+
+  /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
+  .k2b-chart:focus-visible:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+    stroke: var(--k2b-chart-inspection-color);
+    stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
   }
 
+  .k2b-chart[data-inspecting="category"] {
+    isolation: isolate;
+  }
+
+  .k2b-chart[data-inspecting="category"]::before {
+    content: "";
+    position: absolute;
+    left: var(--k2b-chart-band-left);
+    top: var(--k2b-chart-band-top);
+    width: var(--k2b-chart-band-width);
+    height: var(--k2b-chart-band-height);
+    z-index: -1;
+    border-radius: 3px;
+    background: color-mix(in srgb, currentColor 7%, transparent);
+    pointer-events: none;
+  }
+
+  .k2b-chart { --k2b-chart-selection-color: currentColor; }
+  .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color); stroke-width: 2.5px; }
+  .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px; }
+
   /* Pointer hover paints the band instead of outlining every segment. */
-  .k2b-chart [data-inspected="hover"]:not([data-selected]):has(> .k2b-chart-category-band) > :is(rect,path,circle):not(.k2b-chart-category-band) { stroke: none; }
+  .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
+  .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none; }
 
   .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
     fill: var(--k2b-chart-inspection-color);
@@ -1287,4 +1334,18 @@
       padding-block: 0.25rem;
     }
   }
+}
+
+/* Category hover paints only the band; keyboard and selection outline marks. */
+@layer k2b-base {
+.k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none; }
+.k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none; }
+}
+
+@layer k2b-base {
+.k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
+}
+
+@layer k2b-base {
+.k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
 }

@@ -80,6 +80,8 @@ for (const width of [1440, 390])
         await settled(page);
         const before = await sample.boundingBox();
         const marks = chart.locator("[data-chart-datum]");
+        const legendValue = chart.locator("[data-chart-legend-value]").first();
+        const legendDefault = await legendValue.textContent();
         await marks
           .first()
           .locator(".k2b-chart-category-band")
@@ -87,8 +89,13 @@ for (const width of [1440, 390])
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
-        const legendValue = chart.locator("[data-bar-legend]").first();
-        expect(await legendValue.textContent()).not.toBe(await legendValue.getAttribute("data-bar-total"));
+        const fieldKey = await legendValue.getAttribute("data-field");
+        const expectedValue = await marks.first().evaluate((n, key) => {
+          const datum = JSON.parse(n.getAttribute("data-chart-datum")!);
+          return datum.values.find((field: { key: string }) => field.key === key).formatted;
+        }, fieldKey);
+        expect(await legendValue.textContent()).toBe(expectedValue);
+        expect(await legendValue.textContent()).not.toBe(legendDefault);
         const rects = await marks.evaluateAll((nodes) =>
           nodes.flatMap((g) => [g, ...g.querySelectorAll(".stdlib-chart-bar")].map((e) => getComputedStyle(e).opacity)),
         );
@@ -119,6 +126,7 @@ for (const width of [1440, 390])
         await chart.press("Enter");
         expect(await chart.locator('[role="tooltip"]').textContent()).not.toBe(first);
         await chart.press("Home");
+        await settled(page);
         expect(await marks.first().evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-inspection-color")))).toBe(
           true,
         );
@@ -132,6 +140,7 @@ for (const width of [1440, 390])
         ).toBe(true);
         await chart.press("Escape");
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
+        expect(await legendValue.textContent()).toBe(legendDefault);
         await marks.first().evaluate((g) => g.setAttribute("data-selected", ""));
         await settled(page);
         expect(
@@ -236,18 +245,20 @@ for (const width of [1440, 390])
 
 test("standalone and base-only hosts paint transparent bands and distinct previous bars", async () => {
   const page = await browser.newPage();
+  const errors = pageErrors(page);
   try {
     const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
     const specs = [
-      renderBarChartSvg({ data: [{ label: "Old", value: 10 }], width: 480, height: 280 }),
+      renderBarChartSvg({ data: [{ label: "Old", value: 10 }], width: 480, height: 280, inspect: true }),
       renderBarChartSvg({
         x: ["A"],
         series: [{ label: "Now", data: [15] }],
         compare: { label: "Prior", data: [10] },
+        inspect: true,
         width: 480,
         height: 280,
       }),
-      renderHbarSvg({ series: ["A"], rows: [{ label: "Row", values: [15] }], width: 480, height: 280 }),
+      renderHbarSvg({ series: ["A"], rows: [{ label: "Row", values: [15] }], width: 480, height: 280, inspect: true }),
     ];
     for (const strip of [false, true]) {
       await page.setContent(
@@ -255,7 +266,6 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
       );
       await settled(page);
       expect(await page.locator(".k2b-chart-category-band").evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).fill))).toEqual([
-        "none",
         "none",
         "none",
       ]);
@@ -271,11 +281,18 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
           .locator(".stdlib-chart-bar")
           .evaluate((n) => getComputedStyle(n).fill),
       ).not.toBe("rgb(0, 0, 0)");
+      expect(
+        await page
+          .locator(".k2b-chart")
+          .last()
+          .locator(".stdlib-chart-bar")
+          .evaluate((n) => parseFloat(getComputedStyle(n).strokeWidth)),
+      ).toBe(0);
       if (strip) {
         await page
           .locator(".k2b-chart-category-band")
           .first()
-          .evaluate((n) => n.parentElement!.setAttribute("data-inspected", "hover"));
+          .evaluate((n) => n.parentElement!.setAttribute("data-inspected", "true"));
         await settled(page);
         expect(
           await page
@@ -286,12 +303,13 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
         expect(
           await page
             .locator(".k2b-chart")
-            .first()
-            .locator("[data-inspected] > rect")
+            .nth(1)
+            .locator("[data-inspected] rect")
             .evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).stroke)),
-        ).toEqual(["none", "none"]);
+        ).toEqual(["none", "none", "none"]);
       }
     }
+    expect(errors).toEqual([]);
   } finally {
     await page.close();
   }
@@ -300,6 +318,7 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
 test("old bars keep valid SSR/client selection and inspection outlines inside k2b-ui", async () => {
   const page = await browser.newPage();
   try {
+    const errors = pageErrors(page);
     const svg = selectedChartSvg(
       renderChartSvg(
         {
@@ -317,30 +336,186 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     await page.setContent(
       `<style>${css}</style><body class="k2b-ui"><div id="ssr" class="k2b-chart">${svg}</div><div id="root"></div></body>`,
     );
+    await settled(page);
     const serverStroke = await page.locator("#ssr [data-selected] .stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke);
     expect(serverStroke).not.toBe("none");
     await page.addScriptTag({ content: bundle });
     const chart = page.locator("#old-bar-outline .k2b-chart");
     await settled(page);
+    await chart.scrollIntoViewIfNeeded();
+    await settled(page);
     const first = chart.locator("[data-chart-datum]").first();
     const second = chart.locator("[data-chart-datum]").nth(1);
     expect(await first.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe(serverStroke);
     expect(await first.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
-    await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
+    const restingStroke = await second
+      .locator(".stdlib-chart-bar")
+      .evaluate((n) => [getComputedStyle(n).stroke, getComputedStyle(n).strokeWidth]);
+    // Legacy specs use the shared overlay and keep their original SVG markup.
+    expect(await chart.locator(".k2b-chart-category-band").count()).toBe(0);
+    await second.locator(".stdlib-chart-bar").hover();
     await chart.locator('[role="tooltip"]:popover-open').waitFor();
-    expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
-    expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).fill)).not.toBe("none");
+    await settled(page);
+    expect(
+      await second.locator(".stdlib-chart-bar").evaluate((n) => [getComputedStyle(n).stroke, getComputedStyle(n).strokeWidth]),
+    ).toEqual(restingStroke);
+    expect(await chart.evaluate((n) => getComputedStyle(n, "::before").content)).not.toBe("none");
     await chart.focus();
     await chart.press("End");
+    await settled(page);
     expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-inspection-color")))).toBe(true);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
     await chart.press("Enter");
+    await settled(page);
     expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => parseFloat(getComputedStyle(n).strokeWidth))).toBeGreaterThan(0);
     await chart.press("Escape");
-    await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
+    await second.locator(".stdlib-chart-bar").hover();
+    await settled(page);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
-    expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
+    expect(await chart.locator(".k2b-chart-category-band").count()).toBe(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+for (const width of [1440, 390])
+  test(`legend pairs and compact bar gauges keep their geometry at ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 700 } });
+    const errors = pageErrors(page);
+    try {
+      const gauge = {
+        kind: "barGauge" as const,
+        data: [
+          { label: "CPU", value: 65 },
+          { label: "Memory", value: 72 },
+          { label: "Disk", value: 38 },
+        ],
+      };
+      const height = chartRenderHeight(gauge, { contentHeight: true });
+      await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
+        body{margin:0;padding:20px}section{margin-bottom:24px}.k2b-chart{height:240px}#compact .k2b-chart{height:${height}px}
+        </style></head><body class="k2b-ui" data-theme="light"><section><h2>Orders by channel</h2><div class="k2b-chart"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:280px">${renderChartSvg(barFamilyFixtures[0]!, 480, 280)}</div></div></section>
+        <section id="compact"><h2>Resource utilization</h2><div class="k2b-chart"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:${height}px">${renderChartSvg(gauge, 480, height)}</div></div></section></body></html>`);
+      await settled(page);
+      const gaps = await page.locator("[data-chart-legend-value]").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const label = node.previousElementSibling;
+          if (!(node instanceof SVGTSpanElement) || !(label instanceof SVGTSpanElement)) throw new Error("Legend text runs missing");
+          // Text advances exclude glyph overhang; ink bounding boxes vary with the loaded font.
+          const end = label.getEndPositionOfChar(label.getNumberOfChars() - 1).matrixTransform(label.getScreenCTM()!);
+          const start = node.getStartPositionOfChar(0).matrixTransform(node.getScreenCTM()!);
+          return start.x - end.x;
+        }),
+      );
+      expect(gaps).toHaveLength(3);
+      for (const gap of gaps) expect(gap).toBeCloseTo(6, 0);
+      const geometry = await page.locator("#compact svg").evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        const lastRow = [...node.querySelectorAll(".stdlib-chart-bar-gauge-track")].at(-1)!.getBoundingClientRect();
+        return { height: box.height, trailing: box.bottom - lastRow.bottom };
+      });
+      expect(geometry.height).toBe(height);
+      expect(geometry.trailing).toBeGreaterThan(0);
+      expect(geometry.trailing).toBeLessThan(28);
+      expect(errors).toEqual([]);
+      const shots = process.env.CHARTS_SCREENSHOTS;
+      if (shots) {
+        await mkdir(shots, { recursive: true });
+        await page.screenshot({ path: `${shots}/legend-compact-gauge-light-${width}.png`, fullPage: true });
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
+for (const width of [1920, 390])
+  test(`bar rows respect the shared measure in wide and narrow frames at ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 1000 } });
+    const errors = pageErrors(page);
+    try {
+      const rows = {
+        kind: "bar" as const,
+        layout: "rows" as const,
+        data: [
+          { label: "Furniture", value: 84 },
+          { label: "Lighting", value: 62 },
+          { label: "Pictures", value: 39 },
+        ],
+      };
+      const columns = { ...rows, layout: "columns" as const };
+      const drawings = [rows, barFamilyFixtures[3]!, columns]
+        .map((spec) => {
+          const height = chartRenderHeight(spec);
+          return `<section class="k2b-chart" data-chart-kind="${spec.kind}" style="height:${height}px"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:${height}px">${renderChartSvg(spec, 480, height)}</div></section>`;
+        })
+        .join("");
+      const baseCss = await Bun.file(resolve(import.meta.dir, "../../dist/base.css")).text();
+      for (const host of ["scoped", "base"]) {
+        await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${host === "scoped" ? css : baseCss}
+          body{margin:0;padding:20px;font-size:16px;max-width:none}section{margin-bottom:20px}
+          </style></head><body class="${host === "scoped" ? "k2b-ui" : ""}" data-theme="light">${drawings}</body></html>`);
+        await settled(page);
+        const widths = await page
+          .locator(".k2b-chart__svg")
+          .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
+        expect(widths).toHaveLength(3);
+        expect(widths[0]).toBe(Math.min(width - 40, 640));
+        expect(widths[1]).toBe(Math.min(width - 40, 640));
+        expect(widths[2]).toBe(width - 40);
+        // A host may choose a tighter shared row measure without changing column charts.
+        await page.locator("body").evaluate((node) => node.style.setProperty("--k2b-row-measure", "32rem"));
+        await settled(page);
+        expect(
+          await page
+            .locator(".k2b-chart__svg")
+            .first()
+            .evaluate((node) => node.getBoundingClientRect().width),
+        ).toBe(Math.min(width - 40, 512));
+        await page.locator("body").evaluate((node) => node.style.removeProperty("--k2b-row-measure"));
+        await settled(page);
+        const shots = process.env.CHARTS_SCREENSHOTS;
+        if (shots && host === "scoped") {
+          await mkdir(shots, { recursive: true });
+          await page.screenshot({ path: `${shots}/wide-bar-rows-light-${width}.png`, fullPage: true });
+        }
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+test("bar hover styles preserve waterfall band paint in scoped and base hosts", async () => {
+  const page = await browser.newPage();
+  const errors = pageErrors(page);
+  try {
+    const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
+    const svg = renderChartSvg(
+      { kind: "waterfall", start: { label: "Opening", value: 100 }, steps: [{ label: "Sales", value: 40 }], end: { label: "Closing" } },
+      480,
+      280,
+    );
+    for (const scoped of [true, false]) {
+      await page.setContent(
+        `<style>${scoped ? css : base}</style><main class="${scoped ? "k2b-ui" : ""}"><div class="k2b-chart" data-chart-kind="waterfall" style="color:rgb(18,52,86)">${svg}</div></main>`,
+      );
+      await page
+        .locator("[data-chart-datum]")
+        .first()
+        .evaluate((node) => node.setAttribute("data-inspected", "hover"));
+      await settled(page);
+      const paint = await page
+        .locator(".k2b-chart-category-band")
+        .first()
+        .evaluate((node) => {
+          const style = getComputedStyle(node);
+          return { fill: style.fill, opacity: style.fillOpacity, stroke: style.stroke };
+        });
+      expect(paint).toEqual({ fill: "rgb(18, 52, 86)", opacity: "0.05", stroke: "none" });
+    }
+    expect(errors).toEqual([]);
   } finally {
     await page.close();
   }

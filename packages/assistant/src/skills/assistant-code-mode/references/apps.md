@@ -46,6 +46,8 @@ columns.
 
 The same frozen `cloud` as in scripts; read [cloud contract](cloud.md). Await
 every call; `cloud.money.*`, `cloud.chart()` and `cloud.html` are synchronous.
+`cloud.chart()` markup for less common kinds is filled after insertion, from
+the frame’s bundled offline renderer; see [Charts](charts.md).
 
 - Where data lives: per person (my todos, my settings) → `cloud.kv.user`; small
   app-wide settings → `cloud.kv`; records several people add or edit →

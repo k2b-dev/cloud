@@ -1,15 +1,10 @@
 /**
- * Pure chart renderers that share the `Chart` component's drawing without its Solid wrapper, for hosts that draw
- * SVG themselves, such as server previews and app frames.
+ * Drawing helpers and portable chart contracts. Import the Solid Chart component from `@k2b/ui`.
  */
 
-export { type FunnelOptions, funnelLayout, renderFunnelSvg } from "./charts/core/funnel";
-export { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "./charts/core/hbar";
-export {
-  type BarChartLayout,
-  type BarChartOptions,
-  barChartLayout,
-  rankedBarLayout,
-  renderBarChartSvg,
-  seriesBarLayout,
-} from "./content/chart-bar";
+export * from "./charts/core";
+export type * from "./charts/description";
+export type { ChartKindProps, ChartLabels, ChartProps, ChartRenderOptions } from "./content/Chart";
+export { type BarChartLayout, type BarChartOptions, barChartLayout, renderBarChartSvg } from "./content/chart-bar";
+
+export { calendarInspectionNavigation, mountCalendarScroll } from "./content/chart-calendar";

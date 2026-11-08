@@ -163,11 +163,11 @@ export const mailSettingsMessages = i18n.define({
       folderRoleUpdated: "Folder role updated",
       failedUpdateAutomaticReplyAccess: "Failed to update automatic reply access",
       automaticReplyAccessUpdated: "Automatic reply access updated",
-      recentlyDeletedDescription:
-        "This pauses the mailbox and hides it from normal use. Provider mail and Cloud data remain retained so an administrator can restore it.",
-      moveMailboxToRecentlyDeleted: "Move mailbox to recently deleted?",
-      moveToRecentlyDeleted: "Move to recently deleted",
-      failedMoveToRecentlyDeleted: "Failed to move mailbox to recently deleted",
+      deleteMailboxDescription:
+        "This pauses the mailbox and hides it from normal use. Provider mail and Cloud data stay, so an administrator can restore it under Mailboxes → … → Deleted mailboxes.",
+      deleteMailboxTitle: "Delete mailbox?",
+      deleteMailbox: "Delete mailbox",
+      failedDeleteMailbox: "Failed to delete mailbox",
       mailboxSettings: "Mailbox settings",
       personal: "Personal",
       reading: "Reading",
@@ -242,7 +242,8 @@ export const mailSettingsMessages = i18n.define({
       lifecycle: "Lifecycle",
       dangerZone: "Danger zone",
       dangerZoneDescription: "Remove this mailbox from normal use.",
-      recentlyDeletedGroupDescription: "Pause and hide the mailbox while retaining provider mail and Cloud data for restoration.",
+      deleteMailboxGroupDescription:
+        "Pause and hide the mailbox. Provider mail and Cloud data stay; you can restore it under Mailboxes → … → Deleted mailboxes.",
       sent: "Sent",
       drafts: "Drafts",
       archive: "Archive",
@@ -688,6 +689,8 @@ export const mailSettingsMessages = i18n.define({
       emailDesignDescription: "Preview and adjust mailbox branding for Markdown messages.",
       editDesign: "Edit design",
       logo: "Logo",
+      logoChanged: "The logo changed. Load the current logo to review it; your width and alt text stay here.",
+      loadCurrentLogo: "Load current logo",
       logoVariableHint: "In a signature, {{\u00a0mailbox.logo\u00a0}} places the mailbox logo from Writing → Logo.",
       logoDescription:
         "One logo for this mailbox. Place it in any signature with {{\u00a0mailbox.logo\u00a0}}. Mail sends it inside the email, never as a link.",
@@ -1035,11 +1038,11 @@ export const mailSettingsMessages = i18n.define({
       folderRoleUpdated: "Ordnerrolle aktualisiert",
       failedUpdateAutomaticReplyAccess: "Der Zugriff auf automatische Antworten konnte nicht aktualisiert werden",
       automaticReplyAccessUpdated: "Zugriff auf automatische Antworten aktualisiert",
-      recentlyDeletedDescription:
-        "Das Postfach wird pausiert und aus der normalen Verwendung ausgeblendet. E-Mails beim Anbieter und Cloud-Daten bleiben erhalten, damit eine Person mit Verwaltungsrechten das Postfach wiederherstellen kann.",
-      moveMailboxToRecentlyDeleted: "Postfach in „Kürzlich gelöscht“ verschieben?",
-      moveToRecentlyDeleted: "In „Kürzlich gelöscht“ verschieben",
-      failedMoveToRecentlyDeleted: "Das Postfach konnte nicht in „Kürzlich gelöscht“ verschoben werden",
+      deleteMailboxDescription:
+        "Das Postfach wird pausiert und aus der normalen Verwendung ausgeblendet. E-Mails beim Anbieter und Cloud-Daten bleiben erhalten. Eine Person mit Verwaltungsrechten kann es unter „Postfächer“ → „…“ → „Gelöschte Postfächer“ wiederherstellen.",
+      deleteMailboxTitle: "Postfach löschen?",
+      deleteMailbox: "Postfach löschen",
+      failedDeleteMailbox: "Das Postfach konnte nicht gelöscht werden",
       mailboxSettings: "Postfacheinstellungen",
       personal: "Persönlich",
       reading: "Lesen",
@@ -1115,8 +1118,8 @@ export const mailSettingsMessages = i18n.define({
       lifecycle: "Lebenszyklus",
       dangerZone: "Gefahrenbereich",
       dangerZoneDescription: "Dieses Postfach aus der normalen Verwendung entfernen.",
-      recentlyDeletedGroupDescription:
-        "Pausiert das Postfach und blendet es aus. E-Mails beim Anbieter und Cloud-Daten bleiben zur Wiederherstellung erhalten.",
+      deleteMailboxGroupDescription:
+        "Pausiert das Postfach und blendet es aus. E-Mails beim Anbieter und Cloud-Daten bleiben erhalten; du kannst es unter „Postfächer“ → „…“ → „Gelöschte Postfächer“ wiederherstellen.",
       sent: "Gesendet",
       drafts: "Entwürfe",
       archive: "Archiv",
@@ -1576,6 +1579,8 @@ export const mailSettingsMessages = i18n.define({
       emailDesignDescription: "Postfachdesign für Markdown-Nachrichten prüfen und anpassen.",
       editDesign: "Design bearbeiten",
       logo: "Logo",
+      logoChanged: "Das Logo wurde geändert. Lade das aktuelle Logo zum Prüfen. Deine Breite und dein Alternativtext bleiben erhalten.",
+      loadCurrentLogo: "Aktuelles Logo laden",
       logoVariableHint: "In einer Signatur setzt {{\u00a0mailbox.logo\u00a0}} das Postfachlogo aus Schreiben → Logo ein.",
       logoDescription:
         "Ein Logo für dieses Postfach. Setze es mit {{\u00a0mailbox.logo\u00a0}} in eine beliebige Signatur. Mail sendet es in der E-Mail, nie als Link.",

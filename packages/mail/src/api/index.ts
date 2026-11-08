@@ -12,11 +12,11 @@ import {
   setRequestTimeout,
   v,
 } from "@k2b/cloud/server";
+import { preparePdfImage } from "@k2b/cloud/services";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
@@ -106,6 +106,7 @@ import {
   relatedConversationQuerySchema,
   relatedMailPageSchema,
   relatedMailQuerySchema,
+  removeMailboxComposeLogoQuerySchema,
   renderComposeSnippetInputSchema,
   searchBackendSchema,
   searchRequestSchema,
@@ -209,6 +210,7 @@ import { CountRefreshBusy } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
+import automationExportRoutes from "./automation-export";
 import automationLogRoutes from "./automation-log";
 import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
@@ -217,6 +219,7 @@ import {
   internalDraftSeedInput,
   internalInput,
   internalMailboxId,
+  internalMailboxResourceId,
   internalParams,
   type MailApiContext,
   mailboxParamSchema,
@@ -638,8 +641,7 @@ const internalCommandInput = async (c: Context<MailApiContext>, input: MailComma
     case "move":
     case "copy":
     case "delete": {
-      const messageId = await publicResources.resolveMailboxPublicId("messages", internalMailboxId(c), resolved.messageId);
-      if (!messageId) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
+      const messageId = await internalMailboxResourceId(c, "messages", resolved.messageId);
       return { ...resolved, messageId };
     }
     default:
@@ -756,6 +758,14 @@ export const aggregateResourcePaths = (data: unknown) => {
           { path: ["listItems", String(index), "attachmentMatch", "messageId"], table: "messages" },
         );
       }
+      const images = at(["listItems", String(index), "imageAttachments"]);
+      if (Array.isArray(images))
+        images.forEach((_image, child) => {
+          paths.push(
+            { path: ["listItems", String(index), "imageAttachments", String(child), "messageId"], table: "messages" },
+            { path: ["listItems", String(index), "imageAttachments", String(child), "attachmentId"], table: "attachments" },
+          );
+        });
       many(["listItems", String(index), "localTags"], "tags");
     });
   }
@@ -867,6 +877,125 @@ const attachmentDownloadResponse = async (
     }),
     { status: partial ? 206 : 200, headers },
   );
+};
+
+/**
+ * A thumbnail reads its source, up to the 25 MiB preview cap, into memory before an image worker fits it. As many run
+ * at once as there are workers, and a bounded number wait; beyond that the list shows its placeholder.
+ */
+const THUMBNAIL_SLOTS = 2;
+const THUMBNAIL_QUEUE = 64;
+let thumbnailsRunning = 0;
+const thumbnailQueue: (() => void)[] = [];
+const acquireThumbnailSlot = (signal: AbortSignal): Promise<"acquired" | "busy" | "aborted"> => {
+  if (signal.aborted) return Promise.resolve("aborted");
+  if (thumbnailsRunning < THUMBNAIL_SLOTS) {
+    thumbnailsRunning++;
+    return Promise.resolve("acquired");
+  }
+  if (thumbnailQueue.length >= THUMBNAIL_QUEUE) return Promise.resolve("busy");
+  return new Promise((resolve) => {
+    const start = () => {
+      signal.removeEventListener("abort", abort);
+      resolve("acquired");
+    };
+    const abort = () => {
+      thumbnailQueue.splice(thumbnailQueue.indexOf(start), 1);
+      resolve("aborted");
+    };
+    thumbnailQueue.push(start);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+};
+/** Reading the source from the database may take this long before the thumbnail gives up and frees its slot. */
+const THUMBNAIL_READ_DEADLINE_MS = 10_000;
+const untilAborted = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+const releaseThumbnailSlot = () => {
+  const next = thumbnailQueue.shift();
+  if (next) next();
+  else thumbnailsRunning--;
+};
+
+export const attachmentThumbnailResponse = async (
+  c: Context<MailApiContext>,
+  result: Result<AttachmentDownload>,
+  assertCurrentAccess: (blobId: string) => Promise<void>,
+) => {
+  if (!result.ok) return respondPublic(c, result);
+  const attachment = result.data;
+  if (attachmentPreviewKind(attachment.contentType, attachment.total) !== "image") {
+    return respondPublic(c, fail(err.notFound("Attachment")));
+  }
+  // The browser asks again every time, so a revoked access is never served from its cache; an unchanged image only
+  // answers 304 after the access check above and costs no worker.
+  const etag = `"thumbnail-v1-${attachment.contentHash}"`;
+  const cacheHeaders = { ETag: etag, "Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff" };
+  if (
+    c.req
+      .header("if-none-match")
+      ?.split(",")
+      .some((tag) => tag.trim() === etag)
+  ) {
+    return new Response(null, { status: 304, headers: cacheHeaders });
+  }
+  setRequestTimeout(c, 30);
+  const slot = await acquireThumbnailSlot(c.req.raw.signal);
+  if (slot !== "acquired") {
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    c.header("Retry-After", "5");
+    return respond(c, { ok: false, error: "Thumbnails are busy; try again shortly", code: "THUMBNAILS_BUSY", status: 503 });
+  }
+  // A disconnect or a stalled database read gives the slot back; the read itself ends on its own.
+  const reading = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(THUMBNAIL_READ_DEADLINE_MS)]);
+  let source: ReadableStream<Uint8Array> | undefined;
+  try {
+    const prefix = await untilAborted(messages.readAttachmentPrefix(attachment.blobId), reading);
+    if (!attachmentPreviewSignatureMatches(attachment.contentType, prefix)) {
+      return respondPublic(c, fail(err.badInput("The attachment content does not match its declared preview type")));
+    }
+    source = messages.createAttachmentStream({
+      ...attachment,
+      start: 0,
+      endExclusive: attachment.total,
+      assertCurrentAccess: async () => {
+        reading.throwIfAborted();
+        await assertCurrentAccess(attachment.blobId);
+      },
+    });
+    const bytes = await untilAborted(readBoundedBody(source, attachment.total), reading);
+    if (!bytes.ok || bytes.data.byteLength !== attachment.total) {
+      return respondPublic(c, fail(err.internal("Attachment could not be read")));
+    }
+    const prepared = await preparePdfImage(
+      {
+        data: bytes.data,
+        boxes: [{ width: 96, height: 96 }],
+        maxBytes: 48 * 1024,
+      },
+      { signal: c.req.raw.signal, timeoutMs: 15000 },
+    );
+    if (!prepared.ok) {
+      return respondPublic(c, fail(err.badInput("Attachment thumbnail could not be prepared")));
+    }
+    const variant = prepared.variants[0];
+    if (!variant) return respondPublic(c, fail(err.badInput("Attachment thumbnail exceeds the size limit")));
+    await assertCurrentAccess(attachment.blobId);
+    return new Response(variant.data, {
+      headers: { ...cacheHeaders, "Content-Type": variant.type, "Content-Disposition": "inline" },
+    });
+  } catch {
+    if (reading.aborted) void source?.cancel().catch(() => undefined);
+    return respondPublic(c, fail(err.internal("Attachment thumbnail could not be prepared")));
+  } finally {
+    releaseThumbnailSlot();
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+  }
 };
 
 const resolveFolderParam = resolveMailboxResourceParam("folders", "folderId", "Folder");
@@ -1762,7 +1891,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       context: requestContext(c),
       ...internalParams(c, c.req.valid("param")),
     });
-    return resolved.ok ? c.redirect(resolved.data.href, 302) : respondPublic(c, resolved);
+    if (resolved.ok) return c.redirect(resolved.data.href, 302);
+    return respondPublic(c, resolved.error.code === "NOT_FOUND" ? fail(err.notFound("Reminder")) : resolved);
   })
   .get("/mailboxes/:mailboxId/assignable-users", v("param", mailboxParamSchema), v("query", collaboratorQuerySchema), async (c) =>
     respondPublic(
@@ -2569,6 +2699,39 @@ const mailOperationsApi = new Hono<MailApiContext>()
       );
     },
   )
+  .get(
+    "/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/thumbnail",
+    describeRoute({
+      tags: ["Mail:Messages"],
+      summary: "Get a small image attachment thumbnail",
+      ...requiresAuth,
+      responses: {
+        200: { description: "An image fitted within 96 by 96 pixels (JPEG or PNG, at most 48 KiB)" },
+        304: { description: "The image the client holds is current" },
+        400: jsonResponse(ErrorResponseSchema, "Image cannot be prepared"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Attachment not found or not an image"),
+        500: jsonResponse(ErrorResponseSchema, "Thumbnail unavailable"),
+        503: jsonResponse(ErrorResponseSchema, "Too many thumbnails are being prepared"),
+      },
+    }),
+    v(
+      "param",
+      z.object({
+        mailboxId: ResourceShortIdSchema,
+        messageId: ResourceShortIdSchema,
+        attachmentId: ResourceShortIdSchema,
+      }),
+    ),
+    async (c) => {
+      const context = requestContext(c);
+      const params = internalParams(c, c.req.valid("param"));
+      return attachmentThumbnailResponse(c, await messages.openAttachment({ context, ...params }), async (expectedBlobId) => {
+        const current = await messages.openAttachment({ context, ...params });
+        if (!current.ok || current.data.blobId !== expectedBlobId) throw new Error("Attachment access was revoked");
+      });
+    },
+  )
   .post(
     "/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/links",
     v(
@@ -2730,6 +2893,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
         400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        409: jsonResponse(ErrorResponseSchema, "Logo changed"),
         404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
       },
     }),
@@ -2756,12 +2920,17 @@ const mailOperationsApi = new Hono<MailApiContext>()
         200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
         400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        409: jsonResponse(ErrorResponseSchema, "Logo changed"),
         404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
       },
     }),
     v("param", mailboxParamSchema),
+    v("query", removeMailboxComposeLogoQuerySchema),
     async (c) =>
-      respondPublic(c, composeTemplates.removeMailboxComposeLogo({ context: requestContext(c), mailboxId: internalMailboxId(c) })),
+      respondPublic(
+        c,
+        composeTemplates.removeMailboxComposeLogo({ context: requestContext(c), mailboxId: internalMailboxId(c), ...c.req.valid("query") }),
+      ),
   )
   .get("/mailboxes/:mailboxId/compose-style", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, composeTemplates.getMailboxComposeStyle(requestContext(c), internalMailboxId(c))),
@@ -3591,6 +3760,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       ),
   )
+  .route("/", automationExportRoutes)
   .route("/", workflowRoutes)
   .route("/", automationLogRoutes);
 

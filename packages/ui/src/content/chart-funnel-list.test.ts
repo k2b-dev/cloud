@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { funnelLayout, renderFunnelSvg } from "../charts/core/funnel";
+import { funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "../charts/core/funnel";
 import { rankedBarLayout, renderBarChartSvg } from "./chart-bar";
 
 test("funnel ratios retain the start and previous step; rises fit the plot", () => {
@@ -65,4 +65,58 @@ test("ranked rows sort stably, use all observations as denominator and summarize
   expect(() => rankedBarLayout({ ...spec, limit: 0 })).toThrow("positive integer");
   expect(() => rankedBarLayout({ ...spec, data: [{ label: "bad", value: -1 }] })).toThrow("nonnegative");
   expect(rankedBarLayout({ ...spec, data: [{ label: "zero", value: 0 }] }).rows[0]!.share).toBeNull();
+});
+
+test("funnel and ranked list inspection titles serialize labels once", () => {
+  const data = [{ label: "<title>".repeat(2048), value: 2 }];
+  for (const svg of [
+    renderFunnelSvg({ data, width: 480, height: 280, inspect: true }),
+    renderBarChartSvg({ data, layout: "rows", width: 480, height: 280, inspect: true }),
+  ]) {
+    expect(svg.match(/<title>/g)).toHaveLength(1);
+    expect(svg).toContain("&lt;title&gt;".repeat(2048));
+  }
+});
+
+test("ranked flow tones use the shared mark tokens with a neutral fallback", () => {
+  for (const tone of ["in", "out"] as const) {
+    const svg = renderBarChartSvg({ data: [{ label: "Amount", value: 5 }], layout: "rows", tone, width: 480, height: 280 });
+    expect(svg).toContain(`var(--k2b-flow-${tone}-mark,var(--stdlib-chart-c1,#3b82f6))`);
+  }
+});
+
+test("prepared funnel drawings match direct rendering across widths, locales and gaps", () => {
+  for (const width of [296, 480, 1920])
+    for (const locale of ["en", "de"]) {
+      const spec = {
+        width,
+        height: 280,
+        locale,
+        inspect: true,
+        title: "Journey",
+        subtitle: "Invented observations",
+        valueFormat: (n: number) => new Intl.NumberFormat(locale).format(n),
+        data: [
+          { label: "Start", value: 0 },
+          { label: "Rise", value: 20 },
+          { label: "Gap", value: null },
+          { label: "Return", value: 5 },
+        ],
+      };
+      expect(renderFunnelLayoutSvg(spec, funnelLayout(spec, spec))).toBe(renderFunnelSvg(spec));
+    }
+});
+
+test("ranked missing rows and an all-missing remainder stay gaps", () => {
+  const spec = {
+    layout: "rows" as const,
+    share: true,
+    limit: 1,
+    data: [
+      { label: "Observed", value: 10 },
+      { label: "Unknown", value: NaN },
+    ],
+  };
+  expect(rankedBarLayout(spec).restValue).toBeNull();
+  expect(renderBarChartSvg({ ...spec, width: 480, height: 280 })).toContain("1 more · –");
 });

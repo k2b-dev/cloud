@@ -647,6 +647,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
+        "@k2b/editor": "workspace:*",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/sync": "catalog:",
@@ -716,6 +717,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/speedtest": {
+      "name": "@k2b/speedtest",
+      "dependencies": {
+        "@k2b/ssr": "workspace:*",
+        "@k2b/stdlib": "catalog:",
+        "@k2b/ui": "workspace:*",
+        "solid-js": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "bun-plugin-tailwind": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/ssr": {
       "name": "@k2b/ssr",
       "version": "0.20.1",
@@ -752,6 +767,7 @@
       "dependencies": {
         "@k2b/cloud": "workspace:*",
         "@k2b/ssr": "workspace:*",
+        "@k2b/speedtest": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
         "hono": "catalog:",
@@ -784,6 +800,7 @@
         "maplibre-gl": "6.14.0",
         "marked": "18.0.14",
         "pbf": "5.1.2",
+        "pdfjs-dist": "6.3.289",
         "qr-scanner": "1.4.2",
       },
       "devDependencies": {
@@ -1293,6 +1310,8 @@
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 
     "@k2b/rsql": ["@k2b/rsql@1.0.0", "", {}, "sha512-PQe40kFEaAqTpqcRa/LzmexuVPaIXAsjaAdy5F46973FqV7AavS7sjbLF66VBF7vIyYF/uMCSbsrWGOilRic2g=="],
+
+    "@k2b/speedtest": ["@k2b/speedtest@workspace:packages/speedtest"],
 
     "@k2b/ssr": ["@k2b/ssr@workspace:packages/ssr"],
 

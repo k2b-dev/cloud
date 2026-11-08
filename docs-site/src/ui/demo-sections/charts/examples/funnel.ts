@@ -1,3 +1,5 @@
+import type { ChartShowcaseExample } from "./types";
+
 export const funnelExamples = [
   {
     id: "funnel-journey",
@@ -50,4 +52,4 @@ export const funnelExamples = [
     a11y: ["The tooltip names the start and previous-step denominators."],
     options: [{ name: "format", type: "NumberFormat", description: "Format the counts independently of their shares." }],
   },
-];
+] satisfies ChartShowcaseExample[];

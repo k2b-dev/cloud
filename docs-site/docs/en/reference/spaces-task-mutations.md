@@ -5,7 +5,7 @@ section: Reference
 order: 1260
 description: Change assignees and titles safely and retry task creation without duplicates.
 tags: [spaces, api, cli, concurrency]
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # Retry and concurrent Spaces task writes
@@ -71,3 +71,45 @@ CLI: `cld spaces add "Roadmap:Write notes" --request-key <stable-key>`.
 Without that flag, each CLI invocation generates a new key. Web create forms
 keep the key for a retry of unchanged input. The `spaces.task.create` Action
 uses the invocation's required idempotency key; repeat the same key and input.
+
+## Use Actions from background work
+
+`spaces.task.create`, `spaces.event.create`, `spaces.task.update`,
+`spaces.item.reference.add`, `spaces.comment.create`, and `spaces.item.tags.set`
+declare an explicit `silent: "shared"` policy.
+Background callers still need current write access to the target Space and an
+authorized mandate. The policy grants no access. Interactive callers can
+remember approval for that Space, or for the item when adding comments.
+
+Plain task and event creation, linking an existing Cloud resource, adding a
+comment, and replacing item tags can run under that policy. Comments keep their
+required idempotency key and are authored by the calling person or eligible
+service account. Comment editing and deletion keep their existing policies.
+Creation with a template always asks because the template
+can supply additional fields. Creation with assignees and any task update that
+supplies an assignee replacement, addition, or removal always ask because they
+affect other people. Those calls cannot run unattended, even with a remembered
+Space approval. Template changes and deletion keep their existing approval
+requirements. Task title updates still require `expectedTitle`.
+
+Reviews are available in English and German and retain the complete proposed
+fields, including long descriptions, in the review's content view.
+
+## React to Spaces events
+
+Spaces declares `comment.created`, `item.updated`, and `item.due` alongside
+`item.created` and `item.completed`. Every event has a Space as its place and
+only public resource references. `item.updated` adds a bounded `changed` list
+(`assignees`, `due`, `status`); the event contains no field values or content.
+Read the current item or comment through its permission-aware capability.
+
+No-op writes emit no update. Changing assignees through `task.update`, including
+add/remove deltas, uses the same event path as API and CLI writes. The existing
+`involves_people` review still requires confirmation for these calls.
+
+Due events fire once per task and due value, with a global limit of **524 per
+minute**. They fire when the due time is reached after the first successful due
+sweep; there are no events for tasks that were already overdue at that first sweep. All-day deadlines
+use midnight in `app.timezone`. See
+[Built-in resource events](/en/docs/platform/app-events#built-in-resource-events)
+for eligibility, retries, overdue tasks, and delivery authorization.

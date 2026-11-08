@@ -1,4 +1,4 @@
-import type { MapViewport } from "@k2b/stdlib";
+import type { MapViewport } from "../charts/core/svg";
 
 /** Give maps a CSS-sized viewport while retaining the renderer's projection.
  * The outer SVG uses pixels for headers/legend; the nested geographic viewport
@@ -45,7 +45,10 @@ export function responsiveChartSvg(svg: string): string {
     const rotation = tag.match(/\btransform="rotate\((-?[\d.]+) [^\"]+\)"/)?.[1];
     // Individual CSS scale precedes rotation. Use the same text anchor as
     // transform-origin, and avoid applying the SVG rotation pivot twice.
-    return tag.replace(">", ` style="transform-origin:${x}px ${y}px${rotation ? `;transform:rotate(${rotation}deg)` : ""}">`);
+    const origin = `transform-origin:${x}px ${y}px${rotation ? `;transform:rotate(${rotation}deg)` : ""}`;
+    return tag.includes('style="')
+      ? tag.replace(/style="([^"]*)"/, (_match, style: string) => `style="${style};${origin}"`)
+      : tag.replace(/>$/, ` style="${origin}">`);
   });
 }
 
@@ -78,7 +81,8 @@ export function selectedChartSvg(
     if (!matches) return attribute;
     const children = svg.slice(offset, svg.indexOf("</g>", offset));
     const palette = (Number(children.match(/stdlib-chart-series-(\d+)/)?.[1] ?? matches.seriesIndex ?? 0) % 8) + 1;
-    const paint = `--k2b-chart-selection-color:color-mix(in srgb,var(--stdlib-chart-c${palette}) 72%,var(--k2b-chart-highlight-mix))`;
+    const markPaint = children.match(/class="k2b-waterfall-bar"[^>]* fill="([^"]+)"/)?.[1] ?? `var(--stdlib-chart-c${palette})`;
+    const paint = `--k2b-chart-selection-color:color-mix(in srgb,${markPaint} 72%,var(--k2b-chart-highlight-mix))`;
     const opening = attribute.includes('style="')
       ? attribute.replace(/style="([^"]*)"/, (_match: string, style: string) => `style="${style};${paint}"`)
       : attribute.replace(">", ` style="${paint}">`);

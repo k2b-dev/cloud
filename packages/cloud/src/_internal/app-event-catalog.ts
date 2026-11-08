@@ -6,7 +6,7 @@ export type CatalogSubscription = CapabilityEventCatalogEntry["subscribers"][num
 export const readCatalogSubscriptions = async (): Promise<CatalogSubscription[]> => {
   const rows = await sql<(Omit<CatalogSubscription, "firstSeenAt"> & { firstSeenAt: Date })[]>`
     SELECT app_id AS "appId", id AS "subscriptionId", event_type AS "eventType", version, state, reason,
-      first_seen_at AS "firstSeenAt" FROM events.app_subscriptions ORDER BY id
+      first_seen_at AS "firstSeenAt" FROM events.app_subscriptions WHERE resource_binding IS NULL ORDER BY id
   `;
   return rows.map((row) => ({ ...row, firstSeenAt: row.firstSeenAt.toISOString() }));
 };
@@ -15,7 +15,7 @@ export const readEventCatalogSubscriptions = async (type: string, version: numbe
   const rows = await sql<(Omit<CatalogSubscription, "firstSeenAt"> & { firstSeenAt: Date })[]>`
     SELECT app_id AS "appId", id AS "subscriptionId", event_type AS "eventType", version, state, reason,
       first_seen_at AS "firstSeenAt" FROM events.app_subscriptions
-      WHERE event_type = ${type} AND version = ${version} ORDER BY id
+      WHERE resource_binding IS NULL AND event_type = ${type} AND version = ${version} ORDER BY id
   `;
   return rows.map((row) => ({ ...row, firstSeenAt: row.firstSeenAt.toISOString() }));
 };

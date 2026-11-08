@@ -1,3 +1,5 @@
+import type { ChartShowcaseExample } from "./types";
+
 export const hbarExamples = [
   {
     id: "hbar-groups",
@@ -32,4 +34,4 @@ export const hbarExamples = [
       },
     ],
   },
-];
+] satisfies ChartShowcaseExample[];

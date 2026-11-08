@@ -1,6 +1,8 @@
 import { sql } from "@k2b/cloud";
 import { GATEWAY_TELEMETRY_TENANT, type GatewayTelemetryEvent, gatewayTelemetryTopic } from "@k2b/cloud/services";
+import { readQuery } from "@k2b/cloud/services/logging/read";
 import type { TopicEvent } from "@k2b/sync";
+import type { TransactionSQL } from "bun";
 
 const WORKER_GROUP = "postgres-writer";
 /** Duration at which a request is counted as slow, in ingest and in the UI. */
@@ -125,17 +127,18 @@ export const consumeTelemetry = async (signal: AbortSignal): Promise<void> => {
   }
 };
 
-export type TelemetryCleanupResult = { events: number; rollups: number; total: number };
+export type TelemetryCleanupResult = { events: number; rollups: number; total: number; complete: boolean };
 
 const CLEANUP_BATCH_SIZE = 10_000;
 
-const deleteExpiredEventsBatch = async (eventsDays: number): Promise<number> => {
-  const result = await sql`
+const deleteExpiredEventsBatch = async (tx: TransactionSQL, eventsDays: number): Promise<number> => {
+  const result = await tx`
     WITH expired AS (
       SELECT ctid
       FROM gateway.telemetry_events
       WHERE occurred_at < now() - (${eventsDays}::int * INTERVAL '1 day')
       LIMIT ${CLEANUP_BATCH_SIZE}
+      FOR UPDATE SKIP LOCKED
     )
     DELETE FROM gateway.telemetry_events event
     USING expired
@@ -144,13 +147,14 @@ const deleteExpiredEventsBatch = async (eventsDays: number): Promise<number> => 
   return result.count;
 };
 
-const deleteExpiredRollupsBatch = async (rollupsDays: number): Promise<number> => {
-  const result = await sql`
+const deleteExpiredRollupsBatch = async (tx: TransactionSQL, rollupsDays: number): Promise<number> => {
+  const result = await tx`
     WITH expired AS (
       SELECT ctid
       FROM gateway.telemetry_rollups_minute
       WHERE bucket < date_trunc('minute', now() - (${rollupsDays}::int * INTERVAL '1 day'))
       LIMIT ${CLEANUP_BATCH_SIZE}
+      FOR UPDATE SKIP LOCKED
     )
     DELETE FROM gateway.telemetry_rollups_minute rollup
     USING expired
@@ -161,35 +165,47 @@ const deleteExpiredRollupsBatch = async (rollupsDays: number): Promise<number> =
 
 /** Deletes in bounded batches; `heartbeat` runs after each batch so a long cleanup keeps its scheduler lease. */
 export const cleanupTelemetry = async (
-  retention: { eventsDays?: number; rollupsDays?: number; heartbeat?: () => Promise<void> } = {},
+  retention: { eventsDays?: number; rollupsDays?: number; heartbeat?: () => Promise<void>; signal?: AbortSignal } = {},
 ): Promise<TelemetryCleanupResult> => {
   const eventsDays = Math.max(1, Math.trunc(retention.eventsDays ?? 14));
   const rollupsDays = Math.max(eventsDays, Math.trunc(retention.rollupsDays ?? 90));
-  const drain = async (deleteBatch: () => Promise<number>): Promise<number> => {
+  const drain = async (deleteBatch: (tx: TransactionSQL) => Promise<number>): Promise<{ total: number; complete: boolean }> => {
+    const deadline = performance.now() + 15_000;
     let total = 0;
     let deleted: number;
     do {
-      deleted = await deleteBatch();
+      retention.signal?.throwIfAborted();
+      deleted = await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '1s'`;
+        await tx`SET LOCAL statement_timeout = '10s'`;
+        return deleteBatch(tx);
+      });
       total += deleted;
       await retention.heartbeat?.();
-    } while (deleted === CLEANUP_BATCH_SIZE);
-    return total;
+    } while (deleted === CLEANUP_BATCH_SIZE && performance.now() < deadline);
+    return { total, complete: deleted < CLEANUP_BATCH_SIZE };
   };
-  const events = await drain(() => deleteExpiredEventsBatch(eventsDays));
-  const rollups = await drain(() => deleteExpiredRollupsBatch(rollupsDays));
-  return { events, rollups, total: events + rollups };
+  const events = await drain((tx) => deleteExpiredEventsBatch(tx, eventsDays));
+  const rollups = await drain((tx) => deleteExpiredRollupsBatch(tx, rollupsDays));
+  return {
+    events: events.total,
+    rollups: rollups.total,
+    total: events.total + rollups.total,
+    complete: events.complete && rollups.complete,
+  };
 };
 
 export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary> => {
-  const [row] = await sql<
-    {
-      requests: number;
-      errors: number;
-      slow_requests: number;
-      avg_duration_ms: number | null;
-      p95_duration_ms: number | null;
-    }[]
-  >`
+  const [row] = await readQuery(
+    (db) => db<
+      {
+        requests: number;
+        errors: number;
+        slow_requests: number;
+        avg_duration_ms: number | null;
+        p95_duration_ms: number | null;
+      }[]
+    >`
     SELECT
       COUNT(*)::int AS requests,
       COUNT(*) FILTER (WHERE status_code >= 500 OR error_kind IS NOT NULL)::int AS errors,
@@ -198,7 +214,8 @@ export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary>
       percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)::float AS p95_duration_ms
     FROM gateway.telemetry_events
     WHERE occurred_at >= now() - (${hours}::int * INTERVAL '1 hour')
-  `;
+  `,
+  );
   return {
     requests: row?.requests ?? 0,
     errors: row?.errors ?? 0,
@@ -209,12 +226,14 @@ export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary>
 };
 
 export const listTelemetryApps = async (hours = 24): Promise<string[]> => {
-  const rows = await sql<{ app_id: string }[]>`
+  const rows = await readQuery(
+    (db) => db<{ app_id: string }[]>`
     SELECT DISTINCT app_id
     FROM gateway.telemetry_events
     WHERE occurred_at >= now() - (${hours}::int * INTERVAL '1 hour')
     ORDER BY app_id ASC
-  `;
+  `,
+  );
   return rows.map((row) => row.app_id);
 };
 
@@ -227,9 +246,10 @@ export const listTelemetryEvents = async (filter: TelemetryEventFilter = {}): Pr
   const routePrefix = filter.routePrefix?.trim() || null;
   const slowOnly = filter.slowOnly === true;
   const errorsOnly = filter.errorsOnly === true;
-  const hours = Number.isFinite(filter.hours) && filter.hours && filter.hours > 0 ? Math.min(Math.trunc(filter.hours), 24 * 31) : null;
+  const hours = Number.isFinite(filter.hours) && filter.hours && filter.hours > 0 ? Math.min(Math.trunc(filter.hours), 24 * 31) : 24;
 
-  const [countRow] = await sql<{ count: number }[]>`
+  const [countRow] = await readQuery(
+    (db) => db<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM gateway.telemetry_events
     WHERE (${searchPattern}::text IS NULL OR app_id ILIKE ${searchPattern} ESCAPE '\' OR route_prefix ILIKE ${searchPattern} ESCAPE '\' OR method ILIKE ${searchPattern} ESCAPE '\' OR error_kind ILIKE ${searchPattern} ESCAPE '\')
@@ -238,20 +258,22 @@ export const listTelemetryEvents = async (filter: TelemetryEventFilter = {}): Pr
       AND (${hours}::int IS NULL OR occurred_at >= now() - (${hours}::int * INTERVAL '1 hour'))
       AND (${slowOnly}::boolean IS FALSE OR duration_ms >= ${SLOW_REQUEST_MS})
       AND (${errorsOnly}::boolean IS FALSE OR status_code >= 500 OR error_kind IS NOT NULL)
-  `;
+  `,
+  );
 
-  const rows = await sql<
-    {
-      id: number;
-      app_id: string;
-      route_prefix: string;
-      method: string;
-      status_code: number;
-      duration_ms: number;
-      error_kind: string | null;
-      occurred_at: string;
-    }[]
-  >`
+  const rows = await readQuery(
+    (db) => db<
+      {
+        id: number;
+        app_id: string;
+        route_prefix: string;
+        method: string;
+        status_code: number;
+        duration_ms: number;
+        error_kind: string | null;
+        occurred_at: string;
+      }[]
+    >`
     SELECT id, app_id, route_prefix, method, status_code, duration_ms, error_kind, occurred_at::text
     FROM gateway.telemetry_events
     WHERE (${searchPattern}::text IS NULL OR app_id ILIKE ${searchPattern} ESCAPE '\' OR route_prefix ILIKE ${searchPattern} ESCAPE '\' OR method ILIKE ${searchPattern} ESCAPE '\' OR error_kind ILIKE ${searchPattern} ESCAPE '\')
@@ -262,7 +284,8 @@ export const listTelemetryEvents = async (filter: TelemetryEventFilter = {}): Pr
       AND (${errorsOnly}::boolean IS FALSE OR status_code >= 500 OR error_kind IS NOT NULL)
     ORDER BY occurred_at DESC, id DESC
     LIMIT ${perPage} OFFSET ${offset}
-  `;
+  `,
+  );
 
   return {
     total: countRow?.count ?? 0,

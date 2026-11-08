@@ -10,7 +10,7 @@ import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
+import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
@@ -698,6 +698,56 @@ test("cloud.chart renders horizontal grouped rows and their title in app frames"
   expect(markup).not.toMatch(/NaN|Infinity/);
 });
 
+test("calendar app charts preserve headers, units, square geometry and Date pairs", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "heatmap",
+        layout: "calendar",
+        title: "Daily balance",
+        subtitle: "Fictional",
+        locale: "de-DE",
+        label: "EUR",
+        scale: "diverging",
+        data: [
+          [new Date("2026-11-02T00:00:00Z"), -1234.5],
+          ["2026-11-03", null],
+        ],
+      },
+      "en",
+      "UTC",
+    ),
+  );
+  expect(markup).toContain("Daily balance</text>");
+  expect(markup).toContain("Fictional</text>");
+  expect(markup).not.toContain("direction:rtl");
+  expect(markup).not.toContain("data-stretch");
+  const cell = markup.match(/<rect[^>]*width="(\d+)" height="(\d+)" rx="2"/);
+  expect(cell).not.toBeNull();
+  expect(cell![1]).toBe(cell![2]);
+  expect(Number(cell![1])).toBeGreaterThan(14);
+  expect(markup).not.toContain('preserveAspectRatio="none"');
+  expect(markup).not.toMatch(/<text[^>]*style="[^"]*"[^>]*style=/);
+  expect(markup).toContain("1.234,5 mehr raus");
+  expect(markup).toContain("EUR");
+});
+
+test("horizontal rows reserve their final height before the lazy renderer loads", () => {
+  const input: CloudAiChartInput = {
+    kind: "hbar",
+    title: "Regional orders",
+    subtitle: "Fictional",
+    series: ["Current", "Prior"],
+    rows: Array.from({ length: 20 }, (_, i) => ({ group: "Shops", label: `Region ${i + 1}`, values: [i, i + 1] })),
+  };
+  for (const width of [480, 390]) {
+    const prepared = { input, title: input.title };
+    const height = pendingChartHeight(prepared, "en", width, 280);
+    expect(height).toBeGreaterThan(280);
+    expect(chartSvg(prepared, "en", width, 280)).toContain(`viewBox="0 0 ${width} ${height}"`);
+  }
+});
+
 test("cloud.chart renders funnels with start and previous shares in app frames", () => {
   const markup = String(
     chart(
@@ -743,4 +793,29 @@ test("cloud.chart preserves nested dot counts and grey capacity in app frames", 
   expect(markup).toContain('data-dot-series="remainder"');
   expect(markup).toContain("Gesamt");
   expect(markup).not.toContain("<style>");
+});
+
+test("app-frame share legends keep the latest month instead of summing percentages", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "bar",
+        title: "Newsletter",
+        marks: "dots",
+        layout: "nested",
+        total: 1,
+        dots: 20,
+        x: ["Jan", "Feb", "Mar"],
+        format: { style: "percent" },
+        series: [
+          { label: "Opened", data: [0.5, 0.6, 0.7] },
+          { label: "Clicked", data: [0.2, 0.3, 0.4] },
+        ],
+      },
+      "en",
+    ),
+  );
+  expect(markup).toContain('data-default="70%"');
+  expect(markup).toContain('data-default="40%"');
+  expect(markup).not.toContain('data-default="180%"');
 });

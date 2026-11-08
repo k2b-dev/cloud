@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createComponent, createSignal } from "solid-js";
@@ -11,6 +11,21 @@ import { createDomTestHarness } from "./dom";
 const flush = async (): Promise<void> => {
   await Promise.resolve();
   await new Promise<void>((done) => requestAnimationFrame(() => done()));
+};
+
+// pdf.js draws pages only in a real browser (pdf-viewer.browser.test.ts covers it). Here it always fails, so a PDF
+// preview takes its fallback, the browser's own viewer in a frame.
+mock.module("../src/content/pdf-document", () => ({
+  openPdfDocument: async () => {
+    throw new Error("pdf.js draws only in a real browser");
+  },
+  pageImageWidth: () => 400,
+  PDF_LIMITS: { maxBytes: 1, maxPages: 1, maxCanvasPixels: 1, maxImageWidth: 1 },
+  PDF_TOO_LARGE: "PdfTooLargeError",
+}));
+/** Lets a shown PDF reach its fallback: the viewer loads, pdf.js fails, the frame takes over. */
+const settle = async (): Promise<void> => {
+  for (let turn = 0; turn < 10; turn++) await Bun.sleep(5);
 };
 
 const key = (element: Element, value: string, options: KeyboardEventInit = {}): KeyboardEvent => {
@@ -365,7 +380,7 @@ describe("@k2b/ui files and media runtime behavior", () => {
             }),
           dom.root,
         );
-        await flush();
+        await settle();
 
         expect(loads).toBe(1);
         expect(dom.root.querySelector("object")).toBeNull();
@@ -378,14 +393,14 @@ describe("@k2b/ui files and media runtime behavior", () => {
         const frame = dom.root.querySelector("iframe");
 
         setRevision(2);
-        await flush();
+        await settle();
         expect(loads).toBe(2);
         expect(dom.root.querySelector("iframe")).toBe(frame);
         expect(created).toHaveLength(1);
         expect(revoked).toEqual([]);
 
         setRevision(3);
-        await flush();
+        await settle();
         expect(loads).toBe(3);
         expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-2");
         expect(await created[1]?.text()).toBe("%PDF-1.7 v2");
@@ -401,9 +416,15 @@ describe("@k2b/ui files and media runtime behavior", () => {
     });
   }
 
-  test("keeps a host inline PDF URL on the native object without loading bytes", async () => {
+  test("previews a host inline PDF URL from that address without loading bytes, and opens that address", async () => {
     const dom = createDomTestHarness();
     const { default: FileView } = await import("../src/content/FileView");
+    const fetched: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetched.push(String(input));
+      return new Response(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    }) as typeof fetch;
     let loads = 0;
     const dispose = render(
       () =>
@@ -418,14 +439,48 @@ describe("@k2b/ui files and media runtime behavior", () => {
         }),
       dom.root,
     );
-    await flush();
+    try {
+      await settle();
+      expect(loads).toBe(0);
+      expect(fetched).toEqual(["/inline/invoice.pdf?preview-revision=0"]);
+      expect(dom.root.querySelector("object")).toBeNull();
+      expect(dom.root.querySelector(".k2b-content-pdf-preview__actions a")?.getAttribute("href")).toBe(
+        "/inline/invoice.pdf?preview-revision=0",
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      dispose();
+      dom.cleanup();
+    }
+  });
 
-    expect(loads).toBe(0);
-    expect(dom.root.querySelector("object")?.getAttribute("data")).toBe("/inline/invoice.pdf?preview-revision=0");
-    expect(dom.root.querySelector("iframe")).toBeNull();
-
-    dispose();
-    dom.cleanup();
+  test("keeps another origin's inline PDF URL with the browser's viewer, without a request", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    const fetched: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetched.push(String(input));
+      return new Response(null, { status: 500 });
+    }) as typeof fetch;
+    const dispose = render(
+      () =>
+        createComponent(FileView, {
+          file: { path: "/invoice.pdf", mediaType: "application/pdf" },
+          load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: "" }),
+          previewHref: "https://files.example.org/invoice.pdf",
+        }),
+      dom.root,
+    );
+    try {
+      await settle();
+      expect(fetched).toEqual([]);
+      expect(dom.root.querySelector("object")?.getAttribute("data")).toBe("https://files.example.org/invoice.pdf?preview-revision=0");
+    } finally {
+      globalThis.fetch = originalFetch;
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("revokes a PDF object URL produced after the preview was disposed", async () => {

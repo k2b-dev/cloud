@@ -78,9 +78,12 @@ test("share legends show the latest period, while count legends retain period to
   };
   expect(seriesBarLayout(shares).legendLayout.items.map((item) => item.total)).toEqual([0.7, 0.4]);
   const svg = renderBarChartSvg({ ...shares, width: 480, height: 280, inspect: true });
-  expect(svg).toContain('data-bar-total="70%"');
-  expect(svg).toContain('data-bar-total="40%"');
-  expect(svg).not.toContain('data-bar-total="180%"');
+  expect(svg).toContain('data-default="70%"');
+  expect(svg).toContain('data-default="40%"');
+  expect(svg).not.toContain('data-default="180%"');
   expect(seriesBarLayout({ ...shares, legendValues: "total" }).legendLayout.items[0]?.total).toBeCloseTo(1.8);
-  expect(seriesBarLayout({ ...shares, series: [{ label: "Missing", data: [0.5, 0.6, null] }] }).legendLayout.items[0]?.total).toBeNull();
+  for (const missing of [null, Number.NaN])
+    expect(
+      seriesBarLayout({ ...shares, series: [{ label: "Missing", data: [0.5, 0.6, missing] }] }).legendLayout.items[0]?.total,
+    ).toBeNull();
 });

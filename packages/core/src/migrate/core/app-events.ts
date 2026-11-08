@@ -39,6 +39,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       state TEXT NOT NULL CHECK(state IN ('active','blocked','cancelled')), reason TEXT,
       first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`.simple();
+    await tx`ALTER TABLE events.app_subscriptions ADD COLUMN IF NOT EXISTS resource_binding JSONB`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS app_subscriptions_resource ON events.app_subscriptions
+      ((resource_binding->>'consumer'),(resource_binding->>'key')) WHERE resource_binding IS NOT NULL`.simple();
     await tx`CREATE TABLE IF NOT EXISTS events.app_deliveries (
       seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, id UUID NOT NULL UNIQUE,
       subscription_id TEXT NOT NULL REFERENCES events.app_subscriptions(id),

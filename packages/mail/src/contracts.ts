@@ -2104,7 +2104,7 @@ export const updateConversationCollaborationSchema = z
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       .optional()
       .describe("User or service-account UUIDs. Replace the complete assignee set; an empty array clears it."),
-    completion: z.enum(["done", "open"]).optional(),
+    completion: z.enum(["done", "open", "waiting", "needs_action"]).optional(),
     snoozedUntil: z.string().datetime().nullable().optional(),
   })
   .refine(
@@ -2128,9 +2128,24 @@ export const assignConversationsSchema = z
       .array(z.uuid())
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       .describe("User or service-account UUIDs to add, remove, or replace; replace with an empty array clears all assignees."),
+    onlyIfUnassigned: z.boolean().optional(),
+    expectedRevision: z.number().int().positive().optional(),
     mode: z.enum(["add", "remove", "replace"]).describe("Add to, remove from, or replace each conversation’s assignee set."),
   })
   .strict()
+  .refine(
+    (value) =>
+      !value.onlyIfUnassigned ||
+      (value.mode === "add" &&
+        value.assigneeUserIds.length > 0 &&
+        value.conversationIds.length === 1 &&
+        value.expectedRevision !== undefined),
+    "Unassigned-only assignment requires one conversation, a revision, and a nonempty add",
+  )
+  .refine(
+    (value) => value.expectedRevision === undefined || (value.onlyIfUnassigned === true && value.conversationIds.length === 1),
+    "An assignment revision requires an unassigned-only claim on one conversation",
+  )
   .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export type AssignConversations = z.infer<typeof assignConversationsSchema>;
 
@@ -2142,13 +2157,20 @@ export const completeConversationsSchema = z
       .max(MAIL_CONVERSATION_BATCH_LIMIT)
       .refine((ids) => new Set(ids).size === ids.length, "Conversation ids must be unique")
       .describe(`Up to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations of one mailbox.`),
-    completion: z.enum(["done", "open"]).describe("Mark the conversations done or reopen them."),
+    expectedRevisions: z.record(ResourceShortIdSchema, z.number().int().positive()).optional(),
+    completion: z
+      .enum(["done", "open", "waiting", "needs_action"])
+      .describe("Set a work status, or reopen using the latest message direction."),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => !value.expectedRevisions || value.conversationIds.every((id) => value.expectedRevisions?.[id] !== undefined),
+    "Supply a revision for every conversation",
+  );
 
 export const conversationCompletionResultSchema = z
   .object({
-    completion: z.enum(["done", "open"]),
+    completion: z.enum(["done", "open", "waiting", "needs_action"]),
     results: z.array(
       z.discriminatedUnion("status", [
         z
@@ -3145,6 +3167,7 @@ export const mailboxLogoDisplayHeight = (logo: { displayWidth: number; pixelWidt
 export const mailboxComposeLogoSchema = z.object({
   logo: z
     .object({
+      versionId: z.string().uuid(),
       contentType: z.enum(["image/png", "image/jpeg"]),
       pixelWidth: z.number().int().min(1).max(1200),
       pixelHeight: z.number().int().min(1).max(400),
@@ -3166,6 +3189,7 @@ export const mailboxLogoAltTextSchema = z
   .max(200);
 export const updateMailboxComposeLogoInputSchema = z
   .object({
+    expectedVersionId: z.string().uuid().nullable().optional(),
     content: z
       .string()
       .min(4)
@@ -3175,6 +3199,7 @@ export const updateMailboxComposeLogoInputSchema = z
     altText: mailboxLogoAltTextSchema.optional(),
   })
   .strict();
+export const removeMailboxComposeLogoQuerySchema = z.object({ expectedVersionId: z.string().uuid().optional() }).strict();
 export type UpdateMailboxComposeLogoInput = z.infer<typeof updateMailboxComposeLogoInputSchema>;
 
 export const mailboxComposeStyleSchema = z.object({

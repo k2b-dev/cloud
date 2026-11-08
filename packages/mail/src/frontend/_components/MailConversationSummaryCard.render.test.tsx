@@ -66,7 +66,7 @@ describe("MailConversationSummaryCard", () => {
     expect(html).toContain("min-h-[12.25rem]");
   });
 
-  test("a text a person wrote stays neutral: no ✦, no cyan", () => {
+  test("a text a person wrote stays neutral: no ✦, no plum", () => {
     const html = render(
       summaryState({
         summary: "Zahlen abgestimmt, Rechnung nächste Woche.",
@@ -80,6 +80,15 @@ describe("MailConversationSummaryCard", () => {
     expect(html).not.toContain("ti-sparkles");
     expect(html).toContain("Von Lisa Brandt geschrieben · vor 2 Std.");
     expect(html).not.toContain('aria-label="Neu schreiben"');
+  });
+
+  test("prepared automation text names its origin in both locales", () => {
+    const state = summaryState({ summary: "Prepared text", source: "automation", ai: false });
+    const de = render(state);
+    expect(de).toContain("Von einer Automation geschrieben");
+    expect(de).toContain("Von einer Automation vorbereitet.");
+    expect(de).not.toContain("Von einer Person geschrieben");
+    expect(render(state, "en")).toContain("Written by an automation");
   });
 
   test("new messages since this version offer to continue", () => {

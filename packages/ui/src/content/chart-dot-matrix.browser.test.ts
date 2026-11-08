@@ -80,18 +80,18 @@ for (const width of [1440, 390])
         const spec = dotMatrixFixtures[i]!;
         const drawn = spec.x!.filter((_, index) => spec.series!.every((entry) => entry.data[index] !== null)).length;
         expect(await chart.locator(".k2b-chart-dot").count()).toBe(drawn * spec.dots!);
-        if (i === 2) expect(await chart.locator("[data-bar-legend]").allTextContents()).toEqual(["60%", "25%"]);
+        if (i === 2) expect(await chart.locator("[data-chart-legend-value]").allTextContents()).toEqual(["60%", "25%"]);
         const marks = chart.locator("[data-chart-datum]");
         await marks
           .first()
           .locator(".k2b-chart-category-band")
           .hover({ position: { x: 3, y: 3 } });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
-        if (i === 2) expect(await chart.locator("[data-bar-legend]").allTextContents()).toEqual(["45%", "15%"]);
+        if (i === 2) expect(await chart.locator("[data-chart-legend-value]").allTextContents()).toEqual(["45%", "15%"]);
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
-        const legendValue = chart.locator("[data-bar-legend]").first();
-        expect(await legendValue.textContent()).not.toBe(await legendValue.getAttribute("data-bar-total"));
+        const legendValue = chart.locator("[data-chart-legend-value]").first();
+        expect(await legendValue.textContent()).not.toBe(await legendValue.getAttribute("data-default"));
         const rects = await marks.evaluateAll((nodes) =>
           nodes.flatMap((g) => [g, ...g.querySelectorAll(".k2b-chart-dot")].map((e) => getComputedStyle(e).opacity)),
         );
@@ -112,7 +112,7 @@ for (const width of [1440, 390])
         expect(await chart.locator('[role="tooltip"]').textContent()).not.toBe(first);
         await chart.press("Home");
         await chart.press("Escape");
-        if (i === 2) expect(await chart.locator("[data-bar-legend]").allTextContents()).toEqual(["60%", "25%"]);
+        if (i === 2) expect(await chart.locator("[data-chart-legend-value]").allTextContents()).toEqual(["60%", "25%"]);
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
         await marks
           .first()
@@ -209,6 +209,7 @@ for (const width of [1440, 390])
 
 test("dot matrices remain colored with no component wrapper or SVG styles", async () => {
   const page = await browser.newPage();
+  const errors = pageErrors(page);
   try {
     const svg = renderBarChartSvg({ ...dotMatrixFixtures[0]!, width: 480, height: 280 });
     const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
@@ -243,6 +244,7 @@ test("dot matrices remain colored with no component wrapper or SVG styles", asyn
           .evaluate((n) => getComputedStyle(n).fill),
       ).not.toBe("rgb(0, 0, 0)");
     }
+    expect(errors).toEqual([]);
   } finally {
     await page.close();
   }

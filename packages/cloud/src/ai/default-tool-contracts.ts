@@ -1,19 +1,21 @@
 import { z } from "zod";
 import { chartDataIssue, chartDrawingIssue, cloudAiChartMarks } from "./chart-block";
 
-const ToneSchema = z.enum(["neutral", "blue", "teal", "green", "amber", "red"]);
+// Chart-only browser consumers must not initialize unrelated visual tool schemas.
+const ToneSchema = /* @__PURE__ */ (() => z.enum(["neutral", "blue", "teal", "green", "amber", "red"]))();
 
-export const CloudAiCardInputSchema = z.object({
-  title: z.string().min(1),
-  value: z.string().min(1).describe("The figure or status itself, short enough to read at a glance: about 20 characters."),
-  emoji: z.string().max(8).optional().describe("Optional single emoji shown next to the card content. Omit when none fits."),
-  caption: z.string().optional().describe("Optional scope or time range of the value in one short line."),
-  tone: ToneSchema.default("teal"),
-  trendLabel: z.string().min(1).optional(),
-  trendValue: z.string().min(1).optional(),
-  trendDirection: z.enum(["up", "down", "flat"]).default("flat"),
-});
-export const CloudAiCardOutputSchema = z.object({ displayed: z.boolean() });
+export const CloudAiCardInputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    title: z.string().min(1),
+    value: z.string().min(1).describe("The figure or status itself, short enough to read at a glance: about 20 characters."),
+    emoji: z.string().max(8).optional().describe("Optional single emoji shown next to the card content. Omit when none fits."),
+    caption: z.string().optional().describe("Optional scope or time range of the value in one short line."),
+    tone: ToneSchema.default("teal"),
+    trendLabel: z.string().min(1).optional(),
+    trendValue: z.string().min(1).optional(),
+    trendDirection: z.enum(["up", "down", "flat"]).default("flat"),
+  }))();
+export const CloudAiCardOutputSchema = /* @__PURE__ */ (() => z.object({ displayed: z.boolean() }))();
 
 /** The chart palette has eight colors; a ninth series would repeat one. */
 export const CLOUD_AI_CHART_MAX_SERIES = 8;
@@ -33,7 +35,9 @@ import {
   type ChartDateFormat as CloudAiDateFormat,
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
+  chartAcceptsLocale,
   chartKinds,
+  chartLocaleSchema,
   chartParts,
   chartSchema,
   chartKindSchema as cloudAiChartKindSchema,
@@ -121,6 +125,12 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    layout: z
+      .enum(["columns", "rows", "grouped", "stacked", "calendar"])
+      .optional()
+      .describe("bar: columns, rows, grouped or stacked. area: stacked. heatmap: calendar."),
+    scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
+    locale: chartLocaleSchema().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -139,12 +149,27 @@ const flatChartSchema = () => {
           .min(1)
           .max(CLOUD_AI_VIEW_MAX_MARKS),
         z.array(z.number()).min(1).max(CLOUD_AI_CHART_MAX_VALUES),
+        z
+          .array(z.array(z.union([z.string(), z.number(), z.null()])).length(2))
+          .min(1)
+          .max(CLOUD_AI_VIEW_MAX_MARKS),
       ])
       .optional()
       .describe(
-        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
+        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value, or calendar [YYYY-MM-DD,number] pairs. histogram, sparkline: numbers.",
       ),
-    x: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_VALUES).optional().describe("bar: aligned category labels."),
+    start: z.object({ label: ChartLabel, value: z.number() }).optional().describe("waterfall: opening balance."),
+    steps: z
+      .array(z.object({ label: ChartLabel, value: z.number() }))
+      .max(CLOUD_AI_VIEW_MAX_MARKS - 2)
+      .optional()
+      .describe("waterfall: positive inflows and negative outflows."),
+    end: z.strictObject({ label: ChartLabel }).optional().describe("waterfall: closing label; balance is calculated."),
+    x: z
+      .array(z.union([ChartLabel, z.number()]))
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
     marks: z.enum(["bars", "dots"]).optional(),
     total: z.number().positive().optional(),
@@ -152,7 +177,7 @@ const flatChartSchema = () => {
     share: z.boolean().optional(),
     limit: z.number().int().positive().optional(),
     tone: z.enum(["in", "out"]).optional(),
-    normalize: z.boolean().optional().describe("stacked bars: normalize positive totals to 100 percent."),
+    normalize: z.boolean().optional().describe("stacked bar, area: normalize positive totals to 100 percent."),
     rows: z
       .array(
         z.object({
@@ -164,7 +189,6 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_VALUES)
       .optional()
       .describe("hbar: grouped rows of aligned segment values."),
-    layout: z.enum(["columns", "rows", "grouped", "stacked", "nested"]).optional().describe("bar: category layout."),
     series: z
       .array(
         z.union([
@@ -177,7 +201,7 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
       .describe(
-        "bar: aligned label/data counts; hbar: series names. line, scatter: label/data points, optional reference role; line: style. Line needs 2 points per series.",
+        "area: nonnegative aligned label/data matching x; bar: aligned label/data counts; hbar: series names. line, scatter: label/data points, optional reference role; line: style. Line needs 2 points per series.",
       ),
     xAxis: ChartAxis.extend({ ordered: z.boolean().optional() })
       .optional()
@@ -200,7 +224,7 @@ const flatChartSchema = () => {
     unit: ChartUnit.optional().describe("gauge, barGauge, stat: unit after value."),
     format: cloudAiNumberFormatSchema()
       .optional()
-      .describe("gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
+      .describe("area, waterfall, gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
     references: ChartReferences.optional().describe(
       "bar, line, scatter, histogram, boxplot: reference lines; x only for line, scatter, histogram.",
     ),
@@ -223,9 +247,11 @@ const chartInputSchema = () => {
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
       layout: z
-        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "nested"])
+        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "calendar", "nested"])
         .optional()
-        .describe("Groups: stack or grid. Bar: columns, rows, grouped or stacked."),
+        .describe(
+          "Groups: stack/grid. Bar: columns, rows, grouped, stacked or nested. Area: stacked. heatmap: calendar uses ISO date/value pairs.",
+        ),
     })
     .superRefine((value, context) => {
       if ((value.kind !== undefined) === (value.charts !== undefined)) {
@@ -233,6 +259,14 @@ const chartInputSchema = () => {
         return;
       }
       if (value.charts !== undefined) {
+        value.charts.forEach((chart, index) => {
+          if ((chart.layout === "calendar" && chart.kind !== "heatmap") || (chart.locale !== undefined && !chartAcceptsLocale(chart)))
+            context.addIssue({
+              code: "custom",
+              message: "Unsupported calendar layout or locale.",
+              path: ["charts", index],
+            });
+        });
         const parsed = groupSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
@@ -243,8 +277,15 @@ const chartInputSchema = () => {
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
-        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "bar"))
-          context.addIssue({ code: "custom", message: "linkX belongs to groups; bar layouts belong to bars." });
+        if (
+          value.linkX !== undefined ||
+          (value.layout !== undefined && value.kind !== "bar" && value.kind !== "area" && value.layout !== "calendar")
+        )
+          context.addIssue({ code: "custom", message: "linkX belongs to groups; layouts belong to bar, area or calendar heatmap charts." });
+        if (value.locale !== undefined && !chartAcceptsLocale(value))
+          context.addIssue({ code: "custom", message: "Unsupported chart locale." });
+        if (value.layout === "calendar" && value.kind !== "heatmap")
+          context.addIssue({ code: "custom", message: "calendar layout belongs to heatmaps." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
@@ -264,93 +305,100 @@ const chartInputSchema = () => {
  * fail here instead of in the chat.
  */
 export const CloudAiChartInputSchema = /* @__PURE__ */ chartInputSchema();
-export const CloudAiChartOutputSchema = z.object({ displayed: z.boolean() });
+export const CloudAiChartOutputSchema = /* @__PURE__ */ (() => z.object({ displayed: z.boolean() }))();
 
-const SurveyQuestionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("single"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    options: z
-      .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
-      .min(2)
-      .max(8),
-  }),
-  z.object({
-    type: z.literal("multiple"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    options: z
-      .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
-      .min(2)
-      .max(8),
-  }),
-  z.object({
-    type: z.literal("text"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    placeholder: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal("rating"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    min: z.number().int().min(0).default(1),
-    max: z.number().int().max(10).default(5),
-  }),
-]);
+const SurveyQuestionSchema = /* @__PURE__ */ (() =>
+  z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("single"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      options: z
+        .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
+        .min(2)
+        .max(8),
+    }),
+    z.object({
+      type: z.literal("multiple"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      options: z
+        .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
+        .min(2)
+        .max(8),
+    }),
+    z.object({
+      type: z.literal("text"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      placeholder: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal("rating"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      min: z.number().int().min(0).default(1),
+      max: z.number().int().max(10).default(5),
+    }),
+  ]))();
 
-export const CloudAiSurveyInputSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  submitLabel: z.string().default("Submit"),
-  questions: z.array(SurveyQuestionSchema).min(1).max(8),
-});
-export const CloudAiSurveyOutputSchema = z.object({
-  submitted: z.boolean(),
-  answers: z.record(z.string(), z.unknown()).default({}),
-});
+export const CloudAiSurveyInputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    title: z.string().min(1),
+    description: z.string().optional(),
+    submitLabel: z.string().default("Submit"),
+    questions: z.array(SurveyQuestionSchema).min(1).max(8),
+  }))();
+export const CloudAiSurveyOutputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    submitted: z.boolean(),
+    answers: z.record(z.string(), z.unknown()).default({}),
+  }))();
 
 export const CLOUD_AI_TEXT_EDITOR_MAX_CHARS = 20_000;
 export const CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS = 2_000;
 
-export const CloudAiTextEditorInputSchema = z.object({
-  title: z.string().trim().min(1).max(160),
-  description: z.string().trim().min(1).max(1_000).optional(),
-  content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
-  format: z.enum(["plain", "markdown"]).default("plain"),
-  submitLabel: z.string().trim().min(1).max(40).default("Continue"),
-});
-
-export const CloudAiTextEditorOutputSchema = z.discriminatedUnion("submitted", [
+export const CloudAiTextEditorInputSchema = /* @__PURE__ */ (() =>
   z.object({
-    submitted: z.literal(true),
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().min(1).max(1_000).optional(),
     content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
-    format: z.enum(["plain", "markdown"]),
-  }),
+    format: z.enum(["plain", "markdown"]).default("plain"),
+    submitLabel: z.string().trim().min(1).max(40).default("Continue"),
+  }))();
+
+export const CloudAiTextEditorOutputSchema = /* @__PURE__ */ (() =>
+  z.discriminatedUnion("submitted", [
+    z.object({
+      submitted: z.literal(true),
+      content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
+      format: z.enum(["plain", "markdown"]),
+    }),
+    z.object({
+      submitted: z.literal(false),
+      feedback: z.string().trim().min(1).max(CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS),
+    }),
+  ]))();
+
+export const CloudAiLocalBashInputSchema = /* @__PURE__ */ (() =>
   z.object({
-    submitted: z.literal(false),
-    feedback: z.string().trim().min(1).max(CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS),
-  }),
-]);
+    command: z.string().trim().min(1).max(20_000),
+  }))();
 
-export const CloudAiLocalBashInputSchema = z.object({
-  command: z.string().trim().min(1).max(20_000),
-});
-
-export const CloudAiLocalBashOutputSchema = z.object({
-  status: z.enum(["completed", "denied", "failed", "timed_out"]),
-  exitCode: z.number().int().nullable(),
-  stdout: z.string().max(512 * 1024),
-  stderr: z.string().max(512 * 1024),
-  truncated: z.boolean(),
-  /** Local file with the complete output when the client returned only its beginning and end. */
-  outputPath: z.string().max(4096).optional(),
-});
+export const CloudAiLocalBashOutputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    status: z.enum(["completed", "denied", "failed", "timed_out"]),
+    exitCode: z.number().int().nullable(),
+    stdout: z.string().max(512 * 1024),
+    stderr: z.string().max(512 * 1024),
+    truncated: z.boolean(),
+    /** Local file with the complete output when the client returned only its beginning and end. */
+    outputPath: z.string().max(4096).optional(),
+  }))();
 
 export type CloudAiCardInput = z.infer<typeof CloudAiCardInputSchema>;
 export type CloudAiCardOutput = z.infer<typeof CloudAiCardOutputSchema>;

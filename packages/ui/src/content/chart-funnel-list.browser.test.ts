@@ -201,6 +201,7 @@ for (const width of [1440, 390])
 
 test("funnels and ranked lists keep safe fills in standalone and base-only hosts", async () => {
   const page = await browser.newPage();
+  const errors = pageErrors(page);
   try {
     const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
     const svgs = [
@@ -239,12 +240,38 @@ test("funnels and ranked lists keep safe fills in standalone and base-only hosts
       expect(
         await page.locator(".k2b-chart-funnel .stdlib-chart-bar").evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).fill)),
       ).toEqual(["rgb(59, 130, 246)", "rgb(59, 130, 246)"]);
-      expect(
-        await page
-          .locator(".k2b-chart-ranked rect:not(.k2b-chart-category-band)")
-          .evaluate((n) => getComputedStyle(n).fill),
-      ).toBe("rgb(59, 130, 246)");
+      expect(await page.locator(".k2b-chart-ranked rect:not(.k2b-chart-category-band)").evaluate((n) => getComputedStyle(n).fill)).toBe(
+        "rgb(59, 130, 246)",
+      );
     }
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("ranked lists retain the row measure in a 1920px frame", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 600 } });
+  const errors = pageErrors(page);
+  try {
+    const svg = renderBarChartSvg({
+      layout: "rows",
+      share: true,
+      data: [
+        { label: "Workspace", value: 200 },
+        { label: "Power", value: 50 },
+      ],
+      width: 480,
+      height: 280,
+    });
+    await page.setContent(
+      `<style>${css}</style><body class="k2b-ui"><div class="k2b-chart" style="width:1800px;--k2b-chart-height:280px"><div class="k2b-chart__svg">${svg}</div></div></body>`,
+    );
+    await settled(page);
+    const box = await page.locator(".k2b-chart__svg").boundingBox();
+    expect(box!.width).toBeLessThanOrEqual(640);
+    expect(await page.locator(".k2b-chart").evaluate((e) => e.clientWidth)).toBe(1800);
+    expect(errors).toEqual([]);
   } finally {
     await page.close();
   }

@@ -91,6 +91,7 @@ const portableSections = [
       page("tags", "TagsInput", "ti ti-tags", "Comma-separated tag entry in one editable field, deduplicated on commit."),
       page("tag-editor", "Tag editing", "ti ti-tag", "Reusable tag presentation, entity management, and assignment composition."),
       page("date-picker", "Date pickers", "ti ti-calendar", "Date, date-time, and date-range selection with explicit timezone handling."),
+      page("period-picker", "PeriodPicker", "ti ti-calendar-stats", "One control for the period a view shows: presets and a custom range."),
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
       page("slider", "Slider", "ti ti-adjustments-horizontal", "Range input with value labels and optional centered scale."),
@@ -98,7 +99,7 @@ const portableSections = [
         "choice-slider",
         "ChoiceSlider",
         "ti ti-adjustments-alt",
-        "A slider over a few named stops with a fixed description line and unavailable stops.",
+        "A slider over a few named stops with a fixed description line and unavailable stops, and its indicator for triggers.",
       ),
       page("icon", "IconInput", "ti ti-icons", "Searchable controlled icon selection."),
       page("image", "ImageInput", "ti ti-photo", "Controlled image selection, preview, transform, and removal."),
@@ -144,9 +145,20 @@ const portableSections = [
     title: "Actions",
     icon: "ti ti-click",
     pages: [
-      page("buttons", "Buttons", "ti ti-hand-click", "Semantic button and icon-button variants with loading behavior."),
+      page(
+        "buttons",
+        "Buttons",
+        "ti ti-hand-click",
+        "Semantic buttons, quiet link actions, and icon buttons with stable loading behavior.",
+      ),
       page("copy-remove", "Copy and remove", "ti ti-copy", "Focused clipboard feedback and destructive icon actions."),
       page("menus", "Menus", "ti ti-menu-2", "Dropdown and context menus with keyboard and viewport behavior."),
+      page(
+        "command-menu",
+        "CommandMenu",
+        "ti ti-slash",
+        "One list of commands for a composer's slash menu, its “+” button, and a chip, with second lists.",
+      ),
       page("gestures", "GestureMenu", "ti ti-hand-finger", "Swipe, double-tap, and long-press shortcuts into an element's menu."),
       page(
         "drag-and-drop",
@@ -266,7 +278,7 @@ const portableSections = [
       ),
       page("avatar-stack", "AvatarStack", "ti ti-users", "Overlapping faces that open the full list of people."),
       page("details", "Description list", "ti ti-list-details", "Semantic responsive key-value details with optional actions."),
-      page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones."),
+      page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones, and budgets."),
       page("change-list", "ChangeList", "ti ti-list-check", "Pending changes before saving, one line each, with tone icons."),
       page("stats", "Statistics", "ti ti-chart-bar", "Labeled values, context, accents, trends, and grids."),
       page(
@@ -313,6 +325,7 @@ const portableSections = [
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
+      page("money", "Money", "ti ti-coin", "Amounts that show their direction, turquoise in and violet out, and balance rows."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
       page("calendar", "Calendar", "ti ti-calendar-month", "Controlled generic calendar navigation and items."),
       page(
@@ -437,9 +450,6 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
-/** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 180;
-
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
     id: section.id,
@@ -478,7 +488,20 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  resolvePeriod: "Server-side PeriodPicker resolution to inclusive days; documented on the PeriodPicker page (/en/ui/input/period-picker).",
+  periodInstants: "Query bounds [from, to) for a resolved period in a time zone; documented on the PeriodPicker page.",
+  parsePeriodValue: "Validation of stored or URL period values; documented on the PeriodPicker page.",
+  periodContext: "Today and week start a period preset resolves against; documented on the PeriodPicker page.",
+  periodDayCount: "Calendar day count of an inclusive period; documented on the PeriodPicker page.",
+  formatPeriodDays: "The preset day label the PeriodPicker trigger shows; documented on the PeriodPicker page.",
+  formatPeriodRange: "The explicit range label the PeriodPicker trigger shows; documented on the PeriodPicker page.",
+  isPeriodDay: "Real calendar day key check used by parsePeriodValue; documented on the PeriodPicker page.",
+  filterRows: "Search helper for complete table rows; documented in Search, groups, and order on the DataTable page.",
+  sortRows: "Order helper for complete table rows by a typed column; documented on the DataTable page.",
   DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",
+  budgetState: "Documented BudgetList figures (total, over, free, level) on the Progress page (/en/ui/surfaces/progress).",
+  progressBarParts: "Documented segmented ProgressBar geometry on the Progress page (/en/ui/surfaces/progress).",
+  flowDirection: "Documented FlowAmount direction rule (in, out, none) on the Money page (/en/ui/content/money).",
   personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
   PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",
   MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",

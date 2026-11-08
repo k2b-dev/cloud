@@ -1,7 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import type { AiTurnError } from "../types";
 
-const messages = i18n.define({
+// Hosts which only import view schemas do not need the chat message catalog.
+const messages = /* @__PURE__ */ i18n.define({
   baseLocale: "en",
   messages: {
     en: {
@@ -10,6 +11,10 @@ const messages = i18n.define({
       tableOpen: "Open",
       tableEmpty: "No matching rows.",
       chartUnavailable: "This chart cannot be shown.",
+      chartLoadFailed: "The chart could not be loaded.",
+      chartLoading: "Loading chart",
+      chartReload: "Reload",
+      statsPoints: "pts",
       viewLoading: "Loading…",
       viewUnavailable: "This view is no longer available. Its file was changed or deleted.",
       viewCopyData: "Copy data",
@@ -316,6 +321,10 @@ const messages = i18n.define({
       tableOpen: "Öffnen",
       tableEmpty: "Keine passenden Zeilen.",
       chartUnavailable: "Dieses Diagramm kann nicht angezeigt werden.",
+      chartLoadFailed: "Das Diagramm konnte nicht geladen werden.",
+      chartLoading: "Diagramm wird geladen",
+      chartReload: "Neu laden",
+      statsPoints: "Pkt.",
       viewLoading: "Wird geladen …",
       viewUnavailable: "Diese Ansicht ist nicht mehr verfügbar. Ihre Datei wurde geändert oder gelöscht.",
       viewCopyData: "Daten kopieren",

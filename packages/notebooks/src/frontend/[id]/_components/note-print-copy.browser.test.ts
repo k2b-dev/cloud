@@ -5,7 +5,7 @@ import type { Browser } from "playwright";
 import { launchBrowser } from "../../../../../ui/test/browser";
 import type { PrintCopyHarness } from "./editor/note-print-copy.browser-harness";
 
-declare const window: Window & { printCopyHarness: PrintCopyHarness };
+declare const window: Window & { printCopyHarness: PrintCopyHarness; printMediaMatches: boolean };
 const markdown =
   "# Field notebook\n\n" +
   Array.from({ length: 150 }, (_, i) => `Paragraph ${i + 1}. An invented team records observations for the next visit.`).join("\n\n") +
@@ -94,24 +94,55 @@ afterAll(async () => {
 test("the Book copy prints the whole note; changes at print time replace the stale copy", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
+    await page.addInitScript(() => {
+      const media = window.matchMedia("print");
+      window.printMediaMatches = media.matches;
+      media.addEventListener("change", (event) => {
+        window.printMediaMatches = event.matches;
+      });
+    });
+    const emulateMedia = async (media: "screen" | "print") => {
+      await page.emulateMedia({ media });
+      // Chromium can coalesce screen → print before delivering either change event (#1558).
+      // Observe each delivered transition before starting the next one.
+      await page.waitForFunction((matches) => window.printMediaMatches === matches, media === "print");
+    };
     await page.goto(String(server.url));
-    await page.waitForSelector(".notebook-note-print", { state: "attached" });
+    await page.waitForFunction(() => document.querySelector(".notebook-note-print")?.getClientRects().length === 0);
     expect(await page.locator(".notebook-note-print").boundingBox()).toBeNull();
-    await page.emulateMedia({ media: "print" });
+    await emulateMedia("print");
     await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
-    for (const selector of [".k2b-app-workspace__sidebar", ".k2b-app-workspace__detail", ".editor-toolbar", ".editor-surface"])
-      expect({ selector, box: await page.locator(selector).boundingBox() }).toEqual({ selector, box: null });
-    const paragraphs = page.locator(".notebook-note-print p").filter({ hasText: /^Paragraph \d+\./ });
-    expect(await paragraphs.count()).toBe(150);
-    for (const paragraph of await paragraphs.all()) expect(await paragraph.boundingBox()).not.toBeNull();
-    expect((await paragraphs.last().boundingBox())!.y).toBeGreaterThan(900);
-    for (const selector of ["h1", "table", ".k2b-notice-card", "img", "code"])
-      expect(await page.locator(`.notebook-note-print ${selector}`).first().boundingBox()).not.toBeNull();
+    // Read layout in one browser task instead of 150 sequential protocol round trips.
+    const layout = await page.evaluate(() => {
+      const box = (element: Element | null) => {
+        if (!element?.getClientRects().length) return null;
+        const { y, width, height } = element.getBoundingClientRect();
+        return { y, width, height };
+      };
+      return {
+        hidden: [".k2b-app-workspace__sidebar", ".k2b-app-workspace__detail", ".editor-toolbar", ".editor-surface"].map((selector) => {
+          const element = document.querySelector(selector);
+          return { selector, exists: element !== null, box: box(element) };
+        }),
+        paragraphs: [...document.querySelectorAll(".notebook-note-print p")]
+          .filter((paragraph) => /^Paragraph \d+\./.test(paragraph.textContent ?? ""))
+          .map(box),
+        content: ["h1", "table", ".k2b-notice-card", "img", "code"].map((selector) => ({
+          selector,
+          box: box(document.querySelector(`.notebook-note-print ${selector}`)),
+        })),
+      };
+    });
+    for (const { selector, exists, box } of layout.hidden) expect({ selector, exists, box }).toEqual({ selector, exists: true, box: null });
+    expect(layout.paragraphs).toHaveLength(150);
+    for (const box of layout.paragraphs) expect(box).not.toBeNull();
+    expect(layout.paragraphs.at(-1)!.y).toBeGreaterThan(900);
+    for (const { selector, box } of layout.content) expect({ selector, visible: box !== null }).toEqual({ selector, visible: true });
     expect(await page.locator(".notebook-note-print img").getAttribute("loading")).toBe("eager");
     await page.waitForFunction(() => document.querySelector<HTMLImageElement>(".notebook-note-print img")?.naturalWidth === 4);
-    await page.emulateMedia({ media: "screen" });
+    await emulateMedia("screen");
     await page.evaluate(() => window.printCopyHarness.change("# Updated note\n\nFresh content at print time."));
-    await page.emulateMedia({ media: "print" });
+    await emulateMedia("print");
     await page.waitForFunction(() => document.querySelector(".notebook-note-print")?.textContent?.includes("Fresh content at print time."));
     expect(await page.locator(".notebook-note-print").textContent()).not.toContain("Paragraph 150.");
     // beforeprint is an independent path (including browsers without print media events).
@@ -120,10 +151,10 @@ test("the Book copy prints the whole note; changes at print time replace the sta
       window.dispatchEvent(new Event("beforeprint"));
     });
     expect(await page.locator(".notebook-note-print").textContent()).toContain("Latest local text.");
-    await page.emulateMedia({ media: "screen" });
+    await emulateMedia("screen");
     await page.evaluate(() => window.printCopyHarness.switchNote("# Another note\n\nOnly this note."));
     expect(await page.locator(".notebook-note-print").getAttribute("data-print-region")).toBeNull();
-    await page.emulateMedia({ media: "print" });
+    await emulateMedia("print");
     await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
     expect(await page.locator(".notebook-note-print").textContent()).toContain("Only this note.");
     await page.evaluate(() => {
