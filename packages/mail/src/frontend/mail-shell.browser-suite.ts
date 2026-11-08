@@ -2690,8 +2690,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await settled(page);
               const geometry = await toolbar.evaluate((element) => {
                 const box = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
-                const label = (id: string) =>
-                  element.querySelector(`[data-mail-toolbar-action="${id}"] .mail-reader-action-label`);
+                const label = (id: string) => element.querySelector(`[data-mail-toolbar-action="${id}"] .mail-reader-action-label`);
                 return {
                   controlsBottom: box(".mail-reader-controls").bottom,
                   titleTop: box("[data-mail-reader-heading]").top,
