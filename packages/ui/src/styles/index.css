@@ -2252,7 +2252,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 2.5rem;
 }
 
+/* A split button is one body: the segments touch, only the outer corners
+   round, and each segment draws its focus ring inside itself, so a ring
+   never covers the neighbouring segment. */
 .k2b-ui .k2b-dropdown.k2b-split-button {
+  --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-focus-on-fill: currentColor;
   gap: 0;
   transition: scale 100ms ease-out;
 }
@@ -2273,11 +2278,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-split-button__primary-menu { gap: 0; }
 
+/* Filled segments meet at a fine line in their label colour, light on every
+   fill in both themes. Bordered segments overlap by one pixel and share their
+   light border as the divider, so it never darkens. */
 .k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger {
   margin-inline-start: -1px;
-  border-inline-start-color: color-mix(in srgb, currentColor 24%, transparent);
   border-start-start-radius: 0;
   border-end-start-radius: 0;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger:is([data-variant="secondary"], [data-variant="subtle"], [data-variant="input"]) {
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
