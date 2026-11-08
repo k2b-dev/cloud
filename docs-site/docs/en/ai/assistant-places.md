@@ -33,7 +33,8 @@ import { Layout } from "@k2b/cloud/ssr";
 
 Use the namespaced Type and the public ID its reader accepts. The scope selects
 the place; it grants no access. Your normal page and domain-service permission
-checks still apply. A Type without an `assistant` block keeps the normal panel.
+checks still apply. A Type without an `assistant` block keeps the normal panel
+unless the person already has a chat bound to it; that chat shows as unavailable.
 
 For a place that changes inside one document, publish the current scope with
 `publishPageContext` from `@k2b/cloud/browser/panel` and dispose the previous
@@ -198,7 +199,12 @@ Panel hosts create a chat through `POST /api/ai/conversations` with `place: {
 type, id }`, a nonempty `draft.content`, and the normal `requestId` for retries.
 This path takes the title from the current provider. It does not accept the
 ordinary creation overrides for title, Project, tools, Skills, or launching app.
-After creation, draft saving and submission use the normal chat flow.
+
+If the person already has an active chat at this place, open it using the
+loader's `conversationId`. A create request with a different draft returns
+`409 CONFLICT`. Without consent the request returns `403`; an unavailable place
+returns `404`. After creation, draft saving and submission use the normal chat
+flow.
 
 On navigation, the panel follows the new place when an empty chat or a place
 chat is open. Another open chat stays visible, with **Switch to <title>**
@@ -208,8 +214,9 @@ the current page context.
 
 Place chats appear in search under **At places** (**An Orten**) and in the
 separate place filter. Unread and attention counts include them. Ordinary chat
-lists and own-chat discovery omit them by default; exact place filters select
-them explicitly. See [List place chats](/en/docs/ai/chat-runtime-and-streaming#list-place-chats)
+lists and own-chat discovery omit them by default. Lists include them with
+`place=any` or an exact `<type>:<id>`; the own-chat search tools include them only
+with an exact place ref. See [List place chats](/en/docs/ai/chat-runtime-and-streaming#list-place-chats)
 for API filters, counters, and `cld assistant chats list --place`.
 
 ## Refresh context and handle an unavailable place
@@ -220,12 +227,13 @@ remains its selector even after the page changes. Context is marked as untrusted
 application data. Returned Skills join the permission-filtered catalog and are
 loaded through the normal Skill mechanism; listing one grants no access.
 
-If the resource disappears, its application is removed, or the person loses
-access, their chat history remains readable. New rounds receive no place
-context, tools, or Skills. The panel shows **No longer have access to <title>**
+If the resource disappears or the person loses access, their chat history
+remains readable. New rounds receive no place context, tools, or Skills. The panel shows **No longer have access to <title>**
 (**Kein Zugriff mehr auf <Titel>**) using the stored title when available.
 Temporary provider or contract failures carry `retry: true`; hosts should offer
-a retry without presenting them as permanent loss of access.
+a retry without presenting them as permanent loss of access. A place whose
+application is not currently registered also returns `retry: true`, because
+Cloud cannot tell a removal from a restart.
 
 ## Fixed targets and current access
 

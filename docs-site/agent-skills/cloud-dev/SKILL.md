@@ -139,7 +139,7 @@ SolidJS library remains independent of Cloud and application domains.
   persisted locale and theme, no Cloud header or navigation, and a shared legal and preferences footer. A custom
   root using none of these layouts must install one provider around its returned tree.
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
-  Build no back buttons for it; an app with its own header places `PageTrail` there. For resource-specific Assistant context, declare the Type's `assistant` provider and publish its ref through `Layout.context.scope`; read **Assistant at a place** (`/en/docs/ai/assistant-places`) for consent, chat ownership and lifecycle, fixed targets, and checks of current access.
+  Build no back buttons for it; an app with its own header places `PageTrail` there. For resource-specific Assistant context, declare an `assistant` block on the Type and publish its ref through `Layout.context.scope`; read **Assistant at a place** (`/en/docs/ai/assistant-places`) for consent, chat ownership and lifecycle, fixed targets, and checks of current access.
 ## Ship CLI commands and Assistant Skills with the app
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
 Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named
