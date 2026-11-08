@@ -244,9 +244,14 @@ test("both dashboards keep every panel in place in every state", async () => {
 
 // Geometry comes from the real server document. Keep hydration in open()/the
 // parity tests: starting every overview island is unrelated to these bounds.
-// The page runs no script, so the document stays exactly the server markup.
+// A script-src 'none' policy keeps the document exactly the server markup while
+// test evaluation (settled, measurements) still runs.
 const openServerGeometry = async (width: number, height: number, path: string) => {
-  const page = await browser!.newPage({ viewport: { width, height }, reducedMotion: "reduce", javaScriptEnabled: false });
+  const page = await browser!.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
+  await page.route(`${origin}${path}`, async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, headers: { ...response.headers(), "content-security-policy": "script-src 'none'" } });
+  });
   const response = await page.goto(`${origin}${path}`, { waitUntil: "load" });
   expect(response!.ok()).toBe(true);
   await settled(page);
