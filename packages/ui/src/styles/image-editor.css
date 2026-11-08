@@ -368,14 +368,6 @@
 .k2b-ui .k2b-image-editor__strip ul[data-fade~="start"] { --k2b-image-editor-fade-start: 44px; }
 .k2b-ui .k2b-image-editor__strip ul[data-fade~="end"] { --k2b-image-editor-fade-end: 44px; }
 .k2b-ui .k2b-image-editor__strip li { flex: none; }
-/* The open image never leaves the strip: scrolled away, it stays at the visible edge just inside the fade while
-   the others pass beneath, so browsing on to the end (and the add tile) never hides it. */
-.k2b-ui .k2b-image-editor__strip li[data-current] {
-  position: sticky;
-  z-index: 1;
-  left: var(--k2b-image-editor-fade-start);
-  right: var(--k2b-image-editor-fade-end);
-}
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .k2b-image-editor__strip ul { scroll-behavior: auto; }
   .k2b-ui .k2b-image-editor__placeholder::after { animation: none; }
@@ -640,18 +632,18 @@
 }
 .k2b-ui .k2b-image-editor__size[aria-checked="true"] span { background: var(--k2b-action); }
 .k2b-ui :is(.k2b-image-editor__color, .k2b-image-editor__size):disabled { cursor: not-allowed; }
-.k2b-ui .k2b-image-editor[data-tool="annotate"] .k2b-image-editor__body { display: flex; flex-direction: column; overflow: hidden; }
-.k2b-ui .k2b-image-editor__tool[data-tool="annotate"] { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.k2b-ui .k2b-image-editor[data-tool="annotate"] .k2b-image-editor__body { display: flex; flex-direction: column; }
+.k2b-ui .k2b-image-editor__tool[data-tool="annotate"] { display: flex; flex: none; flex-direction: column; min-height: 0; }
 .k2b-ui .k2b-image-editor__tool[data-tool="annotate"] > .k2b-image-editor__hint { padding-top: 10px; }
-.k2b-ui .k2b-image-editor__layers { display: flex; flex: 1; flex-direction: column; min-height: 0; padding-top: 6px; }
+.k2b-ui .k2b-image-editor__layers { display: flex; flex: none; flex-direction: column; min-height: 0; padding-top: 6px; }
 .k2b-ui .k2b-image-editor__layers-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
 .k2b-ui .k2b-image-editor__layer-list {
   position: relative;
-  flex: 1;
+  flex: none;
   min-height: 76px;
   margin: 2px -8px 0;
   padding: 0 8px 4px;
-  overflow: auto;
+  overflow: visible;
   list-style: none;
   scrollbar-width: thin;
 }
@@ -926,7 +918,7 @@
   box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-share), transparent);
   color: var(--k2b-action);
 }
-.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__tool[data-tool="annotate"] { gap: 8px; }
+.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__tool[data-tool="annotate"] { flex: 1; gap: 8px; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__tool[data-tool="annotate"] .k2b-image-editor__section { display: contents; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__marks { display: flex; gap: 6px; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__marks .k2b-image-editor__choice { flex: 1; min-height: 42px; padding: 0; justify-content: center; }
@@ -936,5 +928,5 @@
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__colors,
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__sizes { gap: 4px; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__size { width: 34px; }
-.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__layers { padding-top: 0; }
-.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__layer-list { min-height: 0; margin-top: 0; }
+.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__layers { flex: 1; padding-top: 0; }
+.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__layer-list { flex: 1; min-height: 0; margin-top: 0; overflow: auto; }

@@ -104,6 +104,10 @@ has two rows, their grips show and a hint under the list says how to reorder.
 Redactions form a fixed group at the top and only reorder among themselves, so
 nothing ever covers a redaction.
 
+On desktop, the pane scrolls the whole tool so every layer remains reachable,
+including when an error reduces the space above the save actions. Its lower
+edge fades while more content is below. Phones scroll the bounded layer list.
+
 A hidden mark is neither drawn nor exported, and the save area says so.
 Redactions cannot be hidden: their eye shows what lies underneath only while it
 is held, so every saved image contains every redaction. Annotations carry
@@ -137,8 +141,8 @@ A minimal caller needs only:
   editor per image when edits must survive the switch. `onAddItems` adds a "+"
   at the end. The strip fades only on a side with more images, keeps its
   height, and moves focus with the arrow keys, Home, and End. It opens with
-  the current image in view, and the current image never leaves it: browsed
-  away, it stays at the visible edge just inside the fade. On phones it
+  the current image in view and reveals a newly selected image outside the
+  edge fades. Thumbnails keep their normal order while browsing. On phones it
   opens below the chips from the name chip. Keep each item's `id` stable:
   thumbnail and dirty-state updates preserve its button, focus, and scroll position.
 

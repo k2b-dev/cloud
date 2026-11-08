@@ -312,6 +312,86 @@ describe("public ImageEditor interactions", () => {
       return open.left >= box.left + fade("start") - 0.5 && open.right <= box.right - fade("end") + 0.5;
     });
 
+  const thumbsDoNotOverlap = (page: Page) =>
+    page.locator(".k2b-image-editor__strip ul button").evaluateAll((buttons) => {
+      const boxes = buttons.map((button) => button.getBoundingClientRect());
+      return boxes.every((box, i) => i === 0 || boxes[i - 1]!.right <= box.left);
+    });
+
+  for (const width of [1440, 390]) {
+    test(`strip neighbours never overlap at the first, middle or last image at ${width}px`, async () => {
+      for (const current of ["p1", "p14", "p28"]) {
+        const { page, errors } = await open(`count=28&current=${current}`, width);
+        try {
+          if (width === 390) await page.locator(".k2b-image-editor__name").click();
+          await settled(page);
+          expect(await openThumbVisible(page)).toBe(true);
+          expect(await thumbsDoNotOverlap(page)).toBe(true);
+          const list = page.locator(".k2b-image-editor__strip ul");
+          if (current === "p1") {
+            const inset = await list.evaluate(
+              (element) => element.querySelector("button")!.getBoundingClientRect().left - element.getBoundingClientRect().left,
+            );
+            expect(inset).toBeGreaterThanOrEqual(0);
+            expect(inset).toBeLessThanOrEqual(1);
+          }
+          await list.evaluate((element) => element.scrollTo({ left: element.scrollWidth / 3, behavior: "instant" }));
+          await settled(page);
+          expect(await thumbsDoNotOverlap(page)).toBe(true);
+          expect(errors).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      }
+    });
+  }
+
+  test("the desktop pane scrolls every layer into view before and after a save error", async () => {
+    const { page, errors } = await open("failure=1");
+    try {
+      await selectTool(page, "Mark up");
+      for (const [name, from, to] of [
+        ["Rectangle", [0.1, 0.1], [0.3, 0.3]],
+        ["Arrow", [0.5, 0.5], [0.7, 0.6]],
+        ["Redact", [0.6, 0.2], [0.8, 0.3]],
+      ] as const) {
+        await markTool(page, name === "Redact" ? /^Redact/ : name).click();
+        await settled(page);
+        await drag(page, [...from], [...to]);
+      }
+      await page.setViewportSize({ width: 1440, height: 700 });
+      const body = page.locator(".k2b-image-editor__body");
+      const rows = page.locator(".k2b-image-editor__layer");
+      expect(await rows.count()).toBe(3);
+      for (const failed of [false, true]) {
+        if (failed) {
+          await page.getByRole("button", { name: "Done", exact: true }).click();
+          await page.getByRole("alert").filter({ hasText: "Upload unavailable" }).first().waitFor();
+        }
+        await settled(page);
+        expect(await body.evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+        expect(
+          await page.locator(".k2b-image-editor__layer-list").evaluate((element) => element.clientHeight >= element.scrollHeight),
+        ).toBe(true);
+        for (let index = 0; index < 3; index++) {
+          await body.evaluate((element, index) => {
+            const row = element.querySelectorAll(".k2b-image-editor__layer")[index]!;
+            element.scrollTop += row.getBoundingClientRect().top - element.getBoundingClientRect().top;
+          }, index);
+          await settled(page);
+          const box = (await rows.nth(index).boundingBox())!;
+          const view = (await body.boundingBox())!;
+          expect(box.y).toBeGreaterThanOrEqual(view.y);
+          expect(box.y + box.height).toBeLessThanOrEqual(view.y + view.height);
+          expect(view.y + view.height).toBeLessThanOrEqual((await page.locator(".k2b-image-editor__save").boundingBox())!.y);
+        }
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("the open image stays wholly visible in a long strip at the first, a middle and the last place", async () => {
     for (const current of ["p1", "p14", "p28"]) {
       const { page, errors } = await open(`count=28&current=${current}`);
@@ -324,13 +404,13 @@ describe("public ImageEditor interactions", () => {
         await settled(page);
         expect(await page.locator(".k2b-image-editor__strip ul").evaluate((list) => list.scrollLeft)).toBe(scroll);
         expect(await openThumbVisible(page)).toBe(true);
-        // Browsing by hand to either end keeps the open image at the visible edge; at the end the add tile shows too.
+        // Manual browsing keeps the normal item flow; revealing a selection must never pin it over a neighbour.
         for (const end of ["start", "end"] as const) {
           await page
             .locator(".k2b-image-editor__strip ul")
             .evaluate((list, end) => list.scrollTo({ left: end === "start" ? 0 : list.scrollWidth, behavior: "instant" }), end);
           await settled(page);
-          expect(await openThumbVisible(page)).toBe(true);
+          expect(await thumbsDoNotOverlap(page)).toBe(true);
         }
         expect(
           await page.locator(".k2b-image-editor__strip ul").evaluate((list) => {
@@ -338,10 +418,10 @@ describe("public ImageEditor interactions", () => {
             return add.right <= list.getBoundingClientRect().right + 0.5;
           }),
         ).toBe(true);
-        // A late rebuild of every item while browsed away keeps both.
+        // A late rebuild preserves the normal flow while browsed away.
         await fixture(page, "refreshItems()");
         await settled(page);
-        expect(await openThumbVisible(page)).toBe(true);
+        expect(await thumbsDoNotOverlap(page)).toBe(true);
         expect(errors).toEqual([]);
       } finally {
         await page.close();
@@ -407,7 +487,7 @@ describe("public ImageEditor interactions", () => {
             return document.activeElement === add && focus.left >= box.left && focus.right <= box.right;
           }),
         ).toBe(true);
-        expect(await openThumbVisible(page)).toBe(true);
+        expect(await thumbsDoNotOverlap(page)).toBe(true);
         expect(errors).toEqual([]);
       } finally {
         await page.close();

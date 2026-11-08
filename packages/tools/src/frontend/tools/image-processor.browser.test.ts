@@ -97,6 +97,24 @@ describe("Tools public photo editor adoption", () => {
         await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
         await page.waitForFunction(() => (document.querySelector<HTMLCanvasElement>(".k2b-image-editor__image > canvas")?.width ?? 0) > 1);
         const shot = async (motif: string) => {
+          if (width === 1440 && ["mark-up", "saving", "save-error", "recovered"].includes(motif)) {
+            const body = page.locator(".k2b-image-editor__body");
+            await body.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+            await settled(page);
+            expect(
+              await body.evaluate((element) => {
+                const view = element.getBoundingClientRect();
+                const rows = [...element.querySelectorAll(".k2b-image-editor__layer")];
+                return (
+                  rows.length === 3 &&
+                  rows.every((row) => {
+                    const box = row.getBoundingClientRect();
+                    return box.top >= view.top && box.bottom <= view.bottom;
+                  })
+                );
+              }),
+            ).toBe(true);
+          }
           await settled(page);
           if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/tools-host-${motif}-light-${width}.png` });
         };
@@ -110,12 +128,9 @@ describe("Tools public photo editor adoption", () => {
         const strip = page.getByRole("navigation", { name: "Images", exact: true });
         const list = strip.locator("ul");
         expect(await strip.getByRole("button").count()).toBe(29);
-        await list.evaluate((node) => node.scrollTo({ left: node.scrollWidth / 3 }));
-        await page.waitForFunction(() =>
-          document.querySelector(".k2b-image-editor__strip ul")?.getAttribute("data-fade")?.includes("start"),
-        );
+        await page.waitForFunction(() => document.querySelector(".k2b-image-editor__strip ul")?.getAttribute("data-fade")?.includes("end"));
         await page.waitForFunction(() => document.querySelectorAll(".k2b-image-editor__strip img").length === 28);
-        expect(await list.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+        expect(await list.evaluate((node) => node.scrollLeft)).toBe(0);
         await shot("auto-many-images");
         await strip.getByRole("button").first().focus();
         await page.keyboard.press("End");
@@ -135,6 +150,7 @@ describe("Tools public photo editor adoption", () => {
         ).toBe(true);
         expect(await strip.getByRole("button", { name: "Add photos", exact: true }).locator(".ti-plus").isVisible()).toBe(true);
         await shot("strip-add");
+        await page.keyboard.press("Home");
         if (width === 390) await page.locator(".k2b-image-editor__name").click();
         await page.getByRole("tab", { name: "Mark up", exact: true }).click();
         for (const [name, from, to] of [

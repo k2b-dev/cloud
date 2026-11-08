@@ -1556,7 +1556,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const stripShow = (target: HTMLElement) => {
     const list = stripList;
     const item = target.closest("li");
-    if (!list || !item || item.hasAttribute("data-current")) return stripFade();
+    if (!list || !item) return stripFade();
     const start = item.offsetLeft;
     const end = start + item.offsetWidth;
     const view = list.getBoundingClientRect().width;
@@ -2163,7 +2163,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         >
           <KeyedFor each={props.items ?? []} by={(item) => item.id}>
             {(item) => (
-              <li data-current={item().id === props.currentItem ? "" : undefined}>
+              <li>
                 <button
                   type="button"
                   class="k2b-image-editor__thumb"

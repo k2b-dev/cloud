@@ -269,6 +269,24 @@ describe("Files photo editing", () => {
         await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
         await edit(page);
         const shot = async (motif: string) => {
+          if (width === 1440 && ["mark-up", "saving", "save-error", "recovered"].includes(motif)) {
+            const body = page.locator(".k2b-image-editor__body");
+            await body.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+            await settled(page);
+            expect(
+              await body.evaluate((element) => {
+                const view = element.getBoundingClientRect();
+                const rows = [...element.querySelectorAll(".k2b-image-editor__layer")];
+                return (
+                  rows.length === 3 &&
+                  rows.every((row) => {
+                    const box = row.getBoundingClientRect();
+                    return box.top >= view.top && box.bottom <= view.bottom;
+                  })
+                );
+              }),
+            ).toBe(true);
+          }
           await settled(page);
           if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/files-host-${motif}-light-${width}.png` });
         };
@@ -279,10 +297,7 @@ describe("Files photo editing", () => {
         if (width === 390) await page.locator(".k2b-image-editor__name").click();
         const strip = page.getByRole("navigation", { name: "Images", exact: true });
         expect(await strip.getByRole("button").count()).toBe(28);
-        await strip.locator("ul").evaluate((node) => node.scrollTo({ left: node.scrollWidth / 3 }));
-        await page.waitForFunction(() =>
-          document.querySelector(".k2b-image-editor__strip ul")?.getAttribute("data-fade")?.includes("start"),
-        );
+        await page.waitForFunction(() => document.querySelector(".k2b-image-editor__strip ul")?.getAttribute("data-fade")?.includes("end"));
         await shot("auto-many-images");
         if (width === 390) await page.locator(".k2b-image-editor__name").click();
         await page.getByRole("tab", { name: "Mark up", exact: true }).click();
