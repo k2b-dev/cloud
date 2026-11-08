@@ -1,10 +1,10 @@
-import { approveInModal } from "../CapabilityApproval";
+import { approveInModal } from "../../chat-code/CapabilityApproval";
+import type { RuntimeServices } from "../../chat-code/runtime/services";
 import { artifactClient } from "../client";
 import type { Confirm } from "../html/host";
 import { runHttp } from "../http-host";
 import { browserHttpHost } from "../SecretsDialog";
 import { runCapability } from "./capabilities";
-import type { RuntimeServices } from "./services";
 import { sharedStorage } from "./shared-storage";
 
 /** Server access of a saved app the viewer may use. Loaded only for an authorized run; every endpoint rechecks access. */

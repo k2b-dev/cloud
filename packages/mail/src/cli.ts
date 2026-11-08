@@ -26,6 +26,7 @@ import { principalLabel } from "@k2b/cloud/shared";
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
+import type { MailAutomationExportPage } from "./automation-export-contracts";
 import { ConversationSummaryWriteDataSchema } from "./capability-contracts";
 import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
@@ -7252,6 +7253,38 @@ const specialistCommands = {
         ctx.print(`${result.reference.value}: ${result.conversationId}`);
       },
     }),
+    command("automation export", {
+      summary: "Export every saved automation version as versioned JSON (grants no access)",
+      flags: { ...mailboxFlag, all: flag.boolean({ description: "Export all mailboxes; requires Cloud administration" }) },
+      async run({ ctx, flags }) {
+        if (flags.all && flags.mailbox) throw new Error("Use either --mailbox or --all.");
+        const endpoint = flags.all
+          ? "/admin/automation-export"
+          : `/mailboxes/${(await resolveMailbox(ctx, flags.mailbox)).id}/automation-export`;
+        let after: string | null = null;
+        let first = true;
+        let started = false;
+        do {
+          const page: MailAutomationExportPage = await readApi(ctx, `${endpoint}${after ? `?after=${after}` : ""}`);
+          if (ctx.options.output === "jsonl") ctx.jsonLine(page);
+          else {
+            if (!started) {
+              const { items: _items, nextCursor: _cursor, ...metadata } = page;
+              await ctx.write(`${JSON.stringify(metadata).slice(0, -1)},"items":[`);
+              started = true;
+            }
+            for (const item of page.items) {
+              await ctx.write(`${first ? "" : ","}${JSON.stringify(item)}`);
+              first = false;
+            }
+          }
+          if (page.nextCursor !== null && page.nextCursor === after) throw new Error("Export cursor did not advance. Retry the export.");
+          after = page.nextCursor;
+        } while (after !== null);
+        if (ctx.options.output !== "jsonl") await ctx.write('],"nextCursor":null}\n');
+      },
+    }),
+
     command("sender move", {
       summary: "Move matching inbound mail to Archive, Trash, or a folder",
       flags: {

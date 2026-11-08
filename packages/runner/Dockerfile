@@ -60,8 +60,7 @@ CMD ["bun", "/app/runner.js"]
 # CI exercises every native engine test in the same privilege envelope as production.
 FROM build AS test-build
 COPY packages/runner/test packages/runner/test
-COPY packages/assistant/src/artifacts/runtime packages/assistant/src/artifacts/runtime
-COPY packages/assistant/src/artifacts/actions.ts packages/assistant/src/artifacts/contracts.ts packages/assistant/src/artifacts/http-contracts.ts packages/assistant/src/artifacts/pdf-contracts.ts packages/assistant/src/artifacts/storage-contracts.ts packages/assistant/src/artifacts/
+COPY packages/assistant/src/chat-code packages/assistant/src/chat-code
 COPY packages/editor/src/charts.ts packages/editor/src/charts.ts
 COPY packages/ui/src packages/ui/src
 COPY packages/cloud/scripts/code-check-worker.ts packages/cloud/scripts/

@@ -2,6 +2,7 @@ import type { AiChatTaskView, AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { Button, Dropdown, FileTree, FileView, NoticeCard, Placeholder, prompts, Tabs, useLocale } from "@k2b/ui";
 import { createEffect, createResource, createSignal, ErrorBoundary, For, onCleanup, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { openAssistantTaskRun } from "../frontend/AssistantActivitiesDialog";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
@@ -9,7 +10,6 @@ import { AssistantTaskDetail } from "../frontend/AssistantTasksDialog";
 import { useAssistantLive } from "../frontend/assistant-live";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { artifactClient } from "./client";
-import { artifactMessages } from "./messages";
 import { artifactSourceRenderers, readOnlySourceRenderers } from "./SourceRenderer";
 import {
   appTab,

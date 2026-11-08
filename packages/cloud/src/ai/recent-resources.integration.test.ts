@@ -238,35 +238,22 @@ suite("recent sent resources: real store and current reader authorization", () =
     }
   });
 
-  test("Studio uses latest owned conversation and authorized read metadata; scoped credentials never widen", async () => {
+  test("Studio references never dispatch a legacy reader", async () => {
     const f = await fixture();
+    let calls = 0;
     try {
       await f.append([marker("studio", "assistant.artifact")]);
-      const resources = await f.list({
-        studioReader: async (input) => {
-          expect(input.conversationId).toBe(f.chat.id);
-          expect(input.authority).toBe(f.authority);
-          return {
-            data: { id: "studio", title: "Current Studio title", icon: "ti ti-code", description: "Description\nSecond line" },
-            refs: [{ type: "assistant.artifact", id: "studio" }],
-            links: [{ rel: "open", href: "/app/assistant?workspace=studio" }],
-          };
-        },
-      });
-      expect(resources[0]).toMatchObject({
-        title: "Current Studio title",
-        kind: "Studio-App",
-        preview: "Description",
-        href: "/app/assistant?workspace=studio",
-      });
-      f.authority.scopes = ["read"];
       expect(
         await f.list({
-          studioReader: async () => {
-            throw new Error("Must not execute");
+          dispatch: async () => {
+            calls++;
+            throw new Error("Studio reader must not execute");
           },
         }),
       ).toEqual([]);
+      f.authority.scopes = ["read"];
+      expect(await f.list()).toEqual([]);
+      expect(calls).toBe(0);
     } finally {
       await f.cleanup();
     }

@@ -1,5 +1,15 @@
 import type { CodePageBlock } from "./page-authoring-types";
 
+/** Opaque, expiring, single-use file from this run. Only Core can redeem it; it contains no bytes or URL. */
+declare const __codeFileRef: unique symbol;
+export type FileRef = {
+  readonly [__codeFileRef]: true;
+  readonly id: string;
+  readonly name?: string;
+  readonly mediaType: string;
+  readonly size: number;
+};
+
 /** A target identity created by a generated factory, never an authorization grant. */
 declare const __codeHandle: unique symbol;
 export type CodeHandle<Type extends string, Id extends string = string> = {

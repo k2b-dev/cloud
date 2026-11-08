@@ -195,7 +195,7 @@ table definitions to the checking user/conversation. Inspect every path in the
 report's `review.paths` with `view_image` and its `review.prompt`; a passing
 report does not establish visual quality.
 
-The [HTML app check contract](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+The [HTML app check contract](/en/docs/ai/chat-interface#legacy-studio-html-checks)
 describes desktop/phone runs, disposable data, schema-only copies above the
 budget, restricted effects and cancellation. Browser regressions use the
 repository launcher and support Chromium or `TEST_BROWSER=webkit`.

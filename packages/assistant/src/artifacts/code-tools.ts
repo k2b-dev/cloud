@@ -1,10 +1,14 @@
 import { sql } from "@k2b/cloud";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, AiFileWriteError, type CODE_SOURCE_TOOLS, createAiConversationArtifact } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
-import { AccessMutationBusyError, accessRevision, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
+import { AccessMutationBusyError, accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
 import { principalLabel } from "@k2b/cloud/shared";
 import { fail, ok, text } from "@k2b/stdlib";
 import { z } from "zod";
+import type { CodeToolContext } from "../chat-code/context";
+import { artifactMessages } from "../chat-code/messages";
+import { reviewMessages } from "../chat-code/review-messages";
+import { CloudError } from "../chat-code/runtime/errors";
 import { ArtifactCompileError, sourceActions } from "./actions";
 import { readBinaryResponse } from "./binary";
 import { hasInterface, LIMITS, PUBLIC_APP_SHARING } from "./contracts";
@@ -12,23 +16,11 @@ import { artifactDatabase, DatabaseError } from "./database";
 import { databaseConfigLock } from "./database-lock";
 import { studioFiles } from "./file-transfer";
 import { appChecks } from "./html/check-service";
-import { artifactMessages } from "./messages";
-import { reviewMessages } from "./review-messages";
-import { CloudError } from "./runtime/errors";
-import type { ArtifactIdentity } from "./service";
 import { ArtifactError, artifacts, readArtifactRevision, requireArtifact, user } from "./service";
 import { sourceDiagnostics, sourceManifest } from "./source";
 
-export type CodeToolContext = ArtifactIdentity & {
-  /** Resolved by invocation middleware; retains credential caps and mobile provenance. */
-  authority?: RequestAuthority | null;
-  locale: string;
-  timeZone: string;
-  theme?: "light" | "dark";
-  signal: AbortSignal;
-  review?: boolean;
-  capabilityToken?: string;
-};
+export type { CodeToolContext } from "../chat-code/context";
+
 /** Review copy in the reader's language; `app` names the App the way every review refers to it. */
 const review = (context: CodeToolContext, app?: { title: string; id: string }) => {
   const t = reviewMessages.resolve([context.locale]).t;
@@ -129,7 +121,14 @@ export const artifactCodeHandlers = {
           : { exists: false },
       };
     }),
-  code_file_copy: (input, context) =>
+  code_file_copy: (
+    input: {
+      source: Parameters<typeof studioFiles.readReference>[0];
+      destination: Parameters<typeof studioFiles.read>[0];
+      expectedVersion: string | null;
+    },
+    context,
+  ) =>
     result<unknown>(context, async () => {
       if (context.review) {
         const target = await studioFiles.destination(input.destination, input.expectedVersion, context);
@@ -458,7 +457,20 @@ export const artifactCodeHandlers = {
       const saved = await artifacts.writeFiles(id, { files: [{ path, content }], expectedRevision, entry }, context);
       return { data: { ...sourceManifest(saved), saved: true, diagnostics: await sourceDiagnostics(saved.source) }, ...links(id) };
     }),
-  code_import: ({ id, files, expectedRevision, entry }, context) =>
+  code_import: (
+    {
+      id,
+      files,
+      expectedRevision,
+      entry,
+    }: {
+      id: string;
+      expectedRevision: number;
+      entry?: string;
+      files: { path: string; fromFile: Parameters<typeof studioFiles.readReference>[0] }[];
+    },
+    context,
+  ) =>
     result<unknown>(context, async () => {
       // Authorize the destination before loading any source data.
       const current = await artifacts.get(id, context);

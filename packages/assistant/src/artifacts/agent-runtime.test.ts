@@ -1,10 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import type { ViewRef } from "../chat-code/runtime/views";
 import { createArtifactAgentRuntime } from "./agent-runtime";
 import { artifactClient } from "./client";
 import * as sessions from "./runtime/session";
-import type { ViewRef } from "./runtime/views";
 
 test("script view transport carries run identity, keeps the route's error codes and bounds service failures", async () => {
   const dom = createDomTestHarness();

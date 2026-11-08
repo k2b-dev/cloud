@@ -1,9 +1,9 @@
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { AppWorkspace, Button, IconButton, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { assistantAppsSearchOptions } from "../frontend/assistant-search";
 import { artifactClient } from "./client";
-import { artifactMessages } from "./messages";
 
 function StudioCatalog(props: { open: boolean; close: () => void; activeAppId?: string; modal?: boolean }) {
   const locale = useLocale();

@@ -16,6 +16,7 @@ Undo/Redo are retired. Automatic replies are removed without replacement,
 including out-of-office replies, office-hours replies, and reference
 acknowledgements. Ordinary Mail sending and reference numbers remain available.
 
+
 ## Export before upgrading
 
 Use the export-capable old release to export each mailbox’s definitions with

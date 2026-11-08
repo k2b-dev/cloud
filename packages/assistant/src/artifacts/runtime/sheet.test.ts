@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
-import { read, toOds } from "./sheet-chunk";
+import { read, toOds } from "../../chat-code/runtime/sheet-chunk";
 
 const fixture = async (name: string) =>
-  new Blob([await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).arrayBuffer()], { type: "application/octet-stream" });
+  new Blob([await Bun.file(new URL(`../../chat-code/runtime/fixtures/${name}`, import.meta.url)).arrayBuffer()], {
+    type: "application/octet-stream",
+  });
 
 test("sheet.read detects XLSX and ODS bytes and defaults rows to the first sheet", async () => {
   for (const name of ["ledger.xlsx", "ledger.ods"]) {

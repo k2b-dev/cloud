@@ -1,7 +1,8 @@
 # Explicit file references and transfers
 
-Files belong to a chat, Project, or App shared store. A location is
-`{scope:"chat"|"project"|"app",id,path}`. A reference adds an opaque string
+Chat file tools address a chat or Project. A location is
+`{scope:"chat"|"project",id,path}`. Studio App file stores are unavailable
+through these tools; use discovered application capabilities for other files. A reference adds an opaque string
 `version`. The current chat ID is supplied as `Chat:` in the platform context;
 use it for `scope:"chat"` rather than guessing an ID. Reuse returned locations and references exactly; access to a location
 never grants access to its whole store or to another resource.
@@ -19,27 +20,16 @@ Load only `code_files`, `code_file_stat`, and `code_file_copy` as needed.
    The result contains the destination `reference,size,mediaType`.
 
 Every copy receives fresh user review with the exact source, destination, and
-overwrite scope. App and Project files may be readable by other authorized
+overwrite scope. Project files may be readable by other authorized
 users; copying a private chat attachment there is an explicit disclosure.
 Rejection does not copy anything. Source versions, destination versions, current
 permissions, and the destination's byte limits are checked again during execution.
 After a conflict, inspect current state and prepare a new review before retrying.
 
-App file reads and writes require Use, not Manage. Project files require Read
-for sources and Write for destinations. Chat files require ownership. Transfers
-work without a running app and do not mount other chat attachments implicitly.
-
-For example, inspect an invoice attachment, copy its reference into the target
-App's shared file store, then call the App's published `importFiles` action with
-the destination key expected by its discovered input schema. Do not pass a chat
-path to an App and assume it can read it. Action handlers see only their explicit
-input and authorized App data. Use [App actions](app-actions.md) for discovery.
-
-For small UTF-8 files that should become App source, use
-`code_import({id,expectedRevision,files:[{path:"data.json",fromFile:reference}]})`.
-This is a reviewed import with the same source references, not a chat-only
-special case. Source file/bundle limits still apply; keep larger or private
-runtime data in shared files or the database instead of embedding it in source.
+Project files require Read for sources and Write for destinations. Chat
+files require ownership. Transfers do not mount other chat attachments
+implicitly. Copy an exact returned source reference to an authorized chat or
+Project destination, then inspect the returned reference and version.
 
 Known rejections return `CONFLICT` for an occupied or changed destination and
 `STORAGE_FULL` for a destination byte limit. No destination bytes were written.
@@ -55,7 +45,7 @@ as the flat `entry` target field and keep paths relative to it. Keep the filters
 unchanged and follow `data.next` as
 `after` until null, even after an empty page. Each `data.items` entry includes
 its own `{type:"filesv2.entry",id}` ref and file metadata. Keep that ref in the
-Studio list, alongside the `grids.document` refs from `grids.document.list`.
+view, alongside the `grids.document` refs from `grids.document.list`.
 Use both `type` and `id` as the identity; dispatch each type to its own
 operations. Grids uses its own `page` cursor, not Filesv2's `data.next`.
 

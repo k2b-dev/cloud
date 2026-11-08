@@ -81,6 +81,48 @@ navigation, Enter acceptance, Escape dismissal, and retryable loading and error
 states. A new query aborts stale asynchronous work. Completions do not expand
 inside inline code or fenced code blocks.
 
+## Slash commands
+
+`SlashCommands` adds commands behind `/` to an editor. Place it beside the editor and pass the editor's textarea from
+`textareaRef`; it takes the same entries as [CommandMenu](/en/ui/actions/command-menu): commands that get the
+composer's text, text snippets, and further lists such as people or tags, as a list or as a function of the context,
+such as templates only when the slash starts the text. Editors without it carry none of its code.
+
+```tsx
+const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+const [composer, setComposer] = createSignal<HTMLDivElement>();
+
+<div ref={setComposer} class="composer">
+  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
+</div>
+```
+
+Typing `/` at the start of a line or after a space opens the entries docked above the composer, exactly as wide as
+it; near the top of the window they dock below it. The typed word filters them by label, description, hint, and
+keywords, without regard to case or accents. A `/` inside a word or after punctuation, as in `and/or` or
+`https://`, opens nothing.
+
+- An entry with `onSelect` removes the typed `/query` from the text, then runs with the context: the query, the text
+  without the `/query`, the text before the slash, whether it stands at the start of the text or a line, the path of
+  entries chosen so far, `insert(text)` at the caret as typing would, and an abort `signal`. A returned promise
+  keeps the list open with the entry busy; a rejection shows its message on the entry. See
+  [Context](/en/ui/actions/command-menu#context).
+- An entry with `text` puts its text in place of `/query`.
+- An entry with `next` opens its list in the same place: the typed `/query` leaves the text, the list gets its own
+  search field, and the focus moves there. Typing filters the list, the first match is marked, and <kbd>Enter</kbd>
+  chooses it: `/zuw` <kbd>Enter</kbd> `val` <kbd>Enter</kbd> assigns Valentin and puts the caret back where the slash
+  stood. <kbd>Esc</kbd>, or <kbd>Backspace</kbd> in the empty field, goes back; back in the first list, the `/query`
+  returns. While entries load, <kbd>Enter</kbd> waits for that query and takes its first match.
+- <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd> mark the entries that can be chosen while the list is open,
+  <kbd>Enter</kbd> and <kbd>Tab</kbd> choose, and <kbd>Esc</kbd> stops a running command or, in the first list,
+  closes it and keeps the text. It stays closed until the next `/`.
+- A word without matches closes the list, so <kbd>Enter</kbd> starts a new line as usual.
+
+The editor leaves a key to `SlashCommands` when it marked it handled with `preventDefault`. The list floats in the
+top layer, so it never moves the composer or the text. `SlashCommands` and `completions` work side by side; give `/`
+to only one of them.
+
 ## Editing behavior
 
 The editor keeps a native textarea as the input surface. A synchronized presentation layer provides markdown highlighting without replacing browser selection, composition, or undo behavior.
@@ -105,7 +147,9 @@ their native hyphenated names.
 The toolbar uses one tab stop plus Left, Right, Home, and End navigation.
 Formatting buttons expose active state through `aria-pressed`. The textarea
 uses combobox semantics when completions are configured; an open dropdown is a
-linked listbox with an active descendant and selected options. Loading uses a
+linked listbox with an active descendant and selected options. Slash commands use
+the same pattern: their groups are labeled by their headings, and an unavailable
+entry is `aria-disabled` with its reason in its name. Loading uses a
 status, failures use an alert, and the presentation layer is hidden from
 assistive technology.
 

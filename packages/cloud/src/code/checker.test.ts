@@ -15,11 +15,13 @@ import {
 } from "../../../core/src/code/authoring-contracts";
 import { readCodeCheckLimits } from "../../../core/src/code/runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
+import { mailCapabilities } from "../../../mail/src/capabilities";
 import { capabilityHash } from "../_internal/capability-schemas";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CloudCliContext } from "../cli";
 import { type CodeCheckHost, checkCode } from "./checker";
 import { CODE_CHECK_LIMITS, type CodeCheckRequest, CodeVersionManifestSchema } from "./checker-contract";
+import { fileImportManifest } from "./file-ref.test-fixture";
 import { generateCodeSdk } from "./generator";
 import { validateCodePage } from "./page-contract";
 import { sdkFixture } from "./sdk.test-fixture";
@@ -215,10 +217,9 @@ test("core.ai.decide is AI in the generated SDK and mail triage checks category 
   const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];
   const sdk = generateCodeSdk(manifests, { mode: "code_run" });
   const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
-  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
+  // The Code authoring skill's own examples are checked by its examples test in packages/assistant.
   const snippet = (text: string) => text.split("<!-- ai1-mail-triage -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
   const source = snippet(docs);
-  expect(snippet(skill)).toBe(source);
   const checked = await check(source, {
     sdk,
     aiOperations: sdk.manifest.operations.filter((op) => op.capability.startsWith("core.ai.")).map((op) => op.capability),
@@ -597,10 +598,7 @@ test("accepts dynamic resource targets and records their type as non-binding rev
   expect(result.permissions).toContainEqual(expect.objectContaining({ target: { type: "work-shop.workshop", id: null } }));
 });
 
-test.each([
-  ["outside.change", "code_code_false"],
-  ["stock.export", "code_stream"],
-])("rejects omitted operation %s", async (method, code) => {
+test.each([["outside.change", "code_code_false"]])("rejects omitted operation %s", async (method, code) => {
   const result = await check(schedule(`await owner.${method}({});`));
   expect(result).toMatchObject({ ok: false, diagnostics: expect.arrayContaining([expect.objectContaining({ code })]) });
 });
@@ -962,12 +960,10 @@ app.get("/", c => c.page(
   });
   for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
 }, 30000);
-test("the page example in the docs and the Code authoring skill checks and builds a valid page", async () => {
+test("the page example in the docs checks and builds a valid page", async () => {
   const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
-  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
   const snippet = (text: string) => text.split("<!-- code-page-example -->")[1]!.split("```tsx\n")[1]!.split("```")[0]!.trim();
   const source = snippet(docs);
-  expect(snippet(skill)).toBe(source);
   const result = await checkCode(
     { ...base, entry: "code.tsx", limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 }, files: { "code.tsx": source } },
     host,
@@ -980,6 +976,74 @@ test("the page example in the docs and the Code authoring skill checks and build
   );
   expect(validateCodePage(response.tree, "c_fixture").children.map((node) => node.kind)).toEqual(["Stats", "Section"]);
 }, 30000);
+test("the invoice template is identical in skill and Fibel, checks against the live Mail SDK and passes FileRefs", async () => {
+  const sources = await Promise.all(
+    [
+      "../../../../docs-site/docs/en/platform/code-sdk.md",
+      "../../../../docs-site/docs/en/platform/capabilities.md",
+      "../../../assistant/src/skills/code-authoring/templates/mail-invoices.md",
+    ].map((path) => Bun.file(resolve(import.meta.dir, path)).text()),
+  );
+  const snippet = (text: string) => text.split("<!-- code-file-example -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
+  const source = snippet(sources[0]!);
+  for (const text of sources) expect(snippet(text)).toBe(source);
+  const mail = compileCapabilityManifest("mail", mailCapabilities);
+  const sdk = generateCodeSdk([mail, fileImportManifest()], {
+    mode: "resource",
+    owner: { kind: "resource", ref: { type: "mail.mailbox", id: "Mb4g00" } },
+  });
+  const result = await checkCode(
+    { ...base, sdk, files: { "code.ts": source }, entry: "code.ts", limits: { ...CODE_CHECK_LIMITS, checkMs: 30_000 } },
+    host,
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const calls: CodeSdkInvocation[] = [];
+  const file = { id: "fake-file-ref", name: "invoice.pdf", mediaType: "application/pdf", size: 5_000_000 };
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  await module["event:mail.message.received@1"](
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      type: "mail.message.received",
+      version: 1,
+      source: "mail",
+      time: "2026-11-07T12:00:00.000Z",
+      subject: { type: "mail.message", id: "Ms4g00" },
+      place: { type: "mail.mailbox", id: "Mb4g00" },
+      data: { receiptId: "22222222-2222-4222-8222-222222222222" },
+    },
+    {
+      call: async (_operation: string, input: CodeSdkInvocation) => {
+        calls.push(input);
+        if (input.call.capability === "mail.message.read")
+          return {
+            hydrationStatus: "complete",
+            attachmentsTruncated: false,
+            conversationId: "Cv4g00",
+            attachments: [{ id: "At4g00", contentType: "application/pdf" }],
+          };
+        if (input.call.capability === "mail.attachment.content.read") return file;
+        if (input.call.capability === "imports.import") return { imported: true };
+        if (input.call.capability === "mail.conversation.read") return { collaboration: { revision: 4 } };
+        return {};
+      },
+    },
+  );
+  expect(calls.map((input) => input.call.capability)).toEqual([
+    "mail.message.read",
+    "mail.attachment.content.read",
+    "imports.import",
+    "mail.conversation.read",
+    "mail.conversation.tag.update",
+  ]);
+  expect(calls[2]).toMatchObject({
+    call: { input: { file } },
+    metadata: { idempotencyKey: "invoice:22222222-2222-4222-8222-222222222222:At4g00" },
+  });
+  expect(calls[4]).toMatchObject({
+    call: { target: { type: "mail.mailbox", id: "Mb4g00" }, input: { expectedRevision: 4, addTagIds: ["Tag123"] } },
+  });
+}, 30_000);
+
 test("each building block types its props: a wrong prop, value or child text is a type error", async () => {
   // Each block sits in its right place, so only its own props can be wrong.
   const form = (field: string) => `<Form title="F" action="/x" submit="Go">${field}</Form>`;

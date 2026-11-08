@@ -810,3 +810,9 @@ Personal disabled-Skill preferences still apply. Linking and unlinking require
 Manage on both resources. A link stays intact if its creator later loses access;
 unlinking or losing membership removes only inherited access. Direct grants
 remain. The same persistence rule applies to `code project-link` for Studio Apps.
+
+`cld assistant tasks export --json` preserves all your routine definitions,
+including prompts, schedules, timezones, grants, mandate summaries, state and
+target chats. Cloud administrators use `--all` to export the installation.
+Exports grant no access. JSON and text output are one JSON document; JSONL
+is one API page per line. Export before an upgrade removes routines.

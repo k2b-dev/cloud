@@ -1,8 +1,8 @@
 import { Button, Placeholder, prompts } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import { artifactMessages } from "../messages";
-import type { RuntimeContext } from "../runtime/cloud";
-import type { RuntimeServices } from "../runtime/services";
+import { artifactMessages } from "../../chat-code/messages";
+import type { RuntimeContext } from "../../chat-code/runtime/cloud";
+import type { RuntimeServices } from "../../chat-code/runtime/services";
 import type { AppFrameAssets } from "./assets";
 import type { AppFiles } from "./compose";
 import { type Confirm, type Mount, type MountEvent, mountApp } from "./host";

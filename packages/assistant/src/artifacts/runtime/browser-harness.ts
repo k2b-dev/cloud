@@ -1,6 +1,6 @@
 import { createRoot } from "solid-js";
+import { CloudError } from "../../chat-code/runtime/errors";
 import { createArtifactAgentRuntime } from "../agent-runtime";
-import { CloudError } from "./errors";
 import { startArtifactRun } from "./host";
 import { createArtifactSession, type RunSnapshot } from "./session";
 

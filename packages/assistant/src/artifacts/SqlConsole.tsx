@@ -3,9 +3,9 @@ import { Button, DataTable, NoticeCard, Placeholder, Tabs, useLocale } from "@k2
 import Papa from "papaparse";
 import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
+import { artifactMessages } from "../chat-code/messages";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
-import { artifactMessages } from "./messages";
 import { SourceEditor } from "./SourceEditor";
 
 const Rows = z.object({

@@ -1,5 +1,5 @@
 import { generateCodeSdk } from "@k2b/cloud/code";
-import { compileRunnerScript } from "../../assistant/src/artifacts/runtime/runner-compile";
+import { compileRunnerScript } from "../../assistant/src/chat-code/runtime/runner-compile";
 
 const compiled = await compileRunnerScript(
   {
