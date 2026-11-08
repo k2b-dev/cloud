@@ -5,10 +5,12 @@ import { APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes } from "../
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
+import { assertAssistantPlaceSkills } from "../contracts/assistant-place";
 import { CapabilityInvocationBodySchema } from "../contracts/capabilities";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
+import { sql } from "../runtime/clients";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
@@ -788,6 +790,16 @@ export const defineApp = <
       // flag so the registry never points at a URL that 404s.
       const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
       const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities, meta.routes) : undefined;
+      if (compiledCapabilities) {
+        const requiredSkills = new Set(compiledCapabilities.manifest.types.flatMap((type) => type.assistant?.skills ?? []));
+        const available = new Set(appSkills?.map((skill) => skill.name) ?? []);
+        for (const name of requiredSkills) {
+          if (available.has(name)) continue;
+          const rows = await sql`SELECT 1 FROM ai.app_skills WHERE name = ${name} AND available = true AND conflict IS NULL LIMIT 1`;
+          if (rows.length) available.add(name);
+        }
+        assertAssistantPlaceSkills(compiledCapabilities.manifest, available);
+      }
       if (startOpts.capabilities) bindAppEvents(meta.id, startOpts.capabilities, compiledCapabilities);
       const compiledHelp = startOpts.help
         ? compileHelp({
