@@ -279,6 +279,7 @@ export default function Workspace(props: {
     timeZone: props.timeZone ?? "UTC",
     executionHref: historyExecutionHref,
     describePlace: placeDescriber(snapshot().bases.items, b(), locale()),
+    onNavigate: (event) => onNavigate(event),
   }));
   /** Opens where a history entry's item is now, after the server checked identity and rights again. */
   let historyTargetRequest: AbortController | undefined;
