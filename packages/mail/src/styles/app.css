@@ -1518,27 +1518,25 @@
    newest message that sticks to the top of the reader while the messages
    scroll. It replaces the reply box and the phone's bottom bar. */
 .k2b-ui .mail-reader-reply-pill {
-  position: sticky;
-  top: 0.5rem;
-  z-index: 5;
-  display: flex;
-  margin: 0.25rem 0 0.875rem;
-  pointer-events: none;
+  display: contents;
 }
-/* The strip spans the reader's width, so the toolbar measures the reader: as it
-   narrows, Reply all and Forward drop their words, then actions move into More.
-   The pill never reaches past the reader. */
+/* The floating toolbar with `edge="top"` sticks itself; its strip spans the
+   reading column, so the toolbar measures that row: as it narrows, labels give
+   way to icons, then actions move into More. The pill never reaches past the row. */
 .k2b-ui .mail-reader-reply-pill > .k2b-toolbar-float {
-  position: static;
-  flex: 1 1 auto;
+  z-index: 5;
   min-width: 0;
-  margin: 0;
-  padding: 0;
+  margin-block-end: 0.875rem;
+  padding: 0.25rem 0;
   justify-content: flex-start;
 }
 .k2b-ui .mail-reader-reply-pill .mail-reader-pill-reply {
+  position: relative;
   flex: none;
   padding-inline: 0.75rem;
+}
+.k2b-ui .mail-reader-reply-pill .mail-reader-draft-dot {
+  display: block;
 }
 
 /* From tablets on, the actions take their own row above the subject, which then has the toolbar's full width to wrap. */

@@ -17171,6 +17171,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
   flex-shrink: 0;
 }
+/* `edge="top"`: the strip sticks to the top of its column instead, in its
+   place in the flow, such as above the newest message of a conversation. */
+.k2b-ui .k2b-toolbar-float[data-edge="top"] {
+  inset-block: 0 auto;
+  margin-block-start: 0;
+}
 /* ToolbarDock: one floating row for several pills, the first at the start
    edge and the last at the end edge. The row keeps its place in the flow, so
    the end of the content always stays reachable above it. */

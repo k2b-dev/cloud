@@ -12,8 +12,10 @@ export type ToolbarProps = {
   label: string;
   orientation?: "horizontal" | "vertical";
   wrap?: boolean;
-  /** `floating` floats the toolbar at the bottom of its column. Defaults to `inline`. */
+  /** `floating` floats the toolbar at an edge of its column. Defaults to `inline`. */
   variant?: "inline" | "floating";
+  /** The edge a floating toolbar sticks to while its column scrolls. Defaults to `bottom`. */
+  edge?: "top" | "bottom";
   class?: string;
 };
 
@@ -483,7 +485,7 @@ export const Toolbar = Object.assign(
       </ToolbarOrientationContext.Provider>
     );
     return floating ? (
-      <div ref={strip} class="k2b-toolbar-float">
+      <div ref={strip} class="k2b-toolbar-float" data-edge={props.edge === "top" ? "top" : undefined}>
         {content}
       </div>
     ) : (

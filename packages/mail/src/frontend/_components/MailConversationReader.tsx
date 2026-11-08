@@ -99,13 +99,15 @@ type DraftLookup = {
 /** The conversation details Detail in the mailbox workspace. */
 export const MAIL_CONTEXT_DETAIL_ID = "mail-context";
 
-/** From this many messages on, the reader shows the newest few and folds the rest behind one button. */
 /**
- * The reply pill's actions after Reply, in order. The contents are still being decided (an option is Done and Assign,
- * with Archive under "…"); change only this list.
+ * The reply pill's actions after Reply, in order (Mail concept v4, F10 c): Reply all and Forward, then Done and, in a
+ * mailbox where people can be assigned, Assign. Archive stays in the head's "…". Change only this list.
  */
-const REPLY_PILL_ACTIONS = ["reply_all", "forward", "archive", "done"] as const;
+const REPLY_PILL_ACTIONS = ["reply_all", "forward", "done", "assign"] as const;
 type ReplyPillActionId = (typeof REPLY_PILL_ACTIONS)[number];
+/** The pill's actions leave the head's personal toolbar, so nothing appears twice (F12). */
+const PILL_TOOLBAR_ACTIONS = new Set<string>(["reply", "reply_all", "forward", "done"]);
+/** From this many messages on, the reader shows the newest few and folds the rest behind one button. */
 const MAIL_READER_COLLAPSE_FROM = 5;
 const MAIL_READER_NEWEST_SHOWN = 3;
 
@@ -1268,16 +1270,12 @@ export default function MailConversationReader(props: {
       .filter((section) => section.actions.length > 0),
   );
 
-  const respondToolbarActions = createMemo(() =>
-    (["reply", "reply_all", "forward"] as const).flatMap((id) => {
-      if (!props.toolbarActions.includes(id)) return [];
-      const action = directToolbarAction(id);
-      return action ? [action] : [];
-    }),
-  );
+  // The head keeps the person's own toolbar without the pill's actions (F12): Reply, Reply all, Forward, and Done live
+  // in the pill above the newest message.
   const otherToolbarActions = createMemo(() =>
     directToolbarSections()
-      .filter((section) => section.id !== "respond")
+      .map((section) => ({ ...section, actions: section.actions.filter((action) => !PILL_TOOLBAR_ACTIONS.has(action.id)) }))
+      .filter((section) => section.id !== "respond" && section.actions.length > 0)
       .flatMap((section, index) =>
         section.actions.map((action, position) => ({ action, section: section.id, first: index > 0 && position === 0 })),
       ),
@@ -1305,7 +1303,8 @@ export default function MailConversationReader(props: {
 
   /**
    * The reply pill's actions after Reply, in the order of `REPLY_PILL_ACTIONS`; each runs an existing reader action.
-   * Larger priorities move into More first. Respond actions show their label while there is room.
+   * Every action shows its label while the row has room; then labels give way to icons, and only then do actions move
+   * into More: Assign first (3), then Forward and Reply all (2, the later first), Done last (1). Reply always stays.
    */
   const pillActions = createMemo(() => {
     type PillAction = {
@@ -1324,7 +1323,7 @@ export default function MailConversationReader(props: {
           id,
           label: t().replyAll,
           icon: "ti ti-arrow-back-up-double",
-          priority: 3,
+          priority: 2,
           text: true,
           disabled: composerBusy(),
           run: () => respondToLatest("reply_all"),
@@ -1334,16 +1333,11 @@ export default function MailConversationReader(props: {
           id,
           label: t().forward,
           icon: "ti ti-arrow-forward-up",
-          priority: 3,
+          priority: 2,
           text: true,
           disabled: composerBusy(),
           run: () => respondToLatest("forward"),
         });
-      if (id === "archive" && props.canWrite) {
-        const archive = directToolbarAction("archive");
-        if (archive)
-          actions.push({ id, label: archive.label, icon: archive.icon, priority: 2, disabled: archive.disabled, run: archive.action });
-      }
       if (id === "done" && props.canWrite && props.workStatus) {
         const done = props.workStatus === "done";
         actions.push({
@@ -1351,10 +1345,21 @@ export default function MailConversationReader(props: {
           label: done ? t().reopen : t().markDone,
           icon: done ? "ti ti-arrow-back-up" : "ti ti-check",
           priority: 1,
+          text: true,
           disabled: props.completionPending,
           run: toggleCompletion,
         });
       }
+      // Assign only where people can be assigned; it opens the person picker with "Assign to me" on top.
+      if (id === "assign" && props.canWrite && props.assignment)
+        actions.push({
+          id,
+          label: t().assign,
+          icon: "ti ti-user-plus",
+          priority: 3,
+          text: true,
+          run: () => void props.onAssignConversation(),
+        });
     }
     // A separator stands where the respond actions end and the conversation's own actions begin.
     const responds = (id: ReplyPillActionId) => id === "reply_all" || id === "forward";
@@ -1504,37 +1509,18 @@ export default function MailConversationReader(props: {
               <i class="ti ti-arrow-left" aria-hidden="true" />
             </IconButtonLink>
             <div class="mail-reader-controls">
-              {/* The title has priority; actions that no longer fit remain in the overflow menu. */}
-              <For each={respondToolbarActions()}>
-                {(action) => (
-                  <>
-                    <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
-                      <span class="mail-reader-draft-label" data-mail-draft-label>
-                        {t().draftAvailable}
-                      </span>
-                    </Show>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={action.id === "reply" ? "subtle" : "ghost"}
-                      class="mail-reader-respond"
-                      data-mail-toolbar-action={action.id}
-                      aria-label={action.label}
-                      tooltip={action.label}
-                      disabled={action.disabled}
-                      onClick={action.action}
-                    >
-                      <i class={action.icon} aria-hidden="true" />
-                      <span class="mail-reader-respond-label" aria-hidden="true">
-                        {action.id === "reply" ? t().reply : action.label}
-                      </span>
-                      <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
-                        <span class="mail-reader-draft-dot" data-mail-draft-indicator aria-hidden="true" />
-                      </Show>
-                    </Button>
-                  </>
+              {/* The title has priority; actions that no longer fit remain in the overflow menu. Who is responsible is
+                  a status chip, not a button: Assign lives in the pill (F12). */}
+              <Show when={props.assignment}>
+                {(assignment) => (
+                  <StatusBadge
+                    tone="neutral"
+                    icon="ti ti-user"
+                    class="mail-reader-assignees"
+                    label={[...(assignment().assigned ? [t().you] : []), ...assignment().others].join(", ") || t().unassigned}
+                  />
                 )}
-              </For>
+              </Show>
               {/* The person's other toolbar actions, as icons. When the reader gets narrow, the last ones leave the bar first;
               "…" always lists every action, so each one stays reachable by keyboard. */}
               <div class="mail-reader-toolbar-actions">
@@ -1696,18 +1682,24 @@ export default function MailConversationReader(props: {
                 <Show when={canRespondToLatest() || pillActions().length > 0}>
                   <div class="mail-reader-reply-pill" data-mail-reply-pill>
                     {/* As the reader narrows, labels give way to icons (Reply keeps its word), then actions move into More. */}
-                    <Toolbar label={t().conversationActions} variant="floating">
+                    <Toolbar label={t().conversationActions} variant="floating" edge="top">
                       <Show when={canRespondToLatest()}>
+                        {/* A saved draft shows as a dot on Reply, and Reply's name says so. */}
                         <Button
                           type="button"
                           variant="ghost"
                           class="mail-reader-pill-reply"
+                          data-mail-toolbar-action="reply"
+                          aria-label={props.conversationDrafts.length > 0 ? t().replyDraftAvailable : t().reply}
                           title={t().replyTo({ name: latestReplyNames() })}
                           disabled={composerBusy()}
                           onClick={() => respondToLatest("reply")}
                         >
                           <i class="ti ti-arrow-back-up" aria-hidden="true" />
                           {t().reply}
+                          <Show when={props.conversationDrafts.length > 0}>
+                            <span class="mail-reader-draft-dot" data-mail-draft-indicator aria-hidden="true" />
+                          </Show>
                         </Button>
                       </Show>
                       <For each={pillActions()}>

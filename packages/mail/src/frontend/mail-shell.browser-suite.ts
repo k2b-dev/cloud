@@ -2697,17 +2697,19 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   titleTop: box("[data-mail-reader-heading]").top,
                   titleLeft: box("[data-mail-reader-heading]").left,
                   controlsLeft: box(".mail-reader-controls").left,
-                  named: ["reply_all", "forward", "done", "spam", "trash"].map((id) => label(id)?.getClientRects().length ?? 0),
-                  doneName: label("done")?.textContent,
+                  named: ["spam", "trash"].map((id) => label(id)?.getClientRects().length ?? 0),
+                  // The pill's actions live above the newest message, never in the head too (F12).
+                  pillActionsInHead: ["reply", "reply_all", "forward", "done"].filter((id) =>
+                    element.querySelector(`[data-mail-toolbar-action="${id}"]`),
+                  ),
                 };
               });
               expect(geometry.controlsBottom).toBeLessThanOrEqual(geometry.titleTop + 0.5);
               expect(Math.abs(geometry.controlsLeft - geometry.titleLeft)).toBeLessThanOrEqual(8);
               expect(geometry.named.map((count) => count > 0)).toEqual(geometry.named.map(() => labels));
+              expect(geometry.pillActionsInHead).toEqual([]);
               if (labels) {
-                expect(geometry.doneName).toBe("Done");
                 // The short name is part of the accessible name, which still names the whole action.
-                expect(await toolbar.locator('[data-mail-toolbar-action="done"]').getAttribute("aria-label")).toBe("Mark as done");
                 expect(await toolbar.locator('[data-mail-toolbar-action="trash"]').getAttribute("aria-label")).toBe("Move to Trash");
               }
               // The named bar still fits the reader.
@@ -2915,21 +2917,25 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           });
 
         for (const item of [
-          // S3: a bar with room names its replies; a narrower one shows icons.
-          { path: widePath(), width: 2560, height: 1080, labels: true, shown: true },
-          { path: widePath(), width: 1920, height: 1080, labels: false, shown: true },
-          { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194, labels: false, shown: false },
+          { path: widePath(), width: 2560, height: 1080 },
+          { path: widePath(), width: 1920, height: 1080 },
+          { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194 },
         ] as const)
-          test(`reader toolbar at ${item.width}: optional replies are ${item.labels ? "named" : "icons"} and move into overflow below 576 px`, async () => {
+          test(`reader at ${item.width}: Reply all and Forward live in the pill, not the head, and stay in …`, async () => {
             const page = await open(item.path, item.width, item.height);
             try {
               const label = `${item.width}`;
-              for (const id of ["reply_all", "forward"]) {
-                const button = page.locator(`.mail-reader-toolbar [data-mail-toolbar-action="${id}"]`);
-                const readerWidth = await page.locator(".mail-reader").evaluate((element) => element.getBoundingClientRect().width);
-                expect(await button.isVisible(), `${label}: ${id} shown (reader ${readerWidth})`).toBe(item.shown);
-                if (item.shown)
-                  expect(await button.locator(".mail-reader-respond-label").isVisible(), `${label}: ${id} label`).toBe(item.labels);
+              await page.waitForFunction(
+                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
+              );
+              for (const name of ["Reply all", "Forward"]) {
+                expect(
+                  await page.locator(".mail-reader-toolbar").getByRole("button", { name, exact: true }).count(),
+                  `${label}: ${name} in head`,
+                ).toBe(0);
+                const inPill = await page.locator("[data-mail-reply-pill]").getByRole("button", { name, exact: true }).isVisible();
+                const inPillMore = await page.locator("[data-mail-reply-pill]").getByRole("button", { name: "More actions" }).isVisible();
+                expect(inPill || inPillMore, `${label}: ${name} reachable in the pill`).toBe(true);
               }
               expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible(), `${label}: reader Details`).toBe(
                 false,
@@ -2938,14 +2944,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               // Nothing in the bar spills out of the reader.
               const bar = await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth);
               expect(bar, `${label}: toolbar overflow`).toBeLessThanOrEqual(0);
-              if (!item.shown) {
-                const more = page.getByRole("button", { name: "More conversation actions" });
-                await more.focus();
-                await page.keyboard.press("Enter");
-                for (const name of ["Reply all", "Forward"])
-                  expect(await page.getByRole("menuitem", { name }).count(), `${label}: ${name} in …`).toBe(1);
-                await page.keyboard.press("Escape");
-              }
+              // The head's "…" still lists every reply, so the keyboard path stays.
+              const more = page.getByRole("button", { name: "More conversation actions" });
+              await more.focus();
+              await page.keyboard.press("Enter");
+              for (const name of ["Reply all", "Forward"])
+                expect(await page.getByRole("menuitem", { name }).count(), `${label}: ${name} in …`).toBe(1);
+              await page.keyboard.press("Escape");
             } finally {
               await close(page);
             }
@@ -3030,7 +3035,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   .filter((element) => element.getClientRects().length > 0)
                   .map((element) => element.getAttribute("data-mail-toolbar-action")),
               );
-            expect(visible[0]).toBe("reply");
+            // Reply and Forward are the pill's; the head keeps the person's other actions (F12).
+            expect(visible).not.toContain("reply");
+            expect(visible).not.toContain("forward");
             expect(visible.every((id) => toolbar.split(",").includes(id!))).toBe(true);
             expect(
               await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth),
@@ -3481,6 +3488,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   outside,
                   reply: controls.find((button) => button.classList.contains("mail-reader-pill-reply"))?.textContent?.trim(),
                   labels,
+                  labelled: pill.querySelectorAll(".k2b-toolbar__action[data-text]:not([data-overflow])").length,
                   compact: pill.hasAttribute("data-compact"),
                   more: controls.some((button) => button.closest(".k2b-toolbar__more")),
                 };
@@ -3491,7 +3499,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(fit.reply, `${width} Reply`).toBe("Reply");
               // Labels show only while there is room; a compact pill shows none, and More comes only after labels went.
               if (fit.compact) expect(fit.labels, `${width} labels`).toBe(0);
-              else expect(fit.labels, `${width} labels`).toBe(2);
+              else expect(fit.labels, `${width} labels`).toBe(fit.labelled);
               if (fit.more) expect(fit.compact, `${width} More after labels`).toBe(true);
               // The widest reader has room for every label; the narrowest phone has not.
               if (width === 1920) expect(fit.compact, "1920 shows the labels").toBe(false);
@@ -3502,7 +3510,53 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("phone: the reply pill above the newest message offers Reply, Reply all, Forward, Archive and Done by touch and keyboard", async () => {
+        test("a team mailbox's pill row from 760 to 240 px: never clipped, Reply stays, More fills by priority", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&team=1`, 1440, 900);
+          try {
+            const pending = () =>
+              page.waitForFunction(
+                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
+              );
+            await pending();
+            const order = ["Assign", "Forward", "Reply all", "Mark as done"];
+            for (let width = 760; width >= 240; width -= 10) {
+              await page.evaluate((width) => {
+                document.querySelector<HTMLElement>("[data-mail-reading-column]")!.style.width = `${width}px`;
+              }, width);
+              await pending();
+              await page.evaluate(
+                () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+              );
+              const state = await page.evaluate(() => {
+                const strip = document.querySelector<HTMLElement>("[data-mail-reply-pill] .k2b-toolbar-float")!;
+                const pill = strip.querySelector<HTMLElement>(".k2b-toolbar")!;
+                const row = strip.getBoundingClientRect();
+                const box = pill.getBoundingClientRect();
+                const present = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-toolbar__action")).map((action) => ({
+                  name: action.getAttribute("aria-label")!,
+                  moved: action.hasAttribute("data-overflow"),
+                }));
+                return {
+                  inside: box.left >= row.left - 0.5 && box.right <= row.right + 0.5,
+                  fits: pill.scrollWidth <= Math.ceil(row.width) + 0.5,
+                  reply: pill.querySelector(".mail-reader-pill-reply")?.getClientRects().length ?? 0,
+                  present: present.map((action) => action.name),
+                  moved: present.filter((action) => action.moved).map((action) => action.name),
+                };
+              });
+              expect(state.inside, `${width} inside`).toBe(true);
+              expect(state.fits, `${width} fits`).toBe(true);
+              expect(state.reply, `${width} Reply`).toBe(1);
+              // What moved into More is always the first actions of the priority order that this pill has.
+              const expected = order.filter((name) => state.present.includes(name)).slice(0, state.moved.length);
+              expect(new Set(state.moved), `${width} More order`).toEqual(new Set(expected));
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("phone: the reply pill above the newest message offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
             const bar = page.locator("[data-mail-reply-pill] .k2b-toolbar");
@@ -3528,9 +3582,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   return rows.map((row) => row.trim());
                 })()
               : [];
-            expect(new Set([...names.filter((name) => name !== "More actions"), ...inMore])).toEqual(
-              new Set(["Reply", "Reply all", "Forward", "Archive", "Mark as done"]),
-            );
+            // F10 c: Reply, Reply all, Forward | Done, and Assign only where people can be assigned; Archive is in the head's ….
+            const reachable = new Set([...names.filter((name) => name !== "More actions"), ...inMore]);
+            for (const name of ["Reply", "Reply all", "Forward", "Mark as done"]) expect(reachable.has(name), name).toBe(true);
+            expect([...reachable].every((name) => ["Reply", "Reply all", "Forward", "Mark as done", "Assign"].includes(name))).toBe(true);
             // The pill sits inside the reader, above the newest message, and never below the screen.
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
             const strip = (await bar.boundingBox())!;
@@ -3892,13 +3947,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("the reader's bar marks done where Archive was; Archive stays in …", async () => {
+        test("the pill marks done; Archive stays in the head's …", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`);
           try {
             const toolbar = page.locator(".mail-reader-toolbar");
             expect(await toolbar.locator('[data-mail-toolbar-action="archive"]').count()).toBe(0);
-            const done = toolbar.locator('[data-mail-toolbar-action="done"]');
-            expect(await done.getAttribute("aria-label")).toBe("Mark as done");
+            expect(await toolbar.locator('[data-mail-toolbar-action="done"]').count()).toBe(0);
+            const done = page.locator("[data-mail-reply-pill]").getByRole("button", { name: "Mark as done", exact: true });
+            expect(await done.isVisible()).toBe(true);
             await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
               route.fulfill({
                 json: { completion: "done", results: [{ conversationId: "Conv01", status: "ok", workStatus: "done", revision: 2 }] },
@@ -3920,12 +3976,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("a done conversation offers Reopen in the bar and in its menus", async () => {
+        test("a done conversation offers Reopen in the pill and in its menus", async () => {
           const page = await open(`${boxPath}?conversation=Conv01&work=done&locale=de`);
           try {
-            expect(await page.locator('.mail-reader-toolbar [data-mail-toolbar-action="done"]').getAttribute("aria-label")).toBe(
-              "Wieder öffnen",
-            );
+            expect(
+              await page.locator("[data-mail-reply-pill]").getByRole("button", { name: "Wieder öffnen", exact: true }).isVisible(),
+            ).toBe(true);
             await page.locator("[data-mail-reader-heading]").click({ button: "right" });
             const items = await menuEntries(page, contextMenu);
             expect(items).toContain("Wieder öffnen");
