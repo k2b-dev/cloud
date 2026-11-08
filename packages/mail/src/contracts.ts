@@ -3677,6 +3677,18 @@ export type ComposeSafetyReview = z.infer<typeof composeSafetyReviewSchema>;
 export const draftSendReviewSchema = composeSafetyReviewSchema.extend({ contentHash: z.string().regex(/^[a-f0-9]{64}$/) });
 export type DraftSendReview = z.infer<typeof draftSendReviewSchema>;
 
+export const composeSignatureInputSchema = z
+  .object({
+    senderIdentityId: ResourceShortIdSchema,
+    signatureTemplateId: ResourceShortIdSchema.nullable(),
+    format: mailComposeFormatSchema,
+  })
+  .strict();
+export type ComposeSignatureInput = z.infer<typeof composeSignatureInputSchema>;
+
+export const composeSignatureSchema = z.object({ html: z.string().nullable(), text: z.string() }).strict();
+export type ComposeSignature = z.infer<typeof composeSignatureSchema>;
+
 export const composePreviewInputSchema = z
   .object({
     draft: draftEditableContentInputSchema,

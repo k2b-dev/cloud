@@ -1023,3 +1023,13 @@ Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Al
 When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.
 
 If the sending content changes after your check, Mail stops and queues no message. Open the draft, check it again and approve a new attempt. A signature that changes with the current time may need editing first. Mail does not retry or approve the new content automatically.
+
+## Compose signature fragments
+
+`POST /api/mail/mailboxes/:mailboxId/compose-signature` takes
+`{ senderIdentityId, signatureTemplateId, format }` and returns `{ html, text }`.
+It requires mailbox write access and a verified sender. Private signatures are
+available only to their owner. Use `null` for no signature. The filled signature
+uses the same template rules and render budget as sending, with sanitized
+Markdown HTML and plain text. It has no mailbox CSS or images; the mailbox
+logo becomes its alt text. With `format: "plain"`, `html` is `null`.

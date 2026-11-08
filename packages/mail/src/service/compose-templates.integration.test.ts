@@ -20,6 +20,7 @@ import {
   getMailboxComposeStyle,
   listComposeTemplates,
   previewComposeDraft,
+  previewComposeSignature,
   removeMailboxComposeLogo,
   renderComposeDraft,
   renderComposeSnippet,
@@ -164,6 +165,32 @@ suite("mail compose templates", () => {
     }
     if (userIds.length) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+    }
+  });
+
+  test("signature fragments require write access and never expose another owner's private template", async () => {
+    const created = await createComposeTemplate({
+      context: owner,
+      mailboxId,
+      input: {
+        kind: "signature",
+        scope: "private",
+        name: "Fragment test",
+        body: "**{{ actor.display_name }}**",
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const input = { senderIdentityId, signatureTemplateId: created.data.id, format: "markdown" as const };
+    expect(await previewComposeSignature({ context: owner, mailboxId, input })).toMatchObject({ ok: true, data: { text: "Ada Owner" } });
+    expect(await previewComposeSignature({ context: collaborator, mailboxId, input })).toMatchObject({ ok: false });
+    const readGrant = await updateMailboxAccess({ context: owner, mailboxId, accessId: accessIds[0]!, permission: "read" });
+    if (!readGrant.ok) throw new Error(readGrant.error.message);
+    try {
+      expect(
+        await previewComposeSignature({ context: collaborator, mailboxId, input: { ...input, signatureTemplateId: null } }),
+      ).toMatchObject({ ok: false, error: { status: 403 } });
+    } finally {
+      await updateMailboxAccess({ context: owner, mailboxId, accessId: accessIds[0]!, permission: "write" });
     }
   });
 

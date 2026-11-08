@@ -4,7 +4,7 @@ import { oauthTokens } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
-import { commands, drafts, mailboxAccess, publicResources } from "../service";
+import { commands, composeTemplates, drafts, mailboxAccess, publicResources } from "../service";
 import app from ".";
 
 const user = {
@@ -33,6 +33,30 @@ afterEach(() => mock.restore());
 const suite = databaseSuite();
 
 suite("Mail draft public boundary", () => {
+  test("signature fragment resolves public IDs and returns its browser contract", async () => {
+    const mailboxId = "22222222-2222-4222-8222-222222222222";
+    const senderIdentityId = "33333333-3333-4333-8333-333333333333";
+    const signatureTemplateId = "44444444-4444-4444-8444-444444444444";
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
+    spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
+    spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async (table) =>
+      table === "senderIdentities" ? senderIdentityId : signatureTemplateId,
+    );
+    const preview = spyOn(composeTemplates, "previewComposeSignature").mockResolvedValue(ok({ html: "<p>Ada</p>", text: "Ada" }));
+    const response = await app.request("/mailboxes/mbx123/compose-signature", {
+      method: "POST",
+      headers: { authorization: "Bearer signature-test", "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+      body: JSON.stringify({ senderIdentityId: "snd123", signatureTemplateId: "sig123", format: "markdown" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ html: "<p>Ada</p>", text: "Ada" });
+    expect(preview).toHaveBeenCalledWith(
+      expect.objectContaining({ mailboxId, input: { senderIdentityId, signatureTemplateId, format: "markdown" } }),
+    );
+  });
+
   test("resolves public route IDs once before listing conversation drafts", async () => {
     const mailboxId = "22222222-2222-4222-8222-222222222222";
     const conversationId = "33333333-3333-4333-8333-333333333333";
