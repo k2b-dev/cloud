@@ -126,7 +126,14 @@ export default ssr<AuthContext>(async (c) => {
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
     panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
   ]);
-  const initialPlace = panelScope && placeState ? readAssistantPlace(panelScope, placeState) : null;
+  // An app that does not answer right now leaves the place to the panel, which shows "Try again" in the bar.
+  const initialPlace = (() => {
+    try {
+      return panelScope && placeState ? readAssistantPlace(panelScope, placeState) : null;
+    } catch {
+      return null;
+    }
+  })();
   // The panel at a place opens on the person's chat there, unless the address names another one.
   const placeConversationId =
     initialPlace && initialPlace.state !== "none" && !approvalsOpen && !codeOpen ? initialPlace.conversationId : null;

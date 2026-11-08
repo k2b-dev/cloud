@@ -118,6 +118,10 @@ describe("Gustav at a place", () => {
       readAssistantPlace(ref("u_marta"), { state: "unavailable", ref: ref("u_marta"), title: "Marta Beispiel", conversationId: "Pmarta" }),
     ).toMatchObject({ state: "unavailable", title: "Marta Beispiel", conversationId: "Pmarta" });
     expect(() => readAssistantPlace(ref("u_marta"), { state: "available", ref: ref("u_marta") })).toThrow();
+    // An app that did not answer is a failed load, not lost access.
+    expect(() =>
+      readAssistantPlace(ref("u_marta"), { state: "unavailable", ref: ref("u_marta"), title: null, conversationId: null, retry: true }),
+    ).toThrow();
   });
 
   test("a chat's place and a tool's policy read as the bar shows them", () => {

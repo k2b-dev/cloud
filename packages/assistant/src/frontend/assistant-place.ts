@@ -46,6 +46,7 @@ const PlaceAnswerSchema = z.discriminatedUnion("state", [
     title: z.string().max(200).nullable(),
     app: AppSchema.nullable().optional(),
     conversationId: z.string().nullable(),
+    retry: z.literal(true).optional(),
   }),
   z.object({
     state: z.literal("available"),
@@ -62,7 +63,13 @@ const PlaceAnswerSchema = z.discriminatedUnion("state", [
 /** The server's answer as the panel reads it; `ref` is the place the panel asked for when the answer names none. */
 export const readAssistantPlace = (ref: CloudResourceRef, answer: unknown): AssistantPlaceView => {
   const parsed = PlaceAnswerSchema.parse(answer);
-  if (parsed.state === "available" || parsed.state === "unavailable") return parsed;
+  // The place's app did not answer this time: a failed load with "Try again", not "No access anymore".
+  if (parsed.state === "unavailable" && parsed.retry) throw new Error("The place's app is not reachable right now.");
+  if (parsed.state === "available") return parsed;
+  if (parsed.state === "unavailable") {
+    const { retry: _retry, ...view } = parsed;
+    return view;
+  }
   return { state: "none", ref: { ...ref } };
 };
 
