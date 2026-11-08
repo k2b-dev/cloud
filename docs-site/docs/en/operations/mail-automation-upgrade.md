@@ -16,7 +16,6 @@ Undo/Redo are retired. Automatic replies are removed without replacement,
 including out-of-office replies, office-hours replies, and reference
 acknowledgements. Ordinary Mail sending and reference numbers remain available.
 
-
 ## Export before upgrading
 
 Use the export-capable old release to export each mailbox’s definitions with
@@ -28,6 +27,14 @@ Stop old authoring, activation, incoming admission, timers and backfills. Keep
 replacement Code inactive while old effects drain. Reconcile accepted or
 ambiguous sends using provider evidence. Never bypass an old command’s fence
 or replay an accepted send to make the upgrade proceed.
+
+The cut image refuses startup while legacy commands or sends remain unresolved.
+Finish reconciliation on the export-capable release; an accepted send must never
+be retried to bypass this check. Once retired, the schema marker prevents an old
+Mail image from restarting. Timer registrations are deleted and recorded
+backfills cancelled before ordinary workers start. The migration waits for shared
+workflow transactions; if startup reports a lock timeout, let those transactions
+finish and restart Mail.
 
 Treat this as a coordinated cut, with old Mail workers stopped before the new
 image starts. Do not mix old and new workers during the transition. Keep the
@@ -49,8 +56,12 @@ selection for any gap, and inspect its progress and runs before continuing.
 
 Earlier rule logs remain read-only under **Retired rule history** in the mailbox
 menu. Choose a UTC day and open an entry to inspect its recorded effects and
-decision chain. Undo and Redo are unavailable. Existing run history and source
-names remain evidence; they grant no execution authority.
+decision chain. Earlier runs have a separate, paged read-only list; opening a run
+shows its source, receipt and step evidence. Whole-mailbox read access is
+required for run evidence, which may cover several conversations. Undo and Redo
+are unavailable. Existing run history and source names remain evidence; they grant no execution authority. The existing 30-day
+rule-log retention and shared engine payload expiry still apply. Back up evidence
+before upgrading if the installation requires a longer archive.
 
 Mail commands, drafts, contacts, tags, summaries, reference numbers and provider
 sync continue through their ordinary services. Grids workflows and the public

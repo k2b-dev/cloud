@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-31
+updated: 2026-11-08
 ---
 
 # Configuration reference
@@ -94,7 +94,7 @@ Declared in `packages/mail/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | number | runtime | `20000` | no | Deprecated: bootstraps `mail.workflow_ai_body_max_chars` once; remove after `cld admin settings status --env` succeeds. Maximum Mail body characters loaded for an AI workflow step; the pilot budget rejects larger bodies visibly without truncation and preserves the original for manual inspection. |
+| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | number | runtime | `20000` | no | Deprecated: bootstraps `mail.workflow_ai_body_max_chars` once; remove after `cld admin settings status --env` succeeds. Maximum Mail body characters loaded for an AI summary; larger bodies are rejected visibly without truncation and remain available for manual inspection. |
 
 ## Application: notebooks
 

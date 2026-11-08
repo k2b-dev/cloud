@@ -48,7 +48,7 @@ Start here for everyday mail, mailbox setup, search, and collaboration. Continue
 - Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself. It is the same Cloud ID that **Copy conversation Cloud ID** and **Copy message Cloud ID** copy in Mail, and other Cloud apps accept it as a reference to that conversation or message. `cld mail show` prints it as `Cloud ID`.
 - Pass provider credentials with `--secret-stdin` or `--secret-file`. Credentials are write-only and are never returned by the API.
 - Read a message and its folder ids before changing provider state, moving, copying, or deleting it.
-- Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, compose templates, incoming automations, and automatic replies. Legacy UUID resource ids are rejected. Mailboxes also accept their exact name, folders their path, and tags their exact name; see [Address mailboxes and folders](#address-mailboxes-and-folders).
+- Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, and compose templates. Legacy UUID resource ids are rejected. Mailboxes also accept their exact name, folders their path, and tags their exact name; see [Address mailboxes and folders](#address-mailboxes-and-folders).
 - Treat technical command, provider, workflow, operation, cursor, and token ids as opaque. Do not derive or shorten them.
 - `sync`, `rediscover`, `repair`, sends, and provider mutations create durable commands. A successful request proves that work was accepted, not that every remote effect has finished. Use the corresponding wait or status command.
 - Do not delete remote messages, revoke credentials, revoke access, cancel another user's work, or delete mailbox resources without an explicit request.
@@ -157,38 +157,15 @@ Moving, archiving, filing, and marking read change no work status. Follow-up and
 
 ### Finish work and keep the provider Inbox in step
 
-Run `cld mail done <conversation-id> --mailbox <mailbox>` to finish work. The same Cloud-only change is available through `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, **Done** in **Conversation details**, or automation `set_status: done`.
+Run `cld mail done <conversation-id> --mailbox <mailbox>` to finish work. The same Cloud-only change is available through `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, **Done** in **Conversation details**.
 Done updates only Cloud collaboration state and activity, clears **Show later**, and sends no provider command. It does not archive, move, or mark read. Other mail clients still show the email in the provider Inbox.
 
-To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`, or add `move_to_folder` to the same automation.
+To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`.
 The archive command takes up to 50 IDs and acts on Inbox messages unless `--in` names another folder. On Gmail, it removes only the Inbox label. Archiving keeps the work status; it never marks Done.
 
 ### File noise and keep important mail visible
 
-For newsletters, sign-in codes, or shipping updates, use one automation: `mark_read`, `set_status: done`, then `move_to_folder`. Save this as `newsletter.yaml`:
-
-```yaml
-name: File the Example newsletter
-enabled: true
-scope:
-  mode: matching
-  conditions:
-    mode: all
-    items:
-      - { field: sender_domain, operator: is, value: news.example.com }
-steps:
-  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b01
-    kind: mail_action
-    action: { kind: mark_read }
-  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b02
-    kind: mail_action
-    action: { kind: set_status, status: done }
-  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b03
-    kind: mail_action
-    action: { kind: move_to_folder, folderId: Newsletters }
-```
-
-Use the mailbox **Code** page for recurring actions. Preview and catch-up are available there. For a one-off move, use `cld mail sender move`.
+Use the mailbox **Code** page for recurring actions. Preview and catch-up are available there. For a one-off move, use `cld mail sender move`. Inspect its selection first with `cld mail sender preview`; this reads matching messages without moving them.
 
 ## Keep conversations that must not be deleted
 
@@ -198,9 +175,9 @@ cld --json mail unkeep <conversation-id> --yes
 ```
 
 - `keep` protects whole conversations, including replies that join them later. It needs write access, takes up to 50 IDs, and returns `{ "results": [...] }` with who kept each conversation and since when (`status: "ok"`) or the error (`status: "error"`). Keeping an already kept conversation changes nothing. A batch continues when one conversation fails and then exits with status 1.
-- While a conversation is kept, `rm`, moving it to Junk or Drafts, deleting a folder that holds it, and the same actions from automations, workflows, and agents fail with status 409 and code `CONVERSATION_KEPT` (`FOLDER_HAS_KEPT_CONVERSATIONS` for a folder). `archive`, `mv` to other folders, `read`, and `flag` still work.
+- While a conversation is kept, `rm`, moving it to Junk or Drafts, deleting a folder that holds it, and the same actions from Code and agents fail with status 409 and code `CONVERSATION_KEPT` (`FOLDER_HAS_KEPT_CONVERSATIONS` for a folder). `archive`, `mv` to other folders, `read`, and `flag` still work.
 - When the mail server or another client deletes a kept message, Cloud keeps its own copy in the folder where it was last. `cat --json` shows it with `deletedOnServer: true` and `remoteAvailable: false`. `archive`, `mv`, `read`, and `flag` change that copy in Cloud only; `message flags|move|copy|delete` for it fail with `KEPT_COPY_ONLY`.
-- `unkeep` requires a Cloud administrator (session or personal API key) and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. Use `--reason <text>` to record a reason (up to 500 characters). Without a mailbox grant, pass its exact public ID with `--mailbox <mailbox-id>`. Agents, standalone service accounts, workflows and automations cannot lift keeps. It returns `{ "conversationId", "released" }`.
+- `unkeep` requires a Cloud administrator (session or personal API key) and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. Use `--reason <text>` to record a reason (up to 500 characters). Without a mailbox grant, pass its exact public ID with `--mailbox <mailbox-id>`. Agents, standalone service accounts, and Code cannot lift keeps. It returns `{ "conversationId", "released" }`.
 
 ## Answer mail
 
@@ -261,13 +238,6 @@ cld mail configure \
   --search-backend auto
 ```
 
-Mailbox admins can delegate guided automatic-reply management to writers without granting access to providers, identity configuration, reference settings, or YAML workflows:
-
-```bash
-cld mail configure --mailbox <mailbox-id> --automatic-replies writers
-cld mail configure --mailbox <mailbox-id> --automatic-replies admins
-```
-
 Pause or resume provider synchronization explicitly:
 
 ```bash
@@ -293,7 +263,7 @@ Mailbox access uses the same direct permission model as the Mail settings UI:
 
 - `read` can read mail and participate in collaboration, including internal comments.
 - `write` can also change and send mail.
-- `admin` can configure the mailbox, providers, access, references, and workflows.
+- `admin` can configure the mailbox, providers, access, and references.
 
 A grant's scope is `mailbox` (the default) or `assigned`. Assigned grants are
 available to people, groups, agents, and standalone service accounts with `read` or `write`; `ls` and `access list`
@@ -424,7 +394,7 @@ Verification sends its test message through the mailbox's provider connection, s
 cld --json mail identity verify <identity-id> <binding-id> --recipient support@example.com --wait
 ```
 
-The identity label is internal. Recipients see the display name and From address. Multiple identities may use the same From address while keeping separate Reply-to, default Cc/Bcc, format, priority, receipt requests, contact card, signature, transport, folder mappings, and verification. Recipient defaults apply only when a person creates a draft; workflows and automatic replies keep their recipients explicit. `--clear-vcard`, `--clear-default-bcc`, and the other `--clear-*` flags remove optional defaults.
+The identity label is internal. Recipients see the display name and From address. Multiple identities may use the same From address while keeping separate Reply-to, default Cc/Bcc, format, priority, receipt requests, contact card, signature, transport, folder mappings, and verification. Recipient defaults apply only when a person creates a draft. Code chooses its recipients explicitly. `--clear-vcard`, `--clear-default-bcc`, and the other `--clear-*` flags remove optional defaults.
 
 An identity normally uses the mailbox SMTP connection. Configure a separate verified SMTP server only when that identity must submit through another account:
 
@@ -658,7 +628,7 @@ cld --json mail conversation activity <conversation-id>
 
 Assign many conversations at once with [`assign`](#triage-conversations). It exits with status 1 when any conversation was not found in the mailbox.
 
-People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply and a new message the mailbox sends wait for someone else. Done or a snooze that a person sets also covers the messages whose content Mail still loads. A `done` or `waiting` status that an automation sets covers only the message that started the automation. Other incoming mail derives `needs_action` again once Mail has loaded it. A reply scheduled for later counts once it is sent, and mail that arrived after Send keeps the conversation in `needs_action`. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
+People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply and a new message the mailbox sends wait for someone else. Done or a snooze that a person sets also covers the messages whose content Mail still loads. A reply scheduled for later counts once it is sent, and mail that arrived after Send keeps the conversation in `needs_action`. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
 
 Resolve permission-scoped Contacts from server-derived conversation participants:
 

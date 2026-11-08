@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ssr } from "../../../../config";
 import { getAutomationLogItem, listAutomationLog } from "../../../../service/automation-log";
 import { getMailbox } from "../../../../service/mailboxes";
+import { readRetiredRuleRuns, retiredRunQuerySchema } from "../../../../service/retired-rule-runs";
 import { resolveSsrMailboxId } from "../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
@@ -23,6 +24,10 @@ export default ssr<AuthContext>(async (c) => {
   const entry = z.uuid().safeParse(c.req.query("entry")).data;
   const detail = entry ? await getAutomationLogItem(context, mailboxId, entry) : null;
   if (detail && !detail.ok) return ssr.error(c, detail.error.status);
+  const runsInput = retiredRunQuerySchema.safeParse({ after: c.req.query("runAfter"), run: c.req.query("run") });
+  if (!runsInput.success) return ssr.error(c, 400);
+  const runs = await readRetiredRuleRuns(context, mailboxId, runsInput.data);
+  if (runsInput.data.run && !runs.ok) return ssr.error(c, runs.error.status);
   const title = de ? "Frühere Mail-Regeln" : "Retired Mail rules";
   const base = `/app/mail/${mailboxShortId}/automations/log`;
   return () => (
@@ -60,6 +65,30 @@ export default ssr<AuthContext>(async (c) => {
         <Show when={result.data.nextCursor}>
           {(cursor) => (
             <a href={`${base}?day=${result.data.day}&before=${encodeURIComponent(cursor())}`}>{de ? "Ältere Einträge" : "Older entries"}</a>
+          )}
+        </Show>
+        <Show when={runs.ok && runs.data}>
+          {(history) => (
+            <section class="space-y-3">
+              <h2 class="text-lg font-semibold">{de ? "Frühere Ausführungen" : "Earlier runs"}</h2>
+              <For each={history().items}>
+                {(run) => (
+                  <article class="rounded border border-default p-3">
+                    <a href={`${base}?day=${result.data.day}&run=${run.id}`}>
+                      <Format.Date value={run.createdAt} /> · {run.name} · {run.state}
+                    </a>
+                    <Show when={run.snapshot}>
+                      <pre class="overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(run.snapshot, null, 2)}</pre>
+                    </Show>
+                  </article>
+                )}
+              </For>
+              <Show when={history().nextCursor}>
+                {(cursor) => (
+                  <a href={`${base}?day=${result.data.day}&runAfter=${cursor()}`}>{de ? "Weitere Ausführungen" : "More runs"}</a>
+                )}
+              </Show>
+            </section>
           )}
         </Show>
       </main>

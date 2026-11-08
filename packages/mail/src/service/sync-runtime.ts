@@ -9,14 +9,10 @@ import {
   trace,
 } from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
-import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
-import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
 import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
 import { publishMessageReceived } from "../app-events";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
-import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 import { isStorableMessageAddress, normalizeEmailAddress } from "./address-normalization";
 import { cleanupPublicAttachmentLinks } from "./attachment-links";
 import { type BindingRediscoveryResult, rediscoverProviderBinding } from "./bindings";
@@ -83,8 +79,6 @@ import {
   startFolderSyncActivityReport,
   stopFolderSyncActivityReport,
 } from "./sync-activity";
-import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
-import { captureMailWorkflowEffectOrder } from "./workflow-effect-order";
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
@@ -987,94 +981,6 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
 
   const emitMessageReceived = async (): Promise<void> => {
     await publishMessageReceived(params.db, messageContentId, params.mailboxId, remoteRef.id);
-    const deliveryKey = `message:${remoteRef.id}`;
-    const snapshot = await getWorkflowSnapshot({
-      mailboxId: params.mailboxId,
-      remoteMessageRefId: remoteRef.id,
-      db: params.db,
-    });
-    if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
-    const occurredAt = params.message.internalDate.toISOString();
-    const workflowIds = await params.db<{ workflow_id: string; name: string }[]>`
-      SELECT workflow.id::text AS workflow_id, COALESCE(automation.name, workflow.name) AS name
-      FROM mail.workflow_profile profile
-      JOIN workflows.workflow workflow ON workflow.id = profile.id
-      LEFT JOIN mail.incoming_automations automation ON automation.workflow_id = workflow.id
-      WHERE profile.mailbox_id = ${params.mailboxId}::uuid
-        AND profile.enabled
-        AND workflow.active_version_id IS NOT NULL
-      ORDER BY profile.priority, workflow.id
-    `;
-    const activations =
-      workflowIds.length === 0
-        ? []
-        : await params.db<{ workflow_id: string; trigger_config: Record<string, WorkflowJsonValue> | string }[]>`
-      SELECT
-        activation.workflow_id::text,
-        activation.config AS trigger_config
-      FROM workflows.activation activation
-      JOIN workflows.workflow workflow
-        ON workflow.id = activation.workflow_id
-       AND workflow.active_version_id = activation.workflow_version_id
-      JOIN mail.workflow_profile profile
-        ON profile.id = workflow.id
-       AND profile.enabled
-      WHERE activation.workflow_id = ANY(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[])
-        AND profile.mailbox_id = ${params.mailboxId}::uuid
-        AND activation.event_type = ${MAIL_WORKFLOW_EVENT.messageReceived}
-        AND activation.enabled
-      ORDER BY
-        array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
-        activation.id
-    `;
-    const automationOrder = workflowIds
-      .filter((workflow) => activations.some((activation) => activation.workflow_id === workflow.workflow_id))
-      .map((workflow, position) => ({ workflowId: workflow.workflow_id, name: workflow.name, position }));
-    for (const activation of activations) {
-      const ordering = automationOrder.find((entry) => entry.workflowId === activation.workflow_id);
-      if (!ordering) continue;
-      const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
-      const withValues =
-        config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
-          ? (config.with as Record<string, WorkflowJsonValue>)
-          : {};
-      const triggerValues = { message: snapshot.source.message, conversation: snapshot.source.conversation, occurredAt };
-      try {
-        const emission = await emitWorkflowEvent(
-          {
-            appId: MAIL_WORKFLOW_APP_ID,
-            scopeId: params.mailboxId,
-            type: MAIL_WORKFLOW_EVENT.messageReceived,
-            targetWorkflowId: activation.workflow_id,
-            data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-            context: {
-              ...mailWorkflowEventContext(snapshot),
-              automationOrder: { workflowId: ordering.workflowId, name: ordering.name, position: ordering.position + 1 },
-            },
-            dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
-            occurredAt: new Date(occurredAt),
-          },
-          { db: params.db },
-        );
-        await captureMailWorkflowEffectOrder(params.db, {
-          eventId: emission.eventId,
-          mailboxId: params.mailboxId,
-          remoteMessageRefId: remoteRef.id,
-          workflowId: ordering.workflowId,
-          position: ordering.position,
-          name: ordering.name,
-        });
-      } catch (error) {
-        if (!(error instanceof WorkflowEventTooLargeError)) throw error;
-        // A pathological message must never stall mailbox sync.
-        log.warn("Skipped oversized message workflow event", {
-          mailboxId: params.mailboxId,
-          workflowId: activation.workflow_id,
-          field: error.field,
-          bytes: error.bytes,
-        });
-      }
-    }
   };
   // An incoming message whose first copy is in All Mail waits for its first copy in another folder:
   // automations act on that copy, as an All Mail copy carries Gmail's labels instead of keywords.
@@ -2418,7 +2324,6 @@ export const commitSyncBatch = async (params: {
     }
     return { hydratedIds, draftImportSnapshotIds, draftExportSnapshotIds, flagsUpdated, removed, liveInvalidated };
   });
-  if (result.hydratedIds.length > 0) notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
   if (result.liveInvalidated) mailLive.wake();
   return result;
 };

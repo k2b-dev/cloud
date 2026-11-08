@@ -20,7 +20,6 @@ import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueF
 import { actorRefFromRequest, auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } from "./command-authorization";
-import { authorizeMailWorkflowSend, invalidateAutomationEffects, workflowEffectKey } from "./command-legacy-effects";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversation-keep-rules";
@@ -384,7 +383,6 @@ const prepareActorCommand = (input: ProviderMessageCommandInput): Result<Prepare
 const validateCommandTargets = async (params: {
   mailboxId: string;
   prepared: PreparedActorCommand;
-  draftOrigin: "user" | "workflow";
   db: typeof sql;
 }): Promise<Result<void>> => {
   if (params.prepared.remoteMessageRefId && params.prepared.sourceFolderId) {
@@ -417,7 +415,7 @@ const validateCommandTargets = async (params: {
       JOIN mail.sender_identities si ON si.id = d.sender_identity_id
       WHERE d.id = ${params.prepared.draftId}::uuid
         AND d.mailbox_id = ${params.mailboxId}::uuid
-        AND d.origin = ${params.draftOrigin}
+        AND d.origin = 'user' AND d.delivery_class = 'normal'
         AND d.sender_identity_id = ${params.prepared.senderIdentityId}::uuid
         AND d.state = 'draft'
         AND si.status = 'verified'
@@ -467,14 +465,7 @@ const createSendOutbox = async (params: {
 }): Promise<OutboundMessageProjection | null> => {
   const { prepared } = params;
   if (prepared.kind !== "send" || !prepared.draftId || !prepared.senderIdentityId) return null;
-  if (params.actor.kind === "workflow") {
-    const allowed = await authorizeMailWorkflowSend({
-      db: params.db,
-      mailboxId: params.mailboxId,
-      workflowVersionId: params.actor.workflowVersionId,
-    });
-    if (!allowed.ok) throw Object.assign(new Error(allowed.error.message), allowed.error);
-  }
+  if (params.actor.kind === "workflow") throw new Error("Mail rules are retired");
   const send = await loadSendContent({
     db: params.db,
     mailboxId: params.mailboxId,
@@ -504,7 +495,7 @@ const createSendOutbox = async (params: {
   if (!Number.isFinite(scheduledAt.getTime())) {
     throw Object.assign(new Error("Invalid scheduled send time"), { code: "INVALID_SCHEDULE" });
   }
-  if (prepared.scheduledAt && params.actor.kind !== "workflow" && scheduledAt.getTime() < Date.now() + 30_000) {
+  if (prepared.scheduledAt && scheduledAt.getTime() < Date.now() + 30_000) {
     const invalid = err.badInput("Choose a scheduled send time at least 30 seconds in the future");
     throw Object.assign(new Error(invalid.message), invalid);
   }
@@ -672,19 +663,9 @@ type CreateActorCommandParams = {
   enqueue?: boolean;
 };
 
-/**
- * The workflow step that is creating a command, read under its run lock.
- *
- * A workflow command belongs to the step whose kernel effect key is its
- * idempotency key; the runtime cancels it once that step no longer waits for it.
- */
-export type WorkflowCommandFence = { workflowExecutionGeneration: number; workflowStepKey: string };
-
 type CreateActorCommandInternalParams = Omit<CreateActorCommandParams, "context" | "input"> & {
-  context: MailRequestContext | null;
+  context: MailRequestContext;
   input: ProviderMessageCommandInput;
-  actorOverride?: ActorRef;
-  beforeCreate?: (tx: typeof sql) => Promise<WorkflowCommandFence | void>;
   afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
 };
 
@@ -706,15 +687,9 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   if (!preparedResult.ok) return preparedResult;
   const prepared = preparedResult.data;
   const requestHash = sha256Json({ kind: prepared.kind, target: prepared.target, payload: prepared.payload });
-  if (!params.context && params.actorOverride?.kind !== "workflow") {
-    return fail(err.forbidden("Only an activated workflow may create a mailbox-owned command"));
-  }
-  const initiator = params.context ? actorRefFromRequest(params.context) : null;
-  const actor = params.actorOverride ?? initiator;
-  if (!actor) return fail(err.unauthenticated());
-  const credential = params.context
-    ? durableCredentialSnapshot(params.context)
-    : { scopes: [], credentialId: null, credentialExpiresAt: null };
+  const initiator = actorRefFromRequest(params.context);
+  const actor = initiator;
+  const credential = durableCredentialSnapshot(params.context);
   if (!credential) return fail(err.forbidden("Durable Mail work requires a current service credential"));
 
   const [mailbox] = await tx<{ id: string }[]>`
@@ -734,19 +709,6 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
       if (!permission.ok) return permission;
     }
   }
-  const creationFence = await params.beforeCreate?.(tx);
-  if (actor.kind === "workflow") {
-    if (
-      !creationFence ||
-      !Number.isSafeInteger(creationFence.workflowExecutionGeneration) ||
-      creationFence.workflowExecutionGeneration < 1
-    ) {
-      return fail(err.internal("Workflow command is missing its execution fence"));
-    }
-    if (!prepared.correlationId || prepared.idempotencyKey !== workflowEffectKey(prepared.correlationId, creationFence.workflowStepKey)) {
-      return fail(err.internal("Workflow command must use its step's effect key"));
-    }
-  }
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${params.mailboxId}:${prepared.kind}:${stableTargetKey(prepared.target)}`}, 0))`;
 
   const [existing] = await tx<DbCommand[]>`
@@ -757,9 +719,6 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   `;
   if (existing) {
     if (!commandActorMatches(existing, actor)) return fail(capabilityIdempotencyConflict("Idempotency key is already in use"));
-    // A step that waits for its command runs again on every recheck, under a
-    // newer execution generation, and adopts the command it already issued.
-    // The creation fence admits only the step's current execution.
     return existing.request_hash === requestHash
       ? ok(mapCommand(existing))
       : fail(capabilityIdempotencyConflict("Idempotency key with a different mail command"));
@@ -768,7 +727,6 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   const targets = await validateCommandTargets({
     mailboxId: params.mailboxId,
     prepared,
-    draftOrigin: actor.kind === "workflow" ? "workflow" : "user",
     db: tx,
   });
   if (!targets.ok) return targets;
@@ -776,7 +734,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   if (!protection.ok) return protection;
   const execution = await resolveMailExecution({
     mailboxId: params.mailboxId,
-    operation: params.context ? (prepared.kind === "send" ? "actorSend" : "actorMutation") : "automation",
+    operation: prepared.kind === "send" ? "actorSend" : "actorMutation",
     context: params.context,
     conversationScoped: conversationCommandKinds.has(prepared.kind),
     folderRequirements: prepared.folderRequirements,
@@ -820,7 +778,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
       ${prepared.idempotencyKey},
       ${requestHash},
       ${prepared.correlationId},
-      ${actor.kind === "workflow" ? creationFence?.workflowExecutionGeneration : null},
+      ${null},
       ${prepared.target}::jsonb,
       ${prepared.payload}::jsonb,
       ${execution.data.bindingId}::uuid,
@@ -839,24 +797,6 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   `;
   if (!row) throw new Error("Mail command insert returned no row");
   let command = mapCommand(row);
-  if ("messageId" in params.input && ["move", "delete", "set_flags", "change_message_state"].includes(params.input.kind)) {
-    const owners = await tx<
-      { conversation_id: string }[]
-    >`SELECT conversation_id FROM mail.conversation_messages WHERE message_id = ${params.input.messageId}::uuid`;
-    for (const owner of owners) {
-      if (params.input.kind === "move" || params.input.kind === "delete")
-        await invalidateAutomationEffects(tx, owner.conversation_id, "placement", [params.input.messageId]);
-      if (params.input.kind === "set_flags") await invalidateAutomationEffects(tx, owner.conversation_id, "flag", [params.input.messageId]);
-      if (params.input.kind === "change_message_state") {
-        const change = params.input.change;
-        const providerFlags: Record<string, string> = { seen: "\\Seen", answered: "\\Answered", flagged: "\\Flagged", draft: "\\Draft" };
-        for (const flag of [...change.addFlags, ...change.removeFlags])
-          await invalidateAutomationEffects(tx, owner.conversation_id, "flag", [params.input.messageId], providerFlags[flag]);
-        for (const keyword of [...change.addKeywords, ...change.removeKeywords])
-          await invalidateAutomationEffects(tx, owner.conversation_id, "keyword", [params.input.messageId], keyword);
-      }
-    }
-  }
   await params.afterCreate?.(tx, command);
   const projection = await createSendOutbox({
     db: tx,
@@ -906,16 +846,15 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
     {
       action: `mail.command.${prepared.kind}.request`,
       outcome: "allowed",
-      actor: params.context ? auditActorFromRequest(params.context) : null,
+      actor: auditActorFromRequest(params.context),
       target: { type: "mailbox", id: params.mailboxId },
-      requestId: params.context?.requestId ?? `mail-workflow:${actor.kind === "workflow" ? actor.workflowVersionId : row.id}`,
+      requestId: params.context.requestId,
       metadata: {
         commandId: row.id,
         selectedBindingId: execution.data.bindingId,
         target: prepared.target,
         scheduledAt: prepared.scheduledAt ?? null,
         undoSeconds: prepared.undoSeconds ?? null,
-        workflowVersionId: actor.kind === "workflow" ? actor.workflowVersionId : null,
       },
     },
     tx,
@@ -1002,100 +941,6 @@ export const createActorCommandsInTransaction = async (
   }
   await params.afterCreate?.(tx, commands);
   return commands;
-};
-
-/** Resume a persisted send, including pre-fingerprint commands, without rendering new content. */
-export const adoptWorkflowSendCommand = async (params: {
-  mailboxId: string;
-  workflowVersionId: string;
-  input: Omit<Extract<ActorCommandInput, { kind: "send" }>, "expectedContentHash">;
-  beforeAdopt: (tx: typeof sql) => Promise<WorkflowCommandFence>;
-}): Promise<Result<MailCommand | null>> =>
-  sql.begin(async (tx) => {
-    const [mailbox] = await tx<{ id: string }[]>`
-      SELECT id FROM mail.mailboxes WHERE id=${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE`;
-    if (!mailbox) return fail(err.notFound("Mailbox"));
-    const fence = await params.beforeAdopt(tx);
-    const input = params.input;
-    if (
-      !Number.isSafeInteger(fence.workflowExecutionGeneration) ||
-      fence.workflowExecutionGeneration < 1 ||
-      !input.correlationId ||
-      input.idempotencyKey !== workflowEffectKey(input.correlationId, fence.workflowStepKey)
-    )
-      return fail(err.internal("Workflow command must use its current step's effect key"));
-    const [existing] = await tx<DbCommand[]>`
-      SELECT ${commandColumns()} FROM mail.commands c
-      WHERE c.mailbox_id=${params.mailboxId}::uuid AND c.idempotency_key=${input.idempotencyKey}
-      FOR UPDATE`;
-    if (!existing) return ok(null);
-    if (
-      !commandActorMatches(existing, { kind: "workflow", workflowVersionId: params.workflowVersionId }) ||
-      existing.correlation_id !== input.correlationId
-    ) {
-      return fail(capabilityIdempotencyConflict("Idempotency key is already in use"));
-    }
-    // Old commands have no content hash. Keep their exact historical request format;
-    // a new command is still created only by the hash-required path below.
-    const storedTarget = parseRecord(existing.target);
-    const target = {
-      draftId: input.draftId,
-      expectedDraftRevision: input.expectedDraftRevision,
-      senderIdentityId: input.senderIdentityId,
-      ...(Object.hasOwn(storedTarget, "expectedContentHash") ? { expectedContentHash: storedTarget.expectedContentHash } : {}),
-    };
-    const payload = {
-      scheduledAt: input.scheduledAt ?? null,
-      undoSeconds: input.scheduledAt ? 0 : input.undoSeconds,
-      safetyApproval: input.safetyApproval ?? null,
-    };
-    return existing.kind === "send" && existing.request_hash === sha256Json({ kind: "send", target, payload })
-      ? ok(mapCommand(existing))
-      : fail(capabilityIdempotencyConflict("Idempotency key with a different mail command"));
-  });
-
-export const createWorkflowCommandInTransaction = (
-  params: {
-    context: MailRequestContext | null;
-    mailboxId: string;
-    workflowVersionId: string;
-    input: ActorCommandInput;
-    beforeCreate: (tx: typeof sql) => Promise<WorkflowCommandFence>;
-    afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
-  },
-  tx: typeof sql,
-): Promise<Result<MailCommand>> =>
-  createActorCommandInTransaction(
-    {
-      ...params,
-      enqueue: false,
-      actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
-    },
-    tx,
-  );
-
-export const enqueueCreatedWorkflowCommand = async (command: MailCommand, input: ActorCommandInput): Promise<void> => {
-  mailLive.wake();
-  await enqueueMailCommand(command.id, command.kind).catch(() => undefined);
-  await publishCreatedOutboundProjection(command);
-  if (input.kind === "send" && input.scheduledAt) {
-    mailLive.wake();
-  }
-};
-
-export const createWorkflowCommand = async (params: {
-  context: MailRequestContext | null;
-  mailboxId: string;
-  workflowVersionId: string;
-  input: ActorCommandInput;
-  enqueue?: boolean;
-  beforeCreate: (tx: typeof sql) => Promise<WorkflowCommandFence>;
-  afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
-}): Promise<Result<MailCommand>> => {
-  const result = await sql.begin((tx) => createWorkflowCommandInTransaction(params, tx));
-  if (result.ok && params.enqueue === false) mailLive.wake();
-  if (result.ok && params.enqueue !== false) await enqueueCreatedWorkflowCommand(result.data, params.input);
-  return result.ok ? ok(await normalizeCommand(result.data)) : result;
 };
 
 export const createActorCommands = async (params: {

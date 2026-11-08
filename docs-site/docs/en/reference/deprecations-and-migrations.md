@@ -10,6 +10,22 @@ updated: 2026-11-05
 
 # Deprecations and migrations
 
+## Mail rules and automatic replies are retired
+
+Guided incoming automations, YAML workflows, their timers, backfills and try
+commands, and rule Undo/Redo are removed. `cld mail automation export` remains
+available for frozen definitions; other `mail automation` and all `mail workflow`
+commands are removed. Rule logs and run snapshots remain read-only. Ordinary
+Mail commands, sends, drafts, contacts, tags, summaries, reference numbers and
+provider sync remain supported, as do Grids and `@k2b/cloud/workflows`.
+
+Export before upgrading, stop old workers, and drain or reconcile their provider
+effects before deploying the cut. The new schema marker rejects older Mail
+images. Automatic replies (out-of-office, office-hours and reference
+acknowledgements) have no replacement. Ask Gustav to rebuild supported rules as
+mailbox Code, then review, preview and activate it explicitly. See the
+[Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
+
 ## Geo uses a global budget
 
 `geo.person_daily_credits` and the admin budget field `personDailyCredits`

@@ -6265,7 +6265,6 @@ const specialistCommands = {
             transport: identity.transport.mode,
             status: identity.status,
             reason: identity.statusReason ? senderIdentityReasonText[identity.statusReason] : "",
-            automation: identity.authenticationPolicy.automation === "mailbox" ? "enabled" : "disabled",
             default: identity.isDefault ? "yes" : "",
             id: identity.id,
           })),
@@ -6281,7 +6280,6 @@ const specialistCommands = {
             { key: "transport", label: "SMTP" },
             { key: "status", label: "STATUS" },
             { key: "reason", label: "REASON" },
-            { key: "automation", label: "AUTOMATIC REPLIES" },
             { key: "default", label: "DEFAULT" },
             { key: "id", label: "IDENTITY ID" },
           ],
@@ -6321,9 +6319,6 @@ const specialistCommands = {
           description: "Sent folder id; default the mailbox's discovered Sent folder",
         }),
         default: flag.boolean({ description: "Set as default identity" }),
-        automation: flag.enum(["mailbox", "disabled"] as const, {
-          description: "Allow automatic replies from this sender (default: mailbox)",
-        }),
       },
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
@@ -6345,7 +6340,6 @@ const specialistCommands = {
             defaultSignatureTemplateId: flags.defaultSignature
               ? requireMailResourceId(flags.defaultSignature, "Compose template id")
               : null,
-            ...(flags.automation !== undefined ? { authenticationPolicy: { automation: flags.automation } } : {}),
             sentFolderId: flags.sentFolder ? requireMailResourceId(flags.sentFolder, "Sent folder id") : undefined,
             isDefault: flags.default,
           }),
@@ -6389,7 +6383,7 @@ const specialistCommands = {
       },
     }),
     command("identity configure", {
-      summary: "Update sender metadata, automation, or provider folder mappings",
+      summary: "Update sender metadata or provider folder mappings",
       args: { identityId: arg.required({ description: "Sender identity id" }) },
       flags: {
         ...mailboxFlag,
@@ -6422,9 +6416,6 @@ const specialistCommands = {
         clearDefaultSignature: flag.boolean({ name: "clear-default-signature" }),
         envelopeSender: flag.string({ name: "envelope-sender" }),
         clearEnvelopeSender: flag.boolean({ name: "clear-envelope-sender" }),
-        automation: flag.enum(["disabled", "mailbox"] as const, {
-          description: "Allow automatic replies from this sender",
-        }),
         sentFolder: flag.string({ name: "sent-folder" }),
         clearSentFolder: flag.boolean({ name: "clear-sent-folder" }),
         draftsFolder: flag.string({ name: "drafts-folder" }),
@@ -6482,7 +6473,6 @@ const specialistCommands = {
                 envelopeSender: flags.clearEnvelopeSender ? null : flags.envelopeSender,
               }
             : {}),
-          ...(flags.automation !== undefined ? { authenticationPolicy: { automation: flags.automation } } : {}),
           ...(flags.sentFolder !== undefined || flags.clearSentFolder
             ? { sentFolderId: flags.clearSentFolder ? null : requireMailResourceId(flags.sentFolder!, "Sent folder id") }
             : {}),
@@ -7285,6 +7275,26 @@ const specialistCommands = {
       },
     }),
 
+    command("sender preview", {
+      summary: "Count existing messages matching a sender or domain (bounded to 501)",
+      flags: {
+        ...mailboxFlag,
+        match: flag.enum(["sender", "domain"] as const, { required: true, description: "Sender address or domain" }),
+        value: flag.string({ required: true, description: "Email address or complete domain" }),
+      },
+      run: async ({ ctx, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const query = new URLSearchParams({ match: flags.match!, value: flags.value! });
+        const preview = await readApi<{ messageCount: number; conversationCount: number; capped: boolean }>(
+          ctx,
+          `/mailboxes/${mailbox.id}/senders/preview?${query}`,
+        );
+        if (printStructured(ctx, preview)) return;
+        ctx.print(
+          `${preview.messageCount} messages in ${preview.conversationCount} conversations match${preview.capped ? "; count capped at 501" : ""}.`,
+        );
+      },
+    }),
     command("sender move", {
       summary: "Move matching inbound mail to Archive, Trash, or a folder",
       flags: {

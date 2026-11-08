@@ -26,8 +26,6 @@ const CONNECTION_ID = "00000000-0000-4000-8000-000000000008";
 const FOLDER_ID = "Foldr1";
 const USER_ID = "00000000-0000-4000-8000-000000000011";
 const COMMENT_ID = "Commt1";
-const _WORKFLOW_ID = "00000000-0000-4000-8000-000000000013";
-const _WORKFLOW_VERSION_ID = "00000000-0000-4000-8000-000000000014";
 const SOURCE_CONVERSATION_ID = "Convo2";
 const REMINDER_ID = "Remnd1";
 const SAVED_VIEW_ID = "View01";
@@ -36,10 +34,8 @@ const BINDING_ID = "00000000-0000-4000-8000-000000000020";
 const TAG_ID = "Tag001";
 const COMPOSE_TEMPLATE_ID = "Templ1";
 const SCHEDULED_SEND_ID = "Deliv1";
-const _AUTOMATIC_REPLY_ID = "Reply1";
 const ATTACHMENT_LINK_ID = "00000000-0000-4000-8000-000000000026";
 const REMOTE_CONTENT_RULE_ID = "00000000-0000-4000-8000-000000000027";
-const _INCOMING_AUTOMATION_ID = "Autom1";
 const SECURITY_REPORT_ID = "00000000-0000-4000-8000-000000000029";
 const SECURITY_POLICY_ID = "00000000-0000-4000-8000-000000000030";
 
@@ -4776,7 +4772,7 @@ test("default sender setup preserves an existing display name when no name is pa
   expect(JSON.parse(result.stdout)).toMatchObject({ displayName: "Existing sender", status: "verified" });
 });
 
-test("sender creation keeps the default automation policy unless explicitly disabled", async () => {
+test("sender creation omits retired automatic-reply controls", async () => {
   const bodies: unknown[] = [];
   const server = withMailbox(async (request) => {
     const expectedPath = `/api/mail/mailboxes/${MAILBOX_ID}/sender-identities`;
@@ -4832,7 +4828,7 @@ test("sender creation keeps the default automation policy unless explicitly disa
     "disabled",
   ]);
 
-  expect([defaultResult.exitCode, disabledResult.exitCode]).toEqual([0, 0]);
+  expect([defaultResult.exitCode, disabledResult.exitCode]).toEqual([0, 1]);
   expect(bodies).toEqual([
     {
       label: "Work",
@@ -4841,16 +4837,6 @@ test("sender creation keeps the default automation policy unless explicitly disa
       defaultCc: [],
       defaultBcc: [],
       defaultSignatureTemplateId: null,
-      isDefault: false,
-    },
-    {
-      label: "Work",
-      displayName: "",
-      fromAddress: "sender@example.com",
-      defaultCc: [],
-      defaultBcc: [],
-      defaultSignatureTemplateId: null,
-      authenticationPolicy: { automation: "disabled" },
       isDefault: false,
     },
   ]);
@@ -5177,6 +5163,37 @@ test("reply and forward pass per-draft signature choices", async () => {
     expect.objectContaining({ signatureTemplateId: null, intent: "reply" }),
     expect.objectContaining({ signatureTemplateId: "Sign01", intent: "forward" }),
     expect.objectContaining({ signatureTemplateId: null, intent: "forward" }),
+  ]);
+});
+
+test("sender preview counts matching mail without rule admission or writes", async () => {
+  const requests: Array<{ method: string; path: string; match: string | null; value: string | null }> = [];
+  const server = withMailbox((request) => {
+    const url = new URL(request.url);
+    requests.push({
+      method: request.method,
+      path: url.pathname,
+      match: url.searchParams.get("match"),
+      value: url.searchParams.get("value"),
+    });
+    return api({ messageCount: 501, conversationCount: 410, capped: true, applicationLimit: 500 });
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "sender",
+    "preview",
+    "--mailbox",
+    MAILBOX_ID,
+    "--match",
+    "domain",
+    "--value",
+    "example.com",
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout).toContain("501 messages in 410 conversations match; count capped at 501.");
+  expect(requests).toEqual([
+    { method: "GET", path: `/api/mail/mailboxes/${MAILBOX_ID}/senders/preview`, match: "domain", value: "example.com" },
   ]);
 });
 

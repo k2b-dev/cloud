@@ -13,7 +13,7 @@ const errorResponses = {
 };
 type ErrorStatus = keyof typeof errorResponses;
 
-export const workflowOperation = <T extends z.ZodType>(
+export const historyOperation = <T extends z.ZodType>(
   summary: string,
   successSchema: T,
   successDescription: string,

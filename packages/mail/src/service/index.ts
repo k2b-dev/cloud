@@ -5,7 +5,6 @@ import * as addresses from "./addresses";
 import * as attachmentExtraction from "./attachment-extraction";
 import { attachmentExtractionRuntime } from "./attachment-extraction";
 import * as attachmentLinks from "./attachment-links";
-import * as automaticReplyConfigurations from "./automatic-reply-configuration";
 import * as bindings from "./bindings";
 import * as calendarInvitations from "./calendar-invitations";
 import * as collaboration from "./collaboration";
@@ -30,7 +29,6 @@ import * as focus from "./focus";
 import * as folders from "./folders";
 import * as health from "./health";
 import { imapPushRuntime } from "./imap-push-runtime";
-import * as incomingAutomations from "./incoming-automations";
 import * as keptConversations from "./kept-conversations";
 import * as listSubscriptions from "./list-subscriptions";
 import * as localTags from "./local-tags";
@@ -63,23 +61,15 @@ import * as settingsContext from "./settings-context";
 import * as storageObservability from "./storage-observability";
 import { enqueueMailboxSync, mailRuntime as scheduledMailRuntime } from "./sync-runtime";
 import * as triage from "./triage";
-import { workflowRuntime } from "./workflow-runtime";
-import * as workflows from "./workflows";
 
 const mailRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     await attachmentExtractionRuntime.start();
     await scheduledMailRuntime.start();
     await imapPushRuntime.start();
-    await incomingAutomations.startIncomingAutomationBackfillRuntime();
   },
   stop: () =>
-    stopRuntimeResources([
-      incomingAutomations.stopIncomingAutomationBackfillRuntime,
-      () => imapPushRuntime.stop(),
-      () => scheduledMailRuntime.stop(),
-      () => attachmentExtractionRuntime.stop(),
-    ]),
+    stopRuntimeResources([() => imapPushRuntime.stop(), () => scheduledMailRuntime.stop(), () => attachmentExtractionRuntime.stop()]),
 });
 
 export const mailRuntime = {
@@ -93,7 +83,6 @@ export {
   addresses,
   attachmentExtraction,
   attachmentLinks,
-  automaticReplyConfigurations,
   bindings,
   calendarInvitations,
   cancelSendCommand,
@@ -118,7 +107,6 @@ export {
   focus,
   folders,
   health,
-  incomingAutomations,
   keptConversations,
   listSubscriptions,
   localTags,
@@ -148,13 +136,10 @@ export {
   settingsContext,
   storageObservability,
   triage,
-  workflowRuntime,
-  workflows,
 };
 
 export const mailService = {
   access: mailboxAccess,
-  automaticReplyConfigurations,
   attachmentLinks,
   attachmentExtraction,
   bindings,
@@ -175,7 +160,6 @@ export const mailService = {
   execution,
   focus,
   health,
-  incomingAutomations,
   localTags,
   listSubscriptions,
   folders,
@@ -204,7 +188,6 @@ export const mailService = {
   settingsContext,
   storageObservability,
   triage,
-  workflows,
   sync: {
     enqueue: enqueueMailboxSync,
   },

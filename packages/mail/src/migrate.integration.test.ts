@@ -42,6 +42,7 @@ suite("mail baseline schema", () => {
     expect(first.map(({ version, name }) => ({ version, name }))).toEqual([
       { version: 1, name: "baseline" },
       { version: 2, name: "principal_assignees" },
+      { version: 3, name: "rules_retired" },
     ]);
     await migrate();
     expect(
@@ -54,7 +55,7 @@ suite("mail baseline schema", () => {
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;
-    expect(rows).toEqual([{ version: 1 }, { version: 2 }]);
+    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
     // pg_locks spans the whole server; other databases on it may hold advisory locks of their own.
     const [locks] = await sql<{ held: number }[]>`
       SELECT count(*)::int AS held
@@ -234,6 +235,7 @@ suite("mail baseline schema", () => {
       expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
         { version: 1, name: "baseline" },
         { version: 2, name: "principal_assignees" },
+        { version: 3, name: "rules_retired" },
       ]);
       // The marker excludes the predecessor even before the first account assignment.
       await expect(previousMailStartup(previousLive)).rejects.toThrow("Previous Mail refuses non-baseline schema history");
