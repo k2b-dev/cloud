@@ -1553,10 +1553,6 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`UPDATE auth.access SET permission='write' WHERE id=${fixture.accessId}::uuid`;
     const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations(short_id,mailbox_id,subject,latest_message_at)
       VALUES('Cv4g00',${fixture.mailboxId}::uuid,'Linked message',${now}) RETURNING id`;
-    // The driver-owned schema sync adds this link kind. Keep this fixture usable on either side of that sync.
-    await sql`ALTER TABLE mail.conversation_messages DROP CONSTRAINT conversation_messages_added_by_check`;
-    await sql`ALTER TABLE mail.conversation_messages ADD CONSTRAINT conversation_messages_added_by_check
-      CHECK (added_by IN ('provider','headers','heuristic','manual','outbox','list'))`;
     await sql`INSERT INTO mail.conversation_messages(conversation_id,message_id,position,added_by)
       VALUES(${conversation!.id}::uuid,${fixture.messageId}::uuid,0,'list')`;
     const target = { type: "mail.mailbox", id: "Mb4g00" };
@@ -1605,7 +1601,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         )
       ).json(),
     ).toMatchObject({ ok: true });
-    expect(await snapshot()).toMatchObject([{ work_status: "done" }]);
+    expect((await snapshot())[0]).toMatchObject({ short_id: "Cv4g00", work_status: "done" });
     // Current grants remain independently necessary after the signed projection succeeds.
     await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
     expect(await (await fixture.call("message.read", { id: "Ms4g00" })).json()).toMatchObject({ ok: false });
@@ -1621,7 +1617,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         )
       ).json(),
     ).toMatchObject({ ok: false });
-    expect(await snapshot()).toMatchObject([{ work_status: "done" }]);
+    expect((await snapshot())[0]).toMatchObject({ short_id: "Cv4g00", work_status: "done" });
   });
 
   test("Mail waiting reads keep pending content in one bridge call and report terminal hydration explicitly", async () => {

@@ -864,10 +864,6 @@ suite("mail sent message projection", () => {
         },
       };
       const draft = await replyDraft(mailbox, inbound, request);
-      // The schema sync owns the new link kind; exercise both release bases.
-      await sql`ALTER TABLE mail.conversation_messages DROP CONSTRAINT conversation_messages_added_by_check`;
-      await sql`ALTER TABLE mail.conversation_messages ADD CONSTRAINT conversation_messages_added_by_check
-        CHECK(added_by IN ('provider','headers','heuristic','manual','outbox','list'))`;
       await sql`UPDATE mail.conversation_messages SET added_by='list' WHERE message_id=${inbound.id}::uuid`;
       const hash = await reviewedDraftContentHash(request, mailbox.mailboxId, draft.id, draft.revision);
       const result = await createActorCommand({
