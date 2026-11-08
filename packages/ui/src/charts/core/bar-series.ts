@@ -1,5 +1,5 @@
 import type { BarChartOptions, SeriesBarLayout } from "../../content/chart-bar";
-import { chartTextWidth, fmt, headerHeight, renderHeader, tickFormat, wrapLabel } from "./bar-common";
+import { chartTextWidth, dotStyle, fmt, headerHeight, renderHeader, tickFormat, wrapLabel } from "./bar-common";
 import { chartDatumSvg, escapeXml, svgRoot } from "./svg-common";
 
 /** Draw prepared series geometry without importing any bar layout or data-only renderer. */
@@ -9,8 +9,6 @@ export const renderSeriesBarLayoutSvg = (
   matrixMarks?: (column: SeriesBarLayout["columns"][number]) => string,
 ) => {
   const parts = [renderHeader(opts, opts.width)];
-  const dotStyle = (index: number) =>
-    `fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:${g.entries.length < 2 ? 1 : 0.4 + (index * 0.6) / (g.entries.length - 1)}`;
   const change = new Intl.NumberFormat(opts.locale ?? "en", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
   const text = (x: number, y: number, value: string, cls = "stdlib-chart-tick-label", anchor = "start", extra = "") =>
     `<text class="${cls}" x="${fmt(x)}" y="${fmt(y)}" text-anchor="${anchor}" ${extra}>${escapeXml(value)}</text>`;
@@ -19,7 +17,7 @@ export const renderSeriesBarLayoutSvg = (
       const y = headerHeight(opts) + entry.y;
       const x = entry.x;
       parts.push(
-        `<rect class="stdlib-chart-series-${i < (opts.series?.length ?? 0) ? i % 8 : 0}" x="${x}" y="${y - 8}" width="${8 * g.units}" height="8" ${i >= (opts.series?.length ?? 0) ? 'style="fill:none;stroke:var(--stdlib-chart-c1);"' : g.dot ? `style="${dotStyle(i)};stroke:none"` : ""}/>`,
+        `<rect class="stdlib-chart-series-${i < (opts.series?.length ?? 0) ? i % 8 : 0}" x="${x}" y="${y - 8}" width="${8 * g.units}" height="8" ${i >= (opts.series?.length ?? 0) ? 'style="fill:none;stroke:var(--stdlib-chart-c1);"' : g.dot ? `style="${dotStyle(i, g.entries.length)};stroke:none"` : ""}/>`,
       );
       if (i >= (opts.series?.length ?? 0))
         parts.push(

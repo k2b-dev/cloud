@@ -186,23 +186,9 @@ const flatChartSchema = () => {
       .optional()
       .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
-    marks: z
-      .enum(["bars", "dots"])
-      .optional()
-      .describe('Bar: "dots" with layout "nested" draws nonnegative counts where each series is a subset of the previous one.'),
-    total: z
-      .number()
-      .positive()
-      .optional()
-      .describe(
-        "Nested dots: capacity per category; defaults to the largest count, at least one. For share fractions use 1; the legend shows latest/cursor values, never summed rates.",
-      ),
-    dots: z
-      .number()
-      .int()
-      .min(2)
-      .optional()
-      .describe("Nested dots: even number of dots per category (default 100); each dot counts toward the mark limit."),
+    marks: z.enum(["bars", "dots"]).optional().describe("Bar: nested, nonnegative subset counts."),
+    total: z.number().positive().optional().describe("Dots: capacity; shares use 1. Latest/cursor legend, never summed rates."),
+    dots: z.number().int().min(2).optional().describe("Even dots per category (default 100); counted toward mark limit."),
     share: z.boolean().optional().describe("bar rows ranked list: show shares; requires nonnegative values."),
     limit: z.number().int().positive().optional().describe("bar rows ranked list: number of visible rows; requires nonnegative values."),
     tone: z.enum(["in", "out"]).optional().describe("bar rows ranked list: flow direction; requires nonnegative values."),

@@ -22,6 +22,7 @@ export { calendarTimeLabel, calendarTimeTicks, chartTimeStep } from "../../conte
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./bubble";
 export * from "./calendar";
+export { nestedDotOptions } from "./dot-options";
 export { renderDotMatrixLayoutSvg } from "./dots";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
 export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";

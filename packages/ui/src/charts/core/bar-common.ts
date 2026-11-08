@@ -1,8 +1,12 @@
 import type { BarChartOptions } from "../../content/chart-bar";
 import { escapeXml } from "./svg-common";
+import { fmt } from "./svg-format";
 
-export const fmt = (value: number) => (Number.isFinite(value) ? `${Math.round(value * 100) / 100}` : "0");
+export { fmt } from "./svg-format";
 export const tickFormat = (opts: BarChartOptions) => opts.yAxis?.format ?? ((value: number) => String(value));
+
+export const dotStyle = (index: number, seriesCount: number) =>
+  `fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:${seriesCount < 2 ? 1 : 0.4 + (index * 0.6) / (seriesCount - 1)}`;
 
 /** Estimated width of `text` at `size` pixels in the UI sans font with tabular figures; a little wide on purpose. */
 export const chartTextWidth = (text: string, size = 11): number => {

@@ -1,6 +1,7 @@
 import { chartTextWidth, fmt, headerHeight, renderHeader, tickFormat, wrapLabel } from "../charts/core/bar-common";
 import { barPercent } from "../charts/core/bar-labels";
 import { renderSeriesBarLayoutSvg, visibleCategoryLabels } from "../charts/core/bar-series";
+import { nestedDotOptions } from "../charts/core/dot-options";
 import { renderDotMatrixLayoutSvg } from "../charts/core/dots";
 
 import {
@@ -466,7 +467,7 @@ export const renderBarChartSvg = (opts: BarChartOptions & { width: number; heigh
 
 /** Bar drawing without the optional dot renderer, for small app-frame preludes. */
 export const renderBarBaseSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
-  if (opts.marks === "dots") throw new RangeError("Dot matrices use their dedicated renderer");
+  if (opts.marks === "dots") throw new RangeError("Use the dot renderer");
   if (opts.series) return renderSeriesBarLayoutSvg(opts, seriesBarLayout(opts, opts));
   if (rankedRows(opts)) return renderRankedBars(opts);
   const plan = barChartPlan(opts, opts.width);
@@ -503,16 +504,13 @@ export function barSeriesLegend(
     const latest = entry.data.at(-1);
     const total =
       summary === "latest"
-        ? latest == null || !Number.isFinite(latest)
-          ? null
-          : latest
+        ? latest != null && Number.isFinite(latest)
+          ? latest
+          : null
         : finite.length
           ? finite.reduce((sum, v) => sum + v, 0)
           : null;
-    const valueWidth = Math.max(
-      chartTextWidth(total === null ? "–" : format(total)),
-      ...entry.data.filter((v): v is number => v !== null && Number.isFinite(v)).map((v) => chartTextWidth(format(v))),
-    );
+    const valueWidth = Math.max(chartTextWidth(total === null ? "–" : format(total)), ...finite.map((v) => chartTextWidth(format(v))));
     const labelWidth = Math.max(8, Math.min(96, displayWidth - valueWidth - 32, chartTextWidth(entry.label)));
     const slot = Math.min(width, (14 + labelWidth + 6 + valueWidth + 16) * unit);
     if (x && x + slot > width) {
@@ -537,8 +535,7 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
     throw new RangeError("Bar series must have the same length as x");
   if (opts.compare && series.length !== 1) throw new RangeError("Bar comparison needs exactly one current series");
   if (opts.normalize && opts.layout !== "stacked") throw new RangeError("Normalized bars must be stacked");
-  const dot = opts.marks === "dots" ? nestedDots(opts) : undefined;
-  if (opts.layout === "nested" && !dot) throw new RangeError("Nested bars require dot marks");
+  const dot = nestedDotOptions(opts);
   if (opts.layout === "stacked" && opts.yAxis?.scale === "log") throw new RangeError("Stacked bars need a linear axis");
   if (opts.layout === "stacked" && series.some((s) => s.data.some((v) => v !== null && v < 0)))
     throw new RangeError("Stacked bars require nonnegative values");
@@ -724,26 +721,3 @@ const renderRankedBars = (opts: BarChartOptions & { width: number; height: numbe
     .replace("</style>", ".k2b-chart-ranked :is(.stdlib-chart-tick-label,.stdlib-chart-bar-value){font-size:13px}</style>")
     .replace("<svg ", '<svg data-bar-layout="rows" ');
 };
-
-/** Nested counts share a zero baseline: each later series is a subset of the previous one. */
-function nestedDots(opts: BarChartOptions) {
-  const series = opts.series ?? [];
-  const total = opts.total ?? Math.max(1, ...series.flatMap((s) => s.data.filter((v): v is number => v !== null && Number.isFinite(v))));
-  const count = opts.dots ?? 100;
-  if (opts.layout !== "nested" || !series.length || opts.compare || opts.normalize || opts.yAxis?.scale === "log")
-    throw new RangeError("Dot matrices require nested series on a linear axis, without comparison or normalization");
-  if (!Number.isFinite(total) || total <= 0 || !Number.isSafeInteger(count) || count < 2 || count % 2)
-    throw new RangeError("Dot matrices need a positive total and an even positive dot count");
-  if (opts.yAxis?.domain && (opts.yAxis.domain[0] !== 0 || opts.yAxis.domain[1] !== total))
-    throw new RangeError("Dot matrix domain must be zero to total");
-  series.forEach((s, i) =>
-    s.data.forEach((v, j) => {
-      if (v === null || !Number.isFinite(v)) return;
-      if (v < 0 || v > total) throw new RangeError("Nested counts must be nonnegative and at most total");
-      const parent = series[i - 1]?.data[j];
-      if (i > 0 && parent != null && Number.isFinite(parent) && v > parent)
-        throw new RangeError("Each nested count must be a subset of the previous series");
-    }),
-  );
-  return { total, count };
-}

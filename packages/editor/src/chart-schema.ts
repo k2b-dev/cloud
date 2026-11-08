@@ -1,5 +1,5 @@
 import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
-import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled } from "@k2b/ui/charts/core";
+import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled, nestedDotOptions } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { chartLocaleSchema } from "./chart-locale";
 
@@ -242,12 +242,7 @@ export const chartKinds = (limits?: ChartLimits) => {
         normalize: z.boolean().optional(),
         marks: z.enum(["bars", "dots"]).optional(),
         total: z.number().positive().optional(),
-        dots: z
-          .number()
-          .int()
-          .min(2)
-          .refine((v) => v % 2 === 0, "Dot count must be even.")
-          .optional(),
+        dots: z.number().int().min(2).optional(),
         share: z.boolean().optional(),
         limit: z.number().int().positive().optional(),
         tone: z.enum(["in", "out"]).optional(),
@@ -279,28 +274,7 @@ export const chartKinds = (limits?: ChartLimits) => {
           issue("This layout needs aligned x and series.");
         if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
         if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
-        if (bar.layout === "nested" && bar.marks !== "dots") issue("Nested bars require dot marks.");
-        if (bar.marks !== "dots" && (bar.total !== undefined || bar.dots !== undefined)) issue("Total and dots belong to dot matrices.");
-        if (bar.marks === "dots") {
-          if (bar.data.some((d) => Number.isFinite(d.value) && d.value < 0))
-            issue("Dot matrices require nonnegative nested counts; signed rows use bar marks.");
-          if (bar.layout !== "nested" || !bar.series?.length || bar.compare || bar.normalize || bar.yAxis?.scale === "log")
-            issue("Dot matrices require nested series on a linear axis, without comparison or normalization.");
-          const total =
-            bar.total ??
-            Math.max(1, ...(bar.series?.flatMap((s) => s.data.filter((v): v is number => v !== null && Number.isFinite(v))) ?? []));
-          if (bar.yAxis?.domain && (bar.yAxis.domain[0] !== 0 || bar.yAxis.domain[1] !== total))
-            issue("Dot matrix domain must be zero to total.");
-          bar.series?.forEach((s, i) =>
-            s.data.forEach((v, j) => {
-              if (v === null || !Number.isFinite(v)) return;
-              if (v < 0 || v > total) issue("Nested counts must be nonnegative and at most total.");
-              const parent = bar.series?.[i - 1]?.data[j];
-              if (i > 0 && parent != null && Number.isFinite(parent) && v > parent)
-                issue("Each nested count must be a subset of the previous series.");
-            }),
-          );
-        }
+        nestedDotOptions(bar, issue);
         if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
           issue("Stacked bars require nonnegative values.");
         if (

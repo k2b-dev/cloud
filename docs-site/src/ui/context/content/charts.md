@@ -1303,4 +1303,6 @@ Each category is two dots wide. The smallest nested subset uses the strongest co
 
 A missing nested observation leaves the category drawing as a gap. Zero counts retain a fully grey matrix. The full category is one hover, keyboard and tap target, and the tooltip stays at the top of the plot when moving between its dots. Comparisons, logarithmic scales and normalization are unavailable for nested matrices.
 
+The DOM-free `nestedDotOptions` helper from `@k2b/ui/charts/core` shares these checks with the portable schema and returns the resolved capacity and dot count. Direct calls throw on invalid options; schema hosts can pass an issue callback as the second argument to collect validation errors.
+
 Percentage bar and dot-matrix descriptions show the latest category in their legend until inspection shows the category at the cursor. They never sum percentages across periods. For direct `Chart.Bar` calls with a custom percentage formatter, set `legendValues="latest"`; count series keep summed totals by default.

@@ -55,11 +55,11 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // New dots part: 7,329 B; host total: 88,553 B (+7,329).
+  // New dots part: 7,163 B; host total: 88,387 B (+7,163).
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  expect(total).toBeLessThan(88_593); // Main's 81,264 B ceiling + exactly the new dots part.
+  expect(total).toBeLessThan(88_427); // Main's 81,264 B ceiling + exactly the new dots part.
   expect(parts.kinds.dots!.code).not.toContain("k2b-chart-ranked");
   expect(parts.kinds.dots!.code).not.toContain("Bar series must have the same length as x");
   expect(parts.kinds.dots!.code).not.toContain("stdlib-chart-empty-text");
