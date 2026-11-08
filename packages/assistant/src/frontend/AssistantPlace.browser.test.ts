@@ -532,6 +532,21 @@ describe("Gustav at a place", () => {
     }
   }, 60_000);
 
+  test("the bar reads in dark mode too", async () => {
+    const h = await open(
+      panel,
+      { place: "u_marta", initial: true, conversationId: "Pmarta", answers: { u_marta: available("u_marta", "Pmarta") } },
+      { theme: "dark" },
+    );
+    try {
+      await bar(h.page).getByText("Antwort setzen").waitFor();
+      await shot(h.page, "02-panel-ort-chat-dark-1440");
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
   test("another open chat stays, and the bar offers the switch in its fixed slot", async () => {
     const h = await open(panel, {
       place: "u_marta",
