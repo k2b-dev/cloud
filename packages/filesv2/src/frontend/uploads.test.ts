@@ -215,7 +215,11 @@ test("a durable-key write failure happens before any start request", async () =>
     throw failure;
   });
   try {
-    await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toBe(failure);
+    await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toMatchObject({
+      kind: "final",
+      code: "upload_preflight",
+      cause: failure,
+    });
     expect(startKeys).toEqual([]);
     expect(aborts).toBe(0);
   } finally {

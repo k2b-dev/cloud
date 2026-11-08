@@ -120,3 +120,51 @@ test("each start refreshes the start time, so a session opened by a late retry i
   setSystemTime(now + 3 * day + UPLOAD_KEY_RETENTION_MS);
   expect((await browserUploadKey(["private"], new Blob(["a"]))).idempotencyKey).toBe(first.idempotencyKey);
 });
+
+test("captured unnamed exports with different bytes never share a durable receipt identity", async () => {
+  const scope = ["private", "photos", "same.jpg", "overwrite", "revision-1"];
+  const first = await browserUploadKey(scope, new Blob(["abc"], { type: "image/jpeg" }));
+  const other = await browserUploadKey(scope, new Blob(["xyz"], { type: "image/jpeg" }));
+  const retry = await browserUploadKey(scope, new Blob(["abc"], { type: "image/jpeg" }));
+  expect(other.idempotencyKey).not.toBe(first.idempotencyKey);
+  expect(retry.idempotencyKey).toBe(first.idempotencyKey);
+});
+
+test("named source files retain the existing durable metadata identity", async () => {
+  const file = new File(["source"], "photo.jpg", { lastModified: 12, type: "image/jpeg" });
+  const scope = ["private", "base", "photo.jpg"];
+  const metadata = [scope, file.size, file.type, file.name, file.lastModified];
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(metadata))));
+  const hash = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const existing = crypto.randomUUID();
+  storage.set(`filesv2:upload:${hash}`, existing);
+  expect((await browserUploadKey(scope, file)).idempotencyKey).toBe(existing);
+});
+
+test("export fingerprinting reads bounded chunks and cancellation reserves nothing", async () => {
+  const file = new Blob([new Uint8Array(3 * 1024 * 1024 + 1)]);
+  const controller = new AbortController();
+  const slice = file.slice.bind(file);
+  const sizes: number[] = [];
+  file.slice = (start, end, type) => {
+    sizes.push((end ?? file.size) - (start ?? 0));
+    controller.abort();
+    return slice(start, end, type);
+  };
+  await expect(browserUploadKey(["private"], file, controller.signal)).rejects.toHaveProperty("name", "AbortError");
+  expect(sizes).toEqual([1024 * 1024]);
+  expect(storage.size).toBe(0);
+});
+
+test("confirmed completion survives storage cleanup failure", async () => {
+  const start = await browserUploadKey(["private"], new Blob(["a"]));
+  const remove = localStorage.removeItem;
+  localStorage.removeItem = () => {
+    throw new DOMException("blocked", "SecurityError");
+  };
+  try {
+    expect(() => start.finish()).not.toThrow();
+  } finally {
+    localStorage.removeItem = remove;
+  }
+});

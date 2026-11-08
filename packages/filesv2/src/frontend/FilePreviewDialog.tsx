@@ -10,13 +10,17 @@ import {
   PanelDialog,
   panelDialogOptions,
   panelDialogPanelClass,
+  prompts,
   toast,
 } from "@k2b/ui";
-import { createSignal, onCleanup, Show } from "solid-js";
-import type { FileEntry } from "../contracts";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import type { EntryResult, FileEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
+import FileImageEditor from "./FileImageEditor";
 import FilePreview from "./FilePreview";
+import FileThumbnail from "./FileThumbnail";
 import { contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
+import { useImageMessages } from "./image-messages";
 import { useFilesMessages } from "./messages";
 
 export type FilePreviewDialogOptions = {
@@ -29,6 +33,9 @@ export type FilePreviewDialogOptions = {
   /** The editor opens read-only, so the action says so. */
   readOnly?: boolean;
   onNotPdf?: () => void;
+  imageEditing?: { canCreate: boolean; onSaved: (result: EntryResult) => void };
+  /** The folder's or selection's entries; its images form the strip while editing. */
+  images?: readonly FileEntry[];
 };
 
 /** Documents, text and audio read in a column; tables, images, PDFs and video get the wide frame. */
@@ -48,16 +55,39 @@ export function openFilePreview(options: FilePreviewDialogOptions) {
   if (WIDE.has(kind)) classes.push("filesv2-preview-dialog--wide");
   if (FILL.has(kind)) classes.push("filesv2-preview-dialog--fill");
   if (STRETCH.has(kind)) classes.push("filesv2-preview-dialog--stretch");
-  return dialogCore.open<void>((close) => <FilePreviewDialog {...options} close={() => close()} />, {
-    ...panelDialogOptions,
-    panelClassName: classes.join(" "),
-    // Reading comes first: focus starts on the content, so arrow keys and Page Down scroll it at once.
-    initialFocus: (dialog) => dialog.querySelector<HTMLElement>(".filesv2-preview-dialog__content"),
-  });
+  return dialogCore.open<void>(
+    (close, context) => {
+      let guard: (() => Promise<boolean>) | null = null;
+      const dismiss = async () => {
+        if (!guard || (await guard())) close();
+      };
+      context.setDismissHandler(dismiss);
+      return (
+        <FilePreviewDialog
+          {...options}
+          close={() => void context.requestDismiss()}
+          setGuard={(next) => {
+            guard = next;
+          }}
+        />
+      );
+    },
+    {
+      ...panelDialogOptions,
+      panelClassName: classes.join(" "),
+      // Reading comes first: focus starts on the content, so arrow keys and Page Down scroll it at once.
+      initialFocus: (dialog) => dialog.querySelector<HTMLElement>(".filesv2-preview-dialog__content"),
+    },
+  );
 }
 
-function FilePreviewDialog(props: FilePreviewDialogOptions & { close: () => void }) {
+function FilePreviewDialog(
+  props: FilePreviewDialogOptions & { close: () => void; setGuard: (guard: (() => Promise<boolean>) | null) => void },
+) {
   const t = useBrowserMessages();
+  const i = useImageMessages();
+  const [editing, setEditing] = createSignal(false);
+  const [entry, setEntry] = createSignal(props.entry);
   const f = useFilesMessages();
   const kind = previewKind(props.entry);
   // Undefined until a Markdown file shows whether it starts with a heading; every other file is titled by its name.
@@ -85,6 +115,56 @@ function FilePreviewDialog(props: FilePreviewDialogOptions & { close: () => void
     props.close();
     props.onEdit?.();
   };
+  // Image editing: one session per opened image of the folder; the dialog guards them together.
+  const [editPath, setEditPath] = createSignal(props.entry.path);
+  const [sessions, setSessions] = createSignal<string[]>([]);
+  const [statuses, setStatuses] = createSignal(new Map<string, { dirty: boolean; busy: boolean }>());
+  const images = () => (props.images ?? []).filter((image) => previewKind(image) === "image");
+  const entryAt = (path: string) => (path === props.entry.path ? entry() : images().find((image) => image.path === path));
+  const stripItems = () =>
+    images().length > 1
+      ? images().map((image) => ({
+          id: image.path,
+          name: image.name,
+          dirty: statuses().get(image.path)?.dirty ?? false,
+          thumbnail: () => <FileThumbnail baseId={props.baseId} locationKey={props.locationKey} entry={image} />,
+        }))
+      : undefined;
+  const openImage = (path: string) => {
+    setSessions((open) => (open.includes(path) ? open : [...open, path]));
+    setEditPath(path);
+  };
+  const startEditing = () => {
+    openImage(props.entry.path);
+    setEditing(true);
+  };
+  let confirmation: Promise<boolean> | undefined;
+  /** Closing loses every unsaved image, so it asks once; an image still saving keeps the dialog open. */
+  const guard = async (except?: string) => {
+    const open = [...statuses()].filter(([path]) => path !== except).map(([, status]) => status);
+    if (open.some((status) => status.busy)) return false;
+    if (!open.some((status) => status.dirty)) return true;
+    confirmation ??= prompts
+      .confirm(i().discard, { variant: "danger" })
+      .then(Boolean)
+      .finally(() => {
+        confirmation = undefined;
+      });
+    return confirmation;
+  };
+  props.setGuard(() => guard());
+  // The editor itself already confirmed its own image before it asks to leave.
+  const leaveEditing = async (from: string) => {
+    if (!(await guard(from))) return;
+    setEditing(false);
+    setSessions([]);
+    setStatuses(new Map());
+  };
+  createEffect(() => {
+    const panel = content?.closest<HTMLElement>(".filesv2-preview-dialog");
+    if (panel) panel.toggleAttribute("data-editing", editing());
+  });
+  let content: HTMLDivElement | undefined;
   const separator = () => (
     <span class="filesv2-preview-facts__separator" aria-hidden="true">
       ·
@@ -118,18 +198,23 @@ function FilePreviewDialog(props: FilePreviewDialogOptions & { close: () => void
               {separator()}
             </Show>
             <span class="filesv2-preview-facts__size">
-              <Format.Bytes value={props.entry.size} />
+              <Format.Bytes value={entry().size} />
             </span>
             {separator()}
             {/* Phones show the day only, so the date stays readable next to the name and size. */}
             <span class="filesv2-preview-facts__date">
-              <Format.DateTime class="filesv2-preview-facts__date-time" value={props.entry.modified} />
-              <Format.Date class="filesv2-preview-facts__date-day" value={props.entry.modified} />
+              <Format.DateTime class="filesv2-preview-facts__date-time" value={entry().modified} />
+              <Format.Date class="filesv2-preview-facts__date-day" value={entry().modified} />
             </span>
           </span>
         }
         actions={
           <>
+            <Show when={kind === "image" && props.imageEditing && !editing()}>
+              <Button size="sm" variant="secondary" onClick={startEditing}>
+                {i().edit}
+              </Button>
+            </Show>
             <Show when={kind === "markdown" && props.onEdit}>
               <Button size="sm" variant="secondary" class="filesv2-preview-dialog__edit" onClick={edit}>
                 <i class="ti ti-pencil" aria-hidden="true" />
@@ -139,7 +224,7 @@ function FilePreviewDialog(props: FilePreviewDialogOptions & { close: () => void
             <Show when={kind === "text"}>
               <CopyButton size="sm" variant="ghost" text={text() ?? ""} disabled={text() === null} />
             </Show>
-            <Show when={kind === "image"}>
+            <Show when={kind === "image" && !editing()}>
               <IconButton size="sm" label={t().fullscreen} onClick={() => void openLightbox()}>
                 <i class="ti ti-arrows-maximize" aria-hidden="true" />
               </IconButton>
@@ -165,21 +250,56 @@ function FilePreviewDialog(props: FilePreviewDialogOptions & { close: () => void
         close={props.close}
       />
       <PanelDialog.Body>
-        <div class="filesv2-preview-dialog__content" tabindex="-1">
-          <FilePreview
-            baseId={props.baseId}
-            locationKey={props.locationKey}
-            entry={props.entry}
-            variant="plain"
-            headingScale="normal"
-            onDownload={props.onDownload}
-            onNotPdf={() => {
-              setNotPdf(true);
-              props.onNotPdf?.();
-            }}
-            onDocumentTitle={setDocumentTitle}
-            onText={setText}
-          />
+        <div ref={content} class="filesv2-preview-dialog__content" tabindex="-1">
+          <Show
+            when={editing()}
+            fallback={
+              <FilePreview
+                baseId={props.baseId}
+                locationKey={props.locationKey}
+                entry={entry()}
+                variant="plain"
+                headingScale="normal"
+                onDownload={props.onDownload}
+                onNotPdf={() => {
+                  setNotPdf(true);
+                  props.onNotPdf?.();
+                }}
+                onDocumentTitle={setDocumentTitle}
+                onText={setText}
+              />
+            }
+          >
+            {/* Every opened image keeps its own session, so switching in the strip never drops unsaved edits. */}
+            <For each={sessions()}>
+              {(path) => (
+                <div class="filesv2-image-session" hidden={path !== editPath()}>
+                  <FileImageEditor
+                    baseId={props.baseId}
+                    path={path}
+                    canCreate={props.imageEditing?.canCreate ?? false}
+                    canWrite={entryAt(path)?.actions?.write === true}
+                    items={stripItems()}
+                    onSelectItem={openImage}
+                    onStatus={(status) =>
+                      setStatuses((all) => {
+                        const next = new Map(all);
+                        next.set(path, status);
+                        return next;
+                      })
+                    }
+                    onBack={() => void leaveEditing(path)}
+                    onSaved={(saved) => {
+                      // An upload result carries no actions; the permissions read with the entry still hold.
+                      if (saved.entry.path === props.entry.path)
+                        setEntry((previous) => ({ ...saved.entry, actions: saved.entry.actions ?? previous.actions }));
+                      props.imageEditing?.onSaved(saved);
+                    }}
+                  />
+                </div>
+              )}
+            </For>
+          </Show>
         </div>
       </PanelDialog.Body>
       <Show when={lightbox()}>{(image) => <Lightbox images={[image()]} onClose={() => setLightbox(null)} />}</Show>

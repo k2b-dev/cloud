@@ -38,11 +38,30 @@ function uploadKeys(now: number) {
   return entries;
 }
 
+/** Bind generated exports to their bytes with bounded temporary memory. Ordinary Files keep their source metadata. */
+async function exportDigest(file: Blob, signal?: AbortSignal) {
+  let digest = new Uint8Array(32);
+  const chunkSize = 1024 * 1024;
+  for (let offset = 0; offset < file.size; offset += chunkSize) {
+    signal?.throwIfAborted();
+    const chunk = new Uint8Array(await file.slice(offset, offset + chunkSize).arrayBuffer());
+    const input = new Uint8Array(digest.length + chunk.length);
+    input.set(digest);
+    input.set(chunk, digest.length);
+    digest = new Uint8Array(await crypto.subtle.digest("SHA-256", input));
+  }
+  signal?.throwIfAborted();
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** Keep a logical start key across reloads/lost responses, without storing names, paths or share tokens. */
-export async function browserUploadKey(scope: readonly unknown[], file: Blob) {
+export async function browserUploadKey(scope: readonly unknown[], file: Blob, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const metadata = [scope, file.size, file.type, "name" in file ? file.name : null, "lastModified" in file ? file.lastModified : null];
+  if (!("name" in file) || typeof file.name !== "string") metadata.push(await exportDigest(file, signal));
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(metadata))));
   const hash = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  signal?.throwIfAborted();
   const now = Date.now();
   const stored = uploadKeys(now).get(hash);
   const idempotencyKey = stored ?? crypto.randomUUID();
@@ -53,8 +72,11 @@ export async function browserUploadKey(scope: readonly unknown[], file: Blob) {
   return {
     idempotencyKey,
     finish: () => {
-      localStorage.removeItem(keyPrefix + hash);
-      localStorage.removeItem(atPrefix + hash);
+      // A confirmed commit stays successful even if browser storage becomes unavailable.
+      try {
+        localStorage.removeItem(keyPrefix + hash);
+        localStorage.removeItem(atPrefix + hash);
+      } catch {}
     },
   };
 }

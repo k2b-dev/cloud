@@ -1360,7 +1360,20 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Reports");
     directory("freeipa", "users/alice/existing.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
+    // A photo Alice may only read (group-readable, owned by someone else) in a folder she may write.
+    directory("freeipa", "users/alice/shared-photo.jpg", 999, 2001, "0640", false);
     const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    // The photo editor opens read-only files for editing and download; the service still refuses to overwrite them.
+    expect((await service.download(testCall(actor), { baseId, path: "shared-photo.jpg" })).method).toBe("GET");
+    await expect(
+      service.upload(testCall(actor), {
+        idempotencyKey: crypto.randomUUID(),
+        baseId,
+        path: "shared-photo.jpg",
+        size: 1,
+        onConflict: "overwrite",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
     const opened = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,

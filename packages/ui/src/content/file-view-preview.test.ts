@@ -59,3 +59,7 @@ test("counts CSV records beyond the retained page, including quoted newlines", (
   expect(last.rows[1]).toEqual(["8800", "two\nlines"]);
   expect(last.rows.at(-1)).toEqual(["8999", "two\nlines"]);
 });
+
+test("camera image types keep the native decode error and recovery surface reachable", () => {
+  for (const extension of ["heic", "heif", "tif", "tiff"]) expect(getFileViewPreviewKind({ path: `camera.${extension}` })).toBe("image");
+});

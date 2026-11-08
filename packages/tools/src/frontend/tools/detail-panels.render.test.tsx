@@ -3,43 +3,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import type { ImgData } from "@k2b/stdlib/browser";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { DEFAULT_ADJ } from "./image-processor/constants";
-import type { ImageEntry } from "./image-processor/types";
 
 const root = mkdtempSync(join(tmpdir(), "tools-detail-panel-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: ImageProcessor, ImageProcessorView } = await import("./ImageProcessor.island.tsx");
 const { RequestDetail } = await import("./WebhookTester.island.tsx");
 
 const legacyDetailClasses = ['class="detail-header', 'class="detail-stack', 'class="detail-section'];
-
-const imageData = { width: 1200, height: 800 } as ImgData;
-const image: ImageEntry = {
-  id: "image-1",
-  file: new File(["image"], "invoice.png", { type: "image/png" }),
-  source: imageData,
-  previewSource: imageData,
-  originalSource: imageData,
-  originalPreviewSource: imageData,
-  thumbUrl: "data:image/png;base64,aW1hZ2U=",
-  name: "invoice.png",
-  adj: { ...DEFAULT_ADJ },
-  markup: [],
-  markupUndo: [],
-  markupRedo: [],
-  cropped: false,
-  cropBounds: { x: 0, y: 0, w: 1, h: 1 },
-};
-
-const renderImageProcessor = () => renderToString(() => createComponent(ImageProcessor, {}));
-const renderImageProcessorView = (props: Parameters<typeof ImageProcessorView>[0] = {}) =>
-  renderToString(() => createComponent(ImageProcessorView, props));
 
 describe("Tools detail panels", () => {
   test("groups webhook request and response data under one shared scroll owner", () => {
@@ -103,108 +77,4 @@ describe("Tools detail panels", () => {
     expect(html.match(/>Raw<\/span>/g)).toHaveLength(4);
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
   });
-
-  test("renders the empty image inspector with one shared scroll owner", () => {
-    const html = renderImageProcessor();
-
-    expect(html).toContain('class="k2b-detail-panel"');
-    expect(html).toContain("<h2>Image controls</h2>");
-    expect(html).not.toContain('class="k2b-detail-panel__kind"');
-    expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).toContain("No image selected");
-    expect(html).toContain("Add images");
-    expect(html).toContain('aria-label="Show image canvas"');
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-    expect(html).not.toContain("Export image");
-    for (const className of legacyDetailClasses) expect(html).not.toContain(className);
-  });
-
-  test("renders active edit controls and export actions through the shared detail panel", () => {
-    const html = renderImageProcessorView({ initialImages: [image] });
-
-    expect(html).toContain("<h2>invoice.png</h2>");
-    expect(html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"))).toContain("Image");
-    expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
-    expect(html).toContain('aria-label="More image actions"');
-    expect(html).toContain("1200 × 800 px");
-    expect(html).toContain('<img src="data:image/png;base64,aW1hZ2U=" alt="Preview"');
-    expect(html).toContain('role="radiogroup" aria-label="Options"');
-    expect(html).toContain('class="k2b-detail-panel__summary"');
-    expect(html).toContain('aria-label="Geometry"');
-    expect(html).toContain('aria-label="Appearance"');
-    expect(html).toContain("Crop");
-    expect(html).toContain("Transform");
-    expect(html).toContain("Adjustments");
-    expect(html).toContain("Presets");
-    expect(html).toContain("Edits");
-    expect(html).toContain("Export image");
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-    for (const className of legacyDetailClasses) expect(html).not.toContain(className);
-  });
-
-  test("renders markup controls and their disabled initial actions", () => {
-    const html = renderImageProcessorView({ initialImages: [image], initialEditorMode: "markup" });
-
-    expect(html).toContain('aria-label="Markup controls"');
-    expect(html).toContain("Tool");
-    expect(html).toContain("Style");
-    expect(html).toContain('aria-label="Pen"');
-    expect(html).toMatch(/<button aria-label="Undo markup"[^>]* disabled /);
-    expect(html).toMatch(/<button aria-label="Redo markup"[^>]* disabled /);
-    expect(html).toMatch(/<button aria-label="Delete selected markup"[^>]* disabled /);
-    expect(html).toMatch(/<button aria-label="Clear markup"[^>]* disabled /);
-    expect(html).not.toContain('aria-label="Geometry"');
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-  });
-
-  test("disables destructive and export actions while cropping", () => {
-    const html = renderImageProcessorView({ initialImages: [image], initialCropActive: true });
-
-    expect(html).toContain("Apply");
-    expect(html).toContain("Cancel");
-    // Adding and removing images sit in the header's "…" menu and stay disabled while cropping.
-    expect(html).toMatch(/<button[^>]*role="menuitem"[^>]* disabled [^>]*>(?:(?!<\/button>).)*<span>Add images<\/span>/);
-    expect(html).toMatch(
-      /<button[^>]*role="menuitem"[^>]*data-danger="true" disabled [^>]*>(?:(?!<\/button>).)*<span>Remove image<\/span>/,
-    );
-    expect(html).toMatch(
-      /<button[^>]* disabled ><span class="k2b-button__label"><i class="ti ti-download"><\/i> (?:<!--!\$-->)?Export image/,
-    );
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-  });
-});
-
-test("image file failures stay in the main preview region when the inspector is closed", () => {
-  const html = renderImageProcessorView({
-    initialLoadFailures: [
-      { file: new File([], "broken.heic", { type: "image/heic" }), reason: "decode-failed" },
-      { file: new File([], "scan.tiff", { type: "image/tiff" }), reason: "unsupported" },
-      { file: new File([], "offline.heic", { type: "image/heic" }), reason: "decoder-unavailable" },
-    ],
-  });
-  const main = html.slice(0, html.indexOf('id="k2b-workspace-detail-image-processor-inspector"'));
-  expect(main).toContain('aria-label="Files that could not be added"');
-  expect(main).toContain("broken.heic");
-  expect(main).toContain("This image could not be read.");
-  expect(main).toContain("Export it again from the source app, or choose another file.");
-  expect(main).toContain("scan.tiff");
-  expect(main).toContain("This format is not supported.");
-  expect(main).toContain("offline.heic");
-  expect(main).toContain("The HEIC decoder could not be loaded.");
-  expect(main).toContain("Reload the page and try again. Or convert the photo to JPEG first.");
-  expect(main).toContain('aria-label="Dismiss file errors"');
-  expect(main).toContain("absolute inset-x-[var(--ui-space-shell)] bottom-[var(--ui-space-shell)]");
-});
-
-test("crop refusals render per file in the main area without a hint line", () => {
-  const html = renderImageProcessorView({
-    initialLoadFailures: [{ file: new File([], "later.png", { type: "image/png" }), reason: "crop-active" }],
-  });
-  const main = html.slice(0, html.indexOf('id="k2b-workspace-detail-image-processor-inspector"'));
-  expect(main).toContain("later.png");
-  expect(main).toContain("Apply or cancel the crop before adding images");
-  expect(main).not.toContain('<p class="text-dimmed">');
-  // A long name may be cut short, but never the reason that says how to go on.
-  expect(main).toMatch(/<p class="text-primary">(?:<!--[^>]*-->)?Apply or cancel the crop before adding images/);
 });

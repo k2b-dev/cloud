@@ -114,6 +114,12 @@ const portableSections = [
         "ti ti-crop",
         "Direct-manipulation crop, resize, and rotation with free or fixed aspect ratios.",
       ),
+      page(
+        "image-editor",
+        "ImageEditor",
+        "ti ti-photo-edit",
+        "Photo editing with one history, bounded previews, annotations, and an awaited save.",
+      ),
       page("emoji-picker", "EmojiPicker", "ti ti-mood-smile", "Emoji search in English and German, recently used emoji, and skin tones."),
       page("signature", "SignatureInput", "ti ti-signature", "Draw with finger, pen, or mouse, or type the name, as an SVG value."),
       page(

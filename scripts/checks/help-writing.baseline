@@ -132,7 +132,6 @@ packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | click*
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | click*
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | grant
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | granting
-packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | write access
 packages/gateway-ops/src/help/documents/en/gateway-ops-incident.help.md | frontmatter | kind
 packages/gateway-ops/src/help/documents/en/gateway-ops-operations.help.md | frontmatter | kind
 packages/gateway-ops/src/help/documents/en/gateway-ops-reference.help.md | frontmatter | kind

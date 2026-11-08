@@ -8,6 +8,16 @@ order: 100
 
 Dateien öffnet mit **Alle Ablagen**: eine Kachel für jede Ablage, die du erreichst, darunter deine zuletzt geöffneten Dateien. Öffne eine Kachel, um in dieser Ablage zu arbeiten. Dort legst du Ordner an und lädst Dateien hoch; die Übersicht bietet keine Aktion zum Anlegen. Hast du nur eine Ablage, öffnet Dateien direkt in ihr. Die Beschriftung neben dem Ablagenamen nennt die Herkunft.
 
+## Ein Foto bearbeiten {icon="photo-edit"}
+
+Öffne die Vorschau eines Bildes und wähle **Bild bearbeiten**. Der Editor füllt fast den ganzen Bildschirm. Schneide das Foto zu, drehe es, passe es an, beschrifte es oder decke vertrauliche Stellen ab. Wähle danach **Speichern**; das Menü daneben enthält die anderen Wege zu speichern. Die Bildleiste unten zeigt die anderen Bilder des Ordners oder deine Auswahl. Jedes Bild behält seine Änderungen, bis du speicherst oder schließt; ein Punkt zeigt ungespeicherte Bilder. Kann dein Browser das Format nicht öffnen, erscheint ein Fehler mit **Erneut versuchen**.
+
+Darfst du die Datei nur ansehen, kannst du sie trotzdem bearbeiten und **Herunterladen** wählen. **Neue Version speichern** bleibt dann sichtbar, ist aber gesperrt und nennt den Grund. In einer versionierten Ablage behalten ältere Versionen ihren Inhalt: Nach einer Schwärzung erinnert dich der Editor daran, dass frühere Versionen ohne die Schwärzung im Verlauf bleiben.
+
+**Neue Version speichern** ist die Hauptaktion und gibt es in einer verwalteten, versionierten Ablage, wenn der Browser den ursprünglichen Typ JPEG, PNG oder WebP schreiben kann. Ablagen, die auch Schreibzugriffe außerhalb von Cloud zulassen, bieten nur Kopien an. Sonst wählst du **Kopie speichern**; dafür brauchst du das Recht, Dateien im Ordner anzulegen. Die Kopie heißt etwa `Foto (bearbeitet).jpg`, bei Bedarf mit einer Nummer. Existiert dieser Name schon, wähle erneut **Kopie speichern**, um den nächsten Namen zu verwenden. Dateien versucht die ursprüngliche Bildgröße. Kann der Browser diese Größe nicht ausgeben, bleiben deine Änderungen erhalten. Du kannst dann ausdrücklich eine kleinere Ausgabe versuchen. Beim Speichern entfernt er die Metadaten der Quelle.
+
+Das Original bleibt während der Bearbeitung fest. Wurde die Datei inzwischen geändert, bleiben deine Änderungen erhalten; speichere eine Kopie. Speichern ist erst fertig, wenn die Ablage den Upload bestätigt hat. Ist das Ergebnis unklar, prüft **Upload prüfen** denselben Vorgang vor einem weiteren Speichern. Beim Schließen mit ungespeicherten Änderungen fragt der Editor vor dem Verwerfen.
+
 ## Ordnerbeschreibungen und Vorschauen {icon="file-description"}
 
 Lege eine `README.md` in einem Ordner ab, um zu erklären, was dort hingehört. Groß- und Kleinschreibung spielen dabei keine Rolle. Der Inhalt erscheint in einem kompakten Bereich über Liste oder Grid. Im Baum entfällt diese Vorschau; dort kannst du die README weiterhin als normale Datei öffnen. Lange Beschreibungen werden unten mit einem Verlauf ausgeblendet. Über **Alles anzeigen** öffnest du die vollständige Beschreibung. Die README bleibt eine normale Datei, die du bearbeiten, verschieben oder löschen kannst.

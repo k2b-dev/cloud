@@ -8,6 +8,16 @@ order: 100
 
 Files opens with **All storage**: one tile for each storage location you can reach, and your recently opened files below. Open a tile to work in that storage location. You create folders and upload files there; the overview has no create action. If you have only one storage location, Files opens directly inside it. The label beside each storage name identifies its source.
 
+## Edit a photo {icon="photo-edit"}
+
+Open an image preview and choose **Edit image**. The editor fills almost the whole screen. Crop, rotate, adjust, annotate, or cover sensitive areas, then choose **Save**; its menu holds the other ways to save. The image strip at the bottom shows the folder's other images, or your selection; each keeps its own edits until you save or close, and a dot marks unsaved ones. A browser that cannot open the format shows an error with **Try again**.
+
+If you may only view the file, you can still edit it and choose **Download**. **Save new version** then stays visible but locked, with the reason. In a versioned storage location, older versions keep their content: after you redact an image, the editor reminds you that earlier versions stay in the history without the redaction.
+
+**Save new version** is the main action and is available in a managed, versioned storage location when the browser can encode the original JPEG, PNG, or WebP format. Storage that also accepts writes outside Cloud offers copies only. Otherwise choose **Save copy**; you must be able to create files in that folder to save a copy. Copies are named `Photo (edited).jpg`, with a number when needed. If that name already exists, choose **Save copy** again to use the next name. Files attempts the original image dimensions. If the browser cannot produce that size, your edits stay open and you can explicitly retry with a smaller output. Saving removes source metadata.
+
+The original stays fixed while you edit. A conflicting change preserves your edits; save a copy instead. A save completes only after storage confirms the upload. If its result is unknown, **Check upload** checks that same upload before you can save again. Closing with unsaved changes asks before discarding them.
+
 ## Folder descriptions and previews {icon="file-description"}
 
 Add a `README.md` to a folder to explain what belongs there. Uppercase and lowercase spelling both work. Its content appears above the list or grid in a compact area. Tree view hides this preview; you can still open the README as a normal file. Long descriptions fade out at the bottom. Use **Show all** to read the full description. The README stays a normal file that you can edit, move, or delete.
@@ -118,7 +128,7 @@ Personal and group Cloud storage requires enabled local Linux identities. Machin
 
 Open a `.md` or `.markdown` file in the full workspace editor, or choose **Add → Markdown document**. Markdown editing works without the office editor. UTF-8 files up to 2 MiB are supported. Save with the editor button or Ctrl/Cmd+S. Save and X are on the right of the toolbar. A brief check confirms a successful save; X returns to the folder. Leaving asks about unsaved changes. If saving fails or the file has changed, your draft stays open: reload the file or save a copy under a new name.
 
-**Add → Template** shows the templates available to you. Choose one and a name to create an independent file in the current folder. You need write access there. Existing files are never replaced. A template may be available even when you cannot access its original file. Later changes to the template do not change your copy. If no templates appear, an administrator can grant you or your groups access.
+**Add → Template** shows the templates available to you. Choose one and a name to create an independent file in the current folder. You must be able to create files there. Existing files are never replaced. A template may be available even when you cannot access its original file. Later changes to the template do not change your copy. If no templates appear, an administrator can grant you or your groups access.
 
 Use `cld filesv2 documents create me:/Notes.md --kind markdown`, `cld filesv2 templates list --json`, and `cld filesv2 templates use <template-id> me:/Notes.md` for the same actions in the terminal. For conditional replacement, add `--replace --expected-revision <revision>` to `put`; a conflict leaves the current file untouched.
 

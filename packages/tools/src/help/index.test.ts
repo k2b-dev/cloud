@@ -12,6 +12,7 @@ describe("toolsHelp", () => {
       "tools-markdown-pdf",
       "tools-image-converter",
       "tools-safety",
+      "tools-photo-editor",
     ]);
 
     expect(toolsHelp.getMarkdown("tools-start")).toContain("Tools is a workspace for small generators");
@@ -25,6 +26,7 @@ describe("toolsHelp", () => {
     expect(toolsHelp.getMarkdown("tools-markdown-pdf")).toContain("no dedicated `cld tools` command");
     expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("does not upload or persist them");
     expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("Multiple files download together");
+    expect(toolsHelp.getMarkdown("tools-photo-editor")).toContain("A browser size refusal keeps your edits");
     expect(toolsHelp.getMarkdown("tools-safety")).toContain("Generators, Base64, Hex, Base32, color conversion");
   });
 
@@ -63,6 +65,7 @@ describe("toolsHelp", () => {
     expect(toolsHelp.getMarkdown("tools-document-markdown", "de")).toContain("führt keine OCR aus");
     expect(toolsHelp.getMarkdown("tools-markdown-pdf", "de")).toContain("kein eigenes `cld tools`-Kommando");
     expect(toolsHelp.getMarkdown("tools-image-converter", "de")).toContain("ohne sie hochzuladen");
+    expect(toolsHelp.getMarkdown("tools-photo-editor", "de")).toContain("bleiben Änderungen erhalten");
     expect(toolsHelp.getMarkdown("tools-safety", "de")).toContain("Ein Hash ist keine Verschlüsselung");
   });
 
