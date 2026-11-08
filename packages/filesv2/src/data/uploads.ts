@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import type { ExecutionIdentity, Node, WriteOptions } from "@k2b/filegate";
 import type { TransactionSQL } from "bun";
+import { publishUploadEvent, type UploadEventScope } from "../app-events";
 import type { FilesCall, Intent } from "../service/activity";
 import { FilesError } from "../service/errors";
 import { finishActivity, insertActivity } from "./activity";
@@ -78,6 +79,7 @@ export type UploadHistory = {
   call: FilesCall;
   target: string;
   previous: Pick<Node, "id" | "revision"> | null;
+  eventScope: UploadEventScope;
 };
 export type UploadActivity = {
   id: string;
@@ -89,6 +91,7 @@ export type UploadActivity = {
   path_after: string;
   size: number;
   name: string;
+  detail: { app_event_scope?: UploadEventScope };
 };
 async function recordHistory(tx: TransactionSQL, row: Upload, history: UploadHistory) {
   const intent: Intent = {
@@ -103,6 +106,7 @@ async function recordHistory(tx: TransactionSQL, row: Upload, history: UploadHis
     itemId: history.previous?.id,
     revisionBefore: history.previous?.revision,
     size: row.size,
+    detail: { app_event_scope: history.eventScope },
   };
   const id = await insertActivity(history.call, intent, tx, row.id);
   const options = { ...row.write_options, metadata: { ...row.write_options?.metadata, activity: id } };
@@ -253,6 +257,12 @@ export const uploads = {
       return { upload, activity: await historyFor(tx, upload) };
     });
   },
+  /** Refresh the exact parent under the caller's publication checks, before sending Filegate's commit. */
+  async bindEventScope(id: string, scope: UploadEventScope): Promise<void> {
+    await sql`UPDATE filesv2.activity a SET detail=jsonb_set(a.detail,'{app_event_scope}',${scope}::jsonb)
+      FROM filesv2.uploads u WHERE u.id=${id} AND a.upload_id=u.id
+      AND u.state='open' AND a.state IN ('pending','unclear')`;
+  },
   async finish(id: string, state: "committed" | "aborted" | "expired", result: Node | null): Promise<void> {
     await sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
@@ -274,6 +284,9 @@ export const uploads = {
       )
         throw new FilesError("upload_changed", 409);
       await finishActivity(tx, activity.id, state === "committed" ? "done" : "not_done", async () => {
+        if (state === "committed" && result) {
+          await publishUploadEvent(tx, activity.action, activity.detail.app_event_scope, row.path, result);
+        }
         await tx`UPDATE filesv2.uploads SET state=${state},result=${result},error_code=NULL,updated_at=now() WHERE id=${id} AND state='open'`;
         return { itemAfterId: result?.id, pathAfter: result?.path, size: result?.size, revisionAfter: result?.revision };
       });
