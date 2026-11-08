@@ -215,7 +215,7 @@ form needs it.
 
 ## API reference
 
-See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`. `DatePicker` in its default `field` appearance takes a [suggestion](/en/ui/input/field-suggestion) as a date key within `min` and `max`; `plain` pickers, `DateTimePicker`, and `DateRangePicker` do not take suggestions yet.
 
 ```ts
 type DatePreset<T> = {

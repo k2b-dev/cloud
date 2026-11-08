@@ -382,6 +382,7 @@ export const flattenAiModelVariant = (provider: AiProvider, model: AiModel, vari
   contextWindow: model.contextWindow ?? undefined,
   temperature: model.temperature ?? undefined,
   maxOutputTokens: variant.maxOutputTokens ?? model.maxOutputTokens ?? undefined,
+  outputTokenLimit: model.outputTokenLimit ?? undefined,
   reasoningEffort: variant.reasoningEffort ?? undefined,
   extraBody: { ...model.extraBody, ...variant.extraBody },
   maxLoadedTools: model.maxLoadedTools ?? undefined,
