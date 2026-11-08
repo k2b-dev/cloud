@@ -80,6 +80,7 @@ import {
 } from "./message-queue";
 import { createAiNextMessageTool } from "./next-message";
 import { dismissAiNextMessage } from "./next-message-store";
+import { AiConversationPlaceFilterSchema } from "./place-filter";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
@@ -128,6 +129,7 @@ const retryInstruction = (mode: "retry" | "details" | "concise"): string | null 
 const ConversationListQuerySchema = z
   .object({
     q: z.string().trim().max(200).optional(),
+    place: AiConversationPlaceFilterSchema.optional(),
     limit: z.coerce.number().int().min(1).max(50).optional(),
     archived: z
       .enum(["true", "false"])
@@ -563,6 +565,7 @@ export const aiRoutes = (() => {
               await aiConversations.listConversations({
                 ownerUserId: ctx.ownerUserId,
                 search: query.q,
+                place: query.place,
                 archived: query.archived,
                 done: query.done,
                 status: query.status,
@@ -584,6 +587,7 @@ export const aiRoutes = (() => {
         const page = await aiConversations.listConversationsPage({
           ownerUserId: ctx.ownerUserId,
           search: query.q,
+          place: query.place,
           archived: query.archived,
           done: query.done,
           status: query.status,
@@ -593,6 +597,11 @@ export const aiRoutes = (() => {
           perPage: query.perPage ?? 20,
         });
         return respond(c, ok({ ...page, items: await publicConversations(page.items, resourceContext(c)) }));
+      })
+      .get("/conversations/counts", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        return respond(c, ok(await aiConversations.getConversationCounts({ ownerUserId: ctx.ownerUserId })));
       })
       .post("/conversations", v("json", AiCreateConversationInputSchema), async (c) => {
         const ctx = await resolveContext(c);

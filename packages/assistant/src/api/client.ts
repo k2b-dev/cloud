@@ -222,8 +222,15 @@ export const assistantApi = {
     return (await response.json()) as AssistantProjectContextSnapshot;
   },
 
+  getConversationCounts: async (signal?: AbortSignal): Promise<import("@k2b/cloud/ai").AiConversationCounts> => {
+    const response = await client.conversations.counts.$get({}, { init: { signal } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load chat counts"));
+    return response.json();
+  },
+
   listConversations: async (input: {
     q?: string;
+    place?: import("@k2b/cloud/ai").AiConversationPlaceFilter;
     limit?: number;
     archived?: boolean;
     done?: boolean;
@@ -236,6 +243,7 @@ export const assistantApi = {
       {
         query: {
           q: input.q,
+          place: input.place,
           limit: input.limit ? String(input.limit) : undefined,
           archived: input.archived ? "true" : undefined,
           done: input.done === undefined ? undefined : input.done ? "true" : "false",
@@ -252,6 +260,7 @@ export const assistantApi = {
 
   listConversationsPage: async (input: {
     q?: string;
+    place?: import("@k2b/cloud/ai").AiConversationPlaceFilter;
     page: number;
     perPage?: number;
     archived?: boolean;
@@ -265,6 +274,7 @@ export const assistantApi = {
       {
         query: {
           q: input.q,
+          place: input.place,
           page: String(input.page),
           perPage: String(input.perPage ?? 20),
           archived: input.archived ? "true" : undefined,

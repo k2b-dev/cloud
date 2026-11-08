@@ -389,6 +389,20 @@ describe("Core AI capabilities", () => {
     });
   });
 
+  test("own-chat discovery selects place chats only for an explicit exact place ref", async () => {
+    const list = spyOn(aiConversations, "listConversations").mockResolvedValue([]);
+    const place = { type: "fixture.conversation", id: "Marta1" };
+    await aiCapabilities.queries["ai.chats.search"].run({ query: "Marta", archived: false, limit: 10, place }, context);
+    expect(list).toHaveBeenCalledWith({
+      ownerUserId: user.id,
+      search: "Marta",
+      refs: undefined,
+      place: "fixture.conversation:Marta1",
+      archived: false,
+      limit: 10,
+    });
+  });
+
   test("searches only the current user's chats and returns an open link", async () => {
     const list = spyOn(aiConversations, "listConversations").mockResolvedValue([chat]);
 
@@ -398,6 +412,7 @@ describe("Core AI capabilities", () => {
       ownerUserId: user.id,
       search: "release",
       refs: undefined,
+      place: "none",
       archived: false,
       limit: 10,
     });

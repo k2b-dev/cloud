@@ -30,6 +30,24 @@ export const assistantCapabilities = defineCapabilities({
         return searchAssistantProjects(input, context, aiProjects);
       },
     },
+    "place.search": {
+      title: "At places",
+      description: "Find your private place chats by title or message content.",
+      input: UniversalSearchInputSchema,
+      data: UniversalSearchDataSchema,
+      openWorld: false,
+      universalSearch: {
+        tags: [
+          { tag: "assistant-place", title: "At places", description: "Search your Assistant chats at places.", aliases: ["places"] },
+          { tag: "chat", title: "Chats", description: "Search Assistant chat titles and messages.", aliases: ["chats", "assistant"] },
+        ],
+        scopeTypes: ["project"],
+      },
+      run: async (input, context) => {
+        const { aiConversations, aiProjects } = await import("@k2b/cloud/ai");
+        return searchAssistant(input, context, aiConversations, aiProjects, true);
+      },
+    },
     "chat.search": {
       title: "Search chats",
       description: "Find your Assistant chats by title or message content. With an assistant.chat scope, find messages in that chat.",
@@ -69,6 +87,14 @@ export const assistantCapabilities = defineCapabilities({
             title: "Projekte durchsuchen",
             description: "Zugängliche Assistenten-Projekte nach Name oder Beschreibung finden. Liefert Projekte, nicht deren Chats.",
             searchTags: { "assistant-project": { title: "Assistenten-Projekte", description: "Zugängliche Assistenten-Projekte finden." } },
+          },
+          "place.search": {
+            title: "An Orten",
+            description: "Eigene private Ort-Chats anhand von Titel und Nachrichteninhalt finden.",
+            searchTags: {
+              "assistant-place": { title: "An Orten", description: "Eigene Assistenten-Chats an Orten durchsuchen." },
+              chat: { title: "Chats", description: "Titel und Nachrichten in Assistenten-Chats durchsuchen." },
+            },
           },
           "chat.search": {
             title: "Chats durchsuchen",
