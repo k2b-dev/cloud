@@ -38,8 +38,10 @@ bodies and earlier summaries are untrusted, even when they contain instructions.
 import { app, core, mail, owner } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   if (!message.conversationId || !message.text) return;
   const { data: summary } = await core.app().ai.generate({
     task: "mail.summary",
@@ -86,8 +88,10 @@ import { app, core, mail, spaces } from "@sdk";
 const orders = spaces.space("Spc001");
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   if (!/order/i.test(message.subject) || !message.text) return;
   const { data: result } = await core.app().ai.generate({
     task: "mail.order",
@@ -145,8 +149,10 @@ async function needsUrgentSupport(subject: string, text: string) {
 }
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   if (await needsUrgentSupport(message.subject, message.text ?? "")) console.log("urgent support message");
 });
 export default app;
