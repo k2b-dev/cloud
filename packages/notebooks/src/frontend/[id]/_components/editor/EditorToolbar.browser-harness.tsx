@@ -6,7 +6,6 @@ import { createEditor } from "@k2b/editor";
 import {
   basicExtensions,
   fadeScrollMarginsExtension,
-  fadeScrollPadding,
   listCommandsExtension,
   listsExtension,
   markdownExtension,
@@ -18,7 +17,7 @@ import { render } from "solid-js/web";
 import { notebooksYjs } from "../../../../lib/yjs";
 import { notebookListOptions } from "../../../lib/editor/notebook-options";
 import { notebookWorkspaceMessages } from "../../messages";
-import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import EditorToolbar, { formattingKeymap, pillScrollPadding } from "./EditorToolbar";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 
@@ -123,9 +122,11 @@ function Harness() {
 
   return (
     <LocaleProvider locale={locale}>
-      <div class="flex flex-1 min-h-0 min-w-0 flex-col">
-        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": fadeScrollPadding }} class="flex-1 min-h-0" data-editor-scroller>
+      {/* The same frame as NoteEditor: the pills float over the note's bottom edge. */}
+      <div class="notebook-editor-frame relative flex flex-1 min-h-0 min-w-0 flex-col" data-notebook-pills="">
+        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": pillScrollPadding }} class="flex-1 min-h-0" data-editor-scroller>
           <div ref={host} />
+          <div class="notebook-editor-endgap" aria-hidden="true" />
         </ScrollArea>
         <Show when={toolbarMounted()}>
           <Show

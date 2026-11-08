@@ -797,7 +797,8 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
           });
         const original = await bounds();
         const same = (actual: Awaited<ReturnType<typeof bounds>>) => {
-          for (const surface of ["row", "scroller", "editor"] as const)
+          // The recovery bar is one pill where the toolbar had two; the note around it never moves.
+          for (const surface of ["scroller", "editor"] as const)
             for (const dimension of ["x", "y", "width", "height"] as const)
               expect(Math.abs(actual[surface][dimension] - original[surface][dimension])).toBeLessThanOrEqual(0.5);
         };
