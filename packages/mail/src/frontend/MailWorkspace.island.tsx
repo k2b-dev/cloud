@@ -1342,8 +1342,11 @@ function createMailboxController(props: MailboxControllerProps) {
    * The open draft belongs in the URL, so reload, Back, and a shared link open it again. It replaces the entry: a
    * draft is a state of the conversation, not a place of its own.
    */
-  const setDraftParam = (draftId: string | null) => {
+  const setDraftParam = (draftId: string | null, options: { history?: boolean } = {}) => {
     setDraftOpen(draftId !== null);
+    // Another conversation took the reader: its route is already on its way and carries no draft. The entry of the
+    // conversation that held the draft keeps its `?draft=`, so Back opens the draft again.
+    if (options.history === false) return;
     const current = new URL(window.location.href);
     if ((current.searchParams.get("draft") ?? null) === draftId) return;
     if (draftId) current.searchParams.set("draft", draftId);

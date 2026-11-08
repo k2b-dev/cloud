@@ -263,6 +263,8 @@ export default function MailComposer(props: {
     applyDraftContent,
     isDisposed: () => disposed,
     onRecovered: () => toast(t().unsavedChangesRestored, { title: t().draftRecovered }),
+    // The draft already left the screen: the error says so, and opening the draft again brings back what is saved.
+    onClosedUnsaved: () => toast.error(t().closedUnsaved, { title: t().draftCouldNotBeSaved }),
     onMaterialized: (materialized) => {
       if (props.initialSeed) {
         clearInitialSeed();
@@ -1289,8 +1291,13 @@ export default function MailComposer(props: {
 
   /** Inline: Esc and "Collapse". A draft this click created and nobody changed goes away; any other draft is saved and released. */
   const initialSerializedContent = serializeMailDraftContent(content());
+  const initialRevision = props.initialDraft?.revision ?? null;
+  // Unchanged means unchanged everywhere: the input, the stored draft (no other session wrote it), no conflict.
   const untouched = () =>
     Boolean(props.host?.fresh) &&
+    !draftSession.revisionConflict() &&
+    !isShared() &&
+    draft()?.revision === initialRevision &&
     serializeMailDraftContent(content()) === initialSerializedContent &&
     (draft()?.attachments.length ?? 0) === 0 &&
     uploads().length === 0;
