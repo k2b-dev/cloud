@@ -28,13 +28,18 @@ export const sankeyExamples = [
     height: 280,
     width: "twoThirds",
     useFor: ["Converging and diverging flows with a common unit."],
-    avoidFor: ["Cycles or unrelated measures."],
+    avoidFor: ["Cycles or unrelated measures; use bars for unrelated categories."],
     a11y: [
       "Arrow keys inspect nodes and flows; Home/End jump, Enter pins and Escape dismisses.",
       "A narrow chart starts at the sources and scrolls horizontally. The table includes every node and link.",
     ],
     options: [
-      { name: "nodes", type: "{id,label,tone?}[]", description: "Unique ids; tone colors outgoing flows." },
+      {
+        name: "nodes",
+        type: "{id,label,tone?}[]",
+        description:
+          "Unique ids; tone colors outgoing flows. Each node shows the larger of incoming and outgoing totals, keeping imbalances visible.",
+      },
       { name: "links", type: "{source,target,value}[]", description: "Positive values and existing endpoints; no cycles." },
       { name: "legend", type: "{tone,label}[]", description: "Explicit color meanings; wraps within the plot width." },
     ],

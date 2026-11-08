@@ -122,11 +122,7 @@ const flatChartSchema = () => {
     ChartTooltip,
   } = chartParts(chartLimits);
   return z.object({
-    kind: cloudAiChartKindSchema()
-      .optional()
-      .describe(
-        'Single charts: kind. Omit for groups. Use sankey to follow quantities between stages with merging or branching paths; links must be positive and acyclic. Use bars for unrelated categories. Sankey example: {"kind":"sankey","title":"Paths","nodes":[{"id":"a","label":"Click"},{"id":"b","label":"Read"}],"links":[{"source":"a","target":"b","value":4}]}',
-      ),
+    kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
     groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional().describe("treemap and bubble: group names."),
