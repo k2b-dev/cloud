@@ -3,18 +3,35 @@ import {
   CheckboxCard,
   ChoiceList,
   DashboardFrame,
+  DataTable,
   DescriptionList,
   NoticeCard,
   ReferenceChip,
+  StatCell,
+  StatGrid,
   StatusBadge,
   TextInput,
 } from "@k2b/ui";
-import { type Accessor, createContext, createMemo, createSignal, For, type JSX, Match, Show, Switch, useContext } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  useContext,
+} from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
-import { type DescriptionObject, StatsBlock, TableBlock } from "../descriptions/description-blocks";
-import { blockDataAtPath } from "./bind";
+import { importOnDemand } from "../browser/reload";
+import { type DescriptionObject, descriptionObject, descriptionTable } from "../descriptions/description-table";
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
 import { blockWords } from "./messages";
+import { blockDataAtPath } from "./path";
 import type { Block } from "./schema";
 
 /**
@@ -65,6 +82,7 @@ const text = (value: unknown): string =>
         : "";
 const at = (item: unknown, path: readonly string[] | undefined): unknown => (path ? blockDataAtPath(item, path) : undefined);
 const items = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 /** A key-figure or table description as the shared description blocks read it. */
 const descriptionSpec = (description: unknown): DescriptionObject => {
   const json = blockJson(description);
@@ -391,6 +409,119 @@ function ChoiceBlock(props: { block: Leaf<"Choice">; locale: string; choice?: Bl
   );
 }
 
+/**
+ * Code a block loads after the first frame, once per page: `undefined` while it loads, `null` when it could not load
+ * (Try again loads it again). The server's render and the first browser frame always show the waiting state.
+ */
+const onDemand = <T,>(importer: () => Promise<T>) => {
+  let pending: Promise<T | undefined> | undefined;
+  return () => {
+    const [code, setCode] = createSignal<T | null>();
+    let disposed = false;
+    onCleanup(() => {
+      disposed = true;
+    });
+    const load = () => {
+      setCode(undefined);
+      pending ??= importOnDemand(importer);
+      void pending.then((loaded) => {
+        if (loaded === undefined) pending = undefined;
+        if (!disposed) setCode(() => loaded ?? null);
+      });
+    };
+    onMount(load);
+    return [code, load] as const;
+  };
+};
+const useTableCode = onDemand(() => import("../descriptions/description-blocks"));
+const useStatsCode = onDemand(() => import("../descriptions/description-stats"));
+
+/**
+ * Key figures: their formatting loads on demand. Until then each tile waits in its own place at its own size, the
+ * tile's loading state, so the figures arrive without moving anything.
+ */
+function StatsLeaf(props: { spec: DescriptionObject }) {
+  const [code, load] = useStatsCode();
+  const tiles = () => (Array.isArray(props.spec.items) ? props.spec.items : []).filter(descriptionObject);
+  return (
+    <Show
+      when={code()}
+      fallback={
+        <StatGrid columns={Math.min(6, Math.max(1, tiles().length)) as 1 | 2 | 3 | 4 | 5 | 6}>
+          <For each={tiles()}>
+            {(item) => (
+              <StatCell
+                label={text(item.label)}
+                icon={typeof item.icon === "string" ? item.icon : undefined}
+                value={text(item.value)}
+                sub={isObject(item.compare) ? undefined : text(item.note) || undefined}
+                delta={isObject(item.delta) && typeof item.delta.value === "number" ? { value: item.delta.value } : undefined}
+                compare={isObject(item.compare) ? { label: text(item.compare.label), value: text(item.compare.value) } : undefined}
+                trend={(Array.isArray(item.trend) ? item.trend : []).filter((value): value is number => typeof value === "number")}
+                status={code() === null ? "error" : "loading"}
+                onRetry={code() === null ? load : undefined}
+              />
+            )}
+          </For>
+        </StatGrid>
+      }
+    >
+      {(loaded) => {
+        const Stats = loaded().StatsBlock;
+        return <Stats spec={props.spec} state="ready" />;
+      }}
+    </Show>
+  );
+}
+
+/**
+ * A table: its search, sorting and grouping load on demand, as Gustav's tables do. Until then, and when the code cannot
+ * load, the same frame holds the same room, with a hidden copy of every row, so the table arrives without moving
+ * anything.
+ */
+function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; locale: string }) {
+  const words = () => blockWords(props.locale);
+  const [code, load] = useTableCode();
+  const height = () => (items(props.block.rows).length > 8 ? BLOCK_PANEL_HEIGHTS.md : 0);
+  const table = createMemo(() => descriptionTable(props.spec));
+  return (
+    <Show
+      when={code()}
+      fallback={
+        <DashboardFrame
+          title={props.block.title}
+          subtitle={props.block.subtitle}
+          headingLevel={4}
+          state={code() === null ? "error" : "loading"}
+          onRetry={code() === null ? load : undefined}
+          height={height() ? `${height()}px` : undefined}
+          tools={
+            <Show when={props.block.search}>
+              <TextInput type="search" icon="ti ti-search" aria-label={props.block.title} placeholder={words().search} value="" disabled />
+            </Show>
+          }
+          reserve={<DataTable ariaLabel={props.block.title} surface="plain" rows={table().rows} columns={table().columns} />}
+        />
+      }
+    >
+      {(loaded) => {
+        const Table = loaded().TableBlock;
+        return (
+          <Table
+            spec={props.spec}
+            state="ready"
+            title={props.block.title}
+            subtitle={props.block.subtitle}
+            height={height()}
+            headingLevel={4}
+            empty={props.block.empty}
+          />
+        );
+      }}
+    </Show>
+  );
+}
+
 const textLines = (value: string) =>
   Math.min(
     14,
@@ -490,19 +621,9 @@ function Leaf(props: { block: Block; host: Host; locale: string; timeZone: strin
     case "Draft":
       return <DraftBlock block={block} draft={props.draft} />;
     case "Stats":
-      return <StatsBlock spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} state="ready" />;
+      return <StatsLeaf spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} />;
     case "Table":
-      return (
-        <TableBlock
-          spec={descriptionSpec(blockDescription(block, words(), props.timeZone))}
-          state="ready"
-          title={block.title}
-          subtitle={block.subtitle}
-          height={items(block.rows).length > 8 ? BLOCK_PANEL_HEIGHTS.md : 0}
-          headingLevel={4}
-          empty={block.empty}
-        />
-      );
+      return <TableLeaf block={block} spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} locale={props.locale} />;
     case "Chart":
       // A chart draws as Gustav's charts do: its code loads on demand, and the server's drawing holds its place.
       return (

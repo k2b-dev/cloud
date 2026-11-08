@@ -235,6 +235,21 @@ export const gridsView: Block[] = [
   },
 ];
 
+/** The result scenes of the concept, each as its app answers it and with the state of its choice. */
+export type BlockScene = {
+  name: string;
+  app: string;
+  blocks: Block[];
+  choice?: { state: "open" | "busy" | "answered" | "superseded"; chosen?: string[]; answeredAt?: string };
+};
+export const blockScenes: BlockScene[] = [
+  { name: "01-kunst-offen", app: "/kunst", blocks: artView, choice: { state: "open" } },
+  { name: "02-kunst-gewaehlt", app: "/kunst", blocks: artFollowUp },
+  { name: "03-reise-gewaehlt", app: "/reisen", blocks: travelView, choice: { state: "answered", chosen: ["lucia"], answeredAt: "14:41" } },
+  { name: "04-finanzen-uebersicht", app: "/finanzen", blocks: financeView },
+  { name: "07-tabelle-grids", app: "/grids", blocks: gridsView },
+];
+
 /** An SVG stand-in for an app image: a vase or a plate in one quiet colour. */
 export const fixtureImage = (path: string): string => {
   const palette: Record<string, [string, string]> = {

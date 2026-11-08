@@ -6,9 +6,6 @@ export const descriptionMessages = i18n.define({
   messages: {
     en: {
       nothingToShow: "Nothing to show for this period.",
-      nothingCounted: "Nothing counted in this period",
-      asOfNotCurrent: ({ asOf }: { asOf: string }) => `As of ${asOf} · not current`,
-      notCurrent: "Not current",
       cannotShow: "This view cannot be shown here.",
       table: "Table",
       search: "Search",
@@ -31,9 +28,6 @@ export const descriptionMessages = i18n.define({
     },
     de: {
       nothingToShow: "In diesem Zeitraum gibt es nichts zu zeigen.",
-      nothingCounted: "In diesem Zeitraum nichts gezählt",
-      asOfNotCurrent: ({ asOf }) => `Stand ${asOf} · nicht aktuell`,
-      notCurrent: "Nicht aktuell",
       cannotShow: "Diese Ansicht kann hier nicht gezeigt werden.",
       table: "Tabelle",
       search: "Suchen",
