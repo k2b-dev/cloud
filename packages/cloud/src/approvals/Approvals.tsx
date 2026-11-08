@@ -1,9 +1,7 @@
 import { dates } from "@k2b/stdlib";
-import { Button, dialogCore, PanelDialog, Placeholder, panelDialogOptions, prompts, useLocale } from "@k2b/ui";
+import { Button, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { ActionCard } from "../ai/chat/action-card";
-import { actionMessages } from "../ai/chat/action-messages";
-import { ActionQuestion, ActionReceipt } from "../ai/chat/action-question";
 import { refreshAppBadges } from "../browser/app-badges";
 import { coreClient } from "../clients/core";
 import { FeatCodeMark } from "../code/FeatCodeMark";
@@ -15,37 +13,25 @@ import {
   ApprovalPageSchema,
   type PendingApproval,
 } from "../contracts/approvals";
+import { ApprovalCard } from "./ApprovalCard";
 import { approvalCard } from "./approval-card";
 import { approvalMessages } from "./messages";
 
 /** How a decided request ends in this list. It stays in place as a receipt until the next load. */
 type Outcome = "approved" | "rejected" | "elsewhere" | "gone";
-/** One icon per outcome, so a rejection or a decision made elsewhere never looks like a success. */
-const outcomeIcon = (outcome: Outcome, band = false) =>
-  outcome === "approved"
-    ? band
-      ? "ti ti-circle-check"
-      : "ti ti-check"
-    : outcome === "rejected"
-      ? band
-        ? "ti ti-circle-x"
-        : "ti ti-x"
-      : "ti ti-info-circle";
 
 /** Keep SSR and the first client render identical: the page has no reader zone of its own yet. */
 const READER_TIME_ZONE = "UTC";
 export type ApprovalsProps = {
   /** List the requests whose effect belongs to this app or that this app asked for. Without, every app's, grouped. */
   app?: string;
-  /** Only requests whose review links to this same-origin path, such as the page of the draft a send would send. */
+  /**
+   * Only requests whose review links to this same-origin path, such as the page of the draft a send would send. Such a
+   * list sits beside the resource and shows nothing while no request waits.
+   */
   link?: string;
   /** The first page for the same query, loaded during SSR with `loadPendingApprovals`; without, the browser loads it. */
   initial?: ApprovalPage;
-  /**
-   * `list` shows each request as the same question card as the chat, with a count and an empty state. `band` shows
-   * each request as one compact row above the resource it would change, and nothing when none waits.
-   */
-  layout?: "list" | "band";
 };
 
 /** A click meant for the page must not approve a row that just appeared: decision buttons arm after this delay. */
@@ -66,16 +52,13 @@ const cardInput = (item: PendingApproval) => ({
   review: item.review,
 });
 
-/** Origin of the request: owning app, the chat it waits in, when Cloud asked, and when it expires. */
-function Origin(props: { item: PendingApproval; withApp?: boolean }) {
+/** Origin of the request: the chat or Code version it waits in and when Cloud asked. The card shows the app and expiry. */
+function Origin(props: { item: PendingApproval }) {
   const t = useMessages();
   const locale = useLocale();
   return (
     <p class="cloud-approval__origin">
-      <Show when={props.withApp !== false}>
-        <span>{props.item.app.name}</span>
-        <span aria-hidden="true"> · </span>
-      </Show>
+      <i class={props.item.requester.kind === "code_version" ? "ti ti-code" : "ti ti-message-circle"} aria-hidden="true" />
       <a href={props.item.requester.href}>
         <Show when={props.item.requester.kind === "code_version"}>
           <FeatCodeMark variant="glyph" decorative class="cloud-approval__origin-mark" />
@@ -90,8 +73,6 @@ function Origin(props: { item: PendingApproval; withApp?: boolean }) {
       </a>
       <span aria-hidden="true"> · </span>
       <time dateTime={props.item.createdAt}>{dates.formatDateTimeRelative(props.item.createdAt, { locale: locale() })}</time>
-      <span aria-hidden="true"> · </span>
-      <span>{t().expiresIn({ time: dates.formatTimeSpan(props.item.expiresAt, { locale: locale() }) })}</span>
     </p>
   );
 }
@@ -132,8 +113,8 @@ function Armed(props: { children: JSX.Element }) {
   return <div inert={armed() ? undefined : true}>{props.children}</div>;
 }
 
-/** One request as the chat's question card. Its answers arm late, so a click meant for the page cannot approve it. */
-function ApprovalCard(props: {
+/** One request as Cloud's approval, under where it comes from. Its answers arm late, so a click meant for the page cannot approve it. */
+function Row(props: {
   item: PendingApproval;
   outcome?: Outcome;
   busy: boolean;
@@ -149,205 +130,35 @@ function ApprovalCard(props: {
   // `confirm` asks every time, whatever the stored options say.
   const remember = () =>
     props.item.remember.chat && props.item.assurance === "standard"
-      ? {
-          label: props.item.remember.website ? actionMessages(card().locale).rememberWebsite : actionMessages(card().locale).remember,
-          onSelect: () => props.decide({ approved: true, remember: "chat" }),
-        }
+      ? { website: Boolean(props.item.remember.website), onSelect: () => props.decide({ approved: true, remember: "chat" }) }
       : undefined;
   return (
     <article class="cloud-approval" data-decided={props.outcome} aria-label={t().approvalFor({ title: card().questionText })}>
       <Origin item={props.item} />
       <Armed>
-        <ActionQuestion
+        <ApprovalCard
           card={card()}
           state={state()}
           timeZone={READER_TIME_ZONE}
           remember={remember()}
+          expiresAt={props.item.expiresAt}
           unavailable={props.item.canApprove === false ? t().anotherAdminRequired : undefined}
           onConfirm={() => props.decide({ approved: true })}
           onDecline={() => props.decide({ approved: false })}
           // The outcome lines join the card's sentence, so they speak the stored review's language.
-          outcome={
-            <ActionReceipt
-              card={card()}
-              lines={outcomeLines(
-                card(),
-                approvalMessages.resolve([card().locale]).t,
-                props.reopen,
-                props.item.requester.kind === "code_version",
-                props.failed === "reauthenticate",
-              )}
-              current={current()}
-            />
-          }
+          outcome={{
+            lines: outcomeLines(
+              card(),
+              approvalMessages.resolve([card().locale]).t,
+              props.reopen,
+              props.item.requester.kind === "code_version",
+              props.failed === "reauthenticate",
+            ),
+            current: current(),
+          }}
         />
       </Armed>
     </article>
-  );
-}
-
-/** Reject, then approve, for the compact band; the full card opens in a panel. */
-function BandDecision(props: {
-  item: PendingApproval;
-  busy: boolean;
-  details: () => void;
-  decide: (input: ApprovalDecisionInput) => void;
-}) {
-  const t = useMessages();
-  const [armed, setArmed] = createSignal(false);
-  onMount(() => {
-    const timer = setTimeout(() => setArmed(true), ARM_DELAY_MS);
-    onCleanup(() => clearTimeout(timer));
-  });
-  return (
-    // Inert, not disabled, while arming: the buttons look the same from the first frame, so nothing flickers.
-    <div class="cloud-approval__actions" inert={armed() ? undefined : true}>
-      <Button size="sm" variant="ghost" onClick={() => props.details()}>
-        {t().details}
-      </Button>
-      <Button size="sm" variant="ghost" disabled={props.busy} onClick={() => props.decide({ approved: false })}>
-        {t().reject}
-      </Button>
-      <Show when={!(props.item.review && "contentRef" in props.item.review && props.item.review.contentRef)}>
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={props.item.canApprove === false}
-          loading={props.busy}
-          onClick={() => props.decide({ approved: true })}
-        >
-          {t().approve}
-        </Button>
-      </Show>
-    </div>
-  );
-}
-
-function Receipt(props: { outcome: Outcome }) {
-  const t = useMessages();
-  const label = () => ({ approved: t().approved, rejected: t().rejected, elsewhere: t().decidedElsewhere, gone: t().gone })[props.outcome];
-  return (
-    <span class="cloud-approval__receipt" data-outcome={props.outcome}>
-      <i class={outcomeIcon(props.outcome)} aria-hidden="true" />
-      {label()}
-    </span>
-  );
-}
-
-/** Opens the full request in a panel as the chat's card; resolves with the decision made there, if any. */
-const openDetails = (item: PendingApproval, locale: string) =>
-  dialogCore.open<ApprovalDecisionInput>(
-    (close) => {
-      const t = () => approvalMessages.resolve([locale]).t;
-      const card = approvalCard(cardInput(item), locale, READER_TIME_ZONE);
-      return (
-        <PanelDialog>
-          <PanelDialog.Header
-            icon={item.app.icon ?? "ti ti-shield-check"}
-            title={item.app.name}
-            subtitle={<Origin item={item} withApp={false} />}
-            close={() => close()}
-            closeLabel={t().close}
-          />
-          <PanelDialog.Body>
-            <div class="cloud-approval__sheet">
-              <Armed>
-                <ActionQuestion
-                  card={card}
-                  state="open"
-                  unavailable={item.canApprove === false ? t().anotherAdminRequired : undefined}
-                  timeZone={READER_TIME_ZONE}
-                  remember={
-                    item.remember.chat && item.assurance === "standard"
-                      ? {
-                          label: item.remember.website ? actionMessages(card.locale).rememberWebsite : actionMessages(card.locale).remember,
-                          onSelect: () => close({ approved: true, remember: "chat" }),
-                        }
-                      : undefined
-                  }
-                  onConfirm={() => close({ approved: true })}
-                  onDecline={() => close({ approved: false })}
-                  outcome={null}
-                />
-              </Armed>
-              <p class="cloud-approval__callout">
-                <i class="ti ti-info-circle" aria-hidden="true" />
-                {item.requester.kind === "code_version" ? t().exactlyThisVersion : t().exactlyThis}
-              </p>
-            </div>
-          </PanelDialog.Body>
-        </PanelDialog>
-      );
-    },
-    {
-      ...panelDialogOptions,
-      history: true,
-      ariaLabel: approvalMessages
-        .resolve([locale])
-        .t.approvalFor({ title: approvalCard(cardInput(item), locale, READER_TIME_ZONE).questionText }),
-    },
-  );
-
-function Row(props: {
-  item: PendingApproval;
-  layout: "list" | "band";
-  outcome?: Outcome;
-  busy: boolean;
-  failed: boolean | "reauthenticate";
-  decide: (input: ApprovalDecisionInput) => void;
-  reopen: () => void;
-}) {
-  const t = useMessages();
-  const locale = useLocale();
-  // The band words the request as the card does: the plain question and Cloud's reason line.
-  const card = createMemo(() => approvalCard(cardInput(props.item), locale(), READER_TIME_ZONE));
-  const details = async () => {
-    const input = await openDetails(props.item, locale());
-    if (input) props.decide(input);
-  };
-  return (
-    <Show
-      when={props.layout === "band"}
-      fallback={
-        <ApprovalCard
-          item={props.item}
-          outcome={props.outcome}
-          busy={props.busy}
-          failed={props.failed}
-          decide={props.decide}
-          reopen={props.reopen}
-        />
-      }
-    >
-      <article class="cloud-approval-band" data-decided={props.outcome} aria-label={t().approvalFor({ title: card().questionText })}>
-        <i class={props.outcome ? outcomeIcon(props.outcome, true) : "ti ti-alert-triangle"} aria-hidden="true" />
-        <div class="cloud-approval-band__text">
-          <strong lang={card().locale}>{card().questionText}</strong>
-          <span class="cloud-approval-band__reason" lang={card().locale}>
-            {card().reason.text}
-          </span>
-          <Origin item={props.item} withApp={false} />
-        </div>
-        <div class="cloud-approval__foot">
-          <Show when={props.failed && !props.outcome}>
-            <span class="cloud-approval__note" data-tone="danger" role="alert">
-              <i class="ti ti-alert-circle" aria-hidden="true" />
-              <span>{props.failed === "reauthenticate" ? t().signInAgain : t().decisionFailed}</span>
-            </span>
-          </Show>
-          <Show
-            when={props.outcome}
-            fallback={<BandDecision item={props.item} busy={props.busy} details={() => void details()} decide={props.decide} />}
-          >
-            {(outcome) => (
-              <div class="cloud-approval__actions">
-                <Receipt outcome={outcome()} />
-              </div>
-            )}
-          </Show>
-        </div>
-      </article>
-    </Show>
   );
 }
 
@@ -357,7 +168,6 @@ function Row(props: {
  */
 export default function Approvals(props: ApprovalsProps) {
   const t = useMessages();
-  const layout = () => props.layout ?? "list";
   const query = (cursor?: string): ApprovalListQuery => ({
     ...(props.app ? { app: props.app } : {}),
     ...(props.link ? { link: props.link } : {}),
@@ -492,7 +302,6 @@ export default function Approvals(props: ApprovalsProps) {
       {(item) => (
         <Row
           item={item}
-          layout={layout()}
           outcome={outcomes().get(item.id)}
           busy={busy().has(item.id)}
           failed={failed().get(item.id) ?? false}
@@ -509,14 +318,8 @@ export default function Approvals(props: ApprovalsProps) {
     </For>
   );
   return (
-    <Show
-      when={layout() === "list"}
-      fallback={
-        <Show when={items().length > 0}>
-          <div class="cloud-approval-bands">{rows(items())}</div>
-        </Show>
-      }
-    >
+    // A list beside one resource stays out of the way until a request for it waits.
+    <Show when={!props.link || items().length > 0}>
       <section class="cloud-approvals" aria-label={t().title}>
         <Show
           when={page()}
@@ -539,15 +342,17 @@ export default function Approvals(props: ApprovalsProps) {
             when={items().length > 0}
             fallback={<Placeholder icon="ti ti-circle-check" title={t().emptyTitle} description={t().emptyBody} variant="panel" />}
           >
-            <div class="cloud-approvals__toolbar">
-              <span>{t().open({ count: openCount() })}</span>
-              <Show when={open().length > 1}>
-                <Button size="sm" variant="ghost" onClick={() => void rejectAll()}>
-                  <i class="ti ti-x" aria-hidden="true" />
-                  {t().rejectAll}
-                </Button>
-              </Show>
-            </div>
+            <Show when={!props.link}>
+              <div class="cloud-approvals__toolbar">
+                <span>{t().open({ count: openCount() })}</span>
+                <Show when={open().length > 1}>
+                  <Button size="sm" variant="ghost" onClick={() => void rejectAll()}>
+                    <i class="ti ti-x" aria-hidden="true" />
+                    {t().rejectAll}
+                  </Button>
+                </Show>
+              </div>
+            </Show>
             <Show
               when={props.app || props.link}
               fallback={<For each={groups()}>{(group) => <AppGroup items={group}>{rows(group)}</AppGroup>}</For>}

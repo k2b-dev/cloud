@@ -2,7 +2,6 @@ import { dates, fileIcons } from "@k2b/stdlib";
 import {
   Button,
   Chat,
-  type ChatDecisionState,
   type ChatOutcomeLine,
   dialogCore,
   isStructuredDataValue,
@@ -806,58 +805,6 @@ export function ActionReceipt(props: {
   return (
     <LocaleProvider locale={props.card.locale}>
       <Chat.Outcome class={`cloud-action-outcome ${props.class ?? ""}`} lines={lines()} current={props.current} anchorId={props.anchorId} />
-    </LocaleProvider>
-  );
-}
-
-export type ActionQuestionProps = {
-  card: ActionCard;
-  /** `open` shows the question; every other state shows `outcome` in its place. */
-  state: ChatDecisionState;
-  /** Usually `ActionReceipt`. */
-  outcome: JSX.Element;
-  timeZone: string;
-  onConfirm: () => void | Promise<void>;
-  onDecline: () => void | Promise<void>;
-  /** The quiet third answer, where remembering for this chat exists. */
-  remember?: { label: string; onSelect: () => void | Promise<void> };
-  /** Turns the confirming answers off; this reason replaces the asking reason in its place. */
-  unavailable?: string;
-  /** Turns every answer off until it clears, such as without a connection; this reason replaces the others. */
-  waiting?: string;
-  anchorId?: string | number;
-  class?: string;
-};
-
-const confirmIcon = (card: ActionCard): string | undefined =>
-  card.reason.code === "sends" ? "ti ti-send" : card.confirm.variant === "danger" ? "ti ti-trash" : undefined;
-
-/** One Assistant question in card v4. An answer collapses it at once to its outcome line, which takes the focus. */
-export function ActionQuestion(props: ActionQuestionProps) {
-  const [loadedContent, setLoadedContent] = createSignal<string>();
-  const needsContent = () => props.card.contentRef && loadedContent() !== `${props.card.contentRef.href}:${props.card.contentRef.digest}`;
-  const unavailable = () => props.unavailable ?? (needsContent() ? actionMessages(props.card.locale).fullReviewRequired : undefined);
-  return (
-    <LocaleProvider locale={props.card.locale}>
-      <Chat.Decision
-        class={`cloud-action-question ${props.class ?? ""}`}
-        state={props.state}
-        anchorId={props.anchorId}
-        sentence={<ActionTextView text={props.card.question} accent={props.card.app.accent} />}
-        reason={{ text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone }}
-        unavailable={unavailable() ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" } : undefined}
-        waiting={props.waiting ? { text: props.waiting, icon: "ti ti-wifi-off", tone: "neutral" } : undefined}
-        preview={<ActionPreview card={props.card} timeZone={props.timeZone} onContentLoaded={setLoadedContent} />}
-        confirm={{
-          label: props.card.confirm.label,
-          variant: props.card.confirm.variant,
-          icon: confirmIcon(props.card),
-          onSelect: props.onConfirm,
-        }}
-        decline={{ label: props.card.decline, onSelect: props.onDecline }}
-        remember={props.remember}
-        outcome={props.outcome}
-      />
     </LocaleProvider>
   );
 }

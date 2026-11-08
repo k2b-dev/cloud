@@ -1,12 +1,13 @@
 import { dates } from "@k2b/stdlib";
 import { Button, ButtonLink, type ChatDecisionState, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { ApprovalCard } from "../../approvals/ApprovalCard";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { type ActionCard, type ActionText, actionReceiptText, toolActionCard } from "./action-card";
 import { actionMessages } from "./action-messages";
-import { type ActionLine, ActionQuestion, ActionReceipt } from "./action-question";
+import { type ActionLine, ActionReceipt } from "./action-question";
 import { useReaderTimeZone } from "./action-sentences";
 import { useAiChatActions } from "./message-actions";
 import { capabilityErrorDescription, isRecord } from "./message-utils";
@@ -401,24 +402,25 @@ export function ToolActionView(props: {
   const remember = () => {
     const approval = props.block.approval;
     if (!approval?.allowChat) return undefined;
-    return {
-      label: approval.website ? t().rememberWebsite : t().remember,
-      onSelect: () => submit({ approved: true, remember: "chat" }),
-    };
+    return { website: Boolean(approval.website), onSelect: () => submit({ approved: true, remember: "chat" }) };
   };
+  // A call that never asked is a line of the history, not an approval.
+  const asked = () => Boolean(props.block.approval) || props.block.status === "awaiting_approval";
   return (
-    <ActionQuestion
-      card={card()}
-      state={decisionState()}
-      timeZone={timeZone}
-      anchorId={props.block.id}
-      unavailable={unavailable()}
-      waiting={online() ? undefined : actionMessages(card().locale).offline}
-      remember={remember()}
-      onConfirm={() => submit({ approved: true })}
-      onDecline={() => submit({ approved: false })}
-      outcome={<ActionReceipt card={card()} lines={lines()} current={currentKey()} />}
-    />
+    <Show when={asked()} fallback={<ActionReceipt card={card()} lines={lines()} current={currentKey()} anchorId={props.block.id} />}>
+      <ApprovalCard
+        card={card()}
+        state={decisionState()}
+        timeZone={timeZone}
+        anchorId={props.block.id}
+        unavailable={unavailable()}
+        waiting={online() ? undefined : actionMessages(card().locale).offline}
+        remember={remember()}
+        onConfirm={() => submit({ approved: true })}
+        onDecline={() => submit({ approved: false })}
+        outcome={{ lines: lines(), current: currentKey() }}
+      />
+    </Show>
   );
 }
 

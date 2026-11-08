@@ -34,7 +34,7 @@ export default function MailComposerPage(props: {
 }) {
   return (
     <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
-      {props.approvals && <Approvals app="mail" link={props.approvals.link} initial={props.approvals.page} layout="band" />}
+      {props.approvals && <Approvals app="mail" link={props.approvals.link} initial={props.approvals.page} />}
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden" classList={{ "paper rounded-[var(--ui-radius-frame)]": !props.popout }}>
         <MailContactDirectoryProvider value={props.contactDirectory}>
           <MailComposer

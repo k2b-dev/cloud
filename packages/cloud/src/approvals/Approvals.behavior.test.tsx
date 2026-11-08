@@ -47,7 +47,7 @@ describe("Approvals", () => {
   }
 
   const mount = async (
-    props: { initial?: ApprovalPage; layout?: "list" | "band"; app?: string },
+    props: { initial?: ApprovalPage; link?: string; app?: string },
     answer: (url: string, init?: RequestInit) => Response | Promise<Response>,
   ) => {
     const dom = createDomTestHarness();
@@ -63,7 +63,7 @@ describe("Approvals", () => {
     );
     const { Approvals } = await import("@k2b/cloud/approvals/ui");
     delegateEvents(["click"]);
-    const dispose = render(() => <Approvals app={props.app ?? "assistant"} initial={props.initial} layout={props.layout} />, dom.root);
+    const dispose = render(() => <Approvals app={props.app ?? "assistant"} initial={props.initial} link={props.link} />, dom.root);
     return {
       dom,
       requests,
@@ -207,13 +207,22 @@ describe("Approvals", () => {
           () => Response.json({ status: "rejected" }),
         );
         const { toolActionCard } = await import("../ai/chat/action-card");
-        const { ActionQuestion } = await import("../ai/chat/action-question");
+        const { ApprovalCard } = await import("./ApprovalCard");
         const { legacyOutcomeWords } = await import("../ai/chat/tool-action-words");
         const chatRoot = document.createElement("section");
         view.dom.root.append(chatRoot);
         const card = toolActionCard({ ...block, review }, { locale, timeZone: "UTC", outcome: legacyOutcomeWords(block, locale, "UTC") });
         const disposeChat = render(
-          () => <ActionQuestion card={card} state="open" timeZone="UTC" onConfirm={() => {}} onDecline={() => {}} outcome={null} />,
+          () => (
+            <ApprovalCard
+              card={card}
+              state="open"
+              timeZone="UTC"
+              onConfirm={() => {}}
+              onDecline={() => {}}
+              outcome={{ lines: {}, current: "" }}
+            />
+          ),
           chatRoot,
         );
         try {
@@ -261,7 +270,8 @@ describe("Approvals", () => {
     try {
       const row = () => view.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
       await Bun.sleep(550);
-      row().querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[1]!.click();
+      // Declining comes before the one filled answer.
+      row().querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[0]!.click();
       await waitFor(() => row().dataset.decided === "rejected", "the outcome");
       const line = row().querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent ?? "";
       expect(line).toContain("Du hast abgelehnt.");
@@ -302,7 +312,7 @@ describe("Approvals", () => {
       expect(line(rows()[3])).toContain("You declined.");
       // Answering again brings back the question, armed, in the same place.
       view.button("Answer again", rows()[2]!)!.click();
-      await waitFor(() => rows()[2]?.querySelector(".k2b-chat-decision__card") !== null, "the question again");
+      await waitFor(() => rows()[2]?.querySelector('.k2b-chat-decision[data-state="open"]') !== null, "the question again");
       expect(view.button("Don't run", rows()[2]!)).toBeDefined();
     } finally {
       view.cleanup();
@@ -345,7 +355,7 @@ describe("Approvals", () => {
     }
   });
 
-  test("offers the quiet chat link only where the request offers it, and never Always", async () => {
+  test("offers to remember for the chat only where the request offers it, and never Always", async () => {
     const view = await mount(
       {
         initial: page([
@@ -357,12 +367,15 @@ describe("Approvals", () => {
     );
     try {
       const rows = Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
-      expect(rows[0]?.querySelector(".k2b-chat-decision__remember")?.textContent?.trim()).toBe("Yes, and don't ask again in this chat");
-      // `confirm` asks every time, whatever the stored options say.
+      expect(rows[0]?.querySelector(".k2b-chat-decision__remember")?.textContent?.trim()).toBe("Don't ask again in this chat");
+      // `confirm` asks every time, whatever the stored options say, and says so.
       expect(rows[1]?.querySelector(".k2b-chat-decision__remember")).toBeNull();
+      expect(rows[1]?.querySelector(".k2b-chat-decision__meta")?.textContent).toContain("Asks every time");
       expect(view.dom.root.textContent).not.toMatch(/Always approve|Immer freigeben/);
       await Bun.sleep(550);
-      (rows[0]!.querySelector(".k2b-chat-decision__remember") as HTMLButtonElement).click();
+      (rows[0]!.querySelector(".k2b-chat-decision__remember input") as HTMLInputElement).click();
+      const answers = rows[0]!.querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer");
+      answers[answers.length - 1]!.click();
       await waitFor(() => view.requests.length > 0, "the decision");
       expect(view.requests.at(-1)).toEqual({ url: "/api/approvals/a1/decision", body: { approved: true, remember: "chat" } });
     } finally {
@@ -382,26 +395,24 @@ describe("Approvals", () => {
     }
   });
 
-  test("a band shows nothing when nothing waits, and the request when one does", async () => {
-    const empty = await mount({ initial: page([]), layout: "band", app: "mail" }, () => Response.json({}));
+  test("a list beside one resource shows nothing when nothing waits, and Cloud's one approval card when one does", async () => {
+    const empty = await mount({ initial: page([]), link: "/mail/drafts/d1", app: "mail" }, () => Response.json({}));
     try {
       expect(empty.dom.root.innerHTML).toBe("");
     } finally {
       empty.cleanup();
     }
-    const band = await mount({ initial: page([item("a1")]), layout: "band", app: "mail" }, () => Response.json({ status: "rejected" }));
+    const scoped = await mount({ initial: page([item("a1")]), link: "/mail/drafts/d1", app: "mail" }, () =>
+      Response.json({ status: "rejected" }),
+    );
     try {
-      const row = band.dom.root.querySelector<HTMLElement>("article.cloud-approval-band")!;
-      // The band words the request as its card does: the plain question, then Cloud's reason line.
-      expect(row.querySelector("strong")?.textContent).toBe("Sends the draft after the undo window.");
-      expect(row.querySelector(".cloud-approval-band__reason")?.textContent).toBe("I'm asking because Mail always asks for this.");
-      await Bun.sleep(550);
-      band.button("Reject", row)!.click();
-      await waitFor(() => row.dataset.decided === "rejected", "the band receipt");
-      expect(row.textContent).toContain("Rejected");
-      expect(row.querySelector(":scope > i")?.className).toBe("ti ti-circle-x");
+      const row = scoped.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
+      // The same card as everywhere: no count or bulk action beside one resource.
+      expect(row.querySelector(".k2b-chat-decision")?.getAttribute("data-k2b-primary")).toBe("ai");
+      expect(scoped.dom.root.querySelector(".cloud-approvals__toolbar")).toBeNull();
+      expect(row.querySelector(".k2b-chat-decision__reason")?.textContent).toBe("I'm asking because Mail always asks for this.");
     } finally {
-      band.cleanup();
+      scoped.cleanup();
     }
   });
 });
