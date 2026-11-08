@@ -4,7 +4,7 @@ import { renderToString } from "solid-js/web";
 import type { Contact, ContactNote, ContactTree } from "../../service";
 import "./ssr-test-plugin";
 
-const { default: ContactDetailPanel } = await import("./ContactDetailPanel.island.tsx");
+const { default: ContactDetailPanel } = await import("./ContactDetailPanel.tsx");
 const { default: ContactOrgTreeView } = await import("./ContactOrgTreeView.tsx");
 const { default: ContactNotesSection } = await import("./ContactNotesSection.tsx");
 const { default: ContactsWorkspace } = await import("./ContactsWorkspace.island.tsx");

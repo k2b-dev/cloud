@@ -1,8 +1,8 @@
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { type ComponentProps, createSignal, onCleanup, onMount } from "solid-js";
-import ContactDetailPanel from "./ContactDetailPanel.island";
+import ContactDetailPanel from "./ContactDetailPanel";
 import ContactsWorkspaceMain from "./ContactsWorkspaceMain";
-import CreateContactButton from "./CreateContactButton.island";
+import CreateContactButton from "./CreateContactButton";
 import { CONTACT_DETAIL_EVENT, type ContactDetailPayload, clearSelectedContactInUrl, getSelectedContactFromUrl } from "./context";
 import { detailMessages } from "./detail-messages";
 import { resultsMessages } from "./results-messages";

@@ -1,5 +1,5 @@
 import type { Contact, ContactTag } from "../../service";
-import ContactsResults from "./ContactsResults.island";
+import ContactsResults from "./ContactsResults";
 import type { ContactsScope } from "./contacts-empty-state";
 
 type ContactBookOption = {
