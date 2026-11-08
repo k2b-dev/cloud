@@ -181,14 +181,7 @@ const publicPaths: Record<string, string[]> = {
     ...["pwa-icon-192", "pwa-icon-512", "pwa-icon-maskable-512", "apple-touch-icon"].map((variant) => `/branding/${variant}.png`),
   ],
   "api-docs": ["/app/api-docs", "/api/api-docs/sources"],
-  assistant: [
-    "/_internal/assistant/tools/execute",
-    "/app/assistant/apps/studio/run",
-    "/api/assistant/runner/app-assets",
-    "/api/assistant/runner/chunks/bridge.js",
-    "/api/assistant/runner/studio",
-    "/api/assistant/runner/studio/app",
-  ],
+  assistant: ["/_internal/assistant/tools/execute"],
   faq: ["/faq"],
   filesv2: [
     "/share/filesv2/transfer/ticket",
@@ -305,7 +298,16 @@ const protectedPaths: Record<string, string[]> = {
     "/api/resources/resolve/private",
   ],
   "api-docs": ["/api/api-docs/private"],
-  assistant: ["/api/assistant/chat-code", "/app/assistant"],
+  assistant: [
+    "/api/assistant/chat-code",
+    "/app/assistant",
+    // Retired Studio paths must no longer bypass the application entry policy.
+    "/app/assistant/apps/studio/run",
+    "/api/assistant/runner/app-assets",
+    "/api/assistant/runner/chunks/bridge.js",
+    "/api/assistant/runner/studio",
+    "/api/assistant/runner/studio/app",
+  ],
   faq: ["/admin/faq", "/api/faq"],
   filesv2: [
     "/api/filesv2/bases",
