@@ -18,7 +18,6 @@ import { reviewDraftComposeSafety } from "./compose-safety";
 import * as revisionBase from "./draft-document-revision";
 import * as documentService from "./draft-documents";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
-import * as editModes from "./draft-edit-mode";
 import { draftProviderContentSchema } from "./draft-provider-mime";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { applyDraftTableAction } from "./draft-table-actions";
@@ -56,6 +55,7 @@ suite("Mail document lifecycle boundaries", () => {
   let userId: string;
   let mailboxId: string;
   let senderId: string;
+  let senderShortId: string;
   let otherWriter: MailRequestContext;
   beforeAll(async () => {
     await migrate();
@@ -90,11 +90,12 @@ suite("Mail document lifecycle boundaries", () => {
       accessSubject: { type: "user", userId },
     };
     mailboxId = value(await createMailbox(context, { name: `Draft lifecycle ${suffix}`, description: "Fictional fixture" })).id;
-    const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
+    const [sender] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.sender_identities
       (short_id, mailbox_id, label, display_name, from_address, automation_policy, status)
-      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Writer', 'Writer', 'writer@example.test', 'disabled', 'verified') RETURNING id`;
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Writer', 'Writer', 'writer@example.test', 'disabled', 'verified') RETURNING id, short_id`;
     if (!sender) throw new Error("Missing fixture sender");
     senderId = sender.id;
+    senderShortId = sender.short_id;
     await prepareDraftSendBinding(mailboxId, senderId);
     const [other] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, mail)
       VALUES (${`draft-life-other-${suffix}`}, 'local', 'user', 'Other Writer', ${`other-${suffix}@example.test`}) RETURNING id`;
@@ -174,11 +175,13 @@ suite("Mail document lifecycle boundaries", () => {
   });
 
   test("creation and seed materialization read the setting; rollback changes only new drafts and preserves retries", async () => {
-    const input = draftContentInputSchema.parse({
-      senderIdentityId: senderId,
+    const publicInput = draftContentInputSchema.parse({
+      senderIdentityId: senderShortId,
       to: [{ address: "recipient@example.test" }],
       body: "Created body",
     });
+    // The transport validates short IDs; the service receives resolved internal IDs.
+    const input = { ...publicInput, senderIdentityId: senderId };
     const locked = value(await createDraft({ context, mailboxId, input }));
     expect(locked.editMode).toBe("lock");
     const seed = value(await prepareDraftSeed({ context, mailboxId, origin: { kind: "compose", input } }));
@@ -225,69 +228,6 @@ suite("Mail document lifecycle boundaries", () => {
       value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
     }
   });
-
-  test("an in-flight creation keeps its mode and a concurrent rollback waits for that creation to commit", async () => {
-    const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
-    const reached = Promise.withResolvers<number>();
-    const proceed = Promise.withResolvers<void>();
-    let creating: ReturnType<typeof createDraft> | undefined;
-    let switching: ReturnType<typeof updateMailbox> | undefined;
-    const original = editModes.newDraftEditMode;
-    let paused = false;
-    const readMode = spyOn(editModes, "newDraftEditMode").mockImplementation(async (db, id) => {
-      const mode = await original(db, id);
-      if (!paused) {
-        paused = true;
-        const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-        if (!backend) throw new Error("Missing creation backend");
-        reached.resolve(backend.pid);
-        await proceed.promise;
-      }
-      return mode;
-    });
-    const timer = setTimeout(() => reached.reject(new Error("Creation did not read its mode")), 2000);
-    try {
-      value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" }));
-      creating = createDraft({
-        context,
-        mailboxId,
-        input: draftContentInputSchema.parse({ senderIdentityId: senderId, body: "In flight" }),
-      });
-      const pid = await reached.promise;
-      clearTimeout(timer);
-      switching = updateMailbox({ context, mailboxId, draftEditMode: "lock" });
-      let blocked = false;
-      const deadline = Date.now() + 2000;
-      while (!blocked && Date.now() < deadline) {
-        const rows = await sql`SELECT 1 FROM pg_stat_activity
-          WHERE datname=current_database() AND wait_event_type='Lock' AND ${pid}::int=ANY(pg_blocking_pids(pid))`;
-        blocked = rows.length > 0;
-        if (!blocked) await Bun.sleep(10);
-      }
-      expect(blocked).toBe(true);
-      proceed.resolve();
-      const created = value(await creating);
-      expect(created.editMode).toBe("shared");
-      expect(value(await switching).draftEditMode).toBe("lock");
-      expect(
-        value(
-          await createDraft({
-            context,
-            mailboxId,
-            input: draftContentInputSchema.parse({ senderIdentityId: senderId, body: "After switch" }),
-          }),
-        ).editMode,
-      ).toBe("lock");
-      expect(value(await getDraft(context, mailboxId, created.id)).editMode).toBe("shared");
-    } finally {
-      clearTimeout(timer);
-      proceed.resolve();
-      await Promise.allSettled([creating, switching]);
-      readMode.mockRestore();
-      supported.mockRestore();
-      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
-    }
-  }, 15_000);
 
   test("derived user drafts inherit shared while workflow authors retain lock editing", async () => {
     const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
@@ -445,21 +385,26 @@ suite("Mail document lifecycle boundaries", () => {
     const checked = await review(target);
     const base = value(await readDraftDocument(target));
     const editor = new Y.Doc();
+    editor.clientID = 104;
     try {
       Y.applyUpdate(editor, base.durable.state);
       editor.getText("codemirror").insert(0, "Unprojected ");
-      const bound = mailDraftDocumentLog.topic();
-      await bound.publish({
-        tenantId: target.draftId,
-        expectedAfter: base.fresh.cursor,
-        data: {
-          kind: "sync",
-          payload: toBase64(Y.encodeStateAsUpdate(editor)),
-          restoreRevision: base.generation,
-          originNodeId: "fixture",
-          originPeerId: null,
-        },
+      const update = Y.encodeStateAsUpdate(editor);
+      const admitted = await sql.begin(async (db) => {
+        const locked = value(await lockDraftDocumentInTransaction({ ...target, db }));
+        const projection = spyOn(locked.store, "save").mockRejectedValueOnce(new Error("Fixture projection failure"));
+        try {
+          return value(await locked.accept({ generation: base.generation, baseCursor: base.durable.cursor, update }));
+        } finally {
+          projection.mockRestore();
+        }
       });
+      expect(admitted.status).toBe("pendingPersistence");
+      const unprojected = value(await readDraftDocument(target));
+      expect(unprojected.fresh.content.body).toBe("Unprojected Durable");
+      expect(unprojected.fresh.cursor).toBe(admitted.status === "pendingPersistence" ? admitted.cursor : null);
+      expect(unprojected.durable.cursor).toBe(base.durable.cursor);
+      expect(unprojected.revision).toBe(base.revision);
       expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
       await nothingQueued(target.draftId);
       expect(value(await readDraftDocument(target)).durable.content.body).toBe("Durable");

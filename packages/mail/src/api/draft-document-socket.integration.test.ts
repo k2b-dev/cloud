@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
 import { auth } from "@k2b/cloud/server";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
-import { StoreFullError } from "@k2b/sync";
+import { StoreFullError, type TopicConfig } from "@k2b/sync";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
@@ -301,24 +301,49 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     const client = await connect();
     await client.ready();
     const local = new Y.Doc();
+    local.clientID = 103;
     Y.applyUpdate(local, base.durable.state);
     local.getText("codemirror").insert(0, "Unsent ");
     const update = Y.encodeStateAsUpdate(local);
-    // The adapter is the only version-dependent seam. Do not infer retention support from an error class.
+    // Sync creates a new handle per topic() call, including inside withStore().
+    // Reject the real admission's publication, not an unused sibling handle.
     const rejected = new StoreFullError("Fixture: reject full stream");
-    const publication = spyOn(mailDraftDocumentLog.topic(), "publish").mockRejectedValueOnce(rejected);
+    const sync = getProcessSync();
+    const topic = sync.topic.bind(sync);
+    let rejectedPublications = 0;
+    const publications: { mockRestore(): void }[] = [];
+    const handles = spyOn(sync, "topic").mockImplementation(<T>(config: TopicConfig) => {
+      const handle = topic<T>(config);
+      if (config.id === mailDraftDocumentLog.id) {
+        const publish = handle.publish.bind(handle);
+        publications.push(
+          spyOn(handle, "publish").mockImplementation((input) => {
+            if (input.tenantId === currentDraft.id && rejectedPublications === 0) {
+              rejectedPublications++;
+              return Promise.reject(rejected);
+            }
+            return publish(input);
+          }),
+        );
+      }
+      return handle;
+    });
     try {
       try {
         publish(client, base, update);
         const error = await client.wait((packet) => packet.type === "error");
+        expect(rejectedPublications).toBe(1);
         expect(error).toMatchObject({ type: "error", payload: { code: "DRAFT_DOCUMENT_STREAM_FULL" } });
         expect(error.type === "error" && error.payload.message).toContain("retry");
         expect(decode(Y.encodeStateAsUpdate(local)).body).toBe("Unsent Original");
         const unchanged = await read();
         expect(unchanged.durable.content.body).toBe("Original");
         expect(unchanged.durable.cursor).toBe(base.durable.cursor);
+        expect(unchanged.fresh.content.body).toBe("Original");
+        expect(client.messages.some((packet) => packet.type === "syncPush" && !packet.payload.snapshot)).toBe(false);
       } finally {
-        publication.mockRestore();
+        handles.mockRestore();
+        for (const publication of publications) publication.mockRestore();
       }
       const retry = await connect();
       await retry.ready();
