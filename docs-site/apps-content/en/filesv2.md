@@ -261,6 +261,19 @@ from acknowledged segments:
   manual **Try again** starts a fresh retry budget. A successful probe or
   attempt does not reset the retry or rate-limit budget within a run.
 
+An unavailable receipt (`receipt_unknown` or `upload_uncertain`) or a mismatched
+upload (`upload_changed`) leaves the result unconfirmed. The row shows the
+failure and keeps its existing upload key. **Try again** checks that same
+upload; it does not start a second transfer with a fresh key. When the receipt
+becomes available, the upload can finish without publishing another copy.
+
+A changed upload can also mean that the storage or access settings no longer
+match the original request. Retrying cannot repair that mismatch. Restore the
+original settings, or check the destination before saving a separate copy
+under another name. With the CLI, running the same `put` command keeps the
+original reservation; a different remote file name creates a separate one.
+The unconfirmed original reservation remains retained.
+
 The Filegate SDK's short request retries run inside each attempt; the queue
 is the only additional retry layer. Cancel or leaving the workspace ends a
 wait immediately. The panel announces loss and return of the connection once

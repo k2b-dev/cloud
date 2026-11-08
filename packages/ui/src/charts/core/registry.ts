@@ -3,6 +3,7 @@ import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
 import { renderBubbleSvg } from "./bubble";
 import { renderHeatmapSvg } from "./calendar";
+import { renderFunnelSvg } from "./funnel";
 import { renderHbarSvg } from "./hbar";
 import { map } from "./map";
 import { renderRadarSvg } from "./radar";
@@ -17,6 +18,7 @@ const createChartRenderers = () => ({
   line: line,
   bar: renderBarChartSvg,
   hbar: renderHbarSvg,
+  funnel: renderFunnelSvg,
   pie: pie,
   donut: donut,
   scatter: scatter,

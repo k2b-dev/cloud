@@ -812,3 +812,25 @@ test("horizontal rows reserve their final height before the lazy renderer loads"
     expect(chartSvg(prepared, "en", width, 280)).toContain(`viewBox="0 0 ${width} ${height}"`);
   }
 });
+
+test("cloud.chart renders funnels with start and previous shares in app frames", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "funnel",
+        title: "Checkout",
+        data: [
+          { label: "Opened", value: 100 },
+          { label: "Paid", value: 120 },
+        ],
+      },
+      "de-DE",
+    ),
+  );
+  expect(markup).toContain('data-chart-kind="funnel"');
+  expect(markup).toContain(">Checkout</text>");
+  expect(markup).toContain("120");
+  expect(markup).toContain("Anteil am vorigen Schritt");
+  expect(markup).not.toContain("<style>");
+  expect(markup).not.toMatch(/NaN|Infinity/);
+});

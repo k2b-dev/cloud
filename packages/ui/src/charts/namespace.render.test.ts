@@ -35,6 +35,7 @@ describe("Chart namespace", () => {
 
 /** Typechecked without invoking hooks outside a Solid owner. */
 function namespaceTypes() {
+  Chart.Funnel({ data: [{ label: "Visit", value: 42 }] });
   Chart.Hbar({ series: ["Visits"], rows: [{ label: "Mail", values: [42] }] });
   Chart.Pie({ data: [{ label: "Queue", value: 4 }] });
   Chart.Line({ series: [{ data: [{ x: 1, y: 2 }] }] });

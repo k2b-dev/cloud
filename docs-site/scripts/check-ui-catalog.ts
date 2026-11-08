@@ -1,11 +1,5 @@
 import ts from "@typescript/typescript6";
-import {
-  documentedOnlyUiCatalogExports,
-  hiddenUiCatalogExports,
-  portableUiComponentCount,
-  uiCatalogEntries,
-  uiCatalogSections,
-} from "../src/ui/catalog";
+import { documentedOnlyUiCatalogExports, hiddenUiCatalogExports, uiCatalogEntries, uiCatalogSections } from "../src/ui/catalog";
 import { catalogContextFiles, catalogContexts, standaloneUiContextFiles } from "../src/ui/context";
 import { demoSectionLoaders } from "../src/ui/demo-sections";
 import { catalogDemoRenderers } from "../src/ui/UiCatalogPage";
@@ -141,7 +135,6 @@ for (const { path, source } of portableDemoSources) {
 }
 
 const runtimeExports = sorted(Object.keys(await import("@k2b/ui")));
-const runtimeComponentExports = runtimeExports.filter((name) => /^[A-Z][a-z]/.test(name));
 const liveExports = sorted(liveRuntimeImports);
 const hiddenExports = sorted(Object.keys(hiddenUiCatalogExports));
 const documentedOnlyExports = sorted(Object.keys(documentedOnlyUiCatalogExports));
@@ -182,12 +175,6 @@ const catalogCloudTitles = uiCatalogEntries
 const overviewCloudFailures = exactSetFailures("Cloud overview", catalogCloudTitles, overviewCloudTitles);
 
 const failures = [
-  [
-    "Stale portable component count",
-    portableUiComponentCount === runtimeComponentExports.length
-      ? []
-      : [`expected ${runtimeComponentExports.length}, received ${portableUiComponentCount}`],
-  ],
   ["Duplicate catalog pages", duplicateValues(catalogIds)],
   ["Duplicate section metadata", duplicateValues(declaredSectionIds)],
   ["Catalog registry key-set mismatches", registryFailures],

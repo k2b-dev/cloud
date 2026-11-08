@@ -15,6 +15,18 @@ import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 const examples = {
+  funnel: {
+    description: "Funnel · Share of the start and previous step.",
+    chart: {
+      kind: "funnel",
+      data: [
+        { label: "Visits", value: 12000 },
+        { label: "Products", value: 8400 },
+        { label: "Basket", value: 3600 },
+        { label: "Orders", value: 1800 },
+      ],
+    },
+  },
   hbar: {
     description: "Horizontal bars · Quarterly orders by channel, with group headings and totals.",
     chart: {
@@ -328,6 +340,10 @@ const tooltipExamples: Record<ChartKind, TooltipExample> = {
   },
   radar: { title: "Axis", fields: { "series:0": { label: "Plan A" }, "series:1": { label: "Plan B" } } },
 
+  funnel: {
+    title: "Conversion",
+    fields: { value: { label: "Count" }, startPercent: { label: "Share of start" }, previousPercent: { label: "Share of previous step" } },
+  },
   hbar: { title: "Quarterly orders", fields: { Q1: { label: "Q1" }, Q2: { label: "Q2" }, total: { label: "Total" } } },
   waterfall: {
     title: "Running balance",
