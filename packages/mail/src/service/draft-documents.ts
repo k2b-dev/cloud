@@ -12,7 +12,7 @@ import {
   readDraftDocument as projectDocument,
 } from "../lib/draft-document";
 import { requireDraftAccess } from "./access";
-import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
 import { MAX_LOG_ENVELOPE_BYTES, mailDraftDocumentLog } from "./draft-document-log";
@@ -149,6 +149,8 @@ export const lockDraftDocumentInTransaction = async (
         ? { kind: "service_account" as const, id: actorRef.serviceAccountId }
         : null;
   if (!actor) return fail(err.forbidden("Draft editor is invalid"));
+  // Retain the represented person in the log even if SQL projection rolls back.
+  const documentActor = personalPrincipal(context);
 
   const loadRow = async (): Promise<DraftRow | null> => {
     const [row] = await awaitDraftDocumentQuery(
@@ -388,7 +390,7 @@ export const lockDraftDocumentInTransaction = async (
         text: decode(state).body,
         restoreRevision: generation,
         requestedAt: Date.now(),
-        actor,
+        actor: documentActor,
         contributors: [],
       },
       undefined,
@@ -407,7 +409,7 @@ export const lockDraftDocumentInTransaction = async (
     if (input.update.byteLength > MAX_LOG_ENVELOPE_BYTES) return recovery("Draft update exceeds the document log payload budget");
     let invalid: string | null = null;
     const admitted = await bound.accept(draftId, {
-      actor,
+      actor: documentActor,
       update: input.update,
       baseCursor: input.baseCursor,
       restoreRevision: input.generation,
@@ -559,7 +561,7 @@ export const lockDraftDocumentInTransaction = async (
         receipt = await findDraftRevisionOperation({
           base: base.state,
           content,
-          actor,
+          actor: documentActor,
           generation: input.generation,
           expectedRevision: input.expectedRevision,
           events: topic.replay({ tenantId: draftId, after: base.cursor ?? topic.cursorAt(0), until, signal: requestSignal }),
@@ -599,7 +601,7 @@ export const lockDraftDocumentInTransaction = async (
       if (!ready.ok) return ready;
       if (input.generation !== generation) return conflict("Draft generation changed before freeze");
       const frozen = await bound.freeze(draftId, {
-        actor,
+        actor: documentActor,
         restoreRevision: input.generation,
         signal: input.signal ?? params.signal,
         validate: async (state) => {

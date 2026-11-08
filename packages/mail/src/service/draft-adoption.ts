@@ -1,12 +1,11 @@
 import type { sql } from "@k2b/cloud";
 import { fail, ok, type Result } from "@k2b/stdlib";
 import { draftAdoptionMessages } from "../draft-adoption-messages";
-import type { MailRequestContext } from "./auth";
+import { type MailRequestContext, userBackedActor } from "./auth";
 import { hasHumanDraftDocumentEdit } from "./draft-document-adoption";
 import { mailDraftDocumentLog } from "./draft-document-log";
 
-export const humanDraftEditor = (context: MailRequestContext): boolean =>
-  context.actor.kind === "user" || context.actor.delegatedUser != null;
+export const humanDraftEditor = (context: MailRequestContext): boolean => userBackedActor(context) != null;
 
 type Target = { db: typeof sql; draftId: string; signal?: AbortSignal };
 

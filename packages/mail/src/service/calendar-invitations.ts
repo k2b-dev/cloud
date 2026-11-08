@@ -21,8 +21,8 @@ import {
   prepareEventInvitation,
   previewCalendarInvitation,
 } from "./app-integrations";
-import { actorRefFromRequest, type MailRequestContext } from "./auth";
-import { requireDraftContentWrite } from "./draft-adoption";
+import type { MailRequestContext } from "./auth";
+import { humanDraftEditor, requireDraftContentWrite } from "./draft-adoption";
 import { enqueueDraftProjection } from "./draft-provider-projection";
 import * as draftUploads from "./draft-uploads";
 import * as drafts from "./drafts";
@@ -88,7 +88,6 @@ const attachCalendar = async (params: {
       if (!writable.ok) return writable;
       const [draft] = await tx<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${params.draftId}::uuid FOR UPDATE`;
       if (draft?.state !== "draft") return fail(err.conflict("Draft can no longer accept attachments"));
-      const actor = actorRefFromRequest(params.context);
       const rows = await withShortIdDb(
         tx,
         "draftAttachment",
@@ -104,7 +103,7 @@ const attachCalendar = async (params: {
       );
       if (rows.length > 0)
         await tx`UPDATE mail.drafts SET revision = revision + 1,
-        adopted_at = CASE WHEN ${actor.kind} = 'user' THEN COALESCE(adopted_at, now()) ELSE adopted_at END
+        adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(adopted_at, now()) ELSE adopted_at END
         WHERE id = ${params.draftId}::uuid`;
       return ok();
     });

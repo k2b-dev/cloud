@@ -905,7 +905,8 @@ After that first edit, the suggestion stays adopted. Service-account updates,
 patches and attachment changes to an adopted suggestion return `DRAFT_ADOPTED`
 (409), so Gustav never replaces what a person took over. A person can still
 change it directly or through a credential that acts for them
-(`delegatedUser`). Drafts that a person wrote are adopted from creation and
+(`delegatedUser`). Their first edit adopts the suggestion in either editing mode,
+including attachment changes. Drafts that a person wrote are adopted from creation and
 stay open to service accounts as before.
 
 Each conversation has at most one untouched suggestion. Another `draft.create`

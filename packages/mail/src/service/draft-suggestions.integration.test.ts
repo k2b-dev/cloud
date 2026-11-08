@@ -17,6 +17,7 @@ import { grantMailboxAccess } from "./access";
 import * as integrations from "./app-integrations";
 import type { MailRequestContext } from "./auth";
 import { attachEventInvitation } from "./calendar-invitations";
+import { sha256Json } from "./canonical";
 import { mergeConversations } from "./conversations";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
 import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
@@ -206,7 +207,7 @@ suite("Mail service-account suggestions", () => {
     const rows = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid`;
     grants.push(...rows.map((row) => row.access_id));
     await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
-    await sql`DELETE FROM auth.access WHERE id = ANY(${[...new Set(grants)]}::uuid[])`;
+    for (const id of new Set(grants)) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
     await sql`DELETE FROM auth.service_accounts WHERE id IN (${accountId}::uuid, ${delegatedAccountId}::uuid)`;
     await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
@@ -222,6 +223,16 @@ suite("Mail service-account suggestions", () => {
     unwrap(await releaseDraftLease({ context: owner, mailboxId, draftId: draft.id, token: lease.token }));
     expect(unwrap(await drafts.getDraft(owner, mailboxId, draft.id)).suggestion).toBeTrue();
     expect(await adoption(draft.id)).toBeNull();
+  });
+
+  test("delegated creation adopts immediately and does not reuse an untouched suggestion", async () => {
+    const suggestion = await suggest();
+    const thread = { id: suggestion.conversationId!, shortId: "unused", messageId: suggestion.sourceMessageId! };
+    const created = unwrap(await drafts.createDraft({ context: delegated, mailboxId, input: input(thread, "Person's own text") }));
+    expect(created.id).not.toBe(suggestion.id);
+    expect(created.suggestion).toBeFalse();
+    expect(await adoption(created.id)).not.toBeNull();
+    expect(unwrap(await drafts.getDraft(owner, mailboxId, suggestion.id)).suggestion).toBeTrue();
   });
 
   test("GET draft and conversation drafts expose suggestion; REST PUT adopts", async () => {
@@ -258,15 +269,17 @@ suite("Mail service-account suggestions", () => {
     }
   });
 
-  test("an unchanged human save does not adopt; Gustav can revise an untouched suggestion", async () => {
-    let draft = await suggest();
-    draft = unwrap(await save(draft, owner, {}));
-    expect(draft.suggestion).toBeTrue();
-    draft = unwrap(await save(draft, gustav, { body: "Revised suggestion" }));
-    expect(draft.suggestion).toBeTrue();
-    expect(draft.createdBy.kind).toBe("service_account");
-    expect(await adoption(draft.id)).toBeNull();
-  });
+  for (const mode of ["lock", "shared"] as const)
+    test(`an unchanged human save does not adopt; Gustav can revise an untouched suggestion (${mode})`, async () => {
+      let draft = await suggest();
+      await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${draft.id}::uuid`;
+      draft = unwrap(await save(draft, owner, {}));
+      expect(draft.suggestion).toBeTrue();
+      draft = unwrap(await save(draft, gustav, { body: "Revised suggestion" }));
+      expect(draft.suggestion).toBeTrue();
+      expect(draft.createdBy.kind).toBe("service_account");
+      expect(await adoption(draft.id)).toBeNull();
+    });
 
   const changes: [string, () => Partial<DraftEditableContent>][] = [
     ["body", () => ({ body: "Human body" })],
@@ -294,24 +307,69 @@ suite("Mail service-account suggestions", () => {
       expect(await adoption(draft.id)).toBe(first);
     });
 
-  test("human patch uses the same adoption guard and capability errors remain normal errors", async () => {
-    const draft = await suggest();
-    const id = await publicDraftId(draft.id);
-    const patch = mailCapabilities.actions!["draft.patch"]!;
-    unwrap(
-      await patch.run(
-        { mailboxId: mailboxShortId, draftId: id, expectedRevision: draft.revision, patch: { subject: "Human patch" } },
-        capability(owner),
-      ),
-    );
-    const current = unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
-    expect(current.suggestion).toBeFalse();
-    const result = await patch.run(
-      { mailboxId: mailboxShortId, draftId: id, expectedRevision: current.revision, patch: { body: "Automatic patch" } },
-      capability(gustav),
-    );
-    refused(result);
-  });
+  for (const mode of ["lock", "shared"] as const) {
+    test(`delegated first content edits adopt in ${mode} mode`, async () => {
+      for (const [, patch] of changes) {
+        let draft = await suggest();
+        await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${draft.id}::uuid`;
+        expect(await adoption(draft.id)).toBeNull();
+        draft = unwrap(await save(draft, delegated, {}));
+        expect(draft.suggestion).toBeTrue();
+        draft = unwrap(await save(draft, delegated, patch()));
+        expect(draft.suggestion).toBeFalse();
+        expect(await adoption(draft.id)).not.toBeNull();
+        refused(await save(draft, gustav, { body: "Automatic replacement" }));
+      }
+    });
+
+    test(`delegated first attachment add and removal adopt in ${mode} mode`, async () => {
+      const suggestion = async () => {
+        const draft = await suggest();
+        await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${draft.id}::uuid`;
+        return draft;
+      };
+      const added = unwrap(await attach(await suggestion(), delegated));
+      expect(added.suggestion).toBeFalse();
+      expect(await adoption(added.id)).not.toBeNull();
+      refused(await save(added, gustav, { body: "Automatic replacement" }));
+      const untouched = unwrap(await attach(await suggestion(), gustav));
+      expect(untouched.suggestion).toBeTrue();
+      expect(await adoption(untouched.id)).toBeNull();
+      const removed = unwrap(
+        await drafts.removeDraftAttachment({
+          context: delegated,
+          mailboxId,
+          draftId: untouched.id,
+          attachmentId: untouched.attachments[0]!.id,
+          expectedRevision: untouched.revision,
+        }),
+      );
+      expect(removed.suggestion).toBeFalse();
+      expect(await adoption(removed.id)).not.toBeNull();
+      refused(await attach(removed, gustav));
+    });
+  }
+
+  for (const editor of ["person", "delegated"] as const)
+    test(`human patch uses the same adoption guard and capability errors remain normal errors (${editor})`, async () => {
+      const human = editor === "person" ? owner : delegated;
+      const draft = await suggest();
+      const id = await publicDraftId(draft.id);
+      const patch = mailCapabilities.actions!["draft.patch"]!;
+      unwrap(
+        await patch.run(
+          { mailboxId: mailboxShortId, draftId: id, expectedRevision: draft.revision, patch: { subject: "Human patch" } },
+          capability(human),
+        ),
+      );
+      const current = unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
+      expect(current.suggestion).toBeFalse();
+      const result = await patch.run(
+        { mailboxId: mailboxShortId, draftId: id, expectedRevision: current.revision, patch: { body: "Automatic patch" } },
+        capability(gustav),
+      );
+      refused(result);
+    });
 
   test("attachment add and removal adopt and reject autonomous changes, including an upload started before adoption", async () => {
     let added = unwrap(await attach(await suggest()));
@@ -359,74 +417,111 @@ suite("Mail service-account suggestions", () => {
     expect(added.attachments).toHaveLength(1);
   });
 
-  test("recovery restoration adopts under the draft lock", async () => {
-    const draft = await suggest();
-    const content = { ...editable(draft), body: "Recovered human text" };
-    const [copy] = await sql<{ id: string }[]>`INSERT INTO mail.draft_recovery_copies
-      (draft_id, base_revision, content, creator_kind, creator_id)
-      VALUES (${draft.id}::uuid, ${draft.revision}, ${content}::jsonb, 'user', ${userId}::uuid) RETURNING id`;
-    const lease = unwrap(await acquireDraftLease({ context: owner, mailboxId, draftId: draft.id }));
-    try {
-      const restored = unwrap(
-        await drafts.restoreDraftRecoveryCopy({
-          context: owner,
-          mailboxId,
-          draftId: draft.id,
-          expectedRevision: draft.revision,
-          recoveryCopyId: copy!.id,
-          leaseToken: lease.token,
-        }),
-      );
-      expect(restored.body).toBe(content.body);
-      expect(restored.suggestion).toBeFalse();
-    } finally {
-      unwrap(await releaseDraftLease({ context: owner, mailboxId, draftId: draft.id, token: lease.token }));
-    }
-  });
+  for (const editor of ["person", "delegated"] as const)
+    test(`recovery restoration adopts under the draft lock (${editor})`, async () => {
+      const human = editor === "person" ? owner : delegated;
+      const draft = await suggest();
+      const content = { ...editable(draft), body: "Recovered human text" };
+      const [copy] = await sql<{ id: string }[]>`INSERT INTO mail.draft_recovery_copies
+      (draft_id, base_revision, content, content_hash, creator_kind, creator_id)
+      VALUES (${draft.id}::uuid, ${draft.revision}, ${content}::jsonb, ${await sha256Json(content)}, 'user', ${userId}::uuid) RETURNING id`;
+      const lease = unwrap(await acquireDraftLease({ context: human, mailboxId, draftId: draft.id }));
+      try {
+        const restored = unwrap(
+          await drafts.restoreDraftRecoveryCopy({
+            context: human,
+            mailboxId,
+            draftId: draft.id,
+            expectedRevision: draft.revision,
+            recoveryCopyId: copy!.id,
+            leaseToken: lease.token,
+          }),
+        );
+        expect(restored.body).toBe(content.body);
+        expect(restored.suggestion).toBeFalse();
+      } finally {
+        unwrap(await releaseDraftLease({ context: human, mailboxId, draftId: draft.id, token: lease.token }));
+      }
+    });
 
-  test("calendar invitation attachments adopt through the composer path", async () => {
-    const draft = await suggest();
-    const deliveryId = crypto.randomUUID();
-    const prepare = spyOn(integrations, "prepareEventInvitation").mockResolvedValue({
-      ok: true,
-      data: {
-        deliveryId,
-        itemId: "Event1",
-        mailboxId: mailboxShortId,
-        draftId: await publicDraftId(draft.id),
-        sequence: 0,
-        filename: "invitation.ics",
-        contentType: "text/calendar; method=REQUEST",
-        calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
-      },
+  for (const mode of ["lock", "shared"] as const)
+    test(`delegated attachment-only recovery adopts in ${mode} mode`, async () => {
+      const draft = unwrap(await attach(await suggest(), gustav));
+      await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${draft.id}::uuid`;
+      if (mode === "shared") unwrap(await readDraftDocument({ context: delegated, mailboxId, draftId: draft.id }));
+      const content = editable(draft);
+      const [copy] = await sql<{ id: string }[]>`INSERT INTO mail.draft_recovery_copies
+        (draft_id, base_revision, content, content_hash, creator_kind, creator_id, has_attachment_snapshot)
+        VALUES (${draft.id}::uuid, ${draft.revision}, ${content}::jsonb, ${await sha256Json(content)},
+          'user', ${userId}::uuid, true) RETURNING id`;
+      const lease = mode === "lock" ? unwrap(await acquireDraftLease({ context: delegated, mailboxId, draftId: draft.id })) : null;
+      let restored: MailDraft;
+      try {
+        restored = unwrap(
+          await drafts.restoreDraftRecoveryCopy({
+            context: delegated,
+            mailboxId,
+            draftId: draft.id,
+            expectedRevision: draft.revision,
+            recoveryCopyId: copy!.id,
+            leaseToken: lease?.token,
+          }),
+        );
+        expect(restored.body).toBe(draft.body);
+        expect(restored.attachments).toHaveLength(0);
+        expect(restored.suggestion).toBeFalse();
+        expect(await adoption(draft.id)).not.toBeNull();
+      } finally {
+        if (lease) unwrap(await releaseDraftLease({ context: delegated, mailboxId, draftId: draft.id, token: lease.token }));
+      }
+      refused(await save(restored, gustav, { body: "Automatic replacement" }));
     });
-    const commit = spyOn(integrations, "commitEventInvitation").mockResolvedValue({
-      ok: true,
-      data: {
-        deliveryId,
-        itemId: "Event1",
-        draftId: await publicDraftId(draft.id),
-        state: "drafted",
-      },
-    });
-    try {
-      const saved = unwrap(
-        await attachEventInvitation({
-          context: owner,
-          mailboxId,
-          draftId: draft.id,
+
+  for (const editor of ["person", "delegated"] as const)
+    test(`calendar invitation attachments adopt through the composer path (${editor})`, async () => {
+      const human = editor === "person" ? owner : delegated;
+      const draft = await suggest();
+      const deliveryId = crypto.randomUUID();
+      const prepare = spyOn(integrations, "prepareEventInvitation").mockResolvedValue({
+        ok: true,
+        data: {
+          deliveryId,
           itemId: "Event1",
-          idempotencyKey: crypto.randomUUID(),
-          request: {},
-        }),
-      );
-      expect(saved.suggestion).toBeFalse();
-      expect(saved.attachments).toHaveLength(1);
-    } finally {
-      prepare.mockRestore();
-      commit.mockRestore();
-    }
-  });
+          mailboxId: mailboxShortId,
+          draftId: await publicDraftId(draft.id),
+          sequence: 0,
+          filename: "invitation.ics",
+          contentType: "text/calendar; method=REQUEST",
+          calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+        },
+      });
+      const commit = spyOn(integrations, "commitEventInvitation").mockResolvedValue({
+        ok: true,
+        data: {
+          deliveryId,
+          itemId: "Event1",
+          draftId: await publicDraftId(draft.id),
+          state: "drafted",
+        },
+      });
+      try {
+        const saved = unwrap(
+          await attachEventInvitation({
+            context: human,
+            mailboxId,
+            draftId: draft.id,
+            itemId: "Event1",
+            idempotencyKey: crypto.randomUUID(),
+            request: {},
+          }),
+        );
+        expect(saved.suggestion).toBeFalse();
+        expect(saved.attachments).toHaveLength(1);
+      } finally {
+        prepare.mockRestore();
+        commit.mockRestore();
+      }
+    });
 
   test("concurrent create keys return one suggestion and retries retain their draft after adoption", async () => {
     const thread = await conversation();
@@ -465,7 +560,7 @@ suite("Mail service-account suggestions", () => {
     >`SELECT origin, author_kind FROM mail.drafts WHERE id = ${second.id}::uuid`;
     expect(stored).toEqual({ origin: "user", author_kind: "service_account" });
     // The database constraint also rejects bypasses of the transactional creation path.
-    await expect(sql`UPDATE mail.drafts SET adopted_at = NULL WHERE id = ${first.id}::uuid`).rejects.toThrow();
+    await expect(sql`UPDATE mail.drafts SET adopted_at = NULL WHERE id = ${first.id}::uuid`.execute()).rejects.toThrow();
   });
 
   test("a pending send keeps its suggestion slot so undo can restore the draft", async () => {
@@ -589,107 +684,113 @@ suite("Mail service-account suggestions", () => {
 
   const editableInput = (value: ReturnType<typeof input>) => editable(value);
 
-  test("shared admission adopts; service projection alone and no-op human input do not adopt", async () => {
-    const draft = await suggest();
-    await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${draft.id}::uuid`;
-    const initial = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
-    expect(await adoption(draft.id)).toBeNull();
-    const noOp = await acceptDraftDocumentUpdate({
-      context: owner,
-      mailboxId,
-      draftId: draft.id,
-      generation: initial.generation,
-      baseCursor: initial.fresh.cursor,
-      update: new Uint8Array([0, 0]),
-    });
-    unwrap(noOp);
-    expect(await adoption(draft.id)).toBeNull();
-    const current = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
-    const update = await createDraftRevisionUpdate(
-      current.fresh.state,
-      { ...current.fresh.content, subject: "Human shared subject" },
-      { deadline: Date.now() + 10_000 },
-    );
-    const accepted = unwrap(
-      await acceptDraftDocumentUpdate({
-        context: owner,
+  for (const editor of ["person", "delegated"] as const)
+    test(`shared admission adopts; service projection alone and no-op human input do not adopt (${editor})`, async () => {
+      const human = editor === "person" ? owner : delegated;
+      const draft = await suggest();
+      await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${draft.id}::uuid`;
+      const initial = unwrap(await readDraftDocument({ context: human, mailboxId, draftId: draft.id }));
+      expect(await adoption(draft.id)).toBeNull();
+      const noOp = await acceptDraftDocumentUpdate({
+        context: human,
+        mailboxId,
+        draftId: draft.id,
+        generation: initial.generation,
+        baseCursor: initial.fresh.cursor,
+        update: new Uint8Array([0, 0]),
+      });
+      unwrap(noOp);
+      expect(await adoption(draft.id)).toBeNull();
+      const current = unwrap(await readDraftDocument({ context: human, mailboxId, draftId: draft.id }));
+      const update = await createDraftRevisionUpdate(
+        current.fresh.state,
+        { ...current.fresh.content, subject: "Human shared subject" },
+        { deadline: Date.now() + 10_000 },
+      );
+      const accepted = unwrap(
+        await acceptDraftDocumentUpdate({
+          context: human,
+          mailboxId,
+          draftId: draft.id,
+          generation: current.generation,
+          baseCursor: current.fresh.cursor,
+          update,
+        }),
+      );
+      expect(accepted.status).toBe("accepted");
+      expect(await adoption(draft.id)).not.toBeNull();
+      const saved = unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
+      refused(await save(saved, gustav, { body: "Autonomous shared update" }));
+      const rejected = await acceptDraftDocumentUpdate({
+        context: gustav,
         mailboxId,
         draftId: draft.id,
         generation: current.generation,
         baseCursor: current.fresh.cursor,
         update,
-      }),
-    );
-    expect(accepted.status).toBe("accepted");
-    expect(await adoption(draft.id)).not.toBeNull();
-    const saved = unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
-    refused(await save(saved, gustav, { body: "Autonomous shared update" }));
-    const rejected = await acceptDraftDocumentUpdate({
-      context: gustav,
-      mailboxId,
-      draftId: draft.id,
-      generation: current.generation,
-      baseCursor: current.fresh.cursor,
-      update,
-    });
-    refused(rejected);
-  });
-
-  test("shared table actions adopt human input and refuse autonomous table changes", async () => {
-    const draft = await suggest("| Item | Cost |\n| --- | --- |\n| Paper | 4 |\n");
-    await sql`UPDATE mail.drafts SET edit_mode = 'shared', body_format = 'markdown' WHERE id = ${draft.id}::uuid`;
-    const initial = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
-    const doc = new Y.Doc();
-    try {
-      Y.applyUpdate(doc, initial.fresh.state);
-      const text = doc.getText(SHARED_TEXT_NAME);
-      const table = findTables(text.toString())[0]!;
-      const intent = captureTableAction(text, "rowBelow", {
-        tableFrom: table.from,
-        rowFrom: gridLine(table, 1)!.from,
-        columnFrom: table.lines[0]!.cells[0]!.from,
-        row: 1,
-        column: 0,
       });
-      const target = { mailboxId, draftId: draft.id, generation: initial.generation, actionId: crypto.randomUUID(), intent };
-      const result = unwrap(await applyDraftTableAction({ ...target, context: owner }));
-      expect(result.persisted).toBeTrue();
-      expect(unwrap(await drafts.getDraft(owner, mailboxId, draft.id)).suggestion).toBeFalse();
-      refused(await applyDraftTableAction({ ...target, actionId: crypto.randomUUID(), context: gustav }));
-    } finally {
-      doc.destroy();
-    }
-  });
+      refused(rejected);
+    });
 
-  test("published human input survives SQL rollback and service projection recovers adoption", async () => {
-    const draft = await suggest();
-    await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${draft.id}::uuid`;
-    const initial = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
-    const update = await createDraftRevisionUpdate(
-      initial.fresh.state,
-      { ...initial.fresh.content, body: "Retained human text" },
-      { deadline: Date.now() + 10_000 },
-    );
-    await expect(
-      sql.begin(async (db) => {
-        const locked = unwrap(await lockDraftDocumentInTransaction({ context: owner, db, mailboxId, draftId: draft.id }));
-        unwrap(await locked.accept({ generation: initial.generation, baseCursor: initial.fresh.cursor, update }));
-        throw new Error("Simulated commit failure");
-      }),
-    ).rejects.toThrow("Simulated commit failure");
-    expect(await adoption(draft.id)).toBeNull();
-    // An autonomous mutation must discover retained human edits before either merge or replacement.
-    refused(await save(draft, gustav, { body: "Must never replace retained input" }));
-    expect(await adoption(draft.id)).not.toBeNull();
-    unwrap(
-      await sql.begin(async (db) => {
-        const locked = unwrap(await lockDraftDocumentInTransaction({ context: gustav, db, mailboxId, draftId: draft.id }));
-        return locked.project();
-      }),
-    );
-    const projected = unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
-    expect(projected.body).toBe("Retained human text");
-    expect(projected.suggestion).toBeFalse();
-    expect(projected.lastEditedBy.kind).toBe("service_account");
-  });
+  for (const editor of ["person", "delegated"] as const)
+    test(`shared table actions adopt human input and refuse autonomous table changes (${editor})`, async () => {
+      const human = editor === "person" ? owner : delegated;
+      const draft = await suggest("| Item | Cost |\n| --- | --- |\n| Paper | 4 |\n");
+      await sql`UPDATE mail.drafts SET edit_mode = 'shared', body_format = 'markdown' WHERE id = ${draft.id}::uuid`;
+      const initial = unwrap(await readDraftDocument({ context: human, mailboxId, draftId: draft.id }));
+      const doc = new Y.Doc();
+      try {
+        Y.applyUpdate(doc, initial.fresh.state);
+        const text = doc.getText(SHARED_TEXT_NAME);
+        const table = findTables(text.toString())[0]!;
+        const intent = captureTableAction(text, "rowBelow", {
+          tableFrom: table.from,
+          rowFrom: gridLine(table, 1)!.from,
+          columnFrom: table.lines[0]!.cells[0]!.from,
+          row: 1,
+          column: 0,
+        });
+        const target = { mailboxId, draftId: draft.id, generation: initial.generation, actionId: crypto.randomUUID(), intent };
+        const result = unwrap(await applyDraftTableAction({ ...target, context: human }));
+        expect(result.persisted).toBeTrue();
+        expect(unwrap(await drafts.getDraft(owner, mailboxId, draft.id)).suggestion).toBeFalse();
+        refused(await applyDraftTableAction({ ...target, actionId: crypto.randomUUID(), context: gustav }));
+      } finally {
+        doc.destroy();
+      }
+    });
+
+  for (const editor of ["person", "delegated"] as const)
+    test(`published human input survives SQL rollback and service projection recovers adoption (${editor})`, async () => {
+      const human = editor === "person" ? owner : delegated;
+      const draft = await suggest();
+      await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${draft.id}::uuid`;
+      const initial = unwrap(await readDraftDocument({ context: human, mailboxId, draftId: draft.id }));
+      const update = await createDraftRevisionUpdate(
+        initial.fresh.state,
+        { ...initial.fresh.content, body: "Retained human text" },
+        { deadline: Date.now() + 10_000 },
+      );
+      await expect(
+        sql.begin(async (db) => {
+          const locked = unwrap(await lockDraftDocumentInTransaction({ context: human, db, mailboxId, draftId: draft.id }));
+          unwrap(await locked.accept({ generation: initial.generation, baseCursor: initial.fresh.cursor, update }));
+          throw new Error("Simulated commit failure");
+        }),
+      ).rejects.toThrow("Simulated commit failure");
+      expect(await adoption(draft.id)).toBeNull();
+      // An autonomous mutation must discover retained human edits before either merge or replacement.
+      refused(await save(draft, gustav, { body: "Must never replace retained input" }));
+      expect(await adoption(draft.id)).not.toBeNull();
+      unwrap(
+        await sql.begin(async (db) => {
+          const locked = unwrap(await lockDraftDocumentInTransaction({ context: gustav, db, mailboxId, draftId: draft.id }));
+          return locked.project();
+        }),
+      );
+      const projected = unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
+      expect(projected.body).toBe("Retained human text");
+      expect(projected.suggestion).toBeFalse();
+      expect(projected.lastEditedBy.kind).toBe("service_account");
+    });
 });

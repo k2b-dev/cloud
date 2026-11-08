@@ -49,7 +49,7 @@ import { sha256Json } from "./canonical";
 import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { requireSelectableSignature, resolveDefaultSignatureTemplateId } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
-import { refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
+import { humanDraftEditor, refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { legacySignature, publicDraftContent, resolveDraftSignature, validateIdentity } from "./draft-validation";
@@ -775,7 +775,7 @@ const insertComposeDraftInTransaction = async (params: {
     }
     return ok(draft);
   };
-  if (params.actor.kind === "service_account" && !params.adopted && params.prepared.conversationId) {
+  if (params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted && params.prepared.conversationId) {
     const key = `mail:suggestion:${params.mailboxId}:${params.prepared.conversationId}`;
     await params.db`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
     const [existing] = await params.db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d
@@ -808,7 +808,7 @@ const insertComposeDraftInTransaction = async (params: {
       ${params.content.senderIdentityId}::uuid,
       ${params.actor.kind},
       ${actorId(params.actor)}::uuid,
-      CASE WHEN ${params.actor.kind} = 'user' OR ${params.adopted === true} THEN now() ELSE NULL END,
+      CASE WHEN ${humanDraftEditor(params.context)} OR ${params.adopted === true} THEN now() ELSE NULL END,
       ${params.actor.kind},
       ${actorId(params.actor)}::uuid,
       ${params.content.to}::jsonb,
@@ -994,6 +994,7 @@ const prepareDerivedDraftInTransaction = async (params: {
 
 const insertDerivedDraftInTransaction = async (params: {
   db: typeof sql;
+  context: MailRequestContext;
   mailboxId: string;
   actor: MutableActor;
   prepared: PreparedDerivedDraft;
@@ -1024,7 +1025,7 @@ const insertDerivedDraftInTransaction = async (params: {
       ${params.prepared.messageId}::uuid, ${params.prepared.kind}, ${params.idempotencyKey}, ${params.requestHash},
       ${params.content.senderIdentityId}::uuid, ${params.content.signatureTemplateId ?? null}::uuid,
       ${params.actor.kind}, ${actorId(params.actor)}::uuid,
-      CASE WHEN ${params.actor.kind} = 'user' THEN now() ELSE NULL END,
+      CASE WHEN ${humanDraftEditor(params.context)} THEN now() ELSE NULL END,
       ${params.actor.kind}, ${actorId(params.actor)}::uuid,
       ${params.content.to}::jsonb, ${params.content.cc}::jsonb, ${params.content.bcc}::jsonb,
       ${params.content.subject}, ${params.content.body}, ${params.content.format},
@@ -1269,6 +1270,7 @@ export const materializeDraftSeed = async (params: {
         };
         return insertDerivedDraftInTransaction({
           db: tx,
+          context: params.context,
           mailboxId: params.mailboxId,
           actor,
           prepared,
@@ -1368,6 +1370,7 @@ export const deriveDraftFromMessage = async (params: {
       if (!prepared.ok) return prepared;
       return insertDerivedDraftInTransaction({
         db: tx,
+        context: params.context,
         mailboxId: params.mailboxId,
         actor,
         prepared: prepared.data,
@@ -1502,6 +1505,7 @@ export const createDeliveryRecoveryDraft = async (params: {
       }
       return insertDerivedDraftInTransaction({
         db: tx,
+        context: params.context,
         mailboxId: params.mailboxId,
         actor,
         prepared: prepared.data,
@@ -1885,7 +1889,7 @@ export const updateDraft = async (params: {
           priority = ${parsed.data.priority},
           request_delivery_receipt = ${parsed.data.requestDeliveryReceipt},
           request_read_receipt = ${parsed.data.requestReadReceipt},
-          adopted_at = CASE WHEN ${actor.kind} = 'user' THEN COALESCE(d.adopted_at, now()) ELSE d.adopted_at END,
+          adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(d.adopted_at, now()) ELSE d.adopted_at END,
           last_editor_kind = ${actor.kind},
           last_editor_id = ${actorId(actor)}::uuid,
           revision = revision + 1
@@ -2307,7 +2311,7 @@ export const restoreDraftRecoveryCopy = async (params: {
           // Give the completed attachment list its own base/revision so exports
           // supersede that earlier snapshot instead of reusing its attachments.
           await tx`UPDATE mail.drafts SET revision = revision + 1,
-            adopted_at = CASE WHEN ${actor.kind} = 'user' THEN COALESCE(adopted_at, now()) ELSE adopted_at END
+            adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(adopted_at, now()) ELSE adopted_at END
             WHERE id = ${draftId}::uuid`;
           await recordDraftDocumentRevision({ db: tx, context: params.context, mailboxId: params.mailboxId, draftId });
         }
@@ -2328,7 +2332,7 @@ export const restoreDraftRecoveryCopy = async (params: {
           priority = ${content.data.priority},
           request_delivery_receipt = ${content.data.requestDeliveryReceipt},
           request_read_receipt = ${content.data.requestReadReceipt},
-          adopted_at = CASE WHEN ${actor.kind} = 'user' THEN COALESCE(d.adopted_at, now()) ELSE d.adopted_at END,
+          adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(d.adopted_at, now()) ELSE d.adopted_at END,
           last_editor_kind = ${actor.kind},
           last_editor_id = ${actorId(actor)}::uuid,
           revision = revision + 1
@@ -2439,7 +2443,7 @@ export const removeDraftAttachment = async (params: {
         UPDATE mail.drafts d
         SET
           revision = revision + 1,
-          adopted_at = CASE WHEN ${actor.kind} = 'user' THEN COALESCE(d.adopted_at, now()) ELSE d.adopted_at END,
+          adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(d.adopted_at, now()) ELSE d.adopted_at END,
           last_editor_kind = ${actor.kind},
           last_editor_id = ${actorId(actor)}::uuid
         WHERE d.id = ${draftId}::uuid AND d.origin = 'user'

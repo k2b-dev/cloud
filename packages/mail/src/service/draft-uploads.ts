@@ -12,7 +12,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
-import { requireDraftContentWrite } from "./draft-adoption";
+import { humanDraftEditor, requireDraftContentWrite } from "./draft-adoption";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { requireDraftLeaseAvailable } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
@@ -422,7 +422,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
         UPDATE mail.drafts
         SET
           revision = revision + 1,
-          adopted_at = CASE WHEN ${actor.kind} = 'user' THEN COALESCE(adopted_at, now()) ELSE adopted_at END,
+          adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(adopted_at, now()) ELSE adopted_at END,
           last_editor_kind = ${actor.kind},
           last_editor_id = ${actor.id}::uuid
         WHERE id = ${draftId}::uuid AND origin = 'user'
