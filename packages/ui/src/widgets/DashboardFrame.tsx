@@ -41,7 +41,10 @@ export type DashboardFrameProps = {
    * shows the empty sentence and action while the head keeps its state, so a stale note stays.
    */
   emptyContent?: boolean;
-  /** Height of the body, a CSS length. Every state keeps it. */
+  /**
+   * Height of the body, a CSS length. Every state keeps it. With `reserve`, the content fills it and scrolls inside, so
+   * a table keeps its header in view; without it, the hidden copy sets the height.
+   */
   height?: string;
   /**
    * A hidden copy of the full content that holds the body's height in every state, such as every row of a table. The
@@ -101,13 +104,11 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
         <header class="k2b-dashboard-frame__header">
           <div>
             <Dynamic component={`h${props.headingLevel ?? 3}`}>{props.title}</Dynamic>
-            {/* One reserved line and a polite live region: loading and stale replace the subtitle without moving. */}
+            {/* One reserved line and a polite live region: loading and stale replace the subtitle without moving. The
+                line is one expression: a trailing conditional anchor would change WebKit's rendered text after the
+                first client render. */}
             <p role="status" class={state() === "stale" ? "k2b-dashboard-frame__stale" : undefined}>
-              {status()}
-              <Show when={state() === "stale" && props.onRetry}>
-                {" · "}
-                {retryLink()}
-              </Show>
+              {state() === "stale" && props.onRetry ? [status(), " · ", retryLink()] : status()}
             </p>
           </div>
           <Show when={tools() !== undefined}>
@@ -140,7 +141,12 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
             </div>
           }
         >
-          <div class="k2b-dashboard-frame__stack" aria-busy={busy()}>
+          <div
+            class="k2b-dashboard-frame__stack"
+            data-height={props.height ? "" : undefined}
+            style={props.height ? { height: props.height } : undefined}
+            aria-busy={busy()}
+          >
             {/* The full content, hidden: the body's height in every state. */}
             <div class="k2b-dashboard-frame__reserve" aria-hidden="true" inert>
               {reserve()}

@@ -96,7 +96,8 @@ content; the frame owns everything around it, the same way in every app:
   `reserve`, a hidden copy of the full content (such as every row of a
   table) that holds the height while the shown content narrows or is
   missing. A reserved body reaches the frame's left, right and bottom
-  edges;
+  edges. With both, `height` wins: the content fills it and scrolls inside,
+  so a table keeps its header in view;
 - `compact` shows loading, empty and failure as one quiet line, for short
   content such as an amount.
 

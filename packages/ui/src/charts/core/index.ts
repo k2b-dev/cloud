@@ -23,6 +23,7 @@ export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayout
 export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export * from "./inspection";
 export { map } from "./map";
+export * from "./pareto";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";
@@ -74,6 +75,7 @@ export {
   stepPathD,
   svgRoot,
 } from "./svg-renderers";
+export * from "./treemap";
 export {
   type ChartDateFormat,
   type ChartDatum,

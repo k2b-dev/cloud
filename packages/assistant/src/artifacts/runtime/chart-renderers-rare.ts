@@ -11,6 +11,8 @@ import {
   renderFunnelLayoutSvg,
   renderHbarLayoutSvg,
   renderHeatmapSvg,
+  renderParetoSvg,
+  renderTreemapSvg,
   renderWaterfallLayoutSvg,
   scatter,
 } from "@k2b/ui/charts/core";
@@ -43,6 +45,10 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
       return barGauge({ ...mapped, ...common });
     case "heatmap":
       return renderHeatmapSvg({ ...mapped, ...common });
+    case "treemap":
+      return renderTreemapSvg({ ...mapped, ...common, displayWidth: common.width });
+    case "pareto":
+      return renderParetoSvg({ ...mapped, ...common, displayWidth: common.width });
   }
   const unsupported: never = mapped;
   throw new Error(`Unsupported chart: ${String(unsupported)}`);
