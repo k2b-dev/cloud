@@ -7,14 +7,69 @@
  *   bun scripts/generate-chart-catalog.ts          write both files
  *   bun scripts/generate-chart-catalog.ts --check  exit 1 when one is stale
  *
+ * Every text is written for one surface: the Code reference for `cloud.chart()` (the application schema), the chart
+ * tool's lines for the chat (its schema with limits). Options the surface's schema does not have are left out, enum
+ * types come from the schema, and `chartCatalogIssues` reports any option, enum value or `name: "value"` the text
+ * mentions that the surface does not accept.
+ *
  * `packages/cloud/src/ai/chart-catalog.test.ts` parses every example with the chart tool's schema and cloud.chart()'s;
- * the repository rule `chart-catalog` fails when a committed file differs from this output.
+ * the repository rule `chart-catalog` fails on any issue and when a committed file differs from this output.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chartShowcaseExamples } from "../docs-site/src/ui/demo-sections/charts/examples";
 import type { ChartShowcaseExample, JsonValue } from "../docs-site/src/ui/demo-sections/charts/examples/types";
-import { chartKindSchema } from "../packages/editor/src/chart-schema";
+import { schemaShape, schemaValues } from "../docs-site/src/ui/demo-sections/charts/guidance";
+import { chartKindSchema, chartKinds } from "../packages/editor/src/chart-schema";
+
+/**
+ * The schema each text is written for. The chat's limits change sizes and where a missing value may be null; they
+ * name the same fields (the chart tool's own limits are in packages/cloud/src/ai/default-tool-contracts.ts).
+ */
+const surfaces = { code: chartKinds(), chat: chartKinds({ maxSeries: 8, maxValues: 480, maxMarks: 3840 }) };
+type Surface = keyof typeof surfaces;
+
+type Def = { type?: string; [key: string]: unknown };
+const defOf = (schema: unknown): Def | undefined => (schema as { def?: Def } | null | undefined)?.def;
+const wrappers = new Set(["optional", "nullable", "default", "prefault", "readonly", "catch", "nonoptional"]);
+/** The strings a field accepts when it is an enum, a literal or a union of them; null when it takes any value. */
+const accepted = (field: unknown): Set<string> | null => {
+  const def = defOf(field);
+  if (!def) return null;
+  if (wrappers.has(def.type ?? "")) return accepted(def.innerType);
+  if (def.type === "enum") return new Set(Object.values(def.entries as Record<string, unknown>).map(String));
+  if (def.type === "literal") return new Set((def.values as unknown[]).map(String));
+  if (def.type === "union") {
+    const all = (def.options as unknown[]).map(accepted);
+    return all.every((values) => values) ? new Set(all.flatMap((values) => [...values!])) : null;
+  }
+  return null;
+};
+type Fields = Map<string, Set<string> | null>;
+/** Every field name in a schema branch, nested ones too, with the strings it accepts. */
+const fieldsOf = (schema: unknown, into: Fields = new Map()): Fields => {
+  const def = defOf(schema);
+  if (!def) return into;
+  if (def.type === "object") {
+    for (const [name, field] of Object.entries(def.shape as Record<string, unknown>)) {
+      const values = accepted(field);
+      const known = into.get(name);
+      into.set(name, into.has(name) && (known === null || values === null) ? null : new Set([...(known ?? []), ...(values ?? [])]));
+      fieldsOf(field, into);
+    }
+  } else if (def.type === "array") fieldsOf(def.element, into);
+  else if (def.type === "union") for (const option of def.options as unknown[]) fieldsOf(option, into);
+  else if (def.type === "pipe") fieldsOf(def.in, into), fieldsOf(def.out, into);
+  else if (wrappers.has(def.type ?? "")) fieldsOf(def.innerType, into);
+  return into;
+};
+/** The top-level option names an option line documents: `data[].size` is `data`, `a, b` is both. */
+const roots = (name: string) => name.split(", ").map((part) => part.split(/[.[]/)[0]!);
+/** A description that says a missing value may be null, not one that rules null out. */
+const promisesNull = (text: string) => /\bnull\b/.test(text) && !/null is rejected|\bno null\b|\bnot null\b/i.test(text);
+/** `name: "value"`, `name: true` or `name: null` in prose, outside JSON (whose keys are quoted): always a field. */
+const mentions = (text: string) =>
+  [...text.matchAll(/(?<![\w"])`?([A-Za-z]\w*)`?: ("([^"]*)"|true|false|null)/g)].map((match) => ({ name: match[1]!, value: match[3] }));
 
 /** The two generated files, relative to the repository root. */
 export const chartCatalogTargets = {
@@ -49,14 +104,89 @@ export const chartCatalogEntries = (examples: readonly ChartShowcaseExample[] = 
       const layout = (example.spec as { layout?: string }).layout ?? "";
       if (!layouts.has(layout)) layouts.set(layout, example);
     }
-    return [...layouts.entries()].map(([layout, example]) => ({
-      kind,
-      ...(layout ? { layout } : {}),
-      useFor: example.useFor,
-      avoidFor: example.avoidFor,
-      options: example.options,
-      example: shorten(example.spec),
-    }));
+    return [...layouts.entries()].map(([layout, example]) => {
+      const spec = shorten(example.spec);
+      const shape = schemaShape(kind, layout || undefined, surfaces.code) ?? {};
+      return {
+        kind,
+        ...(layout ? { layout } : {}),
+        useFor: example.useFor,
+        avoidFor: example.avoidFor,
+        // Options of cloud.chart() in this build (title, subtitle and tooltip are named once for every kind), with the
+        // values the schema accepts and where the chat needs a number instead of null.
+        options: example.options
+          .filter((option) => !["title", "subtitle", "tooltip"].includes(option.name))
+          .filter((option) => roots(option.name).every((root) => root in shape))
+          .map((option) => {
+            const values = /^\w+$/.test(option.name) ? schemaValues(kind, option.name, layout || undefined) : undefined;
+            const typed = values ? { ...option, type: values.map((value) => JSON.stringify(value)).join(" | ") } : option;
+            return promisesNull(option.description) && !nullAccepted(spec, roots(option.name)[0]!, "chat")
+              ? { ...typed, description: `${typed.description} Views and the chart tool need a number here.` }
+              : typed;
+          }),
+        example: spec,
+      };
+    });
+  });
+
+/** The example with its first number under `root` set to null, or undefined when it holds no number there. */
+const withNull = (spec: JsonValue, root: string): JsonValue | undefined => {
+  let done = false;
+  const walk = (value: JsonValue): JsonValue => {
+    if (done) return value;
+    if (typeof value === "number") {
+      done = true;
+      return null;
+    }
+    if (Array.isArray(value)) return value.map(walk);
+    return value !== null && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, walk(entry)]))
+      : value;
+  };
+  const object = spec as Record<string, JsonValue>;
+  const changed = { ...object, [root]: walk(object[root] ?? null) };
+  return done ? changed : undefined;
+};
+/** Whether a surface draws the example with a missing (null) value where its option says one may be null. */
+const nullAccepted = (spec: JsonValue, root: string, surface: Surface) => {
+  const changed = withNull(spec, root);
+  return changed === undefined || surfaces[surface].safeParse(changed).success;
+};
+
+/**
+ * What each text mentions that the schema of its surface does not accept: an option that is no field of the kind, an
+ * enum value it does not take, a `name: "value"` in prose (such as `marks: "dots"` before dot matrices exist), or a
+ * null the Code reference promises where cloud.chart() rejects it.
+ */
+export const chartCatalogIssues = (entries: Entry[] = chartCatalogEntries()): string[] =>
+  entries.flatMap((entry) => {
+    const check = (surface: Surface, texts: string[], options: Entry["options"]) => {
+      const shape = schemaShape(entry.kind, entry.layout, surfaces[surface]);
+      if (!shape) return [`${name(entry)}: no ${surface} chart kind`];
+      const fields = fieldsOf({ def: { type: "object", shape } });
+      const issues: string[] = [];
+      for (const option of options) {
+        const [root] = roots(option.name);
+        for (const part of roots(option.name)) if (!(part in shape)) issues.push(`${name(entry)}, ${surface}: option ${part} is no field`);
+        if (/^"[^"]*"( \| "[^"]*")*$/.test(option.type))
+          for (const [, value] of option.type.matchAll(/"([^"]*)"/g))
+            if (!fields.get(root!)?.has(value!)) issues.push(`${name(entry)}, ${surface}: ${option.name} does not take "${value}"`);
+        if (promisesNull(option.description) && !nullAccepted(entry.example, root!, surface))
+          issues.push(`${name(entry)}, ${surface}: ${option.name} does not take null`);
+      }
+      for (const text of [...texts, ...options.map((option) => option.description)])
+        for (const mention of mentions(text)) {
+          const values = fields.get(mention.name);
+          if (!fields.has(mention.name)) issues.push(`${name(entry)}, ${surface}: "${mention.name}" is no field`);
+          else if (mention.value !== undefined && values && !values.has(mention.value))
+            issues.push(`${name(entry)}, ${surface}: ${mention.name} does not take "${mention.value}"`);
+        }
+      return issues;
+    };
+    return [
+      ...check("code", [...entry.useFor, ...entry.avoidFor], entry.options),
+      ...check("chat", [entry.useFor[0] ?? "", entry.avoidFor[0] ?? ""], []),
+    ];
   });
 
 const header = "Generated from the chart showcase examples by scripts/generate-chart-catalog.ts. Do not edit.";
@@ -98,9 +228,12 @@ export const chartCatalogSources = async (entries: Entry[] = chartCatalogEntries
     "",
     "# Chart kinds",
     "",
-    "Each kind with when to use it, its options and one small valid description. Pass the",
-    "same object to `cloud.chart()`, `await cloud.view.chart()` or the `chart` tool; every",
-    "kind also takes `title`, `subtitle` and `tooltip` ([Charts](charts.md)).",
+    "Each kind with when to use it, its options and one small valid description. The",
+    "options are those of `cloud.chart()` in apps, scripts and PDFs; every kind also takes",
+    "`title`, `subtitle` and `tooltip` ([Charts](charts.md)). `await cloud.view.chart()`",
+    "and the `chart` tool take the same descriptions within the chat's limits: labels are",
+    "text, lists are shorter ([Views in the chat](views.md)), and an option notes where they",
+    "need a number instead of null. Every example below is valid on all three.",
     "",
     ...entries.flatMap((entry) => [
       `## ${name(entry)}`,
@@ -109,9 +242,7 @@ export const chartCatalogSources = async (entries: Entry[] = chartCatalogEntries
       "",
       `Avoid for: ${entry.avoidFor.join(" ")}`,
       "",
-      ...entry.options
-        .filter((option) => !["title", "subtitle", "tooltip"].includes(option.name))
-        .map((option) => `- \`${option.name}\` (${option.type}): ${option.description}`),
+      ...entry.options.map((option) => `- \`${option.name}\` (${option.type}): ${option.description}`),
       "",
       "```json",
       JSON.stringify(entry.example),

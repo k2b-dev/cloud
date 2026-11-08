@@ -2,9 +2,12 @@
 
 # Chart kinds
 
-Each kind with when to use it, its options and one small valid description. Pass the
-same object to `cloud.chart()`, `await cloud.view.chart()` or the `chart` tool; every
-kind also takes `title`, `subtitle` and `tooltip` ([Charts](charts.md)).
+Each kind with when to use it, its options and one small valid description. The
+options are those of `cloud.chart()` in apps, scripts and PDFs; every kind also takes
+`title`, `subtitle` and `tooltip` ([Charts](charts.md)). `await cloud.view.chart()`
+and the `chart` tool take the same descriptions within the chat's limits: labels are
+text, lists are shorter ([Views in the chat](views.md)), and an option notes where they
+need a number instead of null. Every example below is valid on all three.
 
 ## waterfall
 
@@ -41,10 +44,10 @@ Use for: Comparing a handful of categories, such as channels, teams or regions. 
 
 Avoid for: Long continuous time series; use a line chart. Parts of one whole; use a donut. Changes that build on each other; use a waterfall. Negative values in a stack; stacked bars need zero or more.
 
-- `data` ({ label, value }[]): One value per category; a missing value is null.
+- `data` ({ label, value }[]): One value per category; a missing value is null. Views and the chart tool need a number here.
 - `x` (string[]): The categories several series share.
 - `series` ({ label, data }[]): One value per category in each series; pairs with x.
-- `layout` ("columns" | "rows"): Columns by default, rows for long labels; with several series grouped side by side or stacked to a total; nested draws a dot matrix with marks: "dots".
+- `layout` ("columns" | "rows" | "grouped" | "stacked"): Columns by default, rows for long labels; with several series grouped side by side or stacked to a total.
 - `xAxis` ({ label? }): Names the categories.
 - `yAxis` ({ label?, domain?, ticks?, scale?, format? }): Vertical axis: label, exact [min, max], tick count, "log" scale and a number or date format.
 - `showValues` (boolean): Prints each value at its bar.
@@ -61,7 +64,7 @@ Use for: Several series with matching categories
 
 Avoid for: Unaligned observations
 
-- `layout` (grouped | stacked): Place series next to each other or accumulate positive segments.
+- `layout` ("columns" | "rows" | "grouped" | "stacked"): Place series next to each other or accumulate positive segments.
 
 ```json
 {"kind":"bar","title":"Orders by channel","x":["Q1","Q2","Q3"],"series":[{"label":"Store","data":[350,420,510]},{"label":"Web","data":[240,310,420]},{"label":"Fair","data":[90,120,180]}],"layout":"grouped"}
@@ -73,7 +76,6 @@ Use for: Category values with readable row labels
 
 Avoid for: A continuous time axis
 
-- `--k2b-row-measure` (CSS length): Maximum drawing width for rows; defaults to 40rem.
 
 ```json
 {"kind":"bar","title":"Orders by collection","layout":"rows","data":[{"label":"Furniture","value":84},{"label":"Lighting","value":62},{"label":"Pictures","value":39}]}
@@ -121,7 +123,7 @@ Use for: A value that changes continuously, such as visitors, revenue or respons
 
 Avoid for: Categories without an order, such as products or countries; use a bar chart. Two values with different units; draw two charts instead of a second axis. A single number; use a key figure.
 
-- `series` ({ label?, data: { x, y }[], role?, style? }[]): Series of points; x is a number or ISO date, a missing y is null and leaves a gap. role "reference" draws a comparison series dashed.
+- `series` ({ label?, data: { x, y }[], role?, style? }[]): Series of points; x is a number or ISO date, a missing y is null and leaves a gap. role "reference" draws a comparison series dashed. Views and the chart tool need a number here.
 - `xAxis` ({ label?, domain?, ticks?, scale?, format? }): Horizontal axis: label, exact [min, max], tick count, "log" scale and a number or date format.
 - `yAxis` ({ label?, domain?, ticks?, scale?, format? }): Vertical axis: label, exact [min, max], tick count, "log" scale and a number or date format.
 - `smooth` (boolean): Draws a smooth curve through the points.
@@ -157,7 +159,7 @@ Avoid for: Comparing parts of similar size; use bars. More than six parts; group
 - `data` ({ label, value }[]): Parts of the total; only values of zero and above.
 - `showLabels` (boolean): Prints the share on large enough slices.
 - `legend` (boolean): Names the slices below the chart.
-- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name: "number", "percent" or "currency" with an ISO currency, decimals and compact notation.
+- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name (style "number", "percent" or "currency") with an ISO currency, decimals and compact notation.
 
 ```json
 {"kind":"pie","title":"Visits by device","subtitle":"October · invented data","data":[{"label":"Phone","value":14820},{"label":"Desktop","value":9240},{"label":"Tablet","value":2110}],"showLabels":true,"legend":true}
@@ -170,7 +172,7 @@ Use for: Parts of a budget or a total amount. Dashboards where several shares si
 Avoid for: Precise comparison of similar parts; use bars. Parts that do not add up to a whole.
 
 - `data` ({ label, value }[]): Parts of the total; only values of zero and above.
-- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name: "number", "percent" or "currency" with an ISO currency, decimals and compact notation.
+- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name (style "number", "percent" or "currency") with an ISO currency, decimals and compact notation.
 - `legend` (boolean): Names the parts below the ring.
 
 ```json
@@ -200,7 +202,7 @@ Avoid for: Values without a natural maximum. Several values; use a bar gauge.
 - `value` (number): The current value; the needle stops at the range, the tooltip keeps the real value.
 - `min, max` (number): The range of the dial.
 - `unit` (string): Unit after the value.
-- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name: "number", "percent" or "currency" with an ISO currency, decimals and compact notation.
+- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name (style "number", "percent" or "currency") with an ISO currency, decimals and compact notation.
 - `thresholds` ({ value, label? }[]): Band edges; each band gets its own color.
 
 ```json
@@ -256,7 +258,7 @@ Avoid for: Exact comparison of values; color is read only roughly. More rows tha
 - `data` ({ x, y, value }[]): One cell per pair; x names the column, y the row.
 - `showValues` (boolean): Prints the value in every cell that fits it.
 - `min, max` (number): Fixed ends of the color scale.
-- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name: "number", "percent" or "currency" with an ISO currency, decimals and compact notation.
+- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name (style "number", "percent" or "currency") with an ISO currency, decimals and compact notation.
 
 ```json
 {"kind":"heatmap","title":"Newsletter opens by day and time","subtitle":"Last 8 weeks · invented data","data":[{"x":"6–9","y":"Mon","value":120},{"x":"9–12","y":"Mon","value":340},{"x":"12–15","y":"Mon","value":260}],"tooltip":{"label":"Opens"}}
@@ -271,7 +273,7 @@ Avoid for: Values without a shared maximum; use a bar chart.
 - `data` ({ label, value, min?, max? }[]): One row per item; up to eight rows fit the frame.
 - `min, max` (number): The shared range.
 - `unit` (string): Unit after each value.
-- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name: "number", "percent" or "currency" with an ISO currency, decimals and compact notation.
+- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name (style "number", "percent" or "currency") with an ISO currency, decimals and compact notation.
 - `thresholds` ({ value, label? }[]): Band edges for every row.
 
 ```json
@@ -285,7 +287,7 @@ Use for: The one number a reader needs first, with its direction.
 Avoid for: Several equal numbers in a row; use key figure tiles. A change without knowing what is better; leave better out.
 
 - `value` (number): The key figure.
-- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name: "number", "percent" or "currency" with an ISO currency, decimals and compact notation.
+- `format` ({ style?, currency?, unit?, decimals?, compact? }): Number format by name (style "number", "percent" or "currency") with an ISO currency, decimals and compact notation.
 - `delta` (number): Change against the previous period, in the format of the value.
 - `better` ("up" | "down"): Which direction is good; only then the change is colored.
 - `sparkline` (number[]): The recent trend behind the number.
