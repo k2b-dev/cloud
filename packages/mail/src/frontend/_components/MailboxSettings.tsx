@@ -78,9 +78,6 @@ export default function MailboxSettings(props: {
   const [description, setDescription] = createSignal(props.context.mailbox.description ?? "");
   const [internalDomains, setInternalDomains] = createSignal(props.context.mailbox.composeSafety.internalDomains.join(", "));
   const [largeRecipientThreshold, setLargeRecipientThreshold] = createSignal(props.context.mailbox.composeSafety.largeRecipientThreshold);
-  const [automaticReplyManagementPermission, setAutomaticReplyManagementPermission] = createSignal<
-    Mailbox["automaticReplyManagementPermission"]
-  >(props.context.mailbox.automaticReplyManagementPermission);
   const [activeTab, setActiveTab] = createSignal(
     normalizeInitialTab(props.initialTab, canWrite(), canAdmin(), props.context.integrations.spacesCalendar),
   );
@@ -131,9 +128,6 @@ export default function MailboxSettings(props: {
     Number(description().trim() !== (props.context.mailbox.description ?? "")) +
     Number(internalDomains() !== props.context.mailbox.composeSafety.internalDomains.join(", ")) +
     Number(largeRecipientThreshold() !== props.context.mailbox.composeSafety.largeRecipientThreshold);
-  const accessChangeCount = () =>
-    automaticReplyManagementPermission() === props.context.mailbox.automaticReplyManagementPermission ? 0 : 1;
-
   const ownDirty = createMemo(() => {
     if (activeTab() === "reading") {
       return readingFormat() !== savedReadingFormat();
@@ -143,9 +137,6 @@ export default function MailboxSettings(props: {
     }
     if (activeTab() === "mailbox") {
       return mailboxDetailsDirty() || sendingSafeguardsDirty();
-    }
-    if (activeTab() === "access") {
-      return automaticReplyManagementPermission() !== props.context.mailbox.automaticReplyManagementPermission;
     }
     return false;
   });
@@ -164,8 +155,6 @@ export default function MailboxSettings(props: {
       setDescription(props.context.mailbox.description ?? "");
       setInternalDomains(props.context.mailbox.composeSafety.internalDomains.join(", "));
       setLargeRecipientThreshold(props.context.mailbox.composeSafety.largeRecipientThreshold);
-    } else if (activeTab() === "access") {
-      setAutomaticReplyManagementPermission(props.context.mailbox.automaticReplyManagementPermission);
     }
     setChildDirtyStates({});
   };
@@ -310,25 +299,6 @@ export default function MailboxSettings(props: {
     );
   };
 
-  const saveAutomaticReplyAccess = mutation.create<Mailbox, void>({
-    mutation: async (_input, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].$patch(
-        {
-          param: { mailboxId: props.context.mailbox.id },
-          json: { automaticReplyManagementPermission: automaticReplyManagementPermission() },
-        },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAutomaticReplyAccess));
-      return response.json();
-    },
-    onSuccess: (mailbox) => {
-      props.onContextChange((context) => ({ ...context, mailbox }));
-      toast.success(messages().automaticReplyAccessUpdated);
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-
   const codeRowText = () => {
     const code = props.context.admin?.code;
     if (!code) return messages().codeUnknown;
@@ -429,7 +399,6 @@ export default function MailboxSettings(props: {
     saveWritingPreferences.abort();
     saveMailboxSettings.abort();
     updateFolderRole.abort();
-    saveAutomaticReplyAccess.abort();
   });
 
   return (
@@ -740,38 +709,6 @@ export default function MailboxSettings(props: {
 
         <SettingsModal.Group title={messages().sharing}>
           <SettingsModal.Tab id="access" title={messages().access} icon="ti ti-shield" description={messages().accessDescription}>
-            <SettingsGroup title={messages().automaticReplies} description={messages().automaticRepliesDescription}>
-              <SettingsField
-                label={messages().managementAccess}
-                description={messages().managementAccessDescription}
-                error={() => undefined}
-                changed={() => accessChangeCount() > 0}
-              >
-                {(control) => (
-                  <Select
-                    aria-label={messages().automaticReplyManagementAccess}
-                    aria-describedby={control.describedBy()}
-                    icon="ti ti-message-cog"
-                    value={automaticReplyManagementPermission}
-                    onValueChange={(value) => setAutomaticReplyManagementPermission(value === "write" ? "write" : "admin")}
-                    options={[
-                      {
-                        id: "write",
-                        label: messages().writersAndAdministrators,
-                        description: messages().writersCanManageReplies,
-                        icon: "ti ti-pencil",
-                      },
-                      {
-                        id: "admin",
-                        label: messages().administratorsOnly,
-                        description: messages().onlyAdministratorsCanManageReplies,
-                        icon: "ti ti-shield",
-                      },
-                    ]}
-                  />
-                )}
-              </SettingsField>
-            </SettingsGroup>
             <SettingsGroup title={messages().peopleAndIntegrations} description={messages().peopleAndIntegrationsDescription}>
               <SettingsGroup.Action>
                 <Button size="sm" variant="secondary" type="button" onClick={editAccess}>
@@ -781,14 +718,6 @@ export default function MailboxSettings(props: {
               </SettingsGroup.Action>
               <AccessSummary entries={admin().accessEntries} allowedLevels={summaryLevels()} allowAuthenticated={false} />
             </SettingsGroup>
-            <SettingsModal.Footer>
-              <SettingsPanelFooter
-                changeCount={accessChangeCount}
-                loading={saveAutomaticReplyAccess.loading}
-                onDiscard={() => setAutomaticReplyManagementPermission(props.context.mailbox.automaticReplyManagementPermission)}
-                onSave={() => saveAutomaticReplyAccess.mutate()}
-              />
-            </SettingsModal.Footer>
           </SettingsModal.Tab>
         </SettingsModal.Group>
 

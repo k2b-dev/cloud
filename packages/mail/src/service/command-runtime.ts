@@ -9,13 +9,7 @@ import { remoteMessagePreconditionSchema } from "../contracts";
 import { MAIL_SENT_ACTIVITY_ACTION, mailSentActivityResult } from "./activity-feed";
 import { recordRefusedProviderLogin, rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized, commandsStillAuthorized } from "./command-authorization";
-import {
-  authorizeMailWorkflowSend,
-  loadIncomingAutomationSiblingTransitions,
-  publishMailWorkflowDependency,
-  workflowCommandStillWanted,
-} from "./command-legacy-effects";
-import { messageStatePayloadSchema, normalizeMailKeywords, projectMailMessagePrecondition } from "./command-message-state";
+import { messageStatePayloadSchema, normalizeMailKeywords } from "./command-message-state";
 import { resolveUndoRequests } from "./command-undo";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
@@ -313,12 +307,6 @@ export const recordCommandState = async (
 
 export const notifyCommandState = async (command: Pick<CommandStateTarget, "id" | "mailbox_id">, state: CommandState): Promise<void> => {
   mailLive.wake();
-  if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
-    await publishMailWorkflowDependency({
-      mailboxId: command.mailbox_id,
-      dependency: { kind: "mail.command", key: command.id },
-    });
-  }
 };
 
 const commandState = async (
@@ -375,7 +363,7 @@ const claimCommand = async (
     const [issuer] = await tx<{ actor_kind: string; correlation_id: string | null }[]>`
       SELECT actor_kind, correlation_id FROM mail.commands WHERE id = ${commandId}::uuid
     `;
-    const wanted = issuer?.actor_kind === "workflow" ? await workflowCommandStillWanted(tx, { id: commandId, ...issuer }) : true;
+    const wanted = issuer?.actor_kind !== "workflow";
     const [current] = await tx<(DbCommandExecution & { provider_effect_started_at: Date | string | null })[]>`
       SELECT
         id, mailbox_id, kind, state, actor_kind, actor_id, correlation_id, workflow_execution_generation,
@@ -396,7 +384,7 @@ const claimCommand = async (
           state = CASE WHEN state = 'ambiguous' OR provider_effect_started_at IS NOT NULL THEN 'needs_attention' ELSE 'cancelled' END,
           finished_at = now(),
           last_error_code = 'WORKFLOW_CANCELED',
-          last_error_message = 'The workflow run was canceled, ended, or moved past this command',
+          last_error_message = 'Mail rules are retired; the legacy command cannot execute',
           updated_at = now()
         WHERE id = ${current.id}::uuid AND state IN ('queued', 'ambiguous')
       `;
@@ -607,7 +595,7 @@ const noLeaseAssertion: LeaseAssertion = async () => undefined;
 const providerEffectPermission = (kind: DbCommandExecution["kind"]): "write" | "admin" =>
   ["create_folder", "rename_folder", "delete_folder", "set_folder_subscription"].includes(kind) ? "admin" : "write";
 
-/** Mailbox and workflow run locks must already be held before locking commands. */
+/** Mailbox locks must already be held before locking commands. */
 const lockProviderEffectCommands = async (tx: SqlClient, candidates: DbCommandExecution[]): Promise<Set<string>> => {
   // A command without a pinned secret revision matches no binding, as `= NULL` matched none before.
   const commands = candidates.filter((command) => Number.isInteger(command.selected_secret_revision));
@@ -674,15 +662,9 @@ const beginMoveSetEffects = async (
       for (const command of commands
         .filter((command) => command.actor_kind === "workflow")
         .toSorted((a, b) => (a.correlation_id ?? "").localeCompare(b.correlation_id ?? "") || a.id.localeCompare(b.id))) {
-        if (!(await workflowCommandStillWanted(tx, command))) {
+        if (command.actor_kind === "workflow") {
           unwanted.add(command.id);
-          reject(
-            command,
-            commandError(
-              "The workflow run was canceled, ended, or moved past this command before the provider effect",
-              "WORKFLOW_CANCELED",
-            ),
-          );
+          reject(command, commandError("Mail rules are retired; the legacy command cannot execute", "WORKFLOW_CANCELED"));
         }
       }
       let eligible = commands.filter((command) => !unwanted.has(command.id));
@@ -748,8 +730,8 @@ const beginProviderEffect = async (
     if (!mailbox) {
       throw Object.assign(new Error("Mailbox access was revoked before the provider effect"), { code: "ACCESS_REVOKED" });
     }
-    if (command.actor_kind === "workflow" && !(await workflowCommandStillWanted(tx, command))) {
-      throw Object.assign(new Error("The workflow run was canceled, ended, or moved past this command before the provider effect"), {
+    if (command.actor_kind === "workflow") {
+      throw Object.assign(new Error("Mail rules are retired; the legacy command cannot execute"), {
         code: "WORKFLOW_CANCELED",
       });
     }
@@ -758,10 +740,6 @@ const beginProviderEffect = async (
       throw Object.assign(new Error("Mail command lease was lost before the provider effect"), { code: "COMMAND_JOB_LEASE_LOST" });
     }
     if (command.kind === "send") {
-      if (command.actor_kind === "workflow") {
-        const allowed = await authorizeMailWorkflowSend({ db: tx, mailboxId: command.mailbox_id, workflowVersionId: command.actor_id });
-        if (!allowed.ok) throw Object.assign(new Error(allowed.error.message), allowed.error);
-      }
       if (!senderIdentityId) {
         throw Object.assign(new Error("Send command is missing its sender identity"), { code: "SENDER_IDENTITY_UNAVAILABLE" });
       }
@@ -776,12 +754,11 @@ const beginProviderEffect = async (
         WHERE identity.id = ${senderIdentityId}::uuid
           AND identity.mailbox_id = ${command.mailbox_id}::uuid
           AND identity.status = 'verified'
-          AND (${command.actor_kind} <> 'workflow' OR identity.automation_policy = 'mailbox')
         FOR SHARE OF identity, sender_binding
       `;
       if (!sender) {
         throw Object.assign(new Error("Sender identity authorization was revoked before the provider effect"), {
-          code: command.actor_kind === "workflow" ? "AUTOMATION_SENDER_DISABLED" : "SENDER_IDENTITY_UNAVAILABLE",
+          code: "SENDER_IDENTITY_UNAVAILABLE",
         });
       }
       if (identityTransportRevision !== null && identityTransportRevision !== undefined) {
@@ -915,7 +892,7 @@ const assertRemoteMessagePrecondition = (current: RemoteMessageState, expected?:
     expected.keywords !== undefined &&
     JSON.stringify(normalizedKeywords(current.keywords)) !== JSON.stringify(normalizedKeywords(expected.keywords));
   if (modseqChanged || flagsChanged || keywordsChanged) {
-    throw Object.assign(new Error("Remote message state changed after workflow preview"), { code: "REMOTE_STATE_CHANGED" });
+    throw Object.assign(new Error("Remote message state changed after command preview"), { code: "REMOTE_STATE_CHANGED" });
   }
 };
 
@@ -1259,7 +1236,7 @@ const settleMoveSet = async (members: SettledMove[], destination: DbDestinationF
 /**
  * Checks identities first, then marks, moves, and settles the set. Marking and settling use a
  * constant number of set-wide statements; their per-row costs still grow with the set size.
- * Live and workflow-dependency notifications run once per confirmed command after settle commits.
+ * Live notifications run once per confirmed command after settle commits.
  */
 const moveMessageSet = async (params: {
   runtime: MutationRuntime;
@@ -1282,20 +1259,13 @@ const moveMessageSet = async (params: {
   );
   const current = await imapSmtpConnector.getMessageStates(runtime, sourceSet(moves));
   await assertLeaseActive();
-  const siblingTransitions = await loadIncomingAutomationSiblingTransitions(
-    sql,
-    moves.map((move) => move.command),
-  );
   const checked: FreshMove[] = [];
   for (const move of moves) {
     try {
       const state = current.get(Number(move.source.uid)) ?? MISSING_REMOTE_MESSAGE;
       assertRemoteIdentity(state, move.source);
       const expected = move.target.expectedRemoteState;
-      assertRemoteMessagePrecondition(
-        state,
-        expected ? projectMailMessagePrecondition(expected, siblingTransitions.get(move.command.id) ?? []) : undefined,
-      );
+      assertRemoteMessagePrecondition(state, expected);
       checked.push(move);
     } catch (error) {
       await fail(move.command, error);
@@ -1363,10 +1333,6 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
   const binding = await loadPinnedBinding(command);
   const runtime = await loadPinnedRuntime(binding);
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
-  const siblingTransitions = await loadIncomingAutomationSiblingTransitions(sql, [command]);
-  if (target.expectedRemoteState) {
-    target.expectedRemoteState = projectMailMessagePrecondition(target.expectedRemoteState, siblingTransitions.get(command.id) ?? []);
-  }
   const source = await loadRemoteMessage(command, target);
   const remote = remoteTarget(source);
   // One connection carries every provider step of the command, from the identity checks to the verification.
@@ -2189,7 +2155,6 @@ type DbOutboxExecutionRow = DbOutboxExecution & {
 
 type DbSenderBinding = {
   saves_sent_automatically: boolean;
-  automation_policy: "disabled" | "mailbox";
   sent_folder_id: string | null;
   sent_path: string | null;
   sent_rights: string[] | null;
@@ -2640,7 +2605,6 @@ const loadSenderBinding = async (command: DbCommandExecution, senderIdentityId: 
   const [sender] = await sql<DbSenderBinding[]>`
     SELECT
       sib.saves_sent_automatically,
-      si.automation_policy,
       si.sent_folder_id,
       sent_ref.remote_path AS sent_path,
       sent_ref.effective_rights AS sent_rights
@@ -2659,9 +2623,7 @@ const loadSenderBinding = async (command: DbCommandExecution, senderIdentityId: 
   `;
   if (!sender)
     throw Object.assign(new Error("Sender identity is no longer verified on the pinned binding"), { code: "SENDER_IDENTITY_UNAVAILABLE" });
-  if (command.actor_kind === "workflow" && sender.automation_policy !== "mailbox") {
-    throw Object.assign(new Error("Sender identity no longer permits mailbox automation"), { code: "AUTOMATION_SENDER_DISABLED" });
-  }
+
   if (!sender.saves_sent_automatically) {
     if (!sender.sent_folder_id || !sender.sent_path || !sender.sent_rights?.includes("insert")) {
       throw Object.assign(new Error("Sent folder append rights are no longer available"), { code: "SENT_FOLDER_UNAVAILABLE" });
@@ -2851,20 +2813,6 @@ const finishOutbox = async (params: {
     `;
     await tx`UPDATE mail.drafts SET state = ${params.draftState} WHERE id = ${params.outbox.draft_id}::uuid`;
     await tx`
-      UPDATE mail.automatic_reply_effects
-      SET
-        state = CASE
-          WHEN ${params.commandState} IN ('confirmed', 'reconciled') THEN 'confirmed'
-          WHEN ${params.commandState} IN ('ambiguous', 'needs_attention') THEN 'needs_attention'
-          ELSE 'failed'
-        END,
-        confirmed_at = CASE
-          WHEN ${params.commandState} IN ('confirmed', 'reconciled') THEN COALESCE(confirmed_at, now())
-          ELSE confirmed_at
-        END
-      WHERE command_id = ${params.outbox.command_id}::uuid
-    `;
-    await tx`
       INSERT INTO mail.activity_events (
         mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
       )
@@ -2949,12 +2897,6 @@ const finishOutbox = async (params: {
   }
   if (result.updated && typeof parseJsonRecord(params.command.payload).scheduledAt === "string") {
     mailLive.wake();
-  }
-  if (result.updated && ["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(params.commandState)) {
-    await publishMailWorkflowDependency({
-      mailboxId: params.command.mailbox_id,
-      dependency: { kind: "mail.command", key: params.command.id },
-    });
   }
   return result.updated;
 };
@@ -4279,7 +4221,7 @@ const MOVE_SET_LIMIT = 50;
 /**
  * Admission budget while a move set holds the provider lease. A fifth of two seconds leaves the
  * rest for per-row and per-command costs. Marking and settling use a constant number of set-wide
- * statements; the workflow-run check runs once per workflow command inside the marker transaction.
+ * statements inside the marker transaction.
  * While admission costs less than 8 ms per move, all 50 fit.
  */
 export const MOVE_SET_ADMISSION_MS = 2_000 / 5;

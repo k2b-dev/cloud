@@ -139,8 +139,6 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onManageTags: () => undefined,
   onMergeConversation: () => undefined,
   onReassignMessage: () => undefined,
-  automationTrace: [],
-  onUndoAutomation: () => undefined,
   onAssignConversation: () => undefined,
   onAssignConversationToMe: () => undefined,
   assignment: null,

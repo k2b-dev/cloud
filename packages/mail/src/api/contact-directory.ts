@@ -13,7 +13,8 @@ import {
 } from "../contact-directory-settings";
 import { contactDirectory } from "../service";
 import type { MailApiContext } from "./public-resource-boundary";
-import { WORKFLOW_AI_BODY_MAX_CHARS_KEY } from "./workflow-ai-settings";
+
+const WORKFLOW_AI_BODY_MAX_CHARS_KEY = "mail.workflow_ai_body_max_chars";
 
 const requestContext = (c: Context<MailApiContext>) => {
   const authority = auth.getAuthority(c);

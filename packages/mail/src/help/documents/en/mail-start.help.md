@@ -49,7 +49,6 @@ Open **… → Settings → Accounts & identities → Sending identities**. An i
 - Recipients see the **Display name** and the **From address**.
 - A normal connection creates a default identity for the account address.
 - Mail can send with an identity only after it is verified. Two identities can use the same From address and keep different defaults.
-- **Automatic replies** is a separate setting of each identity. It is on by default for new identities. Mail sends automatic mail only after someone with **Manage** access creates and turns on an automatic reply or a workflow.
 
 ## Find your way in the mailbox {icon="layout-grid"}
 
@@ -67,7 +66,7 @@ The head contains:
 - View tabs: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, **Unassigned**, **Later**, **Done**, **Recent activity**, **Kept**, and saved views. The head shows as many of them as its width allows, and **More** holds the rest. The open view always stays visible. Folders, Scheduled, and Send problems have no view tabs.
 - A **Tag** icon next to **Search** when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. The magnifier or `/` opens search in the head; **More filters** opens its filter builder.
 - **Select conversations** replaces the views with a selection count and actions. **Exit selection** brings the views back.
-- **… → Choose list view** switches between conversations and individual messages. The menu also contains mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations can choose their list view here; the open mailbox's **…** in the sidebar offers them only pin and hide.
+- **… → Choose list view** switches between conversations and individual messages. The menu also contains mailbox details, synchronization, health, Code, retired rule history, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations can choose their list view here; the open mailbox's **…** in the sidebar offers them only pin and hide.
 - **Compose** as the primary action when you can send.
 
 On a phone, open the mailbox title to reach other mailboxes and the open mailbox's folders. Use the head for views, filters, Compose, and **…**.
@@ -120,6 +119,8 @@ If the draft fails after Mail saved the event, Mail reports this partial result.
 - [Write and send messages](/app/mail/help/mail-compose)
 - [Work together in a mailbox](/app/mail/help/mail-collaboration)
 - [Set up and manage a mailbox](/app/mail/help/mail-admin)
-- [Automate responses and mailbox work](/app/mail/help/mail-automation)
-- [Mail workflow YAML reference](/app/mail/help/mail-workflows)
 - [Troubleshoot Mail](/app/mail/help/mail-troubleshooting)
+
+## Automate with Code
+
+Open the mailbox’s **Code** page to create an automation. Ask Gustav to rebuild an exported rule, review its access and effects, then activate it deliberately. Previous rule history remains read-only. Out-of-office replies, office-hours replies, and reference acknowledgements have been removed without replacement.

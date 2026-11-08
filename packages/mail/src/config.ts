@@ -47,9 +47,8 @@ export const app = defineApp({
     "mail.workflow_ai_body_max_chars": {
       kind: "number",
       default: 20000,
-      label: "Workflow AI body limit (characters)",
-      description:
-        "Maximum body characters loaded for an AI step. Changes apply to new work; larger bodies fail visibly without truncation.",
+      label: "Summary AI body limit (characters)",
+      description: "Maximum message body characters loaded for a summary. Changes apply to new summaries.",
       envVariable: "MAIL_WORKFLOW_AI_BODY_MAX_CHARS",
       envBootstrap: () => appEnv.$readPresent("MAIL_WORKFLOW_AI_BODY_MAX_CHARS"),
       integer: true,
@@ -58,9 +57,8 @@ export const app = defineApp({
       presentation: {
         translations: {
           de: {
-            label: "KI-Workflow-Textgrenze (Zeichen)",
-            description:
-              "Maximale Textlänge je KI-Schritt. Änderungen gelten für neue Arbeit; längere Texte werden sichtbar abgelehnt und nicht gekürzt.",
+            label: "KI-Textgrenze für Zusammenfassungen (Zeichen)",
+            description: "Maximale Nachrichtenlänge für eine Zusammenfassung. Änderungen gelten für neue Zusammenfassungen.",
           },
         },
       },

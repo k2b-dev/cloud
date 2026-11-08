@@ -378,7 +378,7 @@ revoke the old credential after verifying signed background work. See
 
 Core automatically issues an app-bound `identity:invoke` workload credential to
 every registered app instance, including third-party apps. No admin creation or
-per-app Compose input is needed. Mail incoming automations use this credential.
+per-app Compose input is needed. Code uses its own reviewed version mandates.
 The runtime obtains the raw token through non-retained NATS request/reply and
 keeps it in process memory; Postgres stores its hash. Tokens expire after one
 hour and rotate after 30 minutes, with the preceding token valid until its
@@ -493,9 +493,9 @@ issuance. Rotation alone does not invalidate existing JWTs or refresh grants.
 Before upgrading mandate writers, follow the coordinated schema cutover in
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
-Mail incoming automations use mandates and the runtime's automatic
-`identity:invoke` credential. Keep Core's broker available. For upgrades that change
-stored credentials, follow [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
+Mail rules and automatic replies are retired. Follow the
+[Mail cutover guide](/en/docs/operations/mail-automation-upgrade) before upgrading.
+Mailbox Code uses current, reviewed version mandates; keep Core’s broker available.
 
 For first access, temporarily provide `ADMIN_LOGIN_TOKEN` only to Core and open
 `/auth/login?method=admin`. Set up and verify normal administrator sign-in,

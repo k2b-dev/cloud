@@ -149,6 +149,7 @@ export const loadSendContent = async (params: {
     ${params.lock ? params.db`FOR UPDATE OF d, si` : params.db``}
   `;
   if (!draft) return fail(err.badInput("Draft or sender identity is no longer available"));
+  if (draft.origin === "workflow" || draft.delivery_class !== "normal") return fail(err.forbidden("Automatic replies are retired"));
   if (draft.edit_mode === "shared") {
     if (!draft.doc_history_complete) return fail(sendContentChanged());
     try {
@@ -234,8 +235,8 @@ export const loadSendContent = async (params: {
     from: { name: draft.display_name, address: draft.from_address },
     replyTo: draft.reply_to,
     envelopeFrom: draft.envelope_sender,
-    useNullEnvelopeSender: draft.delivery_class === "automatic_reply",
-    automaticReply: draft.delivery_class === "automatic_reply",
+    useNullEnvelopeSender: false,
+    automaticReply: false,
     priority: draft.priority,
     requestDeliveryReceipt: draft.request_delivery_receipt,
     requestReadReceipt: draft.request_read_receipt,

@@ -71,7 +71,7 @@ Someone with **Manage** access paused the mailbox, or restored it, and a restore
 3. Choose **Resume mailbox**.
 :::
 
-While the mailbox is paused, incoming synchronization, queued provider changes, scheduled delivery, and automatic replies do not run.
+While the mailbox is paused, incoming synchronization, queued provider changes, and scheduled delivery do not run.
 
 ## A message cannot be sent {icon="point"}
 
@@ -89,17 +89,6 @@ Check these conditions:
 An attachment can fit the 100 MiB limit per file of Mail while the complete encoded message still exceeds a smaller provider limit. Remove one or more attachments, or create a public download link and send that link instead. With **Manage** access, you can check and refresh the observed values in **… → Mailbox health → Provider limits**.
 
 If the provider credential changed, use **… → Settings → Accounts & identities → Connected account → Edit account**. Mail cannot show the existing secret, and you cannot edit only part of it.
-
-## Automatic replies say that no identity is available {icon="send"}
-
-Open **… → Settings → Accounts & identities → Sending identities**. Check that one identity meets both conditions:
-
-:::steps
-1. The identity status is **Ready**.
-2. **Automatic replies** is turned on.
-:::
-
-Then return to **Automations → Automatic replies**. Existing automatic replies can stay visible while no suitable identity exists. To create an automatic reply or turn one on again, you need a suitable identity.
 
 ## A scheduled message did not send {icon="send"}
 

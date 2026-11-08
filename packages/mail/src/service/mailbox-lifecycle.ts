@@ -1,5 +1,4 @@
 import { sql } from "@k2b/cloud";
-import { cancelPendingAutomaticRepliesInTransaction } from "./automatic-reply";
 import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 
 type SqlClient = typeof sql;
@@ -146,7 +145,6 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
       COUNT(*) FILTER (WHERE state = 'needs_attention')::int AS needs_attention
     FROM changed
   `;
-  await cancelPendingAutomaticRepliesInTransaction({ db, mailboxId, code, message });
   await discardConversationSummaries(db, { mailboxId });
 
   return {

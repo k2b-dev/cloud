@@ -74,7 +74,8 @@ policy, or resume it with an interactive authority, reject such requests:
 `auth.rejectAppSession` on the route, or `isAppSessionActor(actor)` in a service
 or capability. Answer `403` with
 `{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }`.
-Pausing and revoking stay allowed. `POST /api/me/mandates` and Mail incoming automations with Spaces steps follow this rule.
+Pausing and revoking stay allowed. `POST /api/me/mandates` follows this rule.
+Assistant routines and Mail rules are retired; mailbox Code has its own version mandate.
 
 Built-in applications that share Postgres create the mandate and owning
 workload in one transaction. A separately deployed application that cannot
