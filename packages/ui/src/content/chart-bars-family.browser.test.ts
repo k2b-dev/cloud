@@ -429,3 +429,60 @@ for (const width of [1440, 390])
       await page.close();
     }
   });
+
+for (const width of [1920, 390])
+  test(`bar rows respect the shared measure in wide and narrow frames at ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 1000 } });
+    const errors = pageErrors(page);
+    try {
+      const rows = {
+        kind: "bar" as const,
+        layout: "rows" as const,
+        data: [
+          { label: "Furniture", value: 84 },
+          { label: "Lighting", value: 62 },
+          { label: "Pictures", value: 39 },
+        ],
+      };
+      const columns = { ...rows, layout: "columns" as const };
+      const drawings = [rows, barFamilyFixtures[3]!, columns]
+        .map((spec) => {
+          const height = chartRenderHeight(spec);
+          return `<section class="k2b-chart" data-chart-kind="${spec.kind}" style="height:${height}px"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:${height}px">${renderChartSvg(spec, 480, height)}</div></section>`;
+        })
+        .join("");
+      const baseCss = await Bun.file(resolve(import.meta.dir, "../../dist/base.css")).text();
+      for (const host of ["scoped", "base"]) {
+        await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${host === "scoped" ? css : baseCss}
+          body{margin:0;padding:20px;font-size:16px}section{margin-bottom:20px}
+          </style></head><body class="${host === "scoped" ? "k2b-ui" : ""}" data-theme="light">${drawings}</body></html>`);
+        await settled(page);
+        const widths = await page
+          .locator(".k2b-chart__svg")
+          .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
+        expect(widths).toHaveLength(3);
+        expect(widths[0]).toBe(Math.min(width - 40, 640));
+        expect(widths[1]).toBe(Math.min(width - 40, 640));
+        expect(widths[2]).toBe(width - 40);
+        // A host may choose a tighter shared row measure without changing column charts.
+        await page.locator("body").evaluate((node) => node.style.setProperty("--k2b-row-measure", "32rem"));
+        await settled(page);
+        expect(
+          await page
+            .locator(".k2b-chart__svg")
+            .first()
+            .evaluate((node) => node.getBoundingClientRect().width),
+        ).toBe(Math.min(width - 40, 512));
+        await page.locator("body").evaluate((node) => node.style.removeProperty("--k2b-row-measure"));
+        await settled(page);
+        const shots = process.env.CHARTS_SCREENSHOTS;
+        if (shots && host === "scoped") {
+          await mkdir(shots, { recursive: true });
+          await page.screenshot({ path: `${shots}/wide-bar-rows-light-${width}.png`, fullPage: true });
+        }
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });

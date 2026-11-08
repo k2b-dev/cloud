@@ -95,4 +95,27 @@ export const barExamples = [
     a11y: ["Period totals appear in the legend; inspection gives the change."],
     options: [{ name: "compare", type: "{ label, data }", description: "One aligned previous-period series." }],
   },
+  {
+    id: "bar-rows-wide",
+    kind: "bar",
+    question: "compare",
+    title: "Orders by collection",
+    summary: "Rows keep labels and values within the shared measure in a wide frame.",
+    spec: {
+      kind: "bar",
+      title: "Orders by collection",
+      layout: "rows",
+      data: [
+        { label: "Furniture", value: 84 },
+        { label: "Lighting", value: 62 },
+        { label: "Pictures", value: 39 },
+      ],
+    },
+    width: "full",
+    height: 220,
+    useFor: ["Category values with readable row labels"],
+    avoidFor: ["A continuous time axis"],
+    a11y: ["Arrow keys inspect each row; the value stays alongside its category."],
+    options: [{ name: "--k2b-row-measure", type: "CSS length", description: "Maximum drawing width for rows; defaults to 40rem." }],
+  },
 ] satisfies ChartShowcaseExample[];
