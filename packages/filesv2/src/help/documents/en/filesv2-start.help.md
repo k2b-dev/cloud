@@ -10,9 +10,11 @@ Files opens with **All storage**: one tile for each storage location you can rea
 
 ## Edit a photo {icon="photo-edit"}
 
-Open an image preview and choose **Edit image**. You must be able to edit the file. Crop, rotate, adjust, annotate, or cover sensitive areas, then open **Save**. A browser that cannot open the format shows an error with **Try again**.
+Open an image preview and choose **Edit image**. The editor fills almost the whole screen. Crop, rotate, adjust, annotate, or cover sensitive areas, then choose **Save**; its menu holds the other ways to save. The image strip at the bottom shows the folder's other images, or your selection; each keeps its own edits until you save or close, and a dot marks unsaved ones. A browser that cannot open the format shows an error with **Try again**.
 
-**Save new version** is available in a managed, versioned storage location when the browser can encode the original JPEG, PNG, or WebP format. Storage that also accepts writes outside Cloud offers copies only. Otherwise choose **Save copy**; you must be able to create files in that folder to save a copy. Copies are named `Photo (edited).jpg`, with a number when needed. If that name already exists, choose **Save copy** again to use the next name. Files attempts the original image dimensions. If the browser cannot produce that size, your edits stay open and you can explicitly retry with a smaller output. Saving removes source metadata.
+If you may only view the file, you can still edit it and choose **Download**. **Save new version** then stays visible but locked, with the reason. In a versioned storage location, older versions keep their content: after you redact an image, the editor reminds you that earlier versions stay in the history without the redaction.
+
+**Save new version** is the main action and is available in a managed, versioned storage location when the browser can encode the original JPEG, PNG, or WebP format. Storage that also accepts writes outside Cloud offers copies only. Otherwise choose **Save copy**; you must be able to create files in that folder to save a copy. Copies are named `Photo (edited).jpg`, with a number when needed. If that name already exists, choose **Save copy** again to use the next name. Files attempts the original image dimensions. If the browser cannot produce that size, your edits stay open and you can explicitly retry with a smaller output. Saving removes source metadata.
 
 The original stays fixed while you edit. A conflicting change preserves your edits; save a copy instead. A save completes only after storage confirms the upload. If its result is unknown, **Check upload** checks that same upload before you can save again. Closing with unsaved changes asks before discarding them.
 
