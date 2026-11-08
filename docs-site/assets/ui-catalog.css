@@ -497,6 +497,8 @@
     border-top: 1px solid var(--k2b-border);
     border-left: 0;
   }
+}
+
 /* A customer file: the page's own grid of section cards. */
 .ui-section-demo-page {
   display: grid;
