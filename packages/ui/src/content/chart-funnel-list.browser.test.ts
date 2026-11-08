@@ -79,7 +79,7 @@ for (const width of [1440, 390])
         await settled(page);
         const before = await sample.boundingBox();
         const marks = chart.locator("[data-chart-datum]");
-        const firstTarget = marks.first().locator(".k2b-chart-category-band, .stdlib-chart-bar").first();
+        const firstTarget = marks.first().locator(i === 3 ? ".stdlib-chart-bar" : ".k2b-chart-category-band");
         await firstTarget.hover({ position: { x: 3, y: 3 } });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         const first = await chart.locator('[role="tooltip"]').textContent();

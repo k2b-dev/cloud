@@ -16,9 +16,11 @@ Bar charts saved with `layout: "rows"` and negative values under Cloud 0.69
 render again. Cloud 0.70 had incorrectly rejected them. Upgrade and
 reopen the saved chart; no data migration or JSON edits are required.
 
-Signed rows retain source order and draw around zero. Nonnegative rows keep
-their ranked presentation. Ranking options (`share`, `limit`, `tone`) apply
-only to nonnegative data; signed rows always show every source item.
+Signed rows retain source order and draw around zero. Ordered categories,
+reference lines, per-bar colors, explicit value visibility and axis settings
+also keep the original row drawing. Plain unordered nonnegative rows keep
+their ranked presentation. Ranking options (`share`, `limit`, `tone`) require
+nonnegative data; the schema rejects them on signed rows with a clear message.
 
 ## Geo uses a global budget
 

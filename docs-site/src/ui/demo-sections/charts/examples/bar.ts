@@ -117,7 +117,12 @@ export const barExamples = [
     avoidFor: ["A continuous time axis"],
     a11y: ["Arrow keys inspect each row; the value stays alongside its category."],
     options: [
-      { name: "layout", type: "rows", description: "Signed rows diverge around zero in source order; nonnegative rows rank descending." },
+      {
+        name: "layout",
+        type: "rows",
+        description:
+          "Signed rows diverge around zero. Ordered categories, references, colorByBar, showValues and axis settings keep the original row drawing; otherwise nonnegative rows rank descending. Share, limit and tone require nonnegative values.",
+      },
       { name: "--k2b-row-measure", type: "CSS length", description: "Maximum drawing width for rows; defaults to 40rem." },
     ],
   },
@@ -147,7 +152,7 @@ export const barExamples = [
       {
         name: "layout",
         type: "rows",
-        description: "Negative values use source order; ranked-list share, limit and tone options do not apply.",
+        description: "Negative values use source order. Ranked-list share, limit and tone require nonnegative values.",
       },
     ],
   },

@@ -185,9 +185,9 @@ const flatChartSchema = () => {
       .optional()
       .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
-    share: z.boolean().optional(),
-    limit: z.number().int().positive().optional(),
-    tone: z.enum(["in", "out"]).optional(),
+    share: z.boolean().optional().describe("bar rows ranked list: show shares; requires nonnegative values."),
+    limit: z.number().int().positive().optional().describe("bar rows ranked list: number of visible rows; requires nonnegative values."),
+    tone: z.enum(["in", "out"]).optional().describe("bar rows ranked list: flow direction; requires nonnegative values."),
     normalize: z.boolean().optional().describe("stacked bar, area: normalize positive totals to 100 percent."),
     rows: z
       .array(

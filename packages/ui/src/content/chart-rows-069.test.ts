@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { signedRows069 } from "../../test/chart-rows-069-fixture";
+import { parseRows069, positiveRows069Json, signedRows069Json } from "../../test/chart-rows-069-fixture";
 import { barChartLayout, renderBarChartSvg } from "../charts/core";
 
 test("frozen 0.69 signed rows retain source order and diverge around zero in the core", () => {
+  const signedRows069 = parseRows069(signedRows069Json);
   for (const width of [296, 480, 1920]) {
     const { layout, height } = barChartLayout(signedRows069, width);
     expect(layout).toBe("rows");
@@ -29,12 +30,57 @@ test("frozen 0.69 signed rows retain source order and diverge around zero in the
 });
 
 test("entirely negative rows retain their source order and finite geometry", () => {
+  const signedRows069 = parseRows069(signedRows069Json);
   const spec = { ...signedRows069, data: signedRows069.data.filter((d) => d.value < 0) };
   const svg = renderBarChartSvg({ ...spec, width: 480, height: barChartLayout(spec).height, inspect: true });
   expect(svg).not.toMatch(/NaN|Infinity|k2b-chart-ranked/);
   expect(svg).toContain(">-12</text>");
   expect(svg).toContain(">-4</text>");
   expect(svg.indexOf(">Returns</text>")).toBeLessThan(svg.indexOf(">Correction</text>"));
+});
+
+test("frozen positive 0.69 rows preserve category order and legacy drawing options", () => {
+  for (const [name, json] of Object.entries(positiveRows069Json)) {
+    const spec = parseRows069(json);
+    for (const width of [296, 480, 1920]) {
+      const svg = renderBarChartSvg({ ...spec, width, height: barChartLayout(spec, width).height, inspect: true });
+      expect(svg).not.toMatch(/NaN|Infinity|k2b-chart-ranked/);
+      expect([...svg.matchAll(/stdlib-chart-category-label"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Young", "Adult", "Senior"]);
+      expect(svg).toContain('class="stdlib-chart-axis"');
+      if (name === "references") {
+        expect(svg).toContain('class="stdlib-chart-reference"');
+        expect(svg).toContain(">Target</text>");
+      }
+      if (name === "colorByBar")
+        for (const index of [0, 1, 2]) expect(svg).toContain(`class="stdlib-chart-bar stdlib-chart-series-${index}"`);
+      if (name === "showValues") {
+        expect(svg).not.toContain('class="stdlib-chart-bar-value"');
+        expect(svg).toContain('class="stdlib-chart-grid"');
+      } else expect(svg.match(/class="stdlib-chart-bar-value"/g)).toHaveLength(3);
+      if (name === "categoryLabel") expect(svg).toContain(">Age band</text>");
+      if (name === "valueLabel") expect(svg).toContain(">People</text>");
+      if (name === "domain" || name === "scale") {
+        const fallback = renderBarChartSvg({
+          ...spec,
+          yAxis: undefined,
+          xAxis: { ordered: true },
+          width,
+          height: barChartLayout(spec, width).height,
+        });
+        const lengths = (drawing: string) =>
+          [...drawing.matchAll(/class="stdlib-chart-bar stdlib-chart-series-0"[^>]*width="([^"]+)"/g)].map((m) => Number(m[1]));
+        expect(lengths(svg)).not.toEqual(lengths(fallback));
+      }
+    }
+  }
+});
+
+test("explicit legacy false and empty options still use the original row drawing", () => {
+  const spec = parseRows069(positiveRows069Json.ordered);
+  for (const option of [{ colorByBar: false }, { showValues: true }, { references: [] }]) {
+    const svg = renderBarChartSvg({ ...spec, xAxis: undefined, ...option, width: 480, height: 280 });
+    expect(svg).not.toContain("k2b-chart-ranked");
+  }
 });
 
 test("nonnegative ranked rows remain byte-identical to main 7126f02737", () => {

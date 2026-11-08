@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { signedRows069 } from "../../ui/test/chart-rows-069-fixture";
+import { parseRows069, positiveRows069Json, signedRows069Json } from "../../ui/test/chart-rows-069-fixture";
 import { chartKinds, chartRenderOptions, chartTable, drawChart } from "./charts";
 import { notebookChartHeight } from "./markdown/lib/chart-blocks";
 
 test("the frozen 0.69 signed rows description survives editor validation, drawing and tables", () => {
+  const signedRows069 = parseRows069(signedRows069Json);
   for (const limits of [undefined, { maxSeries: 8, maxValues: 480, maxMarks: 3840 }]) {
     const input = chartKinds(limits).parse(signedRows069);
     expect(input).toEqual(signedRows069);
@@ -13,11 +14,22 @@ test("the frozen 0.69 signed rows description survives editor validation, drawin
   }
 });
 
-test("ranked-only options never truncate signed data or add ranks and shares to its table", () => {
-  const input = chartKinds().parse({ ...signedRows069, share: true, limit: 1, tone: "out" });
-  const table = chartTable(input, "en");
-  expect(table).toEqual(chartTable(chartKinds().parse(signedRows069), "en"));
-  expect(table.rows).toHaveLength(4);
-  expect(table.columns.map((column) => column.id)).not.toContain("rank");
-  expect(drawChart(chartRenderOptions(input, "en"))).not.toContain("k2b-chart-ranked");
+test("ranked-only options explain that signed data cannot use shares, limits or tone", () => {
+  for (const option of [{ share: true }, { share: false }, { limit: 1 }, { tone: "out" }, { tone: "in" }]) {
+    expect(() => chartKinds().parse({ ...parseRows069(signedRows069Json), ...option })).toThrow(
+      "Share, limit and tone need nonnegative values.",
+    );
+  }
+});
+
+test("frozen positive 0.69 rows preserve their order and options through the editor", () => {
+  for (const json of Object.values(positiveRows069Json)) {
+    const input = chartKinds().parse(JSON.parse(json));
+    const svg = drawChart(chartRenderOptions(input, "en"));
+    expect(svg).not.toContain("k2b-chart-ranked");
+    expect(chartTable(input, "en").rows.map((row) => row.values.value)).toEqual([20, 50, 30]);
+  }
+  const input = chartKinds().parse({ ...parseRows069(positiveRows069Json.ordered), limit: 1 });
+  expect(chartTable(input, "en").rows).toHaveLength(3);
+  expect(chartTable(input, "en").columns.map((column) => column.id)).not.toContain("rank");
 });

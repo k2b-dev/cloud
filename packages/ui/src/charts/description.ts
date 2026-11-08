@@ -48,7 +48,7 @@ type Variants<N> =
       data: { label: string; value: N }[];
       x?: string[];
       series?: { label: string; data: (number | null)[] }[];
-      /** Rows accept signed values; only nonnegative data uses ranked-list options. */
+      /** Rows accept signed values. Ordered categories and legacy drawing options retain the original row renderer. */
       layout?: "columns" | "rows" | "grouped" | "stacked";
       normalize?: boolean;
       share?: boolean;

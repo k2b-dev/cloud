@@ -45,14 +45,14 @@ test("portable ranked rows validate options and keep every source row in the tab
   expect(drawChart(chartRenderOptions(input, "de"))).toContain("2 weitere");
   expect(schema.safeParse({ ...spec, layout: "columns" }).success).toBe(false);
   expect(schema.safeParse({ ...spec, limit: 0 }).success).toBe(false);
-  // Signed rows use the retained diverging layout, without ranked-only metadata or truncation.
-  const signed = schema.parse({
-    ...spec,
-    data: [
-      { label: "Return", value: -2 },
-      { label: "Sale", value: 8 },
-    ],
-  });
-  expect(chartTable(signed, "de").rows).toHaveLength(2);
-  expect(drawChart(chartRenderOptions(signed, "de"))).not.toContain("k2b-chart-ranked");
+  // The ranked-only options did not exist in 0.69 and require nonnegative input.
+  expect(() =>
+    schema.parse({
+      ...spec,
+      data: [
+        { label: "Return", value: -2 },
+        { label: "Sale", value: 8 },
+      ],
+    }),
+  ).toThrow("Share, limit and tone need nonnegative values.");
 });

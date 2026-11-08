@@ -8,13 +8,14 @@ import {
 } from "@k2b/cloud/ai/browser";
 import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
-import { signedRows069 } from "../../../../ui/test/chart-rows-069-fixture";
+import { parseRows069, positiveRows069Json, signedRows069Json } from "../../../../ui/test/chart-rows-069-fixture";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
 import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight, resolveChartHtml } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
 
 test("saved 0.69 signed rows render synchronously in app frames and remain printable", async () => {
+  const signedRows069 = parseRows069(signedRows069Json);
   const markup = String(chart(signedRows069, "en-US"));
   expect(markup).toContain('data-bar-layout="rows"');
   expect(markup).not.toMatch(/data-chart-pending|k2b-chart-ranked|NaN|Infinity/);
@@ -24,6 +25,16 @@ test("saved 0.69 signed rows render synchronously in app frames and remain print
     -12, 30, -4, 0,
   ]);
   expect(await resolveChartHtml(markup, "en-US")).toBe(markup);
+});
+
+test("frozen positive 0.69 rows keep their original drawing in app frames", async () => {
+  for (const json of Object.values(positiveRows069Json)) {
+    const markup = String(chart(parseRows069(json), "en-US"));
+    expect(markup).toContain('data-bar-layout="rows"');
+    expect(markup).not.toMatch(/data-chart-pending|k2b-chart-ranked|NaN|Infinity/);
+    expect(markup.indexOf(">Young</text>")).toBeLessThan(markup.indexOf(">Adult</text>"));
+    expect(await resolveChartHtml(markup, "en-US")).toBe(markup);
+  }
 });
 
 test("PDF preparation only resolves actual chart placeholders", async () => {

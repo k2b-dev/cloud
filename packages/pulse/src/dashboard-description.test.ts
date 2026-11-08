@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { drawChart } from "@k2b/editor/charts";
-import { signedRows069 } from "../../ui/test/chart-rows-069-fixture";
+import { parseRows069, signedRows069Json } from "../../ui/test/chart-rows-069-fixture";
 import { type DashboardPanel, DashboardPanelSchema, DashboardSaveSchema } from "./dashboard-contracts";
 import {
   dashboardCategoryDescription,
@@ -27,6 +27,7 @@ const project = (panel: DashboardPanel, value: DashboardPanelData) =>
   });
 
 test("saved Pulse bar data retains the signed values accepted in 0.69", () => {
+  const signedRows069 = parseRows069(signedRows069Json);
   const p = panel("bar", ["category", "value"], { x: "category" });
   const result = data(
     p.columns,
