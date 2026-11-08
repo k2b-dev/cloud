@@ -157,11 +157,37 @@ export function BottomSheetDemo() {
       ),
       bottomSheetAdaptiveOptions,
     );
+  const folders = ["General", "Offers", "Archive 2025", "Pictures", "Accounting", "Drafts", "Forms", "Graphics", "Inventory", "Planning", "Customers", "Marketing", "Fairs", "Press", "Projects", "Invoices", "Travel", "Training", "Contracts", "Templates", "Website", "Workshop"];
+  const openPicker = () =>
+    dialogCore.open<void>(
+      (close, context) => (
+        <BottomSheet detents onDismiss={context.requestDismiss}>
+          <BottomSheet.Header title="Move to" subtitle="“Offer Example Ltd.pdf”" close={() => void context.requestDismiss()} />
+          <BottomSheet.Body>
+            <For each={folders}>
+              {(folder) => (
+                <Button variant="ghost" align="start" class="w-full" onClick={() => close()}>
+                  <i class="ti ti-folder" aria-hidden="true" />
+                  {folder}
+                </Button>
+              )}
+            </For>
+          </BottomSheet.Body>
+          <BottomSheet.Footer>
+            <Button variant="secondary" onClick={() => void context.requestDismiss()}>
+              Cancel
+            </Button>
+            <Button onClick={() => close()}>Move</Button>
+          </BottomSheet.Footer>
+        </BottomSheet>
+      ),
+      bottomSheetAdaptiveOptions,
+    );
   return (
     <DemoCard
       id="bottom-sheet"
       chip={{ kind: "component", name: "BottomSheet", from: "@k2b/ui" }}
-      description="A bottom-edge sheet with guarded dismissal, plus a short decision that becomes a centered dialog from tablet width. Enter a draft to exercise the discard guard, or resize the open decision."
+      description="A bottom-edge sheet that follows the finger, with guarded dismissal; a short decision that becomes a centered dialog from tablet width; and a long picker with detents that opens at half height. Drag the handle, the header, or the list."
       code={`dialogCore.open((close, context) => <BottomSheet onDismiss={context.requestDismiss}>\n  <BottomSheet.Header title="Details" close={context.requestDismiss} />\n  <BottomSheet.Body>Content</BottomSheet.Body>\n</BottomSheet>, bottomSheetOptions);
 
 // A decision switches in place from sheet to dialog at 48rem.
@@ -178,6 +204,7 @@ dialogCore.open((close, context) => (
     >
       <Button onClick={() => void open()}>Open bottom sheet</Button>
       <Button onClick={() => void openDecision()}>Open sheet or dialog</Button>
+      <Button onClick={() => void openPicker()}>Open with detents</Button>
     </DemoCard>
   );
 }
