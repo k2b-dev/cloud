@@ -98,6 +98,8 @@ test.each(["abort", "deadline"])("batch context shares one request budget and re
       (error: unknown) => error,
     );
     await started;
+    // The own anchor's navigation lookup ran before the peer scan; nothing may start after cancellation.
+    const before = [...f.requests];
     expect(schedule).toHaveBeenCalledTimes(1);
     expect(schedule.mock.calls[0]?.[1]).toBe(REQUEST_IDLE_TIMEOUT_SECONDS * 1000);
     if (mode === "abort") controller.abort(new Error("batch canceled"));
@@ -109,7 +111,7 @@ test.each(["abort", "deadline"])("batch context shares one request budget and re
     expect(await pending).toMatchObject(mode === "abort" ? { message: "batch canceled" } : { code: "unavailable", status: 503 });
     expect(canceled).toBe(1);
     expect(clear).toHaveBeenCalledTimes(1);
-    expect(f.requests).toEqual([]);
+    expect(f.requests).toEqual(before);
   } finally {
     schedule.mockRestore();
     clear.mockRestore();

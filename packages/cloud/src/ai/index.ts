@@ -254,6 +254,8 @@ export {
 export { migrateCloudAi } from "./migrate";
 export { type AiOpenQuestion, type AiOpenQuestions, countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
+/** Trusted platform host: read current place context as the person. */
+export { type PlaceProviderOptions, runPlaceProvider } from "./place-provider";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 export {
   AI_PROJECT_DESCRIPTION_MAX_CHARS,
@@ -388,8 +390,11 @@ export type {
   AiCapabilityToolPresentation,
   AiClientToolId,
   AiConversation,
+  AiConversationCounts,
   AiConversationDraft,
   AiConversationPage,
+  AiConversationPlace,
+  AiConversationPlaceFilter,
   AiConversationResourceOccurrence,
   AiConversationResourceRef,
   AiConversationRunStatus,

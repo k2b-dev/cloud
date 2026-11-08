@@ -823,22 +823,25 @@ describe("capability v1 compilation", () => {
       run: async () => ok({ data: [] }),
     };
     const manifest = compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries: { search } })).manifest;
-    const untypedView = CloudResourceViewSchema.extend({
+    const untypedView = CloudResourceViewSchema.omit({ group: true }).extend({
       metadata: z
         .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
         .max(20)
         .optional()
         .describe("Small structured metadata shown with the result."),
     });
-    for (const view of [untypedView, untypedView.omit({ context: true, status: true })]) {
+    for (const view of [CloudResourceViewSchema.omit({ group: true }), untypedView, untypedView.omit({ context: true, status: true })]) {
       const copy = structuredClone(manifest);
       const query = copy.queries[0]!;
       query.dataSchema = projectSchema(z.array(view).max(100), "Universal Search data", "output");
       query.schemaHash = capabilityHash({ inputSchema: query.inputSchema, dataSchema: query.dataSchema });
       const { manifestHash: _previous, ...base } = copy;
-      expect(parseCapabilityManifest({ ...base, manifestHash: capabilityHash(base) }, "example").queries[0]?.universalSearch).toEqual(
-        search.universalSearch,
-      );
+      const sent = { ...base, manifestHash: capabilityHash(base) };
+      const parsed = parseCapabilityManifest(sent, "example");
+      expect(parsed.manifestHash).toBe(sent.manifestHash);
+      expect(parsed.queries[0]?.dataSchema).toEqual(query.dataSchema);
+      expect(parsed.queries[0]?.schemaHash).toBe(query.schemaHash);
+      expect(parsed.queries[0]?.universalSearch).toEqual(search.universalSearch);
     }
     // The data schema the release before `format` declared; the untyped view above must reproduce it.
     expect(capabilityHash(projectSchema(z.array(untypedView).max(100), "Universal Search data", "output"))).toBe(

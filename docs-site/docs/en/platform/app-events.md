@@ -43,9 +43,9 @@ application declared that event type and version.
 
 ## Built-in resource events
 
-Spaces, Notebooks, Contacts, and Mail publish these version 1 events. The envelope's
+Spaces, Notebooks, Contacts, Mail, and Files publish these version 1 events. The envelope's
 `subject` and `place` carry public resource IDs accepted by the corresponding
-Type readers. Notebooks and most Spaces events use a strict empty `data`
+Type readers. Notebooks, Files, and most Spaces events use a strict empty `data`
 object (`{}`). `spaces.item.updated` carries only change categories; Contacts
 updates carry only changed field-group names. Mail carries only the receipt
 reference described below.
@@ -62,6 +62,8 @@ reference described below.
 | `notebooks.comment.created` | `notebooks.comment` | `notebooks.notebook` | A post is added to a note's page discussion; edits, deletions and passage annotations emit no such event. |
 | `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
 | `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
+| `filesv2.entry.created` | `filesv2.entry` | `filesv2.entry` | An upload creating a file is committed in a folder. |
+| `filesv2.entry.replaced` | `filesv2.entry` | `filesv2.entry` | An upload reserved to overwrite an existing file is committed in a folder. |
 | `contacts.contact.created` | `contacts.contact` | `contacts.book` | A contact is created, including each committed import entry. Data is `{}`. |
 | `contacts.contact.updated` | `contacts.contact` | `contacts.book` | Stored contact fields change. Data contains only the bounded `changed` group list described below. |
 | `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
@@ -163,6 +165,50 @@ commits. The note and due sweeps own their transactions and call `wake()` after 
 application subscription to them stays `blocked` with
 `resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
 and current read access receive them (see [Who receives an event](#who-receives-an-event)).
+
+### Files uploads
+
+`filesv2.entry.created` and `filesv2.entry.replaced` announce committed file
+uploads. Both use strict empty data (`{}`), the public file ref as `subject`,
+and the containing folder ref as `place`. Both Types are `filesv2.entry` and
+use `filesv2.entry.read` for current permission checks. Read content through
+`filesv2.content.read`; the event carries no names, media types, sizes, content,
+share IDs, or Filegate URLs.
+
+The folder ref is captured with the authorized upload reservation and refreshed
+from the checked parent before sending the commit to Filegate. On roots
+with stable IDs it is the same stable ref the entry reader returns for that
+folder. A storage root uses the empty-path ref returned by `filesv2.provider.list`;
+`filesv2.entry.read` accepts it as a folder after checking current storage access.
+Roots without stable IDs use
+path refs, including durable `p:` refs for long paths. These path refs follow
+the location rather than a file across moves. Subscribe to the exact folder
+ref: descendants do not implicitly match an ancestor subscription.
+
+The upload journal distinguishes creation from replacement, so the two facts
+need no extra payload flag. Replacement means the upload was reserved to
+overwrite an existing file. Managed roots bind this choice to a publication
+precondition; external writers on unmanaged roots can change the target before
+commit. An inbox upload that renames on conflict is a creation, using its final
+returned file ref.
+
+Private uploads, capability content uploads, and public inbox uploads use the
+same completion path. After Filegate confirms publication, Files commits its
+receipt and outbox event in one transaction. A lost response can be recovered
+from the durable Filegate receipt. Retrying a completed Files receipt does not
+create another event; platform delivery remains at least once. If recording
+completion fails, the upload remains open for receipt recovery. Old reservations
+acquire the checked folder ref when committed through the new path. Already
+published legacy uploads without an event scope do not announce old arrivals
+when their receipts are read.
+
+Aborted, expired, incomplete, or refused uploads emit nothing. Folder creation,
+copies, moves, editor or office saves, internal revision snapshots, thumbnails,
+and changes made directly on external storage do not emit these upload events.
+A folder upload or client sync commits individual files: each successful file
+adds one event, with no directory traversal or recursive event fan-out. Failed
+files add none. There is no aggregate publisher throttle; budget bulk traffic
+against the [shared outage capacity](/en/docs/operations/app-events#files-upload-volume).
 
 ### Grids record changes
 

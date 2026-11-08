@@ -1536,3 +1536,33 @@ test("routine export stops visibly when a later page fails", async () => {
   await expect(assistantCli.run(request.ctx)).rejects.toThrow("Export interrupted");
   expect(() => JSON.parse(request.stdout.join(""))).toThrow();
 });
+
+test("chats list forwards the explicit place filter and displays its ref", async () => {
+  for (const place of [undefined, "any", "fixture.conversation:Marta1"]) {
+    const paths: string[] = [];
+    const request = createContext(["chats", "list"], async (path) => {
+      paths.push(String(path));
+      return json([
+        {
+          id: "chat",
+          shortId: "Chat01",
+          title: "Marta",
+          isDone: false,
+          runStatus: "idle",
+          unreadCompletion: false,
+          pinnedAt: null,
+          updatedAt: "2026-11-08T00:00:00Z",
+          place: { ref: { type: "fixture.conversation", id: "Marta1" }, title: "Marta" },
+        },
+      ]);
+    });
+    if (place) request.ctx.flags.place = place;
+    const rows: unknown[] = [];
+    request.ctx.table = (values) => {
+      rows.push(values);
+    };
+    await assistantCli.run(request.ctx);
+    expect(new URL(paths[0]!, "https://cloud.test").searchParams.get("place")).toBe(place ?? null);
+    expect(rows).toMatchObject([[{ place: "fixture.conversation:Marta1" }]]);
+  }
+});
