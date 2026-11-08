@@ -103,8 +103,17 @@ for (const spec of cases)
           if (spec.kind === "pareto") {
             const label = chart.locator("[data-chart-datum] text").first();
             expect(await label.textContent()).toBe("Nordrhein");
-            const bounds = await label.boundingBox();
-            expect(bounds!.x).toBeGreaterThanOrEqual(realBox.x);
+            // Use DOM glyph rectangles, as the other clipping guards do.
+            // WebKit's Playwright SVG text quad has different extents.
+            const bounds = await label.evaluate((e) => {
+              const text = e as SVGTextElement,
+                box = text.getBoundingClientRect(),
+                anchor = new DOMPoint(text.x.baseVal[0]!.value, text.y.baseVal[0]!.value).matrixTransform(text.getScreenCTM()!);
+              return { left: box.left, right: box.right, anchor: anchor.x };
+            });
+            expect(bounds.left).toBeGreaterThanOrEqual(realBox.x);
+            expect(bounds.right).toBeLessThanOrEqual(realBox.x + realBox.width);
+            expect(Math.abs(bounds.right - bounds.anchor)).toBeLessThan(0.1);
           } else {
             expect(await chart.locator('[data-chart-datum*="Zero"]').count()).toBe(0);
           }
