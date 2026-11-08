@@ -1,0 +1,82 @@
+[
+  {
+    "operation": "mail.conversation.list",
+    "target": {
+      "type": "mail.mailbox",
+      "id": "ExBox1"
+    },
+    "replies": [
+      {
+        "ok": true,
+        "data": [],
+        "page": {
+          "hasMore": true,
+          "nextCursor": "opaque-fixture-cursor"
+        }
+      },
+      {
+        "ok": true,
+        "data": [],
+        "page": {
+          "hasMore": false
+        }
+      }
+    ]
+  },
+  {
+    "operation": "core.ai.chat.run",
+    "target": {
+      "type": "core.ai.chat",
+      "id": "ExMndy"
+    },
+    "input": {
+      "prompt": "Review my inbox conversations needing action in the Review mailbox. Use our earlier decisions in this chat to choose which conversations need closer reading and decide the next steps. Read messages as needed, explain your recommendations, and report here. Ask for my approval before making any changes."
+    },
+    "replies": [
+      {
+        "ok": true,
+        "data": {
+          "id": "ExTurn",
+          "chatId": "ExMndy",
+          "status": "queued",
+          "reason": null,
+          "origin": {
+            "codeId": "c_fixture",
+            "title": "Monday inbox review",
+            "runId": "44bd0000-0000-4000-8000-000000000008",
+            "requestId": "fixture-request",
+            "label": "Started by Code Monday inbox review"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "operation": "core.ai.chat.run.read",
+    "target": {
+      "type": "core.ai.chat",
+      "id": "ExMndy"
+    },
+    "input": {
+      "id": "ExTurn"
+    },
+    "replies": [
+      {
+        "ok": true,
+        "data": {
+          "id": "ExTurn",
+          "chatId": "ExMndy",
+          "status": "waiting_for_approval",
+          "reason": null,
+          "origin": {
+            "codeId": "c_fixture",
+            "title": "Monday inbox review",
+            "runId": "44bd0000-0000-4000-8000-000000000008",
+            "requestId": "fixture-request",
+            "label": "Started by Code Monday inbox review"
+          }
+        }
+      }
+    ]
+  }
+]
