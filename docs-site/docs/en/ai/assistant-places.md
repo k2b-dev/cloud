@@ -15,6 +15,31 @@ person's normal Assistant chat. Declare an `assistant` block on the Type and
 return the current selection from a Query. The same API works for built-in and
 third-party applications.
 
+## Connect a resource page
+
+Report the resource through the existing page context on `Layout`:
+
+```tsx
+import { Layout } from "@k2b/cloud/ssr";
+
+<Layout
+  c={c}
+  title={[{ label: conversation.title }]}
+  context={{ scope: { type: "example.conversation", id: conversation.id } }}
+>
+  {children}
+</Layout>
+```
+
+Use the namespaced Type and the public ID its reader accepts. The scope selects
+the place; it grants no access. Your normal page and domain-service permission
+checks still apply. A Type without an `assistant` block keeps the normal panel.
+
+For a place that changes inside one document, publish the current scope with
+`publishPageContext` from `@k2b/cloud/browser/panel` and dispose the previous
+publication. See [Layout and navigation](/en/docs/frontend/layout-and-navigation#render-the-application-layout)
+for the existing publication and cleanup contract.
+
 ## Declare the provider and allowed tools
 
 Import `AssistantPlaceSchema` and `defineCapabilities` from
@@ -138,3 +163,82 @@ Cancellation propagates to the caller.
 This helper neither checks panel consent nor creates a chat. Panel hosts must
 check consent before invoking it. Applications declare the provider and enforce
 resource permissions in their domain service.
+
+## Load the panel without creating a chat
+
+Cloud checks the person's consent to share page context before it invokes the
+provider. The initial server render and later navigation use the same
+`loadPlaceAssistant(c, scope)` loader from `@k2b/cloud/ai/server`. Panel hosts can
+read the same projection from `GET /api/ai/places/:type/:id`.
+
+| State | What the host can show |
+| --- | --- |
+| `none` | No place context; keep the ordinary panel. |
+| `consent_required` | The existing consent flow, before querying the provider. |
+| `available` | Place title, application identity, Type title, selected tool policies, Skills, starters, and the person's existing chat or `null`. |
+| `unavailable` | Stored title and the person's chat ID when known; no current place tools or context. `retry: true` means the provider may recover. |
+
+The response contains display metadata, never the provider's raw `context`.
+Loading it is read-only. Opening the panel, navigating to a place, and clicking
+a starter without sending do not create a chat.
+
+## Keep one personal chat per place
+
+The first message creates a chat bound to the person and the exact place ref.
+Another person opening the same resource gets their own chat. Sharing the
+resource does not share its Assistant history.
+
+A place has one non-archived chat per person. **Start over** (**Neu beginnen**)
+archives that chat and returns to the place's empty state. The next sent
+message creates a replacement; the previous history stays in the archive.
+Restoring the old chat while its replacement is active returns `409 CONFLICT`;
+archive the replacement first.
+
+Panel hosts create a chat through `POST /api/ai/conversations` with `place: {
+type, id }`, a nonempty `draft.content`, and the normal `requestId` for retries.
+This path takes the title from the current provider. It does not accept the
+ordinary creation overrides for title, Project, tools, Skills, or launching app.
+After creation, draft saving and submission use the normal chat flow.
+
+On navigation, the panel follows the new place when an empty chat or a place
+chat is open. Another open chat stays visible, with **Switch to <title>**
+(**Zu <Titel> wechseln**) in the place bar. A response for an earlier page must
+not replace the current place: hosts match both the page ID and sequence of
+the current page context.
+
+Place chats appear in search under **At places** (**An Orten**) and in the
+separate place filter. Unread and attention counts include them. Ordinary chat
+lists and own-chat discovery omit them by default; exact place filters select
+them explicitly. See [List place chats](/en/docs/ai/chat-runtime-and-streaming#list-place-chats)
+for API filters, counters, and `cld assistant chats list --place`.
+
+## Refresh context and handle an unavailable place
+
+Before each model round, including after resume, Cloud reloads the provider
+with the conversation owner's current authority. The place stored on the chat
+remains its selector even after the page changes. Context is marked as untrusted
+application data. Returned Skills join the permission-filtered catalog and are
+loaded through the normal Skill mechanism; listing one grants no access.
+
+If the resource disappears, its application is removed, or the person loses
+access, their chat history remains readable. New rounds receive no place
+context, tools, or Skills. The panel shows **No longer have access to <title>**
+(**Kein Zugriff mehr auf <Titel>**) using the stored title when available.
+Temporary provider or contract failures carry `retry: true`; hosts should offer
+a retry without presenting them as permanent loss of access.
+
+## Fixed targets and current access
+
+Cloud removes Actions declared in `assistant.tools` from the general Assistant
+catalog. In a place chat, only the current provider selection is available.
+Their tool schemas omit the target field: Cloud supplies the resource stored on
+the chat. Other explicit resource references remain ordinary Action inputs.
+
+Before each place Action, including execution after an approval or a resumed
+turn, Cloud reloads the person and the provider. An inactive person, unavailable
+place, or Action absent from the current selection ends the call as `rejected`.
+A previous approval grants no continued resource access. Action policies and
+remembered approvals otherwise follow the normal Assistant flow.
+
+The chat stays readable after place access is lost. Tool audit rows retain their
+conversation link, which supplies the person and immutable place coordinates.

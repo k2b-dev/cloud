@@ -146,6 +146,8 @@ Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `mo
 `<name>`, `references` holds agent Markdown with `index.md`. The app image serves both at `/cli/plugins/<name>/` to signed-in
 callers `cli.plugins.access` allows; `cld` installs them per profile and writes the references into the agent skill per version. The server authorizes.
 
+For resource-specific Assistant context, declare the Type's `assistant` provider and publish its ref through `Layout.context.scope`; read **Assistant at a place** (`/en/docs/ai/assistant-places`) for consent, personal-chat lifecycle, fixed targets, and current-access checks.
+
 Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
 Cloud validates Skills at start, updates them by content hash, and offers them only while their app runs and its access rule (legacy: Help audience) permits use. Skills grant nothing; never seed or rewrite Skill rows from code.
 

@@ -1,4 +1,5 @@
 import { AssistantPlaceSchema, type CapabilityExecutionContext, defineCapabilities } from "@k2b/cloud/contracts";
+import { Layout } from "@k2b/cloud/ssr";
 import { z } from "zod";
 
 export const createPlaceCapabilities = (conversations: {
@@ -55,4 +56,12 @@ export const createPlaceCapabilities = (conversations: {
         },
       },
     },
+  });
+
+export const renderPlacePage = (c: Parameters<typeof Layout>[0]["c"], conversation: { id: string; title: string }) =>
+  Layout({
+    c,
+    title: [{ label: conversation.title }],
+    context: { scope: { type: "example.conversation", id: conversation.id } },
+    children: null,
   });
