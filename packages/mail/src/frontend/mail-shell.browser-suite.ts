@@ -4629,6 +4629,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await page.waitForFunction(() => document.activeElement?.closest(".cm-content") !== null);
             expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
             expect(api.calls).toContain("POST /draft-seeds/materialize");
+            // Reduced motion: the state changes at once, nothing glides.
+            expect(await page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getAnimations().length)).toBe(0);
             // The draft stands above the newest message.
             const order = await page.evaluate(() => {
               const draft = document.querySelector("[data-mail-inline-draft]")!.getBoundingClientRect();
@@ -4645,6 +4647,52 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
+
+      test("the pill grows into the draft: the messages glide monotonically to their layout place in 280 ms", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          const messagesTop = () =>
+            page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
+          const before = await messagesTop();
+          // Pause the glide the moment it starts, before a frame passes, then step through it.
+          await page.evaluate(() => {
+            const state = window as unknown as { mailGlide?: Promise<void> };
+            state.mailGlide = new Promise<void>((resolve) => {
+              const observer = new MutationObserver(() => {
+                const glide = document.querySelector("[data-mail-conversation-messages]")?.getAnimations()[0];
+                if (!glide) return;
+                glide.pause();
+                observer.disconnect();
+                resolve();
+              });
+              observer.observe(document.body, { subtree: true, childList: true });
+            });
+          });
+          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          const samples = await page.evaluate(async () => {
+            await (window as unknown as { mailGlide: Promise<void> }).mailGlide;
+            const messages = document.querySelector("[data-mail-conversation-messages]")!;
+            const glide = messages.getAnimations()[0]!;
+            const total = Number(glide.effect!.getComputedTiming().duration);
+            const tops = [0, total / 2, total - 1].map((at) => {
+              glide.currentTime = at;
+              return messages.getBoundingClientRect().top;
+            });
+            glide.finish();
+            return { total, tops, final: messages.getBoundingClientRect().top };
+          });
+          expect(samples.total).toBe(280);
+          expect(Math.abs(samples.tops[0]! - before)).toBeLessThanOrEqual(0.5);
+          expect(samples.tops[1]!).toBeGreaterThanOrEqual(samples.tops[0]!);
+          expect(samples.tops[2]!).toBeGreaterThanOrEqual(samples.tops[1]!);
+          expect(Math.abs(samples.tops[2]! - samples.final)).toBeLessThanOrEqual(1);
+          expect(samples.final).toBeGreaterThan(before);
+        } finally {
+          await close(page);
+        }
+      });
 
       test("typing saves the draft, and collapsing keeps it: no discard, the lease is released", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;

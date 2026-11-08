@@ -75,6 +75,7 @@ import {
 import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { getMailConversationToolbarSections, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { captureMailDraftMorph, playMailDraftClose, playMailDraftOpen } from "./mail-draft-morph";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
@@ -848,9 +849,11 @@ export default function MailConversationReader(props: {
   });
   const closeInlineDraft = (draftId: string) => {
     if (inlineDraft()?.draftId !== draftId) return;
+    const start = historyScroller ? captureMailDraftMorph(historyScroller) : null;
     inlineDraftControls = null;
     setInlineDraft(null);
     props.onDraftChange?.(null);
+    if (historyScroller && start) playMailDraftClose(historyScroller, start);
   };
   /** Opens a draft here. An open one closes first through its own safe path; if that fails, it stays open. */
   const openInlineDraft = async (next: InlineDraftState) => {
@@ -861,9 +864,13 @@ export default function MailConversationReader(props: {
       if (inlineDraft()?.draftId === current.draftId) return;
     }
     if (disposed || props.selectedConversationId !== next.conversationId) return;
+    const start = historyScroller ? captureMailDraftMorph(historyScroller) : null;
     inlineDraftControls = null;
     setInlineDraft(next);
     props.onDraftChange?.(next.draftId);
+    // The layout already shows the draft; the motion runs from the pill's box to it.
+    const frame = historyScroller?.querySelector<HTMLElement>("[data-mail-inline-draft-frame]");
+    if (historyScroller && frame && start) playMailDraftOpen(historyScroller, frame, start);
   };
   // A draft belongs to its conversation: another conversation or mailbox unmounts it, and its session saves what is
   // left before it releases the lease.
@@ -1839,37 +1846,39 @@ export default function MailConversationReader(props: {
                 {/* The pill grows into the draft: an open draft stands in its place, above the newest message. */}
                 <Show when={visibleInlineDraft()} keyed>
                   {(open) => (
-                    <MailInlineDraft
-                      mailboxId={props.mailboxId}
-                      draftId={open.draftId}
-                      initialDraft={open.initialDraft}
-                      currentUserId={props.currentUserId ?? ""}
-                      currentUserEmail={props.currentUserEmail ?? null}
-                      identities={props.identities}
-                      dateConfig={props.dateConfig}
-                      canAdmin={props.canAdmin}
-                      mailboxRecipientSuggestions={props.mailboxWide}
-                      calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-                      liveDictation={props.liveDictation ?? false}
-                      returnHref={props.requestUrl}
-                      host={{
-                        fresh: open.fresh,
-                        fullscreen: () => props.draftFullscreen ?? false,
-                        toggleFullscreen: () => props.onToggleDraftFullscreen?.(),
-                        register: (controls) => {
-                          inlineDraftControls = controls;
-                        },
-                        leave: (outcome) => {
-                          closeInlineDraft(open.draftId);
-                          // The sent message, the returned draft, or the removed one shows from the server's state.
-                          if (outcome !== "closed") void props.onReconcileAfterWrite().catch(() => undefined);
-                        },
-                        openDraft: (draftId) => {
-                          closeInlineDraft(open.draftId);
-                          void openInlineDraft({ conversationId: open.conversationId, draftId, fresh: false });
-                        },
-                      }}
-                    />
+                    <div class="mail-inline-draft-frame" data-mail-inline-draft-frame>
+                      <MailInlineDraft
+                        mailboxId={props.mailboxId}
+                        draftId={open.draftId}
+                        initialDraft={open.initialDraft}
+                        currentUserId={props.currentUserId ?? ""}
+                        currentUserEmail={props.currentUserEmail ?? null}
+                        identities={props.identities}
+                        dateConfig={props.dateConfig}
+                        canAdmin={props.canAdmin}
+                        mailboxRecipientSuggestions={props.mailboxWide}
+                        calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+                        liveDictation={props.liveDictation ?? false}
+                        returnHref={props.requestUrl}
+                        host={{
+                          fresh: open.fresh,
+                          fullscreen: () => props.draftFullscreen ?? false,
+                          toggleFullscreen: () => props.onToggleDraftFullscreen?.(),
+                          register: (controls) => {
+                            inlineDraftControls = controls;
+                          },
+                          leave: (outcome) => {
+                            closeInlineDraft(open.draftId);
+                            // The sent message, the returned draft, or the removed one shows from the server's state.
+                            if (outcome !== "closed") void props.onReconcileAfterWrite().catch(() => undefined);
+                          },
+                          openDraft: (draftId) => {
+                            closeInlineDraft(open.draftId);
+                            void openInlineDraft({ conversationId: open.conversationId, draftId, fresh: false });
+                          },
+                        }}
+                      />
+                    </div>
                   )}
                 </Show>
                 <Show when={otherDrafts().length > 0}>
