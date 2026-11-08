@@ -206,39 +206,50 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
-  test("a phone sheet that grows after the first fit refits the photo above it", async () => {
-    const { page, errors } = await open("", 390);
+  test("overlay sizes measured late still refit the phone photo above the sheet", async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 950 }, reducedMotion: "reduce" });
+    const errors = pageErrors(page);
     try {
-      // Lowest photo edge and highest bottom overlay edge, both in page pixels.
-      const edges = () =>
-        page.evaluate(() => {
-          const image = document.querySelector(".k2b-image-editor__image")!.getBoundingClientRect();
-          const overlays = [
-            document.querySelector(".k2b-image-editor__pane")!,
-            ...document.querySelectorAll(".k2b-image-editor__bottom .k2b-image-editor__group"),
-          ].filter((element) => (element as HTMLElement).offsetParent !== null);
-          return { photo: image.bottom, overlay: Math.min(...overlays.map((element) => element.getBoundingClientRect().top)) };
+      // Resize notifications may arrive after the first fit (a busy main thread, CI); hold them until released.
+      await page.addInitScript(() => {
+        const Native = window.ResizeObserver;
+        const held: (() => void)[] = [];
+        let holding = true;
+        Object.assign(window, {
+          releaseResize: () => {
+            holding = false;
+            for (const deliver of held.splice(0)) deliver();
+          },
         });
-      const before = await edges();
-      expect(before.photo).toBeLessThanOrEqual(before.overlay);
-      // Grow its observed content box by 260px; padding alone would not notify ResizeObserver.
-      // No tool, canvas, or frame changes, as when the sheet content arrives late.
-      await page.addStyleTag({ content: ".k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__body { height: 418px; }" });
+        window.ResizeObserver = class extends Native {
+          constructor(callback: ResizeObserverCallback) {
+            super((entries, observer) => {
+              if (holding) held.push(() => callback(entries, observer));
+              else callback(entries, observer);
+            });
+          }
+        };
+      });
+      await page.goto(`${server.url}?`);
+      await page.waitForFunction(() => (document.querySelector<HTMLCanvasElement>(".k2b-image-editor__image > canvas")?.width ?? 0) > 1);
       await settled(page);
-      await page.waitForFunction(
-        (overlay) =>
-          [
-            document.querySelector(".k2b-image-editor__pane")!,
-            ...document.querySelectorAll(".k2b-image-editor__bottom .k2b-image-editor__group"),
-          ]
-            .filter((element) => (element as HTMLElement).offsetParent !== null)
-            .some((element) => element.getBoundingClientRect().top < overlay - 240),
-        before.overlay,
-      );
+      await page.evaluate("window.releaseResize()");
       await settled(page);
-      const after = await edges();
-      expect(after.overlay).toBeLessThan(before.overlay - 240);
-      expect(after.photo).toBeLessThanOrEqual(after.overlay);
+      const geometry = await page.evaluate(() => {
+        const image = document.querySelector(".k2b-image-editor__image")!.getBoundingClientRect();
+        const overlays = [
+          document.querySelector(".k2b-image-editor__pane")!,
+          ...document.querySelectorAll(".k2b-image-editor__bottom .k2b-image-editor__group"),
+        ].filter((element) => (element as HTMLElement).offsetParent !== null);
+        return {
+          height: image.height,
+          photo: image.bottom,
+          overlay: Math.min(...overlays.map((element) => element.getBoundingClientRect().top)),
+        };
+      });
+      // The photo uses the room above the sheet instead of the inset of a desktop pane measured too early.
+      expect(geometry.height).toBeGreaterThanOrEqual(160);
+      expect(geometry.photo).toBeLessThanOrEqual(geometry.overlay);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
