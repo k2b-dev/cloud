@@ -530,7 +530,7 @@ Apps now ship their own Assistant Skills; Core no longer contains built-in
 Skill templates. The first Core start of this release links the installed
 built-in Skills to their apps: `cloud-grids` to Grids, `cloud-mail` to Mail,
 `cloud-notebooks` to Notebooks, `cloud-contacts` to Contacts, `cloud-spaces` to
-Spaces, `cloud-weather` to Weather, and `cloud-assistant`, `scheduled-tasks`,
+Spaces, `cloud-weather` to Weather, and `cloud-assistant`,
 `skill-creator`, `assistant-code-mode`, and `assistant-data-analysis` to
 Assistant. It keeps Skill IDs, access, personal **Enabled** settings, and
 administrator changes, and does not recreate deleted ones. It creates no

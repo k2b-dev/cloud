@@ -141,7 +141,6 @@ function fixture() {
       }),
       getTurnRunConfig: async () => config,
     },
-    getMandate: async () => mandate,
     dispatch,
     stream,
     runner: new Hono<AuthContext>().post("/start", (c) =>
@@ -327,21 +326,17 @@ const backgroundConfig: AiTurnRunConfig = {
   mandate: { id: "44444444-4444-4444-8444-444444444444", revision: 1 },
 };
 
-test("background callbacks use their persisted task mandate while another foreground turn runs", async () => {
+test("retired routine callbacks cannot dispatch even with a valid mandate and another foreground turn", async () => {
   const f = fixture();
   f.set({ config: backgroundConfig, activeTurn: crypto.randomUUID() });
   const jwt = await token();
   for (const path of ["queries/demo/read", "actions/demo/write/review", "actions/demo/write"]) {
-    expect((await f.app.fetch(request(jwt, path, JSON.stringify({ input: { notebookId: "target" } })))).status).toBe(200);
+    expect((await f.app.fetch(request(jwt, path, JSON.stringify({ input: { notebookId: "target" } })))).status).toBe(403);
   }
-  for (const [call] of f.dispatch.mock.calls)
-    expect(call).toMatchObject({
-      mandate: { mandateId: backgroundConfig.mandate!.id, mandateRevision: 1, ownerAppId: "core" },
-      input: { notebookId: "target" },
-    });
+  expect(f.dispatch).not.toHaveBeenCalled();
   expect((await f.app.fetch(request(jwt, "streams/read"))).status).toBe(403);
   expect(f.stream).not.toHaveBeenCalled();
-  expect((await f.app.fetch(request(jwt, "queries/demo/read", JSON.stringify({ input: {}, mandate: { id: "other" } })))).status).toBe(400);
+  expect((await f.app.fetch(request(jwt, "queries/demo/read", JSON.stringify({ input: {}, mandate: { id: "other" } })))).status).toBe(403);
 });
 
 test("background callbacks stop after cancellation, mandate revocation, scope changes or expiry", async () => {

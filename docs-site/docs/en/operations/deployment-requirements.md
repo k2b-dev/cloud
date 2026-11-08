@@ -656,11 +656,11 @@ See [Identity key operations](/en/docs/operations/identity-key-operations) for
 signing-key rotation, KEK recovery and revocation. Keep these secrets independent;
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
-Managed chat `code_run`, including API clients, `cld assistant --detach` and
-routine background turns, executes on the Code runner pool. Deploy Core,
+Managed chat `code_run`, including API clients and `cld assistant --detach`,
+executes on the Code runner pool. Deploy Core,
 Assistant and the runner together with the current schema. An unavailable or
 saturated runner produces a visible tool error; the Assistant never falls back
-to Chromium. Existing routine HTTP grants still apply, while Studio RSQL
+to Chromium. Scheduled chat routines are retired, and Studio RSQL
 `database` grants are unavailable in runner chat scripts. Use application
 capabilities for data access.
 
@@ -713,7 +713,7 @@ adopt these settings before using the remaining Studio host. The equivalent Kube
 `seccompProfile.type: RuntimeDefault`.
 
 Each legacy Studio host has a separate browser process and ephemeral host
-credential. Managed chat scripts and routine code runs use workerd instead. This is process isolation within one
+credential. Managed chat scripts use workerd instead. This is process isolation within one
 capability-free application container, not a separate VM per user; the
 residual risk of an unsandboxed renderer inside that container is accepted and
 tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
@@ -1415,9 +1415,8 @@ Two behaviors change for people. More built-in Actions can be remembered, and
 chat did not supply, which means an address that is not in the person's
 message, a search result, or a link of a page read earlier. Search results and
 pages read before the update are not recorded, so reading one of their links
-in an existing chat asks once. A routine cannot ask, so a routine that
-reads such an address now fails with a message to run it in the normal chat;
-give it the address in its prompt instead.
+in an existing chat asks once. Scheduled chat routines are retired; see
+[Routines became Code](/en/docs/operations/routines-to-code).
 
 Roll Core and Assistant over together. Before rolling Core back to an earlier
 release, run the following in the Cloud database. An earlier Core expects the
@@ -1799,72 +1798,21 @@ for new rows; the table files shrink only after `VACUUM FULL` or a similar
 rewrite. See
 [Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
-### Expire routine runs after 90 days
+### Retained routine archive
 
-This release expires finished routine runs after 90 days. It needs no
-configuration change. The first Core start adds the indexes
-`idx_ai_chat_task_occurrences_finished`, `idx_ai_chat_task_occurrences_turn`,
-and `idx_ai_turns_background_finished`.
-The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
-to `ai.turns` while it builds; allow for a longer build on large installations.
-The routine recovery tick then
-deletes completed, failed and stopped runs older than 90 days, their background turns
-with tool calls, and their run transcripts (`ai.task_messages`) in batches of
-100 per minute. Queued and running runs, finished runs whose turns are still
-active, and chat result messages stay.
-The run row holding a one-off task's scheduled time stays, even after
-completion, until the task gets a new time or is deleted, so that time never
-runs twice; its turn and transcript expire on the same clock.
-The same start relaxes `ai_memory_learning_runs_evidence_check` so a workflow
-memory learning run keeps its evidence key when its source turn is deleted.
-Background turns and transcripts of runs whose task was deleted expire on the
-same 90-day clock, measured from when the turn finished.
-
-An installation with a large backlog drains it over time. PostgreSQL reuses
-the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
-See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
+The routine scheduler and its 90-day pruning job are removed. Existing definitions,
+occurrences and run logs stay read-only, without live user/chat cascade deletion.
+Operators must include them in backup and retention procedures. Export definitions
+before upgrading; see [Routines became Code](/en/docs/operations/routines-to-code).
 
 ### Assistant approval choices
 
 **Always approve** is no longer offered on Assistant questions; choices made
 earlier still apply until the next major release.
 
-### Record why routines stop
+### Retired routine history
 
-This release gives every paused routine and every routine that needs its owner
-a reason. It needs no configuration change. The first Core start adds the
-columns `reason_code`, `reason_at`, `title`, and `locale` to `ai.chat_tasks`,
-fills the reason and locale of existing routines once, and adds the constraint
-`ai_chat_tasks_reason_state_check`. Adding the constraint locks
-`ai.chat_tasks` while it checks the existing rows.
-
-Earlier Core and Assistant processes write such states without a reason, which
-the constraint rejects. Stop them before the new Core starts instead of
-running both versions side by side. Before rolling Core back to an earlier
-release, run the following in the Cloud database:
-
-```sql
-ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_check;
-```
-
-See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
-
-### Check the app's review before a routine changes anything
-
-Routines whose calls the app would ask about now stop with **Braucht dich** /
-**Needs you** instead of running. Before each Action with
-`approval: "rememberable"`, a routine asks the app's review. When the review
-gives no approval scope, fails, or is missing, the Action does not run, and
-the routine shows which Action needs the person. It needs no configuration
-change.
-
-The first Core start adds the column `reason_action` to `ai.chat_tasks` and the
-constraint `ai_chat_tasks_reason_action_length_check`, which only limits the
-action name to 200 characters. The change is backward-compatible: an earlier
-Core can run beside the new one and can be rolled back to without SQL. An
-earlier Core or Assistant still runs such Actions without the review, so
-finish the rollout of both before you rely on the stop. See
-[Routine Action reviews](/en/docs/ai/structured-and-background-ai#routine-action-reviews).
+Scheduled chat routines are retired. Export definitions before upgrading and keep an archive backup; see [Routines became Code](/en/docs/operations/routines-to-code).
 
 ### Approve OAuth sign-ins in Cloud Login
 

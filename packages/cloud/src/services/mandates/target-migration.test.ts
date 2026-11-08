@@ -5,7 +5,7 @@ import {
   legacyTargetOperations,
   migratedCapabilityToolArgs,
   migrateLegacyCapabilityCall,
-  migrateLegacyRoutinePolicy,
+  migrateLegacyCapabilityPolicy,
 } from "./target-migration";
 
 const policy = (fixedInput: Record<string, string>, capabilityId = "task.create"): MandatePolicyV1 => ({
@@ -18,15 +18,15 @@ const policy = (fixedInput: Record<string, string>, capabilityId = "task.create"
 
 describe("legacy target migration", () => {
   test("an unavailable mandate needs confirmation without inventing a capability", () => {
-    expect(migrateLegacyRoutinePolicy(null)).toEqual({ ok: false, capability: null });
+    expect(migrateLegacyCapabilityPolicy(null)).toEqual({ ok: false, capability: null });
     const { grants: _grants, ...operationOnly } = policy({});
-    expect(migrateLegacyRoutinePolicy(operationOnly)).toEqual({ ok: false, capability: null });
+    expect(migrateLegacyCapabilityPolicy(operationOnly)).toEqual({ ok: false, capability: null });
   });
 
   test("a fixed Space grant moves the coordinate and retains every other restriction", () => {
     const original = policy({ spaceId: "SpaceA", columnId: "ColumnA", title: "Fictional task" });
     const before = JSON.stringify(original);
-    const migrated = migrateLegacyRoutinePolicy(original);
+    const migrated = migrateLegacyCapabilityPolicy(original);
     expect(migrated.ok).toBe(true);
     if (!migrated.ok) throw new Error("Expected upgrade");
     expect(JSON.stringify(original)).toBe(before);
@@ -56,7 +56,7 @@ describe("legacy target migration", () => {
         }),
       ).toBe(allowed);
     }
-    expect(migrateLegacyRoutinePolicy(migrated.policy)).toEqual({ ok: true, policy: migrated.policy, changed: false });
+    expect(migrateLegacyCapabilityPolicy(migrated.policy)).toEqual({ ok: true, policy: migrated.policy, changed: false });
   });
 
   test.each([
@@ -70,12 +70,12 @@ describe("legacy target migration", () => {
   ])("unmappable target fails closed: %j", (fixedInput) => {
     const value = { ...policy({}), grants: [{ appId: "spaces", capabilityId: "task.create", kind: "action", fixedInput }] };
     const before = JSON.stringify(value);
-    expect(migrateLegacyRoutinePolicy(value)).toEqual({ ok: false, capability: "spaces.task.create" });
+    expect(migrateLegacyCapabilityPolicy(value)).toEqual({ ok: false, capability: "spaces.task.create" });
     expect(JSON.stringify(value)).toBe(before);
   });
 
   test("unknown capabilities and conflicting old/new coordinates require confirmation", () => {
-    expect(migrateLegacyRoutinePolicy(policy({ spaceId: "SpaceA" }, "unknown"))).toEqual({ ok: false, capability: "spaces.unknown" });
+    expect(migrateLegacyCapabilityPolicy(policy({ spaceId: "SpaceA" }, "unknown"))).toEqual({ ok: false, capability: "spaces.unknown" });
     const value = policy({ spaceId: "SpaceA" });
     value.grants![0] = {
       appId: "spaces",
@@ -84,7 +84,7 @@ describe("legacy target migration", () => {
       target: { type: "spaces.space", id: "SpaceB" },
       fixedInput: { spaceId: "SpaceA" },
     };
-    expect(migrateLegacyRoutinePolicy(value).ok).toBe(false);
+    expect(migrateLegacyCapabilityPolicy(value).ok).toBe(false);
   });
 
   test("all frozen target operations move their literal coordinates, including destination refs", () => {
@@ -155,22 +155,19 @@ describe("legacy target migration", () => {
         actions: "preapproved",
         grants: [{ appId, capabilityId, kind, fixedInput: { q: "fictional" } }],
       };
-      expect(migrateLegacyRoutinePolicy(value)).toEqual({ ok: true, policy: value, changed: false });
+      expect(migrateLegacyCapabilityPolicy(value)).toEqual({ ok: true, policy: value, changed: false });
     }
   });
 
-  test("HTTP, database, and known app-wide grants retain their exact authority", () => {
+  test("HTTP and known app-wide grants retain their exact authority", () => {
     const value: MandatePolicyV1 = {
       version: 1,
       apps: ["assistant", "weather"],
-      operations: ["runtime.http", "runtime.database", "capability.query:forecast.get"],
+      operations: ["runtime.http", "capability.query:forecast.get"],
       actions: "preapproved",
-      grants: [
-        { kind: "http", fixedInput: { origin: "https://example.test", method: "GET" } },
-        { kind: "database", fixedInput: { resourceId: "FictionalApp", operation: "rows.list", table: "reports" } },
-      ],
+      grants: [{ kind: "http", fixedInput: { origin: "https://example.test", method: "GET" } }],
     };
-    const result = migrateLegacyRoutinePolicy(value);
+    const result = migrateLegacyCapabilityPolicy(value);
     expect(result.ok && result.policy.grants).toEqual(value.grants);
     expect(result.ok && result.changed).toBe(false);
   });

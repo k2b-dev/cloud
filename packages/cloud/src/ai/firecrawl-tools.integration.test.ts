@@ -181,6 +181,9 @@ databaseSuite()("web_extract provenance", () => {
       finalUrl = null;
 
       // Without a signed-in session, as for `cld`, an API key, or a scheduled task, the approval does not apply.
+      // Legacy mandate metadata remains readable only on an archived terminal turn.
+      // It cannot turn this fixture into an executable routine after retirement.
+      await sql`UPDATE ai.turns SET status='aborted', completed_at=now() WHERE id=${turn.id}::uuid`;
       for (const runConfig of [
         { kind: "chat", input: "Read" },
         { kind: "chat", input: "Read", signedInSession: true, mandate: { id: crypto.randomUUID(), revision: 1 } },
@@ -189,6 +192,7 @@ databaseSuite()("web_extract provenance", () => {
         await expect(read("https://collector.example.net/c?d=other2")).rejects.toThrow("did not allow");
       }
       expect(asked).toHaveLength(3);
+      await expect(sql`UPDATE ai.turns SET status='queued' WHERE id=${turn.id}::uuid`.execute()).rejects.toThrow("routines are retired");
       receipts.length = 0;
       answer = true;
       await read("https://collector.example.net/c?d=other3");

@@ -8,7 +8,6 @@ import { signInvocationToken } from "../services/identity/invocation-token";
 import * as issuer from "../services/identity/issue-invocation";
 import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
-import { aiChatTasks } from "./chat-tasks";
 import * as codeExecution from "./code-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
@@ -294,82 +293,187 @@ for (const name of ["code_sql", "code_database_read", "code_database_export", "c
   });
 }
 
-for (const input of [
-  { id: "AbC234", operation: "schema.get", table: "invoices" },
-  { id: "AbC234", operation: "tables.update", table: "invoices", changes: { write: "own" } },
-  { id: "AbC234", operation: "tables.create", name: "invoices", columns: [{ name: "title", type: "text" }] },
-])
-  test(`background ${input.operation} forwards its table to authorization`, async () => {
-    const actor = { kind: "user" as const, user };
-    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
-      actor,
-      accessSubject: { type: "user", userId: user.id },
-      credentialKind: "session",
-      scopes: [],
-    });
-    const config = {
-      kind: "chat" as const,
-      input: "Run",
-      toolSource: { kind: "none" as const },
-      background: { taskId: "task", occurrenceId: "occurrence", context: [] },
-      mandate: { id: crypto.randomUUID(), revision: 1 },
-    };
-    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(config);
-    spyOn(codeExecution, "authorizeCodeExecution").mockResolvedValue({
-      config,
-      conversation: {
-        id: "chat-test",
-        shortId: "Chat01",
-        title: "Test",
-        titleSource: "user",
-        description: "",
-        descriptionSource: "default",
-        keywords: [],
-        pinnedAt: null,
-        archivedAt: null,
-        done: false,
-        isDone: false,
-        lastUsedAt: "2026-10-07",
-        runStatus: "queued",
-        runError: null,
-        unreadCompletion: false,
-        projectId: null,
-        draft: { content: [], revision: 0, updatedAt: null },
-        createdByUserId: user.id,
-        createdAt: "2026-10-07",
-        updatedAt: "2026-10-07",
-      },
-      turn: {
-        id: "turn-test",
-        shortId: "Turn01",
-        conversationId: "chat-test",
-        status: "running",
-        attempt: 1,
-        modelId: null,
-        createdAt: "2026-10-07",
-        completedAt: null,
-        error: null,
-      },
-    });
-    const authorize = spyOn(aiChatTasks, "authorizeRuntime").mockRejectedValue(new Error("Stop after grant check"));
-    const tool = createCodeSourceTool("code_database");
-    if (tool.location !== "server") throw new Error("Expected server tool");
-    await expect(
-      tool.run(input, {
-        actor,
-        conversationId: "chat-test",
-        turnId: "turn-test",
-        callId: "call-test",
-        signal: new AbortController().signal,
-        requestClientTool: async () => {
-          throw new Error("Unexpected client tool");
-        },
-        requestApproval: async () => false,
-      }),
-    ).rejects.toThrow("Stop after grant check");
-    expect(authorize).toHaveBeenCalledWith({
-      mandate: config.mandate,
-      kind: "database",
-      input: { resourceId: "AbC234", operation: input.operation, table: "invoices" },
-    });
+const stubDatabaseTurn = () => {
+  const conversation = {
+    id: "chat-test",
+    shortId: "Chat01",
+    title: "Test",
+    titleSource: "user" as const,
+    description: "",
+    descriptionSource: "default" as const,
+    keywords: [],
+    pinnedAt: null,
+    archivedAt: null,
+    done: false,
+    isDone: false,
+    lastUsedAt: "2026-10-07",
+    runStatus: "running" as const,
+    runError: null,
+    unreadCompletion: false,
+    projectId: null,
+    draft: { content: [], revision: 0, updatedAt: null },
+    createdByUserId: user.id,
+    createdAt: "2026-10-07",
+    updatedAt: "2026-10-07",
+  };
+  const turn = {
+    id: "turn-test",
+    shortId: "Turn01",
+    conversationId: conversation.id,
+    status: "running" as const,
+    attempt: 1,
+    modelId: null,
+    createdAt: "2026-10-07",
+    completedAt: null,
+    error: null,
+  };
+  const config = { kind: "chat" as const, input: "Run", toolSource: { kind: "none" as const } };
+  const actor = { kind: "user" as const, user };
+  spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
+    actor,
+    accessSubject: { type: "user", userId: user.id },
+    credentialKind: "session",
+    scopes: [],
   });
+  spyOn(aiConversations, "getConversation").mockResolvedValue(conversation);
+  spyOn(aiConversations, "getTurn").mockResolvedValue(turn);
+  spyOn(aiConversations, "getActiveTurn").mockResolvedValue({
+    turn,
+    liveBlocks: [],
+    liveSeq: 0,
+    actionWaitMs: 0,
+    waitingSince: null,
+  });
+  const runConfig = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(config);
+  const requestApproval = mock(async () => true);
+  const context = {
+    actor,
+    conversationId: conversation.id,
+    turnId: turn.id,
+    callId: "database-call",
+    signal: new AbortController().signal,
+    requestClientTool: async () => {
+      throw new Error("Unexpected client tool");
+    },
+    requestApproval,
+  };
+  return { config, context, runConfig, requestApproval };
+};
+
+const databaseTools = [
+  "code_sql",
+  "code_database",
+  "code_database_read",
+  "code_database_export",
+  "code_database_clear",
+  "code_database_reset",
+] as const;
+
+for (const name of databaseTools)
+  for (const legacy of ["background", "mandate"] as const)
+    test(`${name} refuses persisted ${legacy} authority through the real execution gate before any side effect`, async () => {
+      const f = stubDatabaseTurn();
+      f.runConfig.mockResolvedValue({
+        ...f.config,
+        ...(legacy === "background"
+          ? { background: { taskId: "task", occurrenceId: "occurrence", context: [] } }
+          : { mandate: { id: "11111111-1111-4111-8111-111111111112", revision: 1 } }),
+      });
+      const signer = spyOn(identity, "withActiveIdentitySigner");
+      const claim = spyOn(claims, "claimCapabilityIdempotency");
+      const fetchRequest = spyOn(globalThis, "fetch");
+      const tool = createCodeSourceTool(name);
+      if (tool.location !== "server") throw new Error("Expected server tool");
+      await expect(tool.run({ id: "AbC234" }, f.context)).rejects.toThrow("Code execution is no longer authorized");
+      expect(signer).not.toHaveBeenCalled();
+      expect(claim).not.toHaveBeenCalled();
+      expect(fetchRequest).not.toHaveBeenCalled();
+      expect(f.requestApproval).not.toHaveBeenCalled();
+    });
+
+const stubDatabaseHost = async () => {
+  spyOn(registry, "getApp").mockResolvedValue({
+    id: "assistant",
+    name: "Assistant",
+    icon: "",
+    description: "",
+    baseUrl: "http://assistant.test",
+    routes: [],
+  });
+  const keys = await crypto.subtle.generateKey(
+    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+    true,
+    ["sign", "verify"],
+  );
+  spyOn(identity, "withActiveIdentitySigner").mockImplementation(async (_purpose, callback) =>
+    callback({ kid: "test-key", key: keys.privateKey, signUntil: new Date(Date.now() + 60000), issuer: "https://cloud.test" }, sql),
+  );
+};
+
+for (const name of databaseTools)
+  test(`${name} requires a trusted turn before any side effect`, async () => {
+    const f = stubDatabaseTurn();
+    const signer = spyOn(identity, "withActiveIdentitySigner");
+    const claim = spyOn(claims, "claimCapabilityIdempotency");
+    const fetchRequest = spyOn(globalThis, "fetch");
+    const tool = createCodeSourceTool(name);
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    await expect(tool.run({ id: "AbC234" }, { ...f.context, turnId: undefined })).rejects.toThrow(
+      "Database tools require an active Assistant turn",
+    );
+    expect(signer).not.toHaveBeenCalled();
+    expect(claim).not.toHaveBeenCalled();
+    expect(fetchRequest).not.toHaveBeenCalled();
+    expect(f.requestApproval).not.toHaveBeenCalled();
+  });
+
+for (const name of ["code_sql", "code_database"] as const)
+  test(`${name} still dispatches from an authorized interactive turn through the real execution gate`, async () => {
+    const f = stubDatabaseTurn();
+    await stubDatabaseHost();
+    const claim = spyOn(claims, "claimCapabilityIdempotency").mockResolvedValue({ state: "claimed" });
+    const complete = spyOn(claims, "completeCapabilityClaim").mockResolvedValue();
+    const input = name === "code_sql" ? { id: "AbC234", sql: "SELECT 1" } : { id: "AbC234", operation: "tables.list" };
+    const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (_url: RequestInfo | URL, init?: RequestInit) => {
+          expect(String(_url)).toBe(`http://assistant.test/_internal/assistant/tools/${name}`);
+          expect(JSON.parse(String(init?.body))).toEqual({ input, conversationId: "chat-test" });
+          return Response.json({ ok: true, data: { data: { rows: [] } } });
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    );
+    const tool = createCodeSourceTool(name);
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    expect(await tool.run(input, f.context)).toEqual({ data: { rows: [] } });
+    expect(fetchRequest).toHaveBeenCalledTimes(1);
+    expect(f.requestApproval).not.toHaveBeenCalled();
+    expect(claim).toHaveBeenCalledTimes(name === "code_database" ? 1 : 0);
+    expect(complete).toHaveBeenCalledTimes(name === "code_database" ? 1 : 0);
+  });
+
+test("database authority is checked again after an interactive review before claiming or dispatching a mutation", async () => {
+  const f = stubDatabaseTurn();
+  await stubDatabaseHost();
+  const claim = spyOn(claims, "claimCapabilityIdempotency");
+  const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (_url: RequestInfo | URL, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body)).review).toBe(true);
+        return Response.json({ ok: true, data: { data: { message: "Clear all database rows" } } });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  f.requestApproval.mockImplementation(async () => {
+    f.runConfig.mockResolvedValue({ ...f.config, mandate: { id: "11111111-1111-4111-8111-111111111112", revision: 1 } });
+    return true;
+  });
+  const tool = createCodeSourceTool("code_database_clear");
+  if (tool.location !== "server") throw new Error("Expected server tool");
+  await expect(tool.run({ id: "AbC234" }, f.context)).rejects.toThrow("Code execution is no longer authorized");
+  expect(f.requestApproval).toHaveBeenCalledTimes(1);
+  expect(fetchRequest).toHaveBeenCalledTimes(1);
+  expect(claim).not.toHaveBeenCalled();
+});

@@ -220,13 +220,7 @@ describe("Assistant chat files", () => {
     const dispose = render(
       () => (
         <AssistantLiveProvider value={live}>
-          <ArtifactWorkspace
-            controller={controller}
-            userId="user-1"
-            refreshKey="initial"
-            onEditTask={() => undefined}
-            onOpenView={() => undefined}
-          />
+          <ArtifactWorkspace controller={controller} userId="user-1" refreshKey="initial" onOpenView={() => undefined} />
         </AssistantLiveProvider>
       ),
       dom.root,

@@ -17,7 +17,6 @@ import {
 import { session } from "../packages/cloud/src/services/session";
 import { buildProjectedUser } from "../packages/cloud/src/services/session/user";
 import * as settings from "../packages/cloud/src/services/settings";
-import { aiChatTaskRoutes } from "../packages/core/src/ai-chat-task-routes";
 import { suiteFor } from "../scripts/fixtures/test-infra";
 
 const token = `cld_${"a".repeat(24)}_${"b".repeat(64)}`;
@@ -25,7 +24,7 @@ const headers = { authorization: `Bearer ${token}`, "content-type": "application
 const browserHeaders = { cookie: "session_token=skills-mount-session", "content-type": "application/json" };
 
 // Match Core's production API composition, including both dedicated brokers,
-// the wildcard Task middleware and the complete generic API/type surface.
+// and the complete generic API/type surface.
 const mounted = (core: AppRegistryEntry) => {
   const unused = async () => {
     throw new Error("Unused notification");
@@ -33,11 +32,7 @@ const mounted = (core: AppRegistryEntry) => {
   const { api } = createCoreApiRouter({
     notifications: { sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused, sendNewBrowserSignIn: async () => {} },
   });
-  const coreApi = new Hono()
-    .route("/ai/openai/v1", createAiOpenAiRoutes())
-    .route("/ai/skills", aiSkillsRoutes)
-    .route("/ai", aiChatTaskRoutes)
-    .route("/", api);
+  const coreApi = new Hono().route("/ai/openai/v1", createAiOpenAiRoutes()).route("/ai/skills", aiSkillsRoutes).route("/", api);
   return new Hono<AuthContext>()
     .use(
       "*",
@@ -49,7 +44,7 @@ const mounted = (core: AppRegistryEntry) => {
 suiteFor("database", "valkey")("Core Skills broker mount order", () => {
   beforeAll(async () => migrateCloudAi());
 
-  test("non-user reads reach real app/resource checks while management and Task/chat guards stay intact", async () => {
+  test("non-user reads reach real app/resource checks while management and chat guards stay intact", async () => {
     setSystemTime(new Date("2026-10-22T12:00:00Z"));
     const suffix = crypto.randomUUID();
     const userId = crypto.randomUUID();
@@ -224,12 +219,12 @@ suiteFor("database", "valkey")("Core Skills broker mount order", () => {
       const [unchanged] = await sql`SELECT revision,instructions FROM ai.skills WHERE id=${own.id}::uuid`;
       expect(unchanged?.revision).toBe(own.revision);
       expect(unchanged?.instructions).toBe("Original instructions.");
-      const taskRouter = mounted({ ...core, access: undefined });
-      for (const path of ["/api/ai/tasks", "/api/ai/conversations"]) {
-        const response = await taskRouter.request(path, { headers });
+      const chatRouter = mounted({ ...core, access: undefined });
+      for (const path of ["/api/ai/conversations"]) {
+        const response = await chatRouter.request(path, { headers });
         expect(response.status).toBe(403);
         expect(await response.json()).toMatchObject({ message: expect.stringContaining("user-backed") });
-        expect((await taskRouter.request(path)).status).toBe(401);
+        expect((await chatRouter.request(path)).status).toBe(401);
       }
       // Both a real resolved browser user and a delegated API actor may manage;
       // the same delegated user's target-only scope cannot enter Core management.

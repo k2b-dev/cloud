@@ -29,6 +29,7 @@ import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
+import { assertInteractiveChatTurn, isRetiredRoutineConfig } from "./retired-routines";
 import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
@@ -137,6 +138,7 @@ export type SubmitAiChatTurnInput = {
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
+  assertInteractiveChatTurn(input);
   if (input.localContext && !input.client) throw new Error("Local context requires a local client.");
   if (input.clientToolIds?.length && input.toolSource?.kind !== "default") {
     throw new Error("Optional client tools require the default tool source.");
@@ -537,8 +539,8 @@ const processMessage = async (
 };
 
 const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: string }, status: "failed" | "aborted"): Promise<void> => {
-  const config = await aiConversations.getTurnRunConfig(turn);
-  if (config?.kind === "chat" && config.background) return;
+  // A legacy routine shares the conversation, but never owns its interactive stream.
+  if (isRetiredRoutineConfig(await aiConversations.getTurnRunConfig(turn))) return;
   await publishAiWireEvent({
     v: 1,
     conversationId: turn.conversationId,

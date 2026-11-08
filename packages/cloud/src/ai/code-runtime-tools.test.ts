@@ -155,7 +155,7 @@ test("managed code rejects incomplete background authority before contacting a h
             },
           },
         ),
-      ).rejects.toThrow("task-scoped background authority");
+      ).rejects.toThrow("interactive Assistant turn");
     }
   } finally {
     config.mockRestore();

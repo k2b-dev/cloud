@@ -38,10 +38,11 @@ waits. The initial silent-script watchdog remains 15 seconds after admission.
 The default 200 bridge-message budget includes logs, progress, RPCs and terminal
 messages; keep diagnostics compact. At most 32 host messages may be pending.
 
-Unattended turns use their current routine mandate on the same runner path.
-Capability grants and HTTP grants still apply. Studio RSQL `database` grants
-are unavailable in runner `code_run`, saved scripts and `resourceId` are rejected;
-use application capabilities. No replacement database is created. The remaining
+Scheduled chat routines are retired. Rebuild timed work as reviewed personal
+Code using `app.schedule` with `timeZone`, then `core.ai.chat.run` for an AI turn
+or `core.ai.chat.deliver` for a prepared result. Old routine grants do not transfer.
+Studio RSQL `database` grants are unavailable; use application capabilities.
+No replacement database is created. The remaining
 Studio HTML checks, actions and presentations retain their legacy browser host.
 
 Return JSON or nothing; do not return functions or class instances.

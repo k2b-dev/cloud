@@ -60,8 +60,8 @@ export const runManagedCodeTool =
   async (args: unknown, context: Context): Promise<z.infer<ReturnType<typeof z.json>>> => {
     if (!context.conversationId || !context.turnId) throw new Error("Code execution requires an active Assistant turn");
     const runConfig = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
-    if (!runConfig || runConfig.kind === "compact" || Boolean(runConfig.background) !== Boolean(runConfig.mandate)) {
-      throw new Error("Code execution requires a valid turn and task-scoped background authority.");
+    if (!runConfig || runConfig.kind === "compact" || Object.hasOwn(runConfig, "background") || Object.hasOwn(runConfig, "mandate")) {
+      throw new Error("Code execution requires an interactive Assistant turn.");
     }
     const authority = await resolveAiCapabilityActor({
       conversationId: context.conversationId,
@@ -150,13 +150,7 @@ export const runManagedCodeTool =
         throw new Error("Code host request failed; inspect the existing call before starting another execution");
       return Reply.parse(body.data).data;
     };
-    const backgroundApproval = async (): Promise<boolean> => {
-      throw new Error("Background code cannot request interactive approval. Update task grants in the normal chat.");
-    };
-    return waitForManagedCodeCall(
-      request,
-      runConfig.background ? { ...context, requestApproval: backgroundApproval, requestRelayedApproval: backgroundApproval } : context,
-    );
+    return waitForManagedCodeCall(request, context);
   };
 
 /**

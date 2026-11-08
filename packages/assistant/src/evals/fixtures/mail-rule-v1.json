@@ -1,0 +1,88 @@
+{
+  "format": "cloud.mail-automation",
+  "version": 1,
+  "authority": "none",
+  "scope": "mailbox",
+  "exportedAt": "2026-11-07T00:00:00.000Z",
+  "nextCursor": null,
+  "items": [
+    {
+      "kind": "mail-workflow",
+      "mailbox": {
+        "id": "ExBox1",
+        "name": "Fictional support",
+        "deletedAt": null,
+        "aiCallsPerDay": 20
+      },
+      "workflow": {
+        "id": "44bd0000-0000-4000-8000-000000000001",
+        "name": "Tag supplier conversations",
+        "description": "Add the local supplier tag to conversations receiving supplier mail.",
+        "managedBy": "incoming_automation",
+        "enabled": false,
+        "priority": 7,
+        "order": 1,
+        "currentVersionId": "44bd0000-0000-4000-8000-000000000002",
+        "activeVersionId": null,
+        "createdAt": "2026-11-07T00:00:00+00:00",
+        "updatedAt": "2026-11-07T00:00:00+00:00"
+      },
+      "guidedDefinition": {
+        "id": "ExRule",
+        "revision": 1,
+        "name": "Tag supplier conversations",
+        "enabled": false,
+        "scope": {
+          "mode": "conditions",
+          "conditions": {
+            "mode": "all",
+            "items": [
+              {
+                "field": "sender_address",
+                "operator": "is",
+                "value": "supplier@example.test"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "44bd0000-0000-4000-8000-000000000003",
+            "kind": "mail_action",
+            "action": {
+              "kind": "add_local_tag",
+              "tagId": "ExTag1"
+            }
+          }
+        ],
+        "deletedAt": null
+      },
+      "automaticReply": null,
+      "mandateSummary": null,
+      "version": {
+        "id": "44bd0000-0000-4000-8000-000000000002",
+        "revision": 1,
+        "source": "inputs:\n  message:\n    type: mailMessage\n    required: true\n  conversation:\n    type: mailConversation\n    required: true\ntriggers:\n  messageReceived:\n    with:\n      message: ${{ trigger.message }}\n      conversation: ${{ trigger.conversation }}\nsteps:\n  - if:\n      equals:\n        - ${{ inputs.message.fromAddress }}\n        - supplier@example.test\n    then:\n      - addLocalTag:\n          conversation: ${{ inputs.conversation }}\n          tag: ExTag1\n",
+        "sourceHash": "81f21afb8d2c9aaff807919b3d0657165a47b98173b42d0b8cb8691aaddbd66f",
+        "languageId": "mail",
+        "languageVersion": 1,
+        "manifestHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "bindings": {},
+        "effectBudget": {
+          "maxTargets": 1,
+          "maxMoves": 0,
+          "maxCopies": 0,
+          "maxSends": 0,
+          "maxDrafts": 0,
+          "maxFlagChanges": 0,
+          "maxNotifications": 0,
+          "maxKeywordChanges": 0,
+          "maxCollaborationChanges": 1,
+          "maxAiCalls": 0
+        },
+        "createdAt": "2026-11-07T00:00:00+00:00"
+      },
+      "activations": []
+    }
+  ]
+}

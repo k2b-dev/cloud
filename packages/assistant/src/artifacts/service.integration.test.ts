@@ -3,7 +3,6 @@ import { readdir } from "node:fs/promises";
 import { sql } from "@k2b/cloud";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
-  aiChatTasks,
   aiConversations,
   aiMemories,
   aiProjects,
@@ -1167,64 +1166,6 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(await aiToolAudit.capabilityConversation(requestId, owner.user.id)).toBeNull();
   });
 
-  test("background script capabilities reuse one scoped review and never invoke or save refused calls", async () => {
-    const applet = await artifacts.create({ title: "Routine capability", source }, owner);
-    const manifest = compileCapabilityManifest(
-      "demo",
-      defineCapabilities({
-        protocolVersion: 2,
-        actions: {
-          write: {
-            title: "Write item",
-            description: "Write a test item",
-            input: z.object({}).strict(),
-            data: z.unknown(),
-            approval: "rememberable",
-            idempotency: "required",
-            destructive: false,
-            openWorld: false,
-            review: async () => ok({ message: "Write item?", approvalScope: "items:one" }),
-            run: async () => ok({ data: {} }),
-          },
-        },
-      }),
-    );
-    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
-      ok: true,
-      data: { appId: "demo", appName: "Demo", appDescription: "", appIcon: "ti ti-app-window", manifest },
-    });
-    const authorize = spyOn(aiChatTasks, "authorizeCapability").mockResolvedValue();
-    const marker = spyOn(aiChatTasks, "markNeedsApproval").mockResolvedValue();
-    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({ ok: true, data: { message: "Write item?" } });
-    const invoke = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
-    const task = { turnId: crypto.randomUUID(), mandate: { id: crypto.randomUUID(), revision: 1 } };
-    const request = () => ({ id: crypto.randomUUID(), name: "demo.write", input: {}, artifactId: applet.id });
-    try {
-      const refused = request();
-      await expect(runtimeCapabilities.prepare(refused, owner, { locale: "en" }, task)).rejects.toMatchObject({ code: "NEEDS_APPROVAL" });
-      expect(invoke).not.toHaveBeenCalled();
-      expect(await sql`SELECT id FROM assistant.capability_calls WHERE id = ${refused.id}::uuid`).toHaveLength(0);
-      review.mockClear();
-      review.mockResolvedValue({ ok: true, data: { message: "Write item?", approvalScope: "items:one" } });
-      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
-      expect(review).toHaveBeenCalledTimes(1);
-      expect(invoke).toHaveBeenCalledTimes(1);
-      review.mockClear();
-      invoke.mockClear();
-      manifest.actions[0]!.approval = "none";
-      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
-      expect(review).not.toHaveBeenCalled();
-      expect(invoke).toHaveBeenCalledTimes(1);
-      expect(marker).toHaveBeenCalledTimes(1);
-    } finally {
-      catalog.mockRestore();
-      authorize.mockRestore();
-      marker.mockRestore();
-      review.mockRestore();
-      invoke.mockRestore();
-    }
-  });
-
   test("resource-bound script calls persist one normalized approval through execution", async () => {
     const applet = await artifacts.create({ title: "Target capability", source }, owner);
     const manifest = compileCapabilityManifest(
@@ -1994,18 +1935,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
             entry.tool,
           );
         }
-        // Managed/background callers use this same service entry, with no HTTP middleware to rely on.
-        await expect(
-          runtimeCapabilities.prepare(
-            request(crypto.randomUUID(), "access.write", reference),
-            owner,
-            {},
-            {
-              turnId: "00000000-0000-4000-8000-000000000096",
-              mandate: { id: "00000000-0000-4000-8000-000000000097", revision: 1 },
-            },
-          ),
-        ).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+        // Managed callers use this same service entry, with no HTTP middleware to rely on.
+        await expect(runtimeCapabilities.prepare(request(crypto.randomUUID(), "access.write", reference), owner, {})).rejects.toMatchObject(
+          { code: "ACCESS_DENIED" },
+        );
         expect(catalog).not.toHaveBeenCalled();
         expect(execute).not.toHaveBeenCalled();
         expect(transfer).not.toHaveBeenCalled();
@@ -3614,6 +3547,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       conversation.mockRestore();
     }
   });
+
   test("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
     // The disposable Assistant database has no Core runner mailbox. Replace only
     // that transport with the real Runner dispatch/compiler fixture.
@@ -3968,7 +3902,6 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
               ]
             : [],
       }));
-      const tasks = spyOn(aiChatTasks, "list").mockResolvedValue([]);
       // This database holds only the tables code needs; the sidebar's Context section is not under test here.
       const skills = spyOn(aiSkills, "listConversationUses").mockResolvedValue([]);
       const memories = spyOn(aiMemories, "listFromConversation").mockResolvedValue([]);
@@ -3990,7 +3923,6 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         sources.mockRestore();
         resources.mockRestore();
         await sql`DELETE FROM ai.files WHERE conversation_id=${conversationId}::uuid AND path='/kunden.csv'`;
-        tasks.mockRestore();
         skills.mockRestore();
         memories.mockRestore();
       }

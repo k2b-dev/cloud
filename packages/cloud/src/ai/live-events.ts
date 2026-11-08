@@ -5,7 +5,6 @@ export const AI_INVALIDATION_DOMAINS = [
   "conversation-detail",
   "conversation-sources",
   "conversation-files",
-  "conversation-tasks",
   "conversation-dictations",
   "project-list",
   "project-detail",

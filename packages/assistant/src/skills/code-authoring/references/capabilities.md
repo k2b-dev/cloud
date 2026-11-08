@@ -308,7 +308,7 @@ export default app;
 
 ## Gustav (Core AI)
 
-Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat.run.read`, `core.ai.chat.search`, `core.ai.chats.resources`, `core.ai.chats.search`, `core.ai.decide`, `core.ai.generate`, `core.ai.skill.access.read`, `core.ai.skill.read`, `core.ai.skill.reference.read`, `core.ai.skills.list`, `core.ai.task.read`, `core.ai.task.run.read`, `core.ai.tasks.list`.
+Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat.run.read`, `core.ai.chat.search`, `core.ai.chats.resources`, `core.ai.chats.search`, `core.ai.decide`, `core.ai.generate`, `core.ai.skill.access.read`, `core.ai.skill.read`, `core.ai.skill.reference.read`, `core.ai.skills.list`.
 
 | Action | Title | Target | Key | Unattended |
 | --- | --- | --- | --- | --- |
@@ -323,16 +323,9 @@ Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat.run.read`,
 | `core.ai.skill.reference.set` | Set an Assistant Skill reference | core.ai.skill | — | never |
 | `core.ai.skill.references.set` | Set Assistant Skill references | core.ai.skill | — | never |
 | `core.ai.skill.update` | Update an Assistant Skill | core.ai.skill | — | never |
-| `core.ai.task.create` | Create an Assistant routine | core.ai.chat | required | never |
-| `core.ai.task.delete` | Delete an Assistant routine | core.ai.chat | required | never |
-| `core.ai.task.pause` | Pause an Assistant routine | core.ai.chat | — | never |
-| `core.ai.task.resume` | Resume an Assistant routine | core.ai.chat | — | never |
-| `core.ai.task.run` | Run an Assistant routine now | core.ai.chat | required | never |
-| `core.ai.task.update` | Update an Assistant routine | core.ai.chat | — | never |
 
 Only `core.ai.chat.deliver` and `core.ai.chat.run` are meant for Code; both
-work in personal Code alone ([AI](ai.md)). Routines and Skills are managed by
-people, not by Code.
+work in personal Code alone ([AI](ai.md)). Skills are managed by people, not by Code.
 
 ## When a call is refused
 

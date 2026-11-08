@@ -5,7 +5,6 @@ import { prepareNoTransformRouterTest } from "../../../scripts/fixtures/no-trans
 
 prepareNoTransformRouterTest();
 const { createPagesRouter } = await import("./pages/create");
-const { aiChatTaskRoutes } = await import("./ai-chat-task-routes");
 const pages = new Hono<AuthContext>().use("*", middleware.runtime()).use("*", middleware.settings()).route("/", createPagesRouter());
 
 describe("Core compression boundaries", () => {
@@ -35,13 +34,6 @@ describe("Core compression boundaries", () => {
       expect(response.headers.get("Cache-Control")).toContain("no-transform");
     });
   }
-  test("AI tasks opt out at the owning router", async () => {
-    for (const path of ["/tasks", "/__new_route__"]) {
-      const response = await aiChatTaskRoutes.request(path);
-      expect(response.status).toBeLessThan(500);
-      expect(response.headers.get("Cache-Control")).toContain("no-transform");
-    }
-  });
 });
 
 test("profile, access and notification settings pages stay eligible for compression", async () => {

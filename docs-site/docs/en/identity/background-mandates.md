@@ -74,8 +74,7 @@ policy, or resume it with an interactive authority, reject such requests:
 `auth.rejectAppSession` on the route, or `isAppSessionActor(actor)` in a service
 or capability. Answer `403` with
 `{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }`.
-Pausing and revoking stay allowed. `POST /api/me/mandates`, Assistant routines
-(scheduled tasks), and Mail incoming automations with Spaces steps follow this rule.
+Pausing and revoking stay allowed. `POST /api/me/mandates` and Mail incoming automations with Spaces steps follow this rule.
 
 Built-in applications that share Postgres create the mandate and owning
 workload in one transaction. A separately deployed application that cannot
@@ -142,75 +141,11 @@ are never substituted for the machine's own grants. Grids binds its
 `workflow.run` mandate to one workflow and a write ceiling; see
 [Machine workflow mandates](./machine-workflow-mandates.md).
 
-## Grant capabilities to an unattended Assistant routine
-
-Assistant routines use explicit `grants` in their mandate policy. Each grant pairs
-one `appId`, local `capabilityId`, and `kind` (`query` or `action`) with an
-explicit resource target and optional fixed top-level inputs. The agent proposes the scope; the user reviews it when
-creating or updating the routine. Capabilities need no additional metadata.
-
-For example, a fictional application `demo` declares `item.edit` with a
-`folder` target and an `itemId` domain input:
-
-```json
-{
-  "appId": "demo",
-  "capabilityId": "item.edit",
-  "kind": "action",
-  "target": { "type": "demo.folder", "id": "folder123" },
-  "fixedInput": { "itemId": "abc123" }
-}
-```
-
-This allows changes to that item within the named folder while leaving the
-edit content unrestricted.
-An empty `fixedInput` allows any domain input to that exact capability at the
-granted target within the user's current access. Fixed JSON values use exact equality: nested objects
-must match completely, and array order matters. There are no wildcards,
-implicit parent-resource checks, or expressions. The provider must check that
-the item belongs to the declared target folder.
-
-Background runs discover and load only capabilities their mandate policy and
-routine grants can permit. Previously loaded tools outside that scope stay
-unavailable. Discovery ignores fixed inputs and target IDs; Core checks them on every call.
-If the mandate cannot be read, has changed, or its policy is invalid, the run
-stops before the model starts and the routine needs attention.
-
-Core checks the current mandate revision, grant pair, fixed values, and live
-capability approval mode before every invocation. Only actions with `approval:
-"none"` or `approval: "rememberable"` can pass the routine mandate policy.
-Remembered interactive approvals do not authorize background work. The target
-application still checks the user's current resource permissions.
-
-Before each change, a routine run checks the mandate first, then calls the
-app's review for every Action with `approval: "rememberable"`. It runs the
-Action only when the review returns an `approvalScope`. An Action that needs
-approval and is not rememberable never runs in a routine, regardless of the
-review. A missing review, a review error, or a result without that scope
-refuses the call; the app's `run` is never invoked. The review only narrows the
-mandate and never grants access. The same rule applies to background Code Mode.
-
-The model receives a short `NEEDS_APPROVAL` error telling it to stop and say
-what was missing. Even if the model completes its reply, the routine becomes
-`needs_attention` with reason `needs_approval` and the action name in the
-routine's locale. A one-time routine needs a new time before it can run again.
-
-Changing grants updates the mandate revision, invalidating older runs' authority.
-The agent can inspect a failed run and propose revised grants in the normal chat;
-expanding the scope requires a new reviewed routine update. A worker cannot grant
-itself more authority. A capability call rejected by the grants or fixed inputs
-returns a tool error so the model can continue with granted tools or explain
-what is missing. The routine also needs attention when its mandate is unavailable,
-paused, revoked, expired, or changed, when the target app rejects the sponsor
-with HTTP 401 or 403, or when an action's outcome is unknown. Scheduled turns
-run server Code Mode tools under the same routine-scoped authority; see
-[Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode).
-
 ## Bind operations to targets
 
 `CapabilityGrant`, exported from `@k2b/cloud/services`, is the durable grant
-format for both person-owned routines and Code versions. `TaskGrant` includes
-this format alongside the existing HTTP and database grants.
+format for Code versions and other retained workloads. `MandateGrant` includes
+this format and the personal Code HTTP grant. Routine-only `TaskGrant` exports and Studio database grants are removed.
 
 - `appId`, `capabilityId`, `kind`: one discovered operation, with its local ID.
 - `target`: `{ type, id }` using the qualified resource type, or `null` for an
@@ -226,10 +161,9 @@ before issuing either a review or an execution. Another target, reference,
 operation or fixed input is denied. A workload cannot narrow its policy by
 removing or changing an existing target restriction.
 
-Existing routine grants with old target fields in `fixedInput` remain denied
-for converted capabilities until they are migrated. Move those fields into the
-explicit coordinates without broadening authority; if the mapping is unknown,
-stop the routine with `needs_attention` rather than drop the restriction.
+Old Assistant routine mandates are revoked at upgrade. Their stored grants are
+archive evidence and cannot authorize new work. See
+[Routines became Code](/en/docs/operations/routines-to-code).
 
 ## Code version mandates
 
@@ -255,7 +189,7 @@ Existing `core` Code mandates keep their saved policies and never become
 policy-free through update, resume or same-version reactivation. Explicit
 activation of a new version creates the new entry. Old entries are revoked
 only after their queued and running work drains. Other workloads still require
-a policy; this change does not migrate Assistant routines, Mail or Grids.
+a policy; this change does not migrate Mail or Grids. Retired routine mandates are revoked.
 
 Code Actions need an explicit `silent` policy that permits routines. Version
 approval does not override `ask`, `routines: false`, or `unattended: false`.
@@ -414,26 +348,6 @@ ordinary effect-time permission checks.
 
 An app workload credential cannot use the ordinary interactive capability
 route to bypass the mandate.
-
-## Assistant routine runtime grants
-
-Routines keep capability, HTTP, and RSQL access in the same mandate
-`grants` list. Capability entries use `appId`, `capabilityId`, `kind`, and
-`fixedInput`. Code Mode entries use `kind: "http"` or `kind: "database"` and
-`fixedInput`: HTTP can fix an HTTPS origin, exact URL, and method; database
-access can fix a Studio app ID, operation, and table. Omitted fields are free
-for the routine to choose. An empty object explicitly grants unrestricted inputs
-for that kind, within the runtime's existing limits and current resource access.
-
-Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
-
-The ordinary routine approval describes these grants before they are saved.
-Runtime calls check the stored mandate revision and exact fixed values; HTTP
-checks again immediately before sending. Personal remembered approvals do not
-replace routine grants. Expanding a grant needs a new interactive confirmation.
-Table-scoped grants do not authorize arbitrary SQL, export, or connection setup;
-those operations need a separate matching grant. See
-[Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming) for examples.
 
 ## Handle lifecycle and retries
 

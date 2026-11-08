@@ -159,7 +159,7 @@ For microphone input shared across applications, use the browser
 events; the host owns insertion and draft persistence. Its server availability
 helper lets SSR decide whether to render a microphone.
 
-Lists, Sources, files, routines, dictations, and Project context refresh through
+Lists, Sources, files, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
 
@@ -338,14 +338,8 @@ order:
    the step saw, the image description or the answer to its prompt. With the
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
    its name is that action, and the alt text describes it. Without `fileUrl`
-   the step shows no thumbnail. The run history of a routine passes the
-   file route of the routine's chat, so its thumbnails, files and views load with
-   the viewer's access as in the chat. Run details and run history are kept
-   for 90 days after the run finished. Afterwards the run's details show
-   **This run is no longer available**, and the result stays in the chat. A
-   one-off routine keeps its run, but its run history then shows **No run
-   history**. A routine older than 90 days without a newer run shows **No runs
-   in the last 90 days** instead of **No occurrences yet**.
+   the step shows no thumbnail. Historical routine results remain readable in
+   the chat without run controls. Operators retain the run logs as an archive.
 2. **Results.** Presented files and native code views, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, such as the same file path for `present`, replaces the earlier one
@@ -600,7 +594,7 @@ each web search with its query, and the Cloud items a tool call read, bundled
 per call, without stored previews), **Working files** (everything below
 `/temp/`, grouped by folder, with the storage used once it passes 70 % of the
 limit), and **Context** (Project, Skills the chat used, memories remembered
-from it, routines, and Secrets). Sources, Working files, and Context
+from it, and Secrets). Sources, Working files, and Context
 start collapsed; collapsed content is not rendered.
 
 The newest results stay on top: all results of the latest turn that delivered
@@ -824,8 +818,7 @@ runtime monitoring and production checks.
 ## Advertise connected client tools
 
 Every turn with the default tool source offers server-run `code_run`,
-`code_inspect`, `code_stop` and `code_export`, including detached CLI and
-routine turns. They use Assistant's runner host and need no connected client.
+`code_inspect`, `code_stop` and `code_export`, including detached CLI turns. They use Assistant's runner host and need no connected client.
 Studio authoring, HTML checks, app opening, actions and HTML presentations are
 not advertised in chat. Lasting Code's `code_read`, `code_write` and
 `code_check` accept Code inputs only.
@@ -860,8 +853,8 @@ code tools report it to the model as a tool error.
 `code_run` accepts inline JavaScript/TypeScript `code` and optional current-chat
 `inputPaths`, and returns a run ID and compact state. Saved Studio `id`,
 `version`, and `resourceId` contexts are unavailable on this chat path.
-Runs execute in the Code runner (workerd), including background turns, with
-the person's turn approvals and routine HTTP grants. Studio RSQL database
+Runs execute in the Code runner (workerd), with the person's turn approvals.
+Scheduled chat routines are retired; rebuild timed work as reviewed personal Code. Studio RSQL database
 grants and app storage are unavailable; use application capabilities and
 chat/Project file tools. `code_secret` opens trusted secret entry in the chat
 UI; it does not start a browser execution host.
@@ -932,16 +925,13 @@ to, or focused for `press`.
 ```
 
 Both desktop (1280×800) and phone (390×844, touch) replay the steps, in opposite
-themes with the viewer's locale/time zone. Background checks use the routine time
-zone and the default locale/light theme when no preferences are available.
+themes with the viewer's locale/time zone.
 CLI checks use a light desktop theme and the service locale/time zone.
 For a saved app, each run uses a separate disposable copy
 of the app database, shared KV/files and only the checking user's personal KV.
 Reads and writes use the normal services; real app data stays unchanged. A
 database above 1000 rows or 16 MiB uses schema only and reports a warning.
-Storage copies are limited to 250 MiB. In a background turn, checking a saved
-app with a connected database requires a routine grant that allows `export` for
-that app; otherwise the start is refused with `BACKGROUND_ACCESS_DENIED`.
+Storage copies are limited to 250 MiB.
 One-off apps have no storage or database, as in their chat card: `cloud.kv`,
 `cloud.files` and `cloud.db` reject with `unavailable`.
 
@@ -950,7 +940,7 @@ with `unavailable` (“not executed during code_check”). Uncaught errors and
 `console.error` output that contain this message warn instead of failing.
 Read-only capability queries run for one-off apps and apps the checking user
 manages. For apps the user can only use, where the normal runner would ask
-first, and in background turns, every capability rejects. Downloads from
+first, every capability rejects. Downloads from
 `cloud.download` and download links become readable chat files alongside
 screenshots.
 
@@ -1146,19 +1136,14 @@ It does not show the human-attention hand. A selected chat shows running progres
 another chat can indicate that browser execution is waiting. Approval and human
 input still use `needs_attention`. Running-list filters include browser work.
 
-### Inspect background results
+### Historical routine results
 
-Delivered background results use ordinary assistant prose with
-`meta.scheduledTask` identifying the routine and occurrence. The timeline displays a
-**Background run** control above the result. Hosts provide
-`AiChatActions.onOpenScheduledTaskRun(taskId, occurrenceId)` to open their
-permission-checked run detail view. Assistant shows the result, execution history,
-and controls for returning to the chat or managing the routine.
+Old routine messages remain readable in the chat. They have no run, resume or repair control. Run logs are retained as an operator-readable archive; see [Routines became Code](/en/docs/operations/routines-to-code).
 
 ### Open chat content beside the conversation
 
 The context panel is the entry point for apps, files, images, sources, project
-knowledge, and routines. Compact sections show a preview; View all opens
+knowledge. Compact sections show a preview; View all opens
 a searchable overview beside the conversation. Apps appear as cards with their
 name and optional description. The overview includes apps referenced by that
 conversation, rather than a global library.
@@ -1177,7 +1162,7 @@ The context column responds to the available width of the chat pane, including
 when a neighboring workspace is resized. Below 56rem it is hidden and the chat
 header exposes an Open (+) menu, even with no workspace tabs open. This menu and
 the workspace tab menu offer the same chat apps, files (including images and
-voice inputs), sources and references, project knowledge, and routines
+voice inputs), sources and references, project knowledge
 when available. Hiding the column preserves its loaded context and the composer
 draft; it does not unmount the chat.
 
@@ -1297,7 +1282,7 @@ only described as in progress while its turn is actually running.
 Compact context entries use one line and consistent icon alignment. Working
 files include the latest one-off script runs and their full count. The chat
 workspace opens files, sources and knowledge; it does not mount Studio app or
-routine tabs. Routine details remain in dialogs until routine retirement.
+routine tabs. Scheduled chat routines are retired; historical results remain readable.
 Standalone Studio apps retain their own management and runner pages.
 
 Secrets management uses a list with an empty-state action. Adding or replacing
@@ -1325,7 +1310,7 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 Assistant recognizes `/` at a word boundary anywhere in the composer. **+**
 opens the same list with a search field on top, including on phones. Its
 sections stay in this order: **Recent**, **Insert**, **Skills**, **Files in this
-chat**, **This chat**, **Routines**, **Open in apps** (German: **Zuletzt** and
+chat**, **This chat**, **Open in apps** (German: **Zuletzt** and
 **In Apps öffnen**).
 Files appear when searching or narrowing to files. Type a name, or narrow by
 typing one of these words followed by a space:
@@ -1337,7 +1322,6 @@ typing one of these words followed by a space:
 | Projects | `projekt`, `projekte`, `project`, `projects` |
 | Studio apps | `app`, `apps`, `studio` |
 | Models | `model`, `models`, `modell`, `modelle` |
-| Routines | `routine`, `routinen` |
 
 **Open in apps** lists Commands that accept an empty input from other apps in
 your navigation. Choosing one saves this chat's draft with its references and
@@ -1443,31 +1427,6 @@ highlighted references. Editing a reference's
 label turns it into ordinary text; undo restores its identity. Saving and
 reopening a draft preserves references, including versioned conversation files.
 Project file references name a read-only path in the current Project.
-
-**Routines** offers **New routine** and your own routines.
-New routine inserts a reference to Assistant's scheduled-tasks Skill;
-send it with your request to describe what should happen and when. If you
-turned off that Skill, or it is unavailable to you, the row explains why and
-inserts nothing.
-
-Choosing an active routine runs it now. The composer shows a starting status while
-the request is pending and a running status only after the server accepts the
-run. The result arrives in the routine's chat. A failed request restores
-`/…` and explains the failure in plain words: the routine already runs, no longer
-exists, was started too often, or was not accepted. If the server is
-unreachable or gives no clear answer, the composer says it cannot tell whether
-the routine started. Choosing the routine again in the same browser tab, also after a
-reload, checks the earlier start instead of starting it a second time. If that
-run already finished, the status says so and points to the routine's chat. Paused routines say **Paused. Resume the routine first.**
-Routines that need attention explain that you must intervene before they can run.
-Selecting either sends no run request.
-
-Routines load once per menu opening. The overview shows up to five routines, newest
-first, after New routine. Searching or narrowing with `routine` or
-`routinen` shows all matching loaded routines, including paused routines and those
-that need attention; completed routines are excluded. If routine loading fails,
-**Routines could not be loaded** with **Try again** replaces the routine
-rows. Choosing it reloads the list and preserves `/…` while results load.
 
 Selecting a Project permanently assigns a previously unassigned chat. Future
 turns use that Project's instructions and files. Once the chat belongs to a

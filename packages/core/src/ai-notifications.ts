@@ -1,13 +1,5 @@
 import { type BoundNotificationMap, lazySync, listApps, notification, sql } from "@k2b/cloud";
-import {
-  AI_SHORT_ID_PATTERN,
-  aiApprovalUnwatched,
-  CHAT_TASK_REASON_CODES,
-  type ChatTaskReasonCode,
-  chatTaskLocale,
-  chatTaskName,
-  chatTaskReasonSentence,
-} from "@k2b/cloud/ai";
+import { AI_SHORT_ID_PATTERN, aiApprovalUnwatched } from "@k2b/cloud/ai";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";
 import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "@k2b/cloud/services/approvals";
@@ -47,7 +39,6 @@ const notificationMessages = i18n.define({
       responseReady: "Assistant response ready",
       responseFinished: "Your Assistant response has finished.",
       responseEmail: ({ target }: { target: string }) => `Your Assistant response has finished. Open it at ${target}`,
-      taskAttention: ({ name }: { name: string }) => `“${name}” needs you`,
     },
     de: {
       modelChanged: "KI-Modell entfernt",
@@ -68,7 +59,6 @@ const notificationMessages = i18n.define({
       responseReady: "Antwort des Assistenten ist bereit",
       responseFinished: "Die Antwort des Assistenten ist fertig.",
       responseEmail: ({ target }) => `Die Antwort des Assistenten ist fertig. Öffne sie unter ${target}`,
-      taskAttention: ({ name }) => `„${name}“ braucht dich`,
     },
   },
 });
@@ -172,26 +162,6 @@ export const AI_NOTIFICATIONS = {
       }),
     }),
   }),
-  taskNeedsAttention: notification({
-    recipient: "user",
-    label: "Assistant routines",
-    description: "A notification when an Assistant routine cannot continue.",
-    presentation: presentation("Assistant-Routinen", "Benachrichtigung, wenn eine Assistant-Routine nicht weiterlaufen kann."),
-    delivery: { recommended: ["browser"] },
-    data: z.object({
-      conversationId: z.string().regex(AI_SHORT_ID_PATTERN),
-      name: z.string(),
-      code: z.enum(CHAT_TASK_REASON_CODES),
-      at: z.string(),
-      action: z.string().max(200).optional(),
-      timeZone: z.string(),
-    }),
-    render: ({ conversationId, name, code, at, action, timeZone }, { locale }) => ({
-      title: text(locale).taskAttention({ name }),
-      body: chatTaskReasonSentence({ code, at, action }, { locale, timeZone }),
-      targetHref: `/app/assistant?conversation=${encodeURIComponent(conversationId)}`,
-    }),
-  }),
 };
 
 type AiNotificationDefinitions = BoundNotificationMap<"core", typeof AI_NOTIFICATIONS>;
@@ -200,21 +170,6 @@ type CompletionCandidate = {
   turn_id: string;
   conversation_id: string;
   user_id: string;
-};
-
-type TaskAttentionCandidate = {
-  occurrence_id: string;
-  conversation_id: string;
-  task_id: string;
-  user_id: string;
-  title: string | null;
-  chat_title: string;
-  prompt: string;
-  locale: string | null;
-  timezone: string;
-  reason_code: ChatTaskReasonCode;
-  reason_at: Date;
-  reason_action: string | null;
 };
 
 type AiNotificationRecoverySummary = {
@@ -313,75 +268,6 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       }
     }
     if (failed) throw new Error(`Failed to create ${failed} Code result notification(s).`);
-    return { scanned: candidates.length, sent, failed };
-  };
-
-  const recoverTaskAttention = async (input: { occurrenceId?: string; limit?: number } = {}): Promise<AiNotificationRecoverySummary> => {
-    const limit = Math.min(Math.max(Math.floor(input.limit ?? RECOVERY_BATCH_SIZE), 1), 1_000);
-    const candidates = await sql<TaskAttentionCandidate[]>`
-      SELECT occurrence.id AS occurrence_id,
-             conversation.short_id AS conversation_id,
-             task.id AS task_id,
-             task.sponsor_user_id AS user_id,
-             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at,
-             CASE WHEN task.reason_code = 'needs_approval' THEN task.reason_action END AS reason_action
-      FROM ai.chat_task_occurrences occurrence
-      JOIN ai.chat_tasks task ON task.id = occurrence.task_id
-      JOIN ai.conversations conversation ON conversation.id = task.conversation_id
-      JOIN notifications.definitions definition ON definition.id = ${definitions.taskNeedsAttention.id}
-      WHERE occurrence.state = 'failed'
-        AND occurrence.completed_at >= definition.first_seen_at
-        AND occurrence.error IS NOT NULL
-        AND task.state = 'needs_attention' AND task.reason_code IN ('failed', 'rights_changed', 'needs_approval')
-        AND (${input.occurrenceId ?? null}::uuid IS NULL OR occurrence.id = ${input.occurrenceId ?? null}::uuid)
-        AND NOT EXISTS (
-          SELECT 1
-          FROM notifications.events event
-          WHERE event.definition_id = ${definitions.taskNeedsAttention.id}
-            AND (event.idempotency_key = 'routine:' || task.id::text || ':' || task.reason_code || ':' ||
-              floor(extract(epoch FROM task.reason_at) * 1000)::bigint::text
-              OR event.idempotency_key = 'occurrence:' || occurrence.id::text)
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM ai.chat_task_occurrences newer
-          WHERE newer.task_id = occurrence.task_id
-            AND newer.state = 'failed'
-            AND (newer.completed_at, newer.id) > (occurrence.completed_at, occurrence.id)
-        )
-      ORDER BY occurrence.completed_at, occurrence.id
-      LIMIT ${limit}
-    `;
-
-    const locale = await coreSettings.get<string>("app.locale");
-    let sent = 0;
-    let failed = 0;
-    for (const candidate of candidates) {
-      try {
-        await notifications.send(definitions.taskNeedsAttention, {
-          recipient: { userId: candidate.user_id },
-          data: {
-            conversationId: candidate.conversation_id,
-            name: chatTaskName({ title: candidate.title, chatTitle: candidate.chat_title, prompt: candidate.prompt }),
-            code: candidate.reason_code,
-            at: new Date(candidate.reason_at).toISOString(),
-            action: candidate.reason_action ?? undefined,
-            timeZone: candidate.timezone,
-          },
-          idempotencyKey: `routine:${candidate.task_id}:${candidate.reason_code}:${new Date(candidate.reason_at).getTime()}`,
-          locale: chatTaskLocale(candidate.locale, locale),
-        });
-        sent += 1;
-      } catch (error) {
-        failed += 1;
-        log.warn("Failed to create scheduled task attention notification", {
-          taskId: candidate.task_id,
-          occurrenceId: candidate.occurrence_id,
-          error: error instanceof Error ? error.message : "Notification creation failed",
-        });
-      }
-    }
-    if (failed > 0) throw new Error(`Failed to create ${failed} scheduled task notification(s).`);
     return { scanned: candidates.length, sent, failed };
   };
 
@@ -524,18 +410,17 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     return { scanned: candidates.length, sent, failed };
   };
   const recover = async (): Promise<AiNotificationRecoverySummary> => {
-    const [completions, tasks, costs, approvals, modelChanges, codeDeliveries] = await Promise.all([
+    const [completions, costs, approvals, modelChanges, codeDeliveries] = await Promise.all([
       recoverCompletions(),
-      recoverTaskAttention(),
       recoverCostAlerts(),
       recoverApprovalWaiting(),
       recoverModelChanges(),
       recoverCodeDeliveries(),
     ]);
     return {
-      scanned: completions.scanned + tasks.scanned + costs.scanned + approvals.scanned + modelChanges.scanned + codeDeliveries.scanned,
-      sent: completions.sent + tasks.sent + costs.sent + approvals.sent + modelChanges.sent + codeDeliveries.sent,
-      failed: completions.failed + tasks.failed + costs.failed + approvals.failed + modelChanges.failed + codeDeliveries.failed,
+      scanned: completions.scanned + costs.scanned + approvals.scanned + modelChanges.scanned + codeDeliveries.scanned,
+      sent: completions.sent + costs.sent + approvals.sent + modelChanges.sent + codeDeliveries.sent,
+      failed: completions.failed + costs.failed + approvals.failed + modelChanges.failed + codeDeliveries.failed,
     };
   };
 
@@ -543,8 +428,6 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     recover,
     notifyApprovalWaiting: (approvalId: string): Promise<AiNotificationRecoverySummary> => recoverApprovalWaiting({ approvalId, limit: 1 }),
     notifyTurnCompleted: (turnId: string): Promise<AiNotificationRecoverySummary> => recoverCompletions({ turnId, limit: 1 }),
-    notifyTaskNeedsAttention: (occurrenceId: string): Promise<AiNotificationRecoverySummary> =>
-      recoverTaskAttention({ occurrenceId, limit: 1 }),
 
     start: async (): Promise<void> => {
       if (worker) return;
