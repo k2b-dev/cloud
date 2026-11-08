@@ -22,6 +22,17 @@ A separator groups clusters with space, not a drawn line, and keeps `role="separ
 
 Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. Its buttons have 44 × 44 px targets.
 
+The floating toolbar is a pill on layer 3 of [Layers and shadows](/en/ui/surfaces/elevation): fully rounded, a light 1 px edge, a solid elevated surface, and `--k2b-shadow-toolbar`. A toolbar that stays open is softer than a menu that opens for a moment, so it never uses the menu shadow. Apps do not add a shadow of their own.
+
+For two pills at the start and end edge of one column, wrap both in `ToolbarDock`. The dock is the one floating row: it sticks to the bottom of the column, places the first pill at the start edge and the last at the end edge, and keeps the end of the content reachable above it. Each pill measures its own room and moves its lower-priority actions into More when the row gets narrow.
+
+```tsx
+<ToolbarDock>
+  <Toolbar label="Formatting" variant="floating">…</Toolbar>
+  <Toolbar label="Page" variant="floating">…</Toolbar>
+</ToolbarDock>
+```
+
 Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container: the strip sticks to the bottom and reserves its own height after the rows. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.

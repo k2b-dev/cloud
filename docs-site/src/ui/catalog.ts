@@ -274,6 +274,12 @@ const portableSections = [
         "Color style guidelines: when color carries meaning, the app color of a selected row, view, or filter, and what stays blue or neutral.",
       ),
       page(
+        "elevation",
+        "Layers and shadows",
+        "ti ti-stack-2",
+        "Four layers, one rule: content cards in the main content are islands with a soft shadow; lists, grids, panels, and controls stay flat.",
+      ),
+      page(
         "base-stylesheet",
         "Base stylesheet",
         "ti ti-file-type-css",
