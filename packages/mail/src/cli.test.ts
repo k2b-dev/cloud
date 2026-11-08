@@ -1091,6 +1091,7 @@ test("compose rendering commands send one validated draft context", async () => 
   };
   const validatedDraft = {
     ...draft,
+    quoteSource: null,
     priority: "normal",
     requestDeliveryReceipt: false,
     requestReadReceipt: false,
@@ -1158,7 +1159,7 @@ test("compose rendering commands send one validated draft context", async () => 
     },
     {
       path: `/api/mail/mailboxes/${MAILBOX_ID}/compose-preview`,
-      body: { draft: validatedDraft, conversationId: CONVERSATION_ID },
+      body: { draft: validatedDraft, conversationId: CONVERSATION_ID, sourceMessageId: null },
     },
   ]);
   expect(JSON.parse(snippet.stdout)).toEqual({ markdown: "Rendered snippet" });
