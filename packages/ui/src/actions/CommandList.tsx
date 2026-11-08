@@ -580,7 +580,6 @@ function CommandOutcomeLine(props: {
             {(retry) => (
               <button
                 type="button"
-                class="k2b-command-outcome__action"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   retry()();
