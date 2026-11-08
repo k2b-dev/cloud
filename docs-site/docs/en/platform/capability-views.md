@@ -2,7 +2,7 @@
 title: Capability views
 navTitle: Capability views
 section: Platform services
-order: 556
+order: 553
 description: Show a capability result, an approval's details, and a search preview with the same declarative blocks as Code pages.
 tags: [capabilities, views, blocks, approvals, search]
 updated: 2026-11-08

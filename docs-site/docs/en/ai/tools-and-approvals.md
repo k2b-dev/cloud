@@ -15,10 +15,11 @@ A tool gives the model a named action with validated input and output.
 The model may request the action. Cloud still controls where it runs, whether
 approval is required, and which actor reaches the implementation.
 
-Capability results can include optional [table presentation metadata](/en/docs/platform/capabilities#optional-table-previews).
-Assistant displays the referenced canonical values directly; the model does not
-generate a separate table payload. This metadata grants no authority and remains
-optional for CLI and programmatic clients.
+Capability results can include a [view](/en/docs/platform/capability-views)
+of declarative blocks. Assistant shows the referenced canonical values directly;
+the model reads `data` and a short description of the view and does not generate
+a separate table payload. A view grants no authority; the CLI and MCP receive it
+as text.
 
 Applications can also restrict launched conversations through
 [`allowedTools`](/en/docs/ai/chat-runtime-and-streaming). The stored ceiling applies
