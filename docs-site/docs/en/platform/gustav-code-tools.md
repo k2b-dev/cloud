@@ -120,7 +120,7 @@ export default async () => {
     showTableToUser: false,
   });
   if (!result.data.ok) throw new Error(result.data.diagnostics.map(item => item.message).join("; "));
-  if (result.page?.nextCursor) throw new Error("Select a smaller export or follow the query cursor.");
+  if (result.page?.hasMore) throw new Error("Select a smaller export or follow the query cursor.");
   return sheet.toCsv(result.data.rows.map(row => row.values));
 };
 ```

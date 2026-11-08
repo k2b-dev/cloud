@@ -118,8 +118,18 @@ Studio's destructive cleanup. Keep the existing
 `APP_SECRET`, and the stored Studio RSQL URL, API token and network allowlist,
 valid and reachable until startup has finished.
 
-Production Compose does not enforce this startup order. After preparing the
-new images and stopping all old replicas, start in stages. Stop if a readiness
+Production Compose does not enforce this startup order. Use this release's
+Compose file: Core and Mail have `/_cloud/ready` healthchecks, so `--wait`
+waits for their startup work to finish. Custom deployments need the same
+application readiness checks; a running container alone is insufficient.
+
+Before starting Runner, enroll its app key (`secrets/runner.key`), install the
+matching AppArmor profile on each host and deploy the matching seccomp policy.
+Follow [Runner deployment](/en/docs/operations/code-runner) for host,
+user-namespace and container prerequisites.
+
+After preparing the new images and stopping all old replicas, start in stages.
+Run each command only after the previous command succeeds. Stop if a readiness
 check fails; do not start Assistant before Mail is ready.
 
 ```sh
@@ -127,11 +137,6 @@ docker compose -f compose.prod.yml up -d --wait app-core
 docker compose -f compose.prod.yml up -d --wait app-mail
 docker compose -f compose.prod.yml up -d --wait
 ```
-
-Before starting Runner, enroll its app key (`secrets/runner.key`), install the
-matching AppArmor profile on each host and deploy the matching seccomp policy.
-Follow [Runner deployment](/en/docs/operations/code-runner) for host,
-user-namespace and container prerequisites.
 
 The migrations:
 
@@ -229,8 +234,13 @@ or data must never run old rules or routines beside active Code.
 - Every application is ready and the
   [health checks](/en/docs/operations/observability) are green; configured
   health webhooks still reach their destination.
-- Check that routine mandates are retired, the Mail retirement row exists in
+- Check that routine mandates are retired, the `version = 3`, `name = 'rules_retired'` row exists in
   `mail.schema_migrations`, and `assistant.studio_retirement.completed` is true.
+  For routine mandates, the following read-only SQL must return `0`:
+  ```sql
+  SELECT count(*) FROM auth.mandates
+  WHERE owner_app_id = 'core' AND workload_type = 'ai.chat-task' AND state <> 'revoked';
+  ```
   Restart once and confirm no retired timer or admission is recreated.
 - `cld assistant tasks export --all --json` and
   `cld mail automation export --all --json` still return the frozen

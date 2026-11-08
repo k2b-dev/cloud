@@ -40,11 +40,15 @@ environment fallback. They complement the
 | `core.code.wall_clock_ms` | 300,000 ms (5 minutes) | 1–300,000 |
 | `core.code.calls_per_run` | 200 bridge calls | 1–1,000 |
 | `core.code.calls_per_second` | 60 per Code | 1–1,000 |
+| `core.code.database_bytes` | 100 MiB per Code | 1 byte–1 GiB; reserved, no Code database in this release |
 | `core.code.ai_budget_usd` | USD 1 reference cost per generate/decide attempt | 0–100; zero disables generate/decide |
 | `core.code.ai_daily_budget_usd` | USD 1 reference cost per Code per day | 0–100; zero disables AI |
 | `core.code.ai_owner_daily_budget_usd` | USD 1 reference cost per owner per day | 0–100; zero disables AI |
 | `core.code.concurrency_per_code` | 1 active attempt | 1–100 |
 | `core.code.concurrency_per_owner` | 10 active attempts | 1–1,000 |
+
+The database setting remains visible in administration but has no effect in this
+release: Code has no database.
 
 All values except the AI budgets are whole numbers. The wall-clock maximum
 matches the Phase 1 runner budget. The call maximum preserves the existing run
