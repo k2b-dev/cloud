@@ -2,6 +2,7 @@ import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, St
 import type { Usage } from "@k2b/nessi/ai";
 import type { SQL } from "bun";
 import { capabilityRequestHash } from "../capabilities/claims";
+import { presentReview } from "../capabilities/legacy-review-view";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../capabilities/review-storage";
 import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresentationSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
@@ -25,6 +26,7 @@ import {
   compactCapabilityReview,
   compactReviewMapSql,
   compactReviewMetaSql,
+  compactReviewSql,
   compactStoredReview,
   storedReviewWithContent,
 } from "./review-content";
@@ -254,6 +256,7 @@ type TurnRow = {
 };
 
 type PendingActionRow = {
+  review_digest?: string;
   approval_id: string | null;
   turn_id: string;
   conversation_id: string;
@@ -557,7 +560,13 @@ const parseJsonValue = <T>(value: unknown): T => {
 
 const parseCapabilityActionReview = (value: unknown): CapabilityActionReviewPresentation | undefined => {
   if (value === null || value === undefined) return undefined;
-  const parsed = CapabilityActionReviewPresentationSchema.safeParse(restoreReviewSnapshot(parseJsonValue(value)));
+  const raw = restoreReviewSnapshot(parseJsonValue(value));
+  const presentation = presentReview(raw);
+  if (presentation && typeof presentation === "object" && "editedFields" in presentation) {
+    const { editedFields: _edited, ...rest } = presentation;
+    return CapabilityActionReviewPresentationSchema.parse(rest);
+  }
+  const parsed = CapabilityActionReviewPresentationSchema.safeParse(presentation);
   return parsed.success ? parsed.data : undefined;
 };
 
@@ -746,7 +755,21 @@ const rowToTurn = (row: TurnRow): AiTurn => {
 const rowToLiveBlocks = (row: TurnRow): AiTurnBlock[] => {
   if (!row.live_blocks) return [];
   const parsed = parseJsonValue<AiTurnBlock[]>(row.live_blocks);
-  return Array.isArray(parsed) ? parsed : [];
+  return Array.isArray(parsed)
+    ? parsed.map((block) => {
+        if (block.kind !== "tool") return block;
+        const location = { conversationId: row.conversation_id, turnId: row.id, callId: block.callId };
+        const review = block.review ? compactStoredReview(block.review, location) : undefined;
+        const approvalReview = block.approval?.review ? parseCapabilityActionReview(block.approval.review) : undefined;
+        return {
+          ...block,
+          ...(review ? { review } : {}),
+          ...(block.approval
+            ? { approval: { ...block.approval, ...(approvalReview ? { review: compactCapabilityReview(approvalReview, location) } : {}) } }
+            : {}),
+        };
+      })
+    : [];
 };
 
 const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction =>
@@ -757,16 +780,18 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
         conversationId: row.conversation_id,
         callId: row.call_id,
         name: row.tool_name,
-        args: row.args,
+        args: parseJsonValue(row.args),
         mode: row.frontend_mode ?? "client",
       }
     : {
         type: "approval_request",
+        requestId: row.approval_id ?? undefined,
+        digest: row.review_digest,
         turnId: row.turn_id,
         conversationId: row.conversation_id,
         callId: row.call_id,
         name: row.tool_name,
-        args: row.args,
+        args: parseJsonValue(row.args),
         message: row.message ?? undefined,
         review: (() => {
           const review = parseCapabilityActionReview(row.review);
@@ -785,13 +810,14 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
 
 const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRecord => ({
   approvalId: row.approval_id ?? undefined,
+  digest: row.review_digest,
   turnId: row.turn_id,
   conversationId: row.conversation_id,
   callId: row.call_id,
   kind: row.kind,
   status: row.status,
   name: row.tool_name,
-  args: row.args,
+  args: parseJsonValue(row.args),
   message: row.message ?? undefined,
   review: (() => {
     const review = parseCapabilityActionReview(row.review);
@@ -3817,7 +3843,14 @@ export const aiConversations: AiConversationService = {
         ${input.name},
         ${JSON.stringify(input.args ?? null)}::text::jsonb,
         ${input.message ?? null},
-        ${input.review ? serializeReviewSnapshot("sentence" in input.review ? storedReviewWithContent(input.review, input) : input.review) : null}::text::jsonb,
+        ${input.review ? serializeReviewSnapshot("sentence" in input.review ? storedReviewWithContent(input.review, input) : input.review) : null}::text::jsonb || COALESCE((
+          SELECT jsonb_build_object('editedFields', previous.review->'editedFields')
+          FROM ai.pending_actions previous
+          WHERE previous.turn_id=${input.turnId} AND previous.tool_name=${input.name}
+            AND regexp_replace(previous.call_id,'-approval-[0-9]+$','')=regexp_replace(${input.callId},'-approval-[0-9]+$','')
+            AND previous.review ? 'editedFields'
+          ORDER BY previous.created_at DESC,previous.id DESC LIMIT 1
+        ), '{}'::jsonb),
         ${input.approvalScope},
         ${input.allowAlways},
         ${input.allowChat ?? input.allowAlways},
@@ -3845,8 +3878,8 @@ export const aiConversations: AiConversationService = {
 
   listPendingTurnActions: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
-        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
+      SELECT (SELECT review_digest FROM approvals.requests WHERE id=approval_id) AS review_digest, approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        ${compactReviewSql(sql`review`)} AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
@@ -3858,8 +3891,8 @@ export const aiConversations: AiConversationService = {
 
   getPendingTurnAction: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
-        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
+      SELECT (SELECT review_digest FROM approvals.requests WHERE id=approval_id) AS review_digest, approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        ${compactReviewSql(sql`review`)} AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
@@ -3871,7 +3904,7 @@ export const aiConversations: AiConversationService = {
 
   findPendingTurnActionByApproval: async (input) => {
     // Keep resolved questions reachable so the same response can replay through submitAiTurnAction.
-    const [row] = await sql<PendingActionRow[]>`SELECT p.* FROM ai.pending_actions p
+    const [row] = await sql<PendingActionRow[]>`SELECT p.*,r.review_digest FROM ai.pending_actions p
       JOIN ai.conversations c ON c.id=p.conversation_id JOIN approvals.requests r ON r.id=p.approval_id
       WHERE p.approval_id=${input.approvalId}::uuid AND c.created_by_user_id=${input.ownerUserId}::uuid
         AND r.approver_user_id=${input.ownerUserId}::uuid AND p.status IN ('pending','resolved')
@@ -3906,8 +3939,8 @@ export const aiConversations: AiConversationService = {
 
   listPendingActionRecords: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
-        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
+      SELECT (SELECT review_digest FROM approvals.requests WHERE id=approval_id) AS review_digest, approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        ${compactReviewSql(sql`review`)} AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
@@ -3919,8 +3952,8 @@ export const aiConversations: AiConversationService = {
 
   listResolvedPendingActions: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
-        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
+      SELECT (SELECT review_digest FROM approvals.requests WHERE id=approval_id) AS review_digest, approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        ${compactReviewSql(sql`review`)} AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}

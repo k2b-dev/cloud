@@ -469,12 +469,17 @@ const review = async (
           }
         : { action: "Save dashboard", running: "Saving dashboard", done: "Dashboard saved", confirm: "Save", decline: "Cancel" },
       slots: {},
-      content: {
-        kind: "page" as const,
-        title: de ? "Dashboard-Entwurf" : "Dashboard proposal",
-        format: "plain" as const,
-        ...(before ? { baseRevision: before.revision } : {}),
-        body: JSON.stringify({ baseId: access.data.baseId, name: input.name, definition: input.definition }, null, 2),
+      view: {
+        version: 1 as const,
+        blocks: [
+          {
+            kind: "Text" as const,
+            text:
+              (de ? "Dashboard-Entwurf" : "Dashboard proposal") +
+              "\n\n" +
+              JSON.stringify({ baseId: access.data.baseId, name: input.name, definition: input.definition }, null, 2),
+          },
+        ],
       },
       ...(revoke
         ? {
@@ -520,16 +525,21 @@ const review = async (
             decline: "Cancel",
           },
       slots: {},
-      content: {
-        kind: "page" as const,
-        title: de ? "Öffentlich sichtbare Spalten" : "Public output columns",
-        format: "plain" as const,
-        baseRevision: before!.revision,
-        body: JSON.stringify(
-          { baseId: access.data.baseId, dashboard: before!.name, revision: before!.revision, columns: input.columns },
-          null,
-          2,
-        ),
+      view: {
+        version: 1 as const,
+        blocks: [
+          {
+            kind: "Text" as const,
+            text:
+              (de ? "Öffentlich sichtbare Spalten" : "Public output columns") +
+              "\n\n" +
+              JSON.stringify(
+                { baseId: access.data.baseId, dashboard: before!.name, revision: before!.revision, columns: input.columns },
+                null,
+                2,
+              ),
+          },
+        ],
       },
       consequences: [{ text: de ? "Jeder mit dem Link kann diese Ergebnisse lesen." : "Anyone with the link can read these results." }],
     });

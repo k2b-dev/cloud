@@ -1450,6 +1450,12 @@ export const actorCommandInputSchema = z.discriminatedUnion("kind", [
     kind: z.literal("send"),
     draftId: ResourceShortIdSchema,
     expectedDraftRevision: z.number().int().positive(),
+    subject: z.string().max(998).optional().describe("Replacement subject, reviewed against the base draft."),
+    body: z
+      .string()
+      .max(64 * 1024)
+      .optional()
+      .describe("Replacement body in the draft's current format."),
     expectedContentHash: z.string().regex(/^[a-f0-9]{64}$/),
     senderIdentityId: ResourceShortIdSchema,
     scheduledAt: z

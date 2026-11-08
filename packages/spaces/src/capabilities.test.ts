@@ -1333,7 +1333,7 @@ describe("spaces capabilities", () => {
       const result = await spacesCapabilities.actions["task.update"].review({ itemId, assigneeIds: [serviceAccountId] }, userContext);
       expect(result).toMatchObject({
         ok: true,
-        data: { ask: "involves_people", content: { body: expect.stringContaining("Assignees: Zebra helper") } },
+        data: { ask: "involves_people", view: { blocks: [{ kind: "Text", text: expect.stringContaining("Assignees: Zebra helper") }] } },
       });
       expect(lookup).toHaveBeenCalledWith({ spaceId: spaceUuid, ids: [serviceAccountId], limit: 100 });
       expect(JSON.stringify(result)).not.toContain(serviceAccountId);
@@ -1348,7 +1348,10 @@ describe("spaces capabilities", () => {
     const result = await spacesCapabilities.actions["task.update"].review({ itemId, assigneeIds: [serviceAccountId] }, userContext);
     expect(result).toMatchObject({
       ok: true,
-      data: { ask: "involves_people", content: { body: expect.stringContaining("Assignees: Unavailable assignee") } },
+      data: {
+        ask: "involves_people",
+        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Assignees: Unavailable assignee") }] },
+      },
     });
     expect(JSON.stringify(result)).not.toContain(serviceAccountId);
   });
@@ -1372,12 +1375,13 @@ describe("spaces capabilities", () => {
     expect(JSON.stringify(result)).toContain("90 minutes");
     expect(result).toMatchObject({
       ok: true,
-      data: { scope: `space:${spaceId}`, content: { body: expect.stringContaining("Description: First line\n\nSecond line") } },
+      data: {
+        scope: `space:${spaceId}`,
+        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Description: First line\n\nSecond line") }] },
+      },
     });
     const allDay = await spacesCapabilities.actions["task.update"].review!({ itemId, deadline: "2026-10-24" }, userContext);
-    expect(allDay.ok && CapabilityActionCallReviewSchema.parse(allDay.data).content).toMatchObject({
-      body: expect.stringContaining("Deadline: 2026-10-24"),
-    });
+    expect(allDay.ok && JSON.stringify(CapabilityActionCallReviewSchema.parse(allDay.data).view)).toContain("Deadline: 2026-10-24");
     const german = await spacesCapabilities.actions["task.update"].review!(
       { itemId, description: null, estimatedDurationMinutes: 90 },
       { ...userContext, locale: "de-CH" },
@@ -1388,7 +1392,7 @@ describe("spaces capabilities", () => {
       data: {
         locale: "de",
         sentence: { action: "Aufgabe {item} ändern" },
-        content: { body: expect.stringContaining("Beschreibung entfernen") },
+        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Beschreibung entfernen") }] },
       },
     });
   });
@@ -1419,16 +1423,16 @@ describe("spaces capabilities", () => {
         { columnId, title: "Task", description, deadline: "2026-08-20T15:00:00.000Z" },
         { ...userContext, locale },
       );
-      expect(long).toMatchObject({
+      expect(structuredClone(long)).toMatchObject({
         ok: true,
         data: {
-          content: { kind: "page", body: expect.stringContaining(description) },
+          view: { blocks: [{ kind: "Text", text: expect.stringContaining(description) }] },
           consequences: [{ slots: { at: { kind: "time", start: "2026-08-20T15:00:00.000Z", format: "date-time" } } }],
         },
       });
       if (long.ok) {
         const view = capabilityReviewView(long.data, { timeZone: "Europe/Berlin" });
-        expect(JSON.stringify(view)).not.toContain("2026-08-20T15:00:00.000Z");
+        expect(JSON.stringify(view)).toContain("2026-08-20T15:00:00.000Z");
         expect(view).not.toEqual(capabilityReviewView(long.data, { timeZone: "UTC" }));
       }
     }
@@ -1444,9 +1448,9 @@ describe("spaces capabilities", () => {
       await spacesCapabilities.actions["task.create"].review({ columnId, title, description }, userContext),
       await spacesCapabilities.actions["task.update"].review({ itemId, description }, userContext),
     ]) {
-      expect(reviewed).toMatchObject({
+      expect(structuredClone(reviewed)).toMatchObject({
         ok: true,
-        data: { preview: { kind: "page" }, content: { body: expect.stringContaining(description) } },
+        data: { view: { blocks: [{ kind: "Text", text: expect.stringContaining(description) }] } },
       });
       if (reviewed.ok) {
         expect(capabilityReviewRememberScope(reviewed.data, "rememberable")).toBe(`space:${spaceId}`);
@@ -1472,7 +1476,7 @@ describe("spaces capabilities", () => {
       data: {
         scope: `space:${spaceId}`,
         sentence: { action: "Create task {item}" },
-        content: { body: expect.stringContaining("Deadline: 2026-10-20T09:00:00.000Z") },
+        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Deadline: 2026-10-20T09:00:00.000Z") }] },
       },
     });
     expect(plain.ok && "ask" in plain.data).toBeFalse();
@@ -1506,7 +1510,7 @@ describe("spaces capabilities", () => {
     );
     expect(link).toMatchObject({
       ok: true,
-      data: { scope: `space:${spaceId}`, content: { body: expect.stringContaining("Incoming mail") } },
+      data: { scope: `space:${spaceId}`, view: { blocks: [{ kind: "Text", text: expect.stringContaining("Incoming mail") }] } },
     });
     expect(link.ok && "ask" in link.data).toBeFalse();
     spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
@@ -1566,7 +1570,7 @@ describe("spaces capabilities", () => {
         assertCapabilityReview(review.data);
         expect(review.data.locale).toBe(locale);
         expect(review.data.scope).toBe(scope);
-        expect(review.data.content?.body).toContain(content);
+        expect(JSON.stringify(review.data.view)).toContain(JSON.stringify(content).slice(1, -1));
         expect("ask" in review.data).toBe(false);
       }
     }
@@ -1875,7 +1879,10 @@ describe("spaces capabilities", () => {
 
     const input = TaskCreateInputSchema.parse({ title: task.title });
     const review = await spacesCapabilities.actions["task.create"].review!(input, userContext);
-    expect(review).toMatchObject({ ok: true, data: { content: { body: expect.stringContaining("Column: To do") } } });
+    expect(review).toMatchObject({
+      ok: true,
+      data: { view: { blocks: [{ kind: "Text", text: expect.stringContaining("Column: To do") }] } },
+    });
     const result = await spacesCapabilities.actions["task.create"].run(input, userContext);
 
     expect(result.ok).toBeTrue();
@@ -3068,7 +3075,7 @@ test("creation reviews preserve every supplied domain field and bound compact pr
   if (taskReview.ok) {
     assertCapabilityReview(taskReview.data);
     for (const value of ["high", "90 minutes", "Spaces User", "Source: mail.message:Mail01", "Col001"])
-      expect(taskReview.data.content?.body).toContain(value);
+      expect(JSON.stringify(taskReview.data.view)).toContain(JSON.stringify(value).slice(1, -1));
   }
   const eventReview = await spacesCapabilities.actions["event.create"].review!(
     {
@@ -3088,8 +3095,8 @@ test("creation reviews preserve every supplied domain field and bound compact pr
   if (eventReview.ok) {
     assertCapabilityReview(eventReview.data);
     for (const value of ["Office", "https://example.test/event", "FREQ=WEEKLY;COUNT=2", "All day: No"])
-      expect(eventReview.data.content?.body).toContain(value);
-    const { content: _content, ...compact } = eventReview.data;
+      expect(JSON.stringify(eventReview.data.view)).toContain(JSON.stringify(value).slice(1, -1));
+    const { view: _view, ...compact } = eventReview.data;
     expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
   }
 });

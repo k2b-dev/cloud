@@ -104,11 +104,9 @@ const reviewCodeOperation = async (
           : { reach: "you" as const }),
       ...(input.entrypoint
         ? {
-            content: {
-              kind: "page" as const,
-              title: t.codeOperationConfirm({ operation }),
-              format: "plain" as const,
-              body: input.entrypoint,
+            view: {
+              version: 1 as const,
+              blocks: [{ kind: "Text" as const, text: t.codeOperationConfirm({ operation }) + "\n\n" + input.entrypoint }],
             },
           }
         : {}),
@@ -1256,11 +1254,14 @@ export const aiCapabilities = defineCapabilities({
             confirm: t.codeSecretDeleteConfirm,
             decline: t.codePolicyDecline,
           },
-          content: {
-            kind: "page" as const,
-            title: t.codeSecretDeleteConfirm,
-            format: "plain" as const,
-            body: JSON.stringify({ codeId: codeTargetId(context), ...secret }, null, 2),
+          view: {
+            version: 1 as const,
+            blocks: [
+              {
+                kind: "Text" as const,
+                text: t.codeSecretDeleteConfirm + "\n\n" + JSON.stringify({ codeId: codeTargetId(context), ...secret }, null, 2),
+              },
+            ],
           },
         });
       },
@@ -1384,21 +1385,26 @@ export const aiCapabilities = defineCapabilities({
             confirm: t.codePolicyConfirm,
             decline: t.codePolicyDecline,
           },
-          content: {
-            kind: "page" as const,
-            baseRevision: input.revision,
-            title: t.codePolicyTitle,
-            format: "plain" as const,
-            body: CODE_POLICY_ROWS.map(
-              (row) =>
-                `${t.codePolicyRow({ row })} (${row})\n${input.definition.rules
-                  .filter((rule) => rule.row === row)
-                  .map(
-                    (rule) =>
-                      `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValue({ value: rule.value })} (${rule.value})`,
-                  )
-                  .join("\n")}`,
-            ).join("\n\n"),
+          view: {
+            version: 1 as const,
+            blocks: [
+              {
+                kind: "Text" as const,
+                text:
+                  t.codePolicyTitle +
+                  "\n\n" +
+                  CODE_POLICY_ROWS.map(
+                    (row) =>
+                      `${t.codePolicyRow({ row })} (${row})\n${input.definition.rules
+                        .filter((rule) => rule.row === row)
+                        .map(
+                          (rule) =>
+                            `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValue({ value: rule.value })} (${rule.value})`,
+                        )
+                        .join("\n")}`,
+                  ).join("\n\n"),
+              },
+            ],
           },
         });
       },

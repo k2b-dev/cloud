@@ -1,8 +1,9 @@
 import type { AiPendingTurnAction } from "@k2b/cloud/ai";
 import { actionCardText, actionQuestionLines, approvalCard } from "@k2b/cloud/ai/question-text";
+import { BoundBlockViewSchema, blocksText } from "@k2b/cloud/blocks";
 import { readCapabilityReviewContent } from "@k2b/cloud/capabilities";
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import { type CapabilityActionReviewPresentation, CapabilityReviewContentSchema } from "@k2b/cloud/contracts";
+import type { CapabilityActionReviewPresentation } from "@k2b/cloud/contracts";
 import { dates, i18n } from "@k2b/stdlib";
 import { terminalSafeText } from "./terminal";
 
@@ -66,7 +67,7 @@ export const printReviewContent = async (
   signal?: AbortSignal,
 ): Promise<void> => {
   if (!review || !("sentence" in review)) return;
-  let content = review.content;
+  let content = review.view ? BoundBlockViewSchema.parse(review.view) : undefined;
   if (review.contentRef) {
     const result = await readCapabilityReviewContent(review.contentRef, {
       fetch: (url, init) => ctx.fetch(String(url), init),
@@ -76,14 +77,9 @@ export const printReviewContent = async (
     content = result.data;
   }
   if (!content) return;
-  // JSON preserves all fields and source escapes. Other invisible characters stay visible too; no excerpt limit.
-  const json = JSON.stringify(CapabilityReviewContentSchema.parse(content), null, 2).replace(/[\p{Cf}\u2028\u2029]/gu, (character) =>
-    character
-      .split("")
-      .map((unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`)
-      .join(""),
+  ctx.print(
+    terminalSafeText(blocksText(content.blocks, { locale: review.locale, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })),
   );
-  ctx.print(terminalSafeText(json));
 };
 
 export const printPendingActionContent = (

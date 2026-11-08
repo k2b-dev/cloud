@@ -76,8 +76,10 @@ describe("Grids integrity capability contract", () => {
     const proposal = { rows: Array.from({ length: 1000 }, (_, i) => ({ name: `Item ${i}`, amount: "12.34" })) };
     const review = gridsActionReview(context, locale === "de" ? "Finanzexport bestätigen" : "Confirm financial export", proposal);
     assertCapabilityReview(review);
-    expect(review.content?.kind).toBe("page");
-    expect(JSON.parse(review.content!.body)).toEqual(proposal);
-    expect(review.preview?.kind === "page" && review.preview.truncated).toBeTrue();
+    const block = review.view?.blocks[0];
+    expect(block?.kind).toBe("Text");
+    if (block?.kind !== "Text") throw new Error("Missing view");
+    expect(JSON.parse(block.text)).toEqual(proposal);
+    expect(block.text.length).toBeGreaterThan(10000);
   });
 });

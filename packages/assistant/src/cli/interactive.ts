@@ -323,7 +323,7 @@ const resolveAttention = async (input: {
       await printPendingActionContent(input.ctx, action, input.signal);
       const decision = await collectActionApproval(input.ctx, input.reader, action);
       if (decision === null) return null;
-      await submitAction(input.ctx, action, { type: "approval_response", ...decision });
+      await submitAction(input.ctx, action, { type: "approval_response", ...decision, digest: action.digest });
     } else if (action.name === "survey" || action.name === "cloud_survey") {
       const surveyResult = await collectSurveyResult(input.ctx, input.reader, action.args);
       if (surveyResult === null) {

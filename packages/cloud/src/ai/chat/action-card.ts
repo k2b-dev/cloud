@@ -9,13 +9,14 @@ import {
   capabilitySentenceParts,
   capabilitySentenceText,
 } from "../../_internal/capability-sentences";
+import type { Block } from "../../blocks/schema";
+import { boundReviewView, reviewDraft } from "../../capabilities/reviews";
 import type {
   CapabilityActionCallReview,
   CapabilityActionReceipt,
   CapabilityActionReview,
   CapabilityAskReason,
   CapabilityConsequence,
-  CapabilityPreview,
   CapabilityReviewContentRef,
   CapabilitySemanticLink,
   CapabilitySlot,
@@ -52,22 +53,6 @@ export type ActionText = ActionTextPart[];
 
 export type ActionReason = { code: CapabilityAskReason; text: string; icon: string; tone: "neutral" | "danger" | "warning" };
 
-export type ActionPreviewModel =
-  | {
-      kind: "review";
-      locale: string;
-      timeZone: string;
-      preview?: CapabilityPreview;
-      /** Original slots for plain rule sentences, retaining people’s addresses. */
-      slots?: CapabilityActionCallReview["slots"];
-      consequences: { text: ActionText; plain: string; mark?: "added" | "removed" }[];
-      /** The rule sentence of a `rule` preview, with its chips. */
-      when?: ActionText;
-      /** Each `may` line of a `rule` preview. */
-      may?: { text: ActionText; plain: string; mark?: "added" | "removed" }[];
-    }
-  | { kind: "legacy"; rows: AiLegacyReviewRow[]; markdown?: string; input?: unknown };
-
 export type ActionCard = {
   /** The language of the question; Cloud's words on the card use it too, so one card never mixes languages. */
   locale: string;
@@ -76,7 +61,11 @@ export type ActionCard = {
   /** The plain question, for the accessible name of places that only list it. */
   questionText: string;
   reason: ActionReason;
-  preview: ActionPreviewModel | null;
+  view?: Block[];
+  draft?: { editable: boolean; fields: string[] };
+  incomplete?: boolean;
+  timeZone: string;
+  consequences?: { text: ActionText; plain: string; mark?: "added" | "removed" }[];
   /** Opens exactly this version of the thing. */
   readMore?: string;
   contentRef?: CapabilityReviewContentRef;
@@ -213,7 +202,9 @@ const otherLinks = (links: readonly CapabilitySemanticLink[] | undefined, locale
   const label = (link: CapabilitySemanticLink) =>
     link.title ??
     { open: t.openIn({ app }), edit: t.editIn({ app }), status: t.statusIn({ app }), preview: t.preview, download: t.download }[link.rel];
-  return (links ?? []).filter((link) => link.href !== readMore).map((link) => ({ href: link.href, label: label(link) }));
+  return (links ?? [])
+    .filter((link) => link.href !== readMore || (link.rel !== "open" && link.rel !== "preview"))
+    .map((link) => ({ href: link.href, label: label(link) }));
 };
 
 const firstObjectHref = (review: CapabilityActionCallReview): string | undefined =>
@@ -250,7 +241,11 @@ const slotValues = (slots: CapabilitySlot[], context: { locale: string; timeZone
 });
 
 export const reviewActionCard = (
-  review: CapabilityActionCallReview & { contentRef?: CapabilityReviewContentRef },
+  review: CapabilityActionCallReview & {
+    contentRef?: CapabilityReviewContentRef;
+    draft?: { editable: boolean; fields: string[] };
+    incomplete?: boolean;
+  },
   context: ActionCardContext,
 ): ActionCard => {
   const locale = review.locale;
@@ -271,7 +266,8 @@ export const reviewActionCard = (
   });
   const code = review.ask ?? "app_asks";
   const subjectSlot = Object.entries(review.slots).find(([, slot]) => slot.kind === "object" || slot.kind === "place");
-  const preview = review.preview;
+  const view = boundReviewView(review);
+  const draft = reviewDraft(view?.blocks);
   return {
     locale,
     app: context.app,
@@ -283,20 +279,11 @@ export const reviewActionCard = (
       // explicit app_asks review promises that the app asks every time.
       ...(!review.ask ? { text: aiChatMessages(locale).approvalRunsAfter } : {}),
     },
-    preview:
-      preview || review.consequences?.length
-        ? {
-            kind: "review",
-            locale,
-            timeZone: context.timeZone,
-            ...(preview ? { preview } : {}),
-            slots: review.slots,
-            consequences: (review.consequences ?? []).map(consequence),
-            ...(preview?.kind === "rule"
-              ? { when: sentence(preview.when.text, preview.when.slots), may: preview.may.map(consequence) }
-              : {}),
-          }
-        : null,
+    timeZone: context.timeZone,
+    ...(view ? { view: view.blocks } : {}),
+    ...(draft ? { draft: review.draft ?? { editable: false, fields: draft.fields.map((f) => f.name) } } : {}),
+    ...(review.incomplete ? { incomplete: true } : {}),
+    consequences: (review.consequences ?? []).map(consequence),
     contentRef: review.contentRef,
     readMore: firstLink(review.links, ["open", "preview"]),
     links: otherLinks(review.links, locale, context.app.name),
@@ -324,11 +311,7 @@ export const reviewActionCard = (
     short: capabilityReviewSentence(review, "short", tz),
     hasCheck: Boolean(review.check),
     slotValues: slotValues(
-      [
-        review.slots,
-        ...(review.consequences ?? []).map((entry) => entry.slots ?? {}),
-        ...(preview?.kind === "rule" ? [preview.when.slots ?? {}, ...preview.may.map((entry) => entry.slots ?? {})] : []),
-      ].flatMap((slots) => Object.values(slots)),
+      [review.slots, ...(review.consequences ?? []).map((entry) => entry.slots ?? {})].flatMap((slots) => Object.values(slots)),
       { locale, timeZone: context.timeZone },
     ),
   };
@@ -362,15 +345,14 @@ export const legacyActionCard = (input: LegacyCardInput, context: ActionCardCont
     question: plainText(input.question),
     questionText: input.question,
     reason: actionReason("app_asks", { locale: context.locale, appName: context.app.name }),
-    preview:
-      input.rows.length > 0 || input.markdown || showInput
-        ? {
-            kind: "legacy",
-            rows: input.rows,
-            ...(input.markdown ? { markdown: input.markdown } : {}),
-            ...(showInput ? { input: input.input } : {}),
-          }
-        : null,
+    timeZone: context.timeZone,
+    view: [
+      ...(input.rows.length
+        ? [{ kind: "Detail" as const, title: "Details", items: input.rows.map((row) => ({ label: row.label || "—", value: row.value })) }]
+        : []),
+      ...(input.markdown ? [{ kind: "Text" as const, text: input.markdown }] : []),
+      ...(showInput ? [{ kind: "Text" as const, text: JSON.stringify(input.input, null, 2) }] : []),
+    ],
     readMore: firstLink(input.links, ["open", "preview"]),
     links: otherLinks(input.links, context.locale, context.app.name),
     open: firstLink(input.links, ["open", "edit", "status"]),

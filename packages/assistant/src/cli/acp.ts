@@ -734,7 +734,12 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
           }
           if (choice !== "once" && choice !== "chat" && choice !== "reject")
             throw RequestError.invalidParams(undefined, "Unknown approval choice.");
-          body = { type: "approval_response", approved: choice !== "reject", ...(choice === "chat" ? { remember: "chat" } : {}) };
+          body = {
+            type: "approval_response",
+            digest: action.digest,
+            approved: choice !== "reject",
+            ...(choice === "chat" ? { remember: "chat" } : {}),
+          };
         } else if (action.name === "survey" || action.name === "cloud_survey") {
           const input = CloudAiSurveyInputSchema.parse(action.args);
           const response = forms

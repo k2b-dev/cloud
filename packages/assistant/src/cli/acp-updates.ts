@@ -131,7 +131,7 @@ export const planEntries = (args: unknown): PlanEntry[] | undefined =>
   );
 export const isConfirmApproval = (action: ApprovalAction): boolean => !(action.allowChat || action.allowAlways || action.website);
 export const requiresCloudApproval = (action: ApprovalAction): boolean =>
-  isConfirmApproval(action) || !!(action.review && "sentence" in action.review && (action.review.contentRef || action.review.content));
+  isConfirmApproval(action) || !!(action.review && "sentence" in action.review && (action.review.contentRef || action.review.view));
 export const approvalOptions = (action: ApprovalAction): PermissionOption[] =>
   requiresCloudApproval(action)
     ? [

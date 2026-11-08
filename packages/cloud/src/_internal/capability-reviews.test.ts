@@ -3,7 +3,6 @@ import { z } from "zod";
 import { assertCapabilityReview, checkActionReviewMessages } from "../capabilities/testing";
 import { ApprovalPageSchema } from "../contracts/approvals";
 import {
-  CAPABILITY_MAX_REVIEW_BYTES,
   CapabilityActionCallReviewSchema,
   type CapabilityActionDefinition,
   CapabilityActionManifestSchema,
@@ -23,7 +22,14 @@ import {
   reviewCompiledCapability,
   validateCapabilityResult,
 } from "./capabilities";
-import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases, reviewFixture } from "./capability-review.test-fixture";
+import {
+  byteBoundaryReview,
+  compileReviewFixture,
+  outcomeCheckCases,
+  receiptCases,
+  reviewCases,
+  reviewFixture,
+} from "./capability-review.test-fixture";
 import { actionReview, capabilityActionReviewIssues, capabilityReviewRememberScope, capabilityReviewView } from "./capability-reviews";
 import { capabilityReviewSentence } from "./capability-sentences";
 
@@ -109,35 +115,26 @@ describe("shared review validation at the producer", () => {
     expect(capabilityReviewRememberScope({ ...review, scope: "mail" }, "none")).toBeUndefined();
     expect(capabilityActionReviewIssues(review, { queries: [], validateQueryInput: () => false })).not.toEqual([]);
   });
-  test("sends review completeness reports each issue once", () => {
-    const review = reviewFixture();
-    review.ask = "sends";
-    if (review.preview?.kind !== "message") throw new Error("Expected message preview");
-    delete review.preview.from;
-    review.preview.more = { to: 1 };
-    review.preview.truncated = true;
-    delete review.links;
-    const issues = capabilityActionReviewIssues(review, reviewContext);
-    expect(issues).toHaveLength(3);
-    expect(issues.filter((issue) => issue === "A sends message requires from")).toHaveLength(1);
-    expect(new Set(issues).size).toBe(issues.length);
-  });
-  test("a declared sends policy keeps from required when the call asks for another reason", () => {
-    const review = reviewFixture();
-    if (review.preview?.kind !== "message") throw new Error("Expected message preview");
-    delete review.preview.from;
-    for (const ask of [undefined, "involves_people", "sends"] as const) {
-      review.ask = ask;
-      expect(capabilityActionReviewIssues(review, reviewContext)).toContain("A sends message requires from");
-    }
-    review.ask = "sends";
+  test("a sends Draft requires sender context even with a different per-call reason", () => {
+    const review = {
+      ...reviewFixture(),
+      view: {
+        version: 1 as const,
+        blocks: [{ kind: "Draft" as const, fields: [{ name: "body", label: "Body", type: "textarea" as const, value: "Text" }] }],
+      },
+    };
+    const ctx = { ...reviewContext, inputSchema: { properties: { body: { type: "string" } } } };
+    for (const ask of [undefined, "involves_people", "sends"] as const)
+      expect(capabilityActionReviewIssues({ ...review, ask }, ctx)).toContain("A sends Draft requires sender context (From/Von)");
     expect(
-      capabilityActionReviewIssues(review, { policy: { ask: "involves_people" }, queries: [], validateQueryInput: () => false }),
-    ).toContain("A sends message requires from");
-    review.ask = "deletes";
-    expect(
-      capabilityActionReviewIssues(review, { policy: { ask: "involves_people" }, queries: [], validateQueryInput: () => false }),
-    ).not.toContain("A sends message requires from");
+      capabilityActionReviewIssues(
+        {
+          ...review,
+          view: { version: 1, blocks: [{ ...review.view.blocks[0]!, context: [{ label: "From", value: "ops@example.com" }] }] },
+        },
+        ctx,
+      ),
+    ).toEqual([]);
   });
   test("receipt validation at the result seam and consumer future receipt tolerance", () => {
     const compiled = compileReviewFixture(),
@@ -160,35 +157,17 @@ describe("shared review validation at the producer", () => {
       { text: "Done", preview: { kind: "page", title: "Page", body: "Text", format: "plain", truncated: true } },
     ]) {
       expect(validateCapabilityResult(compiled, action, { data: {}, receipt }).ok).toBe(false);
-      expect(validateCapabilityResult(compiled, action, { data: {}, receipt, links: [{ rel: "open", href: "/app/demo" }] }).ok).toBe(
-        receipt.text === "Done",
-      );
+      expect(validateCapabilityResult(compiled, action, { data: {}, receipt, links: [{ rel: "open", href: "/app/demo" }] }).ok).toBe(false);
     }
     expect(validateCapabilityResult(compiled, action, { data: {}, receipt: { text: "Done" } }).ok).toBe(true);
     expect(validateCapabilityResult(compiled, query, { data: { outcome: "pending" }, receipt: { text: "Done" } }).ok).toBe(false);
     expect(capabilityResultSchema(z.object({}), { consumer: true }).parse({ data: {}, receipt: { future: true } }).receipt).toBeUndefined();
   });
-  test("size counts UTF-8 JSON bytes, with a boundary just below and above 32 KiB", () => {
-    const review = reviewFixture();
-    review.preview = {
-      kind: "page",
-      title: "Page",
-      body: "é".repeat(10_000),
-      format: "plain",
-      changes: [
-        { change: "added", text: "é".repeat(2000) },
-        { change: "added", text: "é".repeat(2000) },
-        { change: "added", text: "é".repeat(2000) },
-        { change: "added", text: "" },
-      ],
-    };
-    const bytes = new TextEncoder().encode(JSON.stringify(review)).byteLength;
-    const last = review.preview.changes![3]!;
-    last.text = "x".repeat(CAPABILITY_MAX_REVIEW_BYTES - bytes - 1);
-    expect(new TextEncoder().encode(JSON.stringify(review)).byteLength).toBe(CAPABILITY_MAX_REVIEW_BYTES - 1);
-    expect(capabilityActionReviewIssues(review, reviewContext)).toEqual([]);
-    last.text += "xx";
-    expect(capabilityActionReviewIssues(review, reviewContext)).toContain("Review exceeds 32 KiB");
+  test("metadata counts UTF-8 JSON bytes on either side of 32 KiB", () => {
+    const compiled = compileReviewFixture();
+    const ctx = { ...reviewContext, queries: compiled.manifest.queries, validateQueryInput: () => true };
+    expect(capabilityActionReviewIssues(byteBoundaryReview(false), ctx)).toEqual([]);
+    expect(capabilityActionReviewIssues(byteBoundaryReview(true), ctx)).toContain("Review exceeds 32 KiB");
   });
 });
 
@@ -367,66 +346,8 @@ describe("review helpers", () => {
     };
     expect(checkActionReviewMessages({ locales: ["en", "de"], forms, slots: review.slots }).join()).toContain("de sentence.done");
   });
-  for (const locale of ["en", "de"])
-    for (const kind of ["message", "page"] as const)
-      test(`truncated ${kind} view ${locale}`, () => {
-        const review = reviewFixture();
-        review.locale = locale;
-        review.preview =
-          kind === "message"
-            ? { kind, to: [{ name: "Lea" }], subject: "Meeting", body: "Excerpt", format: "plain", truncated: true }
-            : { kind, title: "Page", body: "Excerpt", format: "plain", truncated: true };
-        review.links = [{ rel: "open", href: "/app/demo/full" }];
-        const view = capabilityReviewView(review, { timeZone: "UTC" });
-        const bodyIndex = view.details!.findIndex((detail) => detail.value === "Excerpt");
-        expect(bodyIndex).toBeGreaterThanOrEqual(0);
-        expect(view.details![bodyIndex + 1]).toEqual({
-          label: locale === "de" ? "Gekürzt" : "Shortened",
-          value: locale === "de" ? "Den ganzen Text öffnest du über den Link unten." : "Open the full text through the link below.",
-        });
-        expect(view.links).toEqual(review.links);
-        review.preview.truncated = false;
-        expect(
-          capabilityReviewView(review, { timeZone: "UTC" }).details?.some(
-            (detail) => detail.label === "Shortened" || detail.label === "Gekürzt",
-          ),
-        ).toBe(false);
-      });
-  for (const locale of ["en", "de"])
-    test(`full legacy view ${locale}`, () => {
-      const review = reviewFixture();
-      review.locale = locale;
-      review.ask = "sends";
-      review.preview = {
-        kind: "message",
-        from: { name: "Ops", address: "ops@example.com" },
-        to: Array.from({ length: 50 }, (_, i) => ({ name: `To ${i}`, address: `to${i}@example.com` })),
-        cc: [{ name: "Cc", address: "cc@example.com" }],
-        bcc: [{ name: "Bcc", address: "bcc@example.com" }],
-        more: { bcc: 3 },
-        subject: "Meeting",
-        body: "Text",
-        format: "plain",
-        attachments: [{ name: "meeting.pdf" }, { name: "notes.txt" }],
-        moreAttachments: 2,
-        sendAt: "2026-10-17T12:00:00Z",
-      };
-      const view = capabilityReviewView(review, { timeZone: "UTC" });
-      const text = JSON.stringify(view);
-      for (const value of [
-        "Ops <ops@example.com>",
-        "To 49 <to49@example.com>",
-        "Cc <cc@example.com>",
-        "Bcc <bcc@example.com>",
-        "meeting.pdf",
-        "notes.txt",
-      ])
-        expect(text).toContain(value);
-      expect(view.details?.some((detail) => detail.label === "Why" || detail.label === "Warum")).toBe(false);
-      const { ask: _ask, ...withoutAsk } = review;
-      expect(capabilityReviewView(withoutAsk, { timeZone: "UTC" })).toEqual(view);
-      expect(view.details?.find((d) => d.format === "date-time")?.value).toBe("2026-10-17T12:00:00Z");
-      const legacy = { message: "Legacy" };
-      expect(capabilityReviewView(legacy, { timeZone: "UTC" })).toBe(legacy);
-    });
+  test("deprecated literal reviews retain their projection", () => {
+    const legacy = { message: "Legacy" };
+    expect(capabilityReviewView(legacy, { timeZone: "UTC" })).toBe(legacy);
+  });
 });

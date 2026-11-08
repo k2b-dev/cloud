@@ -148,15 +148,21 @@ function reviewFor(
     ask: "changes_access",
     // Plain JSON is a passive complete snapshot, readable in every existing approval surface.
     // C22 additionally renders these same full rows through CodeDiff.
-    content: {
-      kind: "page",
-      title: t.content,
-      format: "plain",
-      body: JSON.stringify({
-        binding,
-        manifest: version.manifest,
-        files: codeVersionDiff(comparison?.source_files ?? {}, version.source_files),
-      }),
+    view: {
+      version: 1 as const,
+      blocks: [
+        {
+          kind: "Text" as const,
+          text:
+            t.content +
+            "\n\n" +
+            JSON.stringify({
+              binding,
+              manifest: version.manifest,
+              files: codeVersionDiff(comparison?.source_files ?? {}, version.source_files),
+            }),
+        },
+      ],
     },
   };
 }
@@ -223,18 +229,24 @@ export async function reviewCodeVersionSubmission(
     slots: { code: codeReviewSlot(code) },
     sentence: { action: t.submitAction, running: t.submitRunning, done: t.submitDone, confirm: t.submitConfirm, decline: t.cancel },
     consequences: [{ text: t.submitEffect }],
-    content: {
-      kind: "page",
-      title: t.content,
-      format: "plain",
-      body: JSON.stringify({
-        codeId: code.id,
-        baseVersionId: input.baseVersionId,
-        activeVersionId: code.activeVersionId,
-        manifest: input.manifest,
-        bundle: input.bundle,
-        files: codeVersionDiff(comparison?.source_files ?? {}, input.sourceFiles, "replacement"),
-      }),
+    view: {
+      version: 1 as const,
+      blocks: [
+        {
+          kind: "Text" as const,
+          text:
+            t.content +
+            "\n\n" +
+            JSON.stringify({
+              codeId: code.id,
+              baseVersionId: input.baseVersionId,
+              activeVersionId: code.activeVersionId,
+              manifest: input.manifest,
+              bundle: input.bundle,
+              files: codeVersionDiff(comparison?.source_files ?? {}, input.sourceFiles, "replacement"),
+            }),
+        },
+      ],
     },
   };
   if (!CapabilityActionCallReviewSchema.safeParse(review).success)
@@ -645,19 +657,25 @@ export async function reviewCodeExecutionChange(
       },
       ...(paused ? {} : { ask: "keeps_working" as const }),
       consequences: [{ text: paused ? t.pauseEffect : t.resumeEffect }],
-      content: {
-        kind: "page",
-        title: code.title,
-        format: "plain",
-        body: JSON.stringify({
-          codeId,
-          activeVersionId: code.activeVersionId,
-          sourceHash: version.source_hash,
-          bundleHash: version.bundle_hash,
-          before: code.state,
-          after: paused ? "paused" : "active",
-          approval,
-        }),
+      view: {
+        version: 1 as const,
+        blocks: [
+          {
+            kind: "Text" as const,
+            text:
+              code.title +
+              "\n\n" +
+              JSON.stringify({
+                codeId,
+                activeVersionId: code.activeVersionId,
+                sourceHash: version.source_hash,
+                bundleHash: version.bundle_hash,
+                before: code.state,
+                after: paused ? "paused" : "active",
+                approval,
+              }),
+          },
+        ],
       },
     };
   });

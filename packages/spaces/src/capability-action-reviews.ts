@@ -118,32 +118,21 @@ export const spacesActionReview = (
       .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, (char) => (char === "\n" || char === "\t" ? char : "")),
     ...(format === "date" || format === "date-time" ? { format } : {}),
   }));
-  // Keep date fields typed even when long text needs a page preview.
-  const completeBody = proposal.details.map(({ label, value }) => `${label}: ${value}`).join("\n\n");
-  const normalizedBody = rows.map(({ label, value }) => `${label}: ${value}`).join("\n\n");
-  const body = rows
-    .filter(({ format }) => format === undefined)
-    .map(({ label, value }) => `${label}: ${value}`)
-    .join("\n\n");
   return {
-    preview: {
-      kind: "page",
-      title,
-      body: body.slice(0, 10_000).toWellFormed(),
-      format: "plain",
-      truncated: body.length > 10_000 || normalizedBody !== completeBody,
-    },
     consequences: rows.flatMap(({ label, value, format }) =>
       format ? [{ text: `${label}: {at}`, slots: { at: { kind: "time" as const, start: value, format } } }] : [],
     ),
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title } },
-    content: {
-      kind: "page",
-      title,
-      format: "plain",
-      body: [proposal.message, ...proposal.details.map(({ label, value }) => `${label}: ${value}`)].join("\n\n"),
+    view: {
+      version: 1 as const,
+      blocks: [
+        {
+          kind: "Text" as const,
+          text: [proposal.message, ...proposal.details.map(({ label, value }) => `${label}: ${value}`)].join("\n\n"),
+        },
+      ],
     },
     scope: proposal.scope,
     ...(proposal.ask ? { ask: proposal.ask } : {}),

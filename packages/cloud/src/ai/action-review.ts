@@ -33,7 +33,13 @@ export type AiLegacyActionReview = {
 };
 
 /** A new review, with `ask` filled from the declared policy when the call itself names no reason. */
-export type AiStoredActionReview = (CapabilityActionCallReview & { contentRef?: CapabilityReviewContentRef }) | AiLegacyActionReview;
+export type AiStoredActionReview =
+  | (CapabilityActionCallReview & {
+      contentRef?: CapabilityReviewContentRef;
+      draft?: { editable: boolean; fields: string[] };
+      incomplete?: boolean;
+    })
+  | AiLegacyActionReview;
 
 export const isLegacyActionReview = (review: AiStoredActionReview): review is AiLegacyActionReview => "legacy" in review;
 

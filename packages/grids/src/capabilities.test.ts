@@ -114,10 +114,10 @@ const review = (localId: string, input: unknown, context: CapabilityExecutionCon
   return Promise.resolve(operation.review(parsed.data, context)).then((result) => {
     if (result.ok) {
       const policyReview = CapabilityActionCallReviewSchema.parse(result.data);
-      expect(policyReview.content?.kind).toBe("page");
-      const validated = CapabilityActionReviewSchema.safeParse(
-        (({ input: _input, ...proposal }) => proposal)(JSON.parse(policyReview.content!.body)),
-      );
+      const block = policyReview.view?.blocks[0];
+      expect(block?.kind).toBe("Text");
+      if (block?.kind !== "Text") throw new Error("Missing review view");
+      const validated = CapabilityActionReviewSchema.safeParse((({ input: _input, ...proposal }) => proposal)(JSON.parse(block.text)));
       if (!validated.success) throw new Error(`Invalid complete proposal for ${localId}: ${validated.error.message}`);
       return { ...result, data: validated.data };
     }

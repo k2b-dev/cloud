@@ -275,6 +275,7 @@ export const reviewDraftComposeSafety = async (params: {
   draftId: string;
   expectedRevision: number;
   locale?: string;
+  body?: string;
 }): Promise<Result<DraftSendReview>> => {
   return sql.begin(async (tx) => {
     const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
@@ -290,7 +291,10 @@ export const reviewDraftComposeSafety = async (params: {
       actor: actorRefFromRequest(params.context),
     });
     if (!content.ok) return content;
-    return ok({ ...evaluateComposeSafety(source.data, params.locale), contentHash: content.data.contentHash });
+    return ok({
+      ...evaluateComposeSafety({ ...source.data, ...(params.body === undefined ? {} : { body: params.body }) }, params.locale),
+      contentHash: content.data.contentHash,
+    });
   });
 };
 
@@ -300,11 +304,12 @@ export const validateDraftComposeSafety = async (params: {
   draftId: string;
   expectedRevision: number;
   approval?: ComposeSafetyApproval;
+  body?: string;
 }): Promise<Result<ComposeSafetyReview>> => {
   const source = await loadSafetySource(params);
   if (!source.ok) return source;
   if (source.data.revision !== params.expectedRevision) return fail(err.conflict("Draft changed before sending"));
-  const review = evaluateComposeSafety(source.data);
+  const review = evaluateComposeSafety({ ...source.data, ...(params.body === undefined ? {} : { body: params.body }) });
   if (review.warnings.length === 0) return ok(review);
   /*
    * These warnings are a prompt to the person composing the message, and the

@@ -3,7 +3,9 @@ import { type LoopAggregate, type Message, nessi, type Provider, type ProviderRe
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { serializeReviewSnapshot } from "../capabilities/review-storage";
 import { sql } from "../runtime/clients";
+import { editedDraftArguments } from "./draft-edit";
 import { userResourceContext } from "./projects.test-fixture";
 import { readReviewContent } from "./review-content";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -268,6 +270,76 @@ suite("AI conversation store integration", () => {
       await cleanupFixture({ userId, conversationIds: [chat.id] });
     }
   });
+  test("edited requests require the displayed digest and retain effective args across repeated approval waits", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Edited draft" });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "mock",
+        runConfig,
+        userMessage: userMessage("Edit"),
+      });
+      const review = reviewFixture();
+      const args = { body: "Edited" };
+      const requested = await approvals.request({
+        appId: "demo",
+        action: "write",
+        requester: { kind: "assistant_turn", ref: `${turn.id}/proposal-approval-0`, appId: "assistant" },
+        subjectId: userId,
+        approverUserId: userId,
+        assurance: "confirm",
+        sentence: "Write?",
+        input: args,
+        review,
+        expiresInMs: 60000,
+      });
+      if (!requested.ok) throw new Error("Missing request");
+      const save = {
+        approvalId: requested.id,
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "proposal-approval-0",
+        kind: "custom_approval" as const,
+        status: "pending" as const,
+        name: "demo.write",
+        args,
+        review,
+        approvalScope: "demo.write",
+        allowAlways: false,
+        resolvedEvent: null,
+      };
+      await aiConversations.savePendingTurnAction(save);
+      const stored = serializeReviewSnapshot({ ...review, editedFields: ["body"] });
+      await sql`UPDATE approvals.requests SET details=${stored}::text::jsonb WHERE id=${requested.id}::uuid`;
+      await sql`UPDATE ai.pending_actions SET review=${stored}::text::jsonb WHERE approval_id=${requested.id}::uuid`;
+      const record = await approvals.get(requested.id);
+      expect(record?.details).not.toHaveProperty("editedFields");
+      expect(await approvals.decide(requested.id, { approved: true }, { userId, via: "web_session" })).toMatchObject({
+        ok: false,
+        code: "REVIEW_CHANGED",
+      });
+      expect(
+        await approvals.decide(requested.id, { approved: true, digest: "0".repeat(64) }, { userId, via: "web_session" }),
+      ).toMatchObject({ ok: false, code: "REVIEW_CHANGED" });
+      await aiConversations.savePendingTurnAction(save);
+      await aiConversations.savePendingTurnAction({ ...save, callId: "proposal-approval-1", approvalId: undefined });
+      expect(
+        await editedDraftArguments({
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId: "proposal",
+          name: "demo.write",
+          args: { body: "Original" },
+        }),
+      ).toEqual({ args, fields: ["body"] });
+      expect(
+        await approvals.decide(requested.id, { approved: true, digest: record?.reviewDigest }, { userId, via: "web_session" }),
+      ).toMatchObject({ ok: true, status: "approved" });
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
   test("ending a turn cancels open and unused approvals, including linked chat code, but keeps consumed decisions", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Approvals" });
@@ -508,16 +580,11 @@ suite("AI conversation store integration", () => {
       });
       const session = aiConversations.createSessionStore({ conversationId: source.id, turnId: turn.id });
       await session.append({ role: "assistant", content: [{ type: "tool_call", id: "proposal", name: "demo__action__write", args: {} }] });
-      const content = {
-        kind: "page" as const,
-        title: "Draft",
-        body: `${"x".repeat(65_536)}\u0000\ud800END\udc00`,
-        format: "plain" as const,
-      };
+      const content = { version: 1 as const, blocks: [{ kind: "Text" as const, text: `${"x".repeat(65_536)}\u0000\ud800END\udc00` }] };
       const location = { conversationId: source.id, turnId: turn.id, callId: "proposal" };
       const compact = await recordAiToolReview({
         ...location,
-        review: { ...reviewFixture(), preview: { ...content, body: "Short" }, content },
+        review: { ...reviewFixture(), view: content },
       });
       if (!("contentRef" in compact) || !compact.contentRef) throw new Error("Missing content reference");
       const digest = compact.contentRef.digest;
@@ -534,11 +601,11 @@ suite("AI conversation store integration", () => {
         allowAlways: false,
         approvalScope: "demo.write",
         resolvedEvent: null,
-        review: { ...reviewFixture(), preview: { ...content, body: "Short" }, content },
+        review: { ...reviewFixture(), view: content },
       });
-      const [pending] = await sql<{ review: { content: string } }[]>`
+      const [pending] = await sql<{ review: { view: string } }[]>`
         SELECT review FROM ai.pending_actions WHERE turn_id=${turn.id}::uuid AND call_id='proposal'`;
-      expect(JSON.parse(pending!.review.content)).toEqual(content);
+      expect(JSON.parse(pending!.review.view)).toEqual(content);
       const pendingList = await aiConversations.listPendingTurnActions(location);
       expect(JSON.stringify(pendingList)).not.toContain("x".repeat(1_000));
       expect((await aiConversations.getPendingTurnAction(location))?.review).toEqual(compact);

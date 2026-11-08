@@ -57,7 +57,9 @@ describe("Firecrawl AI tools", () => {
           // A website target still offers this website in this chat; it keeps the standard assurance.
           expect(approvalAssurance(target !== undefined)).toBe("standard");
           expect(review?.ask).toBe("sends");
-          expect(review?.preview).toEqual({ kind: "fields", rows: [{ label: locale === "de" ? "Adresse" : "Address", value: url }] });
+          expect(review?.view).toMatchObject({
+            blocks: [{ kind: "Detail", items: [{ label: locale === "de" ? "Adresse" : "Address", value: url }] }],
+          });
           expect(review?.consequences?.map(({ text }) => text)).toEqual(message.split("\n").slice(1));
           return true;
         },
@@ -83,7 +85,8 @@ describe("Firecrawl AI tools", () => {
       });
       if (!review) throw new Error("Expected a review");
       expect(review.ask).toBe("sends");
-      return review.preview?.kind === "fields" ? review.preview.rows : [];
+      const block = review.view?.blocks[0];
+      return block?.kind === "Detail" && Array.isArray(block.items) ? block.items : [];
     };
     // Shown as written when its encoded form is too long, so the person still reads the whole address.
     const umlauts = new URL(`https://example.com/${"ä".repeat(400)}`).href;

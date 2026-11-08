@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { bindView, blocksText } from "@k2b/cloud/blocks";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
-import { CapabilityActionReviewDataSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import type { CapabilityActionCallReview, CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, encryptSecret } from "@k2b/cloud/services";
 import { approvalReviewDigest, approvals } from "@k2b/cloud/services/approvals";
 import { unwrap } from "@k2b/stdlib";
@@ -21,6 +22,27 @@ import { createMailbox } from "./mailboxes";
 import { outboundDraftSnapshotSchema } from "./outbound-mime";
 import { publicIds } from "./public-resources";
 
+const reviewText = (review: CapabilityActionCallReview) =>
+  review.view
+    ? blocksText(bindView(review.view, JSON.parse(JSON.stringify(review)), { maxBytes: 17 * 1024 * 1024 }).blocks, {
+        locale: review.locale,
+        timeZone: "UTC",
+      })
+    : "";
+const reviewValue = (review: CapabilityActionCallReview, label: string) => {
+  const view = bindView(review.view, JSON.parse(JSON.stringify(review)), { maxBytes: 17 * 1024 * 1024 });
+  for (const block of view.blocks) {
+    if (block.kind === "Detail") {
+      const item = block.items.find((item) => item.label === label);
+      if (item) return item.value;
+    }
+    if (block.kind === "Draft") {
+      const field = block.fields.find((field) => field.label === label);
+      if (field) return field.value;
+    }
+  }
+  throw new Error(`Missing review value ${label}`);
+};
 const suite = suiteFor("database", "nats", "valkey");
 const at = "2026-10-20T06:00:00.000Z";
 const recipient = { name: "Lea Berg", address: "lea@outside.test" };
@@ -253,11 +275,11 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     const created = unwrap(
       await create.review(create.input.parse({ senderIdentityId: identityShortId, subject: "Unsaved", body }), context()),
     );
-    expect(created.content).toMatchObject({ kind: "message", body, to: [] });
+    expect(reviewValue(created, "Text")).toBe(body);
     const base = { draftId: draftShortId, expectedRevision: 7 };
     const patch = mailCapabilities.actions["draft.patch"];
     const patched = unwrap(await patch.review(patch.input.parse({ ...base, patch: { body } }), context()));
-    expect(patched.content).toMatchObject({ body, baseRevision: 7 });
+    expect(reviewValue(patched, "Text")).toBe(body);
     const larger = `${"y".repeat(80_000)}REPLACED`;
     const update = mailCapabilities.actions["draft.update"];
     const replaced = unwrap(
@@ -273,12 +295,13 @@ suite("Mail per-call reviews with real grants and draft state", () => {
         context(),
       ),
     );
-    expect(replaced.content).toMatchObject({ body: larger, baseRevision: 7 });
+    expect(reviewValue(replaced, "Text")).toBe(larger);
     expect(await counts()).toBe(before);
     expect(unwrap(await getDraft(owner, mailboxId, draftId)).body).toBe("Hello Lea");
     await sql`UPDATE mail.drafts SET body_markdown=${larger} WHERE id=${draftId}::uuid`;
     const subjectOnly = unwrap(await patch.review(patch.input.parse({ ...base, patch: { subject: "New subject" } }), context()));
-    expect(subjectOnly.content).toMatchObject({ body: larger, subject: "New subject", baseRevision: 7 });
+    expect(reviewValue(subjectOnly, "Text")).toBe(larger);
+    expect(reviewValue(subjectOnly, "Betreff")).toBe("New subject");
     expect(unwrap(await getDraft(owner, mailboxId, draftId))).toMatchObject({ body: larger, revision: 7 });
   }, 30_000);
 
@@ -293,18 +316,9 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       });
       const review = unwrap(await patch.review(input, context()));
       assertCapabilityReview(review);
-      expect(review.content).toMatchObject({ subject, body, baseRevision: 7 });
+      expect(reviewValue(review, "Text")).toBe(body);
+      expect(reviewValue(review, "Betreff")).toBe(subject);
       expect(review.slots.draft).toMatchObject({ kind: "object", title: "s".repeat(199) });
-      if (review.preview?.kind !== "message") throw new Error("Missing compact message preview");
-      const compactBody = body.length > 10_000 ? "x".repeat(9_999) : body.toWellFormed();
-      expect(review.preview.body).toBe(compactBody);
-      expect(review.preview.body.isWellFormed()).toBeTrue();
-      // A provider that leaves malformed compact text must fail the public review contract.
-      for (const invalid of [
-        { ...review, preview: { ...review.preview, body: "invalid\ud800" } },
-        { ...review, preview: { ...review.preview, subject: "invalid\ud800" } },
-      ])
-        expect(CapabilityActionReviewDataSchema.safeParse(invalid).success).toBeFalse();
       const request = await approvals.request({
         appId: "mail",
         action: "draft.patch",
@@ -319,17 +333,16 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       });
       if (!request.ok) throw new Error("Missing approval snapshot");
       try {
-        const [stored] = await sql<{ body: string; content: string }[]>`
-          SELECT details->'preview'->>'body' AS body, details->>'content' AS content
-          FROM approvals.requests WHERE id=${request.id}::uuid`;
-        expect(stored?.body).toBe(compactBody);
-        expect(JSON.parse(stored!.content)).toEqual(review.content);
+        const [stored] = await sql<{ view: string }[]>`
+          SELECT details->>'view' AS view FROM approvals.requests WHERE id=${request.id}::uuid`;
+        expect(JSON.parse(stored!.view)).toEqual(review.view);
         const restored = await approvals.get(request.id);
         expect(restored?.details).toEqual(review);
         expect(restored?.reviewDigest).toBe(approvalReviewDigest(review));
         const compact = await approvals.get(request.id, undefined, true);
-        expect(compact?.details).not.toHaveProperty("content");
-        expect(compact?.details).toHaveProperty("contentRef.digest", restored?.reviewDigest);
+        // This full view fits 32 KiB, including the exact Unicode; no reader is needed.
+        expect(compact?.details).toHaveProperty("view");
+        expect(compact?.details).not.toHaveProperty("contentRef");
       } finally {
         await sql`DELETE FROM approvals.requests WHERE id=${request.id}::uuid`;
       }
@@ -382,13 +395,10 @@ suite("Mail per-call reviews with real grants and draft state", () => {
               : [],
       });
       const review = unwrap(await action.review(input, context()));
-      expect(review.content).toMatchObject({
-        attachments: [
-          { name: "original.pdf", size: originalBytes.length },
-          { name: "last.txt", size: originalBytes.length },
-          ...(inline === "new" ? [{ name: "added.txt", size: 2 }] : []),
-        ],
-      });
+      const attachments = String(reviewValue(review, "Anhänge"));
+      expect(attachments).toContain(`original.pdf (${originalBytes.length} B)`);
+      expect(attachments).toContain(`last.txt (${originalBytes.length} B)`);
+      if (inline === "new") expect(attachments).toContain("added.txt (2 B)");
       assertCapabilityReview(review);
       expect(await state()).toEqual(before);
       const denied = await accounts.users.get({ id: memberId });
@@ -530,19 +540,22 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     };
     const review = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
     assertCapabilityReview(review);
-    expect(review.preview).toMatchObject({
-      kind: "message",
-      from: { name: "Team Ops", address: "team@internal.test" },
-      to: [recipient],
-      cc: [{ name: "Mira", address: "mira@internal.test" }],
-      bcc: [{ name: "Tom", address: "tom@internal.test" }],
-      sendAt: at,
-    });
-    if (review.preview?.kind !== "message") throw new Error("Expected message preview");
-    expect(review.preview.body).toContain("Regards Team Ops");
-    expect(review.preview.attachments?.map((a) => a.name)).toEqual(["plan.pdf", "calendar.ics", "logo.png", "contact.vcf"]);
-    expect(review.preview.attachments?.every((a) => a.size !== undefined)).toBeTrue();
-    expect(review.preview.warnings?.join(" ")).toContain("1 externer Empfänger.");
+    const text = reviewText(review);
+    for (const expected of [
+      "Team Ops <team@internal.test>",
+      recipient.address,
+      "mira@internal.test",
+      "tom@internal.test",
+      at,
+      "Regards Team Ops",
+      "plan.pdf",
+      "calendar.ics",
+      "logo.png",
+      "contact.vcf",
+      "1 externer Empfänger.",
+    ])
+      expect(text).toContain(expected);
+    expect(review.view?.blocks[0]).toMatchObject({ kind: "Draft", fields: [{ name: "subject" }, { name: "body" }] });
     expect(review.check).toEqual({
       query: "draft.send.check",
       input: { mailboxId: mailboxShortId, draftId: draftShortId, expectedRevision: 7 },
@@ -591,8 +604,8 @@ suite("Mail per-call reviews with real grants and draft state", () => {
         context(),
       ),
     );
-    expect(first.preview).toEqual(second.preview);
-    expect(first.content).not.toEqual(second.content);
+    expect(first.view).not.toEqual(second.view);
+    expect(approvalReviewDigest(first)).not.toBe(approvalReviewDigest(second));
   }, 30_000);
 
   test("time-dependent content beyond the display limit changes the approval digest", async () => {
@@ -621,8 +634,8 @@ suite("Mail per-call reviews with real grants and draft state", () => {
           context(),
         ),
       );
-      expect(first.preview).toEqual(second.preview);
-      expect(first.content).not.toEqual(second.content);
+      expect(first.view).not.toEqual(second.view);
+      expect(approvalReviewDigest(first)).not.toBe(approvalReviewDigest(second));
     } finally {
       setSystemTime();
     }
@@ -751,8 +764,8 @@ suite("Mail per-call reviews with real grants and draft state", () => {
           actor: { ...standalone.actor, scopes: [] },
         }),
       ).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
-      expect(review.content?.body).toContain("Signed by Mail review agent");
-      expect(review.content?.body).not.toContain("Signed by Owner");
+      expect(reviewText(review)).toContain("Signed by Mail review agent");
+      expect(reviewText(review)).not.toContain("Signed by Owner");
       expect(await mailCapabilities.actions["draft.send"].review(input, context())).toMatchObject({
         ok: false,
         error: { code: "SEND_CONTENT_CHANGED", status: 409 },
@@ -790,6 +803,56 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
     }
   }, 30_000);
+
+  test("edited send binds the base hash and atomically saves exactly the reviewed outbound fields", async () => {
+    const expectedContentHash = await reviewedDraftContentHash(owner, mailboxId, draftId, 7);
+    const subject = "Edited subject";
+    const body = "Edited body";
+    const input = {
+      draftId: draftShortId,
+      senderIdentityId: identityShortId,
+      expectedRevision: 7,
+      expectedContentHash,
+      subject,
+      body,
+      undoSeconds: 20,
+    };
+    const reviewed = unwrap(await mailCapabilities.actions["draft.send"].review(input, context()));
+    expect(reviewValue(reviewed, "Betreff")).toBe(subject);
+    expect(reviewValue(reviewed, "Text")).toBe(body);
+    expect(unwrap(await getDraft(owner, mailboxId, draftId))).toMatchObject({ subject: "Maintenance", body: "Hello Lea", revision: 7 });
+    const safety = unwrap(await reviewDraftComposeSafety({ context: owner, mailboxId, draftId, expectedRevision: 7, body }));
+    const commandInput = {
+      kind: "send" as const,
+      draftId,
+      senderIdentityId: identityId,
+      expectedDraftRevision: 7,
+      expectedContentHash,
+      subject,
+      body,
+      undoSeconds: 20,
+      idempotencyKey: "edited-send",
+      safetyApproval: { revision: safety.revision, fingerprint: safety.fingerprint, warningIds: safety.warnings.map((w) => w.id) },
+    };
+    expect(
+      await createActorCommand({
+        context: owner,
+        mailboxId,
+        input: { ...commandInput, expectedContentHash: "0".repeat(64), idempotencyKey: "stale-edit" },
+        enqueue: false,
+      }),
+    ).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED" } });
+    expect(unwrap(await getDraft(owner, mailboxId, draftId))).toMatchObject({ subject: "Maintenance", body: "Hello Lea", revision: 7 });
+    const command = unwrap(await createActorCommand({ context: owner, mailboxId, input: commandInput, enqueue: false }));
+    const [outbox] = await sql<
+      { draft_snapshot: unknown }[]
+    >`SELECT draft_snapshot FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+    const snapshot = outboundDraftSnapshotSchema.parse(outbox?.draft_snapshot);
+    expect(snapshot).toMatchObject({ subject, body, revision: 8 });
+    expect(snapshot.renderedText).toContain(body);
+    expect(snapshot.renderedText).toContain("Regards Team Ops");
+    expect(unwrap(await getDraft(owner, mailboxId, draftId))).toMatchObject({ subject, body, revision: 8 });
+  }, 30000);
 
   const checkInput = () => ({ mailboxId: mailboxShortId, draftId: draftShortId, expectedRevision: 7 });
   const check = () => mailCapabilities.queries["draft.send.check"].run(checkInput(), context());

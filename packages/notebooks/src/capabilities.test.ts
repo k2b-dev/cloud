@@ -1514,11 +1514,11 @@ test("note.create starts from a page template only for writers, with the caller 
   const review = await operation.review!(input, userContext);
   expect(review.ok).toBe(true);
   if (review.ok) {
-    const content = CapabilityActionCallReviewSchema.parse(review.data).content;
-    expect(content?.kind).toBe("page");
-    if (content?.kind === "page") {
-      expect(content.body).toContain("Template: Meeting notes");
-      expect(content.body).toMatch(/Text checksum: sha256:[a-f0-9]{64}/);
+    const content = CapabilityActionCallReviewSchema.parse(review.data).view?.blocks[0];
+    expect(content?.kind).toBe("Text");
+    if (content?.kind === "Text") {
+      expect(content.text).toContain("Template: Meeting notes");
+      expect(content.text).toMatch(/Text checksum: sha256:[a-f0-9]{64}/);
     }
   }
   expect((await operation.run(input, userContext)).ok).toBe(true);
@@ -1557,12 +1557,12 @@ test("shared creation reviews keep complete text, notebook scope and current wri
         validateQueryInput: () => false,
       });
       const review = CapabilityActionCallReviewSchema.parse(result.data);
-      expect(review.preview?.kind).toBe("page");
       expect(review.locale).toBe(locale);
       expect(review.scope).toBe(`notebook:${notebook.shortId}`);
       expect(review.ask).toBeUndefined();
-      expect(review.content?.kind).toBe("page");
-      if (review.content?.kind === "page") expect(review.content.body).toContain(text);
+      expect(review.view?.blocks[0]?.kind).toBe("Text");
+      const body = review.view?.blocks[0];
+      if (body?.kind === "Text") expect(body.text).toContain(text);
     }
   }
   permission.mockResolvedValue("read");

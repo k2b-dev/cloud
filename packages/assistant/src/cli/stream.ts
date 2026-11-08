@@ -344,7 +344,7 @@ export const streamAssistantTurn = async (input: {
         await ctx.readJson(
           await ctx.fetch(
             `${AI_API}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(targetTurnId!)}/actions/${encodeURIComponent(block.callId)}`,
-            jsonRequest("POST", { type: "approval_response", approved: true }),
+            jsonRequest("POST", { type: "approval_response", approved: true, digest: block.approval?.digest }),
           ),
         );
         return null;

@@ -31,7 +31,7 @@ test("web tools keep the whole address in the preview and only the host in a pla
   const review = cloudToolReview("web_extract", { url }, "de-CH");
   expect(review?.locale).toBe("de");
   expect(review?.slots).toEqual({ site: { kind: "place", title: "example.com" } });
-  expect(review?.preview).toEqual({ kind: "fields", rows: [{ label: "Adresse", value: url }] });
+  expect(review?.view).toMatchObject({ blocks: [{ kind: "Detail", items: [{ label: "Adresse", value: url }] }] });
   expect(review && capabilityReviewSentence(review, "question", { timeZone: "UTC" })).toBe("Seite auf „example.com“ lesen?");
   expect(cloudToolReview("fetch_file", inputs.fetch_file, "fr")?.locale).toBe("en");
 });
@@ -51,11 +51,17 @@ test("historical malformed inputs do not throw and long file names respect slot 
   const host = `${["a", "b", "c", "d"].map((letter) => letter.repeat(50)).join(".")}.com`;
   const wide = cloudToolReview("fetch_file", { url: `https://${host}/file.pdf` }, "en");
   expect(wide?.slots.site?.kind === "place" && wide.slots.site.title.length).toBe(200);
-  expect(wide?.preview?.kind === "fields" && wide.preview.rows[0]?.value).toBe(`https://${host}/file.pdf`);
+  expect(wide?.view?.blocks[0]?.kind === "Detail" && Array.isArray(wide.view.blocks[0].items) && wide.view.blocks[0].items[0]?.value).toBe(
+    `https://${host}/file.pdf`,
+  );
   // An address longer than one address row continues over numbered rows, so the question asks with all of it.
   const address = `https://example.com/${"x".repeat(2000)}`;
   const long = cloudToolReview("web_extract", { url: address }, "en");
-  expect(long?.preview?.kind === "fields" && long.preview.rows.map((row) => row.value).join("")).toBe(address);
+  expect(
+    long?.view?.blocks[0]?.kind === "Detail" &&
+      Array.isArray(long.view.blocks[0].items) &&
+      long.view.blocks[0].items.map((row) => row.value).join(""),
+  ).toBe(address);
   expect(cloudToolReview("write_file", { path: `/reports/${"x".repeat(250)}` }, "en")?.slots).toEqual({
     file: { kind: "object", title: "x".repeat(200) },
   });

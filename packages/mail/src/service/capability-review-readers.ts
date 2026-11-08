@@ -14,7 +14,8 @@ export const loadSendReviewContent = async (params: {
   mailboxId: string;
   draft: MailDraft;
   senderIdentityId: string;
-}): Promise<Result<{ draft: DraftPreviewSource; from: CapabilityPerson; contentHash: string }>> => {
+  edits?: { subject?: string; body?: string };
+}): Promise<Result<{ draft: DraftPreviewSource; from: CapabilityPerson; contentHash: string; renderedBody?: string }>> => {
   if (params.draft.state !== "draft") return fail(err.badInput("Draft is not ready for sending"));
   const loaded = await loadSendContent({
     db: sql,
@@ -23,6 +24,7 @@ export const loadSendReviewContent = async (params: {
     expectedRevision: params.draft.revision,
     senderIdentityId: params.senderIdentityId,
     actor: actorRefFromRequest(params.context),
+    edits: params.edits,
   });
   if (!loaded.ok) return loaded;
   const snapshot = loaded.data.snapshot;
@@ -38,8 +40,9 @@ export const loadSendReviewContent = async (params: {
   if (snapshot.vcard) attachments.push({ filename: "contact.vcf", byteLength: Buffer.byteLength(snapshot.vcard) });
   return ok({
     contentHash: loaded.data.contentHash,
+    renderedBody: snapshot.renderedText,
     from: snapshot.from,
-    draft: { ...snapshot, body: snapshot.renderedText!, format: "plain", attachments },
+    draft: { ...snapshot, body: params.edits?.body ?? params.draft.body, attachments },
   });
 };
 

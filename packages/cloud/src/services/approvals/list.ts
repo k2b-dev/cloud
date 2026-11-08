@@ -1,7 +1,10 @@
 import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../../ai/approvals";
+import { compactReviewSql } from "../../ai/review-content";
 import type { AiTurnRunConfig } from "../../ai/types";
 import { approvalMessages } from "../../approvals/messages";
+import { presentReview } from "../../capabilities/legacy-review-view";
+import { restoreReviewSnapshot } from "../../capabilities/review-storage";
 import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
 import { type CapabilityActionPolicy, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
@@ -23,6 +26,7 @@ export type PendingApprovalRow = {
   appId: string;
   action: string;
   argsDigest: string;
+  reviewDigest?: string;
   requesterAppId: string;
   /** The chat title when Cloud asked; unlike `conversationTitle`, a later rename does not change it. */
   requesterTitle: string | null;
@@ -68,7 +72,7 @@ export const listPending = async (input: {
       count(*) FILTER (WHERE NOT (${matches(input.appId, input.link)}))::int AS elsewhere FROM open r`;
     const rows = await tx<PendingApprovalRow[]>`WITH open AS (${open.query})
     SELECT r.id, r.kind, (r.kind <> 'code_version' OR r.author_user_id IS DISTINCT FROM ${input.approverUserId}::uuid OR ${soleAdmin}) AS "canApprove",
-      (r.kind='code_version' AND r.author_user_id IS NOT DISTINCT FROM ${input.approverUserId}::uuid AND ${soleAdmin}) AS "soleAdmin", r.requester_href AS "requesterHref", r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
+      (r.kind='code_version' AND r.author_user_id IS NOT DISTINCT FROM ${input.approverUserId}::uuid AND ${soleAdmin}) AS "soleAdmin", r.requester_href AS "requesterHref", r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest", r.review_digest AS "reviewDigest",
       r.created_at AS "createdAt", r.expires_at AS "expiresAt",
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
@@ -77,7 +81,7 @@ export const listPending = async (input: {
       question.stored_review AS "storedReview"
     FROM open r LEFT JOIN LATERAL (
       SELECT c.short_id, c.title, p.allow_chat, p.allow_always, p.remember_tool_name, p.tool_name, t.run_config,
-        (SELECT (m.meta->'toolReviews'->review.call_id) - 'content' - 'contentRef' FROM (
+        (SELECT ${compactReviewSql(sql`m.meta->'toolReviews'->review.call_id`)} FROM (
           SELECT meta, conversation_id, loop_id, role, seq FROM ai.messages
           UNION ALL
           SELECT meta, conversation_id, loop_id, role, seq FROM ai.task_messages
@@ -136,7 +140,7 @@ export const presentPendingApproval = (
   locale = DEFAULT_LOCALE,
 ): PendingApproval => {
   const app = apps.find((entry) => entry.id === row.appId);
-  const review = CapabilityActionReviewPresentationSchema.nullable().safeParse(row.details);
+  const review = CapabilityActionReviewPresentationSchema.nullable().safeParse(presentReview(restoreReviewSnapshot(row.details), true));
   const originalReview = review.success ? review.data : null;
   const displayReview =
     originalReview && "sentence" in originalReview
@@ -148,6 +152,7 @@ export const presentPendingApproval = (
   const remember = !codeVersion && row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,
+    digest: row.reviewDigest,
     ...(codeVersion ? { canApprove: row.canApprove } : {}),
     ...(codeVersion && row.soleAdmin ? { soleAdminNotice: approvalMessages.resolve([locale]).t.soleAdminNotice } : {}),
     app: { id: row.appId, name: app?.name ?? row.appId, icon: app?.icon ?? null },

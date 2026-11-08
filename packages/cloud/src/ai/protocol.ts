@@ -51,6 +51,8 @@ export type AiTurnBlock =
       isError?: boolean;
       /** Present while status is awaiting_approval. */
       approval?: {
+        requestId?: string;
+        digest?: string;
         message?: string;
         review?: CapabilityActionReviewPresentation;
         allowAlways: boolean;

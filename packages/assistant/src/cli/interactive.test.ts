@@ -157,12 +157,12 @@ test("capability approvals offer numbered Always approve only when allowed", asy
     scope: null,
   };
   const complete = approvalTest(["y"]);
-  const content = { kind: "page" as const, title: "Complete draft", body: `${"x".repeat(80_000)}\u0000END`, format: "plain" as const };
+  const content = { version: 1 as const, blocks: [{ kind: "Text" as const, text: `Complete draft\n${"x".repeat(80_000)}\u0000END` }] };
   const read = complete.reader.read;
   complete.reader.read = async (...args) => {
     const rendered = complete.printed.find((line) => line.includes("Complete draft"));
     expect(rendered).toBeDefined();
-    expect(JSON.parse(rendered!)).toEqual(content);
+    expect(rendered).toBe(`Complete draft\n${"x".repeat(80_000)}\\u0000END`);
     return read(...args);
   };
   expect(
@@ -173,12 +173,12 @@ test("capability approvals offer numbered Always approve only when allowed", asy
         locale: "en",
         sentence: { action: "Write", running: "Writing", done: "Wrote", confirm: "Write", decline: "Keep" },
         slots: {},
-        content,
+        view: content,
       },
     }),
   ).toEqual({ approved: true });
   const contentIndex = complete.printed.findIndex((line) => line.includes("Complete draft"));
-  expect(JSON.parse(complete.printed[contentIndex]!)).toEqual(content);
+  expect(complete.printed[contentIndex]).toBe(`Complete draft\n${"x".repeat(80_000)}\\u0000END`);
   expect(complete.prompts).toEqual([{ prompt: "Approve? [y/N]: ", options: { typedOnly: true } }]);
   const always = approvalTest(["2"]);
   expect(await collectCapabilityApproval(always.ctx, always.reader, request)).toEqual({ approved: true, remember: "always" });

@@ -68,7 +68,19 @@ export const discussionReview = (
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title: label, ...(item ? { ref: item } : {}) } },
-    content: { kind: "page", title: label, body, format: "plain", ...(revision === undefined ? {} : { baseRevision: revision }) },
+    view: {
+      version: 1,
+      blocks:
+        operation === "delete"
+          ? [{ kind: "Text", text: body }]
+          : [
+              {
+                kind: "Draft",
+                context: [{ label: language === "de" ? "Ort" : "Place", value: label }],
+                fields: [{ name: "body", label: language === "de" ? "Text" : "Body", type: "textarea", value: body }],
+              },
+            ],
+    },
     ...(operation === "post" ? { reach: "shared" as const } : {}),
   };
 };

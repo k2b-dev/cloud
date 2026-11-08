@@ -511,11 +511,11 @@ describe("contacts capabilities", () => {
     expect(tagReview.ok).toBe(true);
     if (tagReview.ok) {
       const review = CapabilityActionCallReviewSchema.parse(tagReview.data);
-      expect(review.content?.kind).toBe("page");
-      if (review.content?.kind === "page") {
-        expect(review.content.body).toContain("Contact: Ada Example");
-        expect(review.content.body).toContain("Add: Customer");
-        expect(review.content.body).toContain("Remove: None");
+      expect(review.view?.blocks[0]?.kind).toBe("Text");
+      if (review.view?.blocks[0]?.kind === "Text") {
+        expect(review.view.blocks[0].text).toContain("Contact: Ada Example");
+        expect(review.view.blocks[0].text).toContain("Add: Customer");
+        expect(review.view.blocks[0].text).toContain("Remove: None");
       }
       expect(review.links).toEqual([
         { rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` },
@@ -536,9 +536,9 @@ describe("contacts capabilities", () => {
       });
       const review = CapabilityActionCallReviewSchema.parse(localizedReview.data);
       expect(review.locale).toBe("de");
-      if (review.content?.kind === "page") {
-        expect(review.content.body).toContain("Kontakt: Ada Example");
-        expect(review.content.body).toContain("Hinzufügen: Customer");
+      if (review.view?.blocks[0]?.kind === "Text") {
+        expect(review.view.blocks[0].text).toContain("Kontakt: Ada Example");
+        expect(review.view.blocks[0].text).toContain("Hinzufügen: Customer");
       }
     }
     for (const [index, result] of results.entries()) {
@@ -581,10 +581,8 @@ describe("contacts capabilities", () => {
       const review = CapabilityActionCallReviewSchema.parse(result.data);
       expect(review.locale).toBe(locale === "en" ? "en" : "de");
       expect(review.scope).toBe(`contact:${publicContactId}`);
-      expect(review.preview?.kind).toBe("page");
-      if (review.preview?.kind === "page") expect(review.preview.body).not.toContain("Final detail.");
-      expect(review.content?.kind).toBe("page");
-      if (review.content?.kind === "page") expect(review.content.body).toContain(content);
+      expect(review.view?.blocks[0]?.kind).toBe("Text");
+      if (review.view?.blocks[0]?.kind === "Text") expect(review.view.blocks[0].text).toContain(content);
     }
   });
 

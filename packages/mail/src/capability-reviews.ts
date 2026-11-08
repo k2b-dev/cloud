@@ -1,10 +1,9 @@
+import type { BlockView } from "@k2b/cloud/blocks";
 import { actionReview } from "@k2b/cloud/capabilities";
 import type {
   CapabilityActionCallReview,
   CapabilityActionReceipt,
   CapabilityPerson,
-  CapabilityPreview,
-  CapabilityReviewContent,
   CapabilitySlot,
   CloudResourceRef,
 } from "@k2b/cloud/contracts";
@@ -23,8 +22,6 @@ const reviewSlice = (value: string, max: number): string => {
 
 /** Review projections have smaller display bounds than the durable Mail objects. */
 export const reviewLine = (value: string, max = 200): string => reviewSlice(value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, " "), max);
-const block = (value: string) =>
-  value.replace(/[^\S\n\t]/gu, " ").replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, (c) => (c === "\n" || c === "\t" ? c : ""));
 export const reviewObject = (title: string, ref?: CloudResourceRef, icon = "ti ti-mail"): CapabilitySlot => ({
   kind: "object",
   title: reviewLine(title) || "—",
@@ -103,37 +100,9 @@ export const buildMailReview = (
   // Budget the compact UTF-8 envelope separately from complete review content.
   // Counts make omissions in the card explicit.
   const compactBytes = () => {
-    const { content: _content, ...compact } = review;
+    const { view: _view, ...compact } = review;
     return Buffer.byteLength(JSON.stringify(compact));
   };
-  const p = review.preview;
-  if (p?.kind === "message") {
-    while (compactBytes() > CAPABILITY_MAX_REVIEW_BYTES) {
-      const lists = ["to", "cc", "bcc"] as const;
-      const longest = lists.reduce((a, b) => ((p[a]?.length ?? 0) >= (p[b]?.length ?? 0) ? a : b));
-      if ((p[longest]?.length ?? 0) > 1) {
-        p[longest]!.pop();
-        p.more = { ...p.more, [longest]: (p.more?.[longest] ?? 0) + 1 };
-      } else if ((p.attachments?.length ?? 0) > 0) {
-        p.attachments!.pop();
-        p.moreAttachments = (p.moreAttachments ?? 0) + 1;
-      } else if (p.body.length > 0) {
-        p.body = reviewSlice(p.body, Math.floor(p.body.length / 2));
-        p.truncated = true;
-      } else {
-        // The person slot is a summary, the preview retains each address or its explicit count.
-        const people = Object.values(slotData).find((s) => s.kind === "person" && s.people.length > 1);
-        if (!people || people.kind !== "person") break;
-        people.people.pop();
-      }
-    }
-  }
-  if (p?.kind === "message" && p.attachments?.length === 0) delete p.attachments;
-  if (p?.kind === "page")
-    while (compactBytes() > CAPABILITY_MAX_REVIEW_BYTES && p.body.length) {
-      p.body = reviewSlice(p.body, Math.floor(p.body.length / 2));
-      p.truncated = true;
-    }
   // Assignment batches can name two different audiences. Preserve their full counts
   // while reducing displayed people to fit the same public envelope budget.
   const personSlots = [...Object.values(slotData), ...(extra.consequences ?? []).flatMap((c) => Object.values(c.slots ?? {}))].filter(
@@ -174,67 +143,43 @@ export type DraftPreviewSource = {
   bcc: MailAddress[];
   attachments: { filename: string; byteLength?: number }[];
 };
-export const draftPreview = (draft: DraftPreviewSource, locale?: string): CapabilityPreview => {
-  const body = reviewSlice(block(draft.body), 10_000);
-  const truncated = body.length < block(draft.body).length;
-  if (draft.to.length + draft.cc.length + draft.bcc.length === 0)
-    return {
-      kind: "page",
-      title: reviewLine(draft.subject || mailCapabilityMessages(locale).noSubject),
-      body,
-      format: draft.format,
-      truncated,
-    };
-  return {
-    kind: "message",
-    subject: reviewLine(draft.subject, 998),
-    body,
-    format: draft.format,
-    truncated,
-    to: draft.to.slice(0, 50).map(reviewPerson),
-    ...(draft.cc.length ? { cc: draft.cc.slice(0, 50).map(reviewPerson) } : {}),
-    ...(draft.bcc.length ? { bcc: draft.bcc.slice(0, 50).map(reviewPerson) } : {}),
-    ...(draft.to.length > 50 || draft.cc.length > 50 || draft.bcc.length > 50
-      ? {
-          more: {
-            ...(draft.to.length > 50 ? { to: draft.to.length - 50 } : {}),
-            ...(draft.cc.length > 50 ? { cc: draft.cc.length - 50 } : {}),
-            ...(draft.bcc.length > 50 ? { bcc: draft.bcc.length - 50 } : {}),
-          },
-        }
-      : {}),
-    ...(draft.attachments.length
-      ? {
-          attachments: draft.attachments
-            .slice(0, 50)
-            .map((a) => ({ name: reviewLine(a.filename, 255), ...(a.byteLength === undefined ? {} : { size: a.byteLength }) })),
-        }
-      : {}),
-    ...(draft.attachments.length > 50 ? { moreAttachments: draft.attachments.length - 50 } : {}),
-  };
-};
-/** Exact proposed source; controls are made visible by Cloud's reader, never removed here. */
-export const draftReviewContent = (draft: DraftPreviewSource): Extract<CapabilityReviewContent, { kind: "message" }> => ({
-  kind: "message",
-  ...(draft.revision === undefined ? {} : { baseRevision: draft.revision }),
-  subject: draft.subject,
-  body: draft.body,
-  format: "plain",
-  to: draft.to.map((p) => ({ address: p.address, ...(p.name == null ? {} : { name: p.name }) })),
-  cc: draft.cc.map((p) => ({ address: p.address, ...(p.name == null ? {} : { name: p.name }) })),
-  bcc: draft.bcc.map((p) => ({ address: p.address, ...(p.name == null ? {} : { name: p.name }) })),
-  attachments: draft.attachments.map((a) => ({ name: a.filename, ...(a.byteLength === undefined ? {} : { size: a.byteLength }) })),
+/** Passive proposals; only draft.send exposes editable top-level input keys. */
+export const draftPreview = (draft: DraftPreviewSource, locale?: string): BlockView => ({
+  version: 1,
+  blocks: [
+    {
+      kind: "Detail",
+      title: mailReviewLocale(locale) === "de" ? "Entwurf" : "Draft",
+      items: [
+        { label: mailReviewLocale(locale) === "de" ? "Betreff" : "Subject", value: draft.subject },
+        { label: mailReviewLocale(locale) === "de" ? "Text" : "Body", value: draft.body },
+        {
+          label: mailReviewLocale(locale) === "de" ? "An" : "To",
+          value: draft.to.map((p) => (p.name ? `${p.name} <${p.address}>` : p.address)).join(", "),
+        },
+        { label: "Cc", value: draft.cc.map((p) => p.address).join(", ") },
+        { label: "Bcc", value: draft.bcc.map((p) => p.address).join(", ") },
+        {
+          label: mailReviewLocale(locale) === "de" ? "Anhänge" : "Attachments",
+          value: draft.attachments.map((a) => `${a.filename}${a.byteLength === undefined ? "" : ` (${a.byteLength} B)`}`).join(", "),
+        },
+      ],
+    },
+  ],
 });
-export const commentPreview = (text: string, locale?: string, before?: string): CapabilityPreview => ({
-  kind: "page",
-  title: mailReviewCopy(locale).comment,
-  body: reviewSlice(block(text), 10_000),
-  format: "plain",
-  truncated: block(text).length > 10_000,
-  ...(before !== undefined && block(before).length <= 2_000 ? { changes: [{ change: "removed", text: block(before) }] } : {}),
+export const commentPreview = (text: string, locale?: string, before?: string): BlockView => ({
+  version: 1,
+  blocks: [
+    {
+      kind: "Detail",
+      title: mailReviewCopy(locale).comment,
+      items: [{ label: mailReviewLocale(locale) === "de" ? "Text" : "Body", value: text, ...(before === undefined ? {} : { before }) }],
+    },
+  ],
 });
 export type SendReviewSource = {
   contentHash: string;
+  renderedBody?: string;
   draft: DraftPreviewSource;
   from: CapabilityPerson;
   expectedRevision: number;
@@ -248,28 +193,27 @@ export type SendReviewSource = {
 export const buildSendReview = (source: SendReviewSource, locale?: string): CapabilityActionCallReview => {
   const recipients = source.draft.to.length ? source.draft.to : source.draft.cc.length ? source.draft.cc : source.draft.bcc;
   if (!recipients.length) throw new Error("At least one recipient is required before sending");
-  const p = draftPreview(source.draft, locale);
-  if (p.kind !== "message") throw new Error("A send preview must be a message");
-  p.from = {
-    ...source.from,
-    ...(source.from.name === undefined ? {} : { name: reviewLine(source.from.name) }),
-    ...(source.from.address === undefined ? {} : { address: reviewLine(source.from.address, 320) }),
-  };
-  if (source.scheduledAt) p.sendAt = source.scheduledAt;
-  const warningLead = (title: string) => (/\p{P}$/u.test(title) ? title : title + ".");
-  const warnings = source.warnings.map((w) => warningLead(w.title) + " " + w.description);
-  const compactWarnings = warnings.map((warning) => reviewLine(warning, 300));
-  // Six kinds currently exist. Keep complete first four, then every remaining lead.
-  p.warnings =
-    compactWarnings.length <= 5
-      ? compactWarnings
-      : [
-          ...compactWarnings.slice(0, 4),
-          source.warnings
-            .slice(4)
-            .map((w) => warningLead(reviewLine(w.title, 140)))
-            .join(" "),
-        ];
+  const de = mailReviewLocale(locale) === "de";
+  const people = (values: MailAddress[]) =>
+    // People rows hold 200 entries with 200-character labels. Keep larger Mail
+    // audiences and addresses complete as text rather than shortening them.
+    values.length <= 200 && values.every((p) => p.address.length <= 200 && (!p.name || p.name.length <= 200))
+      ? values.map((p) => ({ ...(p.name ? { name: p.name } : {}), address: p.address }))
+      : values.map((p) => (p.name ? `${p.name} <${p.address}>` : p.address)).join(", ");
+  const context = [
+    { label: de ? "An" : "To", value: people(source.draft.to) },
+    ...(source.draft.cc.length ? [{ label: "Cc", value: people(source.draft.cc) }] : []),
+    ...(source.draft.bcc.length ? [{ label: "Bcc", value: people(source.draft.bcc) }] : []),
+    {
+      label: de ? "Von" : "From",
+      value: source.from.name ? `${source.from.name} <${source.from.address ?? ""}>` : (source.from.address ?? "—"),
+    },
+    {
+      label: de ? "Anhänge" : "Attachments",
+      value: source.draft.attachments.map((a) => `${a.filename}${a.byteLength === undefined ? "" : ` (${a.byteLength} B)`}`).join(", "),
+    },
+    ...(source.scheduledAt ? [{ label: de ? "Sendezeit" : "Send at", value: source.scheduledAt }] : []),
+  ];
   return buildMailReview(
     source.scheduledAt ? "draft.send.scheduled" : "draft.send",
     locale,
@@ -280,14 +224,33 @@ export const buildSendReview = (source: SendReviewSource, locale?: string): Capa
     },
     {
       ask: "sends",
-      preview: p,
-      content: {
-        ...draftReviewContent(source.draft),
-        from: source.from,
-        ...(source.scheduledAt ? { sendAt: source.scheduledAt } : {}),
-        warnings,
+      view: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Draft",
+            context,
+            fields: [
+              { name: "subject", label: de ? "Betreff" : "Subject", type: "text", value: source.draft.subject },
+              { name: "body", label: de ? "Text" : "Body", type: "textarea", value: source.draft.body },
+            ],
+          },
+          ...(source.renderedBody !== undefined && source.renderedBody !== source.draft.body
+            ? [
+                {
+                  kind: "Detail" as const,
+                  title: de ? "Versandtext" : "Rendered message",
+                  items: [{ label: de ? "Text" : "Body", value: source.renderedBody }],
+                },
+              ]
+            : []),
+          ...source.warnings.map((w) => ({ kind: "Notice" as const, tone: "warning" as const, title: w.title, text: w.description })),
+        ],
       },
-      links: [{ rel: "open", href: source.href }],
+      links: [
+        { rel: "open", href: source.href },
+        { rel: "edit", href: source.href, title: de ? "Empfänger in Mail ändern" : "Change recipients in Mail" },
+      ],
       check: {
         query: "draft.send.check",
         input: { mailboxId: source.mailboxId, draftId: source.draftId, expectedRevision: source.expectedRevision },

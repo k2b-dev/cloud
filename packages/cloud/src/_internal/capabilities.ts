@@ -234,6 +234,8 @@ export type CompiledAppEvent = { definition: AppEventDefinition; manifest: Capab
 export type CompiledAppEventSubscription = { definition: AppEventSubscriptionDefinition; manifest: CapabilitySubscriptionManifest };
 
 export type CompiledCapabilities = {
+  appId: string;
+  appPrefixes: readonly string[];
   events: ReadonlyMap<string, CompiledAppEvent>;
   subscribes: ReadonlyMap<string, CompiledAppEventSubscription>;
   manifest: CapabilityManifest;
@@ -1186,7 +1188,7 @@ export const compileCapabilities = (
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
   }
   const presentation = compileCapabilityPresentation(manifest, definitions.presentation);
-  return { manifest, presentation, typeIds, queries, actions, events, subscribes };
+  return { appId, appPrefixes: routes ?? [], manifest, presentation, typeIds, queries, actions, events, subscribes };
 };
 
 const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: Readonly<Record<string, string>> | undefined) => {
@@ -1722,6 +1724,9 @@ const resultRefs = (result: unknown): Array<{ type: string; id: string }> => {
 };
 
 const compiledReviewContext = (compiled: CompiledCapabilities, localId: string) => ({
+  appId: compiled.appId,
+  appPrefixes: compiled.appPrefixes,
+  inputSchema: compiled.actions.get(localId)?.manifest.inputSchema,
   policy: capabilityActionPolicy(compiled.manifest, localId),
   approval: compiled.actions.get(localId)?.manifest.approval,
   queries: compiled.manifest.queries,

@@ -2,20 +2,23 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { DraftEditError, editAiApprovalDraft } from "../ai/draft-edit";
 import { toAiActionFailureResponse } from "../ai/http";
 import { resolveAiChatRequestContext } from "../ai/request-context";
 import { readReviewContent } from "../ai/review-content";
 import { submitAiTurnAction } from "../ai/runtime";
 import { aiConversations } from "../ai/store";
+import { BoundBlockViewSchema } from "../blocks/schema";
 import {
   APPROVAL_CLIENT_HEADER,
   ApprovalCountsSchema,
   ApprovalDecisionInputSchema,
   ApprovalDecisionResultSchema,
+  ApprovalDraftInputSchema,
+  ApprovalDraftResultSchema,
   ApprovalListQuerySchema,
   ApprovalPageSchema,
 } from "../contracts/approvals";
-import { CapabilityReviewContentSchema } from "../contracts/capabilities";
 import { ErrorResponseSchema } from "../contracts/shared";
 import { rateLimit } from "../server";
 import { userFromActor } from "../server/actor";
@@ -41,7 +44,7 @@ export const approvalRoutes = new Hono<AuthContext>()
       summary: "Read one complete pending approval snapshot",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(CapabilityReviewContentSchema, "Complete reviewed content"),
+        200: jsonResponse(BoundBlockViewSchema, "Complete reviewed content"),
         404: jsonResponse(ErrorResponseSchema, "Snapshot unavailable"),
       },
     }),
@@ -68,7 +71,7 @@ export const approvalRoutes = new Hono<AuthContext>()
       summary: "Read one historical conversation review snapshot",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(CapabilityReviewContentSchema, "Complete reviewed content"),
+        200: jsonResponse(BoundBlockViewSchema, "Complete reviewed content"),
         404: jsonResponse(ErrorResponseSchema, "Snapshot unavailable"),
       },
     }),
@@ -121,6 +124,42 @@ export const approvalRoutes = new Hono<AuthContext>()
         c,
         ok(await countPending({ approverUserId: user.id, roleContext: { kind: "request", authority: auth.getAuthority(c) } })),
       );
+    },
+  )
+  .post(
+    "/:id/draft",
+    bodyLimit({ maxSize: 256 * 1024 }),
+    describeRoute({
+      tags: ["Approvals"],
+      summary: "Edit an open chat draft in the owner's browser",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ApprovalDraftResultSchema, "Updated draft"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid fields"),
+        403: jsonResponse(ErrorResponseSchema, "Browser session required"),
+        404: jsonResponse(ErrorResponseSchema, "Open draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "Draft changed"),
+      },
+    }),
+    v("param", z.strictObject({ id: z.uuid() })),
+    v("json", ApprovalDraftInputSchema),
+    async (c) => {
+      const ctx = await resolveAiChatRequestContext(c);
+      if (ctx instanceof Response) return ctx;
+      try {
+        const result = await editAiApprovalDraft({
+          ...c.req.valid("param"),
+          ...c.req.valid("json"),
+          authority: auth.getAuthority(c),
+          signedInSession: ctx.signedInSession,
+          signal: c.req.raw.signal,
+        });
+        c.header("Cache-Control", "private, no-store");
+        return c.json(result);
+      } catch (error) {
+        if (error instanceof DraftEditError) return c.json({ message: error.message }, error.status);
+        throw error;
+      }
     },
   )
   .post(

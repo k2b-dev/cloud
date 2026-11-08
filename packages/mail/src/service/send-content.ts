@@ -72,6 +72,7 @@ export const loadSendContent = async (params: {
   senderIdentityId?: string;
   actor: ActorRef;
   lock?: boolean;
+  edits?: { subject?: string; body?: string };
 }): Promise<Result<{ snapshot: OutboundDraftSnapshot; contentHash: string; source: SendSource }>> => {
   const actorUserId =
     params.actor.kind === "user" ? params.actor.userId : params.actor.kind === "service_account" ? params.actor.delegatedUserId : null;
@@ -170,6 +171,20 @@ export const loadSendContent = async (params: {
     }
   }
   if (actorUserId && !draft.actor_uid) return fail(err.badInput("The delegated compose user is no longer available"));
+  const base = renderSendContent(draft);
+  if (!base.ok || (params.edits?.subject === undefined && params.edits?.body === undefined)) return base;
+  const edited = renderSendContent({
+    ...draft,
+    subject: params.edits?.subject ?? draft.subject,
+    body_markdown: params.edits?.body ?? draft.body_markdown,
+  });
+  return edited.ok ? ok({ ...edited.data, contentHash: base.data.contentHash, source: draft }) : edited;
+};
+
+/** Pure MIME/render snapshot builder, shared by review and atomic send. */
+export const renderSendContent = (
+  draft: SendSource,
+): Result<{ snapshot: OutboundDraftSnapshot; contentHash: string; source: SendSource }> => {
   const content = internalDraftEditableContentInputSchema.safeParse({
     senderIdentityId: draft.sender_identity_id,
     signatureTemplateId: draft.signature_template_id,

@@ -990,6 +990,9 @@ const runCapabilityDispatch = async (
   }
 
   const reviewContext = {
+    appId: params.appId,
+    appPrefixes: [] as readonly string[],
+    inputSchema: operation.inputSchema,
     policy: capabilityActionPolicy(entry.manifest, params.capabilityId),
     approval: "approval" in operation ? operation.approval : undefined,
     queries: entry.manifest.queries,
@@ -1003,6 +1006,16 @@ const runCapabilityDispatch = async (
   const parsedResult = resultValidator?.safeParse(upstreamBody.data);
   const field = (value: unknown, key: string): unknown =>
     value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  let reviewRegistryUnavailable = false;
+  if (params.review && field(upstreamBody.data, "view") !== undefined) {
+    try {
+      const app = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(params.appId));
+      if (!app || app.id !== params.appId) throw new Error("View app registration unavailable");
+      reviewContext.appPrefixes = app.routes;
+    } catch {
+      reviewRegistryUnavailable = true;
+    }
+  }
   const receipt = field(upstreamBody.data, "receipt");
   const links = field(upstreamBody.data, "links");
   const reviewIssues = params.review
@@ -1012,6 +1025,7 @@ const runCapabilityDispatch = async (
       : params.kind === "queries"
         ? ["Queries cannot return a receipt"]
         : capabilityActionReceiptIssues(receipt, links);
+  if (reviewRegistryUnavailable) reviewIssues.push("Review app registration unavailable");
   const nestedReceipt = field(field(upstreamBody.data, "data"), "receipt");
   if (
     !params.review &&

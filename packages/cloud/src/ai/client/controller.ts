@@ -1,7 +1,9 @@
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
+import { editApprovalDraft } from "../../approvals/draft";
 import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
+import type { ApprovalDraftResult } from "../../contracts/approvals";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
@@ -1415,7 +1417,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     conversationId: string,
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
+    action:
+      | { type: "approval_response"; approved: boolean; remember?: "chat" | "always"; digest?: string }
+      | { type: "tool_result"; result: unknown },
   ) => {
     if (isActiveConversation(conversationId) && runStatus() === "stopping") return false;
     try {
@@ -1456,7 +1460,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const submitTurnAction = (
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
+    action:
+      | { type: "approval_response"; approved: boolean; remember?: "chat" | "always"; digest?: string }
+      | { type: "tool_result"; result: unknown },
   ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return Promise.resolve(false);
@@ -1466,7 +1472,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const respondToApproval = async (
     request: { turnId: string; callId: string },
-    input: { approved: boolean; remember?: "chat" | "always" },
+    input: { approved: boolean; remember?: "chat" | "always"; digest?: string },
   ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return false;
@@ -1474,10 +1480,46 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       type: "approval_response",
       approved: input.approved,
       remember: input.remember,
+      digest: input.digest,
     });
     if (submitted)
       showActionResolved(conversationId, request.turnId, { type: "approval_response", callId: request.callId, approved: input.approved });
     return submitted;
+  };
+
+  const editDraft = async (
+    requestInput: { turnId: string; callId: string; requestId: string },
+    values: Record<string, string>,
+    digest: string,
+  ): Promise<ApprovalDraftResult> => {
+    const conversationId = activeConversationId();
+    if (!conversationId) throw new Error("No active conversation.");
+    const result = await editApprovalDraft(requestInput.requestId, values, digest);
+    const projection = isActiveConversation(conversationId) ? state : cache.get(conversationId);
+    if (projection && "sentence" in result.review) {
+      const review = result.review;
+      const parent = requestInput.callId.replace(/-approval-[0-9]+$/, "");
+      const messages = projection.messages.map((message) =>
+        message.loopId === requestInput.turnId && message.meta?.toolReviews?.[parent]
+          ? { ...message, meta: { ...message.meta, toolReviews: { ...message.meta.toolReviews, [parent]: review } } }
+          : message,
+      );
+      const activeTurn =
+        projection.activeTurn?.turnId === requestInput.turnId
+          ? {
+              ...projection.activeTurn,
+              blocks: projection.activeTurn.blocks.map((block) =>
+                block.kind === "tool" && block.callId === requestInput.callId
+                  ? { ...block, review, approval: block.approval ? { ...block.approval, review, digest: result.digest } : undefined }
+                  : block,
+              ),
+            }
+          : projection.activeTurn;
+      const next = { ...projection, messages, activeTurn };
+      cache.set(conversationId, next);
+      if (isActiveConversation(conversationId)) setState(reconcile(next));
+    }
+    return result;
   };
 
   const checkAction = async (requestInput: { turnId: string; callId: string }): Promise<AiActionCheck> => {
@@ -1612,6 +1654,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     clearMessageFeedback,
     submitTurnAction,
     respondToApproval,
+    editDraft,
     checkAction,
     submitFrontendToolResult,
     fileContentUrl,

@@ -180,13 +180,22 @@ const credentialAuthenticate: NonNullable<CapabilityRouteDependencies["authentic
   return c.json({ message: "Authentication required" }, 401);
 };
 
+const getViewApp: NonNullable<CapabilityRouteDependencies["getApp"]> = async (id) => ({
+  id,
+  name: id,
+  description: id,
+  icon: "ti ti-apps",
+  baseUrl: `http://${id}:3000`,
+  routes: [`/app/${id}`],
+});
+
 const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies = {}) =>
-  buildCapabilityRoutes({ withActiveSigner, signInvocation: signInvocationToken, ...dependencies });
+  buildCapabilityRoutes({ withActiveSigner, signInvocation: signInvocationToken, getApp: getViewApp, ...dependencies });
 const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
   performDispatch({
     authority: resourceAuthority,
     ...params,
-    dependencies: { withActiveSigner, signInvocation: signInvocationToken, ...params.dependencies },
+    dependencies: { withActiveSigner, signInvocation: signInvocationToken, getApp: getViewApp, ...params.dependencies },
   });
 
 describe("capability API", () => {
@@ -1597,7 +1606,7 @@ describe("policy review and receipt validation", () => {
     [
       { text: "Queued", preview: { kind: "page", title: "Page", body: "Text", format: "plain", truncated: true } },
       [{ rel: "open", href: "/app/demo" }],
-      true,
+      false,
     ],
     [
       {
@@ -1618,7 +1627,7 @@ describe("policy review and receipt validation", () => {
     [
       { text: "Queued", preview: { kind: "message", to: [{ name: "Lea" }], subject: "Hi", body: "Text", format: "plain" } },
       undefined,
-      true,
+      false,
     ],
   ] as const)
     test(`Core receipt ${JSON.stringify(receipt)} ${!!links}`, async () => {

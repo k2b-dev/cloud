@@ -34,6 +34,10 @@ export type ApprovalListQuery = z.infer<typeof ApprovalListQuerySchema>;
 export const PendingApprovalSchema = z
   .object({
     id: z.uuid(),
+    digest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     /** False for the Code author unless they are the sole active human Cloud admin. Rechecked when deciding. */
     canApprove: z.boolean().optional(),
     /** Localized mandatory notice for a currently eligible sole-admin self-approval. */
@@ -80,8 +84,27 @@ export const ApprovalCountsSchema = z
   .strict();
 export type ApprovalCounts = z.infer<typeof ApprovalCountsSchema>;
 
-export const ApprovalDecisionInputSchema = z.object({ approved: z.boolean(), remember: z.enum(["chat", "always"]).optional() }).strict();
+export const ApprovalDecisionInputSchema = z
+  .object({
+    approved: z.boolean(),
+    remember: z.enum(["chat", "always"]).optional(),
+    digest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .strict();
 export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionInputSchema>;
 
 export const ApprovalDecisionResultSchema = z.object({ status: z.enum(["approved", "rejected"]) }).strict();
 export type ApprovalDecisionResult = z.infer<typeof ApprovalDecisionResultSchema>;
+
+export const ApprovalDraftInputSchema = z.strictObject({
+  values: z.record(z.string(), z.string()),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export const ApprovalDraftResultSchema = z.strictObject({
+  review: CapabilityActionReviewPresentationSchema,
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type ApprovalDraftResult = z.infer<typeof ApprovalDraftResultSchema>;

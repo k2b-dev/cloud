@@ -74,9 +74,15 @@ test("chat post reviews the full proposed text in English and German", async () 
     const result = await action.review({ ...input, body: "🦋".repeat(20_000) }, { ...context, locale });
     expect(result.ok).toBeTrue();
     if (!result.ok) continue;
-    assertCapabilityReview(result.data, { policy: action.policy, queries: [], validateQueryInput: () => false, locales: ["en", "de"] });
+    assertCapabilityReview(result.data, {
+      inputSchema: { properties: { body: { type: "string" } } },
+      policy: action.policy,
+      queries: [],
+      validateQueryInput: () => false,
+      locales: ["en", "de"],
+    });
     expect(result.data.locale).toBe(locale === "en" ? "en" : "de");
-    expect(result.data.content).toMatchObject({ body: "🦋".repeat(20_000) });
+    expect(result.data.view?.blocks[0]).toMatchObject({ kind: "Draft", fields: [{ name: "body", value: "🦋".repeat(20_000) }] });
     expect(result.data.scope).toBe("conversation:Chat01");
     expect(result.data.ask).toBeUndefined();
   }

@@ -1,5 +1,6 @@
-import { z } from "zod";
-import { capabilityPreviewIssues, capabilityReviewFormIssues } from "../capabilities/reviews";
+import type { z } from "zod";
+import { validateBlocks } from "../blocks/validate";
+import { boundReviewView, capabilityReviewFormIssues, reviewBindingData, reviewDraft } from "../capabilities/reviews";
 import {
   CAPABILITY_REACHES,
   CapabilityActionCheckSchema,
@@ -7,7 +8,6 @@ import {
   CapabilityActionReceiptSchema,
   CapabilityActionReviewDataSchema,
   type CapabilityQueryManifest,
-  CapabilitySemanticLinkSchema,
 } from "../contracts/capabilities";
 import { localeFallbackChain } from "../shared/locale";
 import { capabilityHash, projectSchema } from "./capability-schemas";
@@ -28,6 +28,9 @@ export type CapabilityReviewContext = {
   queries: readonly CapabilityQueryManifest[];
   validateQueryInput: (query: CapabilityQueryManifest, input: Record<string, unknown>) => boolean;
   locales?: readonly string[];
+  inputSchema?: { properties?: Record<string, unknown> };
+  appId?: string;
+  appPrefixes?: readonly string[];
 };
 const schemaIssues = (error: z.ZodError): string[] => error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
 let actionCheckDataHash: string | undefined;
@@ -61,27 +64,30 @@ export const capabilityActionReviewIssues = (review: unknown, context: Capabilit
     if (!query || !capabilityQueryChecksActionOutcome(query)) issues.push("check.query must return CapabilityActionCheckSchema");
     else if (!context.validateQueryInput(query, data.check.input)) issues.push("check.input does not match the Query");
   }
-  issues.push(
-    ...capabilityPreviewIssues(
-      data.preview,
-      data.links,
-      // A per-call reason never lifts the declared `sends` completeness rule.
-      data.ask === "sends" || ("ask" in context.policy && context.policy.ask === "sends"),
-      Boolean(data.content),
-    ),
-  );
-  if (data.content?.kind === "message" && "ask" in context.policy && context.policy.ask === "sends") {
-    if (!data.content.from) issues.push("Full sends content requires from");
-    if (!data.content.to.length && !data.content.cc?.length && !data.content.bcc?.length)
-      issues.push("Full sends content requires a recipient");
+  try {
+    const view = boundReviewView(data);
+    if (view) {
+      validateBlocks(view.blocks, "review", {
+        appId: context.appId ?? "",
+        appPrefixes: context.appPrefixes ?? [],
+        envelope: { ...reviewBindingData(data), view },
+      });
+      const draft = reviewDraft(view.blocks);
+      if (
+        draft &&
+        (!context.inputSchema?.properties || draft.fields.some((field) => !Object.hasOwn(context.inputSchema!.properties!, field.name)))
+      )
+        issues.push("Draft fields must name top-level Action input properties");
+      if (draft && "ask" in context.policy && context.policy.ask === "sends" && data.ask !== "sends")
+        issues.push(...capabilityReviewFormIssues({ ...data, ask: "sends" }));
+    }
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : "Invalid review view");
   }
   return [...new Set(issues)];
 };
 /** A receipt's own rules; completeness links are the result envelope's top-level `links`. */
-export const capabilityActionReceiptIssues = (receipt: unknown, links: unknown): string[] => {
+export const capabilityActionReceiptIssues = (receipt: unknown, _links: unknown): string[] => {
   const parsed = CapabilityActionReceiptSchema.safeParse(receipt);
-  const resultLinks = z.array(CapabilitySemanticLinkSchema).safeParse(links);
-  return parsed.success
-    ? capabilityPreviewIssues(parsed.data.preview, resultLinks.success ? resultLinks.data : undefined)
-    : schemaIssues(parsed.error);
+  return parsed.success ? [] : schemaIssues(parsed.error);
 };

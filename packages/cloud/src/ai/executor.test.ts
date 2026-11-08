@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
   type Message,
   memoryStore,
@@ -24,6 +24,12 @@ import {
   aiWebsiteApprovalScope,
   parseAiWebsiteApprovalScope,
 } from "./approvals";
+import * as draftEdit from "./draft-edit";
+
+beforeEach(() => {
+  spyOn(draftEdit, "editedDraftArguments").mockImplementation(async ({ args }) => ({ args, fields: [] }));
+});
+
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { isMalformedToolCallId } from "./malformed-tool-calls";

@@ -50,7 +50,11 @@ export const approvalCard = (item: ApprovalCardInput, locale: string, timeZone: 
     if (!item.codeVersion) return card;
     const reason = actionReason("changes_access", { locale: card.locale, appName: item.appName });
     const notice = item.soleAdminNotice ? approvalMessages.resolve([card.locale]).t.soleAdminNotice : undefined;
-    return { ...card, reason: { ...reason, text: notice ? `${reason.text} ${notice}` : reason.text } };
+    return {
+      ...card,
+      ...(card.draft ? { draft: { ...card.draft, editable: false } } : {}),
+      reason: { ...reason, text: notice ? `${reason.text} ${notice}` : reason.text },
+    };
   };
   if (review && !isLegacyActionReview(review)) return codeReason(reviewActionCard(review, context));
   const title = approvalTitle(item);

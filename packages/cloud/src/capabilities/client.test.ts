@@ -188,7 +188,7 @@ describe("public capability client", () => {
 });
 
 test("full review reader uses only Cloud snapshot routes and preserves complete content", async () => {
-  const content = { kind: "page" as const, title: "Full", body: "x".repeat(300_000), format: "plain" as const };
+  const content = { version: 1 as const, blocks: [{ kind: "Text" as const, text: "x".repeat(300000) }] };
   const ref = { href: "/api/approvals/11111111-1111-4111-8111-111111111111/content", digest: "a".repeat(64) };
   let calls = 0;
   const fetcher = async (url: string | URL | Request, init?: RequestInit) => {

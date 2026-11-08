@@ -39,8 +39,8 @@ test("the input shows without a review, and when the question leaves something o
   expect(pendingActionQuestion(ctx, { ...action(), review: legacy }).showInput).toBe(true);
 });
 
-test("terminal full content preserves valid JSON, complete text and invisible source characters", async () => {
-  const content = { kind: "page", title: "Proposal", body: `${"x".repeat(80_000)}\u0000\u202e\ud800\u{e0001}`, format: "plain" };
+test("terminal full views preserve complete text and escape control characters", async () => {
+  const content = { version: 1, blocks: [{ kind: "Text", text: `Proposal\n${"x".repeat(80_000)}\u0000\u202eEND` }] };
   const pending = action();
   pending.review = {
     ...review(),
@@ -57,7 +57,7 @@ test("terminal full content preserves valid JSON, complete text and invisible so
     pending,
   );
   expect(printed).toHaveLength(1);
-  expect(JSON.parse(printed[0]!)).toEqual(content);
+  expect(printed[0]).toBe(`Proposal\n${"x".repeat(80_000)}\\u0000\\u202eEND`);
   expect(printed[0]).not.toContain("\u202e");
   await expect(
     printPendingActionContent(

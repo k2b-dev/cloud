@@ -463,6 +463,8 @@ export type AiInterChatMessage = {
 export type AiPendingTurnAction =
   | {
       type: "approval_request";
+      requestId?: string;
+      digest?: string;
       turnId: string;
       conversationId: string;
       callId: string;
@@ -504,6 +506,7 @@ export type AiTurnAbortRequest =
 
 export type AiPendingTurnActionRecord = {
   approvalId?: string;
+  digest?: string;
   turnId: string;
   conversationId: string;
   callId: string;

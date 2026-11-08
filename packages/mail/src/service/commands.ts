@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
@@ -166,6 +167,8 @@ type PreparedActorCommand = {
   draftId: string | null;
   expectedDraftRevision: number | null;
   expectedContentHash: string | null;
+  subject?: string;
+  body?: string;
   safetyApproval: ComposeSafetyApproval | null;
   scheduledAt: string | null;
   undoSeconds: number;
@@ -368,12 +371,16 @@ const prepareActorCommand = (input: ProviderMessageCommandInput): Result<Prepare
       scheduledAt: input.scheduledAt ?? null,
       undoSeconds,
       safetyApproval: input.safetyApproval ?? null,
+      ...(input.subject === undefined ? {} : { subject: input.subject }),
+      ...(input.body === undefined ? {} : { body: input.body }),
     },
     folderRequirements: [],
     senderIdentityId: input.senderIdentityId,
     draftId: input.draftId,
     expectedDraftRevision: input.expectedDraftRevision,
     expectedContentHash: input.expectedContentHash,
+    subject: input.subject,
+    body: input.body,
     safetyApproval: input.safetyApproval ?? null,
     scheduledAt: input.scheduledAt ?? null,
     undoSeconds,
@@ -474,6 +481,7 @@ const createSendOutbox = async (params: {
     expectedRevision: prepared.expectedDraftRevision!,
     actor: params.actor,
     lock: true,
+    edits: { subject: prepared.subject, body: prepared.body },
   });
   if (!send.ok) throw Object.assign(new Error(send.error.message), send.error);
   if (send.data.contentHash !== prepared.expectedContentHash) {
@@ -487,6 +495,7 @@ const createSendOutbox = async (params: {
     draftId: prepared.draftId,
     expectedRevision: prepared.expectedDraftRevision!,
     approval: prepared.safetyApproval ?? undefined,
+    body: prepared.body,
   });
   if (!safety.ok) throw Object.assign(new Error(safety.error.message), safety.error);
   const senderDomain = draft.from_address.split("@")[1]?.toLowerCase() || "mail.invalid";
@@ -565,12 +574,47 @@ const createSendOutbox = async (params: {
       const changed = sendContentChanged();
       throw Object.assign(new Error(changed.message), changed);
     }
+    if (prepared.subject !== undefined || prepared.body !== undefined) {
+      const edited = await locked.data.writeRevision({
+        expectedRevision: prepared.expectedDraftRevision!,
+        generation: state.data.generation,
+        content: {
+          ...state.data.durable.content,
+          subject: prepared.subject ?? state.data.durable.content.subject,
+          body: prepared.body ?? state.data.durable.content.body,
+        },
+        deadline: Date.now() + REQUEST_IDLE_TIMEOUT_SECONDS * 1000,
+      });
+      if (!edited.ok || edited.data.status !== "accepted")
+        throw Object.assign(
+          new Error("Edited draft could not be saved completely; retry after reloading."),
+          err.conflict("Edited draft could not be saved completely; retry after reloading."),
+        );
+    }
     const frozen = await locked.data.freeze({ generation: state.data.generation });
     if (!frozen.ok) throw Object.assign(new Error(frozen.error.message), frozen.error);
+    const expectedContent = {
+      ...state.data.durable.content,
+      subject: prepared.subject ?? state.data.durable.content.subject,
+      body: prepared.body ?? state.data.durable.content.body,
+    };
+    if (JSON.stringify(frozen.data.content) !== JSON.stringify(expectedContent)) {
+      const changed = sendContentChanged();
+      throw Object.assign(new Error(changed.message), changed);
+    }
+    snapshot.data.revision = frozen.data.revision;
     await params.db`
       INSERT INTO mail.draft_document_freezes (draft_id, generation, revision, cursor, state)
       VALUES (${prepared.draftId}::uuid, ${frozen.data.generation}::bigint, ${frozen.data.revision}, ${frozen.data.cursor}, ${Buffer.from(frozen.data.state)})
     `;
+  }
+  if (editing?.edit_mode !== "shared" && (prepared.subject !== undefined || prepared.body !== undefined)) {
+    const [edited] = await params.db<
+      { revision: number }[]
+    >`UPDATE mail.drafts SET subject=${snapshot.data.subject},body_markdown=${snapshot.data.body},revision=revision+1,updated_at=now()
+      WHERE id=${prepared.draftId}::uuid AND mailbox_id=${params.mailboxId}::uuid AND revision=${prepared.expectedDraftRevision!} AND state='draft' RETURNING revision`;
+    if (!edited) throw Object.assign(new Error("Draft changed before sending"), err.conflict("Draft changed before sending"));
+    snapshot.data.revision = Number(edited.revision);
   }
   const outboxRows = await withShortIdDb(
     params.db,

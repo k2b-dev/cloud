@@ -38,6 +38,7 @@ import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { createCloudCompactFn } from "./compaction";
 import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { editedDraftArguments } from "./draft-edit";
 import { aiFileStore } from "./files-store";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
@@ -344,6 +345,8 @@ const rebuildBlocksFromMessages = (
           action.kind === "client_tool"
             ? undefined
             : {
+                requestId: action.approvalId,
+                digest: action.digest,
                 message: action.message,
                 review: action.review,
                 allowAlways: action.allowAlways,
@@ -1051,6 +1054,8 @@ export class AiTurnExecutor {
     const capabilityOperations = new Map<string, AiCapabilityCatalogEntry>();
     const storedReviews = new Map<string, AiStoredActionReview>();
     const dynamicToolRuntimeContext = {
+      effectiveArguments: (callId: string, name: string, args: unknown) =>
+        editedDraftArguments({ conversationId, turnId, callId, name, args }),
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
       reportToolResult: (callId: string, result: unknown) => pipeline.reportToolResult(callId, result),
@@ -1839,7 +1844,6 @@ export class AiTurnExecutor {
     signal: AbortSignal;
   }): Promise<boolean> {
     const {
-      event,
       loop,
       pipeline,
       conversationId,
@@ -1851,6 +1855,14 @@ export class AiTurnExecutor {
       capabilityActionReviews,
       approvalTargets,
     } = input;
+    const effective = await editedDraftArguments({
+      conversationId,
+      turnId,
+      callId: customApprovalParentCallId(input.event.callId) ?? input.event.callId,
+      name: prepared.canonicalNames.get(input.event.name) ?? input.event.name,
+      args: input.event.args,
+    });
+    const event = { ...input.event, args: effective.args };
     const approvalPolicy = prepared.approvalPolicies.get(event.name);
     const toolName = prepared.canonicalNames.get(event.name) ?? event.name;
     const frontendMode: AiFrontendToolMode | undefined =
@@ -2000,6 +2012,10 @@ export class AiTurnExecutor {
     }
 
     await pipeline.apply(presented);
+    if (approvalId) {
+      const record = await approvals.get(approvalId, undefined, true);
+      await pipeline.setApprovalRequest(event.callId, approvalId, record?.reviewDigest);
+    }
     if (
       event.kind === "client_tool" &&
       frontendMode === "client" &&
@@ -2355,6 +2371,13 @@ class StreamPipeline {
     const block = this.blocks.find((block) => block.kind === "tool" && block.id === toolBlockId(callId));
     if (block?.kind !== "tool") return;
     await this.emitOp({ type: "block_set", block: { ...block, receipts: merged } });
+    await this.maybeSnapshot();
+  }
+
+  async setApprovalRequest(callId: string, requestId: string, digest?: string): Promise<void> {
+    const block = this.blocks.find((block) => block.kind === "tool" && block.callId === callId);
+    if (block?.kind !== "tool" || !block.approval) return;
+    await this.emitOp({ type: "block_set", block: { ...block, approval: { ...block.approval, requestId, digest } } });
     await this.maybeSnapshot();
   }
 

@@ -1,32 +1,37 @@
-import { capabilityPersonText, capabilityReviewSentence, capabilitySentenceText } from "../_internal/capability-sentences";
+import { capabilityReviewSentence, capabilitySentenceText } from "../_internal/capability-sentences";
+import { bindView } from "../blocks/bind";
+import type { Block } from "../blocks/schema";
+import { blocksText } from "../blocks/text";
 import {
   CAPABILITY_MAX_REVIEW_BYTES,
   type CapabilityActionCallReview,
   CapabilityActionCallReviewSchema,
   type CapabilityActionReview,
   type CapabilityActionReviewData,
-  type CapabilityPreview,
-  type CapabilitySemanticLink,
   type CapabilitySlot,
 } from "../contracts/capabilities";
+import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../contracts/capability-limits";
 import { canonicalLocale } from "../shared/locale";
-export const capabilityPreviewIssues = (
-  preview: CapabilityPreview | undefined,
-  links: readonly CapabilitySemanticLink[] | undefined,
-  sends = false,
-  completeContent = false,
-): string[] => {
-  if (!preview) return [];
-  const issues: string[] = [];
-  const open = completeContent || links?.some((link) => link.rel === "open");
-  if ("truncated" in preview && preview.truncated && !open) issues.push("A truncated preview requires an open link");
-  if (preview.kind === "message") {
-    if ((Object.values(preview.more ?? {}).some((count) => count > 0) || (preview.moreAttachments ?? 0) > 0) && !open)
-      issues.push("Unlisted recipients or attachments require an open link");
-    if (sends && !preview.from) issues.push("A sends message requires from");
+export const reviewDraft = (blocks: readonly Block[] | undefined): Extract<Block, { kind: "Draft" }> | undefined => {
+  for (const block of blocks ?? []) {
+    if (block.kind === "Draft") return block;
+    if (block.kind === "Section") {
+      const draft = reviewDraft(block.children);
+      if (draft) return draft;
+    }
   }
-  return issues;
 };
+// Optional review forms may be explicitly undefined in in-process producers. Their
+// JSON representation omits them; use that same representation for data binding.
+export const reviewBindingData = (review: CapabilityActionCallReview) => ({
+  ...Object.fromEntries(Object.entries(review).filter(([, value]) => value !== undefined)),
+  sentence: Object.fromEntries(Object.entries(review.sentence).filter(([, value]) => value !== undefined)),
+});
+export const boundReviewView = (review: CapabilityActionCallReview) =>
+  review.view
+    ? bindView(review.view, reviewBindingData(review), { maxBytes: CAPABILITY_MAX_REVIEW_CONTENT_BYTES + CAPABILITY_MAX_REVIEW_BYTES + 11 })
+    : undefined;
+
 /** Context-free rules shared by the builder and runtime validation. */
 export const capabilityReviewFormIssues = (review: CapabilityActionCallReview): string[] => {
   const issues: string[] = [];
@@ -34,21 +39,20 @@ export const capabilityReviewFormIssues = (review: CapabilityActionCallReview): 
   for (const form of ["confirm", "decline"] as const)
     if (Array.from(capabilityReviewSentence(review, form, { timeZone: "UTC" })).length > 40)
       issues.push(`${form} exceeds 40 rendered characters`);
-  issues.push(...capabilityPreviewIssues(review.preview, review.links, review.ask === "sends", Boolean(review.content)));
-  if (
-    review.content &&
-    review.preview &&
-    review.content.kind !== review.preview.kind &&
-    !(review.content.kind === "message" && review.preview.kind === "page")
-  )
-    issues.push("Full content must have the same kind as its preview");
-  if (review.content?.kind === "message" && review.ask === "sends") {
-    if (!review.content.from) issues.push("Full sends content requires from");
-    if (!review.content.to.length && !review.content.cc?.length && !review.content.bcc?.length)
-      issues.push("Full sends content requires a recipient");
-  }
+  let draft: ReturnType<typeof reviewDraft>;
   try {
-    const { content: _content, ...compact } = review;
+    draft = reviewDraft(boundReviewView(review)?.blocks);
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : "Invalid review view");
+  }
+  if (
+    review.ask === "sends" &&
+    draft &&
+    !draft.context?.some((row) => /^(from|von)$/iu.test(row.label) && (typeof row.value === "string" ? row.value.trim() : row.value.length))
+  )
+    issues.push("A sends Draft requires sender context (From/Von)");
+  try {
+    const { view: _view, ...compact } = review;
     if (new TextEncoder().encode(JSON.stringify(compact)).byteLength > CAPABILITY_MAX_REVIEW_BYTES) issues.push("Review exceeds 32 KiB");
   } catch {
     issues.push("Review is not JSON serializable");
@@ -111,12 +115,6 @@ export const capabilityReviewView = (
         ...(block ? { display: "block" as const } : {}),
       });
   };
-  const people = (en: string, german: string, persons: Parameters<typeof capabilityPersonText>[0][] | undefined, more = 0) => {
-    if (persons === undefined && !more) return;
-    const values = (persons ?? []).map(capabilityPersonText);
-    if (more) values.push(de ? `und ${more} weitere` : `and ${more} more`);
-    row(en, german, values.join(", "));
-  };
   const sentence = (value: { text: string; slots?: Readonly<Record<string, CapabilitySlot>> }) =>
     capabilitySentenceText(value.text, value.slots ?? {}, { locale: review.locale, timeZone: context.timeZone });
   const consequence = (value: NonNullable<CapabilityActionCallReview["consequences"]>[number]) =>
@@ -125,91 +123,8 @@ export const capabilityReviewView = (
       value.mark === "added" ? "Neu" : value.mark === "removed" ? "Entfernt" : "Folge",
       sentence(value),
     );
-  const p = review.preview;
-  if (p)
-    switch (p.kind) {
-      case "message": {
-        if (p.from) row("From", "Von", capabilityPersonText(p.from));
-        people("To", "An", p.to, p.more?.to);
-        people("Cc", "Cc", p.cc, p.more?.cc);
-        people("Bcc", "Bcc", p.bcc, p.more?.bcc);
-        row("Subject", "Betreff", p.subject);
-        const attachments = (p.attachments ?? []).map((a) => `${a.name}${a.size === undefined ? "" : ` (${a.size} B)`}`);
-        if (p.moreAttachments) attachments.push(de ? `und ${p.moreAttachments} weitere` : `and ${p.moreAttachments} more`);
-        if (p.attachments || p.moreAttachments) row("Attachments", "Anhänge", attachments.join(", "));
-        row("Send at", "Sendezeit", p.sendAt, "date-time");
-        for (const warning of p.warnings ?? []) row("Warning", "Warnung", warning);
-        row("Body", "Text", p.body, p.format === "markdown" ? "markdown" : undefined, true);
-        if (p.truncated)
-          row(
-            "Shortened",
-            "Gekürzt",
-            de ? "Den ganzen Text öffnest du über den Link unten." : "Open the full text through the link below.",
-          );
-        break;
-      }
-      case "event":
-        row("Title", "Titel", p.title);
-        row("Start", "Beginn", p.start, p.allDay || p.start.length === 10 ? "date" : "date-time");
-        row("End", "Ende", p.end, p.allDay || p.end?.length === 10 ? "date" : "date-time");
-        row("All day", "Ganztägig", p.allDay === undefined ? undefined : p.allDay ? (de ? "Ja" : "Yes") : de ? "Nein" : "No");
-        row("Time zone", "Zeitzone", p.timeZone);
-        row("Place", "Ort", p.place);
-        row("Location", "Adresse", p.location);
-        row("Recurrence", "Wiederholung", p.recurrence);
-        people("Attendees", "Teilnehmende", p.attendees);
-        row("Description", "Beschreibung", p.description, undefined, true);
-        break;
-      case "task":
-        row("Title", "Titel", p.title);
-        row("Place", "Ort", p.place);
-        row("Due", "Fällig", p.due, p.due?.length === 10 ? "date" : "date-time");
-        people("Assignees", "Zuständig", p.assignees);
-        row("Status", "Status", p.status);
-        for (const item of p.checklist ?? []) row(item.done ? "Done" : "Open", item.done ? "Erledigt" : "Offen", item.label);
-        if (p.tags) row("Tags", "Tags", p.tags.join(", "));
-        row("Description", "Beschreibung", p.description, undefined, true);
-        break;
-      case "page":
-        row("Title", "Titel", p.title);
-        row("Place", "Ort", p.place);
-        row("Body", "Text", p.body, p.format === "markdown" ? "markdown" : undefined, true);
-        if (p.truncated)
-          row(
-            "Shortened",
-            "Gekürzt",
-            de ? "Den ganzen Text öffnest du über den Link unten." : "Open the full text through the link below.",
-          );
-        for (const change of p.changes ?? [])
-          row(
-            change.change === "added" ? "Added" : "Removed",
-            change.change === "added" ? "Neu" : "Entfernt",
-            change.text,
-            undefined,
-            true,
-          );
-        break;
-      case "file":
-        row("Name", "Name", p.name);
-        row("Place", "Ort", p.place);
-        row("Path", "Pfad", p.path);
-        row("Size", "Größe", p.size);
-        row("Media type", "Medientyp", p.mediaType);
-        row("To", "Ziel", p.to);
-        break;
-      case "rule":
-        row("When", "Wenn", sentence(p.when));
-        row("Does", "Tut", p.does, undefined, true);
-        for (const right of p.may) consequence(right);
-        row("Sees this chat", "Kennt diesen Chat", p.seesChat ? (de ? "Ja" : "Yes") : de ? "Nein" : "No");
-        break;
-      case "fields":
-        for (const field of p.rows) {
-          row(field.label, field.label, field.value, field.format);
-          if (field.before !== undefined) row(`${field.label} (before)`, `${field.label} (vorher)`, field.before, field.format);
-        }
-        break;
-    }
+  const view = boundReviewView(review);
+  if (view) row("Details", "Details", blocksText(view.blocks, { locale: review.locale, timeZone: context.timeZone }), undefined, true);
   for (const value of review.consequences ?? []) consequence(value);
   return {
     message: capabilitySentenceText(review.sentence.action, review.slots, { locale: review.locale, timeZone: context.timeZone }),

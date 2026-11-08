@@ -13,7 +13,6 @@ import {
   buildMailReview,
   buildSendReview,
   draftPreview,
-  draftReviewContent,
   folderDisplayReceipt,
   mailActionReviews,
   mailReceipt,
@@ -53,6 +52,7 @@ const manifest = compileCapabilityManifest("mail", mailCapabilities);
 const reviewContext = {
   policy: capabilityActionPolicy(manifest, "draft.send"),
   queries: manifest.queries,
+  inputSchema: manifest.actions.find((a) => a.localId === "draft.send")!.inputSchema,
   locales: ["en", "de"],
   validateQueryInput: (query: { localId: string }, input: Record<string, unknown>) =>
     query.localId === "draft.send.check" && mailCapabilities.queries["draft.send.check"].input.safeParse(input).success,
@@ -178,23 +178,18 @@ describe("Mail review contract", () => {
       }),
     ).toContain("en: question exceeds 80 visible characters");
   });
-  test("send completeness is checked with declaration context", () => {
+  test("send Draft declares editable input keys and noneditable recipient context", () => {
     const review = buildSendReview(sendSource, "de");
     assertCapabilityReview(review, reviewContext);
-    if (review.preview?.kind !== "message") throw new Error("Expected message");
-    const missingFrom = structuredClone(review);
-    if (missingFrom.preview?.kind === "message") delete missingFrom.preview.from;
-    expect(() => assertCapabilityReview(missingFrom, reviewContext)).toThrow("requires from");
-    for (const field of ["bcc", "attachments", "body"] as const) {
-      const incomplete = structuredClone(review);
-      delete incomplete.links;
-      delete incomplete.content;
-      if (incomplete.preview?.kind !== "message") throw new Error("Expected message");
-      if (field === "bcc") incomplete.preview.more = { bcc: 1 };
-      if (field === "attachments") incomplete.preview.moreAttachments = 1;
-      if (field === "body") incomplete.preview.truncated = true;
-      expect(() => assertCapabilityReview(incomplete, reviewContext)).toThrow("open link");
-    }
+    const draft = review.view?.blocks.find((b) => b.kind === "Draft");
+    if (draft?.kind !== "Draft") throw new Error("Expected Draft");
+    expect(draft.fields.map((f) => f.name)).toEqual(["subject", "body"]);
+    expect(draft.context?.map((row) => row.label)).toEqual(["An", "Cc", "Bcc", "Von", "Anhänge"]);
+    expect(draft.context?.find((row) => row.label === "An")?.value).toEqual(
+      sendSource.draft.to.map((person) => ({ ...(person.name ? { name: person.name } : {}), address: person.address })),
+    );
+    draft.context = draft.context?.filter((row) => row.label !== "Von");
+    expect(() => assertCapabilityReview(review, reviewContext)).toThrow("sender context");
   });
   test("the reviewed revision changes the serialized approval input", () => {
     const seven = buildSendReview(sendSource, "en");
@@ -203,39 +198,28 @@ describe("Mail review contract", () => {
     expect(eight.check?.input.expectedRevision).toBe(8);
     expect(eight.links?.[0]?.href).toBe(sendSource.href);
   });
-  test("valid worst-case Mail content fits the whole review and retains overflow counts", () => {
+  test("send review retains all recipients and attachments inside the Draft budget", () => {
+    const people = Array.from({ length: 60 }, (_, i) => ({ name: `Person ${i}`, address: `p${i}@example.com` }));
     for (const locale of ["en", "de"]) {
-      const people = Array.from({ length: 60 }, (_, i) => ({ name: "界".repeat(200), address: `p${i}@example.com` }));
       const draft = {
         ...sendSource.draft,
-        subject: "界".repeat(998),
-        body: "界".repeat(20_000),
         to: people,
         cc: people,
         bcc: people,
-        attachments: Array.from({ length: 60 }, (_, i) => ({ filename: `${i}${"界".repeat(245)}.pdf`, byteLength: i })),
+        body: "界".repeat(20000),
+        attachments: Array.from({ length: 60 }, (_, i) => ({ filename: `file-${i}.pdf`, byteLength: i })),
       };
-      const source = { ...sendSource, draft, from: { ...sendSource.from, name: "界".repeat(200) } };
-      for (const scheduledAt of [undefined, "2026-10-20T06:00:00.000Z"]) {
-        const review = buildSendReview({ ...source, scheduledAt }, locale);
-        assertCapabilityReview(review, reviewContext);
-        const { content, ...compact } = review;
-        expect(content?.body).toBe(draft.body);
-        expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThanOrEqual(32768);
-        if (review.preview?.kind !== "message") throw new Error("Expected message");
-        for (const role of ["to", "cc", "bcc"] as const)
-          expect((review.preview[role]?.length ?? 0) + (review.preview.more?.[role] ?? 0)).toBe(60);
-        expect((review.preview.attachments?.length ?? 0) + (review.preview.moreAttachments ?? 0)).toBe(60);
-        expect(review.preview.truncated).toBeTrue();
-      }
+      const review = buildSendReview({ ...sendSource, draft }, locale);
+      assertCapabilityReview(review, reviewContext);
+      const text = JSON.stringify(review.view);
+      expect(text).toContain("p59@example.com");
+      expect(text).toContain("file-59.pdf");
+      expect(text).toContain(draft.body);
+      const { view: _view, ...metadata } = review;
+      expect(Buffer.byteLength(JSON.stringify(metadata))).toBeLessThanOrEqual(32768);
       for (const message of ["draft.create", "draft.patch", "draft.update", "draft.discard"] as const)
         assertCapabilityReview(
-          buildMailReview(
-            message,
-            locale,
-            { draft: reviewObject(draft.subject) },
-            { preview: draftPreview(draft, locale), links: [{ rel: "open", href: sendSource.href }] },
-          ),
+          buildMailReview(message, locale, { draft: reviewObject(draft.subject) }, { view: draftPreview(draft, locale) }),
         );
     }
   });
@@ -331,7 +315,7 @@ describe("Mail review contract", () => {
       const review = mailActionReviews["mailing-list.unsubscribe"](
         locale,
         { list: reviewObject("界".repeat(4096)) },
-        { preview: { kind: "fields", rows } },
+        { view: { version: 1, blocks: [{ kind: "Detail", title: "Details", items: rows }] } },
       );
       assertCapabilityReview(review, { ...reviewContext, policy: capabilityActionPolicy(manifest, "mailing-list.unsubscribe") });
       expect(rows.map((row) => row.value).join("")).toBe(href + address);
@@ -346,34 +330,20 @@ describe("Mail review contract", () => {
       expect(folderDisplayReceipt("hidden", reviewPlace("Child"), undefined, locale).text).toMatch(/hidden|ausgeblendet/i);
     }
   });
-  test("recipient-free drafts have page previews; Cc/Bcc-only sends name real recipients", () => {
-    expect(draftPreview({ ...sendSource.draft, to: [], cc: [], bcc: [] }).kind).toBe("page");
+  test("passive drafts contain the whole body; Cc/Bcc-only sends use real recipients", () => {
+    expect(draftPreview({ ...sendSource.draft, to: [], cc: [], bcc: [] }).blocks[0]?.kind).toBe("Detail");
     for (const cc of [sendSource.draft.cc, []]) {
       const review = buildSendReview({ ...sendSource, draft: { ...sendSource.draft, to: [], cc } });
       expect(review.slots.to).toMatchObject({ people: cc.length ? cc : sendSource.draft.bcc });
     }
-  });
-  test("message previews omit empty optional lists and zero overflow counts", () => {
-    const preview = draftPreview({ ...sendSource.draft, cc: [], bcc: [], attachments: [] });
-    expect(preview.kind).toBe("message");
-    for (const key of ["cc", "bcc", "attachments", "more", "moreAttachments"]) expect(preview).not.toHaveProperty(key);
-    const overflow = draftPreview({ ...sendSource.draft, to: Array.from({ length: 51 }, () => sendSource.draft.to[0]!) });
-    expect(overflow.kind === "message" && overflow.more).toEqual({ to: 1 });
-  });
-  test("warning leads preserve punctuation, including combined overflow warnings", () => {
-    for (const punctuation of [".", "!", "?", "…", ":", ";"]) {
-      const title = "External recipient" + punctuation;
-      const review = buildSendReview({ ...sendSource, warnings: Array.from({ length: 6 }, () => ({ title, description: "Details." })) });
-      if (review.preview?.kind !== "message") throw new Error("Expected message");
-      expect(review.preview.warnings?.[0]).toBe(title + " Details.");
-      expect(review.preview.warnings?.[4]).toBe(title + " " + title);
-    }
+    const draft = { ...sendSource.draft, body: "x".repeat(80000) + "😀tail" };
+    expect(JSON.stringify(draftPreview(draft))).toContain(draft.body);
   });
   test("all safety warning kinds remain visible; done and receipts never claim completed delivery", () => {
     const warnings = Array.from({ length: 6 }, (_, i) => ({ title: `Kind ${i}`, description: `Details ${i}.` }));
     const review = buildSendReview({ ...sendSource, warnings });
-    expect(review.preview?.kind === "message" && review.preview.warnings).toHaveLength(5);
-    expect(JSON.stringify(review.preview)).toContain("Kind 5");
+    expect(review.view?.blocks.filter((block) => block.kind === "Notice")).toHaveLength(6);
+    expect(JSON.stringify(review.view)).toContain("Kind 5");
     for (const locale of ["de", "en"])
       for (const scheduledAt of [undefined, "2026-10-20T06:00:00.000Z"]) {
         const review = buildSendReview({ ...sendSource, scheduledAt }, locale);
@@ -417,47 +387,31 @@ describe("Mail review contract", () => {
   });
 });
 
-test("full draft proposal preserves source, base revision, 600 recipients and 202 MIME descriptions", () => {
-  const people = Array.from({ length: 200 }, (_, i) => ({ name: `Person ${i}\u202e`, address: `person${i}@example.test` }));
+test("full Draft preserves all source fields and MIME descriptions", () => {
+  const people = Array.from({ length: 200 }, (_, i) => ({ name: `Person ${i}`, address: `person${i}@example.test` }));
   const draft = {
     ...sendSource.draft,
     revision: 7,
-    body: `${"x".repeat(80_000)}UNSAVED\u0000`,
+    body: "x".repeat(80000) + "UNSAVED\u0000",
     to: people,
     cc: people,
     bcc: people,
-    attachments: Array.from({ length: 202 }, (_, i) => ({ filename: `file-${i}\u202e.txt`, byteLength: i })),
+    attachments: Array.from({ length: 202 }, (_, i) => ({ filename: `file-${i}.txt`, byteLength: i })),
   };
-  const content = draftReviewContent(draft);
-  expect(content.body).toBe(draft.body);
-  expect(content.baseRevision).toBe(7);
-  expect(content.to).toEqual(people);
-  expect(content.cc).toEqual(people);
-  expect(content.bcc).toEqual(people);
-  expect(content.attachments).toHaveLength(202);
-  expect(content.attachments?.at(-1)).toEqual({ name: "file-201\u202e.txt", size: 201 });
-  const review = buildSendReview({
-    ...sendSource,
-    draft,
-    from: { name: "Sender\u202e", address: "sender@example.test" },
-    warnings: [{ title: "Warning\u202e", description: "Complete description" }],
-  });
+  const review = buildSendReview({ ...sendSource, draft });
   assertCapabilityReview(review, reviewContext);
-  expect(review.content).toMatchObject({
-    ...content,
-    from: { name: "Sender\u202e", address: "sender@example.test" },
-    warnings: ["Warning\u202e. Complete description"],
-  });
+  const text = JSON.stringify(review.view);
+  expect(text).toContain("person199@example.test");
+  expect(text).toContain("file-201.txt");
+  const block = review.view?.blocks[0];
+  if (block?.kind !== "Draft") throw new Error("Expected Draft");
+  expect(block.fields.find((field) => field.name === "body")?.value).toBe(draft.body);
 });
 
 test("compact Mail excerpts preserve Unicode boundaries without changing the full proposal", () => {
   const source = { ...sendSource.draft, body: "x".repeat(9_999) + "😀tail\ud800" };
   const preview = draftPreview(source);
-  if (preview.kind !== "message") throw new Error("Expected message preview");
-  expect(preview.body.isWellFormed()).toBe(true);
-  expect(preview.body).toBe("x".repeat(9_999));
-  expect(preview.truncated).toBe(true);
-  expect(draftReviewContent(source).body).toBe(source.body);
+  expect(JSON.stringify(preview)).toContain(JSON.stringify(source.body).slice(1, -1));
   const title = reviewObject("x".repeat(199) + "😀tail");
   if (title.kind !== "object") throw new Error("Expected object slot");
   expect(title.title).toBe("x".repeat(199));

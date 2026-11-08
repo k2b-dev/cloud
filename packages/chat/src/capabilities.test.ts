@@ -202,21 +202,22 @@ test("all discussion approval operations preserve a maximum-size message in full
       const id = operation === "post" ? "discussion.post" : `message.${operation}`;
       const action = manifest.actions.find((action) => action.localId === id)!;
       assertCapabilityReview(review, {
+        inputSchema: action.inputSchema,
         policy: capabilityActionPolicy(manifest, id),
         approval: action.approval,
         queries: manifest.queries,
         validateQueryInput: () => false,
         locales: ["en", "de"],
       });
-      expect(review.content?.body).toBe(body);
-      const { content: _content, ...compact } = review;
+      expect(JSON.stringify(review.view)).toContain(JSON.stringify(body).slice(1, -1));
+      const { view: _view, ...compact } = review;
       expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
     }
   const actualPost = await chatCapabilities.actions["discussion.post"].review({ ref: item, body }, context());
   expect(actualPost.ok).toBe(true);
   if (actualPost.ok) {
     const parsed = CapabilityActionReviewDataSchema.parse(actualPost.data);
-    expect("content" in parsed && parsed.content?.body).toBe(body);
+    expect(JSON.stringify("view" in parsed && parsed.view)).toContain(JSON.stringify(body).slice(1, -1));
     const manifest = compileCapabilityManifest("chat", chatCapabilities);
     const approval = manifest.actions.find((action) => action.localId === "discussion.post")?.approval;
     expect(capabilityReviewRememberScope(actualPost.data, approval)).toBe(discussionApprovalScope(container.ref));

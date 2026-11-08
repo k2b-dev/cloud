@@ -3,6 +3,8 @@ import { type AiStoredActionReview, storedActionReview } from "../../ai/action-r
 import type { ActionCard } from "../../ai/chat/action-card";
 import { approvalCard } from "../../approvals/approval-card";
 import { approvalMessages } from "../../approvals/messages";
+import { presentReview } from "../../capabilities/legacy-review-view";
+import { restoreReviewSnapshot } from "../../capabilities/review-storage";
 import {
   type CapabilityActionPolicy,
   CapabilityActionReviewPresentationSchema,
@@ -23,7 +25,7 @@ import type { PendingApprovalRow } from "./list";
 export type ApprovalActionPolicy = CapabilityActionPolicy | null | undefined;
 const needsPolicy = (row: PendingApprovalRow): boolean => {
   if (row.storedReview && "sentence" in row.storedReview) return true;
-  const review = CapabilityActionReviewPresentationSchema.safeParse(row.details);
+  const review = CapabilityActionReviewPresentationSchema.safeParse(presentReview(restoreReviewSnapshot(row.details), true));
   return review.success && "sentence" in review.data;
 };
 /** Reads the registry once for the rows that need their Action's declared policy, as the approvals page does. */
@@ -46,7 +48,7 @@ export const pendingApprovalReview = (
   row: Pick<PendingApprovalRow, "storedReview" | "details">,
   policy?: ApprovalActionPolicy,
 ): AiStoredActionReview | null => {
-  const parsed = CapabilityActionReviewPresentationSchema.safeParse(row.details);
+  const parsed = CapabilityActionReviewPresentationSchema.safeParse(presentReview(restoreReviewSnapshot(row.details), true));
   if (parsed.success && "sentence" in parsed.data)
     return storedActionReview(
       { ...parsed.data, ask: parsed.data.ask ?? (row.storedReview && "sentence" in row.storedReview ? row.storedReview.ask : undefined) },

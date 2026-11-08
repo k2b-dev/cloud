@@ -53,30 +53,18 @@ export const contactAutomationReview = (
       .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
       .slice(0, 200)
       .toWellFormed() || "—";
-  const compact = (value: string, max: number) =>
-    value
-      .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
-      .slice(0, max)
-      .toWellFormed() || "—";
   return {
-    preview: {
-      kind: "page",
-      title,
-      format: "plain",
-      body: proposal.details
-        .slice(0, 12)
-        .map(({ label, value }) => `${compact(label, 60)}: ${compact(value, 200)}`)
-        .join("\n"),
-      truncated: true,
-    },
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title } },
-    content: {
-      kind: "page",
-      title,
-      format: "plain",
-      body: [proposal.message, ...proposal.details.map(({ label, value }) => `${label}: ${value}`)].join("\n\n"),
+    view: {
+      version: 1 as const,
+      blocks: [
+        {
+          kind: "Text" as const,
+          text: [proposal.message, ...proposal.details.map(({ label, value }) => `${label}: ${value}`)].join("\n\n"),
+        },
+      ],
     },
     scope: proposal.scope,
     links: proposal.links,
