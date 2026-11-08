@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
 import { useLightboxMessages } from "./lightbox-messages";
+import { ThumbnailStrip } from "./ThumbnailStrip";
 
 /** One more thing to do with the shown image, beside Download: a short label, its icon class, and what it does. */
 export type LightboxAction = {
@@ -16,7 +17,12 @@ export type LightboxImage = {
   downloadUrl?: string;
   /** Actions for this image, shown before Download in the same style. */
   actions?: readonly LightboxAction[];
+  /** A small version for the thumbnail strip, shown from four images on; without it the strip loads `src`. */
+  thumbnail?: string;
 };
+
+/** From this many images the gallery shows a thumbnail strip instead of dots. */
+const STRIP_FROM = 4;
 
 type LightboxProps = {
   images: LightboxImage[];
@@ -84,7 +90,8 @@ export default function Lightbox(props: LightboxProps) {
 
   // Keyboard navigation
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (!ownsKey(e.target)) return;
+    // A part that handled the key itself, such as the thumbnail strip moving its focus, keeps it.
+    if (e.defaultPrevented || !ownsKey(e.target)) return;
     switch (e.key) {
       case "Escape":
         // Handled here, so WebKit does not light the returned focus for this key.
@@ -241,7 +248,21 @@ export default function Lightbox(props: LightboxProps) {
         </button>
       </Show>
 
-      <Show when={isMultiple() && props.images.length <= 10}>
+      <Show when={props.images.length >= STRIP_FROM}>
+        <ThumbnailStrip
+          class="k2b-content-lightbox__strip k2b-overlay-surface"
+          label={lightboxMessages().imageNavigation}
+          items={props.images.map((image, i) => ({
+            id: String(i),
+            name: image.alt || lightboxMessages().goToImage({ index: i + 1 }),
+            thumbnail: image.thumbnail ?? image.src,
+          }))}
+          currentItem={String(index())}
+          onSelectItem={(id) => setIndex(Number(id))}
+        />
+      </Show>
+
+      <Show when={isMultiple() && props.images.length < STRIP_FROM}>
         <div class="k2b-content-lightbox__dots k2b-overlay-surface" role="group" aria-label={lightboxMessages().imageNavigation}>
           <For each={props.images}>
             {(_, i) => (

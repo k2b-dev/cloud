@@ -49,6 +49,9 @@ export const chartFixtures = {
   heatmap: { kind: "heatmap", data: [{ x: "Mon", y: "Imports", value: 4 }] },
   map: { kind: "map", series: [{ data: [{ latitude: 52, longitude: 13 }] }] },
   stateTimeline: { kind: "stateTimeline", rows: [{ label: "Queue", intervals: [{ from: 1, to: 2, state: "ok" }] }] },
+  treemap: { kind: "treemap", groups: ["Products"], data: [{ label: "Chairs", group: "Products", value: 40 }] },
+  pareto: { kind: "pareto", labels: ["Current", "Previous"], data: [{ label: "Chairs", value: 40, prev: 30 }] },
+
   sankey: {
     kind: "sankey",
     nodes: [

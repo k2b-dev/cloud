@@ -16,14 +16,18 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).not.toContain("Waterfall balances must be finite");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
+  for (const marker of ["k2b-chart-pareto-current", "k2b-chart-treemap-cell"]) {
+    expect(normal).not.toContain(marker);
+    expect(rare).toContain(marker);
+  }
   expect(normal).not.toContain("k2b-chart-sankey-link");
   expect(rare).toContain("k2b-chart-sankey-link");
   // The blob must be self-contained: no module can fetch a dependency on first use.
   expect(rare).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(57_100);
+  // 65,652 B measured; temporary until the last kind PR sets the catalog total, see #2790
+  expect(Buffer.byteLength(rare)).toBeLessThan(66_400);
 
   expect(normal).not.toContain("k2b-chart-group-heading");
   expect(rare).toContain("k2b-chart-group-heading");

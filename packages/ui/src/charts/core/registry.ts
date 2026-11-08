@@ -5,8 +5,11 @@ import { renderHeatmapSvg } from "./calendar";
 import { renderFunnelSvg } from "./funnel";
 import { renderHbarSvg } from "./hbar";
 import { map } from "./map";
+import { renderParetoSvg } from "./pareto";
+
 import { renderSankeySvg } from "./sankey";
 import { barGauge, boxplot, donut, gauge, histogram, line, pie, scatter, sparkline, stat } from "./svg-renderers";
+import { renderTreemapSvg } from "./treemap";
 import { renderWaterfallSvg } from "./waterfall";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
@@ -30,6 +33,9 @@ const createChartRenderers = () => ({
   heatmap: renderHeatmapSvg,
   map: map,
   stateTimeline: renderStateTimelineSvg,
+  treemap: renderTreemapSvg,
+  pareto: renderParetoSvg,
+
   sankey: renderSankeySvg,
 });
 export const chartRenderers = /* @__PURE__ */ createChartRenderers();

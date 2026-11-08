@@ -105,7 +105,7 @@ export type ChartProps = {
   [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> & {
     class?: string;
     style?: JSX.CSSProperties | string;
-    labels?: ChartLabels;
+    labels?: K extends "pareto" ? [string, string] : ChartLabels;
     /**
      * Navigation for maps and state timelines: pan, zoom and reset controls.
      * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
@@ -127,6 +127,7 @@ export type ChartProps = {
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "treemap" || props.kind === "pareto") return !props.data.length;
   if (props.kind === "sankey") return !props.nodes.length || !props.links.length;
   if (props.kind === "area")
     return (
@@ -161,7 +162,12 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import("../charts/core/render").renderChartSvg): JSX.Element => {
-  const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
+  const drawingProps = () => {
+    // Pareto's labels name its two measures; other kinds use labels only for host controls.
+    if (props.kind === "pareto") return props;
+    const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
+    return drawing;
+  };
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
   const viewportMessages = useViewportMessages();
@@ -226,7 +232,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
   const interactiveMap = () => props.kind === "map" && props.interactive === true;
   const interactiveTimeline = () => props.kind === "stateTimeline" && props.interactive === true;
   const draggable = () => interactiveMap() || interactiveTimeline();
-  const labels = () => props.labels ?? {};
+  const labels = (): ChartLabels => (props.kind === "pareto" ? {} : (props.labels ?? {}));
   const accessibleName = () => {
     const override =
       props.kind === "map"
@@ -467,7 +473,10 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields =
-        props.kind === "sankey" || (props.kind === "heatmap" && props.layout === "calendar")
+        props.kind === "sankey" ||
+        props.kind === "treemap" ||
+        props.kind === "pareto" ||
+        (props.kind === "heatmap" && props.layout === "calendar")
           ? resolveChartMessages(props.locale ?? locale()).chartFields
           : chartMessages().chartFields;
       if (selection.kind === "area" && props.kind === "area") {
@@ -491,17 +500,19 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           .filter((field) => selection.kind !== "waterfall" || field.key !== "before")
           .map((field) => ({
             label:
-              props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
-                ? props.label
-                : selection.kind === "line" && field.key === "y"
-                  ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-                  : (props.kind === "bar" || props.kind === "hbar") && field.key.startsWith("series:")
-                    ? ((props.kind === "hbar"
-                        ? props.series[Number(field.key.slice(7))]
-                        : props.series?.[Number(field.key.slice(7))]?.label) ?? fields({ key: field.key }))
-                    : props.kind === "bar" && field.key === "previous"
-                      ? (props.compare?.label ?? fields({ key: field.key }))
-                      : fields({ key: field.key }),
+              props.kind === "pareto" && (field.key === "value" || field.key === "previous")
+                ? props.labels[field.key === "value" ? 0 : 1]
+                : props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
+                  ? props.label
+                  : selection.kind === "line" && field.key === "y"
+                    ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                    : (props.kind === "bar" || props.kind === "hbar") && field.key.startsWith("series:")
+                      ? ((props.kind === "hbar"
+                          ? props.series[Number(field.key.slice(7))]
+                          : props.series?.[Number(field.key.slice(7))]?.label) ?? fields({ key: field.key }))
+                      : props.kind === "bar" && field.key === "previous"
+                        ? (props.compare?.label ?? fields({ key: field.key }))
+                        : fields({ key: field.key }),
             value:
               field.formatted ??
               (field.key === "upperInclusive"
@@ -518,9 +529,12 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      props.kind === "sankey" || (props.kind === "heatmap" && props.layout === "calendar")
+      props.kind === "sankey" ||
+        props.kind === "treemap" ||
+        props.kind === "pareto" ||
+        (props.kind === "heatmap" && props.layout === "calendar")
         ? { ...props, locale: props.locale ?? locale() }
-        : { ...drawingProps, ...(props.kind === "bar" || props.kind === "hbar" || props.kind === "funnel" ? { locale: locale() } : {}) },
+        : { ...drawingProps(), ...(props.kind === "bar" || props.kind === "hbar" || props.kind === "funnel" ? { locale: locale() } : {}) },
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,

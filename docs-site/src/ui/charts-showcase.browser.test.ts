@@ -243,6 +243,49 @@ test("both dashboards keep every panel in place in every state", async () => {
 }, 600_000);
 
 for (const width of [390, 1440]) {
+  test(`distribution overview cards keep axes and name/value blocks inside at ${width}px`, async () => {
+    const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const errors = pageErrors(page);
+    try {
+      await page.goto(`${origin}/en/ui/charts`, { waitUntil: "networkidle" });
+      await settled(page);
+      const pareto = page.locator('[data-chart-kind="pareto"]');
+      const ticks = await pareto.evaluate((e) => {
+        const b = e.getBoundingClientRect();
+        return Array.from(e.querySelectorAll("svg > text")).every((t) => {
+          const r = t.getBoundingClientRect();
+          return r.left >= b.left - 1 && r.right <= b.right + 1;
+        });
+      });
+      expect(ticks).toBe(true);
+      const treemap = page.locator('[data-chart-kind="treemap"]');
+      expect(await treemap.locator("[data-treemap-name]").count()).toBeGreaterThan(0);
+      expect(await treemap.locator("[data-treemap-value]").count()).toBeGreaterThan(0);
+      const fits = await treemap.locator("[data-chart-datum]").evaluateAll((groups) =>
+        groups.every((g) => {
+          const text = g.querySelector("[data-treemap-name]");
+          if (!text) return true;
+          const cell = g.querySelector("rect")!.getBoundingClientRect(),
+            name = text.getBoundingClientRect(),
+            value = g.querySelector("[data-treemap-value]")?.getBoundingClientRect();
+          return (
+            name.left >= cell.left - 1 &&
+            name.right <= cell.right + 1 &&
+            name.bottom <= cell.bottom + 1 &&
+            (!value ||
+              (name.bottom <= value.top && value.left >= cell.left - 1 && value.right <= cell.right + 1 && value.bottom <= cell.bottom + 1))
+          );
+        }),
+      );
+      expect(fits).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`small Sankey card keeps its source label inside the initial viewport at ${width}px`, async () => {
     const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     const errors = pageErrors(page);

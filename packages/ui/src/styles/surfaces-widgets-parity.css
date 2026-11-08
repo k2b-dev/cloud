@@ -1936,3 +1936,17 @@
 
 :where(.k2b-ui) .k2b-dashboard-frame__reserve { visibility: hidden; }
 :where(.k2b-ui) .k2b-dashboard-frame__content { align-self: start; }
+
+/* A set height instead: the cell is that high, the content fills it and scrolls inside, and the hidden copy is cut to
+   it. A table that brings its own viewport fills the content and scrolls under its sticky header. */
+:where(.k2b-ui) .k2b-dashboard-frame__stack[data-height] {
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__stack[data-height] > .k2b-dashboard-frame__content {
+  display: grid;
+  align-self: stretch;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  overflow: auto;
+}

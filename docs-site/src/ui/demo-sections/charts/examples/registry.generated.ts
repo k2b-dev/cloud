@@ -17,6 +17,7 @@ import * as heatmapExamples from "./heatmap";
 import * as histogramExamples from "./histogram";
 import * as lineExamples from "./line";
 import * as mapExamples from "./map";
+import * as paretoExamples from "./pareto";
 import * as pieExamples from "./pie";
 import * as sankeyExamples from "./sankey";
 import * as scatterExamples from "./scatter";
@@ -25,6 +26,7 @@ import * as statExamples from "./stat";
 import * as stateTimelineExamples from "./stateTimeline";
 import * as statsExamples from "./stats";
 import * as tableExamples from "./table";
+import * as treemapExamples from "./treemap";
 import * as waterfallExamples from "./waterfall";
 
 export const exampleModules: Record<string, unknown>[] = [
@@ -45,6 +47,7 @@ export const exampleModules: Record<string, unknown>[] = [
   histogramExamples,
   lineExamples,
   mapExamples,
+  paretoExamples,
   pieExamples,
   sankeyExamples,
   scatterExamples,
@@ -53,5 +56,6 @@ export const exampleModules: Record<string, unknown>[] = [
   stateTimelineExamples,
   statsExamples,
   tableExamples,
+  treemapExamples,
   waterfallExamples,
 ];
