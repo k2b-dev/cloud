@@ -5,7 +5,7 @@ section: Operations
 order: 920
 description: Size and diagnose Code route requests in the shared runner pool.
 tags: [code, runner, limits]
-updated: 2026-11-06
+updated: 2026-11-08
 ---
 
 # Operate Code requests
@@ -51,7 +51,7 @@ Recurring Code schedules now use their checked `timeZone`, defaulting to UTC
 when omitted. Versions with string cron declarations therefore run in UTC;
 operators who previously relied on `app.timezone` for Code schedules should
 have their authors submit an explicit IANA zone before activating the new
-runtime. Workflows and existing Assistant routines retain their own schedules.
+runtime. Grids workflows retain their own schedules. Old Assistant routines are retired; rebuild them as Code.
 
 Core adds `code.chat_deliveries` as an additive migration. Personal Code chat
 results commit their messages and receipts together. The existing Assistant

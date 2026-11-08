@@ -347,9 +347,9 @@ intermediate files below `/temp/` and saves results outside it, together with
 the `.md` or `.html` source of a PDF. The CLI names each delivered file on
 stderr, such as `present: completed /sales-report.pdf`. Project files are
 read-only inside a chat. To use a Project file as a base, the Assistant
-copies the text into a chat file. Copy between chats and Projects with
-`cld assistant code file-copy`; the Assistant can do the same after approval,
-and copying into a Project needs Project `write`.
+copies the text into a chat file. Use `cld assistant files` and
+`cld assistant projects files` to download and upload files between locations.
+Uploading into a Project needs Project `write`.
 
 ## Models and limits
 

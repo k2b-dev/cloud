@@ -19,10 +19,6 @@ Each row names its replacement, or **none**. "Retained" marks what stays on
 purpose. Grids and the public workflow engine `@k2b/cloud/workflows` are not
 affected.
 
-> **Status on `feat/code`:** the routine rows are merged. The Studio rows and
-> the Mail rule and automatic-reply rows ship with this release but are still
-> in review; they describe the reviewed removals.
-
 ## HTTP routes
 
 | Removed | Replacement |

@@ -38,11 +38,6 @@ These stay as they are:
 The exact list of removed routes, commands, capabilities and settings is in
 [Removed in the Gustav release](/en/docs/reference/code-release-removals).
 
-> **Status on `feat/code`:** routines, Mail rules and automatic replies are
-> retired, Gustav rebuilds exported definitions, and Studio is retired as
-> described in [Studio retirement](/en/docs/operations/studio-retirement).
-> This page describes the release as a whole.
-
 ## 1. Freeze
 
 Announce the window. Stop all authoring, activation and configuration changes
@@ -123,7 +118,22 @@ Studio's destructive cleanup. Keep the existing
 `APP_SECRET`, and the stored Studio RSQL URL, API token and network allowlist,
 valid and reachable until startup has finished.
 
-The migrations, in short:
+Production Compose does not enforce this startup order. After preparing the
+new images and stopping all old replicas, start in stages. Stop if a readiness
+check fails; do not start Assistant before Mail is ready.
+
+```sh
+docker compose -f compose.prod.yml up -d --wait app-core
+docker compose -f compose.prod.yml up -d --wait app-mail
+docker compose -f compose.prod.yml up -d --wait
+```
+
+Before starting Runner, enroll its app key (`secrets/runner.key`), install the
+matching AppArmor profile on each host and deploy the matching seccomp policy.
+Follow [Runner deployment](/en/docs/operations/code-runner) for host,
+user-namespace and container prerequisites.
+
+The migrations:
 
 - **Routines:** revoke every routine mandate, abort unfinished routine turns,
   remove their broker timers and refuse any new or replayed admission.
@@ -142,7 +152,7 @@ Startup stops, with a message, instead of continuing unsafely:
 
 | Stop | Cause | What to do |
 | --- | --- | --- |
-| Mail does not start | Old Mail commands or sends are still unresolved | If Assistant has not started yet, return to the old release, reconcile them there (step 3) and upgrade again. If Studio cleanup has begun, never start the old Assistant again: restore the pre-upgrade backups, including RSQL, before returning to the old release |
+| Mail does not start | Old Mail commands or sends are still unresolved | If Assistant has not started yet, restore the pre-upgrade database before returning to the old release: Core has already retired routines. Reconcile the sends there (step 3) and upgrade again. If Studio cleanup has begun, never start the old Assistant again: restore the pre-upgrade backups, including RSQL, before returning to the old release |
 | Mail reports a lock timeout | Shared workflow transactions, for example Grids writes, are still settling | Let them finish and restart Mail; this is safe to retry |
 | Assistant: "Unreadable pending HTTP scope" | A pending chat HTTP request cannot be decrypted or read, for example after `APP_SECRET` changed | Restore the previous `APP_SECRET`, or settle the pending request on the old release, then start again |
 | Assistant: RSQL cleanup fails | The RSQL service is unreachable or answers with an error other than "namespace missing" | Make RSQL reachable with the stored URL, token and allowlist, then start again. Local changes roll back for the retry; remote deletions that already happened stay deleted |
@@ -219,8 +229,9 @@ or data must never run old rules or routines beside active Code.
 - Every application is ready and the
   [health checks](/en/docs/operations/observability) are green; configured
   health webhooks still reach their destination.
-- Startup logs show the routine, Mail and Studio migrations completed, with
-  no retired timer or admission recreated after a restart.
+- Check that routine mandates are retired, the Mail retirement row exists in
+  `mail.schema_migrations`, and `assistant.studio_retirement.completed` is true.
+  Restart once and confirm no retired timer or admission is recreated.
 - `cld assistant tasks export --all --json` and
   `cld mail automation export --all --json` still return the frozen
   definitions; their `nextCursor` reaches `null`.
