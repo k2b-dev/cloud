@@ -3560,11 +3560,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
 }
 
+/* A framed section is an island (layers and shadows): the island surface and
+   shadow in the main content, flat in a panel, a dialog, or another frame. */
 .k2b-ui .k2b-section[data-frame="line"] {
   padding: 0.75rem 0.875rem;
   border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
 }
 
 .k2b-ui .k2b-section[data-size="md"] {

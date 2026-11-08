@@ -86,9 +86,10 @@ describe("Section", () => {
 
     expect(page).toContain('data-frame="line"');
     expect(panel).toContain('data-frame="none"');
-    // The card is Paper's light frame, without a shadow.
+    // The card is Paper's light frame and an island like Paper: the layer hook decides its shadow.
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain(paperBorder!);
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).not.toContain("box-shadow");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: var(--k2b-island-shadow)");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-island-surface)");
     for (const host of [
       ".k2b-section",
       ".k2b-detail-panel__group",
