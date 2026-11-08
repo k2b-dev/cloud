@@ -14,6 +14,7 @@ import {
   Switch,
   untrack,
 } from "solid-js";
+import { CloudChartBlock } from "#chat-charts";
 import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { markdown } from "../../shared";
 import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatTaskStopSentence } from "../chat-task-reasons";
@@ -22,7 +23,6 @@ import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
-import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
@@ -527,6 +527,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
                   <Chat.Activity
                     label={current().block.presentation?.title ?? displayToolName(current().block.name, locale())}
                     icon={aiToolIcon(current().block.name)}
+                    leading={isFeatCodeTool(current().block.name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined}
                     busy={current().block.status === "awaiting_client"}
                   />
                 }

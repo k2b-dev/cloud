@@ -3,8 +3,8 @@ import { createWorkflowBuiltinActionPorts } from "@k2b/cloud/workflows";
 import { compileWorkflow, hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { evaluateWorkflowTriggerInputs, executeWorkflowPlan } from "@k2b/cloud/workflows/runtime";
 import { automatedMailReasons, autoReplyFactsFromProtocol } from "../service/auto-reply-policy";
+import { projectMailMessagePrecondition } from "../service/command-message-state";
 import { extractMessageProtocolFacts } from "../service/message-protocol";
-import { projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
 import {
   applyMailMessageTransition,
   isMailWorkflowProjectedObject,
@@ -1203,7 +1203,7 @@ ${aliases}
       counts.push(placements);
       expect(placements).toBe(scenario.placements);
       expect(
-        projectMailWorkflowMessagePrecondition({ modseq: "42", flags: [], keywords: [] }, mailWorkflowMessageStateTransitions(message)),
+        projectMailMessagePrecondition({ modseq: "42", flags: [], keywords: [] }, mailWorkflowMessageStateTransitions(message)),
       ).toEqual({ modseq: undefined, flags: ["seen"], keywords: [] });
     }
     expect(counts[0]).toBe(counts[1]);

@@ -217,10 +217,9 @@ test("core.ai.decide is AI in the generated SDK and mail triage checks category 
   const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];
   const sdk = generateCodeSdk(manifests, { mode: "code_run" });
   const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
-  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
+  // The Code authoring skill's own examples are checked by its examples test in packages/assistant.
   const snippet = (text: string) => text.split("<!-- ai1-mail-triage -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
   const source = snippet(docs);
-  expect(snippet(skill)).toBe(source);
   const checked = await check(source, {
     sdk,
     aiOperations: sdk.manifest.operations.filter((op) => op.capability.startsWith("core.ai.")).map((op) => op.capability),
@@ -961,12 +960,10 @@ app.get("/", c => c.page(
   });
   for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
 }, 30000);
-test("the page example in the docs and the Code authoring skill checks and builds a valid page", async () => {
+test("the page example in the docs checks and builds a valid page", async () => {
   const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
-  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
   const snippet = (text: string) => text.split("<!-- code-page-example -->")[1]!.split("```tsx\n")[1]!.split("```")[0]!.trim();
   const source = snippet(docs);
-  expect(snippet(skill)).toBe(source);
   const result = await checkCode(
     { ...base, entry: "code.tsx", limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 }, files: { "code.tsx": source } },
     host,
@@ -984,7 +981,7 @@ test("the invoice template is identical in skill and Fibel, checks against the l
     [
       "../../../../docs-site/docs/en/platform/code-sdk.md",
       "../../../../docs-site/docs/en/platform/capabilities.md",
-      "../../../assistant/src/skills/code-authoring/SKILL.md",
+      "../../../assistant/src/skills/code-authoring/templates/mail-invoices.md",
     ].map((path) => Bun.file(resolve(import.meta.dir, path)).text()),
   );
   const snippet = (text: string) => text.split("<!-- code-file-example -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();

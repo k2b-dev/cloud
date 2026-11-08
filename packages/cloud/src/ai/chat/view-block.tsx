@@ -1,5 +1,6 @@
 import { DescriptionList, StatCell, type StatCellAccent, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
 import { importOnDemand } from "../../browser/reload";
 import { cloudAiNumberFormatters } from "../chart-block";
 import {
@@ -17,8 +18,6 @@ import {
   isAiViewFile,
   parseCloudAiView,
 } from "../view-block";
-import { CloudChartGroupView, CloudChartView } from "./chart-block";
-import { CloudExplorerView } from "./explorer-block";
 import { useAiChatActions } from "./message-actions";
 import { aiChatMessages } from "./messages";
 import { ReferenceText } from "./reference-text";

@@ -18,6 +18,7 @@ import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { migrateIncomingAutomationTargets } from "./service/incoming-automation-targets-migrate";
+import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
 type SqlClient = typeof sql;
@@ -664,7 +665,7 @@ const migrationErrorCode = (error: unknown): string | null => {
  * The whole migration runs in one transaction under a transaction-scoped
  * advisory lock, so the guard also holds behind a transaction pooler. A run
  * that waits longer than `lock_timeout` for the guard or for DDL locks fails
- * with `55P03` and is retried with backoff.
+ * with `55P03` and is retried with backoff; deadlock victims (`40P01`) retry too.
  */
 export const migrate = async (): Promise<void> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -676,13 +677,14 @@ export const migrate = async (): Promise<void> => {
         await applyAdditions(tx);
         await migrateBackfillActivity(tx);
         await migrateAiDailyBudget(tx);
+        await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
         await migrateIncomingAutomationTargets(tx);
       });
       return;
     } catch (error) {
-      if (migrationErrorCode(error) !== "55P03" || attempt === 2) throw error;
+      if (!["55P03", "40P01"].includes(migrationErrorCode(error) ?? "") || attempt === 2) throw error;
       await Bun.sleep(250 * 2 ** attempt);
     }
   }
