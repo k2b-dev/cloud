@@ -1,4 +1,5 @@
 import { For, type JSX, Show, splitProps } from "solid-js";
+import { IconButton } from "../actions/Button";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import type { FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
@@ -128,7 +129,13 @@ export type SliderProps = FieldProps &
     value: MaybeAccessor<number>;
     formatValue?: (value: number) => string;
     showValue?: boolean;
+    /** Place the value and reset beside the label. Without a label, they stay beside the track. */
+    valuePlacement?: "control" | "label";
     center?: boolean;
+    /**
+     * The value the setting starts from. With it, a changed value shows in the accent color and a reset button
+     * appears in a slot the slider always keeps, so nothing moves. Double-click resets too.
+     */
     defaultValue?: number;
   };
 
@@ -147,6 +154,7 @@ export function Slider(props: SliderProps): JSX.Element {
     "onValueCommit",
     "required",
     "showValue",
+    "valuePlacement",
     "value",
     "formatValue",
   ]);
@@ -169,20 +177,59 @@ export function Slider(props: SliderProps): JSX.Element {
     return `linear-gradient(to right, var(--k2b-action) 0 ${position}%, var(--k2b-surface-muted) ${position}% 100%)`;
   };
   const resetValue = () => local.defaultValue ?? (local.center ? (min() + max()) / 2 : min());
+  const changed = () => local.defaultValue !== undefined && value() !== local.defaultValue;
+  const inputMessages = useInputMessages();
+  // Names the value it returns to, formatted as the slider shows it: "Reset to 100%".
+  const resetLabel = () => inputMessages().resetTo({ value: local.formatValue?.(resetValue()) ?? String(resetValue()) });
+  let input: HTMLInputElement | undefined;
+  const reset = () => {
+    commitFieldValue(local, resetValue());
+    // The button hides once the value is back, so focus returns to the slider it belongs to.
+    input?.focus();
+  };
+  const inLabel = () => local.valuePlacement === "label" && !!local.label;
+  const Value = () => (
+    <Show when={local.showValue ?? true}>
+      <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
+    </Show>
+  );
+  const Reset = () => (
+    <Show when={local.defaultValue !== undefined}>
+      <IconButton
+        class="k2b-slider__reset"
+        size="xs"
+        label={resetLabel()}
+        aria-describedby={local.label ? meta.labelId : undefined}
+        disabled={rest.disabled || !changed()}
+        onClick={reset}
+      >
+        <i class="ti ti-arrow-back-up" aria-hidden="true" />
+      </IconButton>
+    </Show>
+  );
 
   return (
     <Field
       class={local.class}
       label={local.label}
+      labelEnd={
+        inLabel() ? (
+          <div class="k2b-slider__value" data-changed={changed() ? "true" : undefined}>
+            <Reset />
+            <Value />
+          </div>
+        ) : undefined
+      }
       description={local.description}
       error={error()}
       meta={meta}
       required={local.required}
       disabled={rest.disabled}
     >
-      <div class="k2b-slider">
+      <div class="k2b-slider" data-changed={changed() ? "true" : undefined} data-value-placement={inLabel() ? "label" : undefined}>
         <input
           {...rest}
+          ref={input}
           id={meta.controlId}
           type="range"
           value={value()}
@@ -195,8 +242,9 @@ export function Slider(props: SliderProps): JSX.Element {
             commitFieldValue(local, next);
           }}
         />
-        <Show when={local.showValue ?? true}>
-          <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
+        <Show when={!inLabel()}>
+          <Value />
+          <Reset />
         </Show>
       </div>
     </Field>

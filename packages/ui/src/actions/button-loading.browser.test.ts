@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Whether a busy button keeps its size is a question of real layout, so the
 // shipped browser build renders every kind of button idle and busy here.
@@ -38,7 +38,7 @@ const button = (props) =>
     },
   });
 
-const variants = ["primary", "secondary", "ghost", "text", "subtle", "input", "warning", "danger", "success", "ai"];
+const variants = ["primary", "secondary", "ghost", "text", "link", "subtle", "input", "warning", "danger", "success", "ai"];
 const sizes = ["xs", "sm", "md", "lg"];
 
 render(
@@ -161,6 +161,45 @@ const boxes = (page: Page) =>
   );
 
 describe("@k2b/ui a busy button keeps its box", () => {
+  test("link actions use regular action ink, surface-free hover and visible keyboard focus in both themes", async () => {
+    const page = await load(viewports.desktop!);
+    try {
+      const link = page.getByRole("button", { name: "Save link sm", exact: true });
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate((value) => document.body.setAttribute("data-theme", value), theme);
+        await settle(page);
+        const ink = await link.evaluate((button) => {
+          const reference = document.createElement("span");
+          reference.style.color = "var(--k2b-action)";
+          button.append(reference);
+          const expected = getComputedStyle(reference).color;
+          reference.remove();
+          const style = getComputedStyle(button);
+          return { color: style.color, expected, weight: style.fontWeight, background: style.backgroundColor };
+        });
+        await page.waitForFunction(
+          (expected) => getComputedStyle(document.querySelector('.k2b-button[data-variant="link"][data-size="sm"]')!).color === expected,
+          ink.expected,
+        );
+        expect(await link.evaluate((button) => getComputedStyle(button).color)).toBe(ink.expected);
+        expect(ink.weight).toBe("400");
+        expect(ink.background).toBe("rgba(0, 0, 0, 0)");
+        await link.hover();
+        await settled(page);
+        expect(await link.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await link.evaluate((button) => getComputedStyle(button).textDecorationLine)).toBe("underline");
+        await page.keyboard.press("Tab");
+        await link.focus();
+        await settled(page);
+        expect(await link.evaluate((button) => button.matches(":focus-visible") && getComputedStyle(button).outlineStyle === "solid")).toBe(
+          true,
+        );
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
   for (const [name, options] of Object.entries(viewports)) {
     test(`${name}: every variant and size keeps its position and size while loading`, async () => {
       const page = await load(options);
@@ -226,7 +265,7 @@ describe("@k2b/ui a busy button keeps its box", () => {
     try {
       await setBusy(page, true);
       const saving = page.getByRole("button", { name: "Saving every change to the server", exact: true });
-      expect(await saving.count()).toBe(40);
+      expect(await saving.count()).toBe(44);
       expect(await saving.first().getAttribute("aria-busy")).toBe("true");
       expect(await saving.first().isDisabled()).toBe(true);
       expect(await page.getByRole("button", { name: "Send primary md", exact: true }).getAttribute("aria-busy")).toBe("true");

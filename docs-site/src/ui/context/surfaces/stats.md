@@ -16,8 +16,15 @@ Use `DataPanel` for records. Use ordinary prose for one isolated value that does
 Assistant stats views compose a read-only `StatGrid` of 1..6 `StatCell`s for
 comparable figures above charts. Shared formatters supply values, scope text,
 sparklines and deltas; the host maps better/worse/neutral tones to colors.
+Chat places change badges below their figures so a formatted amount and its
+change do not compete for width when a saved view finishes loading.
 The Assistant's card tool shows one figure as a single-cell grid with a
 neutral trend accent and `wrap`, so a long value or caption stays whole.
+
+For an existing measure whose change is an amount or count, use
+`delta={{value: 12, unit: "absolute", format: {style: "currency", currency: "EUR"}}}`.
+The badge retains that unit. Assistant stats use this mode for saved numeric
+deltas; new ratio and points deltas use the same badge and comparison line.
 
 ## Import
 
@@ -56,10 +63,11 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | Property | Type | Purpose |
 | --- | --- | --- |
 | `label` | `string` | Names the measurement. |
-| `value` | `string \| number \| JSX.Element \| null` | Displays the figure. `null` shows a dash; say why in `sub`. |
+| `value` | `string \| number \| JSX.Element \| null` | Displays the figure. `null` shows the empty dash (—), which screen readers announce as "No value"; say why in `sub`. |
 | `icon` | `string` | Shows a Tabler icon in a chip before the label. |
 | `tone` | `"zinc" \| "blue" \| "emerald" \| "amber" \| "red" \| "in" \| "out"` | Colors the icon chip. Defaults to zinc. `in` and `out` are the money colors of `FlowAmount` for tiles such as "In in October"; pass a `FlowAmount` as `value` there. |
 | `delta` | `StatCellDelta` | Shows the change as a badge beside the figure. |
+| `deltaPlacement` | `"below"` | Reserves a separate row for the change, including while loading. Omit it for the default responsive placement. |
 | `compare` | `StatCellCompare` | Names the comparison value in the support line, such as "Last month 44,560". |
 | `sub` | `string` | Qualifies the value with scope, unit, or time range. |
 | `href` | `string` | Makes the complete tile a link. |
@@ -97,7 +105,7 @@ wraps. `md` and `sm` tiles take the height of their content.
 ### Change and comparison
 
 ```ts
-type StatCellDelta = { value: number; unit?: "ratio" | "points"; better?: "up" | "down" };
+type StatCellDelta = { value: number; unit?: "ratio" | "points" | "absolute"; format?: ChartNumberFormat; better?: "up" | "down" };
 type StatCellCompare = { label: string; value: string | number };
 ```
 

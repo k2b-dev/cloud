@@ -78,6 +78,11 @@ export const verificationPhases = async (root: string): Promise<VerificationPhas
     { name: "recovery-and-cleanup", files: recovery, flags: [] },
     { name: "dom", files: dom, flags: ["--isolate", "--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
   ];
+  // Only server-side Grids phases write records. Browser and Cloud-kernel phases must not load the server manifest.
+  for (const phase of phases) {
+    if (!["workflow-kernel", "browser-bundle", "dom"].includes(phase.name))
+      phase.flags.unshift("--preload", "./packages/grids/test/app-events-preload.ts");
+  }
   assertPhaseCoverage(all, phases);
   return phases;
 };

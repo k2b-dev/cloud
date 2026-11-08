@@ -79,7 +79,7 @@ export function renderParetoSvg(spec: ParetoOptions): string {
     }).format;
   for (const tick of s.ticks)
     body.push(
-      `<line x1="${s.left + (tick / s.max) * s.plot}" x2="${s.left + (tick / s.max) * s.plot}" y1="${s.top}" y2="${s.height - s.bottom}" stroke="var(--k2b-border,#e4e4e7)" stroke-opacity="0.5" pointer-events="none"/><text x="${s.left + (tick / s.max) * s.plot}" y="${s.top - 8}" text-anchor="middle" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(axisNumber(tick))}</text>`,
+      `<line x1="${s.left + (tick / s.max) * s.plot}" x2="${s.left + (tick / s.max) * s.plot}" y1="${s.top}" y2="${s.height - s.bottom}" stroke="var(--k2b-border,#e4e4e7)" stroke-opacity="0.5" pointer-events="none"/><text x="${s.left + (tick / s.max) * s.plot}" y="${s.top - 8}" text-anchor="${tick === s.max ? "end" : tick === 0 ? "start" : "middle"}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(axisNumber(tick))}</text>`,
     );
   let line = `${s.left},${s.top}`;
   for (const row of s.rows) {

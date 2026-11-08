@@ -350,6 +350,23 @@
   }
 }
 
+/* Over a picture or video (`PanelDialog media`) the close button is a glass
+   chip like the title and the actions next to it. */
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-dialog__close {
+  margin-inline-start: 0;
+  border-radius: 999px;
+  background: var(--k2b-overlay-surface);
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-dialog__close:hover {
+  background: var(--k2b-overlay-surface-hover);
+}
+
+/* Without actions the close chip moves to the end on its own. */
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading + .k2b-dialog__close {
+  margin-inline-start: auto;
+}
+
 /* Header and actions stay in the frame; only the body scrolls. Like the
  * custom content region above, it reaches 0.625rem into the panel's padding
  * at its sides and pads its content back into place, so a Markdown table's

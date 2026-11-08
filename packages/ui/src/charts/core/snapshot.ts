@@ -1,7 +1,7 @@
 import { calendarLayout } from "./calendar";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
-import { escapeXml } from "./svg";
+import { escapeXml } from "./svg-renderers";
 import type { ChartDatum, ChartKind } from "./types";
 
 /** Trusted output of prepareChartSnapshot; never accept arbitrary user SVG. */
@@ -34,10 +34,11 @@ export function prepareChartSnapshot(
     tooltip: ChartTooltipFormatter;
     reference?: (selection: ChartSelection) => boolean;
   },
+  sizing: Parameters<typeof chartRenderHeight>[1] = {},
 ): ChartSnapshot {
   const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
   const width = calendar?.width ?? 480;
-  const height = chartRenderHeight(options);
+  const height = chartRenderHeight(options, sizing);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
   const keys = new Set<string>();

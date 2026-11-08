@@ -97,18 +97,26 @@ const release = (page: Page) =>
 for (const width of [1200, 390])
   for (const theme of ["light", "dark"] as const)
     test(`rare charts draw offline without moving their boxes, ${width}px ${theme}`, async () => {
+      expect.assertions(14);
       const { page, context, requests } = await open(width, delayed + assets.chartModule, theme);
       try {
-        expect(
-          await app(page)
-            .locator("body")
-            .evaluate(() => Reflect.get(globalThis, "__chartLoads") ?? 0),
-        ).toBe(0);
+        const initial = await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__chartLoads") ?? 0);
+        expect(initial).toBe(0);
         await app(page).locator("#draw").click();
         await app(page).locator("html[data-chart-module-loading]").waitFor();
-        const loading = await boxes(page);
-        expect(await app(page).locator('[aria-busy="true"]').count()).toBe(2);
-        expect(await app(page).getByRole("status").first().textContent()).toBe("Loading chart …");
+        // Read each phase in one browser call. CI uses a remote WebKit server;
+        // serial DOM queries otherwise spend the case's deadline on transport.
+        const loading = await app(page)
+          .locator("#charts")
+          .evaluate((element) => ({
+            box: { height: element.getBoundingClientRect().height, after: document.querySelector("#after")!.getBoundingClientRect().top },
+            busy: element.querySelectorAll('[aria-busy="true"]').length,
+            status: element.querySelector('[role="status"]')?.textContent,
+          }));
+        expect(loading.busy).toBe(2);
+        expect(loading.status).toBe("Loading chart …");
         if (process.env.CHART_LOADING_SHOTS && theme === "light") {
           await mkdir(process.env.CHART_LOADING_SHOTS, { recursive: true });
           await page.screenshot({ path: `${process.env.CHART_LOADING_SHOTS}/charts-loading-light-${width}.png` });
@@ -116,36 +124,54 @@ for (const width of [1200, 390])
         await release(page);
         await app(page).locator('[data-chart-kind="histogram"] svg').waitFor();
         await app(page).locator('[data-chart-kind="gauge"] svg').waitFor();
-        expect(await boxes(page)).toEqual(loading);
-        expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
-        expect(await app(page).locator(".k2b-chart__table").count()).toBe(2);
-        await app(page).locator('[data-chart-kind="histogram"]').dispatchEvent("click");
-        expect(await app(page).locator("#result").textContent()).toBe("Chart selected");
-        const mark = app(page).locator('[data-chart-kind="histogram"] [data-chart-datum]').first();
-        await mark.dispatchEvent("pointermove", { pointerType: "mouse", clientX: 100, clientY: 150 });
-        await app(page).locator('[data-chart-kind="histogram"]').focus();
-        await app(page).locator('[data-chart-kind="histogram"]').press("ArrowRight");
-        await app(page).locator('[data-chart-kind="histogram"] .k2b-chart__tooltip').waitFor();
-        expect(await app(page).locator('[data-chart-kind="histogram"] .k2b-chart__tooltip').textContent()).toContain("Day ");
-        await app(page).locator('[data-chart-kind="histogram"]').press("Escape");
+        const rendered = await app(page)
+          .locator("#charts")
+          .evaluate((element) => {
+            const box = {
+              height: element.getBoundingClientRect().height,
+              after: document.querySelector("#after")!.getBoundingClientRect().top,
+            };
+            const pending = element.querySelectorAll("[data-chart-pending]").length;
+            const tables = element.querySelectorAll(".k2b-chart__table").length;
+            element.querySelector('[data-chart-kind="histogram"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            return { box, pending, tables, selected: document.querySelector("#result")!.textContent };
+          });
+        expect(rendered.box).toEqual(loading.box);
+        expect(rendered.pending).toBe(0);
+        expect(rendered.tables).toBe(2);
+        expect(rendered.selected).toBe("Chart selected");
+        // Actual keyboard input still goes through Playwright. Keep hover and
+        // keyboard inspection assertions distinct from the transport batching.
+        const chart = app(page).locator('[data-chart-kind="histogram"]');
+        await chart
+          .locator("[data-chart-datum]")
+          .first()
+          .dispatchEvent("pointermove", { pointerType: "mouse", clientX: 100, clientY: 150 });
+        await chart.focus();
+        await chart.press("ArrowRight");
+        const tooltip = chart.locator(".k2b-chart__tooltip");
+        await tooltip.waitFor();
+        expect(await tooltip.textContent()).toContain("Day ");
+        await chart.press("Escape");
         await app(page).locator("#draw").click();
-        expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
-        expect(
-          await app(page)
-            .locator("body")
-            .evaluate(() => Reflect.get(globalThis, "__chartLoads")),
-        ).toBe(1);
-        const snapshot = await page.evaluate(() => globalThis.lazyChartHarness.snapshot());
-        expect(snapshot).toContain("Delivery days");
-        expect(snapshot).not.toContain("Loading chart");
-        expect(requests).toEqual([]);
-        expect(
-          await page.evaluate(() =>
-            globalThis.lazyChartHarness.events.filter(
-              (event) => event.type === "error" || (event.type === "log" && event.level === "error"),
-            ),
+        const reused = await app(page)
+          .locator("body")
+          .evaluate(() => ({
+            pending: document.querySelectorAll("[data-chart-pending]").length,
+            loads: Reflect.get(globalThis, "__chartLoads"),
+          }));
+        expect(reused.pending).toBe(0);
+        expect(reused.loads).toBe(1);
+        const final = await page.evaluate(async () => ({
+          snapshot: await globalThis.lazyChartHarness.snapshot(),
+          errors: globalThis.lazyChartHarness.events.filter(
+            (event) => event.type === "error" || (event.type === "log" && event.level === "error"),
           ),
-        ).toEqual([]);
+        }));
+        expect(final.snapshot).toContain("Delivery days");
+        expect(final.snapshot).not.toContain("Loading chart");
+        expect(requests).toEqual([]);
+        expect(final.errors).toEqual([]);
         if (process.env.CHART_LOADING_SHOTS && theme === "light") {
           await mkdir(process.env.CHART_LOADING_SHOTS, { recursive: true });
           await page.screenshot({ path: `${process.env.CHART_LOADING_SHOTS}/charts-ready-light-${width}.png` });
@@ -391,6 +417,63 @@ test("narrow pending charts retain the eager logical width and PDF styles accept
     await context.close();
   }
 });
+
+for (const width of [1200, 390])
+  test(`waterfall uses the offline plugin without moving its frame, ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{document.querySelector("#charts").innerHTML=cloud.chart({kind:"waterfall",title:"Liquidity",start:{label:"Opening",value:100},steps:[{label:"Sales",value:40},{label:"Rent",value:-20}],end:{label:"Closing"}});});`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const pending = await boxes(page);
+      await release(page);
+      await app(page).locator(".k2b-waterfall-bar").first().waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(pending);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__chartLoads")),
+      ).toBe(1);
+      expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+for (const width of [1200, 390])
+  test(`horizontal rows reserve height before offline drawing at ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart({kind:"hbar",title:"Regional orders",subtitle:"Fictional",series:["Current","Prior"],rows:Array.from({length:20},(_,i)=>({group:"Shops",label:"Region "+(i+1),values:[i,i+1]}))});
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const loading = await boxes(page);
+      expect(loading.height).toBeGreaterThan(600);
+      await release(page);
+      await app(page).locator('[data-chart-kind="hbar"] svg').waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(await app(page).locator(".k2b-chart-group-heading").textContent()).toBe("Shops");
+      expect(await app(page).locator(".k2b-chart__table tbody tr").count()).toBe(20);
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
+      expect(
+        await page.evaluate(() =>
+          globalThis.lazyChartHarness.events.filter((event) => event.type === "error" || (event.type === "log" && event.level === "error")),
+        ),
+      ).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
 
 // Each added renderer also crosses the real offline first-use boundary.
 const addedSpecs = [

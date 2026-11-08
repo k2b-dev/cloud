@@ -547,3 +547,45 @@ describe("upload panel in a browser", () => {
     });
   }
 });
+
+test("a byte-based ETA fits beside the count without moving controls and disappears while offline", async () => {
+  const tab = await open(phone, "light", "de", true);
+  try {
+    await run(
+      tab,
+      'window.uploads.add([["Rundgang.mp4", 1000000], ...Array.from({length:80}, (_,i)=>[`Foto_${i}.jpg`,50000])], "Projektatelier")',
+    );
+    const before = await boxes(tab);
+    await run(tab, "window.uploads.progress(0)");
+    await tab.clock.runFor(10000);
+    await run(tab, "window.uploads.progress(200000)");
+    expect(await tab.locator(".filesv2-upload__count").textContent()).toMatch(/0 von 81 Dateien \(ca\. \d+ Min\.\)/);
+    const after = await boxes(tab);
+    expect(after[".filesv2-upload__action"]).toEqual(before[".filesv2-upload__action"]);
+    expect(after[".filesv2-upload"]).toEqual(before[".filesv2-upload"]);
+    const fits = await tab.locator(".filesv2-upload__count").evaluate((element) => element.scrollWidth <= element.clientWidth);
+    expect(fits).toBeTrue();
+    await run(tab, "window.uploads.interrupt('network')");
+    expect(await tab.locator(".filesv2-upload__estimate").textContent()).toBe("");
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("a manual retry discards the rate from the previous run", async () => {
+  const tab = await open(phone, "light", "de", true);
+  try {
+    await run(tab, 'window.uploads.add([["a.mp4", 1000000], ["b.mp4", 1000000]])');
+    await run(tab, 'window.uploads.fail("failed")');
+    await run(tab, "window.uploads.progress(0)");
+    await tab.clock.runFor(10000);
+    await run(tab, "window.uploads.progress(200000)");
+    expect(await tab.evaluate(() => window.uploads.queue.remainingSeconds())).not.toBeNull();
+    await run(tab, "window.uploads.finish()");
+    await tab.clock.runFor(600000);
+    await run(tab, "window.uploads.queue.retry()");
+    expect(await tab.evaluate(() => window.uploads.queue.remainingSeconds())).toBeNull();
+  } finally {
+    await tab.context().close();
+  }
+});

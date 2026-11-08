@@ -205,18 +205,28 @@ for (const width of [1280, 390]) {
 
 test("both dashboards keep every panel in place in every state", async () => {
   for (const dashboard of showcaseDashboards) {
-    for (const width of [1280, 390]) {
+    for (const width of [1440, 390]) {
       const { page, errors } = await open(`/en/ui/charts/dashboards/${dashboard.slug}`, width);
       try {
-        const before = await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell");
+        const before = await frames(page, ".k2b-dashboard-section__grid > .k2b-dashboard-frame, .k2b-stat-cell");
         expect(before.length, dashboard.slug).toBeGreaterThan(4);
+        // Every panel keeps its title and its controls on one row, also in a third of the grid and on a phone.
+        const wrapped = await page.$$eval(".k2b-chart-explorer > .k2b-chart-explorer__header", (headers) =>
+          headers.flatMap((header) => {
+            const parts = [...header.children].map((part) => part.getBoundingClientRect());
+            return parts.length > 1 && parts.at(-1)!.top >= parts[0]!.bottom - 2
+              ? [header.querySelector(".k2b-chart-explorer__title")?.textContent ?? ""]
+              : [];
+          }),
+        );
+        expect({ dashboard: dashboard.slug, width, wrapped }).toEqual({ dashboard: dashboard.slug, width, wrapped: [] });
         for (const state of states) {
           await pick(page, "Preview state", state);
           expect({
             dashboard: dashboard.slug,
             width,
             state,
-            frames: await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell"),
+            frames: await frames(page, ".k2b-dashboard-section__grid > .k2b-dashboard-frame, .k2b-stat-cell"),
           }).toEqual({
             dashboard: dashboard.slug,
             width,
@@ -231,3 +241,46 @@ test("both dashboards keep every panel in place in every state", async () => {
     }
   }
 }, 600_000);
+
+for (const width of [390, 1440]) {
+  test(`distribution overview cards keep axes and name/value blocks inside at ${width}px`, async () => {
+    const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const errors = pageErrors(page);
+    try {
+      await page.goto(`${origin}/en/ui/charts`, { waitUntil: "networkidle" });
+      await settled(page);
+      const pareto = page.locator('[data-chart-kind="pareto"]');
+      const ticks = await pareto.evaluate((e) => {
+        const b = e.getBoundingClientRect();
+        return Array.from(e.querySelectorAll("svg > text")).every((t) => {
+          const r = t.getBoundingClientRect();
+          return r.left >= b.left - 1 && r.right <= b.right + 1;
+        });
+      });
+      expect(ticks).toBe(true);
+      const treemap = page.locator('[data-chart-kind="treemap"]');
+      expect(await treemap.locator("[data-treemap-name]").count()).toBeGreaterThan(0);
+      expect(await treemap.locator("[data-treemap-value]").count()).toBeGreaterThan(0);
+      const fits = await treemap.locator("[data-chart-datum]").evaluateAll((groups) =>
+        groups.every((g) => {
+          const text = g.querySelector("[data-treemap-name]");
+          if (!text) return true;
+          const cell = g.querySelector("rect")!.getBoundingClientRect(),
+            name = text.getBoundingClientRect(),
+            value = g.querySelector("[data-treemap-value]")?.getBoundingClientRect();
+          return (
+            name.left >= cell.left - 1 &&
+            name.right <= cell.right + 1 &&
+            name.bottom <= cell.bottom + 1 &&
+            (!value ||
+              (name.bottom <= value.top && value.left >= cell.left - 1 && value.right <= cell.right + 1 && value.bottom <= cell.bottom + 1))
+          );
+        }),
+      );
+      expect(fits).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+}

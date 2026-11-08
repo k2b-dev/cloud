@@ -596,12 +596,15 @@ describe("Files history components", () => {
         items: [network("2001:db8:4f2::/48", 9), network("192.0.2.0/24", 3), network("198.18.0.0/24", 1), network("198.51.100.0/24", 22)],
       },
     };
+    const retryPage = deferred<ShareAccessCounts>();
     const requests: ShareAccessRequest[] = [];
     const period = { from: "2026-09-21", to: "2026-10-20" };
     const load = async (request: ShareAccessRequest) => {
       requests.push(request);
-      return { ...first, networks: { ...first.networks, next: null, items: [network("203.0.113.0/24", 148)] } };
+      if (requests.length === 1) throw new Error("Offline");
+      return retryPage.promise;
     };
+    const last = { ...first, networks: { ...first.networks, next: null, items: [network("203.0.113.0/24", 148)] } };
     const dom = await mount(() => {
       const links = createShareAccess({
         shares: () => [{ share, creatorName: "Mia Schulz" }],
@@ -637,7 +640,17 @@ describe("Files history components", () => {
     expect(dom.root.querySelectorAll(".filesv2-share-facts__networks li")).toHaveLength(4);
     buttonNamed(dom.root, "Weitere Netze laden")!.click();
     await flush();
-    expect(requests).toEqual([{ shareId: share.id, networkAfter: "198.51.100.0/24" }]);
+    const retry = buttonNamed(dom.root, "Erneut versuchen")!;
+    const alert = dom.root.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    retry.click();
+    await flush();
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent?.trim()).toBe("Erneut versuchen");
+    expect(dom.root.querySelector('[role="alert"]')).toBe(alert);
+    retryPage.resolve(last);
+    await flush();
+    expect(requests).toEqual(Array(2).fill({ shareId: share.id, networkAfter: "198.51.100.0/24" }));
     expect(text()).toContain("203.0.113.x");
     expect(text()).toContain("seit 18.10. · 9-mal");
     expect(text()).toContain("148-mal");

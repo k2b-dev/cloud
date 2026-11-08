@@ -15,11 +15,13 @@ const budgets = [
   { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 230 },
   // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure; KaTeX
   // loads only for math. Measured 2026-11-05 with these roots: 2,155,527 B (with KaTeX 2,258,365 B and fewer roots).
-  // Measured 2026-11-07 with search and grouping in chat tables: 2,213,270 B (2,211,825 B without them).
-  { file: "packages/assistant/src/pwa/AssistantPwa.island.tsx", kib: 2176 },
+  // Measured 2026-11-07 with first-use table controls: 2,210,862 B; original 2160 KiB cap restored.
+  // Measured 2026-11-07 with the model trigger's level indicator and its load-error card: 2,215,053 B.
+  { file: "packages/assistant/src/pwa/AssistantPwa.island.tsx", kib: 2164 },
   // The web Assistant renders chat Markdown; KaTeX loads only for math, so it stays out of the static closure.
-  // Measured 2026-11-05: 3,267,899 B with KaTeX, 2,992,646 B without.
-  { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 2990 },
+  // Measured 2026-11-07 with first-use table controls: 3,058,884 B (KaTeX remains on demand).
+  // Measured 2026-11-07 with the model trigger's level indicator and its load-error card: 3,062,712 B.
+  { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 2992 },
   // The Spaces part: "My tasks", a Space as a list per status, one task with its pickers (status, due date, people),
   // and the shared "+" menu of Spaces with its catalog; the quick add field loads when it opens.
   // Measured 2026-11-05: 1,079,170 B.

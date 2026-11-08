@@ -1,4 +1,5 @@
 import actionButtons from "./actions/buttons.md" with { type: "text" };
+import actionCommandMenu from "./actions/command-menu.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
 import actionDragAndDrop from "./actions/drag-and-drop.md" with { type: "text" };
@@ -65,6 +66,7 @@ import inputIconChoices from "./input/icon-choices.md" with { type: "text" };
 import inputImage from "./input/image.md" with { type: "text" };
 import inputImageCropper from "./input/image-cropper.md" with { type: "text" };
 import inputNumber from "./input/number.md" with { type: "text" };
+import inputPeriodPicker from "./input/period-picker.md" with { type: "text" };
 import inputPin from "./input/pin.md" with { type: "text" };
 import inputQrScanner from "./input/qr-scanner.md" with { type: "text" };
 import inputRichSelect from "./input/rich-select.md" with { type: "text" };
@@ -122,6 +124,7 @@ const catalogContextSources = {
   "input/autocomplete-select": { file: "input/autocomplete-select.md", content: inputAutocompleteSelect },
   "input/number": { file: "input/number.md", content: inputNumber },
   "input/date-picker": { file: "input/date-picker.md", content: inputDatePicker },
+  "input/period-picker": { file: "input/period-picker.md", content: inputPeriodPicker },
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
@@ -149,6 +152,7 @@ const catalogContextSources = {
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
   "actions/copy-remove": { file: "actions/copy-remove.md", content: actionCopyRemove },
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
+  "actions/command-menu": { file: "actions/command-menu.md", content: actionCommandMenu },
   "actions/drag-and-drop": { file: "actions/drag-and-drop.md", content: actionDragAndDrop },
   "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },

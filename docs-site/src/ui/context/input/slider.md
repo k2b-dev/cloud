@@ -25,7 +25,18 @@ reports through both callbacks.
 `min`, `max`, and `step` default to `0`, `100`, and `1`. `showValue` defaults
 to `true`; `formatValue` controls its text.
 
+`valuePlacement="label"` places the value and reset button beside the label,
+above the full-width track. The default, `"control"`, keeps them beside the
+track. Without a label, both placements use the track row. `showValue={false}`
+hides only the value; an available reset button stays in the chosen row.
+In the label row the reset comes before the value, so values line up with the
+right edge whether the setting has changed or is at its default.
+
 With `center`, the filled track starts at the range midpoint. Double-click resets to `defaultValue`, or to the midpoint for a centered slider and `min` otherwise.
+
+## Default value and reset
+
+Pass `defaultValue` when the setting has a value it starts from, such as `1` for brightness or `0` for rotation. While the value differs from it, the shown value takes the accent color and a reset button appears after it. The button names the value it returns to, formatted by `formatValue`, such as "Reset to 100%". The button keeps its slot at the default too, invisible and out of the tab order, so changing the value moves nothing. Reset reports through both callbacks and returns focus to the slider. Without `defaultValue` there is no reset button and no changed color.
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for labels, errors, disabled state and value accessors.
 
@@ -53,3 +64,21 @@ const [volume, setVolume] = createSignal(64);
   formatValue={(value) => `${value}%`}
 />;
 ```
+
+For a compact settings panel, keep the value and reset in the label row:
+
+```tsx
+<Slider
+  label="Contrast"
+  value={contrast}
+  onValueChange={setContrast}
+  min={-100}
+  max={100}
+  center
+  defaultValue={0}
+  valuePlacement="label"
+/>
+```
+
+Both layouts reserve the reset slot at the default value, so changing and
+resetting the setting keeps the label and track in place.

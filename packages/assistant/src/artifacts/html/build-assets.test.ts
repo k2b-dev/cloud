@@ -10,6 +10,10 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const rare = await buildChartModule();
   // The separate module travels in every srcdoc; each intermediate kind keeps about 1% headroom.
   expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("k2b-waterfall-bar");
+  expect(rare).toContain("k2b-waterfall-bar");
+  expect(normal).toContain("Waterfall balances must be finite");
+  expect(rare).not.toContain("Waterfall balances must be finite");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
   for (const marker of ["k2b-chart-pareto-current", "k2b-chart-treemap-cell"]) {
@@ -20,8 +24,21 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(60_400);
+  // 57,857 B measured; temporary until the last kind PR sets the catalog total, see #2790
+  expect(Buffer.byteLength(rare)).toBeLessThan(58_500);
+
+  expect(normal).not.toContain("k2b-chart-group-heading");
+  expect(rare).toContain("k2b-chart-group-heading");
+  expect(normal).toContain("Horizontal bars require aligned nonnegative segment values");
+  expect(rare).not.toContain("Horizontal bars require aligned nonnegative segment values");
+  expect(normal).not.toContain("k2b-chart-funnel");
+  expect(rare).toContain("k2b-chart-funnel");
+  expect(rare).not.toContain(".stdlib-chart-series-0 {");
+  expect(normal).not.toContain(".stdlib-chart-series-0 {");
+  expect(normal).toContain("Funnel values must be finite and nonnegative, or null");
+  expect(rare).not.toContain("Funnel values must be finite and nonnegative, or null");
+  // Reference cells need only identity validation, not capability registration.
+  expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);

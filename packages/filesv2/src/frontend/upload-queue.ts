@@ -1,4 +1,4 @@
-import { onCleanup, batch as together } from "solid-js";
+import { createSignal, onCleanup, batch as together } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { createUploadRetryBudget, nextUploadRetry, sleepUploadRetry } from "../upload-retry";
 import { UploadTransferError } from "../upload-transfer";
@@ -18,6 +18,8 @@ import {
   type UploadBatch,
   waitRow,
 } from "./upload-batch";
+
+import { createUploadEstimate } from "./upload-estimate";
 
 export const FINISHING_NOTICE_DELAY_MS = 1_000;
 
@@ -45,6 +47,7 @@ export type UploadAdapter<G> = {
 
 export type UploadQueue<G> = {
   batch: UploadBatch;
+  remainingSeconds: () => number | null;
   add: (group: G, target: { key: string; label: string }, items: readonly UploadItem[]) => void;
   cancel: () => void;
   retry: (ids?: readonly number[]) => void;
@@ -86,6 +89,8 @@ function waitForNetwork(delay: number, signal: AbortSignal): Promise<void> {
  * progress reaches the store at most once per animation frame.
  */
 export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> {
+  const estimate = createUploadEstimate();
+  const [remainingSeconds, setRemainingSeconds] = createSignal<number | null>(null);
   const [batch, setBatch] = createStore<UploadBatch>(createBatch());
   let groups: { value: G; prepared: boolean; changed: boolean; last: string | null }[] = [];
   let items: UploadItem[] = [];
@@ -151,6 +156,9 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
           budget.probes = 0;
           clearWait();
           latest = bytes;
+          const remaining = Math.max(0, batch.totalBytes - batch.doneBytes - batch.failedBytes - bytes);
+          const seconds = estimate.progress(bytes, remaining, performance.now());
+          if (seconds !== null) setRemainingSeconds(seconds);
           if (frame) return;
           frame = requestAnimationFrame(() => {
             frame = 0;
@@ -160,6 +168,7 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
         try {
           while (!stale()) {
             const current = ++attempt;
+            estimate.start(performance.now());
             attempting = true;
             answered = false;
             apply((draft) => phaseRow(draft, id!, null), turn);
@@ -212,6 +221,8 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
             } catch (error) {
               if (stale()) break;
               attempting = false;
+              estimate.reset();
+              setRemainingSeconds(null);
               clearFinishing();
               apply((draft) => phaseRow(draft, id!, null), turn);
               const pause = navigator.onLine === false || (error instanceof UploadTransferError && error.kind === "network" && !answered);
@@ -263,6 +274,8 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
     groups = groups.filter((group) => group.changed);
     items = [];
     setBatch(createBatch());
+    estimate.reset();
+    setRemainingSeconds(null);
   };
 
   onCleanup(() => {
@@ -272,8 +285,13 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
 
   return {
     batch,
+    remainingSeconds,
     add: (group, target, added) => {
       if (!added.length) return;
+      if (batch.phase !== "running") {
+        estimate.reset();
+        setRemainingSeconds(null);
+      }
       // Files after a cancel start a new batch: the cancelled files stay out of its totals. One update, so the panel stays.
       together(() => {
         if (batch.phase === "cancelled") close();
@@ -292,6 +310,8 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
     },
     cancel,
     retry: (ids) => {
+      estimate.reset();
+      setRemainingSeconds(null);
       apply((draft) => retryRows(draft, ids));
       void run();
     },
