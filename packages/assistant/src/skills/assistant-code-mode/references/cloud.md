@@ -228,11 +228,13 @@ type ChartOptions =
   | (ChartBase & { kind: "histogram"; data: number[]; bins?: number; xAxis?: AxisOptions; yAxis?: AxisOptions })
   | (ChartBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string })
   | (ChartBase & { kind: "sparkline"; data: number[]; area?: boolean });
-// boxplot, heatmap, barGauge, stat, declarative formats, references and thresholds: charts.md.
+// Every other kind with an example: chart-kinds.md; declarative formats, references and thresholds: charts.md.
 
 // ---------------------------------------------------------------- views (script runs only)
 
-type ChartKind = "bar" | "line" | "scatter" | "pie" | "donut" | "histogram" | "gauge" | "sparkline" | "boxplot" | "heatmap" | "barGauge" | "stat";
+type ChartKind =
+  | "waterfall" | "area" | "bar" | "hbar" | "funnel" | "line" | "scatter" | "pie" | "donut" | "histogram"
+  | "gauge" | "sparkline" | "boxplot" | "heatmap" | "barGauge" | "stat" | "treemap" | "pareto" | "bubble" | "radar";
 type ViewRef = { path: string; title: string; subtitle?: string } & (
   | { view: "chart"; kind: ChartKind }
   | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }

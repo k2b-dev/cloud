@@ -1,9 +1,9 @@
 import { env } from "@k2b/cloud/config";
-import { z } from "zod";
+import { ChartPartsAsset } from "./asset-schemas";
 import type { ChartParts } from "./chart-parts";
+import { chartHashes } from "./chart-parts";
 
-const ChartPartAsset = z.object({ code: z.string().min(1), hash: z.string().regex(/^[a-f0-9]{64}$/) });
-export const ChartPartsAsset = z.object({ shared: ChartPartAsset, kinds: z.record(z.string(), ChartPartAsset) });
+export { ChartPartsAsset } from "./asset-schemas";
 
 export type AppFrameAssets = {
   /** Prelude script text, embedded in every app document. */
@@ -15,6 +15,11 @@ export type AppFrameAssets = {
   /** All offline chart parts, held once by the host and delivered only on request. */
   chartParts: ChartParts;
 };
+
+/** The interactive start fetches only frame bytes; chart sources were prepared separately. */
+export function frameAssetPayload(assets: AppFrameAssets) {
+  return { prelude: assets.prelude, preludeHash: assets.preludeHash, baseCss: assets.baseCss, chartHashes: chartHashes(assets.chartParts) };
+}
 
 let assets: Promise<AppFrameAssets> | undefined;
 /** Production reads the files that build-extras wrote next to the server bundle; development builds them once. */
