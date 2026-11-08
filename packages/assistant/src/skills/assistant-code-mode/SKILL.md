@@ -85,9 +85,9 @@ files explicitly; runs do not share variables. Stop unneeded work with
 `code_stop`.
 
 Use `code_secret` for credentials in the trusted web UI. Never ask for their
-values in chat, surveys or source. CLI and unattended turns can use existing
-chat secrets but cannot open secret entry. HTTP and capability calls use the current turn’s authority; unattended routine
-turns still require their current mandate. Studio database grants are unavailable.
+values in chat, surveys or source. CLI turns can use existing chat secrets but cannot open secret entry. Scheduled
+chat routines are retired; use reviewed personal Code for scheduled work.
+Studio database grants are unavailable.
 
 ## Reference routing
 

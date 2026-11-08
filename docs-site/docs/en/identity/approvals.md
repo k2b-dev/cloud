@@ -353,7 +353,7 @@ scope for that chat. The browser no longer offers **Always approve**; earlier
 choices still apply until the next major release. These choices and allowed
 websites remain preferences in Assistant and resolve a later matching call
 without a new request. Only a person in a signed-in browser session can remember a website.
-Routines (scheduled tasks) and mandates never ask and never use a remembered approval;
+Mandate-authorized background calls never ask and never use a remembered approval;
 see [Background mandates](/en/docs/identity/background-mandates).
 Remembering and revoking a preference each write an [audit event](/en/docs/platform/audit-events#remembered-ai-approvals).
 

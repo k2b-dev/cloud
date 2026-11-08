@@ -31,13 +31,13 @@ export {
   isMandatePolicyNarrowing,
   MANDATE_POLICY_MAX_IDENTIFIERS,
   MANDATE_POLICY_VERSION,
+  type MandateGrant,
+  MandateGrantSchema,
+  MandateGrantsSchema,
   type MandatePolicyV1,
   MandatePolicyV1Schema,
   mandatePolicyAllows,
   parseMandatePolicy,
-  type TaskGrant,
-  TaskGrantSchema,
-  TaskGrantsSchema,
 } from "./policy";
 
 export type MandateState = "active" | "paused" | "revoked";
@@ -185,7 +185,8 @@ const mapMandate = (row: MandateRow): Mandate => ({
   workloadType: row.workload_type,
   workloadId: row.workload_id,
   policy:
-    row.policy === null && row.owner_app_id === "runner" && row.workload_type === "code.version"
+    (row.owner_app_id === "core" && row.workload_type === "ai.chat-task") ||
+    (row.policy === null && row.owner_app_id === "runner" && row.workload_type === "code.version")
       ? null
       : parseMandatePolicy(parsePgJsonValue(row.policy)),
   state: row.state,
@@ -278,8 +279,9 @@ const parsePolicyForWorkload = (
   const parsed = MandatePolicyV1Schema.safeParse(policy);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mandate policy"));
   const hasWildcard = parsed.data.apps === "*" || parsed.data.operations === "*";
-  const isCoreAiChatTask = workload.subject.type === "user" && workload.ownerAppId === "core" && workload.workloadType === "ai.chat-task";
-  if (hasWildcard && (!isCoreAiChatTask || parsed.data.actions !== "require_approval")) {
+  if (workload.ownerAppId === "core" && workload.workloadType === "ai.chat-task")
+    return fail(err.forbidden("Scheduled chat routines are retired"));
+  if (hasWildcard) {
     return fail(err.forbidden("Wildcard mandate policy is not allowed for this workload"));
   }
   return ok(parsed.data);
@@ -747,7 +749,8 @@ export const validateMandateIssueAuthority = async (
     LIMIT 1
     FOR SHARE OF mandate
   `;
-  if (!row) return denyMandateIssue(err.forbidden("Mandate is unavailable"));
+  if (!row || (row.owner_app_id === "core" && row.workload_type === "ai.chat-task"))
+    return denyMandateIssue(err.forbidden("Mandate is unavailable"));
   if (!row.subject_active || !(await validSubject(subjectFromRow(row), db)))
     return denyMandateIssue(err.forbidden("Mandate subject is unavailable"));
   if (row.owner_app_id !== owner.data) {

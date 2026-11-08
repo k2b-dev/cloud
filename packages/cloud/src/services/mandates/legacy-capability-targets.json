@@ -1534,9 +1534,6 @@
     "providerName": "core__query__ai_dot_skill_dot_reference_dot_read"
   },
   { "appId": "core", "capabilityId": "ai.skills.list", "kind": "query", "providerName": "core__query__ai_dot_skills_dot_list" },
-  { "appId": "core", "capabilityId": "ai.task.read", "kind": "query", "providerName": "core__query__ai_dot_task_dot_read" },
-  { "appId": "core", "capabilityId": "ai.task.run.read", "kind": "query", "providerName": "core__query__ai_dot_task_dot_run_dot_read" },
-  { "appId": "core", "capabilityId": "ai.tasks.list", "kind": "query", "providerName": "core__query__ai_dot_tasks_dot_list" },
   { "appId": "core", "capabilityId": "entities.search", "kind": "query", "providerName": "core__query__entities_dot_search" },
   { "appId": "core", "capabilityId": "geo.availability", "kind": "query", "providerName": "core__query__geo_dot_availability" },
   { "appId": "core", "capabilityId": "map.style", "kind": "query", "providerName": "core__query__map_dot_style" },
@@ -1615,60 +1612,6 @@
     "target": "ai.skill",
     "legacyTarget": "skillId",
     "fields": ["expectedRevision", "name", "description", "instructions"]
-  },
-  {
-    "appId": "core",
-    "capabilityId": "ai.task.create",
-    "kind": "action",
-    "providerName": "core__action__ai_dot_task_dot_create",
-    "target": "ai.chat",
-    "legacyTarget": "chatId",
-    "fields": ["title", "prompt", "grants", "schedule", "timezone"]
-  },
-  {
-    "appId": "core",
-    "capabilityId": "ai.task.delete",
-    "kind": "action",
-    "providerName": "core__action__ai_dot_task_dot_delete",
-    "target": "ai.chat",
-    "legacyTarget": "chatId",
-    "fields": ["taskId"]
-  },
-  {
-    "appId": "core",
-    "capabilityId": "ai.task.pause",
-    "kind": "action",
-    "providerName": "core__action__ai_dot_task_dot_pause",
-    "target": "ai.chat",
-    "legacyTarget": "chatId",
-    "fields": ["taskId"]
-  },
-  {
-    "appId": "core",
-    "capabilityId": "ai.task.resume",
-    "kind": "action",
-    "providerName": "core__action__ai_dot_task_dot_resume",
-    "target": "ai.chat",
-    "legacyTarget": "chatId",
-    "fields": ["taskId"]
-  },
-  {
-    "appId": "core",
-    "capabilityId": "ai.task.run",
-    "kind": "action",
-    "providerName": "core__action__ai_dot_task_dot_run",
-    "target": "ai.chat",
-    "legacyTarget": "chatId",
-    "fields": ["taskId"]
-  },
-  {
-    "appId": "core",
-    "capabilityId": "ai.task.update",
-    "kind": "action",
-    "providerName": "core__action__ai_dot_task_dot_update",
-    "target": "ai.chat",
-    "legacyTarget": "chatId",
-    "fields": ["taskId", "title", "prompt", "grants", "schedule", "timezone"]
   },
   { "appId": "chat", "capabilityId": "discussion.list", "kind": "query", "providerName": "chat__query__discussion_dot_list" },
   { "appId": "chat", "capabilityId": "message.read", "kind": "query", "providerName": "chat__query__message_dot_read" },

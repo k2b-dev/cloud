@@ -1496,7 +1496,7 @@ describe("scheduled result presentation", () => {
     };
     const html = renderToString(() =>
       createComponent(AiChatActionsProvider, {
-        actions: { onOpenScheduledTaskRun: () => undefined },
+        actions: {},
         get children() {
           const items = createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })();
           return items.map((item) => item.content);
@@ -1505,6 +1505,7 @@ describe("scheduled result presentation", () => {
     );
     expect(html).toContain("The morning overview is ready.");
     expect(html).toContain("Background run");
+    expect(html).not.toContain("<button");
     expect(html).toContain("ti-calendar-time");
     expect(html).not.toContain("Scheduled task task");
   });
@@ -1533,7 +1534,7 @@ describe("scheduled result presentation", () => {
         locale,
         get children() {
           return createComponent(AiChatActionsProvider, {
-            actions: { onOpenScheduledTaskRun: () => undefined },
+            actions: {},
             get children() {
               return createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })().map((item) => item.content);
             },
@@ -1544,23 +1545,23 @@ describe("scheduled result presentation", () => {
   };
   const run = { taskId: "tSk234", occurrenceId: "rUn234", scheduledFor: "2026-10-16T14:30:00Z", trigger: "scheduled" as const };
 
-  test("a stopped run shows one system line in the reader's language with what was already done", () => {
+  test("a retired stopped run preserves its original text without executable controls", () => {
     const html = routineLine(
       "Stopped while the routine was running. Already done: Created note Weekly; Nothing was undone.",
       { ...run, stop: { cause: "paused", done: ["Notiz „Woche“ angelegt"] } },
       "de",
     );
-    expect(html).toContain(
-      "Angehalten, während die Routine lief. Schon erledigt: Notiz „Woche“ angelegt. Nichts wurde rückgängig gemacht.",
-    );
-    expect(html).toContain("ti-player-stop");
-    // The stored English text is not shown a second time.
-    expect(html).not.toContain("Stopped while the routine was running");
+    expect(html).toContain("Stopped while the routine was running. Already done: Created note Weekly; Nothing was undone.");
+    expect(html).not.toContain("<button");
     expect(html).not.toContain("tSk234");
   });
 
   test("a stop before any change says so", () => {
-    const html = routineLine("x", { ...run, stop: { cause: "deleted", done: [] } }, "en");
+    const html = routineLine(
+      "Stopped while the routine was running. Nothing was undone.",
+      { ...run, stop: { cause: "deleted", done: [] } },
+      "en",
+    );
     expect(html).toContain("Stopped while the routine was running. Nothing was undone.");
   });
 
@@ -1570,8 +1571,8 @@ describe("scheduled result presentation", () => {
       { ...run, reason: { code: "rights_changed", at: "2026-10-16T14:30:00Z" }, reasonOnly: true },
       "en",
     );
-    expect(reasonOnly).toContain("What it may do changed. Please confirm again.");
-    expect(reasonOnly).not.toContain("Der letzte Lauf ist fehlgeschlagen.");
+    expect(reasonOnly).toContain("Der letzte Lauf ist fehlgeschlagen.");
+    expect(reasonOnly).not.toContain("<button");
     const withAnswer = routineLine(
       "I updated two of three invoices.",
       { ...run, reason: { code: "failed", at: "2026-10-16T14:30:00Z" } },
@@ -1579,6 +1580,7 @@ describe("scheduled result presentation", () => {
     );
     expect(withAnswer).toContain("I updated two of three invoices.");
     expect(withAnswer).toContain("The last run failed.");
+    expect(withAnswer).not.toContain("<button");
   });
 });
 

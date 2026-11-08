@@ -6,13 +6,10 @@ import {
   type AiConversationWorkingGroup,
   type AiFileStat,
   type AiResourceContext,
-  type AiChatTaskView as AssistantChatTask,
-  aiChatTasks,
   aiConversations,
   aiMemories,
   aiSkills,
   loadAiConversationFileOverview,
-  toAiChatTaskView,
 } from "@k2b/cloud/ai";
 
 /** Snapshot limits: results and files come from people and stay small; sources and working files can grow. */
@@ -60,7 +57,6 @@ export type AssistantChatContextSnapshot = {
   sourceCount: number;
   /** Cursor for the sources after `sources`; null when the snapshot holds all of them. */
   sourceCursor: string | null;
-  tasks: AssistantChatTask[];
   skills: AiConversationSkillUse[];
   memories: Array<{ id: string; content: string }>;
   runCount: number;
@@ -114,7 +110,7 @@ export const loadAssistantChatContextSnapshot = async (
   const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const now = new Date().toISOString();
-  const [delivered, sourcePage, overview, tasks, skills, memories] = await Promise.all([
+  const [delivered, sourcePage, overview, skills, memories] = await Promise.all([
     resultSources(conversation.id),
     aiConversations.listConversationSources({
       conversationId: conversation.id,
@@ -127,7 +123,6 @@ export const loadAssistantChatContextSnapshot = async (
       groups: WORKING_GROUP_LIMIT,
       looseWorkingFiles: LOOSE_WORKING_FILE_LIMIT,
     }),
-    aiChatTasks.list({ userId, chatId, limit: 100 }),
     aiSkills.listConversationUses(conversation.id),
     aiMemories.listFromConversation(userId, conversation.id),
   ]);
@@ -188,7 +183,6 @@ export const loadAssistantChatContextSnapshot = async (
     sources: readableSources(sourcePage.sources),
     sourceCount: sourcePage.total,
     sourceCursor: sourcePage.nextCursor ?? null,
-    tasks: tasks.map(toAiChatTaskView),
     skills,
     memories: memories.map((memory) => ({ id: memory.shortId, content: memory.content })),
     runCount: count?.count ?? 0,

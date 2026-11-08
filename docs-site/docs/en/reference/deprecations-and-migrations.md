@@ -105,35 +105,7 @@ The following sections describe recovery and application-specific input changes.
 
 ## Existing Assistant routines and approvals adopt capability targets
 
-Stop every old Core and Assistant worker replica before upgrading. Start the
-upgraded Core before its Assistant workers, and deploy the converted capability
-providers and callers together. Do not run old replicas during this migration. Core migrates existing
-routine mandates and pending capability approvals during its AI startup migration.
-The Assistant app ID and `/assistant/…` addresses remain valid.
-
-A routine's literal container field, such as `fixedInput.spaceId`, becomes its
-exact grant target. Destination restrictions become exact additional refs;
-other fixed inputs keep restricting the call. A routine confirmed for Space A
-continues to authorize Space A only. The migration commits and audits each
-routine separately and does nothing to it on later starts.
-
-A missing, dynamic, conflicting, or unknown target puts the routine in
-`needs_attention` and pauses its mandate. Its notice names the capability:
-**Please confirm this routine again: … now needs a fixed target.** Review its
-grants, choose the intended target, and confirm it again before running it.
-Cloud does not infer a container from a task, note, contact, or other child ID.
-Unknown third-party capabilities also require this review.
-
-Pending capability approvals and approved calls still waiting to run that can
-be converted keep their question and review, with the digest bound to the complete normalized call. Confirmation
-still checks the current review and permissions. A proposal that cannot be
-converted becomes `aborted`; its chat says **Please ask again**
-(**Bitte neu anfragen** in German). Send the request again to review a new
-proposal. The old proposal is retained.
-
-Chats, messages, tool-call history, files, projects, memories, Skills, and
-**Always approve** preferences remain unchanged. History displays stored
-arguments without validating them against the new capability schema.
+The previous routine migration is superseded by [Routines became Code](/en/docs/operations/routines-to-code). Pending interactive approvals still adopt capability targets; proposals whose authority cannot be preserved require a new request.
 
 ## Incoming Mail automations keep their Spaces targets
 
@@ -1304,22 +1276,15 @@ IDs other than a Studio App the Skill calls. The offer appears only while
 moves to version 3. An unmodified installation updates at the next start. A
 customized copy keeps its content and shows **Update available** under
 **Admin > AI > Skills** until an administrator resets it. No setting changes.
-Scheduled task runs are unaffected. See
+Scheduled chat routines are now retired. See
 [Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
 
 ## Assistant offers code tools in every turn and says why a tool is missing
 
-Every Assistant turn with the default tool source now offers the server-run code
-tools `code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`,
-and `code_present`. Before, only turns whose client listed them
-in `clientToolIds` had them, so `cld assistant --detach`, API clients, and
-scheduled tasks could not run code. Scheduled tasks now run them with their
-task grants, as [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
-describes. `code_open`, `code_secret`, and the local client tools
-(`local_bash`, `local_list`, `local_read`, `local_upload`, `local_download`,
-`local_write`, `local_move`, `load_local_skill`) need a client that declares
-and handles them. Clients that list the server-run names keep working; the
-names have no effect.
+Assistant turns with the default tool source offer server-run chat code tools
+to browser, detached CLI and API clients. Scheduled chat routines are retired;
+see [Routines became Code](/en/docs/operations/routines-to-code). `code_secret`
+and local client tools require a client that declares and handles them.
 
 The `load_tools` result changed. `loaded` and `alreadyLoaded` hold
 `{name, call}` objects instead of names, and `missing` is replaced by

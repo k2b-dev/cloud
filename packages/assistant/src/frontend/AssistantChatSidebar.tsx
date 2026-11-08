@@ -1,4 +1,4 @@
-import type { AiConversationSource, AiFileStat, AiProject, AiProjectFile, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
+import type { AiConversationSource, AiFileStat, AiProject, AiProjectFile } from "@k2b/cloud/ai";
 import { type ConversationFileSource, conversationFileSource } from "@k2b/cloud/ai/solid";
 import { SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
@@ -64,7 +64,6 @@ import {
   type WorkingGroup,
 } from "./chat-sidebar-model";
 import { formatDictationTimestamp } from "./dictation-files";
-import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 /** Where a result came from in the chat: the message that holds its delivering call. */
@@ -74,7 +73,6 @@ export type ChatSidebarActions = {
   onOpenFile: (file: { path: string; title: string }) => void;
   onJump: (target: ChatSidebarJump) => void;
   onOpenSecrets?: () => void;
-  onOpenTask?: (task: AssistantChatTask) => void;
   onOpenKnowledge?: () => void;
   onOpenReferences?: () => void;
   /** Opens a shared Project file, read-only here. */
@@ -690,38 +688,11 @@ export function AssistantChatSidebarContent(props: {
           );
         };
 
-        // Needs attention: things that stopped and wait for the person, at the very top.
-        const attention = () => [
-          ...snapshot()
-            .tasks.filter((task) => task.state === "needs_attention")
-            .map((task) => ({
-              key: `task:${task.id}`,
-              label: copy().taskNeedsAttention({ title: assistantTaskTitle(task) }),
-              action: props.actions.onOpenTask ? () => props.actions.onOpenTask!(task) : undefined,
-            })),
-        ];
-
         return (
           <Show
             when={!props.search.active()}
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
-            <Show when={attention().length}>
-              <DetailPanel.Section title={copy().attention}>
-                <For each={attention()}>
-                  {(item) => (
-                    <DetailPanel.Action
-                      class="assistant-sidebar-row"
-                      leading={<i class="ti ti-alert-circle" aria-hidden="true" />}
-                      title={item.label}
-                      disabled={!item.action}
-                      onClick={() => item.action?.()}
-                    />
-                  )}
-                </For>
-              </DetailPanel.Section>
-            </Show>
-
             <DetailPanel.Section
               title={copy().results}
               class="assistant-sidebar-results"
@@ -1207,8 +1178,6 @@ function ContextSection(props: {
   actions: ChatSidebarActions;
 }) {
   const copy = useSidebarCopy();
-  const locale = useLocale();
-  const tasks = () => props.snapshot.tasks.filter((task) => task.state !== "completed");
   const projectContext = () => {
     const context = props.state.projectContext();
     return context && props.project && context.projectId === props.project.id ? context : null;
@@ -1218,7 +1187,6 @@ function ContextSection(props: {
       props.project ? copy().project({ name: props.project.name }) : null,
       props.snapshot.skills.length ? copy().skills({ count: props.snapshot.skills.length }) : null,
       props.snapshot.memories.length ? copy().memories({ count: props.snapshot.memories.length }) : null,
-      tasks().length ? copy().tasks({ count: tasks().length }) : null,
     ]
       .filter(Boolean)
       .join(" · ") || copy().secrets;
@@ -1308,23 +1276,7 @@ function ContextSection(props: {
             </ul>
           </div>
         </Show>
-        <Show when={tasks().length}>
-          <div class="assistant-sidebar-timegroup">
-            <Heading>{copy().scheduled}</Heading>
-            <For each={tasks()}>
-              {(task) => (
-                <DetailPanel.Action
-                  class="assistant-sidebar-row"
-                  leading={<i class="ti ti-calendar-time" aria-hidden="true" />}
-                  title={assistantTaskTitle(task)}
-                  description={formatAssistantTaskSchedule(task, locale())}
-                  disabled={!props.actions.onOpenTask}
-                  onClick={() => props.actions.onOpenTask?.(task)}
-                />
-              )}
-            </For>
-          </div>
-        </Show>
+
         <Show when={props.actions.onOpenSecrets}>
           <DetailPanel.Action
             class="assistant-sidebar-row"
@@ -1627,7 +1579,7 @@ export const openAssistantChatSidebarSheet = async (props: {
         ...props.actions,
         onOpenFile: leave(() => close(), props.actions.onOpenFile),
         onJump: leave(() => close(), props.actions.onJump),
-        onOpenTask: props.actions.onOpenTask && leave(() => close(), props.actions.onOpenTask),
+
         onOpenKnowledge: props.actions.onOpenKnowledge && leave(() => close(), props.actions.onOpenKnowledge),
         onOpenReferences: props.actions.onOpenReferences && leave(() => close(), props.actions.onOpenReferences),
         onOpenProjectFile: props.actions.onOpenProjectFile && leave(() => close(), props.actions.onOpenProjectFile),

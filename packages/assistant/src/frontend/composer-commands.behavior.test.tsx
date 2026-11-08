@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import type { AiChatTaskView, AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
+import type { AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
 import type { AiComposerAttachment } from "@k2b/cloud/ai/ui";
 import type { CloudResourcePickerItem, CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
@@ -86,7 +86,7 @@ const settled = async () => {
 const skills: AiSkillSummary[] = Array.from({ length: 6 }, (_, i) => ({
   id: `skill-${i}`,
   shortId: `Skill${i}`,
-  name: i === 5 ? "scheduled-tasks" : `Skill ${i}`,
+  name: `Skill ${i}`,
   description: `Description ${i}`,
   permission: "read",
   enabled: true,
@@ -95,22 +95,6 @@ const skills: AiSkillSummary[] = Array.from({ length: 6 }, (_, i) => ({
   manualOnly: false,
   referenceCount: 0,
   createdAt: fixedNow,
-  updatedAt: fixedNow,
-}));
-const tasks: AiChatTaskView[] = Array.from({ length: 7 }, (_, i) => ({
-  id: `Task0${i}`,
-  chatId: `Chat0${i}`,
-  chatTitle: "Task chat",
-  title: `Bericht ${i}`,
-  name: `Bericht ${i}`,
-  reason: null,
-  prompt: `Bericht ${i}: Read calendar`,
-  grants: [],
-  schedule: { kind: "cron", cron: "0 7 * * *" },
-  timezone: "UTC",
-  state: "active",
-  lastError: null,
-  createdAt: `2026-10-0${i + 1}T12:00:00.000Z`,
   updatedAt: fixedNow,
 }));
 
@@ -150,11 +134,7 @@ const mount = async (
     catalogGate?: Promise<void>;
     empty?: boolean;
     skills?: AiSkillSummary[];
-    tasks?: AiChatTaskView[];
-    tasksFail?: () => boolean;
     skillsFail?: () => boolean;
-    scheduledTaskSkills?: AiSkillSummary[];
-    scheduledTaskSkillsFail?: () => boolean;
     post?: () => Promise<Response>;
     track?: <T>(picking: Promise<T>) => Promise<T>;
     /** Checked recent references the server answers with; none by default. */
@@ -188,7 +168,6 @@ const mount = async (
     assistantRecentCommands,
     createAssistantCommandSession,
     createAssistantRecentResources,
-    createAssistantTaskRunKeys,
   } = await import("./composer-commands");
   const { assistantCopyFor } = await import("./ui-copy");
   const { createCloudComposerCatalog } = await import("@k2b/cloud/browser/composer-insert");
@@ -209,19 +188,6 @@ const mount = async (
             : Response.json({ resources: options.recent ?? [] });
         }
         if (url.pathname.endsWith("/run")) return options.post ? options.post() : Response.json({});
-        if (url.pathname === "/api/ai/tasks")
-          return options.tasksFail?.()
-            ? Response.json({ message: "Offline" }, { status: 500 })
-            : Response.json((options.tasks ?? tasks).filter((task) => task.state === url.searchParams.get("state")));
-        if (url.pathname.startsWith("/api/ai/skills") && url.searchParams.has("name")) {
-          expect(url.searchParams.get("name")).toBe("scheduled-tasks");
-          expect(url.searchParams.has("q")).toBe(false);
-          return options.scheduledTaskSkillsFail?.()
-            ? Response.json({ message: "Skill lookup offline" }, { status: 500 })
-            : Response.json({
-                skills: options.scheduledTaskSkills ?? (options.skills ?? skills).filter((skill) => skill.name === "scheduled-tasks"),
-              });
-        }
         if (url.pathname.startsWith("/api/ai/skills"))
           return options.skillsFail?.()
             ? Response.json({ message: "Skills offline" }, { status: 500 })
@@ -234,13 +200,6 @@ const mount = async (
   );
   cleanups.push(() => fetchMock.mockRestore());
   const loader = createAssistantCommandSession();
-  let storedRunKeys: string | null = null;
-  const runKeys = createAssistantTaskRunKeys({
-    getItem: () => storedRunKeys,
-    setItem: (_key, value) => {
-      storedRunKeys = value;
-    },
-  });
   cleanups.push(() => loader.dispose());
   const [value, setValue] = createSignal(options.value ?? (options.add ? "Hello world" : "/"));
   const [selectedModel, setSelectedModel] = createSignal("alpha");
@@ -328,7 +287,7 @@ const mount = async (
               session: search.opening,
               scope: search.scope,
               sessionLoader: loader,
-              runKeys,
+
               models,
               selectedModelId: selectedModel(),
               chooseModel,
@@ -395,49 +354,12 @@ const mount = async (
     requests,
     searches: () => searches,
     status: () => dom.root.querySelector(".k2b-chat-composer__status")!.textContent,
-    taskGets: () => requests.filter(({ url }) => url.pathname === "/api/ai/tasks"),
     recentGets: () => requests.filter(({ url }) => url.pathname === "/api/ai/resources/recent"),
     headings: () => [...dom.root.querySelectorAll(".k2b-chat-composer__command-heading span")].map((el) => el.textContent),
     labels: () => rows().map((row) => row.querySelector("strong")?.textContent),
     posts: () => requests.filter(({ url }) => url.pathname.endsWith("/run")),
   };
 };
-
-test("overview groups and rows have the requested order and independent task bound", async () => {
-  const h = await mount();
-  expect([...h.root.querySelectorAll(".k2b-chat-composer__command-heading span")].map((el) => el.textContent)).toEqual([
-    "Einfügen",
-    "Skills",
-    "Dieser Chat",
-    "Routinen",
-  ]);
-  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual([
-    "Aus Cloud einfügen",
-    "Datei anhängen",
-    "Skill 0",
-    "Skill 1",
-    "Skill 2",
-    "Skill 3",
-    "Alle 6 Skills",
-    "Modell wählen",
-    "Projekt zuordnen",
-    "Chat kompaktieren",
-    "Chat abzweigen",
-    "In diesem Chat suchen",
-    "Neuer Chat",
-    "Neue Routine",
-    "Bericht 6",
-    "Bericht 5",
-    "Bericht 4",
-    "Bericht 3",
-    "Bericht 2",
-  ]);
-  expect(h.row("Modell wählen").querySelector("small")?.textContent).toBe("Jetzt: Alpha");
-  h.mark("In diesem Chat suchen");
-  h.key("Enter");
-  await flush();
-  expect(h.searches()).toBe(1);
-});
 
 test("empty chats hide compact, fork and search; searching shows the empty-chat reason", async () => {
   const h = await mount({ empty: true });
@@ -456,7 +378,7 @@ test.each(["Enter", "Tab"])("All Skills narrows with %s", async (key) => {
   h.key(key);
   await settled();
   expect(h.value()).toBe("/skill ");
-  expect(h.row("scheduled-tasks")).toBeDefined();
+  expect(h.row("Skill 5")).toBeDefined();
   expect(h.row("Alle 6 Skills")).toBeUndefined();
 });
 
@@ -493,241 +415,12 @@ test("choosing a retained model after a run starts restores the token and shows 
   expect(h.status()).toBe("Geht, sobald die Antwort fertig ist");
 });
 
-test("task running status appears only after the deferred server acceptance", async () => {
-  let accept!: (response: Response) => void;
-  const h = await mount({
-    value: "/routine ",
-    post: () =>
-      new Promise((resolve) => {
-        accept = resolve;
-      }),
-  });
-  expect(h.rows()).toHaveLength(8);
-  h.mark("Bericht 6");
-  h.key("Enter");
-  await flush();
-  expect(h.status()).toBe("„Bericht 6“ wird gestartet …");
-  expect(h.status()).not.toContain("läuft");
-  expect(h.posts()).toHaveLength(1);
-  expect(new Headers(h.posts()[0]?.init?.headers).get("Idempotency-Key")).toMatch(/^[a-f0-9]{32}$/);
-  accept(Response.json({}));
-  await flush();
-  expect(h.status()).toBe("„Bericht 6“ läuft. Das Ergebnis kommt in den Chat der Routine.");
-  expect(h.value()).toBe("");
-});
-
-test.each(["completed", "failed", "stopped", "running", "queued"] as const)(
-  "a successful replay with state %s reports its outcome and settles the key",
-  async (state) => {
-    const { assistantCopyFor } = await import("./ui-copy");
-    const copy = assistantCopyFor("de");
-    let attempt = 0;
-    const h = await mount({
-      value: "/routine Bericht 6",
-      post: async () => {
-        if (attempt++ === 0) throw new TypeError("Response lost");
-        return Response.json({ state });
-      },
-    });
-    for (let i = 0; i < 3; i++) {
-      if (i > 0) {
-        h.type("");
-        h.type("/routine Bericht 6");
-        await settled();
-      }
-      h.mark("Bericht 6");
-      h.key("Enter");
-      await flush();
-      if (i === 0) {
-        expect(h.value()).toBe("/routine Bericht 6");
-        expect(h.status()).toBe(
-          copy.commandTaskRunUnconfirmed({ title: "Bericht 6", reason: copy.commandTaskOffline }) + " " + copy.draftUnchanged,
-        );
-      } else {
-        expect(h.value()).toBe("");
-        expect(h.status()).toBe(
-          (state === "completed"
-            ? copy.commandTaskAlreadyRan
-            : state === "failed"
-              ? copy.commandTaskAlreadyFailed
-              : state === "stopped"
-                ? copy.commandTaskAlreadyStopped
-                : copy.commandTaskRunning)({ title: "Bericht 6" }),
-        );
-      }
-    }
-    const keys = h.posts().map(({ init }) => new Headers(init?.headers).get("Idempotency-Key"));
-    expect(keys).toHaveLength(3);
-    expect(keys[1]).toBe(keys[0]);
-    expect(keys[2]).not.toBe(keys[1]);
-  },
-);
-
-test.each([409, 404, 429, 403, 500, 408, "offline"] as const)(
-  "task failure %s restores the token and reports the localized reason",
-  async (status) => {
-    const { assistantCopyFor } = await import("./ui-copy");
-    const copy = assistantCopyFor("de");
-    const rawMessage = "Raw upstream failure.";
-    const h = await mount({
-      value: "/routine Bericht 6",
-      post: async () => {
-        if (status === "offline") throw new TypeError(rawMessage);
-        return Response.json({ message: rawMessage }, { status });
-      },
-    });
-    h.mark("Bericht 6");
-    h.key("Enter");
-    await flush();
-    expect(h.value()).toBe("/routine Bericht 6");
-    const unconfirmed = status === 500 || status === "offline";
-    expect(h.status()).toBe(
-      (unconfirmed
-        ? copy.commandTaskRunUnconfirmed({
-            title: "Bericht 6",
-            reason: status === "offline" ? copy.commandTaskOffline : copy.commandTaskNoAnswer,
-          })
-        : copy.commandTaskRunFailed({
-            title: "Bericht 6",
-            reason:
-              status === 409
-                ? copy.commandTaskAlreadyRunning
-                : status === 404
-                  ? copy.commandTaskGone
-                  : status === 429
-                    ? copy.commandTaskTooMany
-                    : copy.commandTaskNotAccepted,
-          })) +
-        " " +
-        copy.draftUnchanged,
-    );
-    expect(h.status()).not.toContain(rawMessage);
-  },
-);
-
-test("after a lost answer, a rejected retry still says the start is unconfirmed", async () => {
-  const { assistantCopyFor } = await import("./ui-copy");
-  const copy = assistantCopyFor("de");
-  const answers = ["offline", 429, 409] as const;
-  let attempt = 0;
-  const h = await mount({
-    value: "/routine Bericht 6",
-    post: async () => {
-      const answer = answers[attempt++]!;
-      if (answer === "offline") throw new TypeError("Response lost");
-      return Response.json({ message: "Raw" }, { status: answer });
-    },
-  });
-  for (const [index, answer] of answers.entries()) {
-    if (index > 0) {
-      // Choose the task again from a fresh `/`.
-      h.type("");
-      h.type("/routine Bericht 6");
-      await settled();
-    }
-    h.mark("Bericht 6");
-    h.key("Enter");
-    await flush();
-    expect(h.value()).toBe("/routine Bericht 6");
-    const reason =
-      answer === "offline" ? copy.commandTaskOffline : answer === 429 ? copy.commandTaskTooMany : copy.commandTaskAlreadyRunning;
-    expect(h.status()).toBe(copy.commandTaskRunUnconfirmed({ title: "Bericht 6", reason }) + " " + copy.draftUnchanged);
-  }
-});
-
-test.each(["paused", "needs_attention"] as const)("%s task explains its reason and sends no POST", async (state) => {
-  const h = await mount({ value: "/routine ", tasks: [{ ...tasks[0]!, state }] });
-  const reason = state === "paused" ? "Pausiert. Setze die Routine zuerst fort." : "Braucht deinen Eingriff, bevor sie laufen kann";
-  expect(h.row("Bericht 0").querySelector("small")?.textContent).toBe(reason);
-  h.mark("Bericht 0");
-  h.key("Enter");
-  await flush();
-  expect(h.posts()).toHaveLength(0);
-  expect(h.value()).toBe("/routine ");
-});
-
-test("new routine inserts the Assistant Skill from the name lookup when absent from the full list", async () => {
-  const h = await mount({
-    skills: skills.slice(0, 5),
-    scheduledTaskSkills: [skills[5]!],
-  });
-  expect(h.row("Alle 5 Skills")).toBeDefined();
-  h.type("/routine neu");
-  await settled();
-  h.mark("Neue Routine");
-  h.key("Enter");
-  await flush();
-  expect(h.mentions()).toHaveLength(1);
-  expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "core.ai.skill", id: "Skill5" } });
-  expect(h.value()).toBe("scheduled-tasks ");
-});
-
-test.each(["disabled", "missing"])("%s scheduled-tasks Skill explains why insertion is unavailable", async (kind) => {
-  const h = await mount({
-    value: "/routine ",
-    skills: kind === "missing" ? skills.slice(0, 5) : skills.map((skill) => ({ ...skill, enabled: skill.id !== "skill-5" })),
-  });
-  expect(h.row("Neue Routine").querySelector("small")?.textContent).toBe(
-    kind === "missing" ? "Der Skill dafür ist für dich nicht verfügbar" : "Du hast den Skill dafür ausgeschaltet",
-  );
-  h.key("Enter");
-  await flush();
-  expect(h.mentions()).toHaveLength(0);
-  expect(h.value()).toBe("/routine ");
-});
-
-test("tasks, full Skills and the named Skill load once per opening, independently of keystroke cancellation", async () => {
-  const h = await mount();
-  expect(h.taskGets()).toHaveLength(3);
-  expect(h.taskGets().map(({ url }) => url.searchParams.get("state"))).toEqual(["active", "paused", "needs_attention"]);
-  for (const text of ["/b", "/be", "/bericht"]) {
-    h.type(text);
-    await settled();
-  }
-  expect(h.taskGets()).toHaveLength(3);
-  expect(h.requests.filter(({ url }) => url.pathname.startsWith("/api/ai/skills") && !url.search)).toHaveLength(1);
-  expect(h.requests.filter(({ url }) => url.searchParams.get("name") === "scheduled-tasks")).toHaveLength(1);
-  h.key("Escape");
-  h.type("");
-  h.type("/");
-  await settled();
-  expect(h.taskGets()).toHaveLength(6);
-  expect(h.requests.filter(({ url }) => url.searchParams.get("name") === "scheduled-tasks")).toHaveLength(2);
-});
-
-test.each([
-  ["/", "tasks"],
-  ["/bericht", "tasks"],
-  ["/routine bericht", "tasks"],
-  ["/", "skill"],
-  ["/routine bericht", "skill"],
-])("failed discovery at %s (%s) offers a retry that reloads and preserves the token", async (value, failure) => {
-  let fail = true;
-  const h = await mount({
-    value,
-    tasksFail: () => failure === "tasks" && fail,
-    scheduledTaskSkillsFail: () => failure === "skill" && fail,
-  });
-  if (!value.startsWith("/routine")) expect(h.row("Skill 0")).toBeDefined();
-  expect(h.row("Routinen konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
-  expect(h.row("Neue Routine")).toBeUndefined();
-  fail = false;
-  h.mark("Routinen konnten nicht geladen werden");
-  h.key("Enter");
-  await settled();
-  expect(h.value()).toBe(value);
-  expect(h.taskGets()).toHaveLength(6);
-  expect(h.row("Bericht 6")).toBeDefined();
-});
-
 test("full Skill-list failure keeps other sections and retries Skills with Enter", async () => {
   let fail = true;
   const h = await mount({ skillsFail: () => fail });
   const skillGets = () => h.requests.filter(({ url }) => url.pathname === "/api/ai/skills" && !url.search);
   expect(skillGets()).toHaveLength(1);
-  expect(h.row("Neue Routine")).toBeDefined();
-  expect(h.row("Bericht 6")).toBeDefined();
-  expect(h.row("Bericht 2")).toBeDefined();
+  expect(h.row("Neue Routine")).toBeUndefined();
   expect(h.row("Modell wählen")).toBeDefined();
   expect(h.row("Aus Cloud einfügen")).toBeDefined();
   expect(h.row("Skills konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
@@ -741,18 +434,7 @@ test("full Skill-list failure keeps other sections and retries Skills with Enter
   expect(h.row("Skills konnten nicht geladen werden")).toBeUndefined();
   expect(h.row("Skill 0")).toBeDefined();
   expect(h.row("Alle 6 Skills")).toBeDefined();
-  expect(h.row("Neue Routine")).toBeDefined();
-  expect(h.row("Bericht 6")).toBeDefined();
-});
-
-test("a failed full Skill list does not prevent task rows or the scheduled Skill reference", async () => {
-  const h = await mount({ value: "/routine ", skillsFail: () => true });
-  expect(h.row("Bericht 6")).toBeDefined();
-  expect(h.row("Routinen konnten nicht geladen werden")).toBeUndefined();
-  h.mark("Neue Routine");
-  h.key("Enter");
-  await flush();
-  expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "core.ai.skill", id: "Skill5" } });
+  expect(h.row("Neue Routine")).toBeUndefined();
 });
 
 test("Insert leads the overview and tags appear only while typing", async () => {
@@ -827,7 +509,8 @@ test("sixteen attachments disable Attach file and every resource insert row", as
 });
 
 test("an unmatched query offers Cloud search and the retired /app scope is absent", async () => {
-  const h = await mount({ value: "/xylo", skills: [], tasks: [] });
+  const h = await mount({ value: "/xylo", skills: [] });
+
   expect(h.root.textContent).toContain("Nichts gefunden für „xylo“");
   h.key("Enter");
   await flush();
@@ -835,6 +518,7 @@ test("an unmatched query offers Cloud search and the retired /app scope is absen
   h.type("/app q");
   await settled();
   expect(h.root.textContent).not.toContain("Studio-Apps aus Gustav");
+
   h.key("Enter");
   await flush();
   expect(picker).toHaveBeenLastCalledWith(expect.objectContaining({ scope: undefined, requireReader: true }));
@@ -888,7 +572,7 @@ test("a slow first catalog keeps the search pending, so a space after /notiz nar
   const gate = new Promise<void>((resolve) => {
     answer = resolve;
   });
-  const h = await mount({ locale: "de-LI", value: "/notiz", catalogGate: gate, skills: [], tasks: [] });
+  const h = await mount({ locale: "de-LI", value: "/notiz", catalogGate: gate, skills: [] });
   await settled();
   // Not "nothing found" yet: the tags that could match have not arrived.
   expect(h.root.textContent).not.toContain("Nichts gefunden");
@@ -902,7 +586,7 @@ test("a slow first catalog keeps the search pending, so a space after /notiz nar
 });
 
 test("the Assistant's own scopes never wait for a catalog that does not answer", async () => {
-  const h = await mount({ locale: "de-LU", value: "/modell ", catalogGate: new Promise<void>(() => {}), skills: [], tasks: [] });
+  const h = await mount({ locale: "de-LU", value: "/modell ", catalogGate: new Promise<void>(() => {}), skills: [] });
   await settled();
   expect(h.row("Alpha")).toBeDefined();
   expect(h.row("Beta")).toBeDefined();
@@ -970,7 +654,7 @@ const recentItems = [
 const mountWithRecent = async (options: Parameters<typeof mount>[0] = {}) => {
   const h = await mount({ value: "", recent: recentItems, ...options });
   h.type("/");
-  // Skills and routines answer after the debounce.
+  // Skills answer after the debounce.
   await settled();
   await settled();
   return h;
@@ -978,7 +662,7 @@ const mountWithRecent = async (options: Parameters<typeof mount>[0] = {}) => {
 
 test("the overview starts with Recent: the four sent most often, then most recently, each with kind and place", async () => {
   const h = await mountWithRecent();
-  expect(h.headings()).toEqual(["Zuletzt", "Einfügen", "Skills", "Dieser Chat", "Routinen"]);
+  expect(h.headings()).toEqual(["Zuletzt", "Einfügen", "Skills", "Dieser Chat"]);
   expect(h.labels().slice(0, 6)).toEqual([
     "Skill 1",
     "Q3-Planung",
@@ -1215,7 +899,7 @@ test.each([false, true])("Plus starts with Insert after Recent when present (rec
   h.openPlus();
   await settled();
   await settled();
-  expect(h.headings()).toEqual([...(recent ? ["Zuletzt"] : []), "Einfügen", "Skills", "Dieser Chat", "Routinen"]);
+  expect(h.headings()).toEqual([...(recent ? ["Zuletzt"] : []), "Einfügen", "Skills", "Dieser Chat"]);
   expect(h.labels().slice(recent ? 4 : 0, recent ? 6 : 2)).toEqual(["Aus Cloud einfügen", "Datei anhängen"]);
 });
 

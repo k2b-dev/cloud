@@ -67,8 +67,6 @@ export type AiChatActions = {
    */
   onContinueTurn?: (message: string) => void | Promise<void>;
   onMessageFeedback?: (entry: AiStoredMessage, feedback: Omit<AiMessageFeedback, "updatedAt"> | null) => void | Promise<void>;
-  /** Open the originating background run for a delivered scheduled result. */
-  onOpenScheduledTaskRun?: (taskId: string, occurrenceId: string) => void;
   /** Open a conversation VFS file in the host application's artifact surface. */
   onOpenFile?: (path: string) => void;
   /** Resolve a Markdown link only when it identifies a known conversation file. */

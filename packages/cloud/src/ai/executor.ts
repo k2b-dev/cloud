@@ -10,8 +10,6 @@ import type { AccessSubject, RequestActor } from "../server";
 import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
 import { logger, trace } from "../services/logging";
-import { getMandate } from "../services/mandates";
-import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
 import type { AiModelRequest } from "../shared/ai-models";
 import { normalizeLocale } from "../shared/locale";
@@ -25,15 +23,8 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
-import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import {
-  type AiCapabilityCatalogEntry,
-  aiCapabilityArguments,
-  buildAiCapabilityCatalog,
-  createAiToolResolver,
-  createRunToolStore,
-} from "./capabilities";
+import { type AiCapabilityCatalogEntry, aiCapabilityArguments, buildAiCapabilityCatalog, createAiToolResolver } from "./capabilities";
 import {
   AiCapabilityExecutionError,
   aiCapabilityCheckResult,
@@ -45,7 +36,6 @@ import {
 import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
-import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
 import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
@@ -77,6 +67,7 @@ import {
 import { retryTransientProviderErrors } from "./provider-retry";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
+import { assertInteractiveChatTurn } from "./retired-routines";
 import { compactCapabilityReview } from "./review-content";
 import { AiRunTimeout } from "./run-timeout";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
@@ -725,7 +716,6 @@ export class AiTurnExecutor {
       startSeq: claim.liveSeq,
       leaseOwner: this.config.leaseOwner,
       seedBlocks: claim.liveBlocks ?? [],
-      background: claim.runConfig?.kind !== "compact" && Boolean(claim.runConfig?.background),
       allowRememberedApprovals: aiTurnAllowsRememberedApprovals(claim.runConfig),
     });
     const runConfig = claim.runConfig;
@@ -847,7 +837,7 @@ export class AiTurnExecutor {
     let allowedTools: string[] | null = null;
     let sourceToolNames: string[] = [];
     try {
-      if (config.background && !config.mandate) throw new Error("Background execution requires its task mandate.");
+      assertInteractiveChatTurn(config);
       const [nextMaterial, conversation] = await Promise.all([
         materializeChatConfig(config, abortController.signal, turnId),
         aiConversations.getConversation({ conversationId }),
@@ -954,7 +944,7 @@ export class AiTurnExecutor {
     const availableSkills = skillSubject
       ? (await aiSkills.list(skillSubject, { authority: toolAuthority })).filter((skill) => skill.enabled)
       : [];
-    const localClient = !config.background && !config.mandate ? config.client : undefined;
+    const localClient = config.client;
     const localContext = localClient ? config.localContext : undefined;
     const localSkills = (localContext?.skills ?? []).map((skill) => ({
       name: skill.name,
@@ -1114,7 +1104,6 @@ export class AiTurnExecutor {
       actor: material.actor,
       conversationId,
     });
-    let backgroundError: string | null = null;
     const rememberableCapabilityApprovals = new Map<string, string>();
     const onCapabilityReview = async (
       callId: string,
@@ -1170,7 +1159,6 @@ export class AiTurnExecutor {
       return;
     }
     const store = aiConversations.createSessionStore({
-      background: config.background,
       onMessage: async (message) => {
         if (message.message.role === "assistant") await pipeline.timing.finishGeneration();
         await pipeline.emitMessage(message);
@@ -1207,56 +1195,6 @@ export class AiTurnExecutor {
 
     const appliedSteers: AiTurnSteer[] = [];
 
-    let mandatePolicy: MandatePolicyV1 | null | undefined;
-    if (config.background && config.mandate) {
-      mandatePolicy = null;
-      try {
-        const mandate = await getMandate(config.mandate.id);
-        if (mandate && mandate.state === "active" && mandate.revision === config.mandate.revision) {
-          mandatePolicy = mandate.policy;
-        } else {
-          backgroundError = "Scheduled task mandate is unavailable or changed; recreate or update the task.";
-        }
-      } catch {
-        backgroundError = "Scheduled task mandate could not be loaded; retry or update the task.";
-      }
-    }
-    if (backgroundError) {
-      signal.removeEventListener("abort", onSignal);
-      await this.finalize(
-        conversationId,
-        turnId,
-        pipeline,
-        "failed",
-        { error: { code: "not_allowed" }, detail: backgroundError, message: backgroundError },
-        "chat",
-        promptLocale,
-      );
-      return;
-    }
-    const authorizeBackgroundMandate =
-      config.background && config.mandate
-        ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {
-            const call = capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args));
-            try {
-              await aiChatTasks.authorizeCapability({
-                mandate: config.mandate!,
-                appId: entry.appId,
-                capabilityId: entry.operation.localId,
-                kind: entry.kind,
-                input: call.input,
-                call,
-                policy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
-                approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-              });
-            } catch (error) {
-              if (!(error instanceof AiChatTaskAuthorityError && error.code === "MANDATE_POLICY_DENIED"))
-                backgroundError = error instanceof Error ? error.message : "Background capability access denied";
-              throw error;
-            }
-          }
-        : undefined;
-    const toolStore = config.background ? createRunToolStore(await aiConversations.getLoadedTools({ conversationId })) : aiConversations;
     const tools = toolActor
       ? createAiToolResolver({
           conversationId,
@@ -1265,10 +1203,9 @@ export class AiTurnExecutor {
           staticTools: activeTools,
           ...(activeTools.some((tool) => tool.def.name === "load_skill") ? { skillNames: availableSkills.map((skill) => skill.name) } : {}),
           allowedTools,
-          mandatePolicy,
           unofferedTools,
           runtimeContext: dynamicToolRuntimeContext,
-          store: toolStore,
+          store: aiConversations,
           ...(capabilityAuthority ? { listRegistry: listCapabilities } : {}),
           onCapabilityRegistryError: (error) =>
             log.warn("AI Capability registry unavailable; continuing without app capabilities", {
@@ -1284,7 +1221,7 @@ export class AiTurnExecutor {
                   return reviewAiCapability({
                     conversationId,
                     authority: capabilityAuthority!,
-                    mandate: config.mandate,
+
                     locale: promptLocale,
                     entry,
                     args,
@@ -1293,56 +1230,16 @@ export class AiTurnExecutor {
                 },
               }
             : {}),
-          authorizeBackground: authorizeBackgroundMandate
-            ? async (entry, args, context) => {
-                const review = await authorizeBackgroundActionWith(
-                  {
-                    turnId,
-                    mandate: config.mandate!,
-                    appId: entry.appId,
-                    capabilityId: entry.operation.localId,
-                    kind: entry.kind,
-                    args,
-                    policy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
-                    approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-                    hasReview: entry.kind === "action" && "review" in entry.operation && entry.operation.review === true,
-                    action: entry.display.title,
-                    review: () =>
-                      capabilityAuthority
-                        ? reviewAiCapability({
-                            conversationId,
-                            authority: capabilityAuthority,
-                            mandate: config.mandate,
-                            locale: promptLocale,
-                            entry,
-                            args,
-                            context,
-                          })
-                        : Promise.resolve(null),
-                    signal: context.signal,
-                  },
-                  () => authorizeBackgroundMandate(entry, args),
-                );
-                if (review && context.callId)
-                  await onCapabilityReview(
-                    context.callId,
-                    review,
-                    "approval" in entry.operation ? entry.operation.approval : undefined,
-                    entry,
-                  );
-              }
-            : undefined,
           onReview: onCapabilityReview,
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
                   try {
-                    await authorizeBackgroundMandate?.(entry, args);
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,
                       authority: capabilityAuthority!,
-                      mandate: config.mandate,
+
                       actionApproval:
                         entry.kind === "action" && !("approval" in entry.operation && entry.operation.approval === "none")
                           ? "approved"
@@ -1395,7 +1292,7 @@ export class AiTurnExecutor {
                             conversationId,
                             turnId,
                             authority: capabilityAuthority!,
-                            mandate: config.mandate,
+
                             // The receipt joins the review's sentence, so it is asked for in the review's language.
                             locale: review.locale,
                             entry,
@@ -1443,12 +1340,6 @@ export class AiTurnExecutor {
                     }
                     return result;
                   } catch (error) {
-                    if (
-                      config.background &&
-                      error instanceof AiCapabilityExecutionError &&
-                      (error.status === 401 || error.status === 403 || error.code === "ACTION_OUTCOME_UNKNOWN")
-                    )
-                      backgroundError = error.message;
                     const resources = collectConversationResourceObservations(args);
                     if (resources.length) {
                       await indexConversationResources({ conversationId, turnId, callId: context.callId, resources });
@@ -1491,7 +1382,7 @@ export class AiTurnExecutor {
     // Offer hints and the recent-work summary only guide a fresh turn a person follows; a resumed
     // attempt after an approval or a scheduled run gets neither.
     let guidance: AiTurnGuidance = {};
-    if (isFresh && !config.background && defaultToolSource && user && chat) {
+    if (isFresh && defaultToolSource && user && chat) {
       try {
         guidance = await loadAiTurnGuidance(
           {
@@ -1557,7 +1448,7 @@ export class AiTurnExecutor {
       memory: memory?.text,
       timeZone,
       locale: promptLocale,
-      interactive: !config.background,
+      interactive: true,
       skillCreatorAvailable,
       recentWork: guidance.recentWork,
     });
@@ -1645,29 +1536,27 @@ export class AiTurnExecutor {
       maxOutputTokens: resolved.profile.maxOutputTokens,
       reasoningEffort: resolved.profile.reasoningEffort,
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
-      compact: config.background
-        ? undefined
-        : createCloudCompactFn({
-            conversationId,
+      compact: createCloudCompactFn({
+        conversationId,
+        turnId,
+        modelId: resolved.profile.id,
+        providerType: resolved.profile.provider,
+        // Accounted as compaction, outside the chat turn's tool policy and retries.
+        provider: rememberProviderErrors(
+          inferenceProvider(resolved.provider, resolved.profile, {
+            subject: quotaSubject,
             turnId,
-            modelId: resolved.profile.id,
-            providerType: resolved.profile.provider,
-            // Accounted as compaction, outside the chat turn's tool policy and retries.
-            provider: rememberProviderErrors(
-              inferenceProvider(resolved.provider, resolved.profile, {
-                subject: quotaSubject,
-                turnId,
-                conversationId,
-                modelRef: resolved.model,
-                kind: "background",
-                task: "chat-compaction",
-              }),
-              remember,
-            ),
-            additionalInstructions: settings.compactionInstructions,
-            maxOutputTokens: resolved.profile.maxOutputTokens,
-            signal: abortController.signal,
+            conversationId,
+            modelRef: resolved.model,
+            kind: "background",
+            task: "chat-compaction",
           }),
+          remember,
+        ),
+        additionalInstructions: settings.compactionInstructions,
+        maxOutputTokens: resolved.profile.maxOutputTokens,
+        signal: abortController.signal,
+      }),
       maxToolResultChars: resolveAiToolResultMaxChars({
         contextWindow: resolved.provider.contextWindow,
         configuredMaxChars: settings.maxToolResultChars,
@@ -1700,9 +1589,6 @@ export class AiTurnExecutor {
       noteToolRound: turnPolicy.noteToolRound,
       noteToolCall: turnPolicy.noteToolCall,
       failureReason,
-      onBackgroundBlocked: (message) => {
-        backgroundError = message;
-      },
     });
     signal.removeEventListener("abort", onSignal);
 
@@ -1727,16 +1613,7 @@ export class AiTurnExecutor {
       outcome.failure = { error: timeout.turnError(), detail: "Run time limit reached." };
     }
     await nextMessage.save(outcome.status, abortController.signal);
-    const finalized = await this.finalize(
-      conversationId,
-      turnId,
-      pipeline,
-      backgroundError ? "failed" : outcome.status,
-      // A background run keeps Cloud's own words for what its mandate blocked.
-      backgroundError ? { error: { code: "not_allowed" }, detail: backgroundError, message: backgroundError } : outcome.failure,
-      "chat",
-      promptLocale,
-    );
+    const finalized = await this.finalize(conversationId, turnId, pipeline, outcome.status, outcome.failure, "chat", promptLocale);
     if (finalized === "pending_steering" && outcome.status === "completed" && !signal.aborted) {
       await this.runChat(conversationId, turnId, claim, config, pipeline, signal, true);
       return;
@@ -1780,7 +1657,6 @@ export class AiTurnExecutor {
      * it, in the order they run; the events here arrive later than that.
      */
     failureReason: { current: AiTurnFailureReason | null };
-    onBackgroundBlocked?: (message: string) => void;
   }): Promise<AttemptOutcome> {
     const {
       loop,
@@ -1824,7 +1700,6 @@ export class AiTurnExecutor {
             approvalTargets,
             linkedApprovals: input.linkedApprovals,
             freshApprovalRequired: input.freshApprovalRequired,
-            onBackgroundBlocked: input.onBackgroundBlocked,
             signal: abortController.signal,
           });
           if (suspended) {
@@ -1951,7 +1826,6 @@ export class AiTurnExecutor {
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
-    onBackgroundBlocked?: (message: string) => void;
     signal: AbortSignal;
   }): Promise<boolean> {
     const {
@@ -1984,7 +1858,7 @@ export class AiTurnExecutor {
     const allowChat = allowRememberedApprovals && (target !== undefined || allowAlways);
 
     // Display-only client_view tools (cards, charts) need neither a browser nor input: Cloud answers them itself, in
-    // background runs too, whose transcript shows them later. The block goes from running straight to completed:
+    // the transcript shows them later. The block goes from running straight to completed:
     // a published awaiting_client would read as an open request to clients and remount the result in the chat.
     // nessi emits no tool_execution_end for client tools, so Cloud ends the call itself.
     if (frontendMode === "client_view") {
@@ -1999,21 +1873,6 @@ export class AiTurnExecutor {
       await aiToolAudit
         .noteToolCompleted({ turnId, callId: event.callId, isError: false })
         .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
-      return false;
-    }
-
-    const runConfig = await aiConversations.getTurnRunConfig({ conversationId, turnId });
-    if (runConfig?.kind !== "compact" && (runConfig?.background || runConfig?.mandate)) {
-      input.onBackgroundBlocked?.(
-        `Background operation ${toolName} requires ${event.kind === "client_tool" ? "an interactive browser" : "interactive approval"}. Update the task in the normal chat.`,
-      );
-      if (event.kind === "client_tool")
-        loop.push({
-          type: "tool_result",
-          callId: event.callId,
-          result: { error: "This operation requires an interactive browser and is unavailable in a background run." },
-        });
-      else loop.push({ type: "approval_response", callId: event.callId, approved: false });
       return false;
     }
 
@@ -2339,7 +2198,6 @@ class StreamPipeline {
   private readonly attempt: number;
   private readonly leaseOwner: string;
   private readonly mapper: ReturnType<typeof createEventMapper>;
-  private readonly background: boolean;
   private readonly allowRememberedApprovals: boolean;
   readonly timing: ReturnType<typeof createTurnTimingRecorder>;
   private lastSnapshotAt = 0;
@@ -2356,10 +2214,8 @@ class StreamPipeline {
     startSeq: number;
     leaseOwner: string;
     seedBlocks: AiTurnBlock[];
-    background?: boolean;
     allowRememberedApprovals: boolean;
   }) {
-    this.background = input.background ?? false;
     this.timing = createTurnTimingRecorder(input.turnId);
     this.conversationId = input.conversationId;
     this.turnId = input.turnId;
@@ -2579,7 +2435,6 @@ class StreamPipeline {
   }
 
   private publish(event: AiWireEvent): Promise<void> {
-    if (this.background) return Promise.resolve();
     return this.ordered(() => publishAiWireEvent(event).catch(() => undefined));
   }
 

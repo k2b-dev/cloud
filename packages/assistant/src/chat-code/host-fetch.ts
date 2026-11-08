@@ -1,23 +1,14 @@
-import {
-  aiChatTasks,
-  authorizeCodeExecution,
-  createAiConversationArtifact,
-  listAiConversationFiles,
-  readAiConversationFile,
-} from "@k2b/cloud/ai";
+import { authorizeCodeExecution, createAiConversationArtifact, listAiConversationFiles, readAiConversationFile } from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Session } from "./agent-host";
 import { createChatCodeServiceRoutes } from "./api";
-import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
 import type { CodeToolContext } from "./context";
-import { backgroundChatCodeRouteAllowed } from "./host-policy";
-import { httpService } from "./http-service";
 export async function hostFetch(context: CodeToolContext, session: Session, path: string, init?: RequestInit): Promise<Response> {
   if (context.actor.kind !== "user" || !context.conversationId) throw new Error("User required");
   const url = new URL(path, "http://localhost");
-  const { config } = await authorizeCodeExecution(context.conversationId, session.turnId, context.actor.user.id);
+  await authorizeCodeExecution(context.conversationId, session.turnId, context.actor.user.id);
   const prefix = `/api/ai/conversations/${context.conversationId}/files`;
   if (url.pathname === prefix && (init?.method ?? "GET") === "GET")
     return Response.json({ files: await listAiConversationFiles(context.conversationId) });
@@ -55,8 +46,6 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
   }
 
   if (!url.pathname.startsWith("/api/assistant/chat-code/runtime/")) throw new Error("Code host request is outside its API boundary");
-  if (config.background && !backgroundChatCodeRouteAllowed(url.pathname.slice("/api/assistant/chat-code".length), init?.method ?? "GET"))
-    throw new Error("Background code request is outside its allowed services");
   const router = new Hono<AuthContext>()
     .use("*", async (c, next) => {
       if (context.authority) {
@@ -67,41 +56,14 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
       c.set("accessSubject", context.accessSubject);
       await next();
     })
-    .post("/api/assistant/chat-code/runtime/capabilities", async (c, next) => {
-      if (!config.background) return next();
-      if (!config.mandate) throw new Error("Background capability mandate is missing");
-      const input = RuntimeCapabilityRequest.parse(await c.req.json());
-      if (input.conversationId !== context.conversationId) throw new Error("Code capability conversation mismatch");
-      return c.json(
-        await runtimeCapabilities.prepare(
-          input,
-          context,
-          { transport: session.capabilityTransport, origin: "assistant", locale: context.locale, signal: c.req.raw.signal },
-          { turnId: session.turnId, mandate: config.mandate },
-        ),
-      );
-    })
-    .post("/api/assistant/chat-code/runtime/http/:id", async (c, next) => {
-      if (!config.background) return next();
-      if (!config.mandate) throw new Error("Background HTTP mandate is missing");
-      const { approved } = z.strictObject({ approved: z.boolean() }).parse(await c.req.json());
-      return c.json(
-        await httpService.execute(c.req.param("id"), approved, context, c.req.raw.signal, undefined, async (stored) => {
-          if (stored.scope.conversationId !== context.conversationId) throw new Error("HTTP conversation mismatch");
-          await aiChatTasks.authorizeRuntime({
-            mandate: config.mandate!,
-            kind: "http",
-            input: { url: stored.request.url, origin: new URL(stored.request.url).origin, method: stored.request.method },
-          });
-        }),
-      );
-    })
     .route(
       "/api/assistant/chat-code",
-      createChatCodeServiceRoutes(
-        () => ({ transport: session.capabilityTransport, origin: "assistant", locale: context.locale, signal: init?.signal ?? undefined }),
-        config.background ? session.turnId : undefined,
-      ),
+      createChatCodeServiceRoutes(() => ({
+        transport: session.capabilityTransport,
+        origin: "assistant",
+        locale: context.locale,
+        signal: init?.signal ?? undefined,
+      })),
     );
   return router.fetch(new Request(url, init));
 }

@@ -24,10 +24,6 @@ export const chatSidebarMessages = i18n.define({
       couldNotLoad: "Could not load this chat’s content",
       retry: "Retry",
 
-      attention: "Needs attention",
-      taskNeedsAttention: ({ title }: { title: string }) => `Routine “${title}” needs attention`,
-      appRunFailed: ({ title }: { title: string }) => `The last run of “${title}” failed`,
-
       results: "Results",
       resultsEmpty: "Files, apps, and visualizations that Gustav creates for you appear here.",
       newResults: ({ count }: { count: number }) => `New · ${count}`,
@@ -92,7 +88,6 @@ export const chatSidebarMessages = i18n.define({
       project: ({ name }: { name: string }) => `Project ${name}`,
       skills: ({ count }: { count: number }) => plural(count, "skill", "skills"),
       memories: ({ count }: { count: number }) => plural(count, "memory", "memories"),
-      tasks: ({ count }: { count: number }) => plural(count, "routine", "routines"),
       projectInstructions: "Project instructions",
       noProjectInstructions: "No Project instructions yet.",
       projectKnowledge: "Project knowledge",
@@ -100,7 +95,6 @@ export const chatSidebarMessages = i18n.define({
       skillsUsed: "Skills used",
       skillTurns: ({ count }: { count: number }) => `${count}×`,
       memoriesFromChat: "Remembered from this chat",
-      scheduled: "Routines",
       secrets: "Secrets & approvals",
 
       today: "Today",
@@ -117,10 +111,6 @@ export const chatSidebarMessages = i18n.define({
       loading: "Wird geladen…",
       couldNotLoad: "Inhalte dieses Chats konnten nicht geladen werden",
       retry: "Erneut versuchen",
-
-      attention: "Braucht Aufmerksamkeit",
-      taskNeedsAttention: ({ title }: { title: string }) => `Routine „${title}“ braucht Aufmerksamkeit`,
-      appRunFailed: ({ title }: { title: string }) => `Der letzte Lauf von „${title}“ ist fehlgeschlagen`,
 
       results: "Ergebnisse",
       resultsEmpty: "Dateien, Apps und Visualisierungen, die Gustav für dich erstellt, erscheinen hier.",
@@ -187,7 +177,6 @@ export const chatSidebarMessages = i18n.define({
       project: ({ name }: { name: string }) => `Projekt ${name}`,
       skills: ({ count }: { count: number }) => `${count} ${count === 1 ? "Skill" : "Skills"}`,
       memories: ({ count }: { count: number }) => `${count} ${count === 1 ? "Erinnerung" : "Erinnerungen"}`,
-      tasks: ({ count }: { count: number }) => `${count} ${count === 1 ? "Routine" : "Routinen"}`,
       projectInstructions: "Projektanweisungen",
       noProjectInstructions: "Noch keine Projektanweisungen.",
       projectKnowledge: "Projektwissen",
@@ -195,7 +184,6 @@ export const chatSidebarMessages = i18n.define({
       skillsUsed: "Verwendete Skills",
       skillTurns: ({ count }: { count: number }) => `${count}×`,
       memoriesFromChat: "Aus diesem Chat gemerkt",
-      scheduled: "Routinen",
       secrets: "Secrets & Freigaben",
 
       today: "Heute",

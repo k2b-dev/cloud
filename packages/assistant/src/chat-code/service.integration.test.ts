@@ -982,18 +982,10 @@ databaseSuite()("Assistant chat runner persistence", () => {
             entry.tool,
           );
         }
-        // Managed/background callers use this same service entry, with no HTTP middleware to rely on.
-        await expect(
-          runtimeCapabilities.prepare(
-            request(crypto.randomUUID(), "access.write", reference),
-            owner,
-            {},
-            {
-              turnId: "00000000-0000-4000-8000-000000000096",
-              mandate: { id: "00000000-0000-4000-8000-000000000097", revision: 1 },
-            },
-          ),
-        ).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+        // Direct runner callers use this same service entry, with no HTTP middleware to rely on.
+        await expect(runtimeCapabilities.prepare(request(crypto.randomUUID(), "access.write", reference), owner, {})).rejects.toMatchObject(
+          { code: "ACCESS_DENIED" },
+        );
         expect(catalog).not.toHaveBeenCalled();
         expect(execute).not.toHaveBeenCalled();
         expect(transfer).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
 import { sql } from "../runtime/clients";
@@ -53,6 +54,7 @@ databaseSuite()("enrichment store (integration)", () => {
   beforeAll(async () => {
     fresh = await useFreshDatabase("ai_enrich");
     await migrateAuth();
+    await migrateAudit();
     await sql`CREATE SCHEMA settings`;
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text)`;
     await migrateEvents();

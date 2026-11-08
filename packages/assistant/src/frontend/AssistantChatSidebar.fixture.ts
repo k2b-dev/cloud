@@ -72,7 +72,6 @@ export const emptySidebarSnapshot = (overrides: Partial<AssistantChatContextSnap
   sources: [],
   sourceCount: 0,
   sourceCursor: null,
-  tasks: [],
   skills: [],
   memories: [],
   runCount: 0,

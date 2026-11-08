@@ -3,7 +3,6 @@ import { sql } from "@k2b/cloud";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   type AiApprovalTarget,
-  aiChatTasks,
   aiConversations,
   aiTurnAllowsWebsiteApprovals,
   aiWebsiteApprovalScope,
@@ -51,7 +50,6 @@ export type Session = {
   conversationId: string;
   turnId: string;
   key: string;
-  background: boolean;
   context: CodeToolContext;
   host: Promise<Host>;
   lastUsed: number;
@@ -96,15 +94,15 @@ export function createAgentHost(
 
   async function authorize(context: CodeToolContext, turnId: string) {
     if (context.actor.kind !== "user" || !context.conversationId) throw new Error("Code host requires a user conversation");
-    const { config } = await authorizeCodeExecution(context.conversationId, turnId, context.actor.user.id);
-    return { user: context.actor.user, key: config.background ? turnId : context.conversationId };
+    await authorizeCodeExecution(context.conversationId, turnId, context.actor.user.id);
+    return { user: context.actor.user, key: context.conversationId };
   }
 
   async function createSession(context: CodeToolContext, turnId: string): Promise<Session> {
     if (context.actor.kind !== "user") throw new Error("User required");
     if (!context.conversationId) throw new Error("Conversation required");
-    const { config } = await authorizeCodeExecution(context.conversationId, turnId, context.actor.user.id);
-    const key = config.background ? turnId : context.conversationId;
+    await authorizeCodeExecution(context.conversationId, turnId, context.actor.user.id);
+    const key = context.conversationId;
     const existing = sessions.get(key);
     if (existing) {
       existing.turnId = turnId;
@@ -118,7 +116,6 @@ export function createAgentHost(
       conversationId: context.conversationId,
       turnId,
       key,
-      background: Boolean(config.background),
       context,
       lastUsed: Date.now(),
       busy: new Set(),
@@ -138,16 +135,6 @@ export function createAgentHost(
               session.turnId,
               context.actor.kind === "user" ? context.actor.user.id : "",
             );
-            if (config.background && config.mandate) {
-              if (!("type" in approval) || approval.type !== "http")
-                throw new Error("Background code cannot request interactive approval. Update the task in the normal chat.");
-              await aiChatTasks.authorizeRuntime({
-                mandate: config.mandate,
-                kind: "http",
-                input: { url: approval.url, origin: new URL(approval.url).origin, method: approval.method },
-              });
-              return { approved: true };
-            }
             if (!session.lastCall) throw new Error("Approval has no originating code call");
             const { turnId, callId } = session.lastCall;
             const id = z.uuid().parse(approval.id);
@@ -159,7 +146,7 @@ export function createAgentHost(
               if (website && website.conversationId === context.conversationId) {
                 target = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope(website.origin), always: false };
                 // Website approvals are looked up only here, on the interactive path of a turn a person started in a
-                // signed-in session; a scheduled task, mandate, or delegated credential always asks or uses its grants.
+                // signed-in session; a delegated credential always asks.
                 if (
                   aiTurnAllowsWebsiteApprovals(config) &&
                   (await findRememberedAiToolApproval(
@@ -334,17 +321,14 @@ export function createAgentHost(
     async sweep() {
       for (const session of sessions.values()) {
         try {
-          if (session.background) await authorize(session.context, session.turnId);
-          else {
-            const active = await aiConversations.getActiveTurn({ conversationId: session.conversationId });
-            if (
-              active?.turn.cancelRequestedAt ||
-              (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
-              (!active && Date.now() - session.lastUsed > IDLE_MS)
-            ) {
-              await closeSession(session);
-              continue;
-            }
+          const active = await aiConversations.getActiveTurn({ conversationId: session.conversationId });
+          if (
+            active?.turn.cancelRequestedAt ||
+            (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
+            (!active && Date.now() - session.lastUsed > IDLE_MS)
+          ) {
+            await closeSession(session);
+            continue;
           }
           await (await session.host).health();
         } catch {

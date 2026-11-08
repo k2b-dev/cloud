@@ -213,7 +213,9 @@ test("footer project popup and mobile group share search and creation; pinned ch
       ["Pinned", ["chat:pinned"]],
       ["Previous 30 days", ["chat:normal"]],
     ]);
-    expect(ids.slice(-4)).toEqual(["approvals", "projects", "activities", "preferences"]);
+    expect(ids.slice(-3)).toEqual(["approvals", "projects", "preferences"]);
+    expect(ids).not.toContain("activities");
+
     expect(ids).not.toContain("pinned");
     expect(ids).not.toContain("chats");
     expect(mobile.items().find((item) => item.id === "projects")?.defaultExpanded).toBe(false);
@@ -232,7 +234,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
 test("Done keeps its row through live updates, confirms success, then fades without blocking", async () => {
   const dom = createDomTestHarness();
   const live = createAssistantLiveHub();
-  const original = { ...conversation("finish", "Finish this", null), hasActiveSchedule: true };
+  const original = { ...conversation("finish", "Finish this", null) };
   const completed = { ...original, isDone: true, done: true };
   const [items, setItems] = createSignal<AiConversation[]>([original]);
   let resolveSave: (value: AiConversation) => void = () => {};
@@ -259,7 +261,7 @@ test("Done keeps its row through live updates, confirms success, then fades with
   const card = () =>
     dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-section:not([data-collapsible]) .assistant-chat-sidebar-item");
   try {
-    expect(card()?.querySelector('.assistant-chat-marker[title="Active schedule"]')).not.toBeNull();
+    expect(card()?.querySelector('.assistant-chat-marker[title="Active schedule"]')).toBeNull();
     card()!.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')!.click();
     expect(card()?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(true);
     setItems([completed]);
@@ -385,7 +387,8 @@ test("Waiting for you always keeps its place above Projects, with the live count
     await settle();
     expect(row()).not.toBeNull();
     expect(row()!.querySelector("i")?.className).toContain("ti-hand-stop");
-    expect(labels()).toEqual(["Waiting for you", "Projects", "Runs", "Personalize"]);
+    expect(labels()).toEqual(["Waiting for you", "Projects", "Personalize"]);
+
     expect(mobileIds()).toContain("approvals");
     expect(mobileIds()).not.toContain("apps");
     counts = { total: 2, apps: { assistant: 2 } };

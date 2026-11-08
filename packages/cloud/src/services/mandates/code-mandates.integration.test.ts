@@ -6,7 +6,6 @@ import { z } from "zod";
 import { suiteFor, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../../_internal/capabilities";
 import * as registry from "../../_internal/registry";
-import { aiChatTasks } from "../../ai/chat-tasks";
 import { aiConversations } from "../../ai/store";
 import { dispatchCapability } from "../../api/capabilities";
 import { CapabilityInvocationBodySchema } from "../../contracts/capabilities";
@@ -23,7 +22,7 @@ import { CODE_VERSION_MANDATE_WORKLOAD_TYPE, type Mandate, mandates } from ".";
 // Real database, invocation signature, admission middleware and resource resolver.
 // The provider fixture substitutes only an app's domain storage and transport.
 const suite = suiteFor("database", "valkey");
-suite("Code version and person routine target mandates", () => {
+suite("Code version target mandates", () => {
   let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let appLookup: ReturnType<typeof spyOn<typeof registry, "getApp">>;
   let capabilityLookup: ReturnType<typeof spyOn<typeof registry, "getCapability">>;
@@ -438,65 +437,5 @@ suite("Code version and person routine target mandates", () => {
     await mandates.reconcileUnconfirmed();
     expect(await mandates.get(created.data.id)).toMatchObject({ state: "revoked", policy: null });
     expect((await invoke(created.data, "b")).status).toBe(403);
-  });
-
-  test("person routine uses the same target grant and retains current human entry checks", async () => {
-    // The person's normal app entry remains mandatory; use the app's signed-in rule for this case.
-    appLookup.mockImplementation(async (id) => ({
-      id,
-      name: id,
-      icon: "ti ti-folder",
-      description: "Fixture",
-      baseUrl: `http://${id}.test`,
-      routes: [],
-      access: { kind: "signedIn" },
-    }));
-    const [access] = await sql<
-      { id: string }[]
-    >`INSERT INTO auth.access(user_id, permission) VALUES (${userId}::uuid, 'write') RETURNING id`;
-    accessByTarget.set("a", [writeAccessId, access!.id]);
-    accessByTarget.set("b", [writeAccessId, access!.id]);
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId, title: "Routine" });
-    const task = await aiChatTasks.create({
-      userId,
-      chatId: conversation.shortId,
-      prompt: "Write in A",
-      timezone: "UTC",
-      schedule: { kind: "cron", cron: "0 9 * * *" },
-      grants: [{ appId: "demo", capabilityId: "write", kind: "action", target: { type: "demo.folder", id: "a" }, fixedInput: {} }],
-    });
-    if (!task?.mandateId || !task.mandateRevision) throw new Error("Routine mandate missing");
-    const mandate = { id: task.mandateId, revision: task.mandateRevision };
-    const call = { capability: "demo.write", target: { type: "demo.folder", id: "a" }, refs: {}, input: { title: "Example" } };
-    await aiChatTasks.authorizeCapability({
-      mandate,
-      appId: "demo",
-      capabilityId: "write",
-      kind: "action",
-      input: call.input,
-      call,
-      policy: compiled.manifest.policies?.write,
-    });
-    await expect(
-      aiChatTasks.authorizeCapability({
-        mandate,
-        appId: "demo",
-        capabilityId: "write",
-        kind: "action",
-        input: call.input,
-        call: { ...call, target: { ...call.target, id: "b" } },
-        policy: compiled.manifest.policies?.write,
-      }),
-    ).rejects.toMatchObject({ code: "MANDATE_POLICY_DENIED" });
-    expect((await invoke(mandate, "a")).status).toBe(200);
-    const before = fetched;
-    expect((await invoke(mandate, "b")).status).toBe(403);
-    expect(fetched).toBe(before);
-    accessByTarget.set("a", [writeAccessId]);
-    const beforeDenied = ran;
-    const denied = await invoke(mandate, "a");
-    expect(denied.status).toBe(403);
-    expect(await denied.json()).toEqual({ code: "FORBIDDEN", message: "No resource access" });
-    expect(ran).toBe(beforeDenied);
   });
 });

@@ -44,9 +44,5 @@ export const assistantChatContextFor = (
   snapshot: AssistantChatContextSnapshot | null | undefined,
 ): AssistantChatContextSnapshot | null => (snapshot?.chatId === chatId ? snapshot : null);
 
-export const visibleAssistantReferences = (items: AiConversationSource[], chatId: string, visibleTaskId?: string) =>
-  items.filter(
-    (source) =>
-      !(source.ref?.type === "core.ai.chat" && source.ref.id === chatId) &&
-      !(source.ref?.type === "core.ai.task" && source.ref.id === visibleTaskId),
-  );
+export const visibleAssistantReferences = (items: AiConversationSource[], chatId: string) =>
+  items.filter((source) => !(source.ref?.type === "core.ai.chat" && source.ref.id === chatId));

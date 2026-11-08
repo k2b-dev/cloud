@@ -200,7 +200,7 @@ export function createRunnerCodeHost(options: Options) {
           capability: async (name, input, signal, coordinates) => {
             const { context, turnId } = options.current();
             if (context.actor.kind !== "user") throw new Error("User required");
-            const { config } = await authorizeCodeExecution(conversationId, turnId, context.actor.user.id);
+            await authorizeCodeExecution(conversationId, turnId, context.actor.user.id);
             const caller = {
               transport: async (request: Request) => {
                 await assertActive();
@@ -221,7 +221,6 @@ export function createRunnerCodeHost(options: Options) {
               },
               context,
               caller,
-              config.mandate ? { turnId, mandate: config.mandate } : undefined,
             );
             if (response.status === "approval") {
               const id = response.id;

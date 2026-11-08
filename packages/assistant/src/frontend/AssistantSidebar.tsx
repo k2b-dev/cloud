@@ -22,7 +22,6 @@ import {
 import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantCommandMessages } from "../commands";
-import { openAssistantActivities } from "./AssistantActivitiesDialog";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
@@ -156,7 +155,7 @@ function ConversationSidebarItem(props: {
   const marker = () => {
     const current = status();
     if (current) return current;
-    return props.conversation.hasActiveSchedule ? { label: text("Active schedule"), icon: "ti ti-clock", tone: "muted" as const } : null;
+    return null;
   };
 
   return (
@@ -505,7 +504,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const collapsedChatMenu = () =>
     chatConversations().map((conversation) => ({
       label: conversation.title,
-      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : conversation.hasActiveSchedule ? "ti ti-clock" : "ti ti-message",
+      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message",
       action: () => openConversationFromCommand(conversation),
     }));
 
@@ -518,9 +517,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
     const active = activeConversationId() === conversation.id;
     // The same one marker as the desktop row, in a slot that stays reserved, so a status change keeps the row's size.
-    const marker =
-      conversationStatusPresentation(conversation, locale(), active) ??
-      (conversation.hasActiveSchedule ? { label: text("Active schedule"), icon: "ti ti-clock", tone: "muted" as const } : null);
+    const marker = conversationStatusPresentation(conversation, locale(), active);
     return {
       id: `chat:${conversation.id}`,
       label: conversation.title,
@@ -615,7 +612,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           })),
         ],
       },
-      { id: "activities", action: "activities", label: t().runs, icon: "ti ti-activity" },
       { id: "preferences", action: "preferences", label: t().personalize, icon: "ti ti-user-cog" },
     ],
     onAction: async (action) => {
@@ -643,10 +639,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
       if (action === "search") {
         await openSearch();
-        return;
-      }
-      if (action === "activities") {
-        await openAssistantActivities(props.live);
         return;
       }
       if (action === "preferences") {
@@ -775,9 +767,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <ApprovalsItem />
             <CodeItem />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem icon="ti ti-activity" title={t().runs} onClick={() => void openAssistantActivities(props.live)}>
-              {t().runs}
-            </AppWorkspace.SidebarItem>
+
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
             </AppWorkspace.SidebarItem>
@@ -789,9 +779,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <ApprovalsItem />
             <CodeItem />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem icon="ti ti-activity" title={t().runs} onClick={() => void openAssistantActivities(props.live)}>
-              {t().runs}
-            </AppWorkspace.SidebarItem>
+
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
             </AppWorkspace.SidebarItem>

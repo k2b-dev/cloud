@@ -34,175 +34,35 @@ continue on the web. Sending, deleting, sharing, and inviting wait for your
 confirmation in Cloud; the editor shows the chat link. See
 [Assistant in editors](/en/docs/ai/editors) for installation and setup.
 
-## Background tasks
+## Routines became Code
 
-The built-in **scheduled-tasks** Skill guides Assistant through one-time
-reminders (“Remind me tomorrow at 09:00”), recurring work, and repairing failed
-tasks. It helps select the needed tools and propose task-specific approvals.
-You can change the instructions, timing or approvals in the normal chat.
+Scheduled Assistant chat routines and their controls are retired. Existing chat
+messages remain readable. Export definitions before upgrading, then ask Gustav
+to rebuild reviewed personal Code with `app.schedule`, an explicit `timeZone`
+and `core.ai.chat.run`. Activation and current grants require a fresh review.
+See [Routines became Code](/en/docs/operations/routines-to-code).
 
-Ask Assistant to run a task once or on a recurring schedule. Each run starts
-with the completed chat context available at that moment and works independently,
-so you can continue chatting. Files, memories, Skills, and Project resources stay
-live; they are not copied into a frozen workspace. A schedule has at most one
-queued or running occurrence; ticks during that run are skipped. Different
-schedules can run independently in the same chat.
-
-The **Background activity** view lists runs across your chats. Open a run to read
-its result and inspect its history, or return to the chat to adjust the task.
-Results and failures arrive as ordinary messages. A new result reopens a completed
-chat and moves it to the top of recent activity. Chats with active schedules show
-a clock and do not become done automatically. Marking a chat done manually does
-not pause its schedules. After a successful Done action, the card briefly shows
-green confirmation before fading out. Failed requests leave it in place.
-
-Before enabling a task, approve its capabilities and any fixed inputs. For example,
-fixing `noteId` permits updates only to that note. Leaving inputs unrestricted
-permits any input allowed by your existing access. These approvals belong only to
-the task; they do not grant additional resource permissions. Actions that require
-a fresh confirmation every time cannot run unattended.
-
-If a run fails or lacks permission, ask in the original chat to change its
-instructions, schedule, or approvals and try again. Expanding its approvals needs
-confirmation. Failed runs remain available for inspection. Do not blindly repeat
-a write whose outcome is unknown. Browser interaction and Code Mode are unavailable
-in background runs. Background runs do not compact the parent chat; a run that
-exceeds its context or runtime limit reports a failure.
-
-The workspace panel opens during server rendering when a tab is selected in the URL,
-using the saved panel width. A loading placeholder reserves its space until the
-interactive content is ready.
-
-Scheduled tasks are planned and adjusted in the chat. The context panel lists tasks;
-each opens in its own reusable workspace tab with the latest result, run history, and
-allowed access. “Adjust in chat” prepares a task reference and editable message in
-the owning conversation without sending it or replacing an existing draft. Additional
-permissions still require approval. The standard approval card describes each allowed
-action and its fixed inputs using localized capability metadata instead of a JSON
-grants dump. Each permission shows its action and app on one line, followed by
-its fixed inputs or a short unrestricted-content notice.
-
-The next run is shown in relative time. Hover over it for the exact date and
-timezone. **Run now** confirms that a run was requested; its queued or running
-status and final result update in the task panel automatically.
-
-Background activities show compact answer previews. Open a run for its instructions
-and result; **Run history** opens a separate read-only chat view with tool calls.
-A neutral **Finished** status means the run ended, not that its goal succeeded.
-
-## Studio
-
-The **Studio** navigation opens a compact app list on hover or click, just like
-**Projects**. It loads accessible apps when opened and includes page controls and
-a **Search apps** button. Search opens global search with one **Studio** context chip and an empty
-search field, matching app titles and descriptions. Apps are created by Assistant, so there is no creation
-button. On mobile, tap **Studio** to open the same list in a dialog. Both surfaces
-show a scrollbar and the standard scroll-edge fade when more apps are available. Projects and
-Studio desktop menus, and the mobile Studio dialog, keep a fixed height of 450 px (at most 60% of the viewport)
-while loading or showing empty, failed, or populated lists. Long lists scroll
-inside that area. Desktop menus align their bottom edge with their navigation item. Mobile Projects remain expandable in the navigation.
-
-There is no separate Studio overview page. Old `/app/assistant/apps` links, the
-Studio breadcrumb, and deleting the currently open app return to Assistant with
-the app-list dialog open. Closing the dialog leaves you in Assistant.
-Select an app to open it directly, without opening a chat. Apps use Cloud person and group grants:
-**Use** allows running and copying the published version; **Manage** also allows
-editing, publishing, and changing access. Administrators can see unpublished drafts.
-
-The app detail action menu provides **Edit**, **Manage access**,
-and **Publish** for administrators. It retains the same actions as app cards
-inside chat context, including copying, deleting, and advanced tools.
-**Delete** is the final menu entry, under **Danger zone**.
-In the runner, **Create your own copy** first explains what is copied. Confirming
-creates your own draft from the published code, without data, secrets, or sharing
-settings, and opens a new chat with an unsent customization prompt. Secrets
-are available in management only.
-**Edit** opens a new chat with the app attached, ready for your instructions. It
-does not send a message. Saving code updates the working draft. **Publish** makes
-that tested version available to users; later edits do not change it. Running apps
-keep their inputs and offer a restart when a newer publication becomes available.
-
+## Project access and linked Skills
 
 Project managers can change direct grants under **Project settings → Access**.
 Add people, groups, service accounts or all signed-in users, choose View, Edit or
 Manage, or remove a grant. Changes apply immediately; the last administrator
 cannot be removed. Projects cannot be shared publicly.
 
-### Link Studio Apps and Skills to a Project
+Use **+** beside **Skills** in a Project to find and link a Skill you manage.
+Linking or unlinking requires **Manage** on both the Project and the Skill.
+Project members inherit **Read** on linked Skills, including instructions and
+references. They do not inherit editing or management rights.
 
-Use **+** beside **Studio Apps** or **Skills** in a Project. The dialog has a
-search field, a list of resources you manage, and a notice explaining inherited
-access. Select a result to link it. Existing links appear under the section
-heading and are rendered on the server with the initial Project context.
-
-Linking or unlinking requires **Manage** on both the Project and the resource.
-Project members inherit **Use** on published Studio Apps, including shared app
-data, in Studio, the standalone runner, tools and CLI. They inherit **Read** on
-Skills, including instructions and references. No editing or management rights
-are inherited. App drafts remain private to app managers.
-
-The app or Skill permission dialog lists linked Projects and explains the
-inherited access. Private Project names are hidden from resource managers who
-cannot access those Projects. A link remains in place if its creator later
-loses access or management rights. Current Project membership still determines
-inherited access. Unlinking or losing Project access removes only that inherited
-access; direct grants and access through other Projects remain.
+Current Project membership determines inherited access. Unlinking or losing
+Project access removes only that inherited access; direct grants and access
+through other Projects remain. Private Project names are hidden from Skill
+managers who cannot access those Projects.
 
 Linked Skills enter the normal enabled Skill catalog. Assistant loads their
 instructions when needed; linking does not insert all instructions into every
 chat. Personal disabled-Skill preferences still apply. Skills never grant access
-to Studio Apps or external resources mentioned in their instructions.
-
-### Standalone apps and public links
-
-Studio opens the standalone runner for users with **Use** access. App managers
-enter the management view and select **Open fullscreen** in the header or action menu. The
-runner offers **Manage** and a personal action menu beside **Restart** and
-**Stop** in the bottom toolbar. The app fills the page and scrolls inside its
-own frame. The background at its scroll edges follows Cloud's light or dark
-appearance, including changes while the app runs. Restarting shows progress in
-the button without adding a status row
-or moving the app. This distinction uses app permissions, not the global Cloud
-administrator role.
-
-An app starts on its own only for people who manage it. Everyone else sees the
-app's name and **Start**, so code someone else wrote never runs just because a
-page opened. If an app's last start in this browser tab never finished, for
-example because of an endless loop, it does not start on its own again; the page
-explains this and offers **Start**. Leaving or reloading the page during a start
-counts as unfinished too, so a reload during a slow start asks once.
-
-App managers see a **Draft** or **Published** badge beside the runtime controls.
-Select it for a short explanation and a **Publish** button for saved drafts.
-Publishing selects a runnable version; it does not grant public access.
-**Open fullscreen** stays visible for drafts and offers publishing first.
-
-The runner's action menu keeps **Create your own copy**, **Secrets** and
-**Personal data** available to authorized users. Personal JSON lives on the
-server and follows the signed-in user across devices. Anonymous visitors have
-no personal storage or server features.
-
-**Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
-latest publication, even for managers. It loads no Assistant sidebar, chat list,
-chat updates, code editor or database console. Apps require sign-in and app
-access.
-
-Public links are switched off for now. **Manage access** no longer offers
-**Public**, and a public grant is refused with `PUBLIC_SHARING_OFF` through every
-interface. A public entry created earlier stays listed with a note, so managers
-can remove it, but it opens nothing: visitors without an account are asked to
-sign in. Public links return once apps run on a domain of their own, where an
-app's page cannot pose as a Cloud page. Until then, share apps with people,
-groups or all signed-in users.
-
-Cloud administrators can add this URL as a **Link** in the navigation settings,
-with a title, icon and audience. The shortcut's audience controls visibility,
-not permission to run the app. CLI users can obtain the path with
-`cld assistant code url ID` and use the existing grant/change-grant commands.
-
-**Create your own copy** copies published source into a private draft. Chats,
-access grants, and browser data are not copied. All administrators of one app edit
-the same working draft, so coordinate simultaneous changes to the same file.
+to external resources mentioned in their instructions.
 
 Assistant is a personal AI workspace for writing, explaining, planning, and
 working with supported files. Chats belong to the current user and remain
@@ -260,13 +120,13 @@ The sidebar shows one chat list of plain rows: pinned chats first under
 **Previous 7 days**, **Previous 30 days**, and **Older**, by when you last used
 them in your own time zone. Each row shows only the chat's title. One quiet
 icon at the row's end marks a chat that is running, waiting for you, failed,
-has a new response, or has an active schedule; its tooltip names the state.
+or has a new response; its tooltip names the state.
 **Done** remains a separate collapsible section. The phone menu lists the same
 sections. There the icon keeps a fixed place at the row's end even while a chat
 is quiet, so a long title wraps the same way and a status change never moves
 the rows below.
 
-**Projects**, between Studio and Personalize in the footer, opens the same preview popup as chat rows: hover or click it to choose a Project, create one with **+**, or open global search with the **Search Projects** button. The search shows one **Projects** context chip and matches accessible Project names and descriptions. Removing that chip returns to global search.
+**Projects**, above Personalize in the footer, opens the same preview popup as chat rows: hover or click it to choose a Project, create one with **+**, or open global search with the **Search Projects** button. The search shows one **Projects** context chip and matches accessible Project names and descriptions. Removing that chip returns to global search.
 
 Inside a Project, **Search chats** opens global search with the Project name as
 a context chip. Results are limited to your chats in that Project.
@@ -277,11 +137,11 @@ On mobile, expand **Projects** to reach the same destinations and actions. Proje
 
 Choose **Mark chat done** on a sidebar row when its work is finished. Stop a
 running response first. Done chats move into the collapsed **Done** section;
-their files, apps, history and pinning remain available. Choose **Reopen chat**
+their files, history and pinning remain available. Choose **Reopen chat**
 to bring one back, or send a new message to continue it. A finished response
 does not automatically mark the whole chat done.
 
-Hover over a chat for its description, Project, last model, apps, files and
+Hover over a chat for its description, Project, last model, files and
 **Chat settings**. Touch devices provide an information button; keyboard users
 can reach the same preview with Tab. Resource details load when the preview
 opens. **All chats** inside **Done** searches your chats and filters them with
@@ -468,28 +328,21 @@ there is no automatic conversion. Operators must follow
 
 ## Explore data with Code Mode
 
-Assistant computes with scripts and shows the result as an HTML app: key
-figures, tables and charts from `cloud.chart`, which draws in Cloud colors and
-redraws at the real width, so axes fit phones. Hover, focus or tap a chart value
-to see it. When you print an app or download its PDF, each chart is followed by
-a table of its values. Filters, tabs and forms are ordinary HTML controls. The
-`assistant-data-analysis` Skill guides source inspection, metric definitions,
-reconciliation, chart choice, and delivery. The API is available without
-loading the Skill. An app states when its data was retrieved and whether it is
-a snapshot, partial, or a fixture. A live loader is explicit; publishing source
-does not create a frozen data snapshot or a continuously refreshing dashboard.
+Assistant runs one-off scripts on the Code runner to calculate results and
+prepare downloadable files. Tables and charts appear as native views in the
+chat. The `assistant-data-analysis` Skill guides source inspection, metric
+definitions, reconciliation, chart choice, and delivery. Ask for the source,
+retrieval time and any incomplete data to remain visible with the result.
 
-Shared access and published source versions use the normal Studio lifecycle.
-Personal secrets remain personal. External loads still follow HTTP approval and
-uncertain-outcome rules. The Code Mode references for HTML apps and charts
-contain complete examples.
-
+Personal secrets remain personal. External loads still follow the current
+turn's HTTP approvals. For a lasting application or scheduled automation, ask
+Gustav to author reviewed Code. Studio HTML apps and publishing are retired.
 
 ### Generate PDFs and read financial formats
 
 A PDF from a chat file needs no code: Assistant converts Markdown with
 `markdown_to_pdf`, and HTML with its CSS, header, footer, images, and fonts
-with `html_to_pdf`. Studio Apps and one-off scripts can generate PDFs with `cloud.pdf.render({ html, ... })`,
+with `html_to_pdf`. One-off scripts can generate PDFs with `cloud.pdf.render({ html, ... })`,
 embed files with `cloud.pdf.attach({ document, attachments })`, and combine invoice
 HTML and XML with `cloud.pdf.render({ html, facturX: { xml, profile }, ... })`. Each returns a Blob
 for download or explicit storage. HTML contains its own CSS; local images,
@@ -498,12 +351,11 @@ scripts are blocked. Paper format, orientation, millimeter margins, optional
 headers/footers and PDF tagging are configurable. These methods need Gotenberg;
 local PDF text extraction continues to work without it.
 
-Use access suffices for published apps. Gotenberg credentials remain on the
-server. Requests can be cancelled, are bounded by configured Gotenberg limits
+Gotenberg credentials remain on the server. Requests can be cancelled, are bounded by configured Gotenberg limits
 and a 64 MiB transfer ceiling, and store no result automatically. A PDF/A-3b
 with XML and Factur-X metadata is not a certificate of invoice validity.
 
-Studio supplies `cloud.money` and lazy `cloud.finance.camt`, `einvoice`, `datev`
+One-off scripts can use `cloud.money` and lazy `cloud.finance.camt`, `einvoice`, `datev`
 and `sepa` methods; finance calls are awaited. Read camt.052.001.08 reports, calculate exact invoice totals,
 generate supported ZUGFeRD CII EN16931 XML, including zero-rated, exempt,
 reverse-charge, intra-EU, export and out-of-scope VAT, or read invoice XML
@@ -514,11 +366,11 @@ clearing. An incoming read mode also accepts received
 CII XRechnung invoices with discounts and prepayments and lists unmapped
 fields. PDF invoice reading extracts embedded XML; it is not OCR.
 No WASM/XSD checker is included. Parsers preserve declared incoming values;
-the app still owns reconciliation, numbering and manual decisions.
+you still review reconciliation, numbering and manual decisions.
 
-For example, an app can read a bank report and invoice attachments, suggest
+For example, a script can read a bank report and invoice attachments, suggest
 matches for review, and save a report with its XML data attached. A separate
-invoice app can calculate totals, generate XML, render matching HTML and offer
+invoice script can calculate totals, generate XML, render matching HTML and offer
 the resulting PDF for download. Neither flow submits payments automatically.
 The Code Mode skill contains complete PDF options and Finance API references.
 
@@ -545,24 +397,20 @@ Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a cha
 
 ### AI inside Code Mode
 
-Scripts, apps in chat and authenticated Studio apps can use
-`cloud.ai.text`, `cloud.ai.classify` (including multiple choices), and `cloud.ai.extract`.
-These server-backed calculations return ordinary values and do not load chat
-history, files, memories or tools automatically. Supply the intended input.
-The executing user's model access and personal chat allowance apply, including
-when running a shared app or testing code. There is no separate AI budget per
-app and person: a shared app spends the allowance of the person running it, and
-at most 32 `cloud.*` calls of one running app are pending at once. Public and local-only runners cannot
-use these methods. Stopping a run cancels pending inference. The Code Mode skill's
-AI reference documents options, limits and examples.
+One-off scripts can use `cloud.ai.text`, `cloud.ai.classify` (including multiple
+choices), and `cloud.ai.extract`. These server-backed calculations return
+ordinary values and do not load chat history, files, memories or tools
+automatically. Supply the intended input. The executing person's model access
+and personal chat allowance apply. Stopping a run cancels pending inference.
+The Code Mode Skill's AI reference documents options, limits and examples.
 
 ## Image upload privacy
 
 New JPEG, PNG, and WebP image uploads remove location and device metadata
 without changing image quality. JPEG orientation, colour profiles,
 transparency, and supported animation data remain. Malformed containers are
-rejected with HTTP 422. This applies to conversation uploads, Project files,
-and shared App files, including images the assistant writes there, such as
+rejected with HTTP 422. This applies to conversation uploads and Project files,
+including images the assistant writes there, such as
 fetched web images. A file counts as an image by its media type or its path
 extension.
 

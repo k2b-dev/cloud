@@ -238,7 +238,7 @@ describe("Assistant phone menu", () => {
           { ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" },
           { ...conversation("working", "Import", null), lastUsedAt: renderedAt, runStatus: "running" },
           { ...conversation("quiet", "Notes", null), lastUsedAt: "2026-10-07T09:00:00.000Z" },
-          { ...conversation("planned", "Weekly report", null), lastUsedAt: "2026-06-01T09:00:00.000Z", hasActiveSchedule: true },
+          { ...conversation("planned", "Weekly report", null), lastUsedAt: "2026-06-01T09:00:00.000Z" },
         ],
         live,
       }),
@@ -250,7 +250,7 @@ describe("Assistant phone menu", () => {
       ["Pinned", [["Pinned work", null]]],
       ["Today", [["Import", { icon: "ti ti-loader-2 animate-spin motion-reduce:animate-none", label: "Running", tone: "neutral" }]]],
       ["Yesterday", [["Notes", null]]],
-      ["Older", [["Weekly report", { icon: "ti ti-clock", label: "Active schedule", tone: "neutral" }]]],
+      ["Older", [["Weekly report", null]]],
     ]);
     // Rows are plain titles like the desktop list: no per-chat icon, and no description line that comes and goes.
     const chats = sections.flatMap((section) => section.children ?? []);
