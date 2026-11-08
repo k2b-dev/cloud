@@ -302,6 +302,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const [following, setFollowing] = createSignal(true);
   const [canvasSize, setCanvasSize] = createSignal({ width: 0, height: 0 });
   const [phone, setPhone] = createSignal(false);
+  /** The overlay edges the fit leaves free, as last measured; a change refits a following view. */
+  const [overlayInsets, setOverlayInsets] = createSignal<ImageEditorInsets>();
   const [split, setSplit] = createSignal(false);
   const [splitAt, setSplitAt] = createSignal(0.5);
   const [peek, setPeek] = createSignal(false);
@@ -497,7 +499,20 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   // A new frame (tool, crop, rotation) or a resized editor refits while the view follows the fit.
   createEffect(
     on(
-      () => [frameSize().width, frameSize().height, canvasSize().width, canvasSize().height, !!preview(), phone(), tool()] as const,
+      () =>
+        [
+          frameSize().width,
+          frameSize().height,
+          canvasSize().width,
+          canvasSize().height,
+          !!preview(),
+          phone(),
+          tool(),
+          overlayInsets()?.top,
+          overlayInsets()?.right,
+          overlayInsets()?.bottom,
+          overlayInsets()?.left,
+        ] as const,
       () => {
         if (!canvasSize().width) return;
         queueMicrotask(() => {
@@ -728,6 +743,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         setVar("--k2b-image-editor-save", `${saveEl.offsetHeight}px`);
         setVar("--k2b-image-editor-save-width", `${saveEl.offsetWidth}px`);
       }
+      // The fit keeps the photo inside the overlays, so a moved overlay edge refits like a resized canvas.
+      const next = insets();
+      const last = overlayInsets();
+      if (!last || next.top !== last.top || next.right !== last.right || next.bottom !== last.bottom || next.left !== last.left)
+        setOverlayInsets(next);
     };
     // The measured sizes feed the layout of the observed pane and save area. Measuring in the next frame, and
     // writing only changed values, keeps a size change from resizing an observed element inside its own
@@ -737,7 +757,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       cancelAnimationFrame(measureFrame);
       measureFrame = requestAnimationFrame(measure);
     });
-    for (const el of [root, paneEl, saveEl]) if (el) observer.observe(el);
+    for (const el of [root, paneEl, saveEl, chipsEl, bottomEl]) if (el) observer.observe(el);
     measure();
     void supportedImageEditorFormats()
       .then((available) => {

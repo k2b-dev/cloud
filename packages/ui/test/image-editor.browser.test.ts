@@ -206,6 +206,43 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("a phone sheet that grows after the first fit refits the photo above it", async () => {
+    const { page, errors } = await open("", 390);
+    try {
+      // Lowest photo edge and highest bottom overlay edge, both in page pixels.
+      const edges = () =>
+        page.evaluate(() => {
+          const image = document.querySelector(".k2b-image-editor__image")!.getBoundingClientRect();
+          const overlays = [
+            document.querySelector(".k2b-image-editor__pane")!,
+            ...document.querySelectorAll(".k2b-image-editor__bottom .k2b-image-editor__group"),
+          ].filter((element) => (element as HTMLElement).offsetParent !== null);
+          return { photo: image.bottom, overlay: Math.min(...overlays.map((element) => element.getBoundingClientRect().top)) };
+        });
+      const before = await edges();
+      expect(before.photo).toBeLessThanOrEqual(before.overlay);
+      // The sheet grows without any tool, canvas, or frame change, as when its content arrives late.
+      await page.addStyleTag({ content: ".k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__pane { padding-bottom: 120px; }" });
+      await page.waitForFunction(
+        (overlay) =>
+          [
+            document.querySelector(".k2b-image-editor__pane")!,
+            ...document.querySelectorAll(".k2b-image-editor__bottom .k2b-image-editor__group"),
+          ]
+            .filter((element) => (element as HTMLElement).offsetParent !== null)
+            .some((element) => element.getBoundingClientRect().top < overlay - 100),
+        before.overlay,
+      );
+      await settled(page);
+      const after = await edges();
+      expect(after.overlay).toBeLessThan(before.overlay - 100);
+      expect(after.photo).toBeLessThanOrEqual(after.overlay);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("portrait previews keep their aspect, fit inside the overlays and lossless output hides quality", async () => {
     for (const width of [1440, 390]) {
       const { page, errors } = await open("", width);
