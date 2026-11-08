@@ -695,8 +695,14 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
       }
     }, 30_000);
 
-    for (const cancel of [false, true]) {
-      test(`a command that moves during a press ${cancel ? "cancels outside its original box" : "runs once under a still pointer"} at ${width}px`, async () => {
+    for (const gesture of ["select", "cancel", "context"] as const) {
+      const outcome =
+        gesture === "select"
+          ? "runs once under a still pointer"
+          : gesture === "cancel"
+            ? "cancels outside its original box"
+            : "ignores a secondary button";
+      test(`a command that moves during a press ${outcome} at ${width}px`, async () => {
         const page = await open({ mode: "slash", width });
         try {
           const field = page.locator("textarea").first();
@@ -708,22 +714,23 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
           const box = (await option.boundingBox())!;
           const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
           await page.mouse.move(point.x, point.y);
-          await page.mouse.down();
+          const button = gesture === "context" ? "right" : "left";
+          await page.mouse.down({ button });
           // A host layout change can move the same row without replacing it (#2958).
           await page.locator(".k2b-chat-composer-shell").evaluate((shell, shift) => {
             shell.style.translate = `0 -${shift}px`;
           }, Math.ceil(box.height));
           expect(await row!.evaluate((element) => element.isConnected)).toBe(true);
           expect(await row!.evaluate((element, point) => element.contains(document.elementFromPoint(point.x, point.y)), point)).toBe(false);
-          if (cancel) {
+          if (gesture === "cancel") {
             const outside = { x: box.x + 8, y: Math.max(1, box.y - box.height * 3) };
             expect(outside.y > box.y + box.height || outside.y < box.y || outside.x < box.x || outside.x > box.x + box.width).toBe(true);
             await page.mouse.move(outside.x, outside.y);
           }
-          await page.mouse.up();
+          await page.mouse.up({ button });
           await frames(page, 2);
-          expect(await page.evaluate(() => fixture.doneCount())).toBe(cancel ? 0 : 1);
-          expect(await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').count()).toBe(cancel ? 0 : 1);
+          expect(await page.evaluate(() => fixture.doneCount())).toBe(gesture === "select" ? 1 : 0);
+          expect(await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').count()).toBe(gesture === "select" ? 1 : 0);
         } finally {
           await page.close();
         }

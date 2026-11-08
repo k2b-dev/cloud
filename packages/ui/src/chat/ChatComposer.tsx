@@ -2288,7 +2288,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       pressedCommand = undefined;
       // After this release's click, which the browser dispatches in the same task.
       if (holdingRows()) setTimeout(() => setHoldingRows(false));
-      if (!pressed || !(event instanceof PointerEvent) || event.type !== "pointerup") return;
+      if (!pressed || !(event instanceof PointerEvent) || event.type !== "pointerup" || event.button !== 0) return;
       const under = document.elementFromPoint(event.clientX, event.clientY);
       // The native click handles a release on the pressed row; never execute it twice.
       if (pressed.row.isConnected && under && pressed.row.contains(under)) return;
@@ -2335,6 +2335,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         data-active={selectedCommandKey() === key ? "true" : undefined}
         data-command-key={key}
         onPointerDown={(event) => {
+          if (event.button !== 0) return;
           pressedCommand = { key, row: event.currentTarget, box: event.currentTarget.getBoundingClientRect() };
           setHoldingRows(true);
         }}
