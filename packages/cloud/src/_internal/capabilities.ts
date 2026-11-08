@@ -1,9 +1,11 @@
 import { capabilityToolInputSchema, normalizeCapabilityCall } from "../capabilities/calls";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "../contracts/app-events";
 import { appStatusIssues } from "../contracts/app-status";
+import { AssistantPlaceSchema, assistantPlaceIssues } from "../contracts/assistant-place";
 import type { CapabilityInvocationBody } from "../contracts/capabilities";
 import {
   CapabilityAppStatusManifestSchema,
+  CapabilityAssistantSchema,
   type CapabilityEventManifest,
   CapabilityEventManifestSchema,
   CapabilityQualifiedIdSchema,
@@ -134,6 +136,7 @@ const CALENDAR_SOURCE_FIELDS = {
 } satisfies DefinedFields<CapabilityCalendarSourceDeclaration>;
 const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
 const TYPE_FIELDS = {
+  assistant: true,
   codeAccount: true,
   title: true,
   description: true,
@@ -798,6 +801,7 @@ export const compileCapabilities = (
         ...(definition.icon ? { icon: definition.icon } : {}),
         ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
+        ...(definition.assistant !== undefined ? { assistant: CapabilityAssistantSchema.parse(definition.assistant) } : {}),
       };
     });
   const typeIds = new Set(types.map((type) => qualifiedId(appId, type.localId)));
@@ -1147,6 +1151,18 @@ export const compileCapabilities = (
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  // Exact schema identity is a producer check; deployed consumers allow compatible versions.
+  for (const type of manifest.types) {
+    if (!type.assistant) continue;
+    const provider = manifest.queries.find((query) => query.localId === type.assistant!.provider);
+    if (
+      provider &&
+      capabilityHash(provider.dataSchema) !== capabilityHash(projectSchema(AssistantPlaceSchema, "Assistant place", "output"))
+    )
+      throw new Error(`Resource type ${type.localId}: assistant provider data must be AssistantPlaceSchema`);
+  }
+  const placeIssues = assistantPlaceIssues(manifest);
+  if (placeIssues.length) throw new Error(`assistant: ${placeIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
   const statusIssues = appStatusIssues(manifest);
   if (statusIssues.length) throw new Error(`appStatus: ${statusIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
   const discussionIssues = discussionsIssues(manifest);
