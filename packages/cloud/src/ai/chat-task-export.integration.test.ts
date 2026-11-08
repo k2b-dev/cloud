@@ -4,9 +4,9 @@ import type { UserRequestActor } from "../contracts/shared";
 import { sql } from "../runtime/clients";
 import { accounts } from "../services/accounts";
 import { ChatTaskExportForbiddenError, exportChatTasks } from "./chat-task-export";
-import { createArchivedTaskExportFixture } from "./chat-task-export.test-fixture";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
+import { createArchivedTaskExportFixture } from "./testing";
 
 // No inference, scheduler or provider is needed to export a definition.
 databaseSuite()("routine definition export", () => {

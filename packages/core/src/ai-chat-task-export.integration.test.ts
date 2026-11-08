@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
+import { createArchivedTaskExportFixture } from "@k2b/cloud/ai/testing";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
-import { createArchivedTaskExportFixture } from "../../cloud/src/ai/chat-task-export.test-fixture";
 import "../../../scripts/fixtures/authorization-preload";
 import { aiChatTaskExportRoutes } from "./ai-chat-task-export-routes";
 
