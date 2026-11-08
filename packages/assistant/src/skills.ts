@@ -35,6 +35,7 @@ import codeAuthoringData from "./skills/code-authoring/references/data.md" with 
 import codeAuthoringEvents from "./skills/code-authoring/references/events.md" with { type: "text" };
 import codeAuthoringFileRef from "./skills/code-authoring/references/file-ref.md" with { type: "text" };
 import codeAuthoringPages from "./skills/code-authoring/references/pages.md" with { type: "text" };
+import codeAuthoringRebuild from "./skills/code-authoring/references/rebuild.md" with { type: "text" };
 import codeAuthoringSchedules from "./skills/code-authoring/references/schedules.md" with { type: "text" };
 import codeAuthoringTesting from "./skills/code-authoring/references/testing.md" with { type: "text" };
 import codeAuthoringTroubleshooting from "./skills/code-authoring/references/troubleshooting.md" with { type: "text" };
@@ -59,6 +60,7 @@ export const SKILLS = [
       "references/events.md": codeAuthoringEvents,
       "references/file-ref.md": codeAuthoringFileRef,
       "references/pages.md": codeAuthoringPages,
+      "references/rebuild.md": codeAuthoringRebuild,
       "references/schedules.md": codeAuthoringSchedules,
       "references/testing.md": codeAuthoringTesting,
       "references/troubleshooting.md": codeAuthoringTroubleshooting,

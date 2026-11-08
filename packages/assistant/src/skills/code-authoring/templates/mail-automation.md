@@ -42,9 +42,12 @@ async function categorise(message: Message): Promise<Category> {
 async function tag(conversationId: string, category: Category) {
   const name = TAGS[category];
   if (!name) return;
-  const { data: tags } = await owner.mailbox.tag.list({ limit: 50 });
+  const { data: tags, page } = await owner.mailbox.tag.list({ limit: 50 });
   const match = tags.find(candidate => candidate.name === name);
-  if (!match) return;
+  if (!match) {
+    if (page?.hasMore) throw new Error(`Tag ${name} was not found on the first page; use its verified ID or a bounded lookup`);
+    throw new Error(`Configured tag ${name} does not exist in this mailbox`);
+  }
   const current = await conversation(conversationId);
   if (current.tags.some(existing => existing.id === match.ref.id)) return;
   await owner.conversation.tag.update({ conversationId, expectedRevision: current.collaboration.revision, addTagIds: [match.ref.id] });
