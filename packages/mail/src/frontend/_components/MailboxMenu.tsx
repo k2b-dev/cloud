@@ -95,7 +95,7 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
               ]
             : []),
           {
-            id: "automation-history",
+            id: "automations",
             label: t.automationLog,
             icon: "ti ti-route",
             action: () => documentNavigate(`/app/mail/${current.mailboxId}/automations/log`),

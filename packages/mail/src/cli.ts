@@ -2883,7 +2883,6 @@ const composeLogoCommands = (t: Translate) => [
   }),
 ];
 
-/** Read and reverse mailbox-scoped rule effects through the public log API. */
 /** Commands whose help stays in English; `mailCommands` adds the localized everyday commands. */
 const specialistCommands = {
   groupSummaries: {
@@ -7433,6 +7432,7 @@ const mailCommands = (locale?: string) => {
     }),
     groupSummaries: {
       ...specialistCommands.groupSummaries,
+      automation: t({ en: "Export retired Mail automation definitions", de: "Definitionen früherer Mail-Automatisierungen exportieren" }),
       "compose logo": t({
         en: "Inspect and replace the mailbox signature logo",
         de: "Das Signaturlogo des Postfachs anzeigen und ersetzen",

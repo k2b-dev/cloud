@@ -98,9 +98,10 @@ suite("Mail conversation participants", () => {
         VALUES (${message!.id}::uuid, 'from', ${position}, ${address.name ?? null}, ${address.email}, ${address.email.toLowerCase()})`;
     if (!sentBy) return;
     const key = crypto.randomUUID();
+    // Sent evidence is historical: no retired workflow command may be queued by this fixture.
     const [command] = await sql<{ id: string }[]>`INSERT INTO mail.commands
-      (mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, target, payload, access_subject_kind, access_subject_id, credential_scopes)
-      VALUES (${mailboxId}::uuid, 'send', ${sentBy.kind}, ${sentBy.id}::uuid, ${key}, ${"f".repeat(64)}, '{}', '{}',
+      (mailbox_id, kind, state, actor_kind, actor_id, idempotency_key, request_hash, target, payload, access_subject_kind, access_subject_id, credential_scopes)
+      VALUES (${mailboxId}::uuid, 'send', 'confirmed', ${sentBy.kind}, ${sentBy.id}::uuid, ${key}, ${"f".repeat(64)}, '{}', '{}',
         'user', ${owner.id}::uuid, ARRAY[]::text[]) RETURNING id`;
     const [draft] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
       (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id,

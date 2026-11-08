@@ -1,18 +1,28 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const source = join(import.meta.dir, "..");
 
-test("Mail never imports retired executable rule modules", async () => {
+test("No application imports retired executable Mail rule modules", async () => {
+  const packages = resolve(source, "../..");
   const forbidden =
-    /(?:from\s*|import\s*\()\s*["']\.[^"']*(?:\/workflows\/|\/(?:workflow-(?!effect-order-schema)|incoming-automation(?:s|-(?!targets))|automatic-reply|auto-reply|automation-(?:effect-state|log-recording|assignment-state|activity)|command-legacy-effects))[^"']*["']/;
+    /^(?:workflows(?:\/|\.|$)|service\/(?:workflows(?:\.|$)|workflow-(?!effect-order-schema)|incoming-automation|automatic-reply|auto-reply|automation-(?:effect-state|log-recording|assignment-state|activity)|command-legacy-effects))/;
   const violations: string[] = [];
-  for await (const file of new Bun.Glob("**/*.{ts,tsx}").scan(source)) {
-    if (file === "service/rule-retirement.test.ts") continue;
-    const text = await readFile(join(source, file), "utf8");
-    if (forbidden.test(text)) violations.push(file);
+  const scanned = new Set<string>();
+  for await (const file of new Bun.Glob("*/{src,test,tests}/**/*.{ts,tsx}").scan(packages)) {
+    scanned.add(file);
+    const path = join(packages, file);
+    if (path === import.meta.path) continue;
+    const text = await readFile(path, "utf8");
+    for (const match of text.matchAll(/(?:from\s*|import\s*(?:\(\s*)?)\s*["'](\.[^"']+)["']/g)) {
+      const target = relative(source, resolve(dirname(path), match[1]!));
+      if (forbidden.test(target)) violations.push(`${file}: ${match[1]}`);
+    }
   }
+  expect(scanned.has("cloud/src/workflows/store/events.integration.test.ts")).toBeTrue();
+  expect(scanned.has("spaces/src/capabilities.ts")).toBeTrue();
+  expect(scanned.has("mail/src/service/commands.ts")).toBeTrue();
   expect(violations).toEqual([]);
 });
 
