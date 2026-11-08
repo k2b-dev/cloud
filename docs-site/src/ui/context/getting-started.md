@@ -193,6 +193,11 @@ the supplied message. `label` supplies the visible accessible name; use
 are component-specific and documented on each input page. Callback omission
 does not universally mean disabled or read-only; use the explicit supported prop.
 
+`TextInput`, `NumberInput`, `DatePicker`, `Select`, and `Switch` also take
+`FieldSuggestionProps<T>` (`suggestion` and `onSuggestionAccept`) for a value
+that software proposes and a person accepts, inside a `SuggestionGroup`; see
+[field suggestions](/en/ui/input/field-suggestion).
+
 Fields placed side by side in a grid align their controls. When a grid contains
 only fields and at least one of them has a description, every field subgrids
 its label, description, control, and error rows, so a longer description in one

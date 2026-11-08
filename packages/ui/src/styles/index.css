@@ -18571,3 +18571,256 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color) !important; stroke-width: 2.5px !important; }
 .k2b-ui .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color) !important; stroke-width: 1.5px; }
+
+/* Field suggestions. A value proposed for a field, such as one an assistant
+   read from a document, shows inside the empty field as a strong placeholder
+   in the AI colour, never as the value. The status line beside the label is
+   reserved whenever a field takes suggestions, so nothing moves when a
+   suggestion arrives, is accepted, is overruled, or goes away. These rules
+   come last so they win over each control's own placeholder colour. */
+.k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row {
+  min-height: 1.5rem;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row {
+    min-height: 2rem;
+  }
+}
+
+/* The label keeps its width whatever the status says, so it never wraps
+   differently between states; a long label wraps the same way in every state,
+   and the status text gives way instead. */
+.k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-field__label {
+  max-width: 60%;
+  flex-shrink: 0;
+}
+
+.k2b-ui .k2b-ai-suggestion {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  color: var(--k2b-ai-accent);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-ai-suggestion-field__control {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-field__control > .k2b-ai-suggestion,
+.k2b-ui .k2b-ai-suggestion-field > .k2b-ai-suggestion {
+  min-height: 1.5rem;
+  justify-content: flex-start;
+}
+
+.k2b-ui .k2b-ai-suggestion__reason {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.k2b-ui .k2b-ai-suggestion__note {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+}
+
+.k2b-ui .k2b-ai-suggestion__note > i {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-ai-suggestion__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-ai-suggestion:is([data-view="accepted"], [data-view="matches"], [data-view="error"], [data-locked="true"]) .k2b-ai-suggestion__text {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-ai-suggestion__note[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-ai-suggestion__action.k2b-button[data-variant="text"],
+.k2b-ui .k2b-ai-suggestion__action.k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  flex-shrink: 0;
+  color: var(--k2b-ai-accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-ai-suggestion__action.k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-ai-accent-hover);
+}
+
+/* The field: AI edge and fill while the suggestion stands in for the value. */
+.k2b-ui .k2b-ai-suggestion-field :is(.k2b-input-shell, .k2b-choice-trigger, .k2b-date-trigger)[data-suggestion^="open"] {
+  --k2b-edge-color: var(--k2b-ai-border);
+  background: var(--k2b-ai-surface);
+}
+
+.k2b-ui .k2b-ai-suggestion-field :is(.k2b-input-shell, .k2b-choice-trigger, .k2b-date-trigger)[data-suggestion="open-unsure"] {
+  --k2b-edge-color: var(--k2b-edge-warning);
+}
+
+/* Focus takes the platform edge; the fill stays, so the suggestion stays recognisable. */
+.k2b-ui .k2b-ai-suggestion-field :is(.k2b-input-shell:focus-within, .k2b-choice-trigger:focus-visible, .k2b-date-trigger:focus-visible)[data-suggestion^="open"] {
+  --k2b-edge-color: var(--k2b-edge-focus);
+}
+
+.k2b-ui .k2b-ai-suggestion-field[data-invalid="true"] :is(.k2b-input-shell, .k2b-choice-trigger, .k2b-date-trigger)[data-suggestion^="open"]:not(:disabled, :focus-within, :focus-visible) {
+  --k2b-edge-color: var(--k2b-edge-danger);
+}
+
+/* A read-only field shows the suggestion dimmed, without the AI edge and fill. */
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion^="open"]:has(.k2b-input:read-only:not(:disabled)) {
+  --k2b-edge-color: var(--k2b-edge);
+  background: var(--k2b-surface);
+}
+
+/* A disabled field keeps its muted well; the suggestion only dims inside it. */
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion^="open"]:has(.k2b-input:disabled),
+.k2b-ui .k2b-ai-suggestion-field :is(.k2b-choice-trigger, .k2b-date-trigger)[data-suggestion^="open"]:disabled {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion^="open"] .k2b-input::placeholder,
+.k2b-ui .k2b-ai-suggestion-field .k2b-date-picker :is(.k2b-choice-trigger, .k2b-date-trigger)[data-suggestion^="open"] :is(.k2b-choice-trigger__value, .k2b-date-trigger__value),
+.k2b-ui .k2b-ai-suggestion-field .k2b-choice-control > .k2b-choice-trigger[data-suggestion^="open"] > .k2b-choice-trigger__value {
+  color: var(--k2b-ai-accent);
+  opacity: 1;
+}
+
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion^="open"] .k2b-number-input__control::placeholder {
+  font-family: var(--k2b-font-mono);
+}
+
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion^="open"] .k2b-input:is(:disabled, :read-only)::placeholder,
+.k2b-ui .k2b-ai-suggestion-field .k2b-choice-control > .k2b-choice-trigger[data-suggestion^="open"]:disabled > .k2b-choice-trigger__value,
+.k2b-ui .k2b-ai-suggestion-field .k2b-date-picker .k2b-date-trigger[data-suggestion^="open"]:disabled .k2b-date-trigger__value {
+  opacity: 0.6;
+}
+
+/* While a suggestion loads, an empty field shows a quiet bar where the value will appear. */
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion="loading"] .k2b-input,
+.k2b-ui .k2b-ai-suggestion-field :is(.k2b-choice-trigger, .k2b-date-trigger)[data-suggestion="loading"] :is(.k2b-choice-trigger__value, .k2b-date-trigger__value) {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--k2b-ai-accent) 16%, transparent),
+    color-mix(in srgb, var(--k2b-ai-accent) 16%, transparent)
+  );
+  background-position: left 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: min(7rem, 60%) 0.5rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-field :is(.k2b-choice-trigger, .k2b-date-trigger)[data-suggestion="loading"] :is(.k2b-choice-trigger__value, .k2b-date-trigger__value) {
+  background-position: left center;
+}
+
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion="loading"] .k2b-number-input__control {
+  background-position: right 0.5rem center;
+}
+
+.k2b-ui .k2b-ai-suggestion-field .k2b-input-shell[data-suggestion="loading"] .k2b-input::placeholder,
+.k2b-ui .k2b-ai-suggestion-field :is(.k2b-choice-trigger, .k2b-date-trigger)[data-suggestion="loading"] :is(.k2b-choice-trigger__value, .k2b-date-trigger__value) {
+  color: transparent;
+}
+
+/* A switch keeps its real position; the ring and the line beside it show the suggestion. */
+.k2b-ui .k2b-ai-suggestion-switch {
+  display: flex;
+  min-height: 1.25rem;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-switch__value {
+  min-width: 0;
+  color: var(--k2b-ai-accent);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-field .k2b-switch[data-suggestion^="open"] > input + .k2b-switch__track {
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-ai-border);
+}
+
+.k2b-ui .k2b-ai-suggestion-field .k2b-switch[data-suggestion^="open"] > input:not(:checked) + .k2b-switch__track {
+  background: var(--k2b-ai-surface);
+}
+
+/* The group line: what was read, the counts, and Accept all for the certain values. */
+.k2b-ui .k2b-ai-suggestion-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__bar {
+  display: flex;
+  min-height: 3rem;
+  min-width: 0;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.875rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-ai-accent);
+  background: var(--k2b-ai-surface);
+}
+
+.k2b-ui .k2b-ai-suggestion-group__icon {
+  flex-shrink: 0;
+  font-size: 1.125rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__title {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+/* The counts give way first on narrow screens; the line never grows. */
+.k2b-ui .k2b-ai-suggestion-group__counts {
+  min-width: 0;
+  flex: 0 100 auto;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__accept {
+  flex-shrink: 0;
+}

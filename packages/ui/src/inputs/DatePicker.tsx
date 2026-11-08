@@ -46,8 +46,9 @@ import {
   weekendBands,
   yearMonth,
 } from "./date-picker";
-import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import type { ChoiceAppearance } from "./Select";
 
 export type { DateRangeValue } from "./date-picker";
@@ -81,10 +82,12 @@ export type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
   readOnly?: boolean;
 };
 
-export type DatePickerProps = DatePickerBaseProps<string | null> & {
-  /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
-  renderValue?: (value: string) => JSX.Element;
-};
+export type DatePickerProps = DatePickerBaseProps<string | null> &
+  /** A suggested day is a date key such as `2026-10-28`; only the default `field` appearance shows it. */
+  FieldSuggestionProps<string> & {
+    /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
+    renderValue?: (value: string) => JSX.Element;
+  };
 export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
   /** Trigger content for a set value, for example the date and time with a relative hint. */
   renderValue?: (value: string) => JSX.Element;
@@ -858,6 +861,22 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     save(key);
     calendar.close();
   };
+  const suggestion = useFieldSuggestion({
+    props: props.owner,
+    enabled: "suggestion" in props.owner,
+    meta,
+    value: props.value,
+    blank: () => !props.value(),
+    format,
+    locked: () => !interactive(),
+    invalid,
+    apply: pick,
+    acceptable: (key) => isDateKey(key) && !limitErrorText(key, limits(), locale(), t()),
+  });
+  const choose = (key: string | null) => {
+    suggestion.edited();
+    pick(key);
+  };
 
   const openSheet = async () => {
     setSheetOpen(true);
@@ -877,7 +896,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
           focusDate={draftKey}
           onSelect={(key) => {
             // Saved at once: the sheet's promise settles only after its history entry has gone.
-            pick(key);
+            choose(key);
             close(key);
           }}
           dateConfig={props.dateConfig()}
@@ -952,6 +971,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
       required={props.owner.required}
       disabled={props.owner.disabled}
       meta={meta}
+      suggestion={suggestion.status}
     >
       <div
         class="k2b-date-picker k2b-date-field"
@@ -959,7 +979,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
         data-readonly={props.owner.readOnly ? "true" : undefined}
         onFocusOut={onFocusOut}
       >
-        <div ref={shell} class="k2b-input-shell" data-invalid={invalid() ? "true" : undefined} onPointerDown={onPointerDown}>
+        <div
+          ref={shell}
+          class="k2b-input-shell"
+          data-invalid={invalid() ? "true" : undefined}
+          data-suggestion={suggestion.state()}
+          onPointerDown={onPointerDown}
+        >
           <span class="k2b-input-shell__icon k2b-date-field__icon" aria-hidden="true">
             <i class="ti ti-calendar" />
           </span>
@@ -976,15 +1002,21 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             aria-haspopup="dialog"
             aria-expanded={calendar.open() || sheetOpen()}
             aria-controls={sheetOpen() ? sheetId : popoverId}
-            aria-describedby={[props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
+            aria-describedby={[
+              props.owner["aria-describedby"],
+              props.owner.description ? meta.descriptionId : undefined,
+              suggestion.describedBy(),
+              statusId,
+            ]
               .filter(Boolean)
               .join(" ")}
             aria-invalid={invalid() ? "true" : undefined}
-            placeholder={props.owner.placeholder ?? datePattern(locale(), t())}
+            placeholder={suggestion.placeholder() ?? props.owner.placeholder ?? datePattern(locale(), t())}
             value={text()}
             disabled={props.owner.disabled}
             readOnly={props.owner.readOnly}
             onInput={(event) => {
+              suggestion.edited();
               setText(event.currentTarget.value);
               setDirty(true);
               clearTimeout(announceTimer);
@@ -1002,7 +1034,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
               data-hidden={text() ? undefined : "true"}
               aria-label={uiMessages().clearDate}
               onClick={() => {
-                pick(null);
+                choose(null);
                 input?.focus();
               }}
             >
@@ -1056,7 +1088,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
                 <PresetRail
                   presets={props.owner.presets}
                   onSelect={(value) => {
-                    pick(value);
+                    choose(value);
                     caretToEnd(input);
                   }}
                 />
@@ -1066,7 +1098,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
                   selected={draftKey}
                   focusDate={draftKey}
                   onSelect={(key) => {
-                    pick(key);
+                    choose(key);
                     caretToEnd(input);
                   }}
                   dateConfig={props.dateConfig()}

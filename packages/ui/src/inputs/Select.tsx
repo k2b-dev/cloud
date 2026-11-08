@@ -3,8 +3,9 @@ import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
-import type { ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import { useSelectMessages } from "./select-messages";
 
 export type SelectOption = ChoiceOption<string>;
@@ -33,39 +34,40 @@ export type SelectSourceOption =
     }
   | SelectOption;
 
-export type SelectProps = ValueFieldProps<string | null> & {
-  placeholder?: string;
-  icon?: string;
-  activeIcon?: string;
-  options?: SelectSourceOption[];
-  fetchData?: (query: string, signal: AbortSignal, group: string | null) => Promise<SelectSourceOption[]>;
-  loadOptions?: (query: string, signal: AbortSignal, group: string | null) => Promise<readonly ChoiceOption<string>[]>;
-  selectedOption?: ChoiceOption<string>;
-  selectedLabel?: () => string | undefined;
-  fetchDebounceMs?: number;
-  debounceMs?: number;
-  searchable?: boolean;
-  /** Optional synchronous filter for static options. */
-  filterOptions?: (options: readonly SelectOption[], query: string) => readonly SelectOption[];
-  /** Optional filters. An option may belong to more than one group. */
-  groups?: readonly SelectGroup[];
-  /** Group selected when the component is created. Omit to start with all options. */
-  defaultGroup?: string;
-  groupsAriaLabel?: string;
-  allGroupLabel?: string;
-  /** Show a local list/grid layout toggle in the dropdown. */
-  viewToggle?: boolean;
-  /** Initial dropdown layout when `viewToggle` is enabled. */
-  defaultView?: SelectView;
-  /** Tile density for the grid layout. */
-  gridSize?: SelectGridSize;
-  searchPlaceholder?: string;
-  clearable?: boolean;
-  name?: string;
-  appearance?: ChoiceAppearance;
-  /** Icon class shown before the placeholder while nothing is selected. */
-  placeholderIcon?: string;
-};
+export type SelectProps = ValueFieldProps<string | null> &
+  FieldSuggestionProps<string> & {
+    placeholder?: string;
+    icon?: string;
+    activeIcon?: string;
+    options?: SelectSourceOption[];
+    fetchData?: (query: string, signal: AbortSignal, group: string | null) => Promise<SelectSourceOption[]>;
+    loadOptions?: (query: string, signal: AbortSignal, group: string | null) => Promise<readonly ChoiceOption<string>[]>;
+    selectedOption?: ChoiceOption<string>;
+    selectedLabel?: () => string | undefined;
+    fetchDebounceMs?: number;
+    debounceMs?: number;
+    searchable?: boolean;
+    /** Optional synchronous filter for static options. */
+    filterOptions?: (options: readonly SelectOption[], query: string) => readonly SelectOption[];
+    /** Optional filters. An option may belong to more than one group. */
+    groups?: readonly SelectGroup[];
+    /** Group selected when the component is created. Omit to start with all options. */
+    defaultGroup?: string;
+    groupsAriaLabel?: string;
+    allGroupLabel?: string;
+    /** Show a local list/grid layout toggle in the dropdown. */
+    viewToggle?: boolean;
+    /** Initial dropdown layout when `viewToggle` is enabled. */
+    defaultView?: SelectView;
+    /** Tile density for the grid layout. */
+    gridSize?: SelectGridSize;
+    searchPlaceholder?: string;
+    clearable?: boolean;
+    name?: string;
+    appearance?: ChoiceAppearance;
+    /** Icon class shown before the placeholder while nothing is selected. */
+    placeholderIcon?: string;
+  };
 
 type NormalizedOption = ChoiceOption<string>;
 /** The list entry that clears a plain select. It cannot collide with a real option value. */
@@ -138,6 +140,11 @@ export function Select(props: SelectProps): JSX.Element {
   });
   // Colour dots mark the options, so an empty plain value keeps the column with a hollow dot.
   const emptyDot = () => plain() && !props.placeholderIcon && sourceOptions().some((option) => option.color);
+  /** A value taken from a suggestion, also through Accept all, reads as the suggestion named it. */
+  const suggestedLabel = (current: string) => {
+    const suggestion = resolveMaybeAccessor(props.suggestion);
+    return suggestion?.state === "ready" && suggestion.value === current ? suggestion.label : undefined;
+  };
   const selected = createMemo(() => {
     const current = value();
     if (current === null) return undefined;
@@ -148,9 +155,26 @@ export function Select(props: SelectProps): JSX.Element {
       cache()[current] ??
       (props.selectedOption?.value === current ? props.selectedOption : undefined) ?? {
         value: current,
-        label: props.selectedLabel?.() ?? current,
+        label: props.selectedLabel?.() ?? suggestedLabel(current) ?? current,
       }
     );
+  });
+  const suggestion = useFieldSuggestion({
+    props,
+    enabled: "suggestion" in props,
+    meta,
+    value,
+    blank: () => value() === null,
+    format: (option) => sourceOptions().find((item) => item.value === option)?.label ?? cache()[option]?.label ?? option,
+    locked: () => Boolean(props.disabled),
+    invalid: () => Boolean(error()),
+    spokenValue: true,
+    apply: (option, named) => {
+      // A suggested option from a remote list keeps its name once it is the value.
+      if (named) setCache({ ...cache(), [option]: { value: option, label: named } });
+      commitFieldValue(props, option);
+    },
+    acceptable: (option) => !sourceOptions().find((item) => item.value === option)?.disabled,
   });
   const hasClearAction = () => Boolean(props.clearable && selected() && !props.disabled && !plain());
   const accessibleLabel = () =>
@@ -193,6 +217,7 @@ export function Select(props: SelectProps): JSX.Element {
   const select = (option: NormalizedOption) => {
     if (option.disabled) return;
     close(true);
+    suggestion.edited();
     if (option.value === CLEAR_VALUE) {
       commitFieldValue(props, null);
       return;
@@ -222,6 +247,7 @@ export function Select(props: SelectProps): JSX.Element {
   };
   const clear = (event: MouseEvent) => {
     event.stopPropagation();
+    suggestion.edited();
     commitFieldValue(props, null);
     popover.trigger()?.focus();
   };
@@ -235,6 +261,7 @@ export function Select(props: SelectProps): JSX.Element {
       meta={meta}
       required={props.required}
       disabled={props.disabled}
+      suggestion={suggestion.status}
     >
       <div class="k2b-choice-control" data-appearance={props.appearance ?? "field"} data-invalid={error() ? "true" : undefined}>
         <button
@@ -248,10 +275,15 @@ export function Select(props: SelectProps): JSX.Element {
           aria-controls={listboxId}
           aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
           data-clearable={hasClearAction() ? "true" : undefined}
-          {...fieldControlAria(meta, {
-            ...props,
-            "aria-label": accessibleLabel(),
-          })}
+          data-suggestion={suggestion.state()}
+          {...fieldControlAria(
+            meta,
+            {
+              ...props,
+              "aria-label": accessibleLabel(),
+            },
+            suggestion,
+          )}
           disabled={props.disabled}
           onClick={() => (popover.open() ? close() : open())}
           onKeyDown={onKeyDown}
@@ -275,7 +307,7 @@ export function Select(props: SelectProps): JSX.Element {
             </Show>
           </Show>
           <span class="k2b-choice-trigger__value" data-placeholder={selected() ? undefined : "true"}>
-            {selected()?.label ?? props.placeholder ?? messages().select}
+            {selected()?.label ?? suggestion.placeholder() ?? props.placeholder ?? messages().select}
           </span>
           <i
             class={`${popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")} k2b-choice-trigger__chevron`}

@@ -3,8 +3,9 @@ import { isServer } from "solid-js/web";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import type { Completion } from "./completion";
-import type { ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import { useInputMessages } from "./input-messages";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 
@@ -12,7 +13,9 @@ export type TextInputProps = Omit<
   JSX.InputHTMLAttributes<HTMLInputElement>,
   "onChange" | "onInput" | "onKeyDown" | "prefix" | "suffix" | "type" | "value" | keyof ValueFieldProps<string>
 > &
-  ValueFieldProps<string> & {
+  ValueFieldProps<string> &
+  /** Suggestions apply to text and multiline fields, not to `markdown`. */
+  FieldSuggestionProps<string> & {
     minLength?: number;
     maxLength?: number;
     type?: "text" | "search" | "email" | "url" | "tel";
@@ -65,11 +68,13 @@ export function TextInput(props: TextInputProps): JSX.Element {
     "onClear",
     "onValueCommit",
     "onSubmit",
+    "onSuggestionAccept",
     "onValueChange",
     "password",
     "prefix",
     "required",
     "suffix",
+    "suggestion",
     "type",
     "value",
     "variant",
@@ -78,6 +83,17 @@ export function TextInput(props: TextInputProps): JSX.Element {
   const meta = createFieldMeta(local.id);
   const value = () => resolveMaybeAccessor(local.value) ?? "";
   const error = () => resolveMaybeAccessor(local.error);
+  const suggestion = useFieldSuggestion({
+    props: local,
+    enabled: "suggestion" in props && !props.markdown,
+    meta,
+    value,
+    blank: () => value() === "",
+    format: (text) => text,
+    locked: () => Boolean(rest.disabled || rest.readOnly),
+    invalid: () => Boolean(error()),
+    apply: (next) => commitFieldValue(local, next),
+  });
   // HTML IDs are single nonempty tokens; numeric starts and punctuation are valid.
   const externalErrorId = () => {
     const id = local.externalErrorId;
@@ -99,7 +115,10 @@ export function TextInput(props: TextInputProps): JSX.Element {
   // Names, addresses and passwords are typed exactly: phone keyboards must not capitalize or "correct" them.
   const verbatim = () =>
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
-  const input = (next: string) => local.onValueChange?.(next);
+  const input = (next: string) => {
+    suggestion.edited();
+    local.onValueChange?.(next);
+  };
   const commit = (next: string) => local.onValueCommit?.(next);
   const submitOnEnter = (event: KeyboardEvent) => {
     if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
@@ -118,6 +137,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
     // Clearing removes the button. Return to the field before notifying the caller, whose handler
     // may deliberately navigate or move focus somewhere else.
     event.currentTarget.ownerDocument.getElementById(meta.controlId)?.focus();
+    suggestion.edited();
     if (local.onClear) {
       local.onClear();
       return;
@@ -137,11 +157,13 @@ export function TextInput(props: TextInputProps): JSX.Element {
           meta={meta}
           required={local.required}
           disabled={rest.disabled}
+          suggestion={suggestion.status}
         >
           <div
             class="k2b-input-shell k2b-text-input"
             data-variant={compact() ? "compact" : undefined}
             data-invalid={error() ? "true" : undefined}
+            data-suggestion={suggestion.state()}
             data-ai={local.variant === "ai" ? "true" : undefined}
             data-multiline={multiline() ? "true" : undefined}
             data-monospace={local.monospace ? "true" : undefined}
@@ -169,10 +191,11 @@ export function TextInput(props: TextInputProps): JSX.Element {
                   size={rest.size ?? (compact() ? 9 : undefined)}
                   type={local.password && !passwordVisible() ? "password" : (local.type ?? "text")}
                   value={value()}
+                  placeholder={suggestion.placeholder() ?? rest.placeholder}
                   minlength={local.minLength}
                   maxlength={local.maxLength}
                   required={local.required}
-                  {...fieldControlAria(controlMeta, local)}
+                  {...fieldControlAria(controlMeta, local, suggestion)}
                   onInput={(event) => {
                     input(event.currentTarget.value);
                   }}
@@ -186,11 +209,12 @@ export function TextInput(props: TextInputProps): JSX.Element {
                 id={meta.controlId}
                 class="k2b-input k2b-text-input__textarea"
                 value={value()}
+                placeholder={suggestion.placeholder() ?? rest.placeholder}
                 rows={local.lines ?? 3}
                 required={local.required}
                 minlength={local.minLength}
                 maxlength={local.maxLength}
-                {...fieldControlAria(controlMeta, local)}
+                {...fieldControlAria(controlMeta, local, suggestion)}
                 onInput={(event) => {
                   input(event.currentTarget.value);
                 }}

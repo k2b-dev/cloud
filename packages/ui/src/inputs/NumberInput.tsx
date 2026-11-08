@@ -2,8 +2,9 @@ import { createEffect, createMemo, createSignal, type JSX, Show, splitProps } fr
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { decimalSeparator, useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
-import type { ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import { useInputMessages } from "./input-messages";
 import type { ChoiceAppearance } from "./Select";
 
@@ -11,7 +12,8 @@ export type NumberInputProps = Omit<
   JSX.InputHTMLAttributes<HTMLInputElement>,
   "max" | "min" | "onChange" | "onInput" | "prefix" | "step" | "type" | "value" | keyof ValueFieldProps<number | null>
 > &
-  ValueFieldProps<number | null> & {
+  ValueFieldProps<number | null> &
+  FieldSuggestionProps<number> & {
     max?: number;
     min?: number;
     /** Stepper increment and commit grid; defaults to `1`. A fractional step also sets the default `decimalPlaces`. */
@@ -80,12 +82,14 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     "onClear",
     "onKeyDown",
     "onValueCommit",
+    "onSuggestionAccept",
     "onValueChange",
     "prefix",
     "required",
     "showSteppers",
     "step",
     "suffix",
+    "suggestion",
     "value",
   ]);
   const meta = createFieldMeta(local.id);
@@ -160,8 +164,29 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     if (!changeAlreadyEmitted || !Object.is(next, value)) emit(next);
     local.onValueCommit?.(next);
   };
+  const affix = (part: JSX.Element) => (typeof part === "string" ? part : "");
+  const suggestion = useFieldSuggestion({
+    props: local,
+    enabled: "suggestion" in props,
+    meta,
+    value,
+    blank: () => value() == null,
+    format: (number) =>
+      local.formatValue ? local.formatValue(number) : [affix(local.prefix), display(number), affix(local.suffix)].filter(Boolean).join(" "),
+    locked: () => Boolean(rest.disabled || rest.readOnly),
+    invalid: () => Boolean(error()),
+    apply: (number) => commit(number),
+    // Accept takes the value exactly, so one off the step or outside the bounds is not offered.
+    acceptable: (number) => Object.is(normalize(number), number),
+  });
+  /** An open suggestion reads as the number alone; prefix and suffix stay where they are. */
+  const suggested = () => {
+    const number = suggestion.value();
+    return suggestion.view() === "open" && number !== undefined ? display(number) : undefined;
+  };
   const stepBy = (direction: number) => {
     if (rest.disabled || local.disableSteppers) return;
+    suggestion.edited();
     const seed = value() ?? (Number.isFinite(min()) ? min() : 0);
     commit(seed + direction * step());
   };
@@ -191,7 +216,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       setRaw(display(value()));
     }
   };
-  const placeholderText = () => (typeof rest.placeholder === "string" ? rest.placeholder : "");
+  const placeholderText = () => suggested() ?? (typeof rest.placeholder === "string" ? rest.placeholder : "");
   /** What a plain field shows: the formatted value at rest, the text being edited while focused. */
   const shownText = () => {
     const current = value();
@@ -217,8 +242,9 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       role="spinbutton"
       inputmode={places() === 0 ? "numeric" : "decimal"}
       value={raw()}
+      placeholder={suggested() ?? rest.placeholder}
       required={local.required}
-      {...fieldControlAria(meta, local)}
+      {...fieldControlAria(meta, local, suggestion)}
       aria-valuemin={Number.isFinite(min()) ? min() : undefined}
       aria-valuemax={Number.isFinite(max()) ? max() : undefined}
       aria-valuenow={(focused() ? parse(raw()) : value()) ?? undefined}
@@ -243,6 +269,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
         }
         setRaw(next);
         committedOnEnter = false;
+        suggestion.edited();
         emit(parse(next));
       }}
       onBlur={() => {
@@ -262,6 +289,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       meta={meta}
       required={local.required}
       disabled={rest.disabled}
+      suggestion={suggestion.status}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the input inside is the keyboard target; a plain field's row only forwards a pointer click beside the text to it. */}
       <div
@@ -269,6 +297,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
         data-appearance={local.appearance ?? "field"}
         data-disabled={rest.disabled ? "true" : undefined}
         data-invalid={error() ? "true" : undefined}
+        data-suggestion={suggestion.state()}
         onClick={(event) => {
           if (plain() && event.target !== input && !rest.disabled) input?.focus();
         }}
@@ -314,7 +343,11 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
               type="button"
               class="k2b-input-shell__clear k2b-input-clear-action"
               aria-label={local.clearLabel ?? messages().clear}
-              onClick={() => (local.onClear ? local.onClear() : commit(null))}
+              onClick={() => {
+                suggestion.edited();
+                if (local.onClear) local.onClear();
+                else commit(null);
+              }}
             >
               <i class="ti ti-x" aria-hidden="true" />
             </button>
