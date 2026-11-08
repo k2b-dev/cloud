@@ -4796,11 +4796,12 @@
   @apply w-full max-w-2xl;
 }
 
+/* Another origin's inline PDF address stays with the browser's viewer. */
 .k2b-ui .k2b-content-file-view__pdf {
   @apply min-h-0 w-full flex-1 rounded-md;
 }
 
-/* A PDF from loaded bytes: the preview frame with its actions above the
+/* A PDF from loaded bytes or a same-origin inline address: the preview with its actions above the
    document, without the standalone viewer's heading and toolbar line. */
 .k2b-ui .k2b-content-file-view__pdf-viewer {
   @apply flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md;
@@ -5445,6 +5446,188 @@
 /* Transparent and inert, not hidden: the frame still loads its document. */
 .k2b-ui .k2b-content-pdf-preview__frame:not([data-drawn]) {
   opacity: 0;
+}
+
+/* The pdf.js viewer fills the same box; until its first page is drawn the loading placeholder lies over it. */
+.k2b-ui .k2b-content-pdf-preview__viewer > .k2b-pdf-viewer {
+  position: absolute;
+  inset: 0;
+}
+
+.k2b-ui .k2b-content-pdf-preview__viewer > .k2b-pdf-viewer:not([data-drawn]) {
+  opacity: 0;
+}
+
+/* PdfViewer: pages as images in one scroll area, a solid zoom bar floating at the bottom. */
+.k2b-ui .k2b-pdf-viewer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.k2b-ui .k2b-pdf-viewer__pages {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  background: var(--k2b-surface-muted);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--k2b-text) 22%, transparent) transparent;
+  scrollbar-gutter: stable;
+  touch-action: pan-x pan-y;
+}
+
+.k2b-ui .k2b-pdf-viewer__pages[data-fit] {
+  overflow-x: hidden;
+}
+
+.k2b-ui .k2b-pdf-viewer__pages:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* Wider than the area the stack grows to the right; narrower, each page stands centred. Room below for the bar. */
+.k2b-ui .k2b-pdf-viewer__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 0.75rem 3.5rem;
+}
+
+.k2b-ui .k2b-pdf-viewer__page {
+  position: relative;
+  flex: none;
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.12);
+}
+
+.k2b-ui .k2b-pdf-viewer__page > img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+/* Text sits under it, so the bar is solid, not glass. */
+.k2b-ui .k2b-pdf-viewer__bar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.5rem;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-pdf-viewer__bar > .k2b-toolbar {
+  --k2b-radius-control: 9999px;
+  padding: 0.25rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: 9999px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+  pointer-events: auto;
+}
+
+.k2b-ui :is(.k2b-pdf-viewer__percent, .k2b-pdf-viewer__page-number) {
+  min-width: 2.75rem;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Text layer: the rules of `.textLayer` in pdfjs-dist/web/pdf_viewer.css (same version as package.json). The spans lie
+   invisibly over the page image, positioned in percent of the page, sized by `--total-scale-factor` (CSS pixels per
+   point on the page). A selection shows only its color; the text stays transparent. Compare after a pdf.js update. */
+.k2b-ui .k2b-pdf-viewer__text {
+  color-scheme: only light;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+/* Rotated pages (/Rotate): the layer keeps the unrotated size and turns about its top left corner into place. */
+.k2b-ui .k2b-pdf-viewer__text[data-main-rotation="90"] {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+.k2b-ui .k2b-pdf-viewer__text[data-main-rotation="180"] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+
+.k2b-ui .k2b-pdf-viewer__text[data-main-rotation="270"] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+.k2b-ui .k2b-pdf-viewer__text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.k2b-ui .k2b-pdf-viewer__text > :not(.markedContent),
+.k2b-ui .k2b-pdf-viewer__text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.k2b-ui .k2b-pdf-viewer__text .markedContent {
+  display: contents;
+}
+
+.k2b-ui .k2b-pdf-viewer__text ::selection {
+  background: rgb(0 0 255 / 0.25);
+  background: color-mix(in srgb, AccentColor, transparent 50%);
+  color: transparent;
+}
+
+.k2b-ui .k2b-pdf-viewer__text br::selection {
+  background: transparent;
+}
+
+.k2b-ui .k2b-pdf-viewer__text-end {
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  display: block;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.k2b-ui .k2b-pdf-viewer__text[data-selecting] > .k2b-pdf-viewer__text-end {
+  top: 0;
 }
 
 .k2b-ui .k2b-content-structured-data {
