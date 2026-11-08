@@ -318,6 +318,8 @@ const closed = (
 );
 
 // Public, without the Cloud layout: the page stands alone, like a form you hand out.
+// A public route never sees who is signed in: c.user is always null, also for signed-in visitors. A page that
+// recognises its visitors leaves out public; then every signed-in person sees it and c.user names them.
 app.get("/", c => c.page(isClosed() ? closed : survey(crypto.randomUUID(), { rating: "", comment: "" })), {
   public: true,
   layout: "plain",

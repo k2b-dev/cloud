@@ -29,7 +29,8 @@ const orders = [
 const allowedGroups: string[] = [];
 
 // Default: the Cloud layout. Every signed-in person may open this page, and it reads with this Code's rights,
-// not the visitor's: check the visitor here when only some people may see the data.
+// not the visitor's: check the visitor here when only some people may see the data. c.user names the visitor only
+// on routes without public: true; a public route always gets null.
 app.get("/", c => {
   if (allowedGroups.length && !c.user?.groups.some(group => allowedGroups.includes(group)))
     return c.text("Only some teams see these orders.", 403);
