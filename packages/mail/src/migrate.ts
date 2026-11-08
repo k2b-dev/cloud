@@ -17,7 +17,7 @@ import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
-import { migrateIncomingAutomationTargets } from "./service/incoming-automation-targets-migrate";
+import { MAIL_RULE_RETIREMENT_NAME, MAIL_RULE_RETIREMENT_VERSION, retireMailRules } from "./service/rule-retirement-migrate";
 import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
@@ -39,7 +39,8 @@ const assertSupportedSchema = (applied: readonly { version: number; name: string
   const foreign = applied.filter(
     (row) =>
       !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
-      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME),
+      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME) &&
+      !(row.version === MAIL_RULE_RETIREMENT_VERSION && row.name === MAIL_RULE_RETIREMENT_NAME),
   );
   if (baseline && foreign.length === 0) return;
   const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
@@ -680,7 +681,7 @@ export const migrate = async (): Promise<void> => {
         await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
-        await migrateIncomingAutomationTargets(tx);
+        await retireMailRules(tx);
       });
       return;
     } catch (error) {

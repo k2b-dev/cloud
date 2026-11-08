@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { AI_SHORT_ID_PATTERN, ChatTaskExportPageSchema, ChatTaskGrantsSchema } from "@k2b/cloud/ai";
+import { AI_SHORT_ID_PATTERN, ChatTaskExportPageSchema } from "@k2b/cloud/ai";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { createCodeTestBridge, generateCodeSdk } from "@k2b/cloud/code";
 import { z } from "zod";
@@ -58,9 +58,8 @@ test("fictional exports retain every field of the owning Mail and routine export
     if (item.export.format === "cloud.mail-automation") {
       expect<unknown>(mailAutomationExportPageSchema.parse(item.export)).toEqual(item.export);
     } else {
-      const parsed = ChatTaskExportPageSchema.parse(item.export);
-      expect<unknown>(parsed).toEqual(item.export);
-      for (const routine of parsed.items) expect<unknown>(ChatTaskGrantsSchema.parse(routine.grants)).toEqual(routine.grants);
+      // Exported grants are evidence only; a rebuild never transfers them as authority.
+      expect<unknown>(ChatTaskExportPageSchema.parse(item.export)).toEqual(item.export);
     }
   }
 });

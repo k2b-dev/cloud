@@ -15,7 +15,6 @@ import { listLapsedAssignees } from "../service/collaborators";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "../service/command-authorization";
 import { mailboxLiveKeys } from "../service/live-channels";
 import { createMailbox } from "../service/mailboxes";
-import { loadMailWorkflowCatalog } from "../service/workflow-catalog-service";
 import app from ".";
 
 // The production API stack includes the Valkey-backed rate limit, so these requests need all three services.
@@ -382,15 +381,6 @@ suite("Mail REST access for service-account credentials", () => {
         serviceAccountKind: kind,
       };
       expect(await eligible.json()).toEqual([expect.objectContaining({ ...principal, scope: "assigned" })]);
-      const catalog = await loadMailWorkflowCatalog({
-        context: {
-          actor: { kind: "user", user: owner },
-          accessSubject: { type: "user", userId: owner.id },
-        },
-        mailboxId,
-      });
-      expect(catalog.assignableUsers.refs.get(name)).toEqual({ id: accountId, name, type: "service_account", serviceAccountKind: kind });
-      expect(catalog.notificationUsers.refs.has(name)).toBe(false);
       const change = await loadAssignmentReviewChange({
         mailboxId,
         conversationIds: [assigned.shortId],

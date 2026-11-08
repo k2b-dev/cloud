@@ -31,7 +31,7 @@ Betriebsstatus und öffentliche Links zu Anhängen sind von den Einstellungen ge
 - **Jetzt synchronisieren** reiht eine Synchronisierung des Postfachs ein. **Letzte erfolgreiche Synchronisierung** zeigt, wann die letzte abgeschlossen wurde. **Jetzt synchronisieren** ist nicht verfügbar, solange das Postfach pausiert ist oder sein Konto zuerst verbunden, neu verbunden oder geprüft werden muss.
 - **Ordner neu ermitteln** aktualisiert die Ordner und die Angaben zum Namensraum beim Anbieter.
 - **Verbindung prüfen** schließt eine ausstehende Verbindung zum Anbieter ab.
-- **Postfach pausieren** stoppt die eingehende Synchronisierung, eingereihte Änderungen beim Anbieter, geplante Zustellungen und automatische Antworten.
+- **Postfach pausieren** stoppt die eingehende Synchronisierung, eingereihte Änderungen beim Anbieter und geplante Zustellungen.
 - **Postfach fortsetzen** lässt diese Hintergrundvorgänge weiterlaufen.
 
 Pausieren stoppt Vorgänge. Es blendet nichts aus. Vorhandene gespiegelte E-Mails und Daten der Zusammenarbeit bleiben für alle mit Zugriff auf das Postfach lesbar.
@@ -92,7 +92,7 @@ Nach einem Versand legt Mail die Nachricht im Ordner Gesendet der Absenderidenti
 Speichert der Anbieter gesendete Nachrichten nicht, gibt es keine Kopie.
 :::
 
-Mail fügt die Standard-Empfänger für Cc und Bcc hinzu, wenn jemand mit dieser Absenderidentität eine neue Nachricht, Antwort oder Weiterleitung beginnt. Mail entfernt Duplikate und Adressen, die schon unter An, Cc oder Bcc stehen. Automatische Antworten und Workflow-Nachrichten bekommen diese Standards nicht, und die schreibende Person kann sie vor dem Senden entfernen.
+Mail fügt die Standard-Empfänger für Cc und Bcc hinzu, wenn jemand mit dieser Absenderidentität eine neue Nachricht, Antwort oder Weiterleitung beginnt. Mail entfernt Duplikate und Adressen, die schon unter An, Cc oder Bcc stehen. Die schreibende Person kann diese Standards vor dem Senden entfernen.
 
 Neue Nachrichten, Antworten und Weiterleitungen beginnen mit der Standardsignatur der Absenderidentität, getrennt vom Text. Ein persönlicher Standard hat Vorrang vor dem Standard des Postfachs. Wechselst du die Absenderidentität im Editor, wechselt die Signatur zu deren Standard.
 
@@ -123,7 +123,6 @@ Eine Absenderidentität, die nicht für den Versand bereit ist, zeigt den Grund 
 
 Hat ein Postfach keine Absenderidentität, die für den Versand bereit ist, zeigen **Verfassen**, **Antworten** und **Weiterleiten** denselben Grund. Personen mit Zugriff **Verwalten** öffnen dort direkt die Absendereinstellungen.
 
-**Für automatische Antworten zulassen** ist von der Prüfung getrennt. Automatische Antworten können nur eine Absenderidentität nutzen, die für den Versand bereit ist und bei der diese Option eingeschaltet ist. Das Einschalten sendet allein nichts. Es braucht zusätzlich eine eingeschaltete automatische Antwort oder einen Workflow.
 
 ## Ordner beim Anbieter verwalten {icon="user-cog"}
 
@@ -181,17 +180,11 @@ Agenten ändern Abonnements beim Anbieter mit `cld mail folder subscribe` und `c
 
 - **Ansehen** zum Lesen, Suchen, Kommentieren und für persönliche Erinnerungen.
 - **Bearbeiten** für den Versand, Vorgänge an E-Mails beim Anbieter und Änderungen an der Zusammenarbeit.
-- **Verwalten** für Transport, Freigabe, Regeln, Workflows und den Lebenszyklus des Postfachs.
+- **Verwalten** für Transport, Freigabe, Code-Zuständigkeit und den Lebenszyklus des Postfachs.
 - **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen, Gruppen und Agenten, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
 
-**Verwaltungszugriff für automatische Antworten** ist eine Einstellung des Postfachs über der Zugriffsliste:
-
-- **Personen mit Schreib- oder Verwaltungsrechten** lässt Personen mit Zugriff **Bearbeiten** geführte Abwesenheitsnotizen und Empfangsbestätigungen erstellen und ändern.
-- **Nur Personen mit Verwaltungsrechten** ist der sichere Standard für neue und vorhandene Postfächer.
-
-Diese Einstellung lässt Personen mit Zugriff **Bearbeiten** keine Absenderidentitäten, Einstellungen für Referenznummern oder YAML-Workflows ändern. Das bleiben Vorgänge, die Zugriff **Verwalten** brauchen.
-
 Zugangsdaten bleiben verborgen, auch für Personen mit Zugriff **Verwalten**. Wer ein Postfach teilt, gibt Zugriff auf das Postfach in Cloud. Das Passwort oder Token beim Anbieter wird dabei nicht sichtbar.
+
 
 ## Anhänge über öffentliche Links teilen {icon="link"}
 
@@ -264,50 +257,13 @@ Mail prüft das CSS beim Speichern. Enthält ein gespeichertes Design einen Wert
 
 Postfachadmins können ein Signaturlogo auch über die CLI verwalten: mit `cld mail compose logo get`, `cld mail compose logo set --file logo.png [--width 200] [--alt "Team"]` und `cld mail compose logo remove --yes`. Erlaubt sind PNG und JPEG mit höchstens 100 KiB und 1200×400 Pixeln. Die Anzeigebreite beträgt 1–600 px (Standard 200). Der Alternativtext ist standardmäßig der getrimmte Postfachname und erfordert 1–200 Zeichen ohne Steuerzeichen. Signaturen setzen das Logo mit `{{ mailbox.logo }}` ein. Mail sendet es eingebettet und zeigt es in Vorschauen. Ohne Logo warnt die Vorschau und lässt den Platzhalter leer. Eingereihte und geplante Nachrichten behalten das ursprüngliche Logo; Entwurfskopien beim Anbieter haben keine Signatur und kein Logo.
 
-## Automatische Antworten und Referenzen einrichten {icon="settings"}
+## Automatisierungen mit Code verwalten {icon="code"}
 
-Öffne **… → Automatisierungen**:
+Öffne die **Code**-Seite des Postfachs. Gustav kann exportierte Regeln als Code neu aufbauen. Prüfe Zugriffe und Änderungen, nutze die Vorschau und aktiviere den Code ausdrücklich. Mit Nachholen wendest du die aktive Version auf ausgewählte vorhandene Nachrichten an.
 
-:::steps
-1. **Übersicht** zeigt, was aktiv ist, und öffnet genau die passende Einrichtung.
-2. **Automatische Antworten** bietet die Vorlagen **Abwesenheitsnotiz**, **Empfangsbestätigung zu Bürozeiten**, **Empfangsbestätigung mit Referenznummer** und **Eigene automatische Antwort**. Personen mit Zugriff **Bearbeiten** nutzen diesen Bereich, wenn die Zugriffseinstellung es erlaubt.
-3. **Eingehende E-Mails** bietet geführte Bedingungen und einen Ablauf, der Mail- und KI-Schritte mischt.
-4. **Aktivität** zeigt Workflow-Läufe und die nachträgliche Verarbeitung von Automatisierungen für eingehende E-Mails in diesem Postfach.
-5. **Workflows** enthält versionierte YAML-Definitionen, die Einrichtung der Referenznummern und ausdrückliche Steuerung der Aktivierung.
-:::
+Automatische Antworten, einschließlich Abwesenheitsantworten, Bürozeitenantworten und Eingangsbestätigungen mit Referenznummer, sind ohne Ersatz entfernt. Das frühere Protokoll bleibt unter **Frühere Mail-Regeln** nur lesbar. Rückgängigmachen und Wiederholen sind nicht mehr verfügbar.
 
-**Eingehende E-Mails**, **Aktivität** und **Workflows** brauchen Zugriff **Verwalten**. Mail speichert den Zeitplan einer automatischen Antwort direkt in der geführten Antwort oder in der unveränderlichen Version des YAML-Workflows. Es gibt keine eigene Zeitplan-Ressource, die du abgleichen musst.
-
-Eine automatische Antwort hat diese Einstellungen:
-
-- ein oder aus und eine bestätigte Absenderidentität für Automatisierungen;
-- Betreff, Text und das Format Markdown oder Nur Text;
-- den Wiederholungsabstand pro Empfänger;
-- Zeitzone, aktive Tage, wöchentliche Zeitfenster und Ausnahmen;
-- das Verhalten außerhalb des aktiven Zeitfensters.
-
-Für das Verhalten außerhalb des aktiven Zeitfensters wählst du:
-
-- **Nicht antworten** ignoriert Nachrichten außerhalb des Zeitplans.
-- **Im nächsten aktiven Zeitfenster antworten** verschiebt die Antwort, bis der Zeitplan aktiv ist.
-
-Prüfe die genaue Antwort in der Vorschau, bevor du sie einschaltest. Das Pausieren des Postfachs stoppt automatische Antworten.
-
-Einrichtungsschritte, Auswirkungen des Zeitplans, Referenzmuster und Schutz vor Wiederholungen findest du unter [Antworten und Postfacharbeit automatisieren](/app/mail/help/mail-automation).
-
-## Workflows verwalten {icon="route"}
-
-Öffne **Automatisierungen → Workflows** für den YAML-Editor. Speichern erzeugt eine neue unveränderliche Version. Diese Version wird nicht automatisch aktiviert.
-
-:::steps
-1. Prüfe YAML, Diagnosen der Validierung und **Ausführungslimits**.
-2. Aktiviere die Version ausdrücklich.
-3. Prüfe die Läufe des Postfachs getrennt unter **Automatisierungen → Aktivität**.
-:::
-
-Für normale Abwesenheitsnotizen und Empfangsbestätigungen nutzt du die Oberfläche für automatische Antworten. Nutze Workflows, wenn das Postfach feste Bedingungen und Aktionen über diesen Editor hinaus braucht.
-
-Alle unterstützten Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Standardwerte und geprüften Beispiele stehen in der [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows).
+Referenznummern bleiben eine Mail-Funktion. Richte ihr Format mit `cld mail reference-number config set` ein und vergib sie mit `cld mail reference-number ensure` oder einem Code-Handler.
 
 ## Ein Postfach löschen und wiederherstellen {icon="point"}
 

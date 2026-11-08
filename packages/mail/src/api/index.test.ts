@@ -102,28 +102,17 @@ describe("Mail API composition", () => {
     expect(api.routes.some((route) => route.method === "POST" && route.path === "/mailboxes/:mailboxId/senders/disposition")).toBe(true);
   });
 
-  test("exposes unified incoming automation and durable deterministic backfill routes", () => {
-    expect(
-      api.routes.some((route) => route.method === "GET" && route.path === "/mailboxes/:mailboxId/incoming-automations/:automationId"),
-    ).toBe(true);
-    expect(api.routes.some((route) => route.method === "GET" && route.path === "/mailboxes/:mailboxId/incoming-automations/catalog")).toBe(
-      true,
-    );
+  test("retires rule admission, automatic replies and Undo while preserving reads and export", () => {
+    expect(api.routes.filter((route) => /incoming-automations|automatic-replies|\/workflows(?:\/|$)/.test(route.path))).toEqual([]);
+    expect(api.routes.filter((route) => /automation-log/.test(route.path) && route.method !== "GET" && route.method !== "ALL")).toEqual([]);
     for (const path of [
-      "/mailboxes/:mailboxId/incoming-automations/preview",
-      "/mailboxes/:mailboxId/incoming-automations/:automationId/backfills",
+      "/mailboxes/:mailboxId/automation-log",
+      "/mailboxes/:mailboxId/retired-runs",
+      "/mailboxes/:mailboxId/automation-export",
     ]) {
-      expect(api.routes.some((route) => route.method === "POST" && route.path === path)).toBe(true);
-    }
-    expect(
-      api.routes.some((route) => route.method === "POST" && route.path === "/mailboxes/:mailboxId/incoming-automations/mark-read"),
-    ).toBe(false);
-    for (const method of ["GET", "DELETE"]) {
       expect(
-        api.routes.some(
-          (route) =>
-            route.method === method && route.path === "/mailboxes/:mailboxId/incoming-automations/:automationId/backfills/:operationId",
-        ),
+        api.routes.some((route) => route.method === "GET" && route.path === path),
+        path,
       ).toBe(true);
     }
   });

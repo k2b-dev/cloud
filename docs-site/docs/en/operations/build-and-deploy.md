@@ -318,7 +318,7 @@ keys from Core and keep no shared signing secret.
 
 Apps calling Core's workload or mandate broker also need
 `CLOUD_CORE_INTERNAL_ORIGIN`. Core automatically delivers and rotates their
-app-bound `identity:invoke` credentials, including for Mail incoming automations.
+app-bound `identity:invoke` credentials.
 `CLOUD_APP_CREDENTIAL` is only an explicit host-run override. OAuth instead needs
 `CLOUD_CORE_INTERNAL_ORIGIN` and `CLOUD_OAUTH_BROKER_SECRET`; inject that same
 broker secret only into Core and OAuth. It requires no admin provisioning. See

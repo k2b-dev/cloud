@@ -4,7 +4,6 @@ import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { CapabilityActionReviewDataSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, encryptSecret } from "@k2b/cloud/services";
 import { approvalReviewDigest, approvals } from "@k2b/cloud/services/approvals";
-import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import { unwrap } from "@k2b/stdlib";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
@@ -14,7 +13,7 @@ import { draftReviewAudience, grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { loadSendReviewContent } from "./capability-review-readers";
-import { adoptWorkflowSendCommand, createActorCommand } from "./commands";
+import { createActorCommand } from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
 import { getDraft } from "./drafts";
 import { createLocalTag } from "./local-tags";
@@ -402,81 +401,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
           accessSubject: { type: "user", userId: denied.id },
         }),
       ).toMatchObject({ ok: false });
-    }, 30_000);
-
-  for (const legacy of [true, false])
-    test(`workflow send adopts persisted content without rerendering (legacy=${legacy})`, async () => {
-      const runId = crypto.randomUUID();
-      const workflowVersionId = crypto.randomUUID();
-      const stepKey = "send";
-      // The old draft need not still render: resuming must depend on the issued command.
-      const input = {
-        kind: "send" as const,
-        draftId: crypto.randomUUID(),
-        senderIdentityId: identityId,
-        expectedDraftRevision: 1,
-        scheduledAt: "2026-10-22T12:00:00.000Z",
-        undoSeconds: 0,
-        correlationId: runId,
-        idempotencyKey: workflowEffectKey(runId, stepKey),
-      };
-      const target = {
-        draftId: input.draftId,
-        expectedDraftRevision: 1,
-        senderIdentityId: identityId,
-        ...(legacy ? {} : { expectedContentHash: "a".repeat(64) }),
-      };
-      const payload = { scheduledAt: input.scheduledAt, undoSeconds: 0, safetyApproval: null };
-      const requestHash = sha256Json({ kind: "send", target, payload });
-      const [command] = await sql<{ id: string }[]>`INSERT INTO mail.commands
-      (mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, correlation_id,
-       workflow_execution_generation, target, payload, access_subject_kind)
-      VALUES (${mailboxId}::uuid, 'send', 'workflow', ${workflowVersionId}::uuid, ${input.idempotencyKey},
-        ${requestHash}, ${runId}, 1, ${target}::jsonb, ${payload}::jsonb, 'system') RETURNING id`;
-      const counts = async () =>
-        (
-          await sql`SELECT
-      (SELECT count(*) FROM mail.commands WHERE mailbox_id=${mailboxId}::uuid) AS commands,
-      (SELECT count(*) FROM mail.outbox_submissions WHERE mailbox_id=${mailboxId}::uuid) AS outbox`
-        )[0];
-      const before = await counts();
-      let fenced = 0;
-      const params = {
-        mailboxId,
-        workflowVersionId,
-        input,
-        beforeAdopt: async () => {
-          fenced++;
-          return { workflowExecutionGeneration: 2, workflowStepKey: stepKey };
-        },
-      };
-      const adopted = unwrap(await adoptWorkflowSendCommand(params));
-      expect(adopted).toMatchObject({ id: command!.id, state: "queued", target });
-      expect(fenced).toBe(1);
-      expect(await counts()).toEqual(before);
-      expect(await adoptWorkflowSendCommand({ ...params, input: { ...input, scheduledAt: "2026-10-23T12:00:00.000Z" } })).toMatchObject({
-        ok: false,
-        error: { status: 409 },
-      });
-      expect(await adoptWorkflowSendCommand({ ...params, workflowVersionId: crypto.randomUUID() })).toMatchObject({
-        ok: false,
-        error: { status: 409 },
-      });
-      expect(
-        await adoptWorkflowSendCommand({
-          ...params,
-          beforeAdopt: async () => ({ workflowExecutionGeneration: 0, workflowStepKey: stepKey }),
-        }),
-      ).toMatchObject({ ok: false, error: { code: "INTERNAL" } });
-      await expect(
-        adoptWorkflowSendCommand({
-          ...params,
-          beforeAdopt: async () => {
-            throw new Error("Authority revoked");
-          },
-        }),
-      ).rejects.toThrow("Authority revoked");
-      expect(await counts()).toEqual(before);
     }, 30_000);
 
   test("group and service principals never narrow draft reach", async () => {

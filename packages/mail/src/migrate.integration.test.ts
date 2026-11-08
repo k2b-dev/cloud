@@ -34,7 +34,7 @@ const previousMailStartup = (previousLiveFunction: string) =>
  * to lose when the baseline is regenerated.
  */
 suite("mail baseline schema", () => {
-  test("records the baseline and principal-assignee marker once and preserves their timestamps on rerun", async () => {
+  test("records the baseline, principal-assignee and retirement markers once and preserves their timestamps on rerun", async () => {
     await migrate();
     const first = await sql<{ version: number; name: string; applied_at: Date }[]>`
       SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version
@@ -42,6 +42,7 @@ suite("mail baseline schema", () => {
     expect(first.map(({ version, name }) => ({ version, name }))).toEqual([
       { version: 1, name: "baseline" },
       { version: 2, name: "principal_assignees" },
+      { version: 3, name: "rules_retired" },
     ]);
     await migrate();
     expect(
@@ -54,7 +55,7 @@ suite("mail baseline schema", () => {
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;
-    expect(rows).toEqual([{ version: 1 }, { version: 2 }]);
+    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
     // pg_locks spans the whole server; other databases on it may hold advisory locks of their own.
     const [locks] = await sql<{ held: number }[]>`
       SELECT count(*)::int AS held
@@ -81,7 +82,7 @@ suite("mail baseline schema", () => {
     const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
       VALUES (${newShortId()}, 'Newer schema data') RETURNING id`;
     if (!mailbox) throw new Error("Newer schema fixture missing");
-    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (3, 'future_schema')`;
+    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (4, 'future_schema')`;
     try {
       const before = await sql`SELECT * FROM mail.schema_migrations ORDER BY version`;
       const live = await liveFunctionDefinition();
@@ -90,7 +91,7 @@ suite("mail baseline schema", () => {
         (error: unknown) => error,
       );
       expect(failure).toBeInstanceOf(Error);
-      expect(String(failure)).toContain("3 (future_schema)");
+      expect(String(failure)).toContain("4 (future_schema)");
       expect(String(failure)).toContain("Use an image compatible with this schema");
       expect(String(failure)).not.toContain("DROP SCHEMA");
       expect(await liveFunctionDefinition()).toBe(live);
@@ -99,7 +100,7 @@ suite("mail baseline schema", () => {
         { name: "Newer schema data" },
       ]);
     } finally {
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 3`;
+      await sql`DELETE FROM mail.schema_migrations WHERE version = 4`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
     }
     await migrate();
@@ -167,7 +168,7 @@ suite("mail baseline schema", () => {
       receipt_pending: "false",
       signature_template_id: true,
       signature_template_fk: true,
-      versions: 2,
+      versions: 3,
     });
   });
 
@@ -213,12 +214,13 @@ suite("mail baseline schema", () => {
         { user_id: string; assigned_at: Date }[]
       >`SELECT user_id, assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`;
       expect(rows).toEqual([{ user_id: user.id, assigned_at: conversation.updated_at }]);
-      // Simulate the existing user-only relation, not just a missing post-baseline table.
+      // Simulate the existing user-only baseline, before either incompatible marker.
+      // Keep previousMailStartup frozen: a real retirement marker must still refuse old startup.
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN principal_id`;
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN service_account_id`;
       await sql`ALTER TABLE mail.conversation_assignees ALTER COLUMN user_id SET NOT NULL`;
       await sql`ALTER TABLE mail.conversation_assignees ADD PRIMARY KEY (conversation_id, user_id)`;
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 2`;
+      await sql`DELETE FROM mail.schema_migrations WHERE version IN (2, 3)`;
       // This is the preceding function body: only people receive assignment updates.
       const previousLive = (await liveFunctionDefinition()).replaceAll("assignee.principal_id", "assignee.user_id");
       expect(previousLive).toContain("assignee.user_id");
@@ -234,6 +236,7 @@ suite("mail baseline schema", () => {
       expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
         { version: 1, name: "baseline" },
         { version: 2, name: "principal_assignees" },
+        { version: 3, name: "rules_retired" },
       ]);
       // The marker excludes the predecessor even before the first account assignment.
       await expect(previousMailStartup(previousLive)).rejects.toThrow("Previous Mail refuses non-baseline schema history");
@@ -613,7 +616,7 @@ suite("mail baseline schema", () => {
       expect((await displays())[older]).toBe("everywhere");
 
       const [shape] = await sql<{ versions: number }[]>`SELECT count(*)::int AS versions FROM mail.schema_migrations`;
-      expect(shape).toEqual({ versions: 2 });
+      expect(shape).toEqual({ versions: 3 });
       const invalid = await sql`UPDATE mail.folders SET display = 'sidebar' WHERE id = ${shown}::uuid`.then(
         () => null,
         (error: unknown) => error,
@@ -774,7 +777,8 @@ suite("mail baseline schema", () => {
               'protect_conversation_reference_allocation', 'guard_outbox_requested_at',
               'enqueue_live_invalidation', 'enqueue_activity_live_invalidation',
               'search_reference_matches', 'touch_updated_at', 'carry_conversation_keep',
-              'invalidate_automation_observed_state'
+              'reject_retired_rule_admission', 'reject_retired_rule_execution', 'reject_retired_rule_command',
+              'reject_retired_reply_draft', 'reject_retired_reply_outbox'
             )
         ) AS functions,
         (
@@ -785,8 +789,8 @@ suite("mail baseline schema", () => {
         ) AS triggers,
         to_regclass('ai.workflow_task') IS NOT NULL AS workflow_ai_table
     `;
-    // Baseline/workflow effects, conversation/shared-draft retention, and deferred count-cache invalidation.
-    expect(shape).toEqual({ extensions: 3, functions: 10, triggers: 34, workflow_ai_table: true });
+    // Retained domain/retention functions plus permanent retirement fences replace the old Undo invalidation hooks.
+    expect(shape).toEqual({ extensions: 3, functions: 14, triggers: 35, workflow_ai_table: true });
     const [retention] = await sql<{ definition: string; enabled: string }[]>`
       SELECT pg_get_triggerdef(oid) AS definition, tgenabled AS enabled FROM pg_trigger
       WHERE tgrelid = 'mail.draft_document_revisions'::regclass

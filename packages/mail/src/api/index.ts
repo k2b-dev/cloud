@@ -36,7 +36,6 @@ import {
   type AttachmentLinkPage,
   acquiredDraftLeaseSchema,
   archiveComposeTemplateInputSchema,
-  automaticReplyManagementPermissionSchema,
   cancelConversationReminderSchema,
   cancelScheduledSendInputSchema,
   commandStateSchema,
@@ -233,8 +232,6 @@ import {
   respondPublic,
 } from "./public-resource-boundary";
 import resourceRoutes from "./resources";
-import workflowAiSettingsRoutes from "./workflow-ai-settings";
-import workflowRoutes from "./workflows";
 
 const mailboxAndIdParamSchema = (name: string, idSchema: z.ZodType = ResourceShortIdSchema) =>
   z.object({ mailboxId: ResourceShortIdSchema, [name]: idSchema });
@@ -367,7 +364,6 @@ const updateMailboxSchema = z
     description: z.string().trim().max(2_000).nullable().optional(),
     syncEnabled: z.boolean().optional(),
     searchBackend: searchBackendSchema.optional(),
-    automaticReplyManagementPermission: automaticReplyManagementPermissionSchema.optional(),
     composeSafety: composeSafetyConfigSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
@@ -1676,6 +1672,20 @@ const mailOperationsApi = new Hono<MailApiContext>()
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
           input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
+  )
+  .get(
+    "/mailboxes/:mailboxId/senders/preview",
+    v("param", mailboxParamSchema),
+    v("query", senderDisposition.senderPreviewQuerySchema),
+    (c) =>
+      respondPublic(
+        c,
+        senderDisposition.previewSenderMatches({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: c.req.valid("query"),
         }),
       ),
   )
@@ -3777,7 +3787,6 @@ const mailOperationsApi = new Hono<MailApiContext>()
       ),
   )
   .route("/", automationExportRoutes)
-  .route("/", workflowRoutes)
   .route("/", automationLogRoutes);
 
 const adminApi = new Hono<MailApiContext>()
@@ -3904,7 +3913,6 @@ const adminApi = new Hono<MailApiContext>()
       ),
   )
   .route("/", contactDirectoryRoutes)
-  .route("/", workflowAiSettingsRoutes)
   .get("/admin/operations", v("query", platformOperationsQuerySchema), async (c) =>
     respondPublic(c, operations.getPlatformMailOperations(requestContext(c), c.req.valid("query"))),
   )

@@ -26,8 +26,6 @@ const CONNECTION_ID = "00000000-0000-4000-8000-000000000008";
 const FOLDER_ID = "Foldr1";
 const USER_ID = "00000000-0000-4000-8000-000000000011";
 const COMMENT_ID = "Commt1";
-const WORKFLOW_ID = "00000000-0000-4000-8000-000000000013";
-const WORKFLOW_VERSION_ID = "00000000-0000-4000-8000-000000000014";
 const SOURCE_CONVERSATION_ID = "Convo2";
 const REMINDER_ID = "Remnd1";
 const SAVED_VIEW_ID = "View01";
@@ -36,10 +34,8 @@ const BINDING_ID = "00000000-0000-4000-8000-000000000020";
 const TAG_ID = "Tag001";
 const COMPOSE_TEMPLATE_ID = "Templ1";
 const SCHEDULED_SEND_ID = "Deliv1";
-const AUTOMATIC_REPLY_ID = "Reply1";
 const ATTACHMENT_LINK_ID = "00000000-0000-4000-8000-000000000026";
 const REMOTE_CONTENT_RULE_ID = "00000000-0000-4000-8000-000000000027";
-const INCOMING_AUTOMATION_ID = "Autom1";
 const SECURITY_REPORT_ID = "00000000-0000-4000-8000-000000000029";
 const SECURITY_POLICY_ID = "00000000-0000-4000-8000-000000000030";
 
@@ -465,30 +461,26 @@ test("conversation drafts lists resumable work for one conversation", async () =
   expect(JSON.parse(result.stdout)).toEqual(drafts.map((draft) => ({ ...draft, permalink: `${origin}/open/mail.draft/~${draft.id}` })));
 });
 
-test("mailbox configure maps automatic reply access to the mailbox policy", async () => {
-  let requestBody: unknown;
+test("retired rule, workflow and automatic-reply commands never reach Mail", async () => {
+  const requests: string[] = [];
   const server = withMailbox(async (request) => {
-    if (request.method === "PATCH" && new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) {
-      requestBody = await request.json();
-      return api({ ...mailbox, automaticReplyManagementPermission: "write" });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
+    requests.push(request.url);
+    return api({});
   });
   servers.push(server);
-
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "mail",
-    "configure",
-    "--mailbox",
-    MAILBOX_ID,
-    "--automatic-replies",
-    "writers",
-  ]);
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.stderr).toBe("");
-  expect(requestBody).toEqual({ automaticReplyManagementPermission: "write" });
+  for (const args of [
+    ["automation", "create"],
+    ["automation", "backfill", "start"],
+    ["automation", "log", "undo"],
+    ["workflow", "activate"],
+    ["workflow", "try"],
+    ["automatic-reply", "create"],
+    ["configure", "--mailbox", MAILBOX_ID, "--automatic-replies", "writers"],
+  ]) {
+    const result = await runCli(server.url.origin, ["--json", "mail", ...args]);
+    expect(result.exitCode, args.join(" ")).toBe(1);
+  }
+  expect(requests).toEqual([]);
 });
 
 test("subscription commands expose safe list actions and durable disposition", async () => {
@@ -4780,7 +4772,7 @@ test("default sender setup preserves an existing display name when no name is pa
   expect(JSON.parse(result.stdout)).toMatchObject({ displayName: "Existing sender", status: "verified" });
 });
 
-test("sender creation keeps the default automation policy unless explicitly disabled", async () => {
+test("sender creation omits retired automatic-reply controls", async () => {
   const bodies: unknown[] = [];
   const server = withMailbox(async (request) => {
     const expectedPath = `/api/mail/mailboxes/${MAILBOX_ID}/sender-identities`;
@@ -4836,7 +4828,7 @@ test("sender creation keeps the default automation policy unless explicitly disa
     "disabled",
   ]);
 
-  expect([defaultResult.exitCode, disabledResult.exitCode]).toEqual([0, 0]);
+  expect([defaultResult.exitCode, disabledResult.exitCode]).toEqual([0, 1]);
   expect(bodies).toEqual([
     {
       label: "Work",
@@ -4845,16 +4837,6 @@ test("sender creation keeps the default automation policy unless explicitly disa
       defaultCc: [],
       defaultBcc: [],
       defaultSignatureTemplateId: null,
-      isDefault: false,
-    },
-    {
-      label: "Work",
-      displayName: "",
-      fromAddress: "sender@example.com",
-      defaultCc: [],
-      defaultBcc: [],
-      defaultSignatureTemplateId: null,
-      authenticationPolicy: { automation: "disabled" },
       isDefault: false,
     },
   ]);
@@ -4922,252 +4904,6 @@ test("identity configuration sends identity-specific defaults without hidden leg
     ],
     defaultSignatureTemplateId: COMPOSE_TEMPLATE_ID,
   });
-});
-
-const workflowSource = `inputs:
-  message:
-    type: mailMessage
-    required: true
-steps:
-  - addKeyword:
-      message: \${{ inputs.message }}
-      keyword: Finance
-`;
-
-const workflowVersion = {
-  id: WORKFLOW_VERSION_ID,
-  identity: `${WORKFLOW_ID}:1`,
-  workflowId: WORKFLOW_ID,
-  mailboxId: MAILBOX_ID,
-  source: workflowSource,
-  sourceHash: "a".repeat(64),
-  boundPlan: { languageId: "mail", languageVersion: 1, manifestHash: "b".repeat(64), inputs: {}, triggers: {}, steps: [] },
-  diagnostics: [],
-  effectBudget: {
-    maxTargets: 1,
-    maxMoves: 0,
-    maxCopies: 0,
-    maxSends: 0,
-    maxDrafts: 0,
-    maxFlagChanges: 0,
-    maxNotifications: 0,
-    maxKeywordChanges: 1,
-    maxCollaborationChanges: 0,
-    maxAiCalls: 0,
-  },
-  languageId: "mail",
-  languageVersion: 1,
-  manifestHash: "b".repeat(64),
-  createdAt: "2026-07-12T00:00:00.000Z",
-};
-
-const workflowDetail = {
-  id: WORKFLOW_ID,
-  mailboxId: MAILBOX_ID,
-  name: "Budgeted workflow",
-  description: null,
-  priority: 100,
-  currentVersionId: WORKFLOW_VERSION_ID,
-  activeVersionId: null,
-  enabled: false,
-  createdAt: "2026-07-12T00:00:00.000Z",
-  updatedAt: "2026-07-12T00:00:01.000Z",
-  currentVersion: workflowVersion,
-  activations: [],
-};
-
-test("workflow validate accepts YAML and sends exact canonical source", async () => {
-  let requestBody: unknown;
-  const server = withMailbox(async (request) => {
-    if (request.method === "POST" && new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/workflows/validate`) {
-      requestBody = await request.json();
-      return api({
-        valid: true,
-        source: (requestBody as { source: string }).source,
-        sourceHash: "a".repeat(64),
-        ir: null,
-        boundPlan: null,
-        diagnostics: [],
-      });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-
-  const result = await runCli(
-    `http://127.0.0.1:${server.port}`,
-    ["--json", "mail", "workflow", "validate", "--mailbox", MAILBOX_ID, "--source-stdin"],
-    workflowSource,
-  );
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.stderr).toBe("");
-  expect(requestBody).toEqual({ source: workflowSource });
-  expect(JSON.parse(result.stdout)).toMatchObject({ valid: true, sourceHash: "a".repeat(64) });
-});
-
-test("workflow create forwards explicit effect budgets", async () => {
-  let requestBody: Record<string, unknown> | null = null;
-  const server = withMailbox(async (request) => {
-    const url = new URL(request.url);
-    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/workflows`) {
-      requestBody = (await request.json()) as Record<string, unknown>;
-      return api({
-        id: WORKFLOW_ID,
-        name: "Budgeted workflow",
-        currentVersion: { id: WORKFLOW_VERSION_ID },
-      });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-
-  const result = await runCli(
-    `http://127.0.0.1:${server.port}`,
-    [
-      "--json",
-      "mail",
-      "workflow",
-      "create",
-      "--mailbox",
-      MAILBOX_ID,
-      "--name",
-      "Budgeted workflow",
-      "--source-stdin",
-      "--max-targets",
-      "25",
-      "--max-moves",
-      "10",
-      "--max-keyword-changes",
-      "20",
-      "--max-collaboration-changes",
-      "15",
-      "--max-ai-calls",
-      "3",
-    ],
-    workflowSource,
-  );
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(requestBody as Record<string, unknown> | null).toMatchObject({
-    name: "Budgeted workflow",
-    source: workflowSource,
-    effectBudget: { maxTargets: 25, maxMoves: 10, maxKeywordChanges: 20, maxCollaborationChanges: 15, maxAiCalls: 3 },
-  });
-});
-
-test("workflow update reads optimistic state before patching metadata", async () => {
-  const requests: Array<{ method: string; body: unknown }> = [];
-  const server = withMailbox(async (request) => {
-    const url = new URL(request.url);
-    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/workflows/${WORKFLOW_ID}`) {
-      if (request.method === "GET") return api(workflowDetail);
-      requests.push({ method: request.method, body: await request.json() });
-      return api({ ...workflowDetail, name: "Renamed", description: null, priority: 25 });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "mail",
-    "workflow",
-    "update",
-    WORKFLOW_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--name",
-    "Renamed",
-    "--clear-description",
-    "--priority",
-    "25",
-  ]);
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.stderr).toBe("");
-  expect(requests).toEqual([
-    {
-      method: "PATCH",
-      body: {
-        expectedUpdatedAt: workflowDetail.updatedAt,
-        name: "Renamed",
-        description: null,
-        priority: 25,
-      },
-    },
-  ]);
-});
-
-test("workflow export writes exact YAML bytes and structured versions", async () => {
-  const requestedPaths: string[] = [];
-  const server = withMailbox((request) => {
-    const url = new URL(request.url);
-    requestedPaths.push(url.pathname);
-    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/workflows/${WORKFLOW_ID}`) return api(workflowDetail);
-    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/workflows/${WORKFLOW_ID}/versions/${WORKFLOW_VERSION_ID}`) {
-      return api(workflowVersion);
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-  const origin = `http://127.0.0.1:${server.port}`;
-
-  const current = await runCli(origin, ["mail", "workflow", "export", WORKFLOW_ID, "--mailbox", MAILBOX_ID]);
-  const historical = await runCli(origin, [
-    "--json",
-    "mail",
-    "workflow",
-    "export",
-    WORKFLOW_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--version-id",
-    WORKFLOW_VERSION_ID,
-  ]);
-
-  expect(current).toEqual({ exitCode: 0, stdout: workflowSource, stderr: "" });
-  expect(historical.exitCode).toBe(0);
-  expect(historical.stderr).toBe("");
-  expect(JSON.parse(historical.stdout)).toEqual(workflowVersion);
-  expect(requestedPaths).toEqual([
-    `/api/mail/mailboxes/${MAILBOX_ID}/workflows/${WORKFLOW_ID}`,
-    `/api/mail/mailboxes/${MAILBOX_ID}/workflows/${WORKFLOW_ID}/versions/${WORKFLOW_VERSION_ID}`,
-  ]);
-});
-
-test("workflow version restore forwards the expected current version", async () => {
-  let body: unknown;
-  const server = withMailbox(async (request) => {
-    const url = new URL(request.url);
-    if (
-      request.method === "POST" &&
-      url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/workflows/${WORKFLOW_ID}/versions/${WORKFLOW_VERSION_ID}/restore`
-    ) {
-      body = await request.json();
-      return api({ ...workflowDetail, currentVersion: { ...workflowVersion, id: "00000000-0000-4000-8000-000000000015" } });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "mail",
-    "workflow",
-    "version",
-    "restore",
-    WORKFLOW_ID,
-    WORKFLOW_VERSION_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--current-version-id",
-    WORKFLOW_VERSION_ID,
-  ]);
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.stderr).toBe("");
-  expect(body).toEqual({ expectedCurrentVersionId: WORKFLOW_VERSION_ID });
 });
 
 test("provider discovery exposes mailbox-scoped autoconfiguration candidates", async () => {
@@ -5290,478 +5026,6 @@ test("provider limit commands expose cached evidence and explicit refresh", asyn
   expect(JSON.parse(refreshed.stdout)).toEqual(connection);
   expect(methods).toEqual(["GET", "POST"]);
 });
-
-test("automatic reply commands cover list, create, and revision-checked update", async () => {
-  const input = {
-    name: "Out of office",
-    enabled: true,
-    senderIdentityId: IDENTITY_ID,
-    subject: "Re: your message",
-    body: "I am away.",
-    format: "plain",
-    ensureReference: false,
-    minimumIntervalHours: 24,
-    inactiveBehavior: "skip",
-    schedule: {
-      mode: "windows",
-      timeZone: "UTC",
-      activeRanges: [],
-      weeklyWindows: [{ weekday: 1, start: "09:00", end: "17:00" }],
-      exceptions: [],
-    },
-  };
-  const configuration = {
-    id: AUTOMATIC_REPLY_ID,
-    mailboxId: MAILBOX_ID,
-    workflowId: WORKFLOW_ID,
-    workflowVersionId: crypto.randomUUID(),
-    ...input,
-    revision: 1,
-    createdAt: "2026-07-19T00:00:00.000Z",
-    updatedAt: "2026-07-19T00:00:00.000Z",
-  };
-  const requests: Array<{ method: string; body: unknown }> = [];
-  const server = withMailbox(async (request) => {
-    const url = new URL(request.url);
-    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/automatic-replies`) {
-      if (request.method === "GET") return api([configuration]);
-      const body = await request.json();
-      requests.push({ method: request.method, body });
-      return api({ automaticReply: configuration, referenceConfiguration: null });
-    }
-    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/automatic-replies/${AUTOMATIC_REPLY_ID}`) {
-      const body = await request.json();
-      requests.push({ method: request.method, body });
-      return api({ automaticReply: { ...configuration, revision: 2 }, referenceConfiguration: null });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-  const serverUrl = `http://127.0.0.1:${server.port}`;
-  const source = JSON.stringify(input);
-
-  const listed = await runCli(serverUrl, ["--json", "mail", "automatic-reply", "list", "--mailbox", MAILBOX_ID]);
-  const created = await runCli(
-    serverUrl,
-    ["--json", "mail", "automatic-reply", "create", "--mailbox", MAILBOX_ID, "--configuration-stdin"],
-    source,
-  );
-  const updated = await runCli(
-    serverUrl,
-    [
-      "--json",
-      "mail",
-      "automatic-reply",
-      "update",
-      AUTOMATIC_REPLY_ID,
-      "--mailbox",
-      MAILBOX_ID,
-      "--revision",
-      "1",
-      "--configuration-stdin",
-    ],
-    source,
-  );
-
-  expect([listed.exitCode, created.exitCode, updated.exitCode]).toEqual([0, 0, 0]);
-  expect(JSON.parse(listed.stdout)).toEqual([configuration]);
-  expect(JSON.parse(created.stdout)).toMatchObject({ id: AUTOMATIC_REPLY_ID, revision: 1 });
-  expect(JSON.parse(updated.stdout)).toMatchObject({ id: AUTOMATIC_REPLY_ID, revision: 2 });
-  expect(requests).toEqual([
-    { method: "POST", body: { automaticReply: input } },
-    { method: "PATCH", body: { automaticReply: { expectedRevision: 1, ...input } } },
-  ]);
-});
-
-test("sender commands cover preview and durable existing-message backfills", async () => {
-  const operationId = crypto.randomUUID();
-  let retryStatus: "limited" | "completed" | undefined;
-  const automation = {
-    id: INCOMING_AUTOMATION_ID,
-    mailboxId: MAILBOX_ID,
-    workflowId: WORKFLOW_ID,
-    workflowVersionId: crypto.randomUUID(),
-    name: "Example sender",
-    enabled: true,
-    scope: {
-      mode: "matching",
-      conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: "sender@example.test" }] },
-    },
-    steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
-    latestBackfillOperationId: null,
-    workflowSource: "name: Example sender",
-    revision: 3,
-    createdAt: "2026-07-26T00:00:00.000Z",
-    updatedAt: "2026-07-26T00:00:00.000Z",
-  };
-  const requests: Array<{ method: string; path: string; body?: Record<string, unknown> }> = [];
-  const server = withMailbox(async (request) => {
-    const url = new URL(request.url);
-    const base = `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations`;
-    if (request.method === "GET" && url.pathname === base) return api([automation]);
-    if (request.method === "GET" && url.pathname === `${base}/${INCOMING_AUTOMATION_ID}`) return api(automation);
-    if (request.method === "POST" && url.pathname === `${base}/preview`) {
-      requests.push({ method: request.method, path: url.pathname, body: (await request.json()) as Record<string, unknown> });
-      return api({ messageCount: 6, conversationCount: 4 });
-    }
-    if (request.method === "POST" && url.pathname === `${base}/${INCOMING_AUTOMATION_ID}/backfills`) {
-      const body = (await request.json()) as Record<string, unknown>;
-      requests.push({ method: request.method, path: url.pathname, body });
-      return api({
-        operationId: body.operationId,
-        retryFailed: body.retryFailed === true,
-        automationId: INCOMING_AUTOMATION_ID,
-        workflowVersionId: automation.workflowVersionId,
-        state: "queued",
-        candidateCount: 6,
-        alreadyAcceptedCount: 0,
-        newlyAcceptedCount: 0,
-        remainingCount: 6,
-        failureCount: 0,
-        lastError: null,
-        createdAt: "2026-07-28T00:00:00.000Z",
-        updatedAt: "2026-07-28T00:00:00.000Z",
-      });
-    }
-    if (request.method === "GET" && url.pathname === `${base}/${INCOMING_AUTOMATION_ID}/backfills/${operationId}`) {
-      requests.push({ method: request.method, path: url.pathname });
-      return api({
-        operationId,
-        automationId: INCOMING_AUTOMATION_ID,
-        workflowVersionId: automation.workflowVersionId,
-        state: retryStatus ?? "running",
-        retryFailed: retryStatus !== undefined,
-        candidateCount: 6,
-        alreadyAcceptedCount: retryStatus ? 0 : 2,
-        newlyAcceptedCount: retryStatus === "completed" ? 6 : 3,
-        remainingCount: retryStatus === "completed" ? 0 : 1,
-        failureCount: 0,
-        lastError: null,
-        createdAt: "2026-07-28T00:00:00.000Z",
-        updatedAt: "2026-07-28T00:00:01.000Z",
-      });
-    }
-    if (request.method === "DELETE" && url.pathname === `${base}/${INCOMING_AUTOMATION_ID}/backfills/${operationId}`) {
-      requests.push({ method: request.method, path: url.pathname });
-      return api({
-        operationId,
-        automationId: INCOMING_AUTOMATION_ID,
-        workflowVersionId: automation.workflowVersionId,
-        state: "canceled",
-        retryFailed: false,
-        candidateCount: 6,
-        alreadyAcceptedCount: 2,
-        newlyAcceptedCount: 3,
-        remainingCount: 1,
-        failureCount: 0,
-        lastError: null,
-        createdAt: "2026-07-28T00:00:00.000Z",
-        updatedAt: "2026-07-28T00:00:02.000Z",
-      });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-  const origin = `http://127.0.0.1:${server.port}`;
-
-  const previewed = await runCli(origin, [
-    "--json",
-    "mail",
-    "sender",
-    "preview",
-    "--mailbox",
-    MAILBOX_ID,
-    "--match",
-    "sender",
-    "--value",
-    "sender@example.test",
-  ]);
-  const started = await runCli(origin, [
-    "--json",
-    "mail",
-    "automation",
-    "backfill",
-    "start",
-    INCOMING_AUTOMATION_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--revision",
-    "3",
-    "--yes",
-  ]);
-  const startedResult = JSON.parse(started.stdout);
-  const status = await runCli(origin, [
-    "--json",
-    "mail",
-    "automation",
-    "backfill",
-    "status",
-    INCOMING_AUTOMATION_ID,
-    operationId,
-    "--mailbox",
-    MAILBOX_ID,
-  ]);
-  const canceled = await runCli(origin, [
-    "--json",
-    "mail",
-    "automation",
-    "backfill",
-    "cancel",
-    INCOMING_AUTOMATION_ID,
-    operationId,
-    "--mailbox",
-    MAILBOX_ID,
-    "--yes",
-  ]);
-
-  expect([previewed.exitCode, started.exitCode, status.exitCode, canceled.exitCode]).toEqual([0, 0, 0, 0]);
-  expect(JSON.parse(previewed.stdout)).toMatchObject({ messageCount: 6, conversationCount: 4 });
-  expect(startedResult).toMatchObject({
-    automationId: INCOMING_AUTOMATION_ID,
-    state: "queued",
-    candidateCount: 6,
-  });
-  expect(JSON.parse(status.stdout)).toMatchObject({ operationId, state: "running", remainingCount: 1 });
-  expect(JSON.parse(canceled.stdout)).toMatchObject({ operationId, state: "canceled" });
-  expect(requests).toHaveLength(4);
-  expect(requests[0]).toEqual({
-    method: "POST",
-    path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/preview`,
-    body: {
-      scope: {
-        mode: "matching",
-        conditions: {
-          mode: "all",
-          items: [{ field: "sender_address", operator: "is", value: "sender@example.test" }],
-        },
-      },
-    },
-  });
-  expect(requests[1]).toMatchObject({
-    method: "POST",
-    path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}/backfills`,
-    body: { expectedRevision: 3, operationId: expect.any(String) },
-  });
-  expect(requests[1]?.body).not.toHaveProperty("retryFailed");
-  expect(requests[2]).toEqual({
-    method: "GET",
-    path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}/backfills/${operationId}`,
-  });
-  expect(requests[3]).toEqual({
-    method: "DELETE",
-    path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}/backfills/${operationId}`,
-  });
-  const retried = await runCli(origin, [
-    "mail",
-    "automation",
-    "backfill",
-    "start",
-    INCOMING_AUTOMATION_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--revision",
-    "3",
-    "--retry-failed",
-    "--yes",
-  ]);
-  expect(retried.exitCode).toBe(0);
-  expect(requests[4]?.body).toEqual({ expectedRevision: 3, operationId: expect.any(String), retryFailed: true });
-  expect(retried.stdout).toContain("Started retry backfill ");
-  expect(retried.stdout).toContain("for 6 messages whose last run failed or was canceled.");
-  const recomputed = await runCli(origin, [
-    "mail",
-    "automation",
-    "backfill",
-    "start",
-    INCOMING_AUTOMATION_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--revision",
-    "3",
-    "--retry-failed",
-    "--recompute-ai",
-    "--yes",
-  ]);
-  expect(recomputed.exitCode).toBe(0);
-  expect(requests[5]?.body).toEqual({ expectedRevision: 3, operationId: expect.any(String), retryFailed: true, recomputeAi: true });
-  for (const state of ["limited", "completed"] as const) {
-    retryStatus = state;
-    const retry = await runCli(origin, [
-      "mail",
-      "automation",
-      "backfill",
-      "status",
-      INCOMING_AUTOMATION_ID,
-      operationId,
-      "--mailbox",
-      MAILBOX_ID,
-    ]);
-    expect(retry.exitCode).toBe(0);
-    expect(retry.stdout.trim()).toBe(
-      state === "limited"
-        ? "limited: 3/6 re-run, 1 remaining; run another retry backfill to continue"
-        : "completed: 6/6 re-run, 0 remaining",
-    );
-  }
-}, 20_000);
-
-test("incoming automation create names every invalid field before calling the API", async () => {
-  const requests: string[] = [];
-  const server = withMailbox((request) => {
-    requests.push(`${request.method} ${new URL(request.url).pathname}`);
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-  const origin = `http://127.0.0.1:${server.port}`;
-  const step = { id: "11111111-1111-4111-8111-111111111111", kind: "mail_action", action: { kind: "trash" } };
-  const condition = { field: "sender_address", operator: "is", value: "user@example.com" };
-  const create = (definition: unknown) =>
-    runCli(origin, ["--json", "mail", "automation", "create", "--mailbox", MAILBOX_ID, "--definition-stdin"], JSON.stringify(definition));
-
-  const listConditions = await create({ name: "Trash", scope: { mode: "matching", conditions: [condition] }, steps: [step] });
-  const wrongInnerKey = await create({
-    name: "Trash",
-    scope: { mode: "matching", conditions: { mode: "all", conditions: [condition] } },
-    steps: [step],
-  });
-
-  expect(listConditions.exitCode).toBe(1);
-  expect(listConditions.stderr).toContain("scope.conditions: Expected an object, got a list.");
-  expect(wrongInnerKey.exitCode).toBe(1);
-  expect(wrongInnerKey.stderr).toContain("scope.conditions.items: Required. Expected a list.");
-  expect(wrongInnerKey.stderr).toContain("scope.conditions.conditions: Unknown field.");
-  expect(requests.filter((request) => request.includes("incoming-automations"))).toEqual([]);
-});
-
-test("incoming automation CRUD accepts complete mixed-flow definitions and preserves revision fences", async () => {
-  const definition = {
-    name: "Example sender",
-    enabled: true,
-    scope: {
-      mode: "matching",
-      conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: "sender@example.test" }] },
-    },
-    steps: [
-      { id: "00000000-0000-4000-8000-000000000040", kind: "mail_action", action: { kind: "mark_read" } },
-      {
-        id: "00000000-0000-4000-8000-000000000041",
-        kind: "ai_generate_text",
-        instructions: "Summarize this message",
-        maxOutputChars: 2_000,
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000043",
-        kind: "create_reply_draft",
-        body: { kind: "step_output", sourceStepId: "00000000-0000-4000-8000-000000000041" },
-        senderIdentityId: IDENTITY_ID,
-      },
-    ],
-  };
-  const automation = {
-    id: INCOMING_AUTOMATION_ID,
-    mailboxId: MAILBOX_ID,
-    workflowId: WORKFLOW_ID,
-    workflowVersionId: crypto.randomUUID(),
-    name: "Example sender",
-    enabled: true,
-    scope: definition.scope,
-    steps: definition.steps,
-    latestBackfillOperationId: null,
-    workflowSource: "name: Example sender",
-    revision: 3,
-    createdAt: "2026-07-26T00:00:00.000Z",
-    updatedAt: "2026-07-26T00:00:00.000Z",
-  };
-  const mutations: Array<{ method: string; path: string; body: unknown }> = [];
-  const server = withMailbox(async (request) => {
-    const url = new URL(request.url);
-    const base = `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations`;
-    if (request.method === "GET" && url.pathname === `${base}/catalog`) {
-      return api({
-        folders: [{ id: FOLDER_ID, name: "Inbox", role: "inbox" }],
-        assignableUsers: [],
-        localTags: [],
-      });
-    }
-    if (request.method === "GET" && url.pathname === base) return api([automation]);
-    if (request.method === "GET" && url.pathname === `${base}/${INCOMING_AUTOMATION_ID}`) return api(automation);
-    if (url.pathname === base && request.method === "POST") {
-      mutations.push({ method: request.method, path: url.pathname, body: await request.json() });
-      return api(automation);
-    }
-    if (url.pathname === `${base}/${INCOMING_AUTOMATION_ID}` && (request.method === "PUT" || request.method === "DELETE")) {
-      mutations.push({ method: request.method, path: url.pathname, body: await request.json() });
-      return api(request.method === "PUT" ? { ...automation, name: "Updated sender", enabled: false, revision: 4 } : automation);
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-  const origin = `http://127.0.0.1:${server.port}`;
-
-  const listed = await runCli(origin, ["--jsonl", "mail", "automation", "list", "--mailbox", MAILBOX_ID]);
-  const catalog = await runCli(origin, ["--json", "mail", "automation", "catalog", "--mailbox", MAILBOX_ID]);
-  const created = await runCli(
-    origin,
-    ["--json", "mail", "automation", "create", "--mailbox", MAILBOX_ID, "--definition-stdin"],
-    JSON.stringify(definition),
-  );
-  const updatedDefinition = { ...definition, name: "Updated sender", enabled: false };
-  const updated = await runCli(
-    origin,
-    ["--json", "mail", "automation", "update", INCOMING_AUTOMATION_ID, "--mailbox", MAILBOX_ID, "--revision", "3", "--definition-stdin"],
-    JSON.stringify(updatedDefinition),
-  );
-  const stale = await runCli(
-    origin,
-    ["--json", "mail", "automation", "update", INCOMING_AUTOMATION_ID, "--mailbox", MAILBOX_ID, "--revision", "2", "--definition-stdin"],
-    JSON.stringify(definition),
-  );
-  const missingEnabled = await runCli(
-    origin,
-    ["--json", "mail", "automation", "update", INCOMING_AUTOMATION_ID, "--mailbox", MAILBOX_ID, "--revision", "3", "--definition-stdin"],
-    JSON.stringify({ name: definition.name, scope: definition.scope, steps: definition.steps }),
-  );
-  const deleted = await runCli(origin, [
-    "--json",
-    "mail",
-    "automation",
-    "delete",
-    INCOMING_AUTOMATION_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--revision",
-    "3",
-    "--yes",
-  ]);
-
-  expect([listed.exitCode, catalog.exitCode, created.exitCode, updated.exitCode, deleted.exitCode]).toEqual([0, 0, 0, 0, 0]);
-  expect(JSON.parse(listed.stdout)).toEqual(automation);
-  expect(JSON.parse(catalog.stdout)).toMatchObject({ folders: [{ id: FOLDER_ID, name: "Inbox" }] });
-  expect(JSON.parse(created.stdout)).toMatchObject({ id: INCOMING_AUTOMATION_ID, revision: 3 });
-  expect(JSON.parse(updated.stdout)).toMatchObject({ name: "Updated sender", enabled: false, revision: 4 });
-  expect(stale.exitCode).toBe(1);
-  expect(stale.stderr).toContain("Incoming automation is at revision 3, not 2");
-  expect(missingEnabled.exitCode).toBe(1);
-  expect(missingEnabled.stderr).toContain("must explicitly set enabled");
-  expect(JSON.parse(deleted.stdout)).toMatchObject({ id: INCOMING_AUTOMATION_ID, revision: 3 });
-  expect(mutations).toEqual([
-    {
-      method: "POST",
-      path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations`,
-      body: definition,
-    },
-    {
-      method: "PUT",
-      path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}`,
-      body: { expectedRevision: 3, ...updatedDefinition },
-    },
-    {
-      method: "DELETE",
-      path: `/api/mail/mailboxes/${MAILBOX_ID}/incoming-automations/${INCOMING_AUTOMATION_ID}`,
-      body: { expectedRevision: 3 },
-    },
-  ]);
-}, 20_000);
 
 test("both mailbox access adapters forward scope, preserve omitted scope, and reject invalid scopes", async () => {
   const writes: Array<{ path: string; body: unknown }> = [];
@@ -5899,6 +5163,37 @@ test("reply and forward pass per-draft signature choices", async () => {
     expect.objectContaining({ signatureTemplateId: null, intent: "reply" }),
     expect.objectContaining({ signatureTemplateId: "Sign01", intent: "forward" }),
     expect.objectContaining({ signatureTemplateId: null, intent: "forward" }),
+  ]);
+});
+
+test("sender preview counts matching mail without rule admission or writes", async () => {
+  const requests: Array<{ method: string; path: string; match: string | null; value: string | null }> = [];
+  const server = withMailbox((request) => {
+    const url = new URL(request.url);
+    requests.push({
+      method: request.method,
+      path: url.pathname,
+      match: url.searchParams.get("match"),
+      value: url.searchParams.get("value"),
+    });
+    return api({ messageCount: 501, conversationCount: 410, capped: true, applicationLimit: 500 });
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "sender",
+    "preview",
+    "--mailbox",
+    MAILBOX_ID,
+    "--match",
+    "domain",
+    "--value",
+    "example.com",
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout).toContain("501 messages in 410 conversations match; count capped at 501.");
+  expect(requests).toEqual([
+    { method: "GET", path: `/api/mail/mailboxes/${MAILBOX_ID}/senders/preview`, match: "domain", value: "example.com" },
   ]);
 });
 
@@ -6130,77 +5425,6 @@ test("mailbox view get and set resolve a mailbox and preserve omitted device cla
     expect(invalid.exitCode).not.toBe(0);
   }
   expect(requests).toHaveLength(before);
-});
-
-test("workflow try follows cursors, merges AI ranges and supports unsaved YAML files", async () => {
-  const requests: unknown[] = [];
-  const fixture = (checked: number) => ({
-    window: { last: 2, total: 2 },
-    checked,
-    cursor: checked === 1 ? "next-preview" : null,
-    items: [
-      {
-        messageId: checked === 1 ? "Messg1" : "Messg2",
-        conversationId: "Convo1",
-        from: { name: "Mara", email: "mara@example.test" },
-        subject: `Offer ${checked}`,
-        receivedAt: "2026-10-20T12:00:00.000Z",
-        outcome: checked === 1 ? "match" : "none",
-        reason: null,
-        facts: [],
-        effects: [],
-        stoppedAtAi: checked === 1,
-        problems: [],
-        aiCalls: { min: checked === 1 ? 1 : 0, max: checked === 1 ? 2 : 0 },
-      },
-    ],
-    aiCalls: { min: checked === 1 ? 1 : 0, max: checked === 1 ? 2 : 0 },
-    maxAiCallsPerDay: null,
-    preflight: { targets: [], sends: false, writesDrafts: false, aiSteps: 2 },
-  });
-  const server = withMailbox(async (request) => {
-    if (new URL(request.url).pathname.endsWith("/workflows/try")) {
-      const body = await request.json();
-      requests.push(body);
-      return api(fixture(body.cursor ? 2 : 1));
-    }
-    return api({}, { status: 404 });
-  });
-  servers.push(server);
-  const text = await runCli(server.url.origin, ["mail", "workflow", "try", WORKFLOW_ID, "--mailbox", MAILBOX_ID, "--last", "2"]);
-  expect(text.exitCode).toBe(0);
-  expect(text.stdout).toContain("1 match · 0 skipped · 1 none · 1–2 AI calls would be needed, none made");
-  expect(text.stdout).toContain("match · Mara · Offer 1 · Messg1");
-  expect(requests.slice(0, 2)).toEqual([
-    { workflowId: WORKFLOW_ID, last: 2, cursor: null, batch: 25 },
-    { workflowId: WORKFLOW_ID, last: 2, cursor: "next-preview", batch: 25 },
-  ]);
-  const structured = await runCli(server.url.origin, [
-    "--json",
-    "mail",
-    "workflow",
-    "try",
-    WORKFLOW_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--last",
-    "2",
-  ]);
-  expect(structured.exitCode).toBe(0);
-  expect(JSON.parse(structured.stdout)).toMatchObject({
-    checked: 2,
-    cursor: null,
-    items: [fixture(1).items[0], fixture(2).items[0]],
-    aiCalls: { min: 1, max: 2 },
-  });
-  const path = join(tmpdir(), `workflow-try-${crypto.randomUUID()}.yaml`);
-  temporaryFiles.push(path);
-  await writeFile(path, "steps:\n  - succeed: { message: Done }\n");
-  const unsaved = await runCli(server.url.origin, ["mail", "workflow", "try", "--file", path, "--mailbox", MAILBOX_ID, "--last", "2"]);
-  expect(unsaved.exitCode).toBe(0);
-  expect(requests.at(-1)).toMatchObject({ source: "steps:\n  - succeed: { message: Done }\n", last: 2 });
-  const invalid = await runCli(server.url.origin, ["mail", "workflow", "try", WORKFLOW_ID, "--file", path, "--mailbox", MAILBOX_ID]);
-  expect(invalid.exitCode).not.toBe(0);
 });
 
 test("protected summary CLI invokes the idempotent capability with explicit revision fences", async () => {

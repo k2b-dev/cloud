@@ -70,7 +70,7 @@ Jemand mit Zugriff **Verwalten** hat das Postfach pausiert oder wiederhergestell
 3. Wähle **Postfach fortsetzen**.
 :::
 
-Solange das Postfach pausiert ist, laufen weder eingehende Synchronisierung noch eingereihte Änderungen beim Anbieter, geplante Zustellungen oder automatische Antworten.
+Solange das Postfach pausiert ist, laufen weder eingehende Synchronisierung noch eingereihte Änderungen beim Anbieter oder geplante Zustellungen.
 
 ## Eine Nachricht lässt sich nicht senden {icon="point"}
 
@@ -88,17 +88,6 @@ Prüfe diese Bedingungen:
 Ein Anhang kann das Limit von Mail mit 100 MiB pro Datei einhalten, während die vollständige kodierte Nachricht ein kleineres Limit des Anbieters überschreitet. Entferne einen oder mehrere Anhänge, oder erstelle einen öffentlichen Download-Link und sende stattdessen diesen Link. Mit Zugriff **Verwalten** prüfst und aktualisierst du die beobachteten Werte unter **… → Postfachstatus → Anbieterlimits**.
 
 Haben sich die Zugangsdaten beim Anbieter geändert, nutze **… → Einstellungen → Konten und Identitäten → Verbundenes Konto → Konto bearbeiten**. Mail kann das vorhandene Geheimnis nicht anzeigen, und du kannst es nicht teilweise bearbeiten.
-
-## Automatische Antworten melden, dass keine Absenderidentität verfügbar ist {icon="send"}
-
-Öffne **… → Einstellungen → Konten und Identitäten → Absenderidentitäten**. Prüfe, dass eine Absenderidentität beide Bedingungen erfüllt:
-
-:::steps
-1. Der Status der Absenderidentität ist **Bereit**.
-2. **Automatische Antworten** ist eingeschaltet.
-:::
-
-Kehre dann zu **Automatisierungen → Automatische Antworten** zurück. Vorhandene automatische Antworten können sichtbar bleiben, solange keine passende Absenderidentität existiert. Um eine automatische Antwort zu erstellen oder wieder einzuschalten, brauchst du eine passende Absenderidentität.
 
 ## Eine geplante Nachricht wurde nicht gesendet {icon="send"}
 

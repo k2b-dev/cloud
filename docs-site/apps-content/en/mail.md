@@ -94,7 +94,7 @@ automatic marking as read.
 - Assign conversations, maintain a shared summary, leave internal comments,
   browse by local tag, and mark work done while Mail derives whether the next
   step needs action or is waiting for a reply.
-- See meaningful status, assignment, tag, summary, and workflow changes quietly
+- See meaningful status, assignment, tag, and summary changes quietly
   in the conversation at the time they happened.
 - Continue the newest unfinished conversation draft directly from the reader.
 - Compose and schedule messages through verified sender identities. The
@@ -102,11 +102,7 @@ automatic marking as read.
   from one of them, such as Files. Attachments from an app arrive as copies
   and follow the same upload limits as files from the device.
 - Review detected mailing lists and safely request unsubscribe or clean up existing messages when permitted.
-- Use incoming automations, automatic replies, or reviewed workflows for
-  recurring mailbox work. One incoming automation can mark mail read and then
-  move it, and its conditions can exclude senders, domains, or text. When several
-  automations match, the oldest decides the folder, and an automation skips a
-  read or keyword step for mail that has moved or is being moved.
+- Use reviewed mailbox **Code** for recurring work. Preview a real message without effects, then activate deliberately. Existing messages can be processed with bounded catch-up.
 
 Provider folders and message flags can appear in other mail clients. Cloud-only
 collaboration fields stay in Mail.
@@ -119,7 +115,7 @@ collaboration fields stay in Mail.
 | Conversation and message | A synchronized thread and its individual received or sent messages |
 | Sender identity and draft | Verified sending context and message content before delivery |
 | Collaboration state | Editable summaries, assignees, comments, local tags, reminders, and a derived next step with manual Done |
-| Incoming automation and workflow | Reviewed flows that match incoming mail and mix bounded Mail and AI actions |
+| Mailbox Code | Reviewed handlers for incoming mail, with preview, catch-up, and visible runs |
 
 The email provider remains the source for portable mail state. Mail keeps a
 synchronized Cloud copy for search, collaboration, durable commands, and
@@ -135,44 +131,19 @@ Moving, archiving, filing, and marking read change no work status. Follow-up and
 
 ### Finish work and keep the provider Inbox in step
 
-Mark **Done** in **Conversation details**, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
+Mark **Done** in **Conversation details**, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`.
 Done updates only Cloud collaboration state and activity, clears **Show later**, and sends no provider command. It does not archive, move, or mark read. Other mail clients still show the email in the provider Inbox.
 
-To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`, or add `move_to_folder` to the same automation.
+To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`.
 The archive command takes up to 50 IDs and acts on Inbox messages unless `--in` names another folder. On Gmail, it removes only the Inbox label. Archiving keeps the work status; it never marks Done.
 
 ### File noise and keep important mail visible
 
-For newsletters, sign-in codes, or shipping updates, use one automation: `mark_read`, `set_status: done`, then `move_to_folder`. Save this as `newsletter.yaml`:
-
-```yaml
-name: File the Example newsletter
-enabled: true
-scope:
-  mode: matching
-  conditions:
-    mode: all
-    items:
-      - { field: sender_domain, operator: is, value: news.example.com }
-steps:
-  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b01
-    kind: mail_action
-    action: { kind: mark_read }
-  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b02
-    kind: mail_action
-    action: { kind: set_status, status: done }
-  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b03
-    kind: mail_action
-    action: { kind: move_to_folder, folderId: Newsletters }
-```
-
-Create it with `cld --json mail automation create --definition-file newsletter.yaml`. This example is enabled; omitting `enabled` defaults to `false`.
-For important mail, add no status step: incoming mail already sets **Needs action**.
-
-In the guided editor, **AI classify** starts with **Important**, **Routine**, and an If branch: **Set status → Needs action** for **Important**, **Set status → Done** otherwise. Add **Move to folder** to the **Routine** branch to file it too.
-An automation's **Done** or **Waiting for reply** covers only its triggering message, even if Mail loads it later or gives up loading it. Other incoming mail sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
-When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
-For existing mail, enable a saved automation without AI steps, then run `cld --json mail automation backfill start <automation-id> --revision <revision> --yes`. One backfill hands over at most 100 messages; `limited` means run it again. For moving only, see [`cld mail sender move`](#automate-mail-from-the-terminal).
+Use the mailbox **Code** page for recurring actions such as marking newsletters
+read and moving them to a folder. Ask Gustav to rebuild exported rules as Code,
+review the proposed effects, and preview a real message before activation.
+Use bounded catch-up for existing mail. See
+[Mail automations with Code](/en/docs/platform/mail-code-automations).
 
 ### Choose the right follow-up and mailbox pattern
 
@@ -182,7 +153,7 @@ For existing mail, enable a saved automation without AI steps, then run `cld --j
 
 For a personal mailbox, work from **Needs action**. Automations mark noise Done and file it. Mark Done when finished; also archive if you want another mail client's Inbox clean. **Waiting for reply** follows automatically; use **Show later** for date-dependent work.
 
-For a shared mailbox, use **Unassigned** with **Needs action** as team intake. Assign an owner with **Assign**, `cld mail assign <id> --to <user>`, or automation `assign_user`. Each person works from **Assigned to me**; the owner's confirmed reply sets **Waiting for reply**, and the owner marks **Done**. For team folders outside shared lists, use [**Only in the folder**](#choose-where-a-folders-mail-appears).
+For a shared mailbox, use **Unassigned** with **Needs action** as team intake. Assign an owner with **Assign**, `cld mail assign <id> --to <user>`, or reviewed Code. Each person works from **Assigned to me**; the owner's confirmed reply sets **Waiting for reply**, and the owner marks **Done**. For team folders outside shared lists, use [**Only in the folder**](#choose-where-a-folders-mail-appears).
 
 ### Make a clean start with old conversations
 
@@ -262,7 +233,7 @@ the provider's role or by the role configured in Mail; Drafts is included
 because Mail imports what lands there as drafts, and discarding a draft deletes
 it on the server. The check sits where every Mail command is
 created and again right before the mail server is changed, so the web app,
-selections, incoming automations, workflows, the API, `cld`, and the Assistant
+selections, Code, the API, `cld`, and the Assistant
 all get the same answer, also for a delete queued shortly before the keep.
 Archiving, moving between other folders, marking, and replying stay allowed.
 Cancelling a scheduled message also stays allowed, because it was never sent;
@@ -363,12 +334,7 @@ ended stays assigned until removed, also when others are added. The API takes
 `assigneeUserIds` (user or service-account UUIDs) with the modes `add`, `remove`, and `replace` on
 `POST /api/mail/mailboxes/{mailboxId}/conversations/assign`,
 and replaces the whole set with `assigneeUserIds` on the collaboration
-`PATCH`. Lists, search, focus items, and the workflow data type
-`mailConversation` report `assigneeUserIds`; collaboration reports
-`assignees`. The workflow action `assignConversation` keeps its single `user`:
-it accepts an eligible person or machine account by exact name or UUID,
-assigns only when nobody is assigned, and leaves existing assignees in place
-when given `null`.
+`PATCH`. Lists, search, and focus items report `assigneeUserIds`; collaboration reports `assignees`.
 Merging two conversations keeps the assignees of both, and splitting one gives
 the new conversation the same assignees.
 
@@ -421,64 +387,19 @@ mailbox-wide access keeps it; an additional assigned-only grant changes
 nothing. Machine accounts remain capped by credential scopes,
 and disabling an account ends its access.
 
-## Manage automation access
+## Mail automations use Code
 
-An incoming automation that uses Spaces actions needs its creator's authorized
-background access. Disabling or deleting the automation pauses or revokes that
-access. Missing or revoked access stops its actions.
+Guided incoming rules, YAML workflows, their timers and backfills, and rule
+Undo/Redo have been retired. Automatic replies, including out-of-office,
+office-hours and reference acknowledgements, have been removed without replacement.
+Earlier rule logs and runs remain read-only under **Retired rule history**.
 
-Mailbox administrators can pause or delete another person's automation, remove
-its Spaces actions, or make cosmetic changes. Changing a definition that keeps
-Spaces actions, or enabling it again, requires the original author. If Cloud
-denies that change, ask the author to authorize it rather than bypassing the
-check. Cosmetic edits do not restore paused or revoked access.
-
-## Confirm Spaces destinations after an upgrade
-
-Incoming automations keep their saved steps. A configured Space remains the
-only Space where that step may create an event or link an item. The automation
-still acts as the person who authorized it, with that person's current access.
-
-If Mail cannot recover a step's Space, **Automations → Incoming mail** shows
-**Needs attention** and keeps the automation off. Choose **Edit automation**,
-select its Spaces item or event destination again, and save. Then enable it.
-The person who originally authorized Spaces access must confirm it again.
-Older item-link steps need this confirmation because they stored the item ID
-without its Space. Mail keeps the definition for review.
-
-## Re-run failed incoming automations
-
-A backfill skips every message that an earlier backfill already handed to the
-same automation version, even when that run failed or was canceled. To run such
-messages once more, a mailbox administrator starts a retry backfill:
-
-```bash
-cld --json mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes
-cld --json mail automation backfill status <automation-id> <operation-id>
-```
-
-A retry backfill takes only messages whose latest run of the current automation
-version ended `failed` or `canceled` before the retry started, whether that run
-came from new mail or from an earlier backfill. It never repeats a run that
-succeeded, needs attention, or is still running. Like a normal backfill, it
-hands over at most 100 messages: while the status says `limited`, start another
-retry backfill. Each message runs at most once per retry operation.
-
-A retry runs the whole flow again, including the steps that succeeded before
-the failure. Steps that set a state, such as moves, flags, assignment, status,
-tags, the summary, or a Spaces link, set the same state again. Steps that
-create something on every run would create it a second time, so Cloud refuses
-a retry backfill for flows that add internal comments, create reply drafts, or
-create Spaces events. A run that moved its message before it failed is not
-retried, because the message is no longer where that run found it.
-
-To repair failed runs, use retry backfills alone. A normal backfill is for
-messages that arrived before the automation was active: it hands over every
-matching message that no earlier backfill of this version handed over,
-including messages the automation already processed on arrival, so their steps
-run again. After a retry backfill, the automation menu in Mail settings offers
-**Retry failed messages** to continue with another retry. **Automations >
-Activity** shows how the new runs ended.
+For new automation, open the mailbox **Code** page. Review its source and grants,
+preview a chosen message without effects, then activate it. Catch-up processes a
+bounded selection of existing messages with visible progress and cancellation.
+Failed runs remain visible for deliberate replay; inspect completed effects
+before replaying. See [Mail automations with Code](/en/docs/platform/mail-code-automations)
+and the [upgrade guide](/en/docs/operations/mail-automation-upgrade).
 
 ## Format outgoing messages
 
@@ -688,11 +609,11 @@ come from the contact directory.
 ## Find detailed product help
 
 Open **Help** inside Mail for account setup, search, reading, composing,
-collaboration, incoming automations, workflows, administration, and
+collaboration, mailbox Code, administration, and
 troubleshooting.
 Developers can read [Resource authorization](/en/docs/identity/authorization),
 [Notifications](/en/docs/platform/notifications), and
-[Workflow overview](/en/docs/automation/workflow-overview) for the shared
+[Mail automations with Code](/en/docs/platform/mail-code-automations) for the shared
 contracts Mail adopts.
 
 ## Automate Mail from the terminal
@@ -818,10 +739,10 @@ complete history and `message.read` only for an exact body. Attachment metadata
 and extracted content remain separate bounded reads.
 
 Run `cld mail help` for mailbox, conversation, message, collaboration,
-provider, automation, and workflow commands. Run `cld mail <command> --help` before a
+provider and export commands. Run `cld mail <command> --help` before a
 mutation or delivery operation to read its current fields and safety checks.
 
-To clean up existing mail from one sender or domain, check the count with `cld mail sender preview --match domain --value example.com`, then run `cld mail sender move --match domain --value example.com --destination archive --yes`. Use `--destination trash` or `--folder <name-or-id>` for other targets and `--match sender` for one address. Moving needs write access. Like incoming automations, it matches the first From address and never the mailbox's own sender addresses. It leaves mail in Sent, Drafts, Trash, and Junk where it is, and it does not move kept conversations to Trash. On Gmail, it moves each message once from the Inbox, so Archive removes only the Inbox label and a folder replaces it with that label; only Trash and Junk also take archived mail from All Mail. Each call queues at most 500 moves; when the result says `truncated`, run it again after those commands finish.
+To clean up existing mail from one sender or domain, check the count with `cld mail sender preview --match domain --value example.com`, then run `cld mail sender move --match domain --value example.com --destination archive --yes`. Use `--destination trash` or `--folder <name-or-id>` for other targets and `--match sender` for one address. Moving needs write access. It matches the first From address and never the mailbox's own sender addresses. It leaves mail in Sent, Drafts, Trash, and Junk where it is, and it does not move kept conversations to Trash. On Gmail, it moves each message once from the Inbox, so Archive removes only the Inbox label and a folder replaces it with that label; only Trash and Junk also take archived mail from All Mail. Each call queues at most 500 moves; when the result says `truncated`, run it again after those commands finish.
 
 To find commands that did not complete, run `cld mail command list --state failed` or `--state needs_attention`. A full page ends with the `--before` value for the next page. Mailbox admins resolve an unclear provider result with `cld mail operator run reconcile --command <id>`; `operator run retry` repeats only failed maintenance reads, not moves or sends.
 

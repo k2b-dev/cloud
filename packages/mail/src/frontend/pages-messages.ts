@@ -5,6 +5,14 @@ export const mailPageMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      retiredRuleHistoryTitle: "Retired Mail rules",
+      retiredRuleHistoryDescription: "This history is read-only. Create automations with Code. Automatic replies have been removed.",
+      retiredRuleHistoryDay: "Day (UTC)",
+      retiredRuleHistoryDatePlaceholder: "YYYY-MM-DD",
+      retiredRuleHistoryShow: "Show",
+      retiredRuleHistoryOlderEntries: "Older entries",
+      retiredRuleHistoryEarlierRuns: "Earlier runs",
+      retiredRuleHistoryMoreRuns: "More runs",
       printHint: "To print a conversation, open it and choose More conversation actions › Print conversation.",
       breadcrumbStart: "Start",
       breadcrumbMail: "Mail",
@@ -141,6 +149,15 @@ export const mailPageMessages = i18n.define({
       findingIdentityExplanation: "This protected identity normally sends from another domain.",
     },
     de: {
+      retiredRuleHistoryTitle: "Frühere Mail-Regeln",
+      retiredRuleHistoryDescription:
+        "Dieses Protokoll ist nur lesbar. Automatisierungen werden mit Code erstellt. Automatische Antworten gibt es nicht mehr.",
+      retiredRuleHistoryDay: "Tag (UTC)",
+      retiredRuleHistoryDatePlaceholder: "YYYY-MM-DD",
+      retiredRuleHistoryShow: "Anzeigen",
+      retiredRuleHistoryOlderEntries: "Ältere Einträge",
+      retiredRuleHistoryEarlierRuns: "Frühere Ausführungen",
+      retiredRuleHistoryMoreRuns: "Weitere Ausführungen",
       printHint: "Um eine Unterhaltung zu drucken, öffne sie und wähle Weitere Unterhaltungsaktionen › Unterhaltung drucken.",
       breadcrumbStart: "Start",
       breadcrumbMail: "Mail",
