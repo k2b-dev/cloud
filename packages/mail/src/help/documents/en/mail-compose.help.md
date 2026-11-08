@@ -10,13 +10,23 @@ kind: task
 
 ## Start a message {icon="square-plus"}
 
-Choose **Compose** for a new message. In a conversation, choose **Reply**, **Reply all**, **Forward**, or **Quote selection**. Mail first creates a shared draft and then opens its focused composer page. Mail keeps the purpose of the draft, so the final action button says **Send**, **Reply**, **Reply all**, or **Forward**.
+You write in the conversation itself. In a conversation, choose **Reply**, **Reply all**, or **Forward** in the floating bar above the newest message, or **Quote selection** on a message. The bar grows into the draft at the same place, above the newest message, and the cursor stands in the text. On a phone, the bar waits at the bottom, and the draft opens at the top over the full width. Mail creates the shared draft before you type, so nothing exists only in your browser.
+
+Choose **Compose** for a new message. It appears as **New message** at the top of the list, and the reader shows an empty conversation with the draft. After you send it, the message becomes a conversation.
+
+The draft head shows the recipients, **Cc, Bcc**, **…**, **Full screen**, and **Collapse (Esc)**. A quiet line below shows the sender and the subject. Esc leaves full screen first and then collapses the draft. A draft you just started and did not change goes away when you collapse it; any other draft is saved and stays in the conversation.
+
+- **Space:** the draft takes about 60 percent of the reader's height and grows with your text. **Full screen** moves the list and the details aside; Mail remembers this choice in this browser. On a wide screen, the history stands beside the draft.
+- **Signature:** the chosen signature follows the text as a fixed block, exactly as Mail adds it when it sends. Switch it with the signature button in the draft's tools.
+- **Quote:** a reply offers **Attach quote** for the message it answers. The quote is collapsed in the draft and goes out after the signature, with the date in your language and time zone.
+- **Preview:** shows the mail exactly as it arrives, with the mailbox's design. The editor itself keeps a calm Cloud style.
+- **Own window:** **…** › **In its own window** moves the same draft to its own browser window. It never creates a second draft. Old links to the compose page open the conversation with the draft open.
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
 
 While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
 
-The composer is separate from the mailbox workspace. **Back to mailbox** saves the latest changes, releases the editing lease, and returns to the mailbox. **Open in new window** moves the same draft to its own browser window. It never creates a second draft.
+When you open another conversation or mailbox while a draft is open, Mail saves the latest changes before it releases the editing lease. Back and reload open the conversation with the draft open again.
 
 ## Continue the draft with Assistant {icon="sparkles"}
 
@@ -71,7 +81,9 @@ Your default format is in **… → Settings → Writing → Compose format**. C
 
 ## Resume an existing conversation draft {icon="pencil"}
 
-Drafts belong to the mailbox, not only to the browser that created them. When a conversation already has drafts, **Reply**, **Reply all**, or **Forward** opens **Continue a draft?**. The dialog shows who created each draft, when it changed, and a preview of its content. Continue the right draft or create a separate message.
+Drafts belong to the mailbox, not only to the browser that created them. A conversation shows its drafts: the open one in the pill's place, every other one as a row with who wrote it, when it changed, and a preview. Choose a row to open it in place. **Reply**, **Reply all**, or **Forward** opens an existing draft with the same purpose instead of starting a second one. In the list, a conversation with drafts shows **Draft** or the number of drafts with the people who write them.
+
+A suggestion from Gustav is a real draft that is already open in the conversation, in plum, with **Type to take it over, or send it as it is**. It never sends by itself; **Send** sends it as it is. Once someone changes anything, recipients included, it is an ordinary draft, and Gustav never replaces it.
 
 Mail saves the shared draft while you work. It also keeps a recovery journal in the browser for changes that have not reached the server yet. After a reload or a broken connection, Mail can restore these browser changes.
 
