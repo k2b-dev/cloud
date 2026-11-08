@@ -582,7 +582,9 @@
 }
 
 /* ---------------------------------------------------------------- Budget -- */
-.k2b-ui .k2b-budget { min-width: 0; }
+/* A budget row is label and amount on one line over a bar; the list keeps the row measure, so on a wide screen the
+   amount stays within reach of its label instead of drifting to the far edge. */
+.k2b-ui .k2b-budget { min-width: 0; max-width: var(--k2b-row-measure); }
 .k2b-ui .k2b-budget__list { display: flex; flex-direction: column; gap: 0.875rem; margin: 0; padding: 0; list-style: none; }
 .k2b-ui .k2b-budget__anchor {
   display: grid;
@@ -593,6 +595,8 @@
   border-radius: var(--k2b-radius-control);
   font-size: 0.8125rem;
 }
+/* The row tint of a table row: a pointer on a row ties its label to its amount. */
+.k2b-ui .k2b-budget__anchor:hover { background: color-mix(in srgb, var(--k2b-hover) 50%, transparent); }
 .k2b-ui .k2b-budget__label { min-width: 0; overflow: hidden; color: var(--k2b-text-secondary); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-budget__amount { color: var(--k2b-text); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
 .k2b-ui .k2b-budget__amount span { color: var(--k2b-text-muted); font-weight: 500; }
@@ -881,6 +885,17 @@
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value { font-size: clamp(1rem, 13cqi, 1.25rem); line-height: 1.75rem; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value[data-size="sm"] { font-size: clamp(0.875rem, 11cqi, 1rem); line-height: 1.5rem; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value[data-size="lg"] { font-size: clamp(1.125rem, 16cqi, 1.75rem); line-height: 2.25rem; }
+/* Hosts which load unknown formatted values can reserve the badge's row before the value arrives. */
+.k2b-ui .k2b-stat-cell[data-delta-placement="below"] .k2b-stat-cell__main {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  min-height: 3.375rem;
+}
+.k2b-ui .k2b-stat-cell[data-size="sm"][data-delta-placement="below"] .k2b-stat-cell__main { min-height: 3.125rem; }
+.k2b-ui .k2b-stat-cell[data-size="lg"][data-delta-placement="below"] .k2b-stat-cell__main { min-height: 3.875rem; }
+
 .k2b-ui .k2b-stat-cell__value[data-empty] { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-stat-cell__delta {
   display: inline-flex;
