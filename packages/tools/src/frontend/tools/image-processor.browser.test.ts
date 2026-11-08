@@ -119,7 +119,7 @@ describe("Tools public photo editor adoption", () => {
       expect(archive.text).toContain("photo.jpg");
       expect(archive.text).toContain("photo (2).jpg");
       // Decode the actual ZIP members: neither the strip thumbnail nor the fitted display sets export size.
-      expect(await page.evaluate("window.photoFixture.archiveImages()")).toEqual([
+      expect(await page.evaluate<{ name: string; width: number; height: number }[]>("window.photoFixture.archiveImages()")).toEqual([
         { name: "photo.jpg", width: 1067, height: 1600 },
         { name: "photo (2).jpg", width: 1600, height: 1067 },
       ]);
