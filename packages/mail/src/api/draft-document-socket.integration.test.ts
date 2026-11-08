@@ -3,18 +3,22 @@ import { sql } from "@k2b/cloud";
 import { auth } from "@k2b/cloud/server";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
+import { StoreFullError } from "@k2b/sync";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
 import { draftEditableContentInputSchema } from "../contracts";
 import { createDraftRevisionUpdate, readDraftDocument as readModel } from "../lib/draft-document";
 import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from "../lib/draft-document-protocol";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { createActorCommand } from "../service/commands";
+import { reviewDraftComposeSafety } from "../service/compose-safety";
 import * as draftDocumentService from "../service/draft-documents";
 import {
   acceptDraftDocumentUpdate,
@@ -22,6 +26,7 @@ import {
   mailDraftDocumentLog,
   readDraftDocument,
 } from "../service/draft-documents";
+import { recoverDraftDocumentRest } from "../service/drafts";
 import { createMailbox } from "../service/mailboxes";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import type { MailApiContext } from "./public-resource-boundary";
@@ -46,6 +51,10 @@ const decode = (bytes: Uint8Array) => {
 
 suite("Mail document socket with real SQL, retained topic and WebSockets", () => {
   let server: Server<unknown>;
+  let app: Hono<MailApiContext>;
+  const startServer = () => {
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, runtime) => app.fetch(request, runtime), websocket });
+  };
   let context: MailRequestContext;
   let otherContext: MailRequestContext;
   let requestContext: MailRequestContext;
@@ -118,7 +127,8 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     `;
     if (!sender) throw new Error("Missing socket sender");
     identity = sender;
-    const app = new Hono<MailApiContext>()
+    await prepareDraftSendBinding(mailboxId, identity.id);
+    app = new Hono<MailApiContext>()
       .use("*", async (c, next) => {
         c.set("actor", requestContext.actor);
         c.set("accessSubject", requestContext.accessSubject);
@@ -128,7 +138,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         await next();
       })
       .get("/mailboxes/:mailboxId/drafts/:draftId/document/socket", upgradeMailDraftDocumentSocket);
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, runtime) => app.fetch(request, runtime), websocket });
+    startServer();
   });
   afterEach(async () => {
     for (const socket of sockets) socket.close();
@@ -228,6 +238,191 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     };
     return { socket, messages, send, wait, ready };
   };
+
+  const publish = (client: Awaited<ReturnType<typeof connect>>, base: Awaited<ReturnType<typeof read>>, update: Uint8Array) => {
+    client.send({
+      type: "syncPublish",
+      payload: { docId: currentDraft.short_id, generation: base.generation, baseCursor: base.durable.cursor, payload: toBase64(update) },
+    });
+  };
+  const persistedBody = (client: Awaited<ReturnType<typeof connect>>, body: string) =>
+    client.wait(
+      (packet) =>
+        packet.type === "syncPush" &&
+        packet.payload.snapshot === true &&
+        decode(fromBase64(packet.payload.updates[0]!.payload)).body === body,
+    );
+
+  test("bounded reconnect storm preserves every admitted edit and replayed input is idempotent", async () => {
+    await draft();
+    const initial = await read();
+    const local = new Y.Doc();
+    local.clientID = 101;
+    Y.applyUpdate(local, initial.durable.state);
+    try {
+      let expected = "Original";
+      for (let index = 0; index < 8; index++) {
+        const client = await connect();
+        await client.ready();
+        const base = await read();
+        Y.applyUpdate(local, base.durable.state);
+        const text = ` [${index}]`;
+        local.getText("codemirror").insert(local.getText("codemirror").length, text);
+        expected += text;
+        const update = Y.encodeStateAsUpdate(local);
+        publish(client, base, update);
+        await persistedBody(client, expected);
+        // A lost response may make a tab resend the same admitted identities on reconnect.
+        client.socket.close();
+        await stopMailDraftConnections();
+        const retried = value(
+          await acceptDraftDocumentUpdate({
+            context,
+            mailboxId,
+            draftId: currentDraft.id,
+            generation: base.generation,
+            baseCursor: base.durable.cursor,
+            update,
+          }),
+        );
+        expect(retried.status).toBe("accepted");
+      }
+      const final = await read();
+      expect(final.durable.content.body).toBe(expected);
+      expect(Buffer.from(final.fresh.state)).toEqual(Buffer.from(final.durable.state));
+    } finally {
+      local.destroy();
+    }
+  }, 30_000);
+
+  test("full stream rejection exposes a stable retry error while the exact local input remains recoverable", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const local = new Y.Doc();
+    Y.applyUpdate(local, base.durable.state);
+    local.getText("codemirror").insert(0, "Unsent ");
+    const update = Y.encodeStateAsUpdate(local);
+    // The adapter is the only version-dependent seam. Do not infer retention support from an error class.
+    const rejected = new StoreFullError("Fixture: reject full stream");
+    const publication = spyOn(mailDraftDocumentLog.topic(), "publish").mockRejectedValueOnce(rejected);
+    try {
+      try {
+        publish(client, base, update);
+        const error = await client.wait((packet) => packet.type === "error");
+        expect(error).toMatchObject({ type: "error", payload: { code: "DRAFT_DOCUMENT_STREAM_FULL" } });
+        expect(error.type === "error" && error.payload.message).toContain("retry");
+        expect(decode(Y.encodeStateAsUpdate(local)).body).toBe("Unsent Original");
+        const unchanged = await read();
+        expect(unchanged.durable.content.body).toBe("Original");
+        expect(unchanged.durable.cursor).toBe(base.durable.cursor);
+      } finally {
+        publication.mockRestore();
+      }
+      const retry = await connect();
+      await retry.ready();
+      publish(retry, base, update);
+      await persistedBody(retry, "Unsent Original");
+      expect((await read()).durable.content.body).toBe("Unsent Original");
+    } finally {
+      local.destroy();
+    }
+  }, 15_000);
+
+  test("socket server restart resynchronizes committed state and admits offline edits without loss", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const local = new Y.Doc();
+    local.clientID = 102;
+    Y.applyUpdate(local, base.durable.state);
+    try {
+      local.getText("codemirror").insert(8, " before");
+      publish(client, base, Y.encodeStateAsUpdate(local));
+      await persistedBody(client, "Original before");
+      await stopMailDraftConnections();
+      await server.stop(true);
+      // Document service handles are transaction-scoped; shutdown leaves no cached document to reuse.
+      local.getText("codemirror").insert(local.getText("codemirror").length, " offline");
+      startServer();
+      const restarted = await connect();
+      await restarted.ready();
+      const restored = await read();
+      expect(restored.durable.content.body).toBe("Original before");
+      Y.applyUpdate(local, restored.durable.state);
+      publish(restarted, restored, Y.encodeStateAsUpdate(local));
+      await persistedBody(restarted, "Original before offline");
+      expect((await read()).fresh.content.body).toBe("Original before offline");
+    } finally {
+      local.destroy();
+    }
+  }, 15_000);
+
+  test("sending while a socket types freezes only reviewed input and retains the late edit for recovery", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const checked = value(
+      await reviewDraftComposeSafety({ context, mailboxId, draftId: currentDraft.id, expectedRevision: base.revision }),
+    );
+    const local = new Y.Doc();
+    Y.applyUpdate(local, base.durable.state);
+    local.getText("codemirror").insert(8, " late");
+    const reached = Promise.withResolvers<void>();
+    const proceed = Promise.withResolvers<void>();
+    const original = draftDocumentService.acceptDraftDocumentUpdate;
+    const admission = spyOn(draftDocumentService, "acceptDraftDocumentUpdate").mockImplementation(async (params) => {
+      reached.resolve();
+      await proceed.promise;
+      return original(params);
+    });
+    try {
+      publish(client, base, Y.encodeStateAsUpdate(local));
+      await reached.promise;
+      const command = value(
+        await createActorCommand({
+          context,
+          mailboxId,
+          input: {
+            kind: "send",
+            draftId: currentDraft.id,
+            senderIdentityId: identity.id,
+            expectedDraftRevision: base.revision,
+            expectedContentHash: checked.contentHash,
+            undoSeconds: 60,
+            idempotencyKey: crypto.randomUUID(),
+            safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+          },
+        }),
+      );
+      proceed.resolve();
+      await client.wait((packet) => packet.type === "error" && packet.payload.code === "RESYNC_REQUIRED");
+      const recovered = value(
+        await recoverDraftDocumentRest({
+          context,
+          mailboxId,
+          draftId: currentDraft.id,
+          generation: base.generation,
+          clientId: crypto.randomUUID(),
+          state: Y.encodeStateAsUpdate(local),
+        }),
+      );
+      expect(recovered.status).toBe("recovered");
+      if (recovered.status !== "recovered") throw new Error("Missing late input recovery");
+      expect(recovered.draft.body).toBe("Original late");
+      const [outbox] = await sql<{ draft_snapshot: { body: string } }[]>`
+        SELECT draft_snapshot FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+      expect(outbox?.draft_snapshot.body).toBe("Original");
+      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${recovered.draft.id}::uuid`).toHaveLength(0);
+    } finally {
+      proceed.resolve();
+      admission.mockRestore();
+      local.destroy();
+    }
+  }, 15_000);
 
   // R48 source-only guard: cookie B also has real write permission to the same draft.
   test("reconnect after switching A to B refuses A's expected account before opening the document", async () => {

@@ -9,7 +9,7 @@ import * as Y from "yjs";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { DraftEditableContent, MailDraft } from "../../contracts";
 import { createDraftDocument, DRAFT_BODY, readDraftDocument, writeLocalDraftHeaders } from "../../lib/draft-document";
-import { mailDraftDocumentRequestSchema } from "../../lib/draft-document-protocol";
+import { mailDraftDocumentMessages, mailDraftDocumentRequestSchema } from "../../lib/draft-document-protocol";
 import type {} from "./mail-draft-document.browser-harness";
 
 const base: DraftEditableContent = {
@@ -55,6 +55,7 @@ let generation = "1";
 let revision = 1,
   seq = 1,
   saveFails = false,
+  streamFull = false,
   lifecycle: MailDraft["state"] = "draft",
   denied = false;
 let frozen: Uint8Array | null = null;
@@ -202,6 +203,15 @@ const server = Bun.serve<{ document: boolean }>({
         });
         packet(socket, "replayReady", { docId: "Draft1", generation: "1", cursor: cursor(), peerId: "fixture" });
       } else if (type === "syncPublish") {
+        if (streamFull) {
+          packet(socket, "error", {
+            docId: "Draft1",
+            code: "DRAFT_DOCUMENT_STREAM_FULL",
+            message: mailDraftDocumentMessages.resolve(["de"]).t.streamFull,
+          });
+          socket.close(1012, "DRAFT_DOCUMENT_STREAM_FULL");
+          return;
+        }
         const bytes = encoding.fromBase64(payload.payload);
         Y.applyUpdate(document, bytes);
         publish(bytes);
@@ -232,6 +242,7 @@ const reset = () => {
   revision = 1;
   seq = 1;
   saveFails = false;
+  streamFull = false;
   denied = false;
   lifecycle = "draft";
   frozen = null;
@@ -382,6 +393,33 @@ test("permission loss preserves readable input; device opt-out prevents local pe
     expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Keep Hello");
     expect(await editor.getAttribute("contenteditable")).toBe("false");
     expect(await page.locator(".k2b-ste-status").innerText()).toContain("Zugriff entzogen");
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("a full stream keeps pending text on device and shows an error with a working retry", async () => {
+  const { page, context, errors } = await open();
+  try {
+    streamFull = true;
+    const editor = page.locator(".cm-content").first();
+    await editor.click();
+    await page.keyboard.press("Control+Home");
+    await page.keyboard.insertText("Unsent ");
+    await page.waitForFunction(() => window.mailSharedFixture.state()?.terminal && window.mailSharedFixture.state()?.error);
+    expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toBe(`Unsent ${base.body}`);
+    expect(await page.evaluate(() => window.mailSharedFixture.unsent())).toBe(true);
+    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Entwurfsspeicher ist voll");
+    expect(readDraftDocument(document).body).toBe(base.body);
+    await waitStored(page, 1);
+    streamFull = false;
+    await page.getByRole("button", { name: "Speichern erneut versuchen", exact: true }).click();
+    await page.waitForFunction(() => window.mailSharedFixture.state()?.ready && !window.mailSharedFixture.unsent());
+    expect(readDraftDocument(document).body).toBe(`Unsent ${base.body}`);
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
+    await waitStored(page, 0);
     expect(errors).toEqual([]);
   } finally {
     await context.close();
