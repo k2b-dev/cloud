@@ -21,7 +21,12 @@ export const strokeWidth = (mark: ImageEditorAnnotation, source: ImageEditorSour
 
 let measure: CanvasRenderingContext2D | null | undefined;
 const textWidth = (text: string, size: number) => {
-  measure ??= document.createElement("canvas").getContext("2d");
+  // A zero-sized canvas measures text without holding any pixel memory.
+  if (measure === undefined) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 0;
+    measure = canvas.getContext("2d");
+  }
   if (!measure) return text.length * size * 0.56;
   measure.font = `${size}px sans-serif`;
   return measure.measureText(text).width;

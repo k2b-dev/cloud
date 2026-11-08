@@ -48,18 +48,35 @@ const open = async (query = "", width = 1440) => {
   return { page, errors };
 };
 const dirty = (page: Page) => page.locator(".k2b-image-editor[data-dirty=true]").count();
+/** "Download all as ZIP" sits in the menu beside Download once there are several photos. */
+const zip = async (page: Page) => {
+  await page.getByRole("button", { name: "More download options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Download all as ZIP", exact: true }).click();
+};
+const rotate = async (page: Page) => {
+  await page.getByRole("tab", { name: "Crop", exact: true }).click();
+  await page.getByRole("button", { name: "Rotate right", exact: true }).click();
+};
+const mirror = async (page: Page) => {
+  await page.getByRole("tab", { name: "Crop", exact: true }).click();
+  await page.getByRole("button", { name: "Mirror", exact: true }).click();
+};
+/** Photos are chosen in the editor's image strip; hidden editors keep their strips out of reach. */
+const choose = (page: Page, name: RegExp, nth = 0) =>
+  page.getByRole("navigation", { name: "Images" }).getByRole("button", { name }).nth(nth).click();
+const shownCanvases = ".k2b-image-editor__image > canvas";
 
 describe("Tools public photo editor adoption", () => {
   test("archive opens unvisited editors, keeps names unique and clears dirty after the destination succeeds", async () => {
     const { page, errors } = await open("", 390);
     try {
       await settled(page);
-      const stage = await page.locator(".k2b-image-editor__stage").boundingBox();
-      expect(stage!.height).toBeGreaterThanOrEqual(160);
+      const image = await page.locator(".k2b-image-editor__image").boundingBox();
+      expect(image!.height).toBeGreaterThanOrEqual(160);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await rotate(page);
       expect(await dirty(page)).toBe(1);
-      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
+      await zip(page);
       await page.waitForFunction("window.photoFixture.downloads.length === 1");
       const archive = await page.evaluate<{ name: string; magic: number[]; text: string }>(
         `(async () => { const item=window.photoFixture.downloads[0]; const blob=await item.blob; const bytes=new Uint8Array(await blob.arrayBuffer()); return {name:item.filename,magic:[...bytes.slice(0,4)],text:new TextDecoder().decode(bytes)}; })()`,
@@ -78,14 +95,14 @@ describe("Tools public photo editor adoption", () => {
   test("a failed ZIP preserves edits and a fresh archive retry succeeds", async () => {
     const { page, errors } = await open();
     try {
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await rotate(page);
       await page.evaluate("window.photoFixture.rejectArchive = true");
-      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
+      await zip(page);
       await page.getByText("The archive could not be created.", { exact: false }).last().waitFor();
       expect(await dirty(page)).toBe(1);
       expect(await page.locator(".k2b-image-editor").nth(1).isVisible()).toBe(true);
       await page.evaluate("window.photoFixture.rejectArchive = false");
-      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
+      await zip(page);
       await page.waitForFunction("window.photoFixture.downloads.length === 1");
       await page.waitForFunction(() => !document.querySelector(".k2b-image-editor[data-dirty=true]"));
       expect(errors).toEqual([]);
@@ -96,11 +113,10 @@ describe("Tools public photo editor adoption", () => {
   test("a reduced per-photo retry cannot resume a failed ZIP and a fresh archive saves all entries", async () => {
     const { page, errors } = await open();
     try {
-      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
-      await page.getByRole("combobox", { name: "Photo", exact: true }).click();
-      await page.getByRole("option", { name: "photo.jpg", exact: true }).nth(1).click();
-      await page.waitForFunction(() => document.querySelectorAll(".k2b-image-editor canvas").length === 2);
-      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+      await mirror(page);
+      await choose(page, /^photo\.jpg/, 1);
+      await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 2, shownCanvases);
+      await mirror(page);
       await page.evaluate(() => {
         const encode = HTMLCanvasElement.prototype.toBlob;
         let exports = 0;
@@ -112,14 +128,14 @@ describe("Tools public photo editor adoption", () => {
           encode.call(this, callback, type, quality);
         };
       });
-      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
-      await page.getByRole("button", { name: /Save again at .* MP/ }).waitFor();
+      await zip(page);
+      await page.getByRole("button", { name: /Save again at .* MP/ }).first().waitFor();
       expect(await dirty(page)).toBe(2);
-      await page.getByRole("button", { name: /Save again at .* MP/ }).click();
-      await page.getByRole("alert").filter({ hasText: "Start Download all as ZIP again" }).waitFor();
+      await page.getByRole("button", { name: /Save again at .* MP/ }).first().click();
+      await page.getByRole("alert").filter({ hasText: "Start Download all as ZIP again" }).first().waitFor();
       expect(await page.evaluate<number>("window.photoFixture.downloads.length")).toBe(0);
       expect(await dirty(page)).toBe(2);
-      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
+      await zip(page);
       await page.waitForFunction("window.photoFixture.downloads.length === 1");
       await page.waitForFunction(() => !document.querySelector(".k2b-image-editor[data-dirty=true]"));
       expect(await page.locator(".k2b-image-editor [role=alert]").count()).toBe(0);
@@ -131,15 +147,15 @@ describe("Tools public photo editor adoption", () => {
   test("an unvisited photo load failure ends ZIP visibly and preserves earlier captured edits", async () => {
     const { page, errors } = await open("brokenSecond=1");
     try {
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await rotate(page);
       expect(await page.locator(".k2b-image-editor").count()).toBe(1);
-      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
-      await page.getByText("This image could not be opened.", { exact: true }).waitFor();
+      await zip(page);
+      await page.getByText("This image cannot be opened", { exact: true }).waitFor();
       await page.getByText("The archive could not be created.", { exact: false }).last().waitFor();
-      expect(await page.getByRole("button", { name: "Download all as ZIP", exact: true }).isEnabled()).toBe(true);
+      expect(await page.getByRole("button", { name: "Close", exact: true }).isVisible()).toBe(true);
       expect(await dirty(page)).toBe(1);
       expect(await page.evaluate<number>("window.photoFixture.downloads.length")).toBe(0);
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Close", exact: true }).click();
       expect(await page.locator(".k2b-image-editor").count()).toBe(1);
       expect(await dirty(page)).toBe(1);
       await page.getByRole("button", { name: "Download", exact: true }).click();
@@ -166,18 +182,18 @@ describe("Tools public photo editor adoption", () => {
       });
       await page.goto(`${server.url}?large=1`);
       await page.getByText("3000 × 1500 px", { exact: true }).waitFor();
-      await page.getByRole("combobox", { name: "Photo", exact: true }).click();
-      await page.getByRole("option", { name: "photo.jpg", exact: true }).nth(1).click();
-      await page.waitForFunction(() => document.querySelectorAll(".k2b-image-editor canvas").length === 2);
-      await page.waitForFunction(() =>
-        [...document.querySelectorAll<HTMLCanvasElement>(".k2b-image-editor canvas")].every((c) => c.width > 1),
+      await choose(page, /^photo\.jpg/, 1);
+      await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 2, shownCanvases);
+      await page.waitForFunction(
+        (selector) => [...document.querySelectorAll<HTMLCanvasElement>(selector)].every((c) => c.width > 1),
+        shownCanvases,
       );
       const sizes = await page.evaluate<{ width: number; height: number }[]>(
         "window.retainedCanvases.filter(c=>c.width>0&&c.height>0).map(c=>({width:c.width,height:c.height}))",
       );
       expect(sizes.filter((c) => c.width === 2048 && c.height === 1024)).toHaveLength(2);
       expect(sizes.every((c) => Math.max(c.width, c.height) <= 2048)).toBe(true);
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Close", exact: true }).click();
       expect(await page.locator(".k2b-image-editor").count()).toBe(1);
       expect(await page.evaluate<number>("window.retainedCanvases.filter(c=>c.width===2048&&c.height===1024).length")).toBe(1);
       await page.evaluate("window.photoFixture.dispose()");
@@ -198,10 +214,9 @@ describe("Tools public photo editor adoption", () => {
           .querySelector("#tools > div")!
           .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
       });
-      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).waitFor();
-      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__save button")?.disabled);
-      await page.getByRole("combobox", { name: "Photo", exact: true }).click();
-      await page.getByRole("option", { name: "phone.heic", exact: true }).click();
+      await page.getByRole("button", { name: "More download options", exact: true }).waitFor();
+      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__actions button")?.disabled);
+      await choose(page, /^phone\.heic/);
       await page.getByText("48 × 32 px", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Download", exact: true }).click();
       await page.waitForFunction("window.photoFixture.downloads.length === 1");

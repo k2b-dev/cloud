@@ -379,11 +379,7 @@ describe("Files photo editing", () => {
         };
       });
       await save(page);
-      await page
-        .locator(".k2b-image-editor")
-        .getByText("The image could not be saved. Your edits are preserved.")
-        .first()
-        .waitFor();
+      await page.locator(".k2b-image-editor").getByText("The image could not be saved. Your edits are preserved.").first().waitFor();
       expect(uploads).toEqual([]);
       expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
       expect(await page.getByRole("button", { name: "Check upload", exact: true }).count()).toBe(0);
@@ -425,7 +421,7 @@ describe("Files photo editing", () => {
       }
     }
     // Read only: editing and downloading work; a new version is visible but locked with its reason.
-    const { page, errors } = await setup({ write: false, canCreate: false });
+    const { page, errors, uploads, commits } = await setup({ write: false, canCreate: false });
     try {
       await edit(page);
       await page.getByText("You may only view this file. Editing and downloading work.", { exact: true }).waitFor();
@@ -434,6 +430,13 @@ describe("Files photo editing", () => {
       const locked = page.getByRole("menuitem", { name: /^Save new version/ });
       expect(await locked.innerText()).toContain("You may not change this file");
       expect(await locked.isDisabled()).toBe(true);
+      await page.getByRole("button", { name: "More saving options", exact: true }).click();
+      const download = page.waitForEvent("download");
+      await page.locator(".filesv2-image-save-actions button").first().click();
+      expect((await download).suggestedFilename()).toBe("Photo.jpg");
+      expect(uploads).toEqual([]);
+      expect(commits()).toBe(0);
+      expect(await page.evaluate(() => window.fileImages.saved)).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -469,11 +472,15 @@ describe("Files photo editing", () => {
     try {
       const visible = () => page.locator(".filesv2-image-session:not([hidden]) .k2b-image-editor");
       const open = async (name: string) => {
-        await visible().getByRole("navigation", { name: "Images" }).getByRole("button", { name: new RegExp(`^${name}`) }).click();
+        await visible()
+          .getByRole("navigation", { name: "Images" })
+          .getByRole("button", { name: new RegExp(`^${name}`) })
+          .click();
         await page.waitForFunction(
           (target) =>
             document.querySelector(".filesv2-image-session:not([hidden]) .k2b-image-editor__name")?.textContent?.includes(target) &&
-            (document.querySelector<HTMLCanvasElement>(".filesv2-image-session:not([hidden]) .k2b-image-editor__image > canvas")?.width ?? 0) > 1,
+            (document.querySelector<HTMLCanvasElement>(".filesv2-image-session:not([hidden]) .k2b-image-editor__image > canvas")?.width ??
+              0) > 1,
           name,
         );
         await settled(page);
