@@ -70,7 +70,7 @@ found by a script instead of Markdown links. Choose the chart by the question:
 | Question | Chart |
 | --- | --- |
 | Compare category counts or totals | Bar; sort by value unless categories have their own order. |
-| Show ordered trends | Line; several measures over the same time axis use a group with `linkX`, each with its own units. There is no second y axis. |
+| Show ordered trends | Line; use `forecast` and its confidence `band` for an outlook, `marker` for Today, `threshold` for a reserve and `zero` for negative regions. The Code charts reference has a complete cash outlook example. Several measures over the same time axis use a group with `linkX`, each with its own units. There is no second y axis. |
 | Show a continuous distribution | Histogram rows form over all observations, rather than a sample. |
 | Compare distributions across categories | Boxplot; observations count toward the mark budget, so check the limits before delivery. |
 | Compare two categorical dimensions | Heatmap; aggregate to one value per x/y pair. |

@@ -14,12 +14,12 @@ and for that table, so a dense chart is large: 8 series × 480 points is about
 Draw dense charts in the app that shows them instead of returning their markup
 from an action or storing it in KV.
 
-`cloud.chart()` remains synchronous. In HTML apps, line, bar, pie, donut,
+`cloud.chart()` remains synchronous. In HTML apps, ordinary line, bar, pie, donut,
 stat and sparkline draw immediately. Other kinds initially return a loading
 placeholder; insert the markup into the document and the frame fills it at the
 same size. Their renderer ships with the frame and loads without any network
 request, including offline first use. A load failure shows **Try again**.
-A rendering error (including a throwing format callback) shows its message
+A line with forecast annotations uses the same loading path. A rendering error (including a throwing format callback) shows its message
 without retry and is reported to the host.
 Formats, tooltips and print value tables work after loading. Frame readiness,
 snapshots and `cloud.pdf.render({html})` wait for pending chart rendering; do
@@ -47,7 +47,7 @@ same way:
 | Kind | Required options | Optional options |
 | --- | --- | --- |
 | `bar` | `data: [{label, value}]` | `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
-| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]` | `xAxis`, `yAxis`, `legend`, `references`; line also `area`, `smooth`, series `style` |
+| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]` | `xAxis`, `yAxis`, `legend`, `references`; line also `area`, `smooth`, series `style`, `forecast`, `threshold`, `marker`, `zero`, `step`, `legendValues` |
 | `pie`, `donut` | `data: [{label, value}]` | `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]` | `bins` (count or ascending edges), `references` |
 | `gauge` | `value` | `min`, `max`, `label`, `unit`, `format`, `thresholds` |
@@ -56,6 +56,33 @@ same way:
 | `heatmap` | `data: [{x, y, value}]`, each pair once | `min`, `max`, `showValues`, `format` |
 | `barGauge` | `data: [{label, value, min?, max?}]` | shared `min`, `max`, `unit`, `format`, `thresholds` |
 | `stat` | `value` | `unit`, `format`, `delta`, `better: "up" | "down"`, `sparkline` |
+
+### Forecast lines
+
+Use `forecast: {from, band?}` to show an outlook after observed values. `from`
+matches an x in the first series. Its line is dashed from that point. Optional
+`band` is one `[lower, upper]` pair per first-series point from `from`, sorted
+by x; bounds are finite and lower cannot exceed upper. The band follows the
+line's smooth, straight or `step: "before" | "after" | "middle"` interpolation.
+
+`marker: {at, label}` identifies Today; `threshold: {value, label}` adds a warning
+line. `zero: true` includes zero and tints the negative region. These options
+enable legend values at the cursor; `legendValues: true` enables those alone.
+The resting legend uses the marker's x when present, otherwise the latest x.
+For these opted-in lines, `y: null` is a gap. Ordinary lines and scatter keep
+numeric y. Use a table when the reader needs every exact value.
+
+```js
+const outlook = {
+  "kind": "line", "title": "Cash outlook", "legend": true,
+  "series": [{"label": "Cash", "data": [{"x": 1, "y": 100}, {"x": 2, "y": 120}, {"x": 3, "y": 110}]}],
+  "forecast": {"from": 2, "band": [[100, 140], [90, 130]]},
+  "marker": {"at": 2, "label": "Today"}, "threshold": {"value": 95, "label": "Reserve"}, "zero": true,
+  "yAxis": {"format": {"style": "currency", "currency": "EUR"}}
+};
+document.querySelector("#chart").innerHTML = cloud.chart(outlook);
+// For computed chat output in a run: await cloud.view.chart(outlook), then present its path.
+```
 
 All kinds accept `title` and `subtitle`; together they name the chart for screen
 readers (an image in static markup, an interactive group in apps). An axis

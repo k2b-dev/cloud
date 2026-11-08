@@ -1,14 +1,22 @@
 import { expect, test } from "bun:test";
-import { appFrameAssets, checkFrameAssets } from "./assets";
-import { buildChartModule, buildCheckPrelude, buildPrelude } from "./build-assets";
+import type { RareChart } from "../runtime/chart-renderer-types";
+import { appFrameAssets, ChartPartsAsset, checkFrameAssets } from "./assets";
+import { buildChartParts, buildCheckPrelude, buildPrelude } from "./build-assets";
+import { CHART_SHARED_IMPORT } from "./chart-parts";
+import { moduleSpecifiers } from "./imports";
 
 test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
   // Rare renderers belong to the separate offline module, never to every app's prelude.
   // Previous main budget was 319,900 B; keep the common frame below it without per-kind raises.
   expect(normal).not.toContain("k2b-area-layer");
-  const rare = await buildChartModule();
-  // The separate module travels in every srcdoc; each intermediate kind keeps about 1% headroom.
+  const parts = await buildChartParts();
+  const rare =
+    parts.shared.code +
+    Object.values(parts.kinds)
+      .map((part) => part.code)
+      .join("\n");
+  // Only requested kind assets and shared helpers enter a frame over its host channel.
   expect(rare).toContain("k2b-area-layer");
   expect(normal).not.toContain("k2b-line-forecast");
   expect(normal).not.toContain("k2b-line-negative-zone");
@@ -20,17 +28,54 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).not.toContain("Waterfall balances must be finite");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
-  for (const marker of ["k2b-chart-pareto-current", "k2b-chart-treemap-cell"]) {
+  for (const marker of ["k2b-chart-bubble-label", "k2b-chart-radar-axis", "k2b-chart-pareto-current", "k2b-chart-treemap-cell"]) {
     expect(normal).not.toContain(marker);
     expect(rare).toContain(marker);
   }
-  // The blob must be self-contained: no module can fetch a dependency on first use.
-  expect(rare).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
-  console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
+  // Dependencies are restricted to the one local shared blob; never an external URL.
+  expect(parts.shared.code).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
+  for (const part of Object.values(parts.kinds)) {
+    expect([...moduleSpecifiers(part.code)].map((specifier) => specifier.value)).toEqual([CHART_SHARED_IMPORT]);
+  }
+  const sizes = Object.fromEntries(Object.entries(parts.kinds).map(([kind, part]) => [kind, Buffer.byteLength(part.code)]));
+  const shared = Buffer.byteLength(parts.shared.code);
+  const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
+  console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // Measured 87,369 B with detailed lines, treemap and Pareto; about 1% headroom.
-  // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(88_250);
+  // New line part: 12,744 B; main's 68,100 B host ceiling plus exactly this part.
+  // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
+  expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
+  expect(shared).toBeLessThanOrEqual(14_950);
+  expect(total).toBeLessThan(80_844);
+  const markers = {
+    line: "k2b-line-forecast-band",
+    area: "k2b-area-layer",
+    waterfall: "k2b-waterfall-bar",
+    heatmap: "data-calendar-weekdays",
+    bubble: "k2b-chart-bubble-label",
+    radar: "k2b-chart-radar-axis",
+    pareto: "k2b-chart-pareto-current",
+    treemap: "k2b-chart-treemap-cell",
+    hbar: "k2b-chart-group-heading",
+    funnel: "k2b-chart-funnel",
+    histogram: "stdlib-chart-bar stdlib-chart-series-0",
+    gauge: "stdlib-chart-gauge-track",
+    barGauge: "stdlib-chart-bar-gauge-track",
+    boxplot: "stdlib-chart-box-whisker",
+    scatter: "stdlib-chart-trendline",
+  } satisfies Record<RareChart["kind"], string>;
+  expect(Object.keys(parts.kinds).sort()).toEqual(Object.keys(markers).sort());
+  for (const [kind, marker] of Object.entries(markers)) {
+    expect(normal).not.toContain(marker);
+    expect(parts.shared.code).not.toContain(marker);
+    for (const [other, part] of Object.entries(parts.kinds)) {
+      if (kind === other) expect(part.code).toContain(marker);
+      else expect(part.code).not.toContain(marker);
+    }
+  }
+  for (const part of [parts.shared, ...Object.values(parts.kinds)]) {
+    expect(part.hash).toBe(new Bun.CryptoHasher("sha256").update(part.code).digest("hex"));
+  }
 
   expect(normal).not.toContain("k2b-chart-group-heading");
   expect(rare).toContain("k2b-chart-group-heading");
@@ -55,6 +100,23 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(Buffer.byteLength(check)).toBeGreaterThan(Buffer.byteLength(normal));
 }, 30000);
 
+test("production chart assets validate shared and kind source at the JSON boundary", () => {
+  const part = { code: "export const render=()=>'';", hash: "a".repeat(64) };
+  expect(ChartPartsAsset.parse({ shared: part, kinds: { histogram: part } })).toEqual({ shared: part, kinds: { histogram: part } });
+  for (const value of [
+    null,
+    { kinds: {} },
+    { shared: part },
+    { shared: part, kinds: [] },
+    { shared: { code: 42, hash: part.hash }, kinds: {} },
+    { shared: { code: part.code }, kinds: {} },
+    { shared: part, kinds: { histogram: "unhashed" } },
+    { shared: part, kinds: { histogram: { code: part.code, hash: "invalid" } } },
+  ]) {
+    expect(ChartPartsAsset.safeParse(value).success).toBe(false);
+  }
+});
+
 test("check assets pin their own prelude and share the normal base stylesheet", async () => {
   const [normal, check] = await Promise.all([appFrameAssets(), checkFrameAssets()]);
   expect(normal.preludeHash).toBe(`'sha256-${new Bun.CryptoHasher("sha256").update(normal.prelude).digest("base64")}'`);
@@ -63,6 +125,6 @@ test("check assets pin their own prelude and share the normal base stylesheet", 
   expect(check.prelude).toContain("axe-core");
   expect(normal.prelude).not.toContain("axe-core");
   expect(check.baseCss).toBe(normal.baseCss);
-  expect(check.chartModule).toBe(normal.chartModule);
-  expect(normal.chartModule).toContain("k2b-area-layer");
+  expect(check.chartParts).toBe(normal.chartParts);
+  expect(normal.chartParts.kinds.area!.code).toContain("k2b-area-layer");
 }, 30000);

@@ -1,61 +1,66 @@
-// One exhaustive kind-switch. Import this module only from lib.ts: the frame
-// build replaces that exact specifier and ships the real module separately.
+// One exhaustive kind-switch. Runtime consumers import this only from lib.ts:
+// the frame build replaces that exact specifier. build-assets enumerates the
+// named kind exports and bundles each chart-kind-<kind>.ts independently.
 // Scripts and PDF workers get the real renderers synchronously through lib.ts.
-import {
-  barGauge,
-  boxplot,
-  gauge,
-  histogram,
-  line,
-  renderAreaSvg,
-  renderFunnelLayoutSvg,
-  renderHbarLayoutSvg,
-  renderHeatmapSvg,
-  renderParetoSvg,
-  renderTreemapSvg,
-  renderWaterfallLayoutSvg,
-  scatter,
-} from "@k2b/ui/charts/core";
+
+import { area } from "./chart-kind-area";
+import { barGauge } from "./chart-kind-barGauge";
+import { boxplot } from "./chart-kind-boxplot";
+import { bubble } from "./chart-kind-bubble";
+import { funnel } from "./chart-kind-funnel";
+import { gauge } from "./chart-kind-gauge";
+import { hbar } from "./chart-kind-hbar";
+import { heatmap } from "./chart-kind-heatmap";
+import { histogram } from "./chart-kind-histogram";
+import { line } from "./chart-kind-line";
+import { pareto } from "./chart-kind-pareto";
+import { radar } from "./chart-kind-radar";
+import { scatter } from "./chart-kind-scatter";
+import { treemap } from "./chart-kind-treemap";
+import { waterfall } from "./chart-kind-waterfall";
 import type { RareChartRenderer } from "./chart-renderer-types";
+
+export { area, barGauge, boxplot, bubble, funnel, gauge, hbar, heatmap, histogram, line, pareto, radar, scatter, treemap, waterfall };
 
 export const rareChartSvg: RareChartRenderer = (mapped, common, locale) => {
   switch (mapped.kind) {
     case "line":
-      return line({ ...mapped, ...common, locale });
+      return line(mapped, common, locale);
     case "funnel":
-      if (!common.funnel) throw new Error("Missing funnel layout");
-      return renderFunnelLayoutSvg({ ...mapped, ...common }, common.funnel);
+      return funnel(mapped, common);
     case "hbar":
-      if (!common.hbar) throw new Error("Missing hbar layout");
-      return renderHbarLayoutSvg({ ...mapped, ...common }, common.hbar);
+      return hbar(mapped, common);
     case "waterfall":
-      if (!common.waterfall) throw new Error("Missing waterfall layout");
-      return renderWaterfallLayoutSvg({ ...mapped, ...common }, common.waterfall);
+      return waterfall(mapped, common);
     case "area":
-      return renderAreaSvg({ ...mapped, ...common });
+      return area(mapped, common);
     case "scatter":
-      return scatter({ ...mapped, ...common });
+      return scatter(mapped, common);
     case "histogram":
-      return histogram({ ...mapped, ...common });
+      return histogram(mapped, common);
     case "boxplot":
-      return boxplot({ ...mapped, ...common });
+      return boxplot(mapped, common);
     case "gauge":
-      return gauge({ ...mapped, ...common });
+      return gauge(mapped, common);
     case "barGauge":
-      return barGauge({ ...mapped, ...common });
+      return barGauge(mapped, common);
     case "heatmap":
-      return renderHeatmapSvg({ ...mapped, ...common });
+      return heatmap(mapped, common);
     case "treemap":
-      return renderTreemapSvg({ ...mapped, ...common, displayWidth: common.width });
+      return treemap(mapped, common);
     case "pareto":
-      return renderParetoSvg({ ...mapped, ...common, displayWidth: common.width });
+      return pareto(mapped, common);
+    case "bubble":
+      return bubble(mapped, common);
+    case "radar":
+      return radar(mapped, common);
   }
   const unsupported: never = mapped;
   throw new Error(`Unsupported chart: ${String(unsupported)}`);
 };
 
 /** Outside app frames every renderer is already available. */
-export async function loadChartRenderer(): Promise<void> {}
+export async function loadChartRenderer(_kind: string): Promise<void> {}
 
 /** Only the frame stub may defer a drawing. */
 export const deferChartDrawing = false;

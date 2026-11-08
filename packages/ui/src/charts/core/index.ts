@@ -16,15 +16,20 @@ export {
   stateTimelineHeight,
 } from "../../content/chart-state-timeline";
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
+export { calendarTimeLabel, calendarTimeTicks, chartTimeStep } from "../../content/chart-time-calendar";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
+export * from "./bubble";
 export * from "./calendar";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
 export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export * from "./inspection";
 export { lineBase } from "./line-base";
+export { renderLineDetailsSvg } from "./line-details";
 export { lineDetailsEnabled, lineForecastLayout } from "./line-options";
 export { map } from "./map";
 export * from "./pareto";
+
+export * from "./radar";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";

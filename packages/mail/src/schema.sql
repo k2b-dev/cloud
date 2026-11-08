@@ -728,7 +728,7 @@ CREATE TABLE mail.conversation_messages (
     "position" bigint NOT NULL,
     added_by text DEFAULT 'heuristic'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT conversation_messages_added_by_check CHECK ((added_by = ANY (ARRAY['provider'::text, 'headers'::text, 'heuristic'::text, 'manual'::text, 'outbox'::text]))),
+    CONSTRAINT conversation_messages_added_by_check CHECK ((added_by = ANY (ARRAY['provider'::text, 'headers'::text, 'heuristic'::text, 'manual'::text, 'outbox'::text, 'list'::text]))),
     CONSTRAINT conversation_messages_position_check CHECK (("position" >= 0))
 );
 

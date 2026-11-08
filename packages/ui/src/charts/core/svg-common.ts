@@ -1,10 +1,23 @@
-/** Shared SVG geometry and presentation; independent of every chart renderer. */
+import { fmt } from "./svg-format";
+// Ported from @k2b/stdlib 0.30.0 (ISC); retain SVG and numeric algorithms until parity proves changes.
+// ==========================
+// SVG Chart Generation
+// ==========================
+//
+// Pure-native SVG generation for the four basic chart types: scatter, line,
+// bar, and pie/donut. Returns SVG strings — inject directly into the DOM,
+// write to disk, or send over the wire. No peer dependencies.
+//
+// Charts ship with embedded default CSS using semantic class names and CSS
+// custom properties for colors. Consumers override styles via class selectors
+// (their CSS wins on specificity) or CSS variables (`--stdlib-chart-c1` ...
+// `--stdlib-chart-c8`). Axes and labels use `currentColor` so parent `color`
+// drives theming (dark mode "just works").
+
+import type { ChartTimeAxis } from "../../content/chart-time-axis";
 import type { IntentTone } from "../../semantics";
 import { DEFAULT_STYLES } from "./default-styles";
-import type { Threshold } from "./svg";
 import type { ChartDatum } from "./types";
-
-export { DEFAULT_STYLES } from "./default-styles";
 
 // ==========================
 // PUBLIC TYPES
@@ -218,20 +231,12 @@ export const referenceLineAttributes = (ref: ReferenceLine, label = false): stri
 
 export const DEFAULT_WIDTH = 400;
 export const DEFAULT_HEIGHT = 240;
-export const DEFAULT_PADDING: Padding = { top: 16, right: 16, bottom: 32, left: 40 };
-export const DEFAULT_TICKS = 5;
+const DEFAULT_PADDING: Padding = { top: 16, right: 16, bottom: 32, left: 40 };
+const DEFAULT_TICKS = 5;
 
 export const DEFAULT_MARKERS: readonly MarkerShape[] = ["circle", "square", "triangle", "diamond", "plus", "cross"];
 
-export const DEFAULT_LINE_STYLES: readonly LineStyle[] = ["solid", "dashed", "dotted", "dashdot"];
-
-/** SVG `stroke-dasharray` values per line style. Empty string = no dasharray. */
-export const LINE_DASH_PATTERNS: Record<LineStyle, string> = {
-  solid: "",
-  dashed: "6 4",
-  dotted: "2 3",
-  dashdot: "6 3 2 3",
-};
+export { DEFAULT_LINE_STYLES, LINE_DASH_PATTERNS } from "./line-paths";
 
 // ==========================
 // HELPERS (pure)
@@ -626,7 +631,7 @@ export const resolveErrorY = (p: Point): [number, number] | null => {
   return [Number.isFinite(low) ? Math.abs(low!) : 0, Number.isFinite(high) ? Math.abs(high!) : 0];
 };
 
-export const resolveErrorX = (p: Point): [number, number] | null => {
+const resolveErrorX = (p: Point): [number, number] | null => {
   const high = p.errXHigh ?? p.errX;
   const low = p.errXLow ?? p.errX;
   if (high === undefined && low === undefined) return null;
@@ -802,15 +807,6 @@ export const svgRoot = (opts: { width: number; height: number; className?: strin
 // ==========================
 
 /** Format an SVG path `d` attribute for a polyline through `points`. */
-export const linePathD = (points: ReadonlyArray<{ x: number; y: number }>): string => {
-  if (points.length === 0) return "";
-  let d = `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  for (let i = 1; i < points.length; i++) {
-    d += ` L ${fmt(points[i]!.x)} ${fmt(points[i]!.y)}`;
-  }
-  return d;
-};
-
 /**
  * Format an SVG path `d` for a smooth curve through `points` using cubic
  * Bezier segments with Catmull-Rom-derived vertical control points.
@@ -821,28 +817,7 @@ export const linePathD = (points: ReadonlyArray<{ x: number; y: number }>): stri
  * thirds, so x progresses linearly and never doubles back when point spacing
  * is uneven.
  */
-export const smoothPathD = (points: ReadonlyArray<{ x: number; y: number }>): string => {
-  const n = points.length;
-  if (n === 0) return "";
-  if (n === 1) return `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  if (n === 2) return linePathD(points);
-
-  let d = `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  for (let i = 0; i < n - 1; i++) {
-    const p0 = i > 0 ? points[i - 1]! : points[i]!;
-    const p1 = points[i]!;
-    const p2 = points[i + 1]!;
-    const p3 = i + 2 < n ? points[i + 2]! : points[i + 1]!;
-    const dx = p2.x - p1.x;
-    const cp1x = p1.x + dx / 3;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-    const cp2x = p2.x - dx / 3;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-    d += ` C ${fmt(cp1x)} ${fmt(cp1y)} ${fmt(cp2x)} ${fmt(cp2y)} ${fmt(p2.x)} ${fmt(p2.y)}`;
-  }
-  return d;
-};
-
+export { linePathD, smoothPathD } from "./line-paths";
 /**
  * Build an SVG path `d` attribute for a pie slice (or donut sector).
  *
@@ -946,37 +921,9 @@ export const markerPath = (shape: MarkerShape, cx: number, cy: number, r: number
  *  - `after`  — value updates at the data point's x and persists until next x
  *  - `middle` — vertical step at the midpoint between consecutive x-values
  */
-export const stepPathD = (points: ReadonlyArray<{ x: number; y: number }>, mode: "before" | "after" | "middle"): string => {
-  if (points.length === 0) return "";
-  if (points.length === 1) return `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-
-  let d = `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  for (let i = 1; i < points.length; i++) {
-    const p = points[i]!;
-    const prev = points[i - 1]!;
-    if (mode === "before") {
-      // step at next-x: extend horizontally to new x at OLD y, then jump to new y.
-      d += ` L ${fmt(p.x)} ${fmt(prev.y)} L ${fmt(p.x)} ${fmt(p.y)}`;
-    } else if (mode === "after") {
-      // step at current-x: jump to new y immediately, persist until next x.
-      d += ` L ${fmt(prev.x)} ${fmt(p.y)} L ${fmt(p.x)} ${fmt(p.y)}`;
-    } else {
-      // middle: step at midpoint of x.
-      const mx = (prev.x + p.x) / 2;
-      d += ` L ${fmt(mx)} ${fmt(prev.y)} L ${fmt(mx)} ${fmt(p.y)} L ${fmt(p.x)} ${fmt(p.y)}`;
-    }
-  }
-  return d;
-};
-
+export { stepPathD } from "./line-paths";
 /** Format a number for SVG attributes — short, no scientific notation. */
-export const fmt = (n: number): string => {
-  if (!Number.isFinite(n)) return "0";
-  // 2 decimals is enough for sub-pixel precision at typical sizes.
-  const rounded = Math.round(n * 100) / 100;
-  return Number.isInteger(rounded) ? `${rounded}` : `${rounded}`;
-};
-
+export { fmt } from "./svg-format";
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 export const normalizeMinMax = (min: number | undefined, max: number | undefined): [number, number] => {
@@ -994,111 +941,7 @@ export const thresholdFillAttr = (color: string | undefined): string => (color ?
 
 export const thresholdStrokeAttr = (color: string | undefined): string => (color ? ` stroke="${escapeXml(color)}"` : "");
 
-export const polarPoint = (cx: number, cy: number, r: number, angleRad: number) => ({
-  x: cx + r * Math.cos(angleRad),
-  y: cy + r * Math.sin(angleRad),
-});
-
-export const arcLinePathD = (cx: number, cy: number, r: number, a0: number, a1: number): string => {
-  const start = polarPoint(cx, cy, r, a0);
-  const end = polarPoint(cx, cy, r, a1);
-  const large = Math.abs(a1 - a0) > Math.PI ? 1 : 0;
-  const sweep = a1 >= a0 ? 1 : 0;
-  return `M ${fmt(start.x)} ${fmt(start.y)} A ${fmt(r)} ${fmt(r)} 0 ${large} ${sweep} ${fmt(end.x)} ${fmt(end.y)}`;
-};
-
 export type RgbColor = { r: number; g: number; b: number };
-
-export const parseHexColor = (color: string): RgbColor | null => {
-  const short = /^#([0-9a-f]{3})$/i.exec(color);
-  if (short) {
-    const [r, g, b] = short[1]!.split("").map((c) => Number.parseInt(c + c, 16));
-    return { r: r!, g: g!, b: b! };
-  }
-  const long = /^#([0-9a-f]{6})$/i.exec(color);
-  if (!long) return null;
-  const value = long[1]!;
-  return {
-    r: Number.parseInt(value.slice(0, 2), 16),
-    g: Number.parseInt(value.slice(2, 4), 16),
-    b: Number.parseInt(value.slice(4, 6), 16),
-  };
-};
-
-export const hexColor = (color: RgbColor): string =>
-  `#${[color.r, color.g, color.b].map((value) => clamp(Math.round(value), 0, 255).toString(16).padStart(2, "0")).join("")}`;
-
-export const interpolateColor = (from: string, to: string, t: number): string => {
-  const a = parseHexColor(from);
-  const b = parseHexColor(to);
-  if (!a || !b) return t < 0.5 ? from : to;
-  return hexColor({
-    r: a.r + (b.r - a.r) * t,
-    g: a.g + (b.g - a.g) * t,
-    b: a.b + (b.b - a.b) * t,
-  });
-};
-
-export const gaugeThresholdStops = (
-  thresholds: readonly Threshold[] | undefined,
-  min: number,
-  max: number,
-): Array<{ value: number; color: string }> => {
-  if (!thresholds || thresholds.length === 0) return [];
-  const sorted = [...thresholds].filter((t) => Number.isFinite(t.value)).sort((a, b) => a.value - b.value);
-  if (sorted.length === 0) return [];
-  const colorFor = (threshold: Threshold, index: number) => threshold.color ?? `var(--stdlib-chart-c${(index % 8) + 1})`;
-  return [
-    { value: min, color: colorFor(sorted[0]!, 0) },
-    ...sorted.map((threshold, index) => ({
-      value: clamp(threshold.value, min, max),
-      color: colorFor(threshold, index),
-    })),
-  ];
-};
-
-export const gaugeColorAt = (stops: readonly { value: number; color: string }[], value: number): string => {
-  if (stops.length === 0) return "currentColor";
-  for (let i = 1; i < stops.length; i++) {
-    const prev = stops[i - 1]!;
-    const next = stops[i]!;
-    if (value <= next.value) {
-      const t = next.value === prev.value ? 1 : clamp((value - prev.value) / (next.value - prev.value), 0, 1);
-      return interpolateColor(prev.color, next.color, t);
-    }
-  }
-  return stops[stops.length - 1]!.color;
-};
-
-export const renderGaugeGradientSegments = (opts: {
-  stops: readonly { value: number; color: string }[];
-  min: number;
-  max: number;
-  cx: number;
-  cy: number;
-  radius: number;
-  startAngle: number;
-  endAngle: number;
-  progress?: number;
-  className: string;
-}): string => {
-  if (opts.stops.length === 0) return "";
-  const segments = 72;
-  const maxProgress = opts.progress ?? 100;
-  const parts: string[] = [];
-  for (let i = 0; i < segments; i++) {
-    const p0 = (i / segments) * 100;
-    const p1 = Math.min(((i + 1) / segments) * 100, maxProgress);
-    if (p0 >= maxProgress || p1 <= p0) break;
-    const v0 = mapRange(p0, [0, 100], [opts.min, opts.max]);
-    const v1 = mapRange(p1, [0, 100], [opts.min, opts.max]);
-    const color = gaugeColorAt(opts.stops, (v0 + v1) / 2);
-    const a0 = mapRange(p0, [0, 100], [opts.startAngle, opts.endAngle]);
-    const a1 = mapRange(p1, [0, 100], [opts.startAngle, opts.endAngle]);
-    parts.push(`<path class="${opts.className}" stroke="${escapeXml(color)}" d="${arcLinePathD(opts.cx, opts.cy, opts.radius, a0, a1)}"/>`);
-  }
-  return parts.join("");
-};
 
 // ==========================
 // AXIS RENDERERS
@@ -1273,10 +1116,276 @@ export const emptyChart = (width: number, height: number, className: string | un
     `<text class="stdlib-chart-empty-text" x="${fmt(width / 2)}" y="${fmt(height / 2)}" text-anchor="middle" dominant-baseline="middle">${escapeXml(message)}</text>`,
   );
 
+// ==========================
+// CHART FUNCTIONS
+// ==========================
+
+export type SeriesChartOptions = ChartOptions & {
+  series: Series[];
+  xAxis?: AxisOptions;
+  yAxis?: AxisOptions;
+  /** Reference lines (thresholds, targets, averages) drawn on the plot. */
+  references?: ReferenceLine[];
+  /** Render a single-row legend at the bottom of the chart, listing each
+   *  series's label with its color swatch. Series without a `label` are
+   *  shown as `Series N` (1-indexed). Default false. */
+  legend?: boolean;
+};
+
+export type ScatterOptions = SeriesChartOptions & {
+  /** Pixel-radius range for the optional `size` dimension on points.
+   *  Default `[3, 12]`. Only applied when at least one point has a finite
+   *  `size`; otherwise all points use the default radius (3px). */
+  sizeRange?: [number, number];
+  /** When true, automatically vary marker shape per series (cycling through
+   *  `circle, square, triangle, diamond, plus, cross`) so series remain
+   *  distinguishable in B/W or color-blind contexts. Default false. */
+  autoVariant?: boolean;
+  /** Overlay a least-squares linear regression line across all data points.
+   *  Default false. */
+  trendline?: boolean;
+};
+
+export type LineOptions = SeriesChartOptions & {
+  /** Render smooth Catmull-Rom curves. Default `true`. Pass `false` for
+   *  straight segments between points. */
+  smooth?: boolean;
+  /** Fill the area below each line with the series color (translucent).
+   *  Renders as a separate path so the line stroke remains crisp. Default false. */
+  area?: boolean;
+  /** Render a step (stair) line instead of a smooth/straight one. Implies
+   *  `smooth: false`. */
+  step?: "before" | "after" | "middle";
+  /** When true, automatically vary line dash pattern per series (cycling
+   *  through `solid, dashed, dotted, dashdot`). Default false. */
+  autoVariant?: boolean;
+  /** Render a translucent confidence band between each point's `errYLow` and
+   *  `errYHigh`. Points without explicit error fields are skipped. Default false. */
+  errorBand?: boolean;
+  /** Dashed first-series forecast suffix with optional ordered bounds. */
+  forecast?: { from: number; band?: [number, number][] };
+  legendValues?: boolean;
+  zero?: boolean;
+  threshold?: { value: number; label: string };
+  marker?: { at: number; label: string };
+  timeAxis?: ChartTimeAxis;
+  maxGap?: number;
+  locale?: string;
+};
+
 export const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Array<{ label: string; seriesIndex: number }> => {
   if (!opts.legend) return [];
   return opts.series.map((s, i) => ({
     label: s.label && s.label.length > 0 ? s.label : `Series ${i + 1}`,
     seriesIndex: i,
   }));
+};
+
+// ==========================
+// BAR
+// ==========================
+
+export type BarChartOptions = ChartOptions & {
+  data: BarItem[];
+  yAxis?: AxisOptions;
+  /** When true, each bar gets its own series color (`series-0` ... `series-7`,
+   *  cyclic). When false (default), all bars share `series-0`. */
+  colorByBar?: boolean;
+  /** Reference lines on the y-axis (e.g. target threshold). x-axis references
+   *  are ignored on bar charts since the x-axis is categorical. */
+  references?: ReferenceLine[];
+  /** Render the formatted value above (positive) or below (negative) each bar.
+   *  Uses `yAxis.format` if provided, otherwise `String(value)`. Default false. */
+  showValues?: boolean;
+  /** Render a legend mapping each bar's label to its color. Only meaningful
+   *  when `colorByBar` is true; ignored otherwise (the default single-color
+   *  bar chart needs no legend). Default false. */
+  legend?: boolean;
+};
+
+// ==========================
+// PIE / DONUT
+// ==========================
+
+export type PieChartOptions = ChartOptions & {
+  data: SliceItem[];
+  /** Render slice labels with percentages outside the chart area. Default false.
+   *  Note: for many small slices or one dominant slice, prefer `legend: true`
+   *  to avoid overlapping labels. */
+  showLabels?: boolean;
+  /** Render a wrapping legend below the chart with `Label (XX%)` entries.
+   *  Recommended when slices are many or when one slice dominates — outside
+   *  labels collide in those cases. Default false. */
+  legend?: boolean;
+  /** Inner radius as a fraction of outer radius (0..1). 0 = pie, 0.6 = donut.
+   *  Values outside `[0, 0.95]` are clamped. */
+  innerRadius?: number;
+};
+
+// ==========================
+// HISTOGRAM
+// ==========================
+
+export type HistogramOptions = ChartOptions & {
+  /** Raw observations. Non-finite entries are filtered. */
+  data: number[];
+  /** Bin specification:
+   *   - undefined → Sturges' formula `ceil(log2(n)) + 1`
+   *   - number → that many equal-width bins
+   *   - array of bin edges (length k+1 → k bins) */
+  bins?: number | number[];
+  yAxis?: AxisOptions;
+  xAxis?: AxisOptions;
+  references?: ReferenceLine[];
+};
+
+// ==========================
+// BOX PLOT
+// ==========================
+
+export type BoxPlotItem = { label: string; values: number[] };
+
+export type BoxPlotOptions = ChartOptions & {
+  /** Groups of observations, one box per group. */
+  groups: BoxPlotItem[];
+  yAxis?: AxisOptions;
+  /** When true (default), render outliers as individual dots beyond the
+   *  whiskers (1.5×IQR fences). */
+  showOutliers?: boolean;
+  references?: ReferenceLine[];
+  /** When true, each box gets its own series color. Default false (all use
+   *  series-0). */
+  colorByBox?: boolean;
+};
+
+// ==========================
+// DASHBOARD PANELS
+// ==========================
+
+export type Threshold = {
+  /** Inclusive upper bound for this threshold segment. */
+  value: number;
+  /** Optional label for legends or future consumers. */
+  label?: string;
+  /** Optional SVG color. When omitted, the series CSS variables are used. */
+  color?: string;
+};
+
+export type GaugeOptions = ChartOptions & {
+  value: number;
+  min?: number;
+  max?: number;
+  label?: string;
+  unit?: string;
+  format?: (value: number) => string;
+  thresholds?: Threshold[];
+  showNeedle?: boolean;
+};
+
+export type BarGaugeItem = {
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  unit?: string;
+};
+
+export type BarGaugeOptions = ChartOptions & {
+  data: BarGaugeItem[];
+  min?: number;
+  max?: number;
+  unit?: string;
+  format?: (value: number) => string;
+  thresholds?: Threshold[];
+};
+
+export type StatOptions = ChartOptions & {
+  label: string;
+  value: number | string;
+  unit?: string;
+  delta?: number | string;
+  deltaFormat?: (value: number) => string;
+  trend?: "up" | "down" | "neutral";
+  sparkline?: number[] | Point[];
+  format?: (value: number) => string;
+};
+
+export type HeatmapDatum = { x: string; y: string; value: number };
+
+export type HeatmapOptions = ChartOptions & {
+  data: HeatmapDatum[];
+  xLabels?: string[];
+  yLabels?: string[];
+  min?: number;
+  max?: number;
+  format?: (value: number) => string;
+  showValues?: boolean;
+};
+
+export type StateInterval = {
+  from: number;
+  to: number;
+  state: string;
+  label?: string;
+};
+
+export type StateTimelineRow = {
+  label: string;
+  intervals: StateInterval[];
+};
+
+export type StateStyle = {
+  state: string;
+  label?: string;
+  color?: string;
+};
+
+export type StateTimelineOptions = ChartOptions & {
+  rows: StateTimelineRow[];
+  states?: StateStyle[];
+  xAxis?: Pick<AxisOptions, "format" | "label">;
+  legend?: boolean;
+};
+
+export const thresholdIndexForValue = (value: number, thresholds: readonly Threshold[] | undefined, min: number, max: number): number => {
+  if (!thresholds || thresholds.length === 0) return 0;
+  const sorted = [...thresholds].filter((t) => Number.isFinite(t.value)).sort((a, b) => a.value - b.value);
+  const clamped = clamp(value, min, max);
+  const idx = sorted.findIndex((t) => clamped <= t.value);
+  return idx >= 0 ? idx : Math.max(0, sorted.length - 1);
+};
+
+export const thresholdForIndex = (thresholds: readonly Threshold[] | undefined, index: number): Threshold | undefined => {
+  if (!thresholds || thresholds.length === 0) return undefined;
+  const sorted = [...thresholds].filter((t) => Number.isFinite(t.value)).sort((a, b) => a.value - b.value);
+  return sorted[index];
+};
+
+// ==========================
+// SPARKLINE
+// ==========================
+
+export type SparklineOptions = {
+  inspect?: boolean;
+  /** Series of values. Bare numbers auto-x to their array index. */
+  data: number[] | Point[];
+  /** Default 80. */
+  width?: number;
+  /** Default 20. */
+  height?: number;
+  /** Render with smooth Catmull-Rom curves. Default `true`. */
+  smooth?: boolean;
+  /** Render a small dot at the last data point. Default false. */
+  showLast?: boolean;
+  /** Render dots at the highest and lowest data points. Skipped when all
+   *  values are equal. Default false. */
+  showMinMax?: boolean;
+  /** Render a soft gradient fill below the stroke line, fading from a
+   *  translucent `currentColor` at the top to fully transparent at the
+   *  bottom — the classic dashboard-tile look. The stroke line stays
+   *  visible on top, and dots from `showLast`/`showMinMax` compose over
+   *  the fill. Default false. */
+  area?: boolean;
+  /** Appended to the root `<svg>`'s class attribute. */
+  className?: string;
 };

@@ -51,6 +51,35 @@ suite("mail baseline schema", () => {
     ).toEqual(first);
   });
 
+  test("upgrades list link provenance once without changing existing conversation links", async () => {
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
+      VALUES (${newShortId()}, 'List link upgrade') RETURNING id`;
+    const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations (short_id, mailbox_id, latest_message_at)
+      VALUES (${newShortId()}, ${mailbox!.id}::uuid, '2026-11-01T10:00:00Z') RETURNING id`;
+    const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents (short_id, mailbox_id, content_hash, internal_date)
+      VALUES (${newShortId()}, ${mailbox!.id}::uuid, ${"c".repeat(64)}, '2026-11-01T10:00:00Z') RETURNING id`;
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+      VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0, 'headers')`;
+    const before = await sql`SELECT * FROM mail.conversation_messages WHERE message_id = ${message!.id}::uuid`;
+    await sql`ALTER TABLE mail.conversation_messages DROP CONSTRAINT conversation_messages_added_by_check`.simple();
+    await sql`ALTER TABLE mail.conversation_messages ADD CONSTRAINT conversation_messages_added_by_check
+      CHECK (added_by = ANY (ARRAY['provider', 'headers', 'heuristic', 'manual', 'outbox'])) NOT VALID`.simple();
+    try {
+      await migrate();
+      const first = await sql`SELECT oid::text, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE conrelid = 'mail.conversation_messages'::regclass AND conname = 'conversation_messages_added_by_check'`;
+      expect(first[0]!.definition).toContain("'list'");
+      await migrate();
+      expect(
+        await sql`SELECT oid::text, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+        WHERE conrelid = 'mail.conversation_messages'::regclass AND conname = 'conversation_messages_added_by_check'`,
+      ).toEqual(first);
+      expect(await sql`SELECT * FROM mail.conversation_messages WHERE message_id = ${message!.id}::uuid`).toEqual(before);
+    } finally {
+      await migrate();
+    }
+  });
+
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;

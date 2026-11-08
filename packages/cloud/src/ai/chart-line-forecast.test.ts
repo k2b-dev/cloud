@@ -4,6 +4,19 @@ import { liquidityForecastSpec } from "../../../../docs-site/src/ui/demo-section
 import { CloudAiChartInputSchema } from "./default-tool-contracts";
 import { parseCloudAiChartToolView } from "./view-block";
 
+test("the Assistant Code chart catalog forecast example passes the real model contract", async () => {
+  const docs = await Bun.file(new URL("../../../assistant/src/skills/assistant-code-mode/references/charts.md", import.meta.url)).text();
+  const source = docs.match(/const outlook = (\{[\s\S]*?\n\});/)?.[1];
+  if (!source) throw new Error("Missing outlook example");
+  const input = CloudAiChartInputSchema.parse(JSON.parse(source));
+  const view = parseCloudAiChartToolView(input);
+  expect(view?.view).toBe("chart");
+  if (!view || view.view !== "chart" || view.kind !== "line") throw new Error("Expected line example");
+  const svg = drawChart(chartRenderOptions(view, "en"));
+  expect(svg).toContain("k2b-line-forecast-band");
+  expect(svg).toContain("Today");
+});
+
 test("Chat accepts additive forecast options and preserves missing observations", () => {
   const input = {
     kind: "line",

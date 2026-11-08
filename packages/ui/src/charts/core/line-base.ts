@@ -28,7 +28,7 @@ import {
   smoothPathD,
   stepPathD,
   svgRoot,
-} from "./svg-shared";
+} from "./svg-common";
 
 export const lineBase = (opts: LineOptions): string => {
   const width = opts.width ?? DEFAULT_WIDTH;

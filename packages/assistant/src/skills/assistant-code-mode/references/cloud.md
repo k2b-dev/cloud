@@ -222,6 +222,12 @@ type ChartOptions =
       area?: boolean;
       smooth?: boolean;
       legend?: boolean;
+      forecast?: { from: number | string; band?: [number, number][] };
+      marker?: { at: number | string; label: string };
+      threshold?: { value: number; label: string };
+      zero?: boolean;
+      step?: "before" | "after" | "middle";
+      legendValues?: boolean;
     })
   | (ChartBase & { kind: "scatter"; series: ChartSeries[]; xAxis?: AxisOptions; yAxis?: AxisOptions; legend?: boolean })
   | (ChartBase & { kind: "pie" | "donut"; data: ChartItem[]; legend?: boolean; showLabels?: boolean })
