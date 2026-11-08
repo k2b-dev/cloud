@@ -77,3 +77,13 @@ test("Pareto lazy frame height equals the drawing for every header combination",
     expect(chartRenderHeight({ ...spec, kind: "pareto" })).toBe(paretoLayout(spec).height);
   }
 });
+
+// WebKit uses taller glyph boxes than Chromium; a 15px baseline step let the two lines touch.
+test("treemap name and value reserve independent readable lines", () => {
+  const svg = renderTreemapSvg({ groups: ["A"], data: [{ label: "Chairs", group: "A", value: 1234 }] });
+  expect(svg).toContain("var(--k2b-chart-inverse-y,1) - 1) * 18px");
+  expect(svg).toContain("var(--k2b-chart-inverse-y,1) - 1) * 38px");
+  expect(renderTreemapSvg({ groups: ["A"], height: 60, data: [{ label: "Chairs", group: "A", value: 1234 }] })).not.toContain(
+    "data-treemap-value",
+  );
+});

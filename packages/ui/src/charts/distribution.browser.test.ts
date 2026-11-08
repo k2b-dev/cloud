@@ -230,17 +230,15 @@ test("small-card Pareto axes stay inside and treemap name/value lines never over
         });
       });
       expect(axisBounds).toBe(true);
-      expect(await page.locator('[data-chart-kind="treemap"] tspan').count()).toBeGreaterThan(0);
+      expect(await page.locator('[data-chart-kind="treemap"] [data-treemap-value]').count()).toBeGreaterThan(0);
       const fit = await page.locator('[data-chart-kind="treemap"] [data-chart-datum]').evaluateAll((groups) =>
         groups.every((g) => {
           const cell = g.querySelector("rect")!.getBoundingClientRect();
-          // The text element encloses its tspan; measure the name as its first text node.
-          const text = g.querySelector("text");
+          // Independent text elements give glyph bounds in WebKit as well as Chromium.
+          const text = g.querySelector("[data-treemap-name]");
           if (!text) return true;
-          const range = document.createRange();
-          range.selectNodeContents(text.firstChild!);
-          const name = range.getBoundingClientRect(),
-            value = g.querySelector("tspan")?.getBoundingClientRect();
+          const name = text.getBoundingClientRect(),
+            value = g.querySelector("[data-treemap-value]")?.getBoundingClientRect();
           return (
             name.left >= cell.left - 1 &&
             name.right <= cell.right + 1 &&
