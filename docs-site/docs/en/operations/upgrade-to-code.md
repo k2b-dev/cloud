@@ -233,6 +233,12 @@ or data must never run old rules or routines beside active Code.
   **Preview without effects** for a real message, and handles one new test
   message or one manual schedule start as expected. Its run list shows the calls in order.
 
+Mailbox Code was not accepted against a real mailbox before this release; its
+tests deliver simulated messages to the Mail handler. Check it once on your
+installation: switch on one mailbox Code version on a test mailbox, send that
+mailbox a message from an outside address, and confirm that the run list shows
+one run for it with the expected effect.
+
 ## Related pages
 
 - [Export automation definitions](/en/docs/operations/automation-definition-export)
