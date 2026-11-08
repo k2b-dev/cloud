@@ -1484,6 +1484,8 @@ export default function MailComposer(props: {
             : t().inlineNew;
     };
     // F4: a reply offers to attach the quoted message it answers; a forward already carries it.
+    // A suggestion from Gustav stays plum until someone types or changes anything, recipients included.
+    const suggestionUntouched = () => Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent;
     const quoteLabel = () => {
       const intent = composerIntent();
       const sourceMessageId = draft()?.sourceMessageId ?? initial.sourceMessageId;
@@ -1538,6 +1540,7 @@ export default function MailComposer(props: {
         data-intent={composerIntent()}
         data-fullscreen={host.fullscreen() ? "" : undefined}
         data-history-label={t().historyBelow}
+        data-suggestion={suggestionUntouched() ? "" : undefined}
         aria-label={t().inlineDraftLabel({ intent: inlineIntentLabel() })}
         onKeyDown={onKeyDown}
       >
@@ -1550,10 +1553,20 @@ export default function MailComposer(props: {
           }}
         />
         <header class="mail-inline-draft-head">
-          <span class="mail-inline-draft-intent">
-            <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
-            {inlineIntentLabel()}
-          </span>
+          <Show
+            when={suggestionUntouched()}
+            fallback={
+              <span class="mail-inline-draft-intent">
+                <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
+                {inlineIntentLabel()}
+              </span>
+            }
+          >
+            <span class="mail-inline-draft-intent">
+              <i class="ti ti-sparkles" aria-hidden="true" />
+              {t().suggestionFromGustav}
+            </span>
+          </Show>
           <span class="mail-inline-draft-field-label">{t().to}</span>
           <div class="mail-inline-draft-recipients">
             <MailRecipientInput
@@ -1869,9 +1882,11 @@ export default function MailComposer(props: {
             </Show>
           </span>
           <span class="mail-inline-draft-status" role="status" aria-live="polite">
-            <Show when={saveState()}>
-              <i class={`ti ${status() === "saved" ? "ti-cloud-check" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
-              {saveState()}
+            <Show when={!suggestionUntouched()} fallback={<span class="mail-inline-draft-suggestion-hint">{t().suggestionHint}</span>}>
+              <Show when={saveState()}>
+                <i class={`ti ${status() === "saved" ? "ti-cloud-check" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
+                {saveState()}
+              </Show>
             </Show>
           </span>
           <SplitButton

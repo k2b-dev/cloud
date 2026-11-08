@@ -32,7 +32,7 @@ export default function MailInlineSignature(props: {
   });
   return (
     <Show when={props.signatureTemplateId()}>
-      <div class="mail-inline-draft-signature" data-mail-draft-signature aria-label={t().signatureBlock}>
+      <div class="mail-inline-draft-signature" data-mail-draft-signature role="group" aria-label={t().signatureBlock}>
         <Show when={!signature.error} fallback={<span class="mail-inline-draft-signature-note">{t().signatureAtSend}</span>}>
           {signature.latest ?? ""}
         </Show>

@@ -900,6 +900,22 @@ export default function MailConversationReader(props: {
           ? "ti-arrow-forward-up"
           : "ti-pencil";
 
+  // A suggestion from Gustav is already open in the conversation, in plum, ready to edit or send. Once someone
+  // collapses it, it waits as a row until someone opens it again.
+  const collapsedSuggestions = new Set<string>();
+  createEffect(() => {
+    const conversationId = props.selectedConversationId;
+    if (!conversationId || !props.canWrite || inlineDraft() || inlineStarting()) return;
+    const suggestion = props.conversationDrafts.find((draft) => draft.suggestion && !collapsedSuggestions.has(draft.id));
+    if (suggestion) untrack(() => void openInlineDraft({ conversationId, draftId: suggestion.id, fresh: false }));
+  });
+  createEffect(
+    on(inlineDraft, (_open, previous) => {
+      if (previous && props.conversationDrafts.some((draft) => draft.id === previous.draftId && draft.suggestion))
+        collapsedSuggestions.add(previous.draftId);
+    }),
+  );
+
   // Back and Forward return to a conversation with its draft open: the URL names the draft, the reader opens it.
   createEffect(
     on(

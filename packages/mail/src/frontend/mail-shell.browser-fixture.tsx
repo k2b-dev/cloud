@@ -59,19 +59,31 @@ const fixtureIdentity = (name: string): SenderIdentity => ({
 });
 /** `?drafts=1`: the open conversation already has a colleague's forward draft (invented). */
 const conversationDraftsFixture = (url: URL, selectedConversationId: string | null): ConversationDraftSummary[] =>
-  selectedConversationId && url.searchParams.has("drafts")
+  selectedConversationId && url.searchParams.has("suggestion")
     ? [
         {
-          id: "Drf001",
-          intent: "forward",
-          subject: "Fwd: Example request 1",
-          updatedAt: "2026-10-14T09:55:00.000Z",
-          bodyPreview: "Hello Tom, here are the pickup details for Saturday.",
-          createdByDisplayName: "Jonas Example",
-          suggestion: false,
+          id: "DrfSug",
+          intent: "reply",
+          subject: "Re: Example request 1",
+          updatedAt: "2026-10-14T09:58:00.000Z",
+          bodyPreview: "Saturday at 11 works. The chairs are ready in hall A.",
+          createdByDisplayName: "Gustav",
+          suggestion: true,
         },
       ]
-    : [];
+    : selectedConversationId && url.searchParams.has("drafts")
+      ? [
+          {
+            id: "Drf001",
+            intent: "forward",
+            subject: "Fwd: Example request 1",
+            updatedAt: "2026-10-14T09:55:00.000Z",
+            bodyPreview: "Hello Tom, here are the pickup details for Saturday.",
+            createdByDisplayName: "Jonas Example",
+            suggestion: false,
+          },
+        ]
+      : [];
 /** `?trace=` picks what rules did with the open conversation (fictional, from the approved mockup). */
 const traceFixture = (kind: string | null) => {
   const [sortUncertain, sortNora, sortAngebote, skippedCan, , , , manual] = [
@@ -551,7 +563,24 @@ export function mailboxData(url: URL): MailboxPageData {
                       ? { ...row, assigneeUserIds: [teamUsers[1]!.id, teamUsers[0]!.id] }
                       : row,
                 )
-              : listRows
+              : // ?drafts=1: a colleague's draft in the first conversation; ?suggestion=1: Gustav's untouched suggestion there.
+                url.searchParams.has("drafts") || url.searchParams.has("suggestion")
+                ? listRows.map((row, index) =>
+                    index === 0
+                      ? {
+                          ...row,
+                          drafts: {
+                            count: 1,
+                            editors: [
+                              url.searchParams.has("suggestion")
+                                ? { kind: "service_account" as const, id: "00000000-0000-4000-8000-0000000000e1", displayName: "Gustav" }
+                                : { kind: "user" as const, id: "00000000-0000-4000-8000-0000000000e2", displayName: "Jonas Example" },
+                            ],
+                          },
+                        }
+                      : row,
+                  )
+                : listRows
             : listRows.map((row) => ({
                 ...row,
                 id: `${selectedMailbox.id}-${row.id}`,

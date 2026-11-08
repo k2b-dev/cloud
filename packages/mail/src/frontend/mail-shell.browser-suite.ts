@@ -4509,6 +4509,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           revision: 1,
           state: "draft",
           deliveryClass: "normal",
+          suggestion: false,
           createdAt: stamp,
           updatedAt: stamp,
           ...extra,
@@ -4520,6 +4521,19 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             { subject: "Fwd: Example request 1", body: "Hello Tom, here are the pickup details for Saturday." },
             {
               intent: "forward",
+            },
+          ),
+        );
+        drafts.set(
+          "DrfSug",
+          makeDraft(
+            "DrfSug",
+            { body: "Hello,\n\nSaturday at 11 works. The chairs are ready in hall A." },
+            {
+              suggestion: true,
+              createdBy: { kind: "service_account", serviceAccountId: "00000000-0000-4000-8000-0000000000e1" },
+              lastEditedBy: { kind: "service_account", serviceAccountId: "00000000-0000-4000-8000-0000000000e1" },
+              lastEditedByDisplayName: "Gustav",
             },
           ),
         );
@@ -4751,6 +4765,39 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      test("Gustav's suggestion is already open in plum, its row says so, and the first typing takes it over", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          await readyDraft(page);
+          const draft = page.locator("[data-mail-inline-draft]");
+          expect(await draft.getAttribute("data-suggestion")).toBe("");
+          expect(await draft.textContent()).toContain("Suggestion from Gustav");
+          expect(await page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]').getAttribute("data-suggestion")).toBe("");
+          // Never a second Reply while the suggestion stands in the pill's place.
+          expect(await readerReplies(page).count()).toBe(0);
+          await page.locator("[data-mail-inline-draft] .cm-content").click();
+          await page.keyboard.type(" Thanks!");
+          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-suggestion"));
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a conversation with a colleague's draft shows a draft chip with who writes it", async () => {
+        const page = await open(`${boxPath}?drafts=1`, 1440);
+        try {
+          const chip = page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]');
+          expect(await chip.textContent()).toContain("Draft");
+          expect(await chip.textContent()).toContain("JE");
+          expect(await chip.getAttribute("aria-label")).toBe("Draft: Jonas Example");
+          expect(await chip.getAttribute("data-suggestion")).toBeNull();
+        } finally {
+          await close(page);
+        }
+      });
+
       test("switching to another conversation saves typing the autosave had not sent yet", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
@@ -4869,7 +4916,19 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           });
           await shoot("05-draft-rows", "light", 1440, `${thread}&drafts=1`);
           await shoot("05-draft-rows", "light", 390, `${thread}&drafts=1`);
-        }, 180_000);
+          for (const width of [1440, 390])
+            await shoot("06-gustav-suggestion", "light", width, `${thread}&suggestion=1`, async (page) => {
+              await readyDraft(page);
+            });
+          await shoot("06-gustav-suggestion", "dark", 1440, `${thread}&suggestion=1`, async (page) => {
+            await readyDraft(page);
+          });
+          await shoot("07-quote-attached", "light", 1440, thread, async (page) => {
+            await reply(page);
+            await page.locator("[data-mail-draft-quote]").getByRole("button").click();
+            await page.waitForFunction(() => document.querySelector("[data-mail-draft-quote]")?.textContent?.includes("attached"));
+          });
+        }, 240_000);
     });
 
     if (screenshots && part === "reader")

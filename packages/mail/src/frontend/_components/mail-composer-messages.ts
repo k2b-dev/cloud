@@ -308,6 +308,8 @@ export const mailComposerMessages = i18n.define({
       quoteAttached: ({ label }: { label: string }) => `Quote attached: ${label} · collapsed`,
       attachQuote: "Attach",
       removeQuote: "Remove",
+      suggestionFromGustav: "Suggestion from Gustav",
+      suggestionHint: "Type to take it over, or send it as it is",
       closedUnsaved:
         "The last changes of a shared draft you closed reached neither the server nor this device. Open the draft again and check its text.",
     },
@@ -620,6 +622,8 @@ export const mailComposerMessages = i18n.define({
       quoteAttached: ({ label }) => `Zitat angehängt: ${label} · eingeklappt`,
       attachQuote: "Anhängen",
       removeQuote: "Entfernen",
+      suggestionFromGustav: "Vorschlag von Gustav",
+      suggestionHint: "Tippe, um ihn zu übernehmen, oder sende ihn so",
       closedUnsaved:
         "Die letzten Änderungen eines gemeinsamen Entwurfs, den du geschlossen hast, erreichten weder den Server noch dieses Gerät. Öffne den Entwurf erneut und prüfe den Text.",
     },
