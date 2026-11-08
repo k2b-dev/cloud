@@ -1,7 +1,28 @@
 import { expect, test } from "bun:test";
 import { line } from "./svg";
 
-test("exact linear domains keep their endpoints without crowding them with round ticks", () => {
+test("default exact axes retain their original ticks and centered endpoint labels", () => {
+  for (const axis of ["xAxis", "yAxis"] as const) {
+    const svg = line({
+      series: [
+        {
+          data: [
+            { x: 0, y: 0 },
+            { x: 10.1, y: 10.1 },
+          ],
+        },
+      ],
+      [axis]: { domain: [0, 10.1], format: (value: number) => `default:${value}` },
+    });
+    expect([...svg.matchAll(/>default:([^<]+)</g)].map((match) => Number(match[1]))).toEqual([0, 2, 4, 6, 8, 10, 10.1]);
+    if (axis === "xAxis") {
+      expect(svg).toContain('text-anchor="middle">default:0</text>');
+      expect(svg).toContain('text-anchor="middle">default:10.1</text>');
+    }
+  }
+});
+
+test("opted-in exact linear domains keep their endpoints without crowding them with round ticks", () => {
   for (const [bounds, expected] of [
     [
       [0, 10.1],
@@ -30,7 +51,7 @@ test("exact linear domains keep their endpoints without crowding them with round
             ],
           },
         ],
-        [axis]: { domain: bounds, format: (value: number) => `endpoint:${value}` },
+        [axis]: { domain: bounds, insetEndpointLabels: true, format: (value: number) => `endpoint:${value}` },
       });
       const ticks = [...svg.matchAll(/>endpoint:([^<]+)</g)].map((match) => Number(match[1]));
       expect(ticks).toEqual(expected);
@@ -38,7 +59,7 @@ test("exact linear domains keep their endpoints without crowding them with round
   }
 });
 
-test("explicit numeric X labels stay centered with caller-reserved space for units", () => {
+test("opted-in numeric X labels point inward and leave space for endpoint units", () => {
   const svg = line({
     series: [
       {
@@ -48,20 +69,18 @@ test("explicit numeric X labels stay centered with caller-reserved space for uni
         ],
       },
     ],
-    xAxis: { domain: [0, 11.2], format: (value) => `${value} s` },
-    padding: { right: 32 },
+    xAxis: { domain: [0, 11.2], insetEndpointLabels: true, format: (value) => `${value} s` },
   });
   const ticks = [...svg.matchAll(/<text class="stdlib-chart-tick-label"[^>]*text-anchor="([^"]+)"[^>]*>([^<]+ s)<\/text>/g)].map(
     (match) => ({ anchor: match[1], text: match[2] }),
   );
   expect(ticks).toEqual([
-    { anchor: "middle", text: "0 s" },
+    { anchor: "start", text: "0 s" },
     { anchor: "middle", text: "2 s" },
     { anchor: "middle", text: "4 s" },
     { anchor: "middle", text: "6 s" },
     { anchor: "middle", text: "8 s" },
-    { anchor: "middle", text: "10 s" },
-    { anchor: "middle", text: "11.2 s" },
+    { anchor: "end", text: "11.2 s" },
   ]);
 });
 

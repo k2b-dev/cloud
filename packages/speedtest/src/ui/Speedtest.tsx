@@ -332,8 +332,11 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean; i
               maxGap={0.6}
               smooth={false}
               references={phaseStarts().map((item) => ({ axis: "x" as const, value: item.x, style: "dotted" as const }))}
-              xAxis={{ domain: [0, historySeconds()], format: (value) => `${formatSpeedTestReading(value, locale())} s` }}
-              padding={{ right: 32 }}
+              xAxis={{
+                domain: [0, historySeconds()],
+                insetEndpointLabels: true,
+                format: (value) => `${formatSpeedTestReading(value, locale())} s`,
+              }}
               yAxis={{ domain: [0, chartCeiling()], format: (value) => formatSpeedTestReading(value, locale()) }}
               legend
               legendPlacement="top-start"
