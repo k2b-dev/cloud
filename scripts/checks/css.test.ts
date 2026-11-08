@@ -65,6 +65,15 @@ test("applications can each override a token owned by UI", async () => {
   ).toEqual([]);
 });
 
+test("applications can each start their workspace sidebar at their own width", async () => {
+  expect(
+    await check("--k2b-workspace-sidebar-width", "", {
+      first: ".first-workspace { --k2b-workspace-sidebar-width: 16rem; }",
+      second: ".second-workspace { --k2b-workspace-sidebar-width: 248px; }",
+    }),
+  ).toEqual([]);
+});
+
 test("application-owned tokens still need a single owner", async () => {
   expect(
     await check("--example-ink", "", {
