@@ -16,7 +16,7 @@ import {
   renderXAxisCategorical,
   renderYAxis,
   svgRoot,
-} from "./svg-renderers";
+} from "./svg-common";
 /**
  * Render a box plot (Tukey style): box for the IQR (Q1-Q3), median line,
  * whiskers extending to 1.5×IQR fences, and individual outlier dots.

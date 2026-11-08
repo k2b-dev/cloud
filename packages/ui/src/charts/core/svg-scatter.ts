@@ -27,7 +27,7 @@ import {
   renderYAxis,
   type ScatterOptions,
   svgRoot,
-} from "./svg-renderers";
+} from "./svg-common";
 import type { ChartDatum } from "./types";
 /**
  * Render a scatter plot. Each series produces a group of circles, one per

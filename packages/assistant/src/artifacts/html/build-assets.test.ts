@@ -38,7 +38,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // 8,040 B largest kind, 14,846 B shared, 68,040 B total measured.
+  // 8,040 B largest kind, 14,842 B shared, 68,036 B total measured.
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);

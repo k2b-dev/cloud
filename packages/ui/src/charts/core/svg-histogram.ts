@@ -16,7 +16,7 @@ import {
   renderXAxisNumeric,
   renderYAxis,
   svgRoot,
-} from "./svg-renderers";
+} from "./svg-common";
 /**
  * Render a histogram (frequency distribution) of the given observations.
  * Uses Sturges' formula by default for bin count, or accepts an explicit

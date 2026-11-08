@@ -14,7 +14,7 @@ import {
   thresholdForIndex,
   thresholdIndexForValue,
   thresholdStrokeAttr,
-} from "./svg-renderers";
+} from "./svg-common";
 
 const polarPoint = (cx: number, cy: number, r: number, angleRad: number) => ({
   x: cx + r * Math.cos(angleRad),

@@ -11,7 +11,7 @@ import {
   normalizePadding,
   renderHeader,
   svgRoot,
-} from "./svg-renderers";
+} from "./svg-common";
 /**
  * Render a categorical two-dimensional heatmap. Cell opacity represents value
  * intensity; labels are derived from first occurrence order unless provided.

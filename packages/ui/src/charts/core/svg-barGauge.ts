@@ -12,7 +12,7 @@ import {
   thresholdFillAttr,
   thresholdForIndex,
   thresholdIndexForValue,
-} from "./svg-renderers";
+} from "./svg-common";
 /** Render compact horizontal bar gauges for multiple reduced metrics. */
 export const barGauge = (opts: BarGaugeOptions): string => {
   const width = opts.width ?? 420;
