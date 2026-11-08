@@ -7,6 +7,7 @@ import {
   CloudResourceRefSchema,
 } from "../contracts/capabilities";
 import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
+import { hasFileInput } from "./file-ref";
 import * as pageTypes from "./page-authoring-types.ts" with { type: "text" };
 import { CODE_PAGE_LIMITS, CodeChartDescriptionSchema, CodePageTreeSchema } from "./page-contract";
 import { CODE_PAGE_BUILDERS } from "./page-source";
@@ -20,6 +21,7 @@ const path = (value: string): string[] => value.split(".");
 const quote = JSON.stringify;
 const forbiddenProperties = new Set(["__proto__", "prototype", "constructor"]);
 const reservedExports = new Set([
+  "FileRef",
   "Page",
   "Section",
   "Text",
@@ -177,13 +179,14 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     ] as const) {
       for (const operation of byId(entries)) {
         const capability = `${app.appId}.${operation.localId}`;
-        const reason = operation.stream
-          ? "stream"
-          : "code" in operation && operation.code === false
-            ? "code_false"
-            : "appOnly" in operation && operation.appOnly
-              ? "app_only"
-              : null;
+        const reason =
+          operation.stream?.direction === "write" && !hasFileInput(operation.inputSchema)
+            ? "stream"
+            : "code" in operation && operation.code === false
+              ? "code_false"
+              : "appOnly" in operation && operation.appOnly
+                ? "app_only"
+                : null;
         if (reason) {
           manifest.omitted.push({ capability, reason });
           continue;
@@ -212,6 +215,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
           dataSchema: structuredClone(operation.dataSchema),
           schemaHash: operation.schemaHash,
           idempotency: "idempotency" in operation && operation.idempotency === "required" ? "required" : "none",
+          ...(operation.stream ? { stream: { ...operation.stream } } : {}),
         });
       }
     }
@@ -242,7 +246,14 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
         type: op.idempotency === "required" ? "string" : "never",
         required: op.idempotency === "required",
       });
-    const input = schemaTypes(op.inputSchema, `Input${index}`, fields);
+    const inputSchema = structuredClone(op.inputSchema);
+    if (op.stream?.direction === "write") {
+      const properties = inputSchema.properties;
+      if (properties && typeof properties === "object")
+        inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => name !== "file"));
+      fields.push({ name: "file", type: "FileRef", required: true });
+    }
+    const input = schemaTypes(inputSchema, `Input${index}`, fields);
     const output = schemaTypes(op.dataSchema, `Data${index}`);
     declarations.push(
       ...input.declarations,
@@ -250,7 +261,8 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `type Input${index} = ${input.type};`,
       `type Data${index} = ${output.type};`,
     );
-    methods.set(op, `(input: Input${index}) => Promise<${op.kind === "query" ? `CodeQueryResult<Data${index}>` : `Data${index}`}>`);
+    const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<Data${index}>` : `Data${index}`;
+    methods.set(op, `(input: Input${index}) => Promise<${result}>`);
   }
   const handleNames = new Map<string, string>();
   for (const [index, handle] of manifest.handles.entries()) {

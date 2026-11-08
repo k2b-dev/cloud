@@ -19,7 +19,7 @@ export type CodeSdkCallMetadata = { idempotencyKey?: string };
 /** Payload sent through cloud.call(operation, input); operation equals call.capability. */
 export type CodeSdkInvocation = { call: NormalizedCapabilityCall; metadata: CodeSdkCallMetadata };
 
-/** Runner-compatible object capability. Resolves query data/page envelopes or Action domain data; the host throws on bridge refusals. No tokens enter the SDK. */
+/** Runner-compatible object capability. Resolves query data/page envelopes, streaming FileRefs or Action domain data; the host throws on bridge refusals. No tokens enter the SDK. */
 export type CodeSdkBridge = {
   call(operation: string, input: CodeSdkInvocation): Promise<unknown>;
   call(operation: "http.fetch", input: CodeHttpRequest): Promise<unknown>;
@@ -44,6 +44,7 @@ export type CodeSdkOperation = {
   dataSchema: Record<string, unknown>;
   schemaHash: string;
   idempotency: "required" | "none";
+  stream?: { direction: "read" | "write"; maxBytes: number };
 };
 
 /** Discovered event contract; resource registrations bind the owner place. */

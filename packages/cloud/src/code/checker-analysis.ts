@@ -318,7 +318,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             node,
             `code_${omitted.reason}`,
             omitted.reason === "stream"
-              ? "Streams sind für Code gesperrt."
+              ? "Dieser Schreib-Stream deklariert keinen file-Metadateneingang für Code."
               : omitted.reason === "code_false"
                 ? "Diese Action ist mit code: false für diesen Code gesperrt."
                 : "Diese Query ist nur für Apps verfügbar.",

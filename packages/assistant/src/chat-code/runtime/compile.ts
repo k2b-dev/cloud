@@ -103,7 +103,7 @@ export async function compileScript(input: unknown, sdk?: GeneratedCodeSdk, runn
                            const envelope = await globalThis.cloud.capabilities.run(name, call.input, {
                              ...(call.target ? {target: call.target} : {}), refs: call.refs, ...metadata
                            });
-                           return ${JSON.stringify(sdk.manifest.operations.filter((op) => op.kind === "query").map((op) => op.capability))}.includes(name)
+                           return ${JSON.stringify(sdk.manifest.operations.filter((op) => op.kind === "query" && op.stream?.direction !== "read").map((op) => op.capability))}.includes(name)
                              ? {data: envelope.data, ...(envelope.page === undefined ? {} : {page: envelope.page})}
                              : envelope.data;
                          }});

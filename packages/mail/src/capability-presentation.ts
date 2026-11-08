@@ -133,6 +133,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             id: "Genauer mail.attachment ID, der von den Metadaten des Nachrichtenanhangs oder einer typisierten Ressource ref zurückgegeben wird.",
           },
         },
+        "attachment.content.read": {
+          title: "Anhang als Datei lesen",
+          description:
+            "Öffnet den Originalanhang als begrenzten Binärstream. Code erhält eine FileRef für eine Schreib-Capability einer anderen App; attachment.read-content liefert extrahierten Text.",
+          input: { id: "Stabile Anhang-ID." },
+        },
         "attachment.read-content": {
           title: "Anhangtext lesen",
           description:
