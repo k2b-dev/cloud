@@ -390,6 +390,8 @@ export type {
   AiConversation,
   AiConversationDraft,
   AiConversationPage,
+  AiConversationPlace,
+  AiConversationPlaceFilter,
   AiConversationResourceOccurrence,
   AiConversationResourceRef,
   AiConversationRunStatus,
