@@ -592,7 +592,14 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       data: { appId: "fixture", appName: "Fixture", appIcon: "box", appDescription: "Fixture", manifest: declaration.manifest },
     });
     const resource = spyOn(eventPlatform, "authorizeResourceEvent").mockResolvedValue(true);
+    let refuseHistorical = false;
     const source = spyOn(catalogProvider, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+      if (invocation.capabilityId === "collection.read")
+        return { ok: true, data: { data: schema.parse({ view: { title: "Fixture collection", permission: "admin" } }) } };
+      if (refuseHistorical) {
+        refuseHistorical = false;
+        return { ok: false, error: { code: "FORBIDDEN", message: "unavailable", status: 403 } };
+      }
       const subject = z.object({ id: z.string() }).parse(invocation.input).id;
       const index = Number(subject.replace("message-", ""));
       return { ok: true, data: { data: schema.parse(event(100 + index, subject)) } };
@@ -646,8 +653,8 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       await broker.work();
       expect(await runs()).toHaveLength(45);
       expect(await sql`SELECT * FROM code.run_requests WHERE request_key=${`event:${delayed.id}`}`).toHaveLength(1);
-      expect(source.mock.calls[0]?.[2]?.authority).toBe(editor.authority);
-      source.mockResolvedValueOnce({ ok: false, error: { code: "FORBIDDEN", message: "unavailable", status: 403 } });
+      expect(source.mock.calls.find(([call]) => call.capabilityId === "item.event")?.[2]?.authority).toBe(editor.authority);
+      refuseHistorical = true;
       await expect(startCodeEventCatchup(codeId, { ...input, operationId: id(63) }, editor)).rejects.toMatchObject({ code: "FORBIDDEN" });
       await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp()`;
       backlog = 2;
