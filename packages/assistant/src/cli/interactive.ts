@@ -28,7 +28,7 @@ import { httpApprovalNotice } from "../chat-code/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../chat-code/runtime/capabilities";
 import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
-import { assistantChoicePrompt, assistantChoiceText, openAssistantChoices, parseAssistantChoice, submitAssistantChoice } from "./choices";
+import { assistantChoiceText, openAssistantChoices } from "./choices";
 import { createLineReader, type LineReader } from "./line-reader";
 import { createLocalContextReader, type LocalContext, type LocalSkill, localSkillCatalog, readLocalSkill } from "./local-context";
 import { type LocalFileReview, reviewLocalFile } from "./local-file";
@@ -644,44 +644,9 @@ They go to the model with every message and can steer what it does with your Clo
           })) ?? undefined;
         if (!result && !abort.signal.aborted) return 2;
       }
-      while (result?.status === "completed" && !abort.signal.aborted) {
-        const choices = openAssistantChoices(result.messages);
-        let submitted = false;
-        for (const choice of choices) {
-          ctx.print(terminalSafeText(assistantChoiceText(choice)));
-          let ids: string[] | null = null;
-          while (ids === null && !abort.signal.aborted) {
-            const answer = await reader.read(assistantChoicePrompt(choice, ctx.options.locale), { typedOnly: true });
-            if (answer === null) break;
-            ids = parseAssistantChoice(choice, answer);
-          }
-          if (!ids?.length || abort.signal.aborted) continue;
-          const response = await submitAssistantChoice(ctx, chatId, choice, ids, abort.signal);
-          turnId = response.turn.id;
-          result = await streamAssistantTurn({
-            ctx,
-            conversationId: chatId,
-            turnId,
-            output: createAssistantTurnOutput(),
-            clientTools,
-            signal: abort.signal,
-            onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
-          });
-          if (result.status === "needs_attention" && result.turnId)
-            result =
-              (await resolveAttention({
-                ctx,
-                reader,
-                conversationId: chatId,
-                turnId: result.turnId,
-                output: createAssistantTurnOutput(),
-                signal: abort.signal,
-                clientTools,
-              })) ?? undefined;
-          submitted = true;
-          break;
-        }
-        if (!submitted) break;
+      if (result?.status === "completed" && !abort.signal.aborted) {
+        const chatLink = `${ctx.options.server.replace(/\/$/, "")}/app/assistant?conversation=${chatId}`;
+        for (const choice of openAssistantChoices(result.messages)) ctx.print(terminalSafeText(assistantChoiceText(choice, chatLink)));
       }
       if (result?.status === "aborted" || (!result && abort.signal.aborted)) {
         if (turnId) await readApi(ctx, conversationPath(chatId, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" });

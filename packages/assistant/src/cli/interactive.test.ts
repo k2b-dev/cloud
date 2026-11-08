@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AiStoredMessage } from "@k2b/cloud/ai";
 import { AI_LOCAL_TOOL_NAMES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import {
@@ -529,6 +530,74 @@ const interactiveSession = (
 
 const submissions = (session: ReturnType<typeof interactiveSession>) =>
   session.requests.filter((request) => request.path.endsWith("/turns"));
+
+test.each(["one", "many"] as const)("a completed turn prints a %s choice and browser link without asking or submitting", async (mode) => {
+  const result: AiStoredMessage = {
+    id: "choice-result",
+    shortId: "Chs234",
+    conversationId: "new-1",
+    seq: 2,
+    kind: "message",
+    loopId: "turn-1",
+    message: { role: "tool_result", callId: "choice-source", name: "art__query__categories", result: { data: {} } },
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    createdAt: "2026-11-08T12:00:00Z",
+    meta: {
+      resultChoice: { state: "open" },
+      resultView: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "category",
+            title: "Category?",
+            submit: "Choose",
+            mode,
+            options: [
+              { id: "jug", title: "Jugendstil" },
+              { id: "modern", title: "Modern" },
+            ],
+            option: { id: ["id"], title: ["title"] },
+          },
+        ],
+      },
+    },
+  };
+  const messages = ["Categories", "/status", "/exit"];
+  const session = interactiveSession(messages, [], {}, undefined, (path) => {
+    if (path.endsWith("/stream"))
+      return new Response(
+        `data: ${JSON.stringify({
+          v: 1,
+          type: "turn_finished",
+          conversationId: "new-1",
+          turnId: "turn-1",
+          attempt: 1,
+          seq: 2,
+          status: "completed",
+          error: null,
+          messages: [result],
+        })}\n\n`,
+      );
+  });
+  session.ctx.options.server = "https://cloud.test/";
+  expect(await session.run()).toBe(0);
+  expect(messages).toEqual([]);
+  expect(session.printed).toContain(
+    "Category?\n1. Jugendstil [jug]\n2. Modern [modern]\nAnswer in Cloud: https://cloud.test/app/assistant?conversation=new-1",
+  );
+  expect(session.prompts).toEqual([]);
+  expect(session.errors).toEqual([]);
+  expect(session.requests.some((request) => request.path.endsWith("/choices"))).toBe(false);
+  expect(session.requests.filter((request) => request.path.endsWith("/stream"))).toHaveLength(1);
+  expect(submissions(session)).toHaveLength(1);
+});
 
 test("Ctrl+C at /model cancels the picker and keeps reading messages", async () => {
   const messages = ["/model", "hello", "/exit"];

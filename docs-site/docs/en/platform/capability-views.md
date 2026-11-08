@@ -163,6 +163,9 @@ person can answer it:
    After an answer and after a reload, the chosen options stay marked with
    "Chosen by you" and the time; the block is read-only.
 
+An API key, OAuth token (such as `cld`), or delegated credential receives `403`
+when trying to answer a choice.
+
 Set `choose` on `Cards` to draw the choice's options as those cards. Card `id`s
 must match the choice's option ids.
 
@@ -201,7 +204,9 @@ column shows the search facts (`metadata`, `preview`, `previewUrl`) as before.
 ## Text for terminals, MCP, and the model
 
 - `cld assistant` prints the result's `summary` and the view as text
-  (`blocksText`). An open choice becomes a numbered list.
+  (`blocksText`). `cld assistant` and ACP clients print an open choice as a
+  numbered list with a link to answer it in Cloud, because only the person in
+  a signed-in browser session can answer a choice.
 - MCP keeps the whole result as `structuredContent` and puts the summary and
   the view text before the JSON text.
 - The model receives `data` as before plus a short description of what the

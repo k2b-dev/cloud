@@ -1815,32 +1815,16 @@ describe("ACP capability choices", () => {
       },
     },
   });
-  test.each([false, true])("offers elicitation only when announced (%s), and cancellation leaves the choice open", async (forms) => {
-    const h = await harness({ forms, form: () => ({ action: "cancel" }) });
+  test.each([false, true])("prints choices with a browser link without elicitation or submission (forms: %s)", async (forms) => {
+    const h = await harness({ forms, form: () => ({ action: "accept", content: { ids: "jug" } }) });
     h.streams.push([{ ...h.done(), messages: [choiceResult()] }]);
     expect(await h.send("Categories")).toEqual({ stopReason: "end_turn" });
-    expect(h.forms).toHaveLength(forms ? 1 : 0);
+    expect(h.forms).toHaveLength(0);
     expect(h.requests.some((request) => request.path.endsWith("/choices"))).toBe(false);
-    if (!forms) expect(h.text()).toContain("1. Jugendstil [jug]");
-  });
-  test("accepted elicitation posts the event endpoint and follows its new turn", async () => {
-    const h = await harness({
-      forms: true,
-      form: () => ({ action: "accept", content: { ids: "jug" } }),
-      intercept: (path) => (path.endsWith("/choices") ? Response.json({ turn: { id: "choice-turn" } }) : undefined),
-    });
-    h.streams.push([{ ...h.done(), messages: [choiceResult()] }], [{ ...h.done(), turnId: "choice-turn", messages: [] }]);
-    expect(await h.send("Categories")).toEqual({ stopReason: "end_turn" });
-    expect(h.forms[0]).toMatchObject({
-      mode: "form",
-      requestedSchema: { properties: { ids: { type: "string", enum: ["jug", "modern"] } } },
-    });
-    expect(h.requests.find((request) => request.path.endsWith("/choices"))?.body).toEqual({
-      turnId: "turn",
-      toolCallId: "choice-source",
-      blockId: "category",
-      ids: ["jug"],
-    });
+    expect(h.text()).toContain(
+      "Category?\n1. Jugendstil [jug]\n2. Modern [modern]\nAnswer in Cloud: https://cloud.test/app/assistant?conversation=chat\n",
+    );
+    expect(h.requests.filter((request) => request.path.endsWith("/stream"))).toHaveLength(1);
     expect(h.requests.some((request) => request.path.includes("/actions/"))).toBe(false);
   });
 });
