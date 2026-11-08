@@ -476,4 +476,15 @@ export const Toolbar = Object.assign(
   { Action: ToolbarAction, Label: ToolbarLabel, Group: ToolbarGroup, Separator: ToolbarSeparator, Spacer: ToolbarSpacer },
 ) as ToolbarComponent;
 
+export type ToolbarDockProps = { children: JSX.Element; class?: string };
+
+/**
+ * One floating row at the bottom of a column for several floating toolbars: the first sits at the start edge, the last
+ * at the end edge, and each moves its own actions into More when the row gets narrow. Content scrolls beneath the row
+ * and still ends above it.
+ */
+export const ToolbarDock = (props: ToolbarDockProps): JSX.Element => (
+  <div class={props.class ? `k2b-toolbar-dock ${props.class}` : "k2b-toolbar-dock"}>{props.children}</div>
+);
+
 export default Toolbar;

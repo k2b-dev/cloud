@@ -1263,7 +1263,7 @@
 }
 
 /* Quick look card beside the conversation list. The card is the shared
-   @k2b/ui hover preview (fixed 22rem x 20rem box, inner depth only); Mail sets
+   @k2b/ui hover preview (fixed 22rem x 20rem box, float shadow); Mail sets
    the plain surface and lays out its content. Unlayered, because the shared
    card rules are unlayered too. Nothing in the card scrolls: every block is
    clamped and the message text fades out at the bottom. */

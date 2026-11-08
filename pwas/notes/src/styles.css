@@ -1346,7 +1346,8 @@ body.k2b-ui {
     background: var(--k2b-action-solid);
     color: #fff;
     font-size: 26px;
-    box-shadow: 0 8px 20px -8px rgb(29 78 216 / 0.6);
+    /* A floating action stays open over the list: the toolbar shadow of layer 3. */
+    box-shadow: var(--k2b-shadow-toolbar);
     cursor: pointer;
   }
   .n-foot {

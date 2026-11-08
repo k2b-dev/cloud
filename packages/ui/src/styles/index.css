@@ -183,10 +183,12 @@
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
   --k2b-motion-sheet: 220ms; /* panels, sheets, period changes */
+  --k2b-motion-morph: 280ms; /* one large surface changes size or place: a pill grows into a draft */
   --k2b-motion-celebrate: 600ms; /* completion moments only */
   --k2b-fresh-fade: 1600ms; /* color only: a highlight fades out */
   --k2b-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* standard curve */
   --k2b-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small marks only: check, switch knob, badge */
+  --k2b-ease-morph: cubic-bezier(0.2, 0, 0, 1); /* with --k2b-motion-morph: a soft start and a long, calm landing */
   /* Cloud pins `--ui-shadow-surface: none` in both themes: flat surfaces carry
      a border, not a drop shadow, and an outer shadow is clipped anyway by the
      `overflow: hidden` parents these surfaces sit in. Only genuinely floating,
@@ -214,6 +216,12 @@
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
   --k2b-shadow-sheet: 0 -14px 36px rgb(9 9 11 / 0.16); /* a sheet rising from the bottom edge */
+  /* Layer 1, an island in the main content: a section, a content card, a dashboard frame. */
+  --k2b-shadow-raised: 0 1px 2px rgb(15 23 19 / 0.05), 0 4px 12px -6px rgb(15 23 19 / 0.12);
+  /* The surface of an island. In dark mode a lighter surface replaces the shadow. */
+  --k2b-surface-raised: var(--k2b-surface);
+  /* A floating pill or toolbar that stays open: softer than a menu that opens for a moment. */
+  --k2b-shadow-toolbar: 0 1px 2px rgb(9 9 11 / 0.06), 0 6px 18px -8px rgb(9 9 11 / 0.16);
 
   --stdlib-chart-c1: var(--k2b-accent-500);
   --stdlib-chart-c2: var(--k2b-success-500);
@@ -247,6 +255,7 @@
     --k2b-motion-fast: 0ms;
     --k2b-motion-base: 0ms;
     --k2b-motion-sheet: 0ms;
+    --k2b-motion-morph: 0ms;
     --k2b-motion-celebrate: 0ms;
     --k2b-fresh-fade: 0ms;
   }
@@ -270,6 +279,7 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-fast: 0ms;
   --k2b-motion-base: 0ms;
   --k2b-motion-sheet: 0ms;
+  --k2b-motion-morph: 0ms;
   --k2b-motion-celebrate: 0ms;
   --k2b-fresh-fade: 0ms;
 }
@@ -385,6 +395,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
+  /* No shadow, as a transparent no-op layer so lists such as `ring, var(--k2b-shadow-raised)` stay valid. */
+  --k2b-shadow-raised: 0 0 #0000;
+  --k2b-surface-raised: var(--k2b-surface-elevated);
+  --k2b-shadow-toolbar: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 22px -10px rgb(0 0 0 / 0.5);
   color-scheme: dark;
   --k2b-chart-highlight-mix: white;
 }
@@ -394,6 +408,55 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui *::before,
 .k2b-ui *::after {
   box-sizing: border-box;
+}
+
+/* Layers and shadows: one model for every app.
+   0 the workspace: the app card and its columns, flat.
+   1 islands in the main content: Paper, a framed Section, LinkCard,
+     ResourceCard, DashboardFrame. They read `--k2b-island-shadow` and
+     `--k2b-island-surface` and never pick a shadow themselves.
+   2 overlaying surfaces: drawer, sheet, PanelDialog (`--k2b-shadow-side`, `-sheet`).
+   3 floating surfaces: menu, popover, dialog, toast, drag preview
+     (`--k2b-shadow-float`, `-toast`); floating pills and toolbars (`--k2b-shadow-toolbar`).
+   A shadow appears only between layers. Every column beside the main content,
+   every overlaying or floating surface, and every region marked
+   `data-k2b-layer="flat"` (a dense collection) is flat inside; the inside of an
+   island is flat too (surfaces-widgets-parity.css), so depth never nests. */
+.k2b-ui {
+  --k2b-island-shadow: var(--k2b-shadow-raised);
+  --k2b-island-surface: var(--k2b-surface-raised);
+}
+
+:is(.k2b-ui, .k2b-ui *):is(
+    [data-k2b-layer="flat"],
+    dialog,
+    [popover],
+    .k2b-app-workspace__sidebar,
+    .k2b-app-workspace__detail,
+    .k2b-detail-panel,
+    .k2b-bottom-sheet,
+    .k2b-floating-window,
+    .k2b-context-menu,
+    .k2b-toolbar
+  ),
+/* A nested `.k2b-ui` scope inside a flat layer stays flat; it would otherwise
+   declare the main-content default again. */
+:is(
+    [data-k2b-layer="flat"],
+    dialog,
+    [popover],
+    .k2b-app-workspace__sidebar,
+    .k2b-app-workspace__detail,
+    .k2b-detail-panel,
+    .k2b-bottom-sheet,
+    .k2b-floating-window,
+    .k2b-context-menu,
+    .k2b-toolbar
+  )
+  .k2b-ui {
+  /* A transparent no-op layer, not `none`, so an island may list it after a ring. */
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-island-surface: var(--k2b-surface);
 }
 
 .k2b-ui::selection,
@@ -3007,7 +3070,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1rem;
   border-radius: 999px;
   background: #ffffff;
-  box-shadow: 0 1px 2px rgb(9 9 11 / 0.2);
   transition: transform 120ms ease;
 }
 
@@ -11203,7 +11265,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A selected row is a clear fill in the app colour, never a coloured line,
    so its geometry and the row lines stay as they are. */
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface-beneath, var(--k2b-surface)));
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
@@ -12133,7 +12195,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-elevated);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--k2b-text) 10%, transparent);
+  box-shadow: var(--k2b-shadow-toolbar);
   font: inherit;
   font-size: 0.75rem;
   cursor: pointer;
@@ -12248,7 +12310,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-elevated);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--k2b-text) 10%, transparent);
+  box-shadow: var(--k2b-shadow-toolbar);
   font-size: 0.75rem;
   pointer-events: none;
   transform: translateX(-50%);
@@ -16314,9 +16376,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-surface);
-  /* Solid: fields and text scroll underneath, and blurred they read as a fault. */
+  /* Solid: fields and text scroll underneath, and blurred they read as a fault.
+     A bar that stays open floats with the toolbar shadow, softer than a menu. */
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-toolbar);
 }
 
 .k2b-ui .k2b-settings-save-bar p {
@@ -17148,23 +17211,60 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
   flex-shrink: 0;
 }
+/* ToolbarDock: one floating row for several pills, the first at the start
+   edge and the last at the end edge. The row keeps its place in the flow, so
+   the end of the content always stays reachable above it. */
+.k2b-ui .k2b-toolbar-dock {
+  position: sticky;
+  inset-block-end: 0;
+  margin-block-start: auto;
+  display: flex;
+  min-inline-size: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.625rem;
+  padding: 0.5rem 1rem 1rem;
+  pointer-events: none;
+  z-index: 1;
+  flex-shrink: 0;
+}
+/* Each strip takes an equal share of the row, whatever its pill shows, so
+   widening the row resizes every strip and its toolbar measures again: moved
+   actions and labels come back. A share that followed the pill's content would
+   keep a compact pill compact. */
+.k2b-ui .k2b-toolbar-dock > .k2b-toolbar-float {
+  position: static;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  justify-content: flex-start;
+}
+.k2b-ui .k2b-toolbar-dock > .k2b-toolbar-float:last-child:not(:first-child) {
+  justify-content: flex-end;
+}
+/* A floating toolbar is a pill on layer 3 that stays open: the toolbar shadow,
+   softer than a menu's, and a light 1 px edge. It is solid, never glass, so
+   text scrolling beneath it never shows through. */
 .k2b-ui .k2b-toolbar[data-variant="floating"] {
   position: relative;
   pointer-events: auto;
   max-inline-size: 100%;
-  block-size: 3.25rem;
+  /* 44 px controls with room for their key hints, plus the 1 px edge on each side. */
+  block-size: calc(3.25rem + 2px);
   padding: 0.25rem;
   gap: 0.125rem;
-  border-radius: 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: 999px;
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-toolbar);
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] > .k2b-button,
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__group .k2b-button,
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__more .k2b-dropdown__trigger {
   min-inline-size: 2.75rem;
   block-size: 2.75rem;
-  border-radius: 0.625rem;
+  border-radius: 999px;
   flex: none;
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button i {
@@ -17734,7 +17834,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__dimension-value { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 3.5rem; overflow: hidden; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
 .k2b-ui .k2b-chart-explorer__dimension-value > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__dimension-value > [aria-hidden] { visibility: hidden; }
-.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: 0 2px 6px #00000008; visibility: hidden; pointer-events: none; font-size: .625rem; }
+.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: var(--k2b-shadow-toolbar); visibility: hidden; pointer-events: none; font-size: .625rem; }
 .k2b-ui .k2b-chart-explorer__steps span { padding: .0625rem .1875rem; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: .1875rem; font-weight: 500; }
 .k2b-ui .k2b-chart-explorer__dimension:is([data-keyboard="true"], :has(input:active)) .k2b-chart-explorer__steps { visibility: visible; }
