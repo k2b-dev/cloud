@@ -1496,7 +1496,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     revealPending = false;
     const centred = current.offsetLeft - (list.clientWidth - current.offsetWidth) / 2;
     list.style.scrollBehavior = "auto";
-    list.scrollLeft = clamp(centred, 0, list.scrollWidth - list.clientWidth);
+    // The ends go to the browser's own clamp, exact even with fractional widths.
+    const max = list.scrollWidth - list.clientWidth;
+    list.scrollLeft = centred <= 0 ? 0 : centred >= max ? list.scrollWidth : centred;
     list.style.scrollBehavior = "";
     stripFade();
   };
@@ -1542,11 +1544,41 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     event.stopPropagation();
     items.forEach((item, k) => (item.tabIndex = k === to ? 0 : -1));
     const target = items[to]!;
+    // Never the browser's focus scroll: the strip places the focused item itself, at once.
     target.focus({ preventScroll: true });
-    const list = stripList!;
-    if (target.offsetLeft < list.scrollLeft + 48) list.scrollLeft = target.offsetLeft - 48;
-    else if (target.offsetLeft + target.offsetWidth > list.scrollLeft + list.clientWidth - 48)
-      list.scrollLeft = target.offsetLeft + target.offsetWidth - list.clientWidth + 48;
+    stripShow(target);
+  };
+  /**
+   * Scrolls the strip at once (no smooth animation to wait for) until `target` lies outside both edge fades. The
+   * first and last items go to the true scroll ends, where no fade shows; scrolling to `0` or to `scrollWidth`
+   * lets the browser clamp, so fractional widths never leave the last item a sub-pixel past the edge.
+   */
+  const stripShow = (target: HTMLElement) => {
+    const list = stripList;
+    const item = target.closest("li");
+    if (!list || !item || item.hasAttribute("data-current")) return stripFade();
+    const start = item.offsetLeft;
+    const end = start + item.offsetWidth;
+    const view = list.getBoundingClientRect().width;
+    const max = list.scrollWidth - view;
+    const style = getComputedStyle(list);
+    const startInset = Math.max(
+      Number.parseFloat(style.scrollPaddingLeft) || 0,
+      Number.parseFloat(style.getPropertyValue("--k2b-image-editor-fade-start")) || 0,
+    );
+    const endInset = Math.max(
+      Number.parseFloat(style.scrollPaddingRight) || 0,
+      Number.parseFloat(style.getPropertyValue("--k2b-image-editor-fade-end")) || 0,
+    );
+    let left = list.scrollLeft;
+    if (start < left + (left > 1 ? startInset : 0)) left = start - startInset;
+    else if (end > left + view - (left < max - 1 ? endInset : 0)) left = end - view + endInset;
+    else return stripFade();
+    list.style.scrollBehavior = "auto";
+    const position = left < list.scrollLeft ? Math.floor(left) : Math.ceil(left);
+    list.scrollLeft = position <= 1 ? 0 : position >= max - 1 ? list.scrollWidth : position;
+    list.style.scrollBehavior = "";
+    stripFade();
   };
 
   const tip = (label: string, keys?: string) => (
@@ -2121,10 +2153,17 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   function strip() {
     return (
       <nav class="k2b-image-editor__strip k2b-overlay-surface" aria-label={t().images}>
-        <ul ref={stripList} onScroll={stripFade} onKeyDown={stripKeys}>
+        <ul
+          ref={stripList}
+          onScroll={stripFade}
+          onKeyDown={stripKeys}
+          onFocusIn={(event) => {
+            if (event.target instanceof HTMLElement) stripShow(event.target);
+          }}
+        >
           <KeyedFor each={props.items ?? []} by={(item) => item.id}>
             {(item) => (
-              <li>
+              <li data-current={item().id === props.currentItem ? "" : undefined}>
                 <button
                   type="button"
                   class="k2b-image-editor__thumb"
@@ -2319,6 +2358,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               </span>
             </>
           }
+          valuePlacement="label"
           value={value()}
           min={centered ? -100 : 0}
           max={100}
@@ -2334,6 +2374,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const strength = () => (
       <Slider
         label={t().strength}
+        valuePlacement="label"
         value={Math.round(state().lookStrength * 100)}
         min={0}
         max={100}
@@ -2795,6 +2836,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           <Show when={!losslessOutput()} fallback={<p class="k2b-image-editor__hint k2b-image-editor__lossless">{t().lossless}</p>}>
             <Slider
               label={t().quality}
+              valuePlacement="label"
               min={40}
               max={100}
               defaultValue={90}

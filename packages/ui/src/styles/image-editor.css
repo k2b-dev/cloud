@@ -352,12 +352,15 @@
   gap: 4px;
   height: 36px;
   margin: 0;
-  padding: 0;
+  /* One trailing pixel: a strip that starts on a fractional x gets a whole-pixel scroll range in WebKit, which
+     would leave the last item a fraction past the edge at the scroll end. */
+  padding: 0 1px 0 0;
   list-style: none;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
   scroll-behavior: smooth;
+  scroll-padding-inline: 44px;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--k2b-image-editor-fade-start), #000 calc(100% - var(--k2b-image-editor-fade-end)), transparent);
   mask-image: linear-gradient(to right, transparent, #000 var(--k2b-image-editor-fade-start), #000 calc(100% - var(--k2b-image-editor-fade-end)), transparent);
 }
@@ -365,6 +368,14 @@
 .k2b-ui .k2b-image-editor__strip ul[data-fade~="start"] { --k2b-image-editor-fade-start: 44px; }
 .k2b-ui .k2b-image-editor__strip ul[data-fade~="end"] { --k2b-image-editor-fade-end: 44px; }
 .k2b-ui .k2b-image-editor__strip li { flex: none; }
+/* The open image never leaves the strip: scrolled away, it stays at the visible edge just inside the fade while
+   the others pass beneath, so browsing on to the end (and the add tile) never hides it. */
+.k2b-ui .k2b-image-editor__strip li[data-current] {
+  position: sticky;
+  z-index: 1;
+  left: var(--k2b-image-editor-fade-start);
+  right: var(--k2b-image-editor-fade-end);
+}
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .k2b-image-editor__strip ul { scroll-behavior: auto; }
   .k2b-ui .k2b-image-editor__placeholder::after { animation: none; }

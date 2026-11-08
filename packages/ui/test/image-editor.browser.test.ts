@@ -324,6 +324,24 @@ describe("public ImageEditor interactions", () => {
         await settled(page);
         expect(await page.locator(".k2b-image-editor__strip ul").evaluate((list) => list.scrollLeft)).toBe(scroll);
         expect(await openThumbVisible(page)).toBe(true);
+        // Browsing by hand to either end keeps the open image at the visible edge; at the end the add tile shows too.
+        for (const end of ["start", "end"] as const) {
+          await page
+            .locator(".k2b-image-editor__strip ul")
+            .evaluate((list, end) => list.scrollTo({ left: end === "start" ? 0 : list.scrollWidth, behavior: "instant" }), end);
+          await settled(page);
+          expect(await openThumbVisible(page)).toBe(true);
+        }
+        expect(
+          await page.locator(".k2b-image-editor__strip ul").evaluate((list) => {
+            const add = list.querySelector(".k2b-image-editor__thumb--add")!.getBoundingClientRect();
+            return add.right <= list.getBoundingClientRect().right + 0.5;
+          }),
+        ).toBe(true);
+        // A late rebuild of every item while browsed away keeps both.
+        await fixture(page, "refreshItems()");
+        await settled(page);
+        expect(await openThumbVisible(page)).toBe(true);
         expect(errors).toEqual([]);
       } finally {
         await page.close();
@@ -335,7 +353,9 @@ describe("public ImageEditor interactions", () => {
     const { page, errors } = await open("count=28&current=p1");
     try {
       await page.locator('.k2b-image-editor__strip [aria-current="true"]').focus();
+      // End reaches the add tile last; one step back is the last image.
       await page.keyboard.press("End");
+      await page.keyboard.press("ArrowLeft");
       await page.keyboard.press("Enter");
       await page.waitForFunction("window.editorFixture.selected.length === 1");
       await settled(page);
@@ -358,6 +378,42 @@ describe("public ImageEditor interactions", () => {
       await late.page.close();
     }
   });
+
+  for (const width of [1440, 390]) {
+    test(`strip focus respects scroll padding and End reveals Add without browser focus scrolling at ${width}px`, async () => {
+      const { page, errors } = await open("count=28&current=p1", width);
+      try {
+        if (width === 390) await page.locator(".k2b-image-editor__name").click();
+        const list = page.locator(".k2b-image-editor__strip ul");
+        await list.evaluate((element) => {
+          element.style.scrollPaddingInline = "60px";
+          element.querySelectorAll<HTMLButtonElement>("button")[20]!.focus({ preventScroll: true });
+        });
+        await settled(page);
+        expect(
+          await list.evaluate((element) => {
+            const focus = document.activeElement!.getBoundingClientRect();
+            const box = element.getBoundingClientRect();
+            return focus.left >= box.left + 60 && focus.right <= box.right - 60;
+          }),
+        ).toBe(true);
+        await page.keyboard.press("End");
+        await settled(page);
+        expect(
+          await list.evaluate((element) => {
+            const add = element.querySelector(".k2b-image-editor__thumb--add")!;
+            const box = element.getBoundingClientRect();
+            const focus = add.getBoundingClientRect();
+            return document.activeElement === add && focus.left >= box.left && focus.right <= box.right;
+          }),
+        ).toBe(true);
+        expect(await openThumbVisible(page)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }
 
   test("markings show how to reorder them and their order menu moves them, below the anchored redactions", async () => {
     const { page, errors } = await open();

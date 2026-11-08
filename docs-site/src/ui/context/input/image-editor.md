@@ -136,7 +136,9 @@ A minimal caller needs only:
   caller's own thumbnail. The caller swaps `source` on selection and keeps one
   editor per image when edits must survive the switch. `onAddItems` adds a "+"
   at the end. The strip fades only on a side with more images, keeps its
-  height, and moves focus with the arrow keys, Home, and End. On phones it
+  height, and moves focus with the arrow keys, Home, and End. It opens with
+  the current image in view, and the current image never leaves it: browsed
+  away, it stays at the visible edge just inside the fade. On phones it
   opens below the chips from the name chip. Keep each item's `id` stable:
   thumbnail and dirty-state updates preserve its button, focus, and scroll position.
 

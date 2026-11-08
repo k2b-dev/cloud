@@ -91,6 +91,7 @@ function mount() {
         }
         items={items()}
         currentItem={current()}
+        onAddItems={count ? () => {} : undefined}
         onSelectItem={(id) => {
           control.selected.push(id);
           setCurrent(id);
