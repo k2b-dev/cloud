@@ -268,6 +268,33 @@ describe("Cloud invocation JWT", () => {
     expect(await verify(await token({ ...baseClaims(), workload_run: "r1" }))).toBeNull();
   });
 
+  test("Code trigger coordinates round-trip only with a complete run binding", async () => {
+    const current = {
+      ...baseClaims(),
+      credential_kind: "mandate",
+      mandate_id: "10ec1c74-858b-4a98-9ba7-ab2276754c69",
+      mandate_revision: 1,
+      workload_type: "code.version",
+      workload_id: "version",
+      workload_run: "run",
+      workload_trigger: {
+        type: "mail.message.received",
+        subject: { type: "mail.message", id: "Msg123" },
+        place: { type: "mail.mailbox", id: "Box123" },
+      },
+    };
+    expect(await verify(await token(current))).toMatchObject({ workload_trigger: current.workload_trigger });
+    expect(await verify(await token({ ...current, workload_trigger: null }))).toMatchObject({ workload_trigger: null });
+    for (const change of [
+      { workload_run: undefined },
+      { workload_type: "other" },
+      { credential_kind: "session" },
+      { workload_event: jti },
+      { workload_trigger: { ...current.workload_trigger, text: "body" } },
+    ])
+      expect(await verify(await token({ ...current, ...change }))).toBeNull();
+  });
+
   test("event visibility proofs require a complete mandate and cannot authorize Actions", async () => {
     const proof = {
       ...baseClaims(),

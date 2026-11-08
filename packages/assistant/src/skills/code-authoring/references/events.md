@@ -42,9 +42,11 @@ message ID; `event.data.receiptId` identifies the receipt.
 import { app, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   // Throwing before the first Action lets Cloud retry the run automatically.
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (message.keywordsTruncated) throw new Error("Provider keywords are incomplete");
   const sender = message.from[0]?.address ?? "";
   console.log(`New message from ${sender}: ${message.subject}`);
@@ -92,8 +94,10 @@ async function markWaiting(message: Message) {
 }
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   await tagInvoices(message);
   await markWaiting(message);
 });

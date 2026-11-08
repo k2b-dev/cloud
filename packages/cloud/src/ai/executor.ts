@@ -46,6 +46,8 @@ import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
 import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
+import { withPlaceAssistantContext } from "./place-prompt";
+import { loadPlaceAssistantRound } from "./place-round";
 import { rejectUnavailablePlaceCalls, resolveAiPlaceTools } from "./place-tools";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
@@ -1527,7 +1529,18 @@ export class AiTurnExecutor {
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: nextMessage.wrap(turnPolicy.provider),
+      provider:
+        chat?.place && defaultToolSource
+          ? withPlaceAssistantContext(nextMessage.wrap(turnPolicy.provider), (signal) =>
+              loadPlaceAssistantRound({
+                conversationId,
+                persistedActor: material.actor,
+                skillsEnabled: activeTools.some((tool) => tool.def.name === "load_skill"),
+                locale: promptLocale,
+                signal,
+              }),
+            )
+          : nextMessage.wrap(turnPolicy.provider),
       systemPrompt,
       store,
       steering: createChatSteering({

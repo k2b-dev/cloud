@@ -1030,6 +1030,7 @@ test("the invoice template is identical in skill and Fibel, checks against the l
   );
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   const calls: CodeSdkInvocation[] = [];
+  let hydrationReads = 0;
   const file = { id: "fake-file-ref", name: "invoice.pdf", mediaType: "application/pdf", size: 5_000_000 };
   const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
   await module["event:mail.message.received@1"](
@@ -1049,7 +1050,7 @@ test("the invoice template is identical in skill and Fibel, checks against the l
         if (input.call.capability === "mail.message.read")
           return {
             data: {
-              hydrationStatus: "complete",
+              hydrationStatus: ++hydrationReads <= 5 ? "envelope" : "complete",
               attachmentsTruncated: false,
               conversationId: "Cv4g00",
               attachments: [{ id: "At4g00", contentType: "application/pdf" }],
@@ -1062,20 +1063,48 @@ test("the invoice template is identical in skill and Fibel, checks against the l
       },
     },
   );
+  expect(hydrationReads).toBe(6);
+  for (const call of calls.slice(0, 6)) expect(call.call.input).toEqual({ id: "Ms4g00", waitForHydration: true });
+  // Five pending replies did not spend five run attempts or perform an early effect.
   expect(calls.map((input) => input.call.capability)).toEqual([
-    "mail.message.read",
+    ...Array(6).fill("mail.message.read"),
     "mail.attachment.content.read",
     "imports.import",
     "mail.conversation.read",
     "mail.conversation.tag.update",
   ]);
-  expect(calls[2]).toMatchObject({
+  expect(calls[7]).toMatchObject({
     call: { input: { file } },
     metadata: { idempotencyKey: "invoice:22222222-2222-4222-8222-222222222222:At4g00" },
   });
-  expect(calls[4]).toMatchObject({
+  expect(calls[9]).toMatchObject({
     call: { target: { type: "mail.mailbox", id: "Mb4g00" }, input: { expectedRevision: 4, addTagIds: ["Tag123"] } },
   });
+  const failedCalls: string[] = [];
+  const failedModule = await import(
+    `data:text/javascript;base64,${Buffer.from(`${result.bundle}\n// terminal fixture`).toString("base64")}`
+  );
+  await expect(
+    failedModule["event:mail.message.received@1"](
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        type: "mail.message.received",
+        version: 1,
+        source: "mail",
+        time: "2026-11-07T12:00:00.000Z",
+        subject: { type: "mail.message", id: "Ms4g00" },
+        place: { type: "mail.mailbox", id: "Mb4g00" },
+        data: { receiptId: "22222222-2222-4222-8222-222222222222" },
+      },
+      {
+        call: async (_operation: string, input: CodeSdkInvocation) => {
+          failedCalls.push(input.call.capability);
+          throw new Error("mail_message_hydration_failed");
+        },
+      },
+    ),
+  ).rejects.toThrow("mail_message_hydration_failed");
+  expect(failedCalls).toEqual(["mail.message.read"]);
 }, 30_000);
 
 test("each building block types its props: a wrong prop, value or child text is a type error", async () => {
