@@ -5,6 +5,7 @@ import { offlineHtml } from "./offline-html";
 export type GotenbergRenderErrorCode =
   | "busy"
   | "bad_input"
+  | "unreadable_pdf"
   | "not_configured"
   | "html_too_large"
   | "pdf_too_large"

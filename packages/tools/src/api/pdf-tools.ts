@@ -31,6 +31,7 @@ export const PdfToolOperationSchema = z.discriminatedUnion("kind", [
 export const PdfToolsErrorSchema = z.object({
   code: z.enum([
     "bad_input",
+    "unreadable_pdf",
     "pdf_too_large",
     "cancelled",
     "renderer_busy",
@@ -56,6 +57,7 @@ const messages = i18n.define({
   messages: {
     en: {
       bad_input: "Choose PDF files and valid pages for this operation.",
+      unreadable_pdf: "The PDF could not be read. Choose an undamaged PDF without password protection.",
       pdf_too_large: "The PDF operation exceeds the size, page or work limit. Use fewer pages or smaller files.",
       cancelled: "The PDF operation was cancelled.",
       renderer_busy: "PDF processing is busy. Try again in a moment.",
@@ -66,6 +68,7 @@ const messages = i18n.define({
     },
     de: {
       bad_input: "Wähle PDF-Dateien und gültige Seiten für diese Aktion.",
+      unreadable_pdf: "Das PDF konnte nicht gelesen werden. Wähle ein unbeschädigtes PDF ohne Passwortschutz.",
       pdf_too_large: "Die PDF-Aktion überschreitet die Größen-, Seiten- oder Arbeitsgrenze. Verwende weniger Seiten oder kleinere Dateien.",
       cancelled: "Die PDF-Aktion wurde abgebrochen.",
       renderer_busy: "Die PDF-Verarbeitung ist ausgelastet. Versuche es gleich erneut.",
@@ -187,7 +190,7 @@ export const createPdfToolsRoutes = (dependencies: Dependencies = {}) => {
   const run = dependencies.run ?? runPdfToolWithConfig;
   // Match existing Tools document/PDF local memory admission. Shared renderer
   // admission is centralized in the PDF service; neither admission queues.
-  let active = 0;
+  const activeSubjects = new Set<string>();
   return new Hono<AuthContext>()
     .use("*", async (c, next) => {
       c.header("Cache-Control", "private, no-store");
@@ -255,8 +258,10 @@ export const createPdfToolsRoutes = (dependencies: Dependencies = {}) => {
         const t = messages.resolve([getLocale(c)]).t;
         const failure = (code: PdfToolsErrorCode, status: 400 | 408 | 413 | 422 | 502 | 503 | 504) =>
           c.json({ code, message: t[code] } satisfies PdfToolsError, status);
-        if (active >= 2) return failure("renderer_busy", 503);
-        active++;
+        const subject = c.get("accessSubject");
+        const subjectKey = subject.type === "user" ? `user:${subject.userId}` : `service_account:${subject.serviceAccountId}`;
+        if (activeSubjects.size >= 2 || activeSubjects.has(subjectKey)) return failure("renderer_busy", 503);
+        activeSubjects.add(subjectKey);
         let raisedTimeout = false;
         try {
           signal.throwIfAborted();
@@ -286,12 +291,14 @@ export const createPdfToolsRoutes = (dependencies: Dependencies = {}) => {
           }
           const files = form.getAll("files");
           if (!files.every((file): file is File => file instanceof File)) return failure("bad_input", 400);
-          const input = { files, operation };
-          validatePdfToolInput(input, config);
           for (const file of files) {
             signal.throwIfAborted();
             if ((await file.slice(0, 5).text()) !== "%PDF-") return failure("bad_input", 400);
           }
+          // The wire MIME and magic were checked above. Bun may infer File.type
+          // from the filename instead of its declared multipart content type.
+          const input = { files: files.map((file) => new Blob([file], { type: "application/pdf" })), operation };
+          validatePdfToolInput(input, config);
           const result = await run(input, config, { signal });
           signal.throwIfAborted();
           return new Response(new Blob([new Uint8Array(result.data)], { type: result.contentType }), {
@@ -308,6 +315,8 @@ export const createPdfToolsRoutes = (dependencies: Dependencies = {}) => {
           if (signal.aborted) return failure("renderer_timeout", 504);
           if (error instanceof GotenbergRenderError) {
             switch (error.code) {
+              case "unreadable_pdf":
+                return failure("unreadable_pdf", 422);
               case "bad_input":
                 return failure("bad_input", 400);
               case "pdf_too_large":
@@ -325,7 +334,7 @@ export const createPdfToolsRoutes = (dependencies: Dependencies = {}) => {
           }
           return failure("renderer_failed", 502);
         } finally {
-          active--;
+          activeSubjects.delete(subjectKey);
           if (raisedTimeout) setRequestTimeout(c, 10);
         }
       },

@@ -851,7 +851,7 @@ it needs the PDF-engine routes and ExifTool metadata support provided by
 Gotenberg 8.36.0. No new service or setting is required.
 
 With the default renderer settings, an operation accepts at most 99 files and
-99 total source pages, 10 MiB of input and 10 MiB of output. Renderer uploads
+98 total source pages, 10 MiB of input and 10 MiB of output. Renderer uploads
 and downloads each have a cumulative 20 MiB work budget. Reordering or splitting
 may hit that budget before the final output reaches 10 MiB. Larger operations
 fail with HTTP 413; use fewer pages or smaller files. The limits derive from
@@ -860,7 +860,9 @@ the existing renderer size and timeout settings. See
 
 Before enabling the API for users, check a small merge, selected-page extraction,
 split ZIP, rotation and reorder against the installed renderer. Uploaded files
-and results are not persisted by Tools. Keep Gotenberg private and offline as
+and results are not persisted by Tools. Each access subject can hold one of
+two local upload places; a second concurrent request from that subject returns
+HTTP 503. Unreadable or password-protected PDFs return HTTP 422. Keep Gotenberg private and offline as
 below.
 
 ### Keep Gotenberg offline

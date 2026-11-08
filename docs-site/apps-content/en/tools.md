@@ -27,7 +27,7 @@ testing tasks that do not need their own application.
 
 Check where each task runs before entering sensitive data. Most generators,
 converters, security helpers, and image operations are interactive page tools.
-Document extraction and PDF rendering call the Cloud server. Speed tests use
+Document extraction, PDF rendering, and PDF page operations call the Cloud server. Speed tests use
 the named standalone measurement server without sending Cloud credentials.
 Document conversion holds its input and result only in memory; webhook
 endpoints and request history are stored server-side.
@@ -87,6 +87,20 @@ the PDF directly with a private no-store policy. The Markdown, CSS, and PDF are
 processed in memory and are not persisted. API callers may also combine a
 preset with CSS overrides; omitting the preset makes the CSS the complete
 stylesheet.
+
+## Process PDF pages through the API
+
+Authenticated integrations can send PDF files and a JSON operation to
+`POST /tools/api/pdf` to merge, extract, split, rotate, or reorder pages.
+Split returns a ZIP; the other operations return a PDF. This endpoint
+has no Tools page or dedicated CLI command yet. The upload and result stay
+in memory and are not persisted.
+
+Default limits are 99 files, 98 total source pages, and 10 MiB each for input
+and output. Repeated processing can reach the work budget sooner. Unreadable
+or password-protected PDFs return HTTP 422; use an undamaged PDF without
+password protection. See the Tools OpenAPI description at
+`/tools/api/openapi.json` for the request contract.
 
 ## Convert images in bulk
 

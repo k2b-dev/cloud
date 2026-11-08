@@ -273,11 +273,11 @@ from `@k2b/cloud/services/pdf`.
   uploads together have a budget of twice `maxPdfBytes`. Intermediate PDF
   downloads and the final output together have the same budget; retained
   intermediate PDFs must fit `maxPdfBytes`.
-- File count and total source page count are each limited by the smaller of
-  `floor(maxHtmlBytes / 8192)` and `floor(timeoutMs / 100) - 1`, with a minimum
-  of one. The first reserves the existing 8 KiB multipart metadata envelope
-  per slot; the second uses the configuration's 100 ms minimum timeout as a
-  work unit. It is a count bound, not a renderer speed estimate.
+- File count is limited by the smaller of `floor(maxHtmlBytes / 8192)` and
+  `maxOperations - 1`. Total source pages use `maxOperations - 2`, with a
+  minimum of one, reserving inspection and the final merge even when each
+  page needs a separate extraction. The 8 KiB metadata envelope bounds both
+  counts. These are count bounds, not renderer speed estimates.
 - All renderer calls together are limited to `floor(timeoutMs / 100)` (at
   least two). Inspection and the final merge count too. Metadata fits
   `maxHtmlBytes`. Configuration values use the existing registry ranges.
@@ -286,7 +286,7 @@ from `@k2b/cloud/services/pdf`.
   a queue. A busy renderer fails the operation; no partial archive is returned.
 
 At the default settings, source and final output are each limited to 10 MiB,
-with 20 MiB for aggregate uploads and PDF downloads, 99 files or source pages,
+with 20 MiB for aggregate uploads and PDF downloads, 99 files, 98 source pages,
 and 100 renderer calls. A large file can therefore merge or rotate successfully
 but exceed the work budget when split or reordered. Use smaller documents,
 fewer groups, or an order with fewer ascending runs.
@@ -294,7 +294,8 @@ fewer groups, or an order with fewer ascending runs.
 Applications must authenticate and authorize app access before reading an
 upload. Bound the actual request stream before parsing multipart data, including
 requests without `Content-Length`. Reserve local memory admission before
-reading; forward the original request's abort signal and raise its idle timeout
+reading, and allow at most one active upload per access subject so one caller
+cannot occupy both local places; forward the original request's abort signal and raise its idle timeout
 while waiting for the result. Return a private, non-cacheable PDF or ZIP with
 an attachment filename. The helpers retain no files and accept no user-chosen
 renderer URL or path.
@@ -307,6 +308,7 @@ renderer URL or path.
 | --- | --- |
 | `busy` | Both shared renderer places are occupied, or admission is unavailable; retry later (503) |
 | `bad_input` | Invalid files, page selection or operation |
+| `unreadable_pdf` | Metadata has no valid page count; choose an undamaged PDF without password protection (Tools returns 422) |
 | `not_configured` | The renderer URL or limits are invalid |
 | `html_too_large` | HTML exceeds the deployment limit |
 | `pdf_too_large` | Input, output, source pages or aggregate PDF work exceeds the deployment limit |

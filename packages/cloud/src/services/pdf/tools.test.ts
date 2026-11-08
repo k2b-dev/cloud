@@ -160,14 +160,32 @@ describe("bounded PDF operations", () => {
     expect(upstream.calls).toHaveLength(1);
   });
 
-  test("counts inspection, ascending runs and final merge against one call limit", async () => {
+  test("rejects selections above the complete-operation call ceiling before admission", async () => {
     const upstream = renderer();
     const limited = { ...config, timeoutMs: 400 };
-    expect(pdfToolLimits(limited).maxPages).toBe(3);
+    expect(pdfToolLimits(limited).maxPages).toBe(2);
     await expect(
       runPdfToolWithConfig({ files: [source()], operation: { kind: "reorder", pages: [3, 2, 1] } }, limited, upstream),
-    ).rejects.toMatchObject({ code: "pdf_too_large" });
-    expect(upstream.calls).toHaveLength(1);
+    ).rejects.toMatchObject({ code: "bad_input" });
+    expect(upstream.calls).toHaveLength(0);
+    expect(admission).not.toHaveBeenCalled();
+  });
+
+  test("the default page ceiling reserves inspection and final merge for a worst-case reorder", async () => {
+    const defaults = { ...config, maxPdfBytes: 10 * 1024 * 1024 };
+    const limits = pdfToolLimits(defaults);
+    expect(limits.maxPages).toBe(98);
+    expect(limits.maxFiles).toBe(99);
+    expect(limits.maxPages + 2).toBe(limits.maxOperations);
+    const pages = Array.from({ length: limits.maxPages }, (_, i) => i + 1);
+    const upstream = renderer();
+    const result = await runPdfToolWithConfig(
+      { files: [source(pages)], operation: { kind: "reorder", pages: pages.toReversed() } },
+      defaults,
+      upstream,
+    );
+    expect(decode(result.data)).toBe(`%PDF-${pages.toReversed().join(",")}`);
+    expect(upstream.calls).toHaveLength(limits.maxOperations);
   });
 
   test("aborting between split groups produces no partial ZIP and no further call", async () => {
@@ -206,7 +224,7 @@ describe("bounded PDF operations", () => {
     for (const value of [{ "000001.pdf": {} }, { "000001.pdf": { PageCount: "unknown" } }, { "000001.pdf": { PageCount: -1 } }, null]) {
       await expect(
         runPdfToolWithConfig({ files: [source()], operation: { kind: "merge" } }, config, { fetch: async () => Response.json(value) }),
-      ).rejects.toMatchObject({ code: "bad_response" });
+      ).rejects.toMatchObject({ code: "unreadable_pdf" });
     }
     await expect(
       runPdfToolWithConfig({ files: [source()], operation: { kind: "merge" } }, config, {

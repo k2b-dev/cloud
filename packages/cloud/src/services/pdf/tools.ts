@@ -44,7 +44,8 @@ export const pdfToolLimits = (config: GotenbergConfig) => {
   const metadataSlots = Math.max(1, Math.floor(config.maxHtmlBytes / PDF_TOOL_PART_METADATA_BYTES));
   return {
     maxFiles: Math.min(metadataSlots, maxOperations - 1),
-    maxPages: Math.min(metadataSlots, maxOperations - 1),
+    // Reserve inspection and the final merge even for one run per page.
+    maxPages: Math.min(metadataSlots, Math.max(1, maxOperations - 2)),
     maxOperations,
     maxInputBytes: config.maxPdfBytes,
     maxRequestBytes: config.maxPdfBytes + config.maxHtmlBytes,
@@ -226,7 +227,7 @@ export async function runPdfToolWithConfig(
         return value;
       });
     } catch {
-      throw new GotenbergRenderError("bad_response", "Renderer did not provide valid PDF page counts.");
+      throw new GotenbergRenderError("unreadable_pdf", "Renderer did not provide valid PDF page counts.");
     }
     const totalPages = counts.reduce((sum, count) => sum + count, 0);
     if (totalPages > limits.maxPages) tooLarge();

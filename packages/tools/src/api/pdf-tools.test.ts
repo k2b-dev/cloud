@@ -8,6 +8,16 @@ import { createPdfToolsRoutes } from "./pdf-tools";
 
 const config: GotenbergConfig = { url: "http://renderer.invalid", timeoutMs: 10_000, maxPdfBytes: 1024, maxHtmlBytes: 16 * 1024 };
 const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
+const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
+  const id = c.req.header("x-test-subject") ?? "one";
+  c.set(
+    "accessSubject",
+    c.req.header("x-test-kind") === "service_account"
+      ? { type: "service_account", serviceAccountId: id }
+      : { type: "user", userId: id, delegatedByServiceAccountId: c.req.header("x-test-delegator") },
+  );
+  await next();
+};
 const result = { data: new TextEncoder().encode("%PDF-result"), contentType: "application/pdf", extension: "pdf" } as const;
 const form = (operation: PdfToolOperation = { kind: "merge" }) => {
   const value = new FormData();
@@ -16,7 +26,7 @@ const form = (operation: PdfToolOperation = { kind: "merge" }) => {
   return value;
 };
 const setup = (dependencies: Parameters<typeof createPdfToolsRoutes>[0] = {}) =>
-  createPdfToolsRoutes({ authenticate: pass, rateLimiter: pass, config: async () => config, run: async () => result, ...dependencies });
+  createPdfToolsRoutes({ authenticate, rateLimiter: pass, config: async () => config, run: async () => result, ...dependencies });
 
 function streamed(body: ReadableStream<Uint8Array>, headers: Record<string, string> = {}, signal?: AbortSignal) {
   return new Request("http://localhost/", {
@@ -228,6 +238,78 @@ describe("PDF tools API", () => {
     expect(ran).toBe(false);
   });
 
+  test.each(["application/pdf", "application/octet-stream"])(
+    "normalizes validated %s bytes independently of the filename",
+    async (type) => {
+      const body = form();
+      body.set("files", new Blob(["%PDF-valid"], { type }), "scan.png");
+      const app = setup({
+        run: async (input) => {
+          expect(input.files[0]?.type).toBe("application/pdf");
+          expect(await input.files[0]?.text()).toBe("%PDF-valid");
+          return result;
+        },
+      });
+      expect((await app.request("/", { method: "POST", body })).status).toBe(200);
+      body.set("files", new Blob(["not a PDF"], { type }), "scan.png");
+      expect((await app.request("/", { method: "POST", body })).status).toBe(400);
+    },
+  );
+
+  test.each(["user", "service_account"])(
+    "one %s cannot occupy both upload slots, including through delegated credentials",
+    async (kind) => {
+      const abort = new AbortController();
+      let reading!: () => void;
+      const started = new Promise<void>((resolve) => {
+        reading = resolve;
+      });
+      const app = setup();
+      const request = streamed(
+        new ReadableStream(
+          {
+            pull() {
+              reading();
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+        { "x-test-kind": kind, "x-test-subject": "one" },
+        abort.signal,
+      );
+      const pending = app.fetch(request);
+      await started;
+      try {
+        let read = false;
+        const serialized = new Request("http://localhost/", { method: "POST", body: form() });
+        const contentType = serialized.headers.get("content-type")!;
+        const bytes = new Uint8Array(await serialized.arrayBuffer());
+        const duplicate = streamed(
+          new ReadableStream(
+            {
+              pull(controller) {
+                read = true;
+                controller.enqueue(bytes);
+                controller.close();
+              },
+            },
+            { highWaterMark: 0 },
+          ),
+          { "content-type": contentType, "x-test-kind": kind, "x-test-subject": "one", "x-test-delegator": "another-credential" },
+        );
+        const rejected = await app.fetch(duplicate);
+        expect(rejected.status).toBe(503);
+        expect((await rejected.json()).code).toBe("renderer_busy");
+        expect(read).toBe(false);
+        expect((await app.request("/", { method: "POST", body: form(), headers: { "x-test-subject": "two" } })).status).toBe(200);
+      } finally {
+        abort.abort();
+        expect((await pending).status).toBe(408);
+      }
+      expect((await app.request("/", { method: "POST", body: form(), headers: { "x-test-kind": kind } })).status).toBe(200);
+    },
+  );
+
   test("bounds metadata and part count before parsing multipart", async () => {
     using parser = spyOn(Response.prototype, "formData");
     const app = setup();
@@ -276,7 +358,7 @@ describe("PDF tools API", () => {
       },
     });
     const a = app.request("/", { method: "POST", body: form() });
-    const b = app.request("/", { method: "POST", body: form() });
+    const b = app.request("/", { method: "POST", body: form(), headers: { "x-test-subject": "two" } });
     await started;
     let read = false;
     const response = await app.fetch(
@@ -348,6 +430,7 @@ describe("PDF tools API", () => {
     ["not_configured", undefined, 503, "renderer_not_configured"],
     ["timeout", undefined, 504, "renderer_timeout"],
     ["bad_response", 400, 422, "renderer_rejected"],
+    ["unreadable_pdf", undefined, 422, "unreadable_pdf"],
     ["bad_response", 500, 502, "renderer_failed"],
     ["request_failed", undefined, 502, "renderer_failed"],
   ] as const)("maps %s/%s to stable HTTP %s/%s without renderer detail", async (code, upstreamStatus, status, expected) => {
