@@ -1245,7 +1245,17 @@ function DateRangeTextField(props: {
     setFailure(undefined);
     calendar.close();
   };
-  /** Calendar clicks fill both halves at once, so the text, the status line and the calendar show the same range. */
+  /**
+   * A pick in the popover fills the field's text, so the text, the status line and the calendar show the same range.
+   * A pick in the phone sheet stays in the sheet until it is saved: the field never shows an unsaved range, also not in
+   * the moment between a dismissed sheet and the end of its history step.
+   */
+  const showPick = (range: DateRangeValue) => {
+    if (sheetOpen()) return;
+    fill(range);
+    setDirty(true);
+  };
+  /** Calendar clicks fill both halves at once. */
   const pickDay = (key: string) => {
     const next = pickRangeDay(picked(), anchor(), key);
     // One update: the start alone would read as a typed range and reset the anchor of the next click.
@@ -1253,8 +1263,7 @@ function DateRangeTextField(props: {
       setPicked(next.range);
       setAnchor(next.anchor);
       setPreviewDate(null);
-      fill(next.range);
-      setDirty(true);
+      showPick(next.range);
     });
   };
   const apply = (range: DateRangeValue) => {
@@ -1274,8 +1283,7 @@ function DateRangeTextField(props: {
               batch(() => {
                 setPicked(next);
                 setAnchor(null);
-                fill(next);
-                setDirty(true);
+                showPick(next);
               });
               if (value) setVisibleMonth(parseDateValue(value, props.dateConfig()));
             }}
@@ -1312,7 +1320,6 @@ function DateRangeTextField(props: {
   const openSheet = async () => {
     setSheetOpen(true);
     calendar.close();
-    const before = { start: startText(), end: endText(), dirty: dirty() };
     // Every opening starts from the text, also after a dismissed sheet left other days picked.
     batch(() => {
       setPicked(draft());
@@ -1334,14 +1341,8 @@ function DateRangeTextField(props: {
         }),
     });
     setSheetOpen(false);
-    // A dismissed sheet saves nothing and leaves the text as it was before the sheet opened.
-    if (!range)
-      batch(() => {
-        setStartText(before.start);
-        setEndText(before.end);
-        setDirty(before.dirty);
-        setAnchor(null);
-      });
+    // A dismissed sheet saves nothing; its picks never reached the text (see `showPick`).
+    if (!range) setAnchor(null);
     toggle?.focus({ preventScroll: true });
   };
   const openCalendar = (focusDay: boolean) => {
