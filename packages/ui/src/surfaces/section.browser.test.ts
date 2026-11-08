@@ -77,8 +77,9 @@ describe("Section in a real engine", () => {
         const hit = getComputedStyle(toggle, "::after");
         return { row: toggle.getBoundingClientRect().height, top: Number.parseFloat(hit.top), bottom: Number.parseFloat(hit.bottom) };
       });
-      expect(sizes.row).toBe(28);
-      expect(sizes.row - sizes.top - sizes.bottom).toBeGreaterThanOrEqual(44);
+      // Engines report sub-pixel layout (WebKit: 27.99999), so compare to the half pixel.
+      expect(Math.abs(sizes.row - 28)).toBeLessThan(0.5);
+      expect(sizes.row - sizes.top - sizes.bottom).toBeGreaterThanOrEqual(43.5);
     } finally {
       await page.close();
     }
