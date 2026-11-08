@@ -39,6 +39,11 @@ export type MarkdownEditorProps = ValueFieldProps<string> & {
   completions?: readonly Completion[];
   showStats?: boolean;
   variant?: "default" | "paper" | "embedded";
+  /**
+   * The font of the text, its highlighting, and the placeholder together: `mono` (default) for Markdown source,
+   * `sans` for a message composer whose text later shows in the interface font.
+   */
+  font?: "mono" | "sans";
   fill?: boolean;
   /** Groups save and close at the end of the toolbar. The caller owns navigation and unsaved-change confirmation. */
   onClose?: () => void;
@@ -511,6 +516,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
         data-disabled={props.disabled ? "true" : undefined}
         data-invalid={error() ? "true" : undefined}
         data-variant={props.variant === "default" ? undefined : props.variant}
+        data-font={props.font === "sans" ? "sans" : undefined}
         data-fill={props.fill ? "true" : undefined}
         style={{
           "--k2b-editor-lines": String(props.lines ?? 6),

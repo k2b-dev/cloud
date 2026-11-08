@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { launchBrowser, pageErrors } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { chartFixtures } from "../../test/charts/fixtures";
 
 test("named charts preserve browser output and reactive data at desktop and phone widths", async () => {
@@ -55,6 +55,7 @@ test("named charts preserve browser output and reactive data at desktop and phon
           body{margin:0;padding:24px;background:white;color:#202632}main{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}section{min-width:0}h2{font:600 16px sans-serif}.direct,.named{height:220px}
           </style></head><body class="k2b-ui"><main></main><button>Update</button><div id="reactive" style="height:200px"></div></body></html>`);
         await page.addScriptTag({ content: bundle });
+        await settled(page);
         const equal = await page
           .locator("main section")
           .evaluateAll((sections) =>
