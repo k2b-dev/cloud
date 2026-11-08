@@ -5,7 +5,7 @@ section: Platform services
 order: 970
 description: Build, check, test and submit lasting Code in a Gustav conversation.
 tags: [code, ai, sdk, versions]
-updated: 2026-11-01
+updated: 2026-11-08
 ---
 
 # Build Code in Gustav
@@ -86,7 +86,7 @@ import { grids, sheet } from "@sdk";
 
 export default async () => {
   const tableId = "t_fictional";
-  const rows = await grids.table(tableId).record.list({});
+  const { data: rows } = await grids.table(tableId).record.list({});
   return sheet.toCsv(rows);
 };
 ```

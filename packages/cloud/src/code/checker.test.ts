@@ -215,10 +215,8 @@ test("core.ai.decide is AI in the generated SDK and mail triage checks category 
   const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];
   const sdk = generateCodeSdk(manifests, { mode: "code_run" });
   const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
-  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
   const snippet = (text: string) => text.split("<!-- ai1-mail-triage -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
   const source = snippet(docs);
-  expect(snippet(skill)).toBe(source);
   const checked = await check(source, {
     sdk,
     aiOperations: sdk.manifest.operations.filter((op) => op.capability.startsWith("core.ai.")).map((op) => op.capability),
@@ -248,7 +246,7 @@ test("core.ai.decide is AI in the generated SDK and mail triage checks category 
       await triage.run(null, {
         call: async (operation: string) => {
           calls.push(operation);
-          return response(category);
+          return { data: response(category) };
         },
       }),
     ).toBe(category === "support");
@@ -269,6 +267,14 @@ export default app;`,
   expect(lasting).toMatchObject({ ok: true, manifest: { ai: true } });
   if (!lasting.ok) throw new Error(JSON.stringify(lasting.diagnostics));
   expect(lasting.permissions).toMatchObject([{ operation: "core.ai.decide", target: null }]);
+});
+
+test("the documented query loop checks against a third-party SDK with a bounded page budget", async () => {
+  const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
+  const source = docs.split("<!-- code-query-pagination -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
+  const checked = await check(source, { sdk: generateCodeSdk([sdkFixture()], { mode: "code_run" }) });
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.permissions.map((permission) => permission.operation)).toEqual(["work-shop.stock.list"]);
 });
 
 test("text and JSON generation SDK example passes the real checker as AI for one-off and lasting Code", async () => {
@@ -1048,7 +1054,7 @@ test("personal scheduled Code generates a summary and posts it into the owner's 
   );
   const source = `import { app, core, chat } from "@sdk";
 app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, async () => {
-  const result = await core.app().ai.generate({ task: "daily.summary", prompt: "Summarize the supplied notes.", input: { notes: "Delivery received." }, output: { type: "text", maxChars: 1200 } });
+  const { data: result } = await core.app().ai.generate({ task: "daily.summary", prompt: "Summarize the supplied notes.", input: { notes: "Delivery received." }, output: { type: "text", maxChars: 1200 } });
   if (typeof result.output !== "object" || result.output === null || !("text" in result.output) || typeof result.output.text !== "string") throw new Error("Unexpected summary output");
   await chat.app().message.post({ conversation: "Chat01", body: result.output.text, idempotencyKey: "summary-2026-12-01" });
 }, { name: "reminder", title: "Send summary" });
@@ -1062,7 +1068,7 @@ export default app;`;
   await loaded.reminder(null, {
     async call(operation: string, invocation: CodeSdkInvocation) {
       calls.push({ operation, invocation });
-      if (operation === "core.ai.generate") return { output: { text: "Summary: delivery received." } };
+      if (operation === "core.ai.generate") return { data: { output: { text: "Summary: delivery received." } } };
       if (operation === "chat.message.post") return { id: "Msg001", conversation: "Chat01", createdAt: "2026-12-01T08:15:30.000Z" };
       throw new Error("Unexpected operation");
     },

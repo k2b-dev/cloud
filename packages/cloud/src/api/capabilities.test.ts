@@ -9,8 +9,11 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
 import { CAPABILITY_DISCOVERY_TIMEOUT_MS, capabilityTimeoutMs } from "../_internal/capability-timeout";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
+import { CodeBridgeRefusal } from "../code/bridge-contract";
+import { generateCodeSdk } from "../code/generator";
 import * as runTokens from "../code/run-token";
 import { RUNNER_PATHS, type RunnerCallResponse, RunnerCallResponseSchema } from "../code/runner-protocol";
+import type { CodeSdkInvocation } from "../code/types";
 import { env } from "../config/env";
 import { CapabilityCatalogSchema, capabilityResultSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
@@ -2246,6 +2249,142 @@ test("Command resolution preserves temporary app unavailability", async () => {
     expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
   } finally {
     check.mockRestore();
+  }
+});
+
+test.each(["all pages", "call limit"])("generated Code queries walk envelope cursors (%s)", async (mode) => {
+  const now = new Date("2026-11-08T12:00:00Z");
+  setSystemTime(now);
+  const claims: runTokens.CodeRunTokenClaims = {
+    ver: 1,
+    token_use: "code_run",
+    iss: "https://cloud.example",
+    aud: "cloud-code-bridge",
+    iat: now.getTime() / 1000,
+    nbf: now.getTime() / 1000,
+    exp: now.getTime() / 1000 + 300,
+    codeId: "c_fixture",
+    versionId: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    generation: 1,
+    mandateId: "33333333-3333-4333-8333-333333333333",
+    mandateRevision: 1,
+    entrypoint: "weekly",
+    bundleHash: "a".repeat(64),
+  };
+  const auth = spyOn(appRequests, "authenticateSignedAppRequest").mockResolvedValue({
+    appId: "runner",
+    serviceAccountId: claims.mandateId,
+    credentialId: claims.mandateId,
+    scope: "identity:invoke",
+  });
+  const token = spyOn(runTokens, "verifyCodeRunToken").mockResolvedValue(claims);
+  const paginated = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        list: {
+          title: "List",
+          description: "List fictional items.",
+          openWorld: false,
+          input: z.object({ cursor: z.string().optional().describe("Opaque next-page cursor.") }).strict(),
+          data: z.array(z.string()),
+          run: () => ok({ data: [] }),
+        },
+      },
+    }),
+  );
+  let admitted = 0;
+  const limit = 3;
+  const endless = mode === "call limit";
+  const inputs: unknown[] = [];
+  const route = createCodeRunnerCallRoutes({
+    ownOrigins: async () => [],
+    host: {
+      async withCall(_call, execute) {
+        if (admitted >= limit) throw new CodeBridgeRefusal("code_call_limit");
+        admitted++;
+        return execute({
+          mandateId: claims.mandateId,
+          mandateRevision: 1,
+          ownerAppId: "core",
+          withMandateIssueAuthority: async (input, use) =>
+            ok(
+              await use({
+                mandateId: claims.mandateId,
+                mandateRevision: 1,
+                ownerAppId: "core",
+                subject: { type: "user", id: claims.versionId },
+                workloadType: "code.version",
+                workloadId: claims.versionId,
+                targetAppId: input.targetAppId,
+                operation: input.operation,
+                policy: { version: 1, apps: ["demo"], operations: ["capability.query:list"], actions: "deny" },
+              }),
+            ),
+        });
+      },
+    },
+    dispatch: {
+      getCapability: async () => ({ ...entry(), manifest: paginated.manifest }),
+      withActiveSigner,
+      signInvocation: signInvocationToken,
+      fetch: async (_url, init) => {
+        const { input } = z.object({ input: z.object({ cursor: z.string().optional() }) }).parse(JSON.parse(String(init?.body)));
+        inputs.push(input);
+        const pages = [
+          { cursor: undefined, data: ["one", "two"], page: { hasMore: true, nextCursor: "opaque:two" } },
+          { cursor: "opaque:two", data: ["three", "four"], page: { hasMore: true, nextCursor: "opaque:three" } },
+          { cursor: "opaque:three", data: ["five"], page: { hasMore: false } },
+        ];
+        const page = endless ? pages[0]! : pages.find((page) => page.cursor === input.cursor);
+        if (!page) throw new Error("Unexpected cursor after the final page");
+        return Response.json({ data: page.data, page: page.page });
+      },
+    },
+  });
+  try {
+    const sdk = generateCodeSdk([paginated.manifest], { mode: "code_run" });
+    const loaded = await import(`data:text/javascript;base64,${Buffer.from(`${sdk.runtime}\n// ${mode}`).toString("base64")}`);
+    loaded.__codeSdk.bind({
+      async call(operation: string, input: CodeSdkInvocation) {
+        const response = await route.request(RUNNER_PATHS.call, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId: claims.runId, generation: 1, token: "fixture", operation, input }),
+        });
+        const result = RunnerCallResponseSchema.parse(await response.json());
+        if (!result.ok) throw new Error(result.error.code);
+        return result.data;
+      },
+    });
+    const list = loaded.demo.app().list;
+    const walk = async () => {
+      let cursor: string | undefined;
+      const items: string[] = [];
+      while (true) {
+        const { data, page } = await list({ cursor });
+        items.push(...data);
+        if (!page?.hasMore) return items;
+        cursor = page.nextCursor;
+      }
+    };
+    if (endless) {
+      await expect(walk()).rejects.toThrow("code_call_limit");
+      expect(inputs).toEqual([{}, { cursor: "opaque:two" }, { cursor: "opaque:two" }]);
+    } else {
+      const items = await walk();
+      expect(items).toEqual(["one", "two", "three", "four", "five"]);
+      expect(new Set(items).size).toBe(items.length);
+      expect(inputs).toEqual([{}, { cursor: "opaque:two" }, { cursor: "opaque:three" }]);
+    }
+    expect(admitted).toBe(limit);
+    expect(inputs).toHaveLength(limit);
+  } finally {
+    token.mockRestore();
+    auth.mockRestore();
+    setSystemTime();
   }
 });
 

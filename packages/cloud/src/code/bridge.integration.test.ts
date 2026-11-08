@@ -149,6 +149,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let currentEntry = baseEntry;
   let targetFailure: CapabilityError | null = null;
   let providerRequestsConfirmation = false;
+  let queryCursor: string | undefined;
   let callLimit = 200;
   let aiBudget = 1;
   let rateLimited = false;
@@ -243,7 +244,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         }
         if (targetFailure)
           return Response.json({ code: targetFailure.code, message: targetFailure.message }, { status: targetFailure.status });
-        return Response.json({ data: { value: body.target.id } });
+        return Response.json({
+          data: { value: body.target.id },
+          ...(queryCursor === undefined ? {} : { page: { hasMore: true, nextCursor: queryCursor } }),
+        });
       },
     } satisfies CapabilityDispatchDependencies,
   });
@@ -366,6 +370,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   ) {
     currentEntry = structuredClone(baseEntry);
     callLimit = 200;
+    queryCursor = undefined;
     aiBudget = 1;
     rateLimited = false;
     realRate = false;
@@ -499,7 +504,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         operation: "core.ai.decide",
         input: { call: { capability: "core.ai.decide", target: null, refs: {}, input: decisionInputFixture }, metadata: {} },
       });
-      expect(await response.json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(await response.json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
       const [code] = await sql<
         { service_account_id: string | null }[]
       >`SELECT service_account_id FROM code.codes WHERE id=${claims.codeId}`;
@@ -536,7 +541,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           metadata: {},
         },
       });
-      expect(await response.json()).toMatchObject({ ok: true, data: { output: "Summary" } });
+      expect(await response.json()).toMatchObject({ ok: true, data: { data: { output: "Summary" } } });
       const [code] = await sql<
         { service_account_id: string | null }[]
       >`SELECT service_account_id FROM code.codes WHERE id=${claims.codeId}`;
@@ -679,7 +684,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     aiBudget = 0.000046;
     const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
     try {
-      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
       expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
       expect(run).toHaveBeenCalledTimes(1);
       const [cost] =
@@ -714,7 +719,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     } finally {
       finish.resolve();
       try {
-        expect(await (await first).json()).toEqual({ ok: true, data: decisionResultFixture });
+        expect(await (await first).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
         expect(run).toHaveBeenCalledTimes(1);
       } finally {
         run.mockRestore();
@@ -727,7 +732,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     aiBudget = 0.000092;
     const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
     try {
-      for (let call = 0; call < 2; call++) expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      for (let call = 0; call < 2; call++)
+        expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
       expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
       expect(run).toHaveBeenCalledTimes(2);
     } finally {
@@ -744,9 +750,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         operation: "core.ai.skills.list",
         input: { call: { capability: "core.ai.skills.list", target: null, refs: {}, input: {} }, metadata: {} },
       });
-      expect(await response.json()).toEqual({ ok: true, data: { value: "done" } });
+      expect(await response.json()).toEqual({ ok: true, data: { data: { value: "done" } } });
       expect(run).not.toHaveBeenCalled();
-      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
     } finally {
       run.mockRestore();
     }
@@ -765,7 +771,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       aiSettingsSpy.mockRejectedValueOnce(new Error("fixture unavailable"));
       expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_bridge_unavailable" } });
       run.mockResolvedValue(decisionResultFixture);
-      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
       expect(run).toHaveBeenCalledTimes(2);
     } finally {
       run.mockRestore();
@@ -783,7 +789,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       expect(run).not.toHaveBeenCalled();
       beforeIssue = undefined;
       await sql`UPDATE code.policy_rules SET value='automatic' WHERE group_id IS NULL AND row='ai'`;
-      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
       expect(run).toHaveBeenCalledTimes(1);
     } finally {
       run.mockRestore();
@@ -1192,7 +1198,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
     await error({ operation: "example.read" }, "code_approval_required");
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read'),(${claims.versionId}::uuid,'ask_app_asks')`;
-    expect(await (await send({ operation: "example.read" })).json()).toEqual({ ok: true, data: { value: "a" } });
+    expect(await (await send({ operation: "example.read" })).json()).toEqual({ ok: true, data: { data: { value: "a" } } });
     await error({ operation: "example.asks" }, "code_unattended_forbidden");
   });
 
@@ -1297,6 +1303,36 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     });
     expect(response.status).toBe(403);
   });
+  test("paginated queries still stop at the durable per-run call limit", async () => {
+    await resetFixture({ entry: true, policyRows: ["read"] });
+    const entry = structuredClone(baseEntry);
+    entry.manifest.queries[0]!.inputSchema = {
+      type: "object",
+      properties: { cursor: { type: "string" } },
+      additionalProperties: false,
+    };
+    queryCursor = "opaque:again";
+    callLimit = 2;
+    let cursor: string | undefined;
+    for (let page = 0; page < 3; page++) {
+      const response = await send({
+        entry,
+        operation: "example.read",
+        input: {
+          call: { capability: "example.read", target: { type: "example.folder", id: "a" }, refs: {}, input: cursor ? { cursor } : {} },
+          metadata: {},
+        },
+      });
+      const result = await response.json();
+      if (page === 2) expect(result).toEqual({ ok: false, error: { code: "code_call_limit" } });
+      else {
+        expect(result).toEqual({ ok: true, data: { data: { value: "a" }, page: { hasMore: true, nextCursor: queryCursor } } });
+        cursor = result.data.page.nextCursor;
+      }
+    }
+    expect(fetched).toBe(2);
+  });
+
   test("successful calls are ordered and stored before the provider runs", async () => {
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });

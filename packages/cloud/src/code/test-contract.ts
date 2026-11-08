@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CloudResourceRefSchema, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
+import { CapabilityPageSchema, CloudResourceRefSchema, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
 import type { CodeCheckDiagnostic, CodeVersionManifest } from "./checker-contract";
 import type { GeneratedCodeSdk } from "./types";
 
@@ -16,7 +16,7 @@ export const CodeTestMockSchema = z
     replies: z
       .array(
         z.discriminatedUnion("ok", [
-          z.object({ ok: z.literal(true), data: z.json() }).strict(),
+          z.object({ ok: z.literal(true), data: z.json(), page: CapabilityPageSchema.optional() }).strict(),
           z.object({ ok: z.literal(false), error: errorCode }).strict(),
         ]),
       )

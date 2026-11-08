@@ -88,8 +88,11 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
       if (!reply) return refuse("code_test_mock_exhausted");
       cursors.set(mock, cursor + 1);
       if (!reply.ok) return refuse(reply.error, false);
+      if (spec.kind !== "query" && reply.page !== undefined) return refuse("code_test_invalid_fixture");
       if (!z.fromJSONSchema(spec.dataSchema).safeParse(reply.data).success) return refuse("code_test_invalid_fixture");
-      const data = structuredClone(reply.data);
+      const data = structuredClone(
+        spec.kind === "query" ? { data: reply.data, ...(reply.page === undefined ? {} : { page: reply.page }) } : reply.data,
+      );
       row.result = { ok: true, data };
       if (key) receipts.set(receiptKey, { digest, data: structuredClone(data) });
       return structuredClone(data);

@@ -56,6 +56,7 @@ import {
   type CapabilityInvocationBody,
   CapabilityInvocationBodySchema,
   type CapabilityOrigin,
+  CapabilityPageSchema,
   capabilityActionPolicy,
   capabilityResultJsonSchema,
   NormalizedCapabilityCallSchema,
@@ -1559,8 +1560,8 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
           },
         });
         const result = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES, c.req.raw.signal);
-        const payload = z.object({ data: z.json() }).safeParse(result.ok ? result.data : null);
-        if (response.ok && payload.success) return Response.json({ ok: true, data: payload.data.data });
+        const payload = z.object({ data: z.json(), page: CapabilityPageSchema.optional() }).safeParse(result.ok ? result.data : null);
+        if (response.ok && payload.success) return Response.json({ ok: true, data: kind === "query" ? payload.data : payload.data.data });
         const failure = z.object({ code: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,127}$/) }).safeParse(result.ok ? result.data : null);
         const code = failure.success ? failure.data.code.toLowerCase() : "code_call_failed";
         authority.onRefusal?.(failure.success ? codeBridgeDispatchRefusalKind(code, targetStatus) : "bridge");
