@@ -1,7 +1,6 @@
 import { For, type JSX, Show, splitProps } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
-import { useUiMessages } from "../intl/messages";
 import type { FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 import { useInputMessages } from "./input-messages";
@@ -176,7 +175,9 @@ export function Slider(props: SliderProps): JSX.Element {
   };
   const resetValue = () => local.defaultValue ?? (local.center ? (min() + max()) / 2 : min());
   const changed = () => local.defaultValue !== undefined && value() !== local.defaultValue;
-  const uiMessages = useUiMessages();
+  const inputMessages = useInputMessages();
+  // Names the value it returns to, formatted as the slider shows it: "Reset to 100%".
+  const resetLabel = () => inputMessages().resetTo({ value: local.formatValue?.(resetValue()) ?? String(resetValue()) });
   let input: HTMLInputElement | undefined;
   const reset = () => {
     commitFieldValue(local, resetValue());
@@ -217,7 +218,7 @@ export function Slider(props: SliderProps): JSX.Element {
           <IconButton
             class="k2b-slider__reset"
             size="xs"
-            label={uiMessages().reset}
+            label={resetLabel()}
             aria-describedby={local.label ? meta.labelId : undefined}
             disabled={rest.disabled || !changed()}
             onClick={reset}
