@@ -132,7 +132,7 @@ match the schema:
     {
       "operation": "mail.message.read",
       "target": null,
-      "input": { "id": "Msg001" },
+      "input": { "id": "Msg001", "waitForHydration": true },
       "replies": [{ "ok": true, "data": {
         "id": "Msg001", "mailboxId": "Mbx001", "conversationId": "Cnv101", "subject": "Urgent: server down", "subjectTruncated": false,
         "messageId": "<fictional-1@example.com>", "internalDate": "2026-11-09T07:59:00Z", "sentAt": "2026-11-09T07:58:00Z",
@@ -146,7 +146,7 @@ match the schema:
     {
       "operation": "mail.message.read",
       "target": null,
-      "input": { "id": "Msg002" },
+      "input": { "id": "Msg002", "waitForHydration": true },
       "replies": [{ "ok": true, "data": {
         "id": "Msg002", "mailboxId": "Mbx001", "conversationId": "Cnv102", "subject": "Lunch on Friday?", "subjectTruncated": false,
         "messageId": "<fictional-2@example.com>", "internalDate": "2026-11-09T08:00:00Z", "sentAt": null,
