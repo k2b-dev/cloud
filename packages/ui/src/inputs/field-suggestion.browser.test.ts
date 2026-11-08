@@ -175,6 +175,25 @@ const boxes = (page: Page) =>
         return { x, y, width, height };
       }),
     );
+// From each field row's lowest control to the next row's top: one rhythm for every row, so no field reserves
+// a line under its control that the others do not.
+const rhythm = (page: Page) =>
+  page.locator("#fields > *").evaluateAll((fields) => {
+    const rows = new Map<number, { top: number; bottom: number }>();
+    for (const field of fields) {
+      const top = Math.round(field.getBoundingClientRect().top * 100) / 100;
+      const controls = [...field.querySelectorAll(".k2b-input-shell, .k2b-choice-control, .k2b-ai-suggestion-switch")];
+      const bottom = Math.max(...controls.map((control) => control.getBoundingClientRect().bottom));
+      rows.set(top, { top, bottom: Math.max(rows.get(top)?.bottom ?? -Infinity, bottom) });
+    }
+    const ordered = [...rows.values()].sort((left, right) => left.top - right.top);
+    return ordered.slice(1).map((row, index) => Math.round((row.top - ordered[index]!.bottom) * 100) / 100);
+  });
+const expectOneRhythm = async (page: Page) => {
+  const gaps = await rhythm(page);
+  expect(gaps.length).toBeGreaterThanOrEqual(3);
+  expect(new Set(gaps).size, `gaps between field rows: ${gaps.join(", ")}`).toBe(1);
+};
 const open = async (page: Page, scenario: string) => {
   const errors = pageErrors(page);
   page.on("console", (message) => {
@@ -201,6 +220,7 @@ describe("field suggestions in a browser", () => {
       const page = await browser!.newPage({ viewport: { width, height: 1400 }, reducedMotion: "reduce" });
       try {
         const { before, errors } = await open(page, "mixed");
+        await expectOneRhythm(page);
         const summary = page.locator(".k2b-ai-suggestion-group__summary");
         expect(await summary.textContent()).toContain("1 übernommen · 5 offen · 1 unsicher");
         expect(await page.locator(".k2b-ai-suggestion-group__accept").textContent()).toBe("Alle übernehmen (5)");
@@ -244,6 +264,7 @@ describe("field suggestions in a browser", () => {
         expect(await page.locator(".k2b-ai-suggestion-group__accept").getAttribute("aria-disabled")).toBe("true");
         await settled(page);
         expect(await boxes(page)).toEqual(before);
+        await expectOneRhythm(page);
 
         // The owner withdraws every suggestion: the reserved lines stay.
         await page.locator("#dismiss").click();
@@ -260,12 +281,34 @@ describe("field suggestions in a browser", () => {
         const page = await browser!.newPage({ viewport: { width, height: 1400 }, reducedMotion: "reduce" });
         try {
           const { before, errors } = await open(page, scenario);
+          await expectOneRhythm(page);
           if (scenario === "loading") {
             expect(await page.locator(".k2b-ai-suggestion-group").getAttribute("aria-busy")).toBe("true");
             await page.locator("#arrive").click();
             await settled(page);
             expect(await page.locator(".k2b-ai-suggestion-group").getAttribute("aria-busy")).toBeNull();
             expect(await page.getByRole("textbox", { name: "Rechnungsnummer" }).getAttribute("placeholder")).toBe("RE-2026-4471");
+            // Typing a date: its own status speaks in the label row, over the suggestion's, and nothing moves.
+            const dateField = page.locator(".k2b-field", { has: page.getByRole("combobox", { name: "Rechnungsdatum" }) });
+            const dateStatus = dateField.locator(".k2b-date-status");
+            expect(await dateStatus.textContent()).toBe("");
+            expect(await dateField.locator(".k2b-ai-suggestion").evaluate((element) => getComputedStyle(element).visibility)).toBe(
+              "visible",
+            );
+            await page.getByRole("combobox", { name: "Rechnungsdatum" }).fill("28.10.");
+            await settled(page);
+            expect(await dateStatus.textContent()).not.toBe("");
+            expect(await dateField.locator(".k2b-ai-suggestion").evaluate((element) => getComputedStyle(element).visibility)).toBe(
+              "hidden",
+            );
+            const row = (await dateField.locator(".k2b-field__label-row").boundingBox())!;
+            const said = (await dateStatus.boundingBox())!;
+            expect(said.y).toBeGreaterThanOrEqual(row.y);
+            expect(said.y + said.height).toBeLessThanOrEqual(row.y + row.height);
+            expect(await boxes(page)).toEqual(before);
+            await page.keyboard.press("Escape");
+            await settled(page);
+            expect(await dateStatus.textContent()).toBe("");
           } else {
             expect(await page.getByRole("button", { name: "Vorschlag für Rechnungsnummer übernehmen" }).count()).toBe(0);
             expect(await page.getByRole("button", { name: "Vorschlag für Buchungstext übernehmen" }).count()).toBe(0);

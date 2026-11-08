@@ -808,6 +808,18 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   const externalError = () => resolveMaybeAccessor(props.owner.error);
   const invalid = () => Boolean(failure() || externalError());
+  const suggestion = useFieldSuggestion({
+    props: props.owner,
+    enabled: "suggestion" in props.owner,
+    meta,
+    value: props.value,
+    blank: () => !props.value(),
+    format,
+    locked: () => !interactive(),
+    invalid,
+    apply: (key) => pick(key),
+    acceptable: (key) => isDateKey(key) && !limitErrorText(key, limits(), locale(), t()),
+  });
   const status = createMemo((): { tone: DateStatusTone; text: JSX.Element } => {
     const failed = failure();
     if (failed) return { tone: "error", text: failed };
@@ -820,7 +832,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     const external = externalError();
     if (external) return { tone: "error", text: external };
     const value = props.value();
-    if (!value || result) return { tone: "rest", text: "" };
+    // With a suggestion the line shares the label row and speaks only while typing or on an error.
+    if (!value || result || suggestion.enabled) return { tone: "rest", text: "" };
     return { tone: "rest", text: props.owner.renderValue?.(value) ?? restStatusText(value, today(), locale()) };
   });
 
@@ -861,18 +874,6 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     save(key);
     calendar.close();
   };
-  const suggestion = useFieldSuggestion({
-    props: props.owner,
-    enabled: "suggestion" in props.owner,
-    meta,
-    value: props.value,
-    blank: () => !props.value(),
-    format,
-    locked: () => !interactive(),
-    invalid,
-    apply: pick,
-    acceptable: (key) => isDateKey(key) && !limitErrorText(key, limits(), locale(), t()),
-  });
   const choose = (key: string | null) => {
     suggestion.edited();
     pick(key);

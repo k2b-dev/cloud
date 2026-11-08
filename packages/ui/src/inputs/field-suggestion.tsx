@@ -338,9 +338,17 @@ export function SuggestionGroup(props: SuggestionGroupProps): JSX.Element {
         </p>
         <Show when={tally().failed && props.onRetryAll}>
           {(retry) => (
-            <Button type="button" variant="text" size="xs" class="k2b-ai-suggestion__action" onClick={() => retry()()}>
+            // On a phone the line keeps its title; Retry shows only its icon there and keeps its name.
+            <Button
+              type="button"
+              variant="text"
+              size="xs"
+              class="k2b-ai-suggestion__action"
+              aria-label={messages().retryAll}
+              onClick={() => retry()()}
+            >
               <i class="ti ti-refresh" aria-hidden="true" />
-              {messages().retryAll}
+              <span class="k2b-ai-suggestion-group__retry-label">{messages().retryAll}</span>
             </Button>
           )}
         </Show>

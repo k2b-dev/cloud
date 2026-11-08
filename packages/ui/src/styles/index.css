@@ -18668,6 +18668,40 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-ai-accent-hover);
 }
 
+/* A typed date field keeps its own status line (what a typed date means, or an
+   error). With a suggestion that line shares the label row instead of reserving
+   a line under the field, so every field row keeps the same rhythm. While it
+   speaks it covers the suggestion's status; at rest it is empty. */
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) {
+  position: relative;
+}
+
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) > .k2b-date-field {
+  position: static;
+}
+
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) > .k2b-date-field > .k2b-date-status {
+  position: absolute;
+  top: 0;
+  right: 0;
+  max-width: 40%;
+  height: 1.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+  text-align: end;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) > .k2b-date-field > .k2b-date-status {
+    height: 2rem;
+    line-height: 2rem;
+  }
+}
+
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-date-field > .k2b-date-status:not(:empty)) > .k2b-field__label-row > .k2b-ai-suggestion {
+  visibility: hidden;
+}
+
 /* The field: AI edge and fill while the suggestion stands in for the value. */
 .k2b-ui .k2b-ai-suggestion-field :is(.k2b-input-shell, .k2b-choice-trigger, .k2b-date-trigger)[data-suggestion^="open"] {
   --k2b-edge-color: var(--k2b-ai-border);
@@ -18823,4 +18857,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-ai-suggestion-group__accept {
   flex-shrink: 0;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-ai-suggestion-group__retry-label {
+    display: none;
+  }
 }

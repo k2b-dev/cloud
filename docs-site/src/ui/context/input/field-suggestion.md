@@ -82,6 +82,12 @@ A disabled or read-only field shows the suggestion dimmed, without Accept. A
 it. It keeps its real position, takes an AI ring, and names the suggested
 position beside it. With a suggestion, its label moves above the switch.
 
+A typed `DatePicker` keeps its own status line, which says what a typed date
+means or why it was refused. With a suggestion, that line shares the label row
+and covers the suggestion's status while someone types or while there is an
+error. It reserves no line under the field, and it does not repeat the chosen
+day at rest.
+
 Passing `suggestion` at all reserves the status line beside the label, even
 while it resolves to `undefined`. Nothing moves when a suggestion arrives, is
 accepted, is overruled, or goes away. A field without a visible label shows the
