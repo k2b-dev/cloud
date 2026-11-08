@@ -106,8 +106,12 @@ describe("MarkdownEditor font", () => {
           placeholder: placeholder ? getComputedStyle(placeholder).fontFamily : "",
         };
       });
-      // Computed lists put a space after each comma; the tokens are written without.
-      const list = (value: string) => value.replace(/\s*,\s*/g, ",").trim();
+      // Browsers serialize a font list differently: spaces after commas, and WebKit drops the quotes around a name.
+      const list = (value: string) =>
+        value
+          .split(",")
+          .map((name) => name.trim().replace(/^["']|["']$/g, ""))
+          .join(",");
       expect(list(fonts.sans.input)).toBe(list(tokens.sans));
       expect(list(fonts.mono.input)).toBe(list(tokens.mono));
       expect(list(tokens.placeholder)).toBe(list(tokens.sans));
