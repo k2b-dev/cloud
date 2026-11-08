@@ -5,9 +5,43 @@ Code calls apps through the generated SDK. A handle selects the resource:
 `owner` for the resource that owns this Code. Method paths follow the
 operation ID: `mail.conversation.tag.update` on a mailbox handle is
 `owner.conversation.tag.update(...)`. The SDK takes domain input, lifts
-`idempotencyKey` into call metadata and returns domain data. A handle grants
-nothing: each call checks the policy, the version approval and the current
-access of the account.
+`idempotencyKey` into call metadata. Domain Queries return `{ data, page? }`;
+read fields from `data`. Actions return domain data directly, and streaming
+reads return `FileRef`. A handle grants nothing: each call checks the policy,
+the version approval and the current access of the account.
+
+## Read a bounded number of pages
+
+For paginated Queries such as `mail.conversation.list` and `spaces.task.list`,
+pass `page.nextCursor` unchanged as the next input's `cursor`. Stop when
+`page` is absent or `page.hasMore` is false. Always choose a fixed page or
+item maximum; each page spends a normal call from the same per-run limit.
+This example counts at most three pages and marks an incomplete count:
+
+<!-- check: resource mail.mailbox -->
+```ts
+import { app, owner } from "@sdk";
+
+const MAX_PAGES = 3;
+
+app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "count-inbox" }, async () => {
+  let cursor: string | undefined;
+  let conversations = 0;
+  let complete = false;
+  for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
+    const { data, page } = await owner.conversation.list({ view: "needs_action", limit: 50, cursor });
+    conversations += data.length;
+    if (!page?.hasMore) { complete = true; break; }
+    cursor = page.nextCursor;
+  }
+  console.log(`Needs action: ${complete ? conversations : `${conversations} or more`}`);
+}, { name: "count-inbox", title: "Count inbox" });
+export default app;
+```
+
+Files retains its legacy `data.next` / input `after` contract; see the
+[Files paging example](data.md). Narrow searches when only a sample is needed,
+and label capped counts with `page.hasMore` rather than guessing from `limit`.
 
 ## When a call runs unattended
 
@@ -79,13 +113,13 @@ with `onlyIfUnassigned: true` to leave existing assignees alone.
 import { app, mail, owner } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
   // Fictional user name; the search also matches names and groups, so compare the exact uid.
-  const lead = (await owner.mailbox.member.list({ query: "accounting.lead", limit: 20 })).find(member => member.uid === "accounting.lead");
-  const [identity] = await owner.mailbox.identity.list({ limit: 1 });
-  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  const lead = (await owner.mailbox.member.list({ query: "accounting.lead", limit: 20 })).data.find(member => member.uid === "accounting.lead");
+  const { data: [identity] } = await owner.mailbox.identity.list({ limit: 1 });
+  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
   if (lead) {
     await owner.conversation.assign({
       conversationId: message.conversationId,
@@ -250,10 +284,10 @@ Reading from several apps in one personal page:
 import { app, contacts, filesv2, jsx, notebooks, Page, Table, Column } from "@sdk";
 
 app.get("/", async c => {
-  const [base] = (await filesv2.app().bases.list({})).items;
-  const files = base ? (await filesv2.entry(base.ref.id).entry.list({ sort: "modified", order: "desc" })).items.slice(0, 10) : [];
-  const people = await contacts.app().contact.search({ query: "supplier", tags: [], limit: 10 });
-  const notes = await notebooks.app().note.search({ query: "supplier", tags: [], limit: 10 });
+  const [base] = (await filesv2.app().bases.list({})).data.items;
+  const files = base ? (await filesv2.entry(base.ref.id).entry.list({ sort: "modified", order: "desc" })).data.items.slice(0, 10) : [];
+  const { data: people } = await contacts.app().contact.search({ query: "supplier", tags: [], limit: 10 });
+  const { data: notes } = await notebooks.app().note.search({ query: "supplier", tags: [], limit: 10 });
   return c.page(
     <Page title="Suppliers">
       <Table width="third" title="Recent files" rows={files.map(file => ({ name: file.name, modified: file.modified }))}>

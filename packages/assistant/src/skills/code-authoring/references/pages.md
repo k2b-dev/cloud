@@ -115,18 +115,18 @@ import { app, jsx, owner, Page, Notice, Stats, Stat, Chart, Table, Column } from
 
 // Fictional ID of the group that may see this mailbox's data.
 const TEAM = "00000000-0000-4000-8000-0000000000aa";
-const count = (items: readonly unknown[]) => (items.length >= 50 ? "50+" : items.length);
+const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length}+` : items.length);
 
 app.get("/", async c => {
   if (!c.user?.groups.includes(TEAM)) return c.page(<Page title="Inbox"><Notice tone="warning" title="Only for the mailbox team" /></Page>);
-  const open = await owner.conversation.list({ view: "needs_action", limit: 50 });
-  const waiting = await owner.conversation.list({ view: "waiting", limit: 50 });
+  const { data: open, page: openPage } = await owner.conversation.list({ view: "needs_action", limit: 50 });
+  const { data: waiting, page: waitingPage } = await owner.conversation.list({ view: "waiting", limit: 50 });
   const rows = open.map(item => ({ title: item.title, from: item.participants, messages: item.messageCount }));
   return c.page(
     <Page title="Inbox" subtitle="Needs action and waiting" icon="ti ti-mail" color="blue" follow={["mail.message.received"]}>
       <Stats>
-        <Stat label="Needs action" value={count(open)} />
-        <Stat label="Waiting" value={count(waiting)} />
+        <Stat label="Needs action" value={count(open, openPage?.hasMore ?? false)} />
+        <Stat label="Waiting" value={count(waiting, waitingPage?.hasMore ?? false)} />
       </Stats>
       {open.length + waiting.length > 0
         ? <Chart.Bar width="third" title="Open work" data={[{ label: "Needs action", value: open.length }, { label: "Waiting", value: waiting.length }]} />
@@ -142,8 +142,9 @@ app.get("/", async c => {
 export default app;
 ```
 
-A list query returns at most its `limit`; say "50 or more" instead of
-presenting a capped count as exact. `follow` lists up to eight event types;
+This page deliberately reads one page per view. When `page.hasMore` is true,
+mark the count with "+" instead of presenting it as exact. Follow the bounded
+cursor pattern in [Data](data.md) when the task needs more pages. `follow` lists up to eight event types;
 Cloud loads the page again for its viewer after those events. Until the event
 service delivers to open pages, a following page reloads when its tab becomes
 visible again.

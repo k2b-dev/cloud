@@ -79,6 +79,33 @@ test("test cases and stable machine output have versioned JSON schemas", () => {
   expect(CODE_TEST_RESULT_JSON_SCHEMA).toMatchObject({ type: "object", properties: { version: { const: 1 } } });
 });
 
+test("query mocks preserve envelope pagination while validating domain data separately", async () => {
+  const operation = "work-shop.stock.list";
+  const bridge = createCodeTestBridge(manifest, [
+    {
+      operation,
+      target,
+      replies: [
+        { ok: true, data: { rows: [{ id: "one", state: "ready" }], next: null }, page: { hasMore: true, nextCursor: "opaque:two" } },
+        { ok: true, data: { rows: [], next: null }, page: { hasMore: false } },
+      ],
+    },
+  ]);
+  const call = (input: { cursor?: string }) =>
+    bridge.call(operation, { call: { capability: operation, target, refs: {}, input }, metadata: {} });
+  expect(await call({})).toEqual({
+    data: { rows: [{ id: "one", state: "ready" }], next: null },
+    page: { hasMore: true, nextCursor: "opaque:two" },
+  });
+  expect(await call({ cursor: "opaque:two" })).toEqual({ data: { rows: [], next: null }, page: { hasMore: false } });
+  expect(bridge.calls()[1]?.call.input).toEqual({ cursor: "opaque:two" });
+});
+
+test("Action mocks reject query pagination rather than silently dropping it", async () => {
+  const bridge = createCodeTestBridge(manifest, [{ ...mock, replies: [{ ...mock.replies[0]!, page: { hasMore: false } }] }]);
+  await expect(bridge.call(mock.operation, invocation())).rejects.toThrow("code_test_invalid_fixture");
+});
+
 test("file mocks pass only checked references and keep the business receipt stable across fresh references", async () => {
   const manifest = generateCodeSdk([sdkFixture(), fileImportManifest()], { mode: "personal" }).manifest;
   const file = { id: "fake-file-1", name: "invoice.pdf", mediaType: "application/pdf", size: 5 };

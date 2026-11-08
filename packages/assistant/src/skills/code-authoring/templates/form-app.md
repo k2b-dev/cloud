@@ -30,7 +30,7 @@ const requestForm = (values: Values, errors: Errors = {}) => (
 );
 
 const page = async (values: Values, errors: Errors = {}, created?: string) => {
-  const recent = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", sort: "created", sortDesc: true, limit: 10 });
+  const { data: recent } = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", sort: "created", sortDesc: true, limit: 10 });
   return (
     <Page title="Requests" subtitle="Creates a task in the team Space" icon="ti ti-clipboard-list" color="blue">
       {created ? <Notice tone="success" title="Request sent" text={`Task “${created}” was created.`} /> : null}
