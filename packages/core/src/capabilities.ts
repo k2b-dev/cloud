@@ -219,6 +219,7 @@ const ChatsSearchInputSchema = z
       .max(10)
       .optional()
       .describe("Require chats to contain every exact structured Cloud resource ref."),
+    place: CloudResourceRefSchema.optional().describe("Search only chats bound to this exact place. Omit to exclude place chats."),
     archived: z.boolean().default(false).describe("Search archived chats instead of active chats."),
     limit: z.number().int().min(1).max(20).default(10).describe("Maximum number of matching chats to return."),
   })
@@ -254,7 +255,10 @@ const ChatResourcesInputSchema = z
   .strict();
 
 const ChatsResourcesInputSchema = ChatResourcesInputSchema.omit({ chatId: true, cursor: true })
-  .extend({ cursor: resourceCursorSchema("user") })
+  .extend({
+    cursor: resourceCursorSchema("user"),
+    place: CloudResourceRefSchema.optional().describe("Search only resources from chats at this exact place. Omit to exclude place chats."),
+  })
   .strict();
 
 const ChatSummarySchema = z
@@ -999,6 +1003,7 @@ export const aiCapabilities = defineCapabilities({
           ownerUserId: context.user.id,
           search: input.query || undefined,
           refs: input.refs,
+          place: input.place ? `${input.place.type}:${input.place.id}` : "none",
           archived: input.archived,
           limit: input.limit,
         });
@@ -1092,6 +1097,7 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
         const page = await aiConversations.listUserConversationResources({
           ownerUserId: context.user.id,
+          place: input.place ? `${input.place.type}:${input.place.id}` : "none",
           search: input.query,
           before: input.cursor,
           limit: input.limit,

@@ -5,7 +5,7 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, on, onClea
 import { SEARCH_APP_RESULT_LIMIT, SEARCH_PAGE_SIZE, type SearchApp, type SearchItem } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
-import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
+import { cloudResourceSearchUrl, filterCloudResourceSearchItems, groupCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
@@ -261,7 +261,12 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   /** Rows of the run for the current input; anything older is visible but cannot be chosen. */
   const freshResults = () => current() && shownRun();
   const results = createMemo(() =>
-    canSearch() ? [...navigation(), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))] : [],
+    canSearch()
+      ? [
+          ...navigation(),
+          ...shownBlocks().flatMap((block) => groupCloudResourceSearchItems(filterCloudResourceSearchItems(block.items, props))),
+        ]
+      : [],
   );
   const searchContext = () => JSON.stringify([desiredUrl(), commandMode(), commandQuery()]);
   /**
@@ -670,9 +675,13 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                       const item = () => itemsByKey().get(key) ?? first;
                       return (
                         <>
-                          <Show when={index() === 0 || items()[index() - 1]?.appId !== item().appId}>
+                          <Show
+                            when={
+                              index() === 0 || items()[index() - 1]?.appId !== item().appId || items()[index() - 1]?.group !== item().group
+                            }
+                          >
                             <div class="cloud-resource-search__group" role="presentation">
-                              {item().appName}
+                              {item().group ?? item().appName}
                             </div>
                           </Show>
                           <button

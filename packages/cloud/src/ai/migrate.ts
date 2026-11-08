@@ -50,6 +50,22 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql`ALTER TABLE ai.conversations
+    ADD COLUMN IF NOT EXISTS place_type TEXT,
+    ADD COLUMN IF NOT EXISTS place_id TEXT,
+    ADD COLUMN IF NOT EXISTS place_title VARCHAR(200)`.simple();
+  await sql`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='ai.conversations'::regclass AND conname='ai_conversations_place_complete') THEN
+      ALTER TABLE ai.conversations ADD CONSTRAINT ai_conversations_place_complete CHECK (
+        (place_type IS NULL AND place_id IS NULL AND place_title IS NULL) OR
+        (place_type IS NOT NULL AND place_id IS NOT NULL AND place_title IS NOT NULL)
+      );
+    END IF;
+  END $$`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_conversations_active_place
+    ON ai.conversations(created_by_user_id, place_type, place_id)
+    WHERE archived_at IS NULL AND place_type IS NOT NULL`.simple();
+
   // Keep the request identity after deletion: retrying a lost response must not resurrect a chat.
   await sql`
     CREATE TABLE IF NOT EXISTS ai.conversation_creations (

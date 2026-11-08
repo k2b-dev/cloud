@@ -24,6 +24,9 @@ import {
   type PdfPreviewRequest,
   PdfViewer,
   type PdfViewerProps,
+  ThumbnailStrip,
+  type ThumbnailStripItem,
+  type ThumbnailStripProps,
   VideoPlayer,
   type VideoPlayerProps,
   ZoomPanViewport,
@@ -40,6 +43,27 @@ Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. 
 An image may also carry `actions`: further things to do with that image, each a short `label`, a Tabler `icon` class, and `onClick`. They sit before **Download** in the same style and show their label on wider screens. Cloud apps use one for **Save to Files**. Keep the list short; the bar holds a few buttons, not a menu.
 
 `initialIndex` selects the first visible image. The parent owns the open state and removes the component through `onClose`.
+
+Two or three images show dots to switch between them. From four images on, a [`ThumbnailStrip`](#thumbnail-strip) replaces the dots. Pass a small version of each image as `thumbnail`; without it the strip loads `src`, which costs bandwidth for large photos. The counter, caption, buttons, arrows, dots, and strip float over the picture on dark glass (`k2b-overlay-surface`).
+
+## Thumbnail strip
+
+`ThumbnailStrip` is a row of image thumbnails, 44 px high, for switching between images: the gallery uses it, and an image editor or a file preview can too. Each item has an `id`, a `name`, an optional `thumbnail` (a URL, or a function that renders the host's own thumbnail component), and an optional `dirty` flag that adds a dot for unsaved edits. `currentItem` names the shown image; it is ringed and scrolled into the middle. `onSelectItem` receives an id. `onAddItems` adds a "+" tile at the end.
+
+The strip scrolls sideways and fades softly only on the side where more images follow. The current image is the strip's one tab stop. The arrow keys, Home, and End move focus between the images and the "+" tile without showing them; Enter or a click shows one. A host that uses the arrow keys itself, as the gallery does for the previous and next image, does not also receive them while the strip has focus.
+
+The host decides where the strip sits, also on a phone, and its surface: over a picture, pass `class="k2b-overlay-surface"`.
+
+```tsx
+<ThumbnailStrip
+  label="Images"
+  class="k2b-overlay-surface"
+  items={photos().map((photo) => ({ id: photo.id, name: photo.name, thumbnail: photo.thumbUrl, dirty: photo.edited }))}
+  currentItem={current()}
+  onSelectItem={setCurrent}
+  onAddItems={pickPhotos}
+/>
+```
 
 ## Video
 
@@ -125,7 +149,14 @@ Without a height, the viewport takes the height of its content. Give it a height
 ```ts
 type LightboxImage = {
   src: string; alt?: string; downloadUrl?: string;
-  actions?: readonly LightboxAction[];
+  actions?: readonly LightboxAction[]; thumbnail?: string;
+};
+
+type ThumbnailStripItem = { id: string; name: string; thumbnail?: string | (() => JSX.Element); dirty?: boolean };
+
+type ThumbnailStripProps = {
+  items: readonly ThumbnailStripItem[]; currentItem?: string; onSelectItem: (id: string) => void;
+  onAddItems?: () => void; label: string; class?: string;
 };
 
 type LightboxAction = { label: string; icon: string; onClick: () => void };

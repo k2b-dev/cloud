@@ -594,7 +594,11 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(cell({ status: "error", onRetry: () => undefined })).toContain("Try again");
     expect(cell({ status: "error" })).not.toContain("<button");
     expect(cell({ stale: "As of 09:12 · not current", onRetry: () => undefined })).toContain("Reload");
-    expect(cell({ value: null, sub: "Nothing counted in this period" })).toMatch(/data-empty="true"[^>]*>–</);
+    // The empty figure is the shared empty dash "—" (as in Format and DataTable), named for screen readers; it stays
+    // inside the value row, so the tile keeps its three rows (#2896).
+    expect(cell({ value: null, sub: "Nothing counted in this period" })).toMatch(
+      /data-empty="true"[^>]*><span role="img" aria-label="No value">—<\/span><\/span><\/div><div class="k2b-stat-cell__support">/,
+    );
     // An empty tile draws no trend, so it keeps the height of the tile with data and of the loading tile.
     expect(cell({ value: null, sub: "Nothing counted in this period", trend: [1, 2, 3] })).not.toContain("k2b-stat-cell__trend");
     // A link tile is no link while it loads or failed.

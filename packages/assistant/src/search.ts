@@ -19,6 +19,7 @@ export const searchAssistant = async (
   context: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale">,
   store: SearchStore,
   projects: Pick<typeof aiProjects, "getByShortId">,
+  places = false,
 ) => {
   const t = assistantCommandMessages.resolve([context.locale]).t;
   if (context.accessSubject.type !== "user") return fail(err.forbidden(t.userRequired));
@@ -47,14 +48,17 @@ export const searchAssistant = async (
   const chats = await store.listConversations({
     ownerUserId,
     search: input.query,
+    ...(places ? { place: "any" as const } : {}),
     limit: input.limit,
     ...(projectId ? { projectId } : {}),
   });
   const data: CloudResourceView[] = chats.map((chat) => ({
     ref: { type: "assistant.chat", id: chat.shortId },
     title: chat.title.slice(0, 500),
+    ...(chat.place ? { group: t.atPlaces } : {}),
     preview: (chat.description || "").slice(0, 2000),
-    icon: "ti ti-messages",
+    icon: chat.place ? "ti ti-map-pin" : "ti ti-messages",
+    ...(chat.place ? { context: chat.place.title, metadata: [{ label: t.app, value: chat.place.ref.type.split(".")[0]! }] } : {}),
     priority: 7,
     links: [{ rel: "open", href: `/app/assistant?conversation=${encodeURIComponent(chat.shortId)}` }],
   }));

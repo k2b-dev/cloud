@@ -74,6 +74,7 @@ export const SearchAppSchema = z.object({
 export const SearchItemSchema = z.object({
   appId: z.string(),
   appName: z.string(),
+  group: z.string().min(1).max(120).optional(),
   appIcon: z.string(),
   readable: z.boolean(),
   ref: CloudResourceRefSchema,
