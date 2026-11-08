@@ -26,7 +26,15 @@ export type CodeQueryResult<Data> = {
   page?: { hasMore: true; nextCursor: string } | { hasMore: false };
 };
 /** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
-export type CodeUser = { id: string; groups: string[] };
+export type CodeUser = {
+  id: string;
+  groups: string[];
+  /** The signed-in person's Cloud account profile. Workload accounts cannot visit private pages. */
+  kind: "user" | "guest";
+  /** Stable identity provider ID, never a credential. */
+  provider: "local" | "ipa";
+  name: string;
+};
 /** Request helpers for hosted routes. No middleware system is part of Code. */
 export type CodeRequest = {
   raw: Request;
@@ -408,7 +416,10 @@ const __codeSdk = Object.freeze({
       const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
       const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new Error("code_invalid_response"); return value; };
       const c = {
-        user: registered.route.public ? null : input.user,
+        user: registered.route.public || !input.user ? null : {
+          id: input.user.id, groups: [...input.user.groups], kind: input.user.kind,
+          provider: input.user.provider, name: input.user.name,
+        },
         req: { raw, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
           json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
         json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),

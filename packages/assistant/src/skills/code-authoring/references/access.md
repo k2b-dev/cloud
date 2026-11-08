@@ -28,8 +28,23 @@ others first needs a Cloud administrator's approval under the default policy.
 
 ## The visitor of a page: `c.user`
 
-Routes need a signed-in person by default. `c.user` is `{ id, groups }`: the
-person's ID and effective group IDs. Use it to decide what a page shows or
+Routes need a signed-in person by default, including signed-in guests.
+`c.user` contains only the visitor's own identity:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Cloud user ID |
+| `groups` | Effective group IDs |
+| `kind` | Cloud account profile: `"user"` or `"guest"` |
+| `provider` | Stable identity provider ID: `"local"` or `"ipa"` (FreeIPA) |
+| `name` | Display name |
+
+Cloud currently has no OIDC sign-in provider ID. `provider` is never a token,
+session ID or provider configuration. Agents and other service accounts cannot
+visit private pages; they do not become `c.user`. Webhook contexts have no
+`user` field, and webhook registration is still unavailable.
+
+Use this identity to decide what a page shows or
 which form it accepts. It is never data authority: every SDK call runs with
 the Code's account, not the visitor's access. A page therefore must not show
 mailbox data to a visitor who should not see it.
@@ -42,11 +57,11 @@ import { app, jsx, owner, Page, Notice, Stats, Stat } from "@sdk";
 const TEAM = "00000000-0000-4000-8000-0000000000aa";
 
 app.get("/", async c => {
-  if (!c.user?.groups.includes(TEAM))
+  if (c.user?.kind !== "user" || !c.user.groups.includes(TEAM))
     return c.page(<Page title="Team inbox"><Notice tone="warning" title="Only for the support team" /></Page>);
   const { data: open, page } = await owner.conversation.list({ view: "needs_action", limit: 50 });
   return c.page(
-    <Page title="Team inbox">
+    <Page title="Team inbox" subtitle={`Signed in as ${c.user.name} (${c.user.provider})`}>
       <Stats>
         <Stat label="Needs action" value={page?.hasMore ? `${open.length}+` : open.length} />
       </Stats>
@@ -57,6 +72,9 @@ export default app;
 ```
 
 ## Public routes
+
+Public routes never see who is signed in. To recognise visitors, leave out
+`public`; then every signed-in person sees the page.
 
 `{ public: true }` opens a route without sign-in. `c.user` is then always
 `null`, also for signed-in visitors. Public routes need the public-endpoint

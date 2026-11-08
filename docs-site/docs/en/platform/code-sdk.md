@@ -720,9 +720,31 @@ receives `403` with `code_owner_only`. Public routes of personal Code follow the
 same rules as below and still run with the owner's mandate, so return only what
 any visitor may see.
 
-Routes require a signed-in session by default. `c.user` contains that person's
-ID and effective group IDs; check it in the handler when access depends on the
-visitor. Public routes also require the `public_routes` policy classification and version-bound
+Routes require a signed-in person's session by default, including guests.
+Check `c.user` in the handler when access depends on the visitor:
+
+```ts
+type CodeUser = {
+  id: string;
+  groups: string[];
+  kind: "user" | "guest";
+  provider: "local" | "ipa";
+  name: string;
+};
+```
+
+`id` is the Cloud user ID, `groups` contains effective group IDs, `kind` is
+the account profile and `name` is the display name. `provider` is the stable
+identity provider ID (`ipa` means FreeIPA), never a token, session ID or
+provider configuration. Cloud currently has no OIDC sign-in provider ID.
+Agents and other service accounts cannot visit private pages and are never
+projected into `c.user`. `CodeWebhookContext` has no `user` field; webhook
+registration remains unavailable.
+
+Public routes never see who is signed in. To recognise visitors, leave out
+`public`; then every signed-in person sees the page.
+
+Public routes also require the `public_routes` policy classification and version-bound
 administrator approval by default. Existing policy tables initially forbid this new
 classification until an operator chooses its rule. Public routes require the literal `{ public: true }` in the checked
 version and always receive `c.user === null`, including for signed-in visitors.

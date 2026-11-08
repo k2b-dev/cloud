@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { UserProfileSchema, UserProviderSchema } from "../contracts/shared";
 
 import { CODE_REQUEST_LIMITS } from "./request-limits";
 
@@ -12,7 +13,13 @@ export const CodeRouteRequestSchema = z
     body: z.string().max(CODE_REQUEST_LIMITS.bodyBytes),
     params: z.record(z.string(), z.string()),
     user: z
-      .object({ id: z.string(), groups: z.array(z.string()) })
+      .object({
+        id: z.string(),
+        groups: z.array(z.string()),
+        kind: UserProfileSchema,
+        provider: UserProviderSchema,
+        name: z.string(),
+      })
       .strict()
       .nullable(),
     codeId: z.string(),

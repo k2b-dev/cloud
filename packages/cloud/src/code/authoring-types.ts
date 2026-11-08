@@ -23,7 +23,15 @@ export type CodeQueryResult<Data> = {
   page?: { hasMore: true; nextCursor: string } | { hasMore: false };
 };
 /** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
-export type CodeUser = { id: string; groups: string[] };
+export type CodeUser = {
+  id: string;
+  groups: string[];
+  /** The signed-in person's Cloud account profile. Workload accounts cannot visit private pages. */
+  kind: "user" | "guest";
+  /** Stable identity provider ID, never a credential. */
+  provider: "local" | "ipa";
+  name: string;
+};
 /** Request helpers for hosted routes. No middleware system is part of Code. */
 export type CodeRequest = {
   raw: Request;

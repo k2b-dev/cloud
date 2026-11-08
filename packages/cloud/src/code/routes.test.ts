@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { CodeRouteSchema, codeOwnPath, matchCodeRoute } from "../contracts/code-routes";
 import { analyzeCode } from "./checker-analysis";
 import { generateCodeSdk } from "./generator";
+import { type CodeRouteRequest, CodeRouteRequestSchema } from "./request-contract";
 import { sdkFixture } from "./sdk.test-fixture";
 
 const sdk = generateCodeSdk([sdkFixture()], {
@@ -90,9 +91,13 @@ test("SDK runtime routes return description responses without cookies, HTML or a
     contentType: "text/plain",
     body: "",
     params: { id: "a" },
-    user: { id: "visitor", groups: [] },
+    user: { id: "visitor", groups: [], kind: "guest", provider: "local", name: "Visitor", token: "must-not-reach-handler" },
   });
-  expect(result).toEqual({ kind: "json", status: 200, body: JSON.stringify({ user: { id: "visitor", groups: [] }, id: "a" }) });
+  expect(result).toEqual({
+    kind: "json",
+    status: 200,
+    body: JSON.stringify({ user: { id: "visitor", groups: [], kind: "guest", provider: "local", name: "Visitor" }, id: "a" }),
+  });
   runtime.app.get("/public", (c: { user: unknown; json(value: unknown): Response }) => c.json(c.user), { public: true });
   expect(
     await runtime.__codeSdk.run("route:GET:/public", {
@@ -105,6 +110,28 @@ test("SDK runtime routes return description responses without cookies, HTML or a
       user: { id: "visitor" },
     }),
   ).toEqual({ kind: "json", status: 200, body: "null" });
+});
+
+test("route requests accept only Cloud visitor profiles and providers, with no additional identity fields", () => {
+  const request = {
+    codeId: "c_one",
+    method: "GET",
+    path: "/",
+    query: "",
+    contentType: "text/plain",
+    body: "",
+    params: {},
+    user: { id: "visitor", groups: [], kind: "user", provider: "local", name: "Visitor" },
+  } satisfies CodeRouteRequest;
+  expect(CodeRouteRequestSchema.parse(request).user).toEqual(request.user);
+  expect(CodeRouteRequestSchema.parse({ ...request, user: null }).user).toBeNull();
+  for (const user of [
+    { ...request.user, kind: "agent" },
+    { ...request.user, kind: "service_account" },
+    { ...request.user, provider: "provider-secret" },
+    { ...request.user, token: "provider-secret" },
+  ])
+    expect(CodeRouteRequestSchema.safeParse({ ...request, user }).success).toBe(false);
 });
 
 test("personal Code registers private and public routes like resource Code", () => {

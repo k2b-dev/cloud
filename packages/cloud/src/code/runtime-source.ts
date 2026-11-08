@@ -170,7 +170,10 @@ const __codeSdk = Object.freeze({
       const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
       const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new Error("code_invalid_response"); return value; };
       const c = {
-        user: registered.route.public ? null : input.user,
+        user: registered.route.public || !input.user ? null : {
+          id: input.user.id, groups: [...input.user.groups], kind: input.user.kind,
+          provider: input.user.provider, name: input.user.name,
+        },
         req: { raw, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
           json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
         json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),
