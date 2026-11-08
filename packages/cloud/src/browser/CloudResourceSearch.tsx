@@ -11,7 +11,7 @@ import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
 import { commandSearchItem, matchingCommands, type PaletteCommand } from "./search-commands";
-import { createSearchPreview, type SearchPreviewState } from "./search-preview";
+import { createSearchPreview } from "./search-preview";
 import {
   applySearchLine,
   breakSearchRun,
@@ -497,6 +497,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     const item = showResults() ? previewItem() : undefined;
     return item && "ref" in item && item.readable ? item.ref : undefined;
   });
+  const previewView = () => {
+    const state = preview();
+    return state.state === "view" ? state.view : undefined;
+  };
   const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim());
 
   return (
@@ -923,7 +927,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                 {/* The reader answers within a moment; its room is held so the column does not jump. */}
                 <div class="cloud-resource-search__preview-loading" aria-busy="true" />
               </Match>
-              <Match when={preview().state === "view" ? (preview() as Extract<SearchPreviewState, { state: "view" }>).view : undefined}>
+              <Match when={previewView()}>
                 {(view) => <BlockTree blocks={view().blocks} host="preview" locale={locale()} timeZone={localTimeZone()} />}
               </Match>
               <Match when={true}>

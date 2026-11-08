@@ -10,6 +10,14 @@ export const SEARCH_PREVIEW_DELAY_MS = 150;
 
 const key = (ref: CloudResourceRef) => `${ref.type}\u0000${ref.id}`;
 
+/** Cloud checked and bound the view before it answered; this only tells an answer with a view from one without. */
+const previewView = (body: unknown): BoundBlockView | null => {
+  const view = body && typeof body === "object" && "view" in body ? body.view : null;
+  return view && typeof view === "object" && "version" in view && view.version === 1 && "blocks" in view && Array.isArray(view.blocks)
+    ? { version: 1, blocks: view.blocks }
+    : null;
+};
+
 /**
  * Loads the reader view of the active search hit through `/api/search/preview`, as the person: after a short delay,
  * cancelling the previous request, and kept for as long as the dialog is open. Without a reader, on an error, a
@@ -38,7 +46,7 @@ export function createSearchPreview(ref: Accessor<CloudResourceRef | undefined>)
       request = controller;
       const query = new URLSearchParams({ type: current.type, id: current.id });
       void fetch(`/api/search/preview?${query}`, { signal: controller.signal, credentials: "same-origin" })
-        .then(async (response) => (response.ok ? (((await response.json()) as { view?: BoundBlockView | null }).view ?? null) : null))
+        .then(async (response) => (response.ok ? previewView(await response.json()) : null))
         .catch(() => (controller.signal.aborted ? undefined : null))
         .then((view) => {
           if (view === undefined || controller.signal.aborted) return;
