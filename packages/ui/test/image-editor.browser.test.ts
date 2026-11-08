@@ -700,6 +700,10 @@ describe("public ImageEditor interactions", () => {
   test("a discard confirmed in one editor never marks it saved when another editor keeps the page", async () => {
     const { page, errors } = await open("nav=1&pair=1");
     try {
+      // This test is about the leave checks of two editors, not their look. Two glass overlays repainted over two
+      // changing canvases take seconds per frame in software-rendered WebKit (CI and the Playwright image); the
+      // editor's solid high-contrast surface keeps the frames short. The other editor tests keep the glass.
+      await page.emulateMedia({ contrast: "more" });
       const editors = page.locator(".k2b-image-editor");
       for (const index of [0, 1]) {
         const editor = editors.nth(index);
