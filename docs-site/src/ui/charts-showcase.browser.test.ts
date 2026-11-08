@@ -242,23 +242,95 @@ test("both dashboards keep every panel in place in every state", async () => {
   }
 }, 600_000);
 
+// Geometry comes from the real server document. Keep hydration in open()/the
+// parity tests: starting every overview island is unrelated to these bounds.
+// A script-src 'none' policy keeps the document exactly the server markup while
+// test evaluation (settled, measurements) still runs.
+const openServerGeometry = async (width: number, height: number, path: string) => {
+  const page = await browser!.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
+  await page.route(`${origin}${path}`, async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, headers: { ...response.headers(), "content-security-policy": "script-src 'none'" } });
+  });
+  const response = await page.goto(`${origin}${path}`, { waitUntil: "load" });
+  expect(response!.ok()).toBe(true);
+  await settled(page);
+  return { page, response: response! };
+};
+
+for (const width of [390, 800, 1440, 1920]) {
+  for (const path of ["/en/ui/charts/calendar", "/en/ui/charts/dashboards/newsletter", "/en/ui/charts"]) {
+    test(`calendar starts flush with newest weeks in ${path} at ${width}px`, async () => {
+      const { page, response } = await openServerGeometry(width, 1000, path);
+      const errors = pageErrors(page);
+      try {
+        const selector = ".k2b-chart__svg > svg[data-calendar]";
+        const serverSvg = await page.evaluate(
+          (html) => new DOMParser().parseFromString(html, "text/html").querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
+          await response!.text(),
+        );
+        expect(
+          await page
+            .locator(selector)
+            .first()
+            .evaluate((e) => e.outerHTML),
+        ).toBe(serverSvg);
+        const calendar = page
+          .locator(".k2b-chart")
+          .filter({ has: page.locator("svg[data-calendar]") })
+          .first();
+        expect(await calendar.count(), path).toBe(1);
+        const geometry = await calendar.evaluate((element) => {
+          const viewport = element.getBoundingClientRect();
+          const drawing = element.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
+          const newest = element.querySelectorAll("[data-chart-datum] rect");
+          const last = newest[newest.length - 1]!.getBoundingClientRect();
+          const label = element.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect();
+          const firstVisible = [...newest]
+            .map((e) => e.getBoundingClientRect())
+            .filter((b) => b.left >= label.right - 0.1)
+            .sort((a, b) => a.left - b.left)[0]!;
+          return {
+            left: element.scrollLeft,
+            gap: drawing.width > viewport.width ? drawing.right - viewport.right : drawing.left - viewport.left,
+            lastRight: last.right - viewport.right,
+            lastLeft: last.left - viewport.left,
+            cell: last.width,
+            square: Math.abs(last.width - last.height),
+            labelGap: firstVisible.left - label.right,
+            labelLeft: label.left - viewport.left,
+            railLeft: element.querySelector("[data-calendar-weekdays] > rect")!.getBoundingClientRect().left - viewport.left,
+            height: drawing.height,
+            viewportHeight: viewport.height,
+          };
+        });
+        expect(Math.abs(geometry.gap), path).toBeLessThan(1);
+        expect(geometry.labelGap, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.labelGap, path).toBeLessThanOrEqual(8);
+        expect(geometry.labelLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.railLeft, path).toBeLessThanOrEqual(0);
+        expect(geometry.left, path).toBe(0);
+        expect(geometry.lastRight, path).toBeLessThanOrEqual(1);
+        expect(geometry.lastLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.cell, path).toBeLessThanOrEqual(32.1);
+        expect(geometry.square, path).toBeLessThan(0.2);
+        expect(geometry.viewportHeight - geometry.height, path).toBeGreaterThanOrEqual(-1);
+        expect(geometry.viewportHeight - geometry.height, path).toBeLessThanOrEqual(17);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}
+
 for (const width of [390, 1440]) {
   test(`distribution overview cards keep axes and name/value blocks inside at ${width}px`, async () => {
     // This guard measures server SVGs. Hydrating every overview card belongs to
     // the separate parity test and must not consume this geometry test's budget.
-    const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-    await page.route("**/en/ui/charts", async (route) => {
-      const response = await route.fetch();
-      // Keep the real document, styles and fonts; exclude only script startup.
-      const body = (await response.text()).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-      await route.fulfill({ response, body });
-    });
+    const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
     const errors = pageErrors(page);
     try {
-      const response = await page.goto(`${origin}/en/ui/charts`, { waitUntil: "load" });
-      expect(response!.ok()).toBe(true);
-      await settled(page);
-      expect(await page.locator("script").count()).toBe(0);
       const pareto = page.locator('[data-chart-kind="pareto"]');
       expect(await pareto.count()).toBe(1);
       expect(await pareto.locator("svg > text").count()).toBeGreaterThan(0);

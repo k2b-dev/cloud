@@ -72,6 +72,7 @@ and 12rem minimum width. Trigger styling is configured separately.
 
 Set `phone="sheet"` on `Dropdown.Root` to open the same items in a bottom sheet
 below 48rem. The default `phone="menu"` keeps the menu beside its trigger.
+`SplitButton` takes the same `phone` prop and passes it to its menus.
 Use `sheetTop={(close) => ...}` for a contextual heading or a visible Done
 button above those items. Call `close` to dismiss through the same history and
 focus lifecycle as the menu actions.

@@ -888,7 +888,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `actions` | Optional owner actions in the header before Copy data, such as a button that shows the query behind the chart. Keep them icon-sized. The actions move below the title only when the title itself does not fit beside them; a long description wraps in the space the title leaves, so explorers side by side keep one header layout. |
 | `headingLevel` | Level of the title heading, `2`–`6`; default `3`. Use one level below the surrounding heading, for example `4` for charts under a group's `h3`. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
-| `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
+| `height` | CSS viewport height; default `"18rem"`, or content height for a calendar snapshot, shared by chart and scrollable table. |
 | `legend` | Optional `ChartLegendEntry[]` (`{ label, color, style?, reference? }`, `color` is the palette index 0–7). Shows the series names as a wrapping list below the chart, inside the same viewport height, and only in chart view. The chart keeps at least 60% of the height; a longer legend scrolls in the rest. Prepare the snapshot with `legend: false` and pass the names here: the renderer's legend is one SVG row and runs out of a stretched phone-width chart. `style` `"dashed"` or `"dotted"` shows a line swatch; `reference` shows a hollow swatch like the comparison marks. |
 | `empty` | Optional JSX shown in the viewport without rows; default **No data**. With `request`, write one sentence that says why, such as "No newsletter was sent in this period." The header and height stay in place. |
 
@@ -1169,8 +1169,8 @@ legend names it (`legend={false}` hides it). Labels and values print only when
 both fit; the tooltip and table keep every item, including zero-valued items.
 
 `Chart.Pareto` accepts `labels: [current, previous]` and
-`data: {label,value,prev}[]`. It ranks current values descending and places a
-category named `Rest` last. Solid bars show current values; hatched bars show
+`data: {label,value,prev,rest?}[]`. It ranks current values descending and places a
+category flagged with `rest: true` last. The label stays free text, supplied and localized by the author; an unflagged `Rest` has no special meaning. Solid bars show current values; hatched bars show
 the previous period. The cumulative line uses the percentage axis below;
 the absolute value axis is above. The dashed 80% line marks concentration.
 Both periods must be nonnegative. A zero previous value or zero total shows
@@ -1243,10 +1243,10 @@ days and null values remain gaps. The date span is limited to three years. Weeks
 
 The color scale includes every observation. Diverging values use turquoise
 for positive and violet for negative values, with zero neutral. Phone charts
-scroll to the newest weeks. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
+open at the newest weeks in the server frame, before JavaScript runs. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
 Home/End jump, Enter pins and Escape dismisses. The exact date and value are
 also available in the table. Optional `locale` takes precedence over the UI
-provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Month and weekday labels use explicit short Intl formats; full dates use explicit long parts and a shared date pattern. Older engines use the US Sunday and other-locale Monday week-start fallback. Print output scales uniformly to the page. Measured hosts pass `displayWidth`. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts`, pass `nav: calendarInspectionNavigation` to `inspectChart`, and dispose both cleanups.
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells grow with the available width from 14px to a maximum of 32px, aligned to the left. The drawing height follows its seven rows and legend. Horizontal scrolling starts only when the minimum cells do not fit. `ChartExplorer` uses this content height when its first frame includes a calendar snapshot, and retains that reserve if a request later omits the snapshot. For a first load with only `{rows: []}`, it keeps its standard 18rem frame when data arrives. Provide a snapshot prepared from the known date span (null observations are valid) or an explicit `height` to choose the first reserve. The reserve includes 16px for a classic horizontal scrollbar. Weekday labels stay visible and attached to the grid while the weeks scroll or the panel resizes. Their grid gap stays small as cells grow; month/year rows and the legend keep fixed text spacing. The weekday rail masks partially visible month names. Month and weekday labels use explicit short Intl formats; full dates use explicit long parts and a shared date pattern. Older engines use the US Sunday and other-locale Monday week-start fallback. Print output scales uniformly to the page. CSS fits the same coordinate space on the server and in the browser; a measured redraw is unnecessary. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts`, pass `nav: calendarInspectionNavigation` to `inspectChart`, and dispose both cleanups. Scroll measurements use a calendar-scoped CSSOM rule so fractional widths preserve the server markup; cleanup removes that rule.
 
 Keep loading, empty, error/retry and stale feedback in the host's fixed-height
 frame. The newsletter example shows daily opens across a complete year.

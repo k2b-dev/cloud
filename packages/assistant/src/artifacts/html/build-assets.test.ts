@@ -55,11 +55,12 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // New line part: 12,744 B; main's 68,100 B host ceiling plus exactly this part.
+  // New line part: 12,744 B on top of main's 68,456 B measured total.
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  expect(total).toBeLessThan(80_844);
+  // Pareto +299 B, treemap +34 B, heatmap +87 B and the line part +12,744 B; retain exactly main's host headroom.
+  expect(total).toBeLessThan(81_264);
   const markers = {
     line: "k2b-line-forecast-band",
     area: "k2b-area-layer",
