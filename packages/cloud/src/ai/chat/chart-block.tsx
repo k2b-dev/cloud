@@ -25,7 +25,7 @@ const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null 
       key: ({ datum }) => cloudAiChartMarkKey(datum),
       tooltip: ({ datum }) => {
         const row = rows.add(datum);
-        return cloudAiChartTooltip(rows.columns(), row, input.kind);
+        return cloudAiChartTooltip(rows.columns(), row, input);
       },
       reference: ({ datum }) => cloudAiChartReferenceMark(input, datum),
     });

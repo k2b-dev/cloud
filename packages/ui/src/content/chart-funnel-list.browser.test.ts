@@ -79,10 +79,8 @@ for (const width of [1440, 390])
         await settled(page);
         const before = await sample.boundingBox();
         const marks = chart.locator("[data-chart-datum]");
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .hover({ position: { x: 3, y: 3 } });
+        const firstTarget = marks.first().locator(i === 3 ? ".stdlib-chart-bar" : ".k2b-chart-category-band");
+        await firstTarget.hover({ position: { x: 3, y: 3 } });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
@@ -90,10 +88,7 @@ for (const width of [1440, 390])
           nodes.flatMap((g) => [g, ...g.querySelectorAll("rect:not(.k2b-chart-category-band)")].map((e) => getComputedStyle(e).opacity)),
         );
         const tipBox = await chart.locator('[role="tooltip"]').boundingBox();
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .hover({ position: { x: 6, y: 10 } });
+        await firstTarget.hover({ position: { x: 6, y: 10 } });
         await settled(page);
         expect(await chart.locator('[role="tooltip"]').textContent()).toBe(first);
         expect(await chart.locator('[role="tooltip"]').boundingBox()).toEqual(tipBox);
@@ -106,10 +101,7 @@ for (const width of [1440, 390])
         await chart.press("Home");
         await chart.press("Escape");
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .tap({ position: { x: 3, y: 3 } });
+        await firstTarget.tap({ position: { x: 3, y: 3 } });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         await page.locator(".states").dispatchEvent("pointerdown", { pointerType: "touch", bubbles: true });
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
@@ -136,10 +128,7 @@ for (const width of [1440, 390])
           clientY: box!.y + 4,
           bubbles: true,
         });
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .dispatchEvent("click", { clientX: box!.x + 24, clientY: box!.y + 4, bubbles: true });
+        await firstTarget.dispatchEvent("click", { clientX: box!.x + 24, clientY: box!.y + 4, bubbles: true });
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
         await chart.dispatchEvent("pointerdown", {
           pointerType: "touch",
@@ -155,10 +144,7 @@ for (const width of [1440, 390])
           clientY: box!.y + 4,
           bubbles: true,
         });
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .dispatchEvent("click", { clientX: box!.x + 11, clientY: box!.y + 4, bubbles: true });
+        await firstTarget.dispatchEvent("click", { clientX: box!.x + 11, clientY: box!.y + 4, bubbles: true });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         await chart.press("Escape");
       }
@@ -184,6 +170,7 @@ for (const width of [1440, 390])
       if (shots) {
         await mkdir(shots, { recursive: true });
         await page.screenshot({ path: resolve(shots, `funnel-list-data-light-${width}.png`), fullPage: true });
+        await page.locator('[data-example="3"]').screenshot({ path: resolve(shots, `signed-rows-data-light-${width}.png`) });
       }
       await page.locator("body").evaluate((e) => (e.dataset.theme = "dark"));
       await settled(page);

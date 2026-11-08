@@ -427,3 +427,11 @@
     flex: none;
   }
 }
+
+/* Calendar placeholders, drawings and tables share a width-derived content box. */
+.k2b-ui .notebook-book-chart[data-calendar] .notebook-book-chart__viewport {
+  height: var(--notebook-chart-height);
+}
+.k2b-ui .notebook-book-chart[data-calendar] .k2b-chart__svg {
+  height: auto;
+}
