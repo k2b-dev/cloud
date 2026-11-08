@@ -102,9 +102,7 @@
   /* Underline and arrow of web and mail links in content. An optional host
      hook, as for the workspace accent; Cloud maps it to the app accent. */
   --k2b-link-accent: var(--k2b-action);
-  /* Chat questions: the type step of the question sentence. Marks of new
-     words read the optional host hook `--k2b-mark-accent`, which defaults to
-     the AI accent. */
+  /* Chat questions: the type step of the question sentence. */
   --k2b-chat-decision-size: 1rem;
   /* Reference pills: a neutral fill that follows any surface below it, and
      one icon colour per type. Icons keep at least 3:1 on the hover fill. */
@@ -13880,16 +13878,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* A preview in an activity body, such as a task list, keeps the step's small scale instead of the question's 14.5px. */
-.k2b-ui .k2b-chat-activity__body .k2b-chat-preview,
-.k2b-ui .k2b-chat-activity__body .k2b-chat-preview :is(.k2b-chat-preview__meta, .k2b-chat-preview__line[data-tone="warning"]) {
-  font-size: 0.8125rem;
-}
-
-/* Chat questions (`Chat.Decision`), their outcome line (`Chat.Outcome`), and
-   the thing they are about (`Chat.Preview`). No surface, no border, no
-   column: sentence, reason, preview, answers, and the conversation share one
-   left edge. A line led by an icon starts its text 1.5rem from that edge, the
+/* Chat questions (`Chat.Decision`) and their outcome line (`Chat.Outcome`):
+   sentence, reason, details, answers, and the conversation share one left edge. A line led by an icon starts its text 1.5rem from that edge, the
    same inset as activity bodies. */
 .k2b-ui .k2b-chat-line {
   display: grid;
@@ -14218,8 +14208,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-action);
 }
 
-.k2b-ui .k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover > .k2b-button__label,
-.k2b-ui .k2b-chat-preview__more:hover {
+.k2b-ui .k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover > .k2b-button__label {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -14344,187 +14333,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     row-gap: 0.625rem;
     margin-top: 0.625rem;
   }
-}
-
-/* The preview: calm text in one column, no display face. */
-.k2b-ui .k2b-chat-preview {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.25rem;
-  color: var(--k2b-text-secondary);
-  font-size: 0.90625rem;
-  line-height: 1.55;
-}
-
-.k2b-ui .k2b-chat-preview p {
-  margin: 0;
-}
-
-.k2b-ui .k2b-chat-preview b {
-  color: var(--k2b-text);
-  font-weight: 500;
-}
-
-/* Header fields as real rows: the quiet label right before its value. */
-.k2b-ui .k2b-chat-preview__header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  margin-bottom: 0.5rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.84375rem;
-  line-height: 1.5;
-}
-
-.k2b-ui .k2b-chat-preview__header dl {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  margin: 0;
-}
-
-.k2b-ui .k2b-chat-preview__header dl > div {
-  overflow-wrap: anywhere;
-}
-
-.k2b-ui .k2b-chat-preview__header dt,
-.k2b-ui .k2b-chat-preview__header dd {
-  display: inline;
-  margin: 0;
-}
-
-.k2b-ui .k2b-chat-preview__header dt {
-  margin-inline-end: 0.35em;
-}
-
-.k2b-ui .k2b-chat-preview__header [data-emphasis="true"] dt {
-  color: var(--k2b-text-secondary);
-  font-weight: 500;
-}
-
-.k2b-ui .k2b-chat-preview__person {
-  overflow-wrap: anywhere;
-}
-
-.k2b-ui .k2b-chat-preview__address {
-  margin-inline-start: 0.3em;
-}
-
-.k2b-ui .k2b-chat-preview__address[data-alone="true"] {
-  margin-inline-start: 0;
-}
-
-.k2b-ui .k2b-chat-preview__title-line {
-  overflow-wrap: anywhere;
-}
-
-.k2b-ui .k2b-chat-preview__title {
-  color: var(--k2b-text);
-  font-weight: 500;
-}
-
-.k2b-ui .k2b-chat-preview__meta {
-  color: var(--k2b-text-muted);
-  font-size: 0.84375rem;
-}
-
-.k2b-ui .k2b-chat-preview__sentence {
-  color: var(--k2b-text);
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-/* About three lines that fade out; the card never scrolls inside itself. */
-.k2b-ui .k2b-chat-preview__excerpt {
-  max-height: 4.65em;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: pre-line;
-  -webkit-mask-image: linear-gradient(#000 1.86em, transparent 4.65em);
-  mask-image: linear-gradient(#000 1.86em, transparent 4.65em);
-}
-
-.k2b-ui .k2b-chat-preview__excerpt[data-expanded="true"] {
-  max-height: none;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.k2b-ui button.k2b-chat-preview__more {
-  margin: 0;
-  border: 0;
-  padding-inline: 0;
-  background: none;
-  font-family: inherit;
-  line-height: inherit;
-  cursor: pointer;
-}
-
-.k2b-ui .k2b-chat-preview__more {
-  align-self: flex-start;
-  padding-block: 0.125rem;
-  border-radius: 0.25rem;
-  color: var(--k2b-action);
-  font-size: 0.84375rem;
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.k2b-ui .k2b-chat-preview__more:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
-}
-
-.k2b-ui .k2b-chat-preview__lines {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin: 0.25rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.k2b-ui .k2b-chat-preview__line[data-tone="muted"] {
-  color: var(--k2b-text-muted);
-}
-
-.k2b-ui .k2b-chat-preview__line[data-tone="warning"] {
-  font-size: 0.84375rem;
-}
-
-.k2b-ui .k2b-chat-preview__line[data-tone="warning"] .k2b-chat-line__icon {
-  color: var(--k2b-warning-text);
-}
-
-.k2b-ui .k2b-chat-preview__people {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.k2b-ui .k2b-chat-preview__faces {
-  --k2b-faces-size: 1.5rem;
-  --k2b-faces-overlap: 0.1875rem;
-  display: inline-flex;
-  flex: none;
-}
-
-/* New and removed words. The fill follows the host's `--k2b-mark-accent`. */
-.k2b-ui .k2b-chat-mark[data-change="added"] {
-  padding: 0 0.125rem;
-  border-radius: 0.1875rem;
-  color: inherit;
-  background: color-mix(in srgb, var(--k2b-mark-accent, var(--k2b-ai-accent)) 22%, transparent);
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-
-.k2b-ui .k2b-chat-mark[data-change="removed"] {
-  color: var(--k2b-text-muted);
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
 }
 
 .k2b-ui .k2b-chat-timeline__retry,

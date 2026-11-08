@@ -414,14 +414,7 @@ const StepRowsDemo = () => (
     defaultOpen
     label={<><Chat.Activity.Toggle>3 of 4 tasks</Chat.Activity.Toggle> created in <ReferenceChip kind="place" title="Team Ops" href="#chat-step-rows" /></>}
   >
-    <Chat.Preview>
-      <Chat.Preview.Lines label="Tasks">
-        <Chat.Preview.Line icon="ti ti-check" meta="Created">Check inventory</Chat.Preview.Line>
-        <Chat.Preview.Line icon="ti ti-check" meta="Created">Plan deliveries</Chat.Preview.Line>
-        <Chat.Preview.Line icon="ti ti-check" meta="Created">Prepare the workshop</Chat.Preview.Line>
-        <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">Schedule pickup could not be created. Try again.</Chat.Preview.Line>
-      </Chat.Preview.Lines>
-    </Chat.Preview>
+    <p>Created Check inventory, Plan deliveries, and Prepare the workshop. Schedule pickup could not be created. Try again.</p>
   </Chat.Activity>
   <Chat.Activity busy icon="ti ti-loader-2 k2b-spin" label="Creating 4 tasks in Team Ops …" />
 </div>`}
@@ -446,22 +439,7 @@ const StepRowsDemo = () => (
           </>
         }
       >
-        <Chat.Preview>
-          <Chat.Preview.Lines label="Tasks">
-            <Chat.Preview.Line icon="ti ti-check" meta="Created">
-              Check inventory
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-check" meta="Created">
-              Plan deliveries
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-check" meta="Created">
-              Prepare the workshop
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-              Schedule pickup could not be created. Try again.
-            </Chat.Preview.Line>
-          </Chat.Preview.Lines>
-        </Chat.Preview>
+        <p>Created Check inventory, Plan deliveries, and Prepare the workshop. Schedule pickup could not be created. Try again.</p>
       </Chat.Activity>
       <Chat.Activity busy icon="ti ti-loader-2 k2b-spin" label="Creating 4 tasks in Team Ops …" />
     </div>
@@ -492,16 +470,7 @@ const MailDecisionDemo = () => {
   source={{ name: "Mail", icon: "ti ti-mail" }}
   sentence={<>Send <ReferenceChip kind="object" title="Workshop delivery" href="#draft" /> to <ReferenceChip kind="person" name="Lea Berg" />?</>}
   reason={{ text: "You asked to check mail before sending." }}
-  details={{ label: "Details from Mail", content: <Chat.Preview>
-    <Chat.Preview.Header rows={[
-      { label: "To", people: [{ name: "Lea Berg", address: "lea@example.com" }] },
-      { label: "Bcc", emphasis: true, people: [{ address: "archive@example.com" }] },
-    ]} note="Sends immediately after your answer." />
-    <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
-    <Chat.Preview.Excerpt>Hello Lea, the report is ready for Friday.</Chat.Preview.Excerpt>
-    <Chat.Preview.Line icon="ti ti-file-type-pdf" meta="PDF · 240 KB">Delivery report.pdf</Chat.Preview.Line>
-    <Chat.Preview.ReadMore href="#draft">Read full draft</Chat.Preview.ReadMore>
-  </Chat.Preview> }}
+  details={{ label: "Details from Mail", content: <p>Hello Lea, the delivery is ready for Friday. The attached report includes the revised quantities.</p> }}
   confirm={{ label: "Send to Lea", icon: "ti ti-send", onSelect: send }}
   decline={{ label: "Keep draft", onSelect: () => { setCurrent("declined"); setState("decided"); } }}
   outcome={<Chat.Outcome current={current()} lines={{
@@ -525,42 +494,7 @@ const MailDecisionDemo = () => {
         meta={[{ text: "Expires in 9 min", icon: "ti ti-clock" }]}
         details={{
           label: "Details from Mail",
-          content: (
-            <Chat.Preview>
-              <Chat.Preview.Header
-                rows={[
-                  { label: "From", people: [{ name: "Robin Example", address: "robin@example.com" }] },
-                  { label: "To", people: [{ name: "Lea Berg", address: "lea@example.com" }] },
-                  { label: "Cc", people: [{ name: "Tom Weber", address: "tom@example.com" }] },
-                  { label: "Bcc", emphasis: true, people: [{ address: "archive@example.com" }] },
-                ]}
-                note="Sends immediately after your answer."
-              />
-              <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
-              <Chat.Preview.Excerpt>
-                {
-                  "Hello Lea,\nThe delivery is ready for Friday.\nThe report includes the revised quantities.\nPlease check the attached list."
-                }
-              </Chat.Preview.Excerpt>
-              <Chat.Preview.Line icon="ti ti-file-type-pdf" accent="var(--k2b-reference-pdf)" meta="PDF · 240 KB">
-                Delivery report.pdf
-              </Chat.Preview.Line>
-              <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-                The draft includes outside content.
-              </Chat.Preview.Line>
-              <Chat.Preview.ReadMore href="#chat-mail-decision" title="Open this version of the draft">
-                Read full draft
-              </Chat.Preview.ReadMore>
-              <Chat.Preview.Lines label="What happens next">
-                <Chat.Preview.Line icon="ti ti-send" mark="added">
-                  Lea receives the revised report.
-                </Chat.Preview.Line>
-                <Chat.Preview.Line icon="ti ti-x" mark="removed" tone="muted">
-                  The previous attachment is removed.
-                </Chat.Preview.Line>
-              </Chat.Preview.Lines>
-            </Chat.Preview>
-          ),
+          content: <p>Hello Lea, the delivery is ready for Friday. The attached report includes the revised quantities.</p>,
         }}
         confirm={{ label: "Send to Lea", icon: "ti ti-send", onSelect: send }}
         decline={{
@@ -605,8 +539,8 @@ const DecisionPoliciesDemo = () => {
   return (
     <DemoCard
       id="chat-decision-policies"
-      chip={{ kind: "component", name: "Chat.Preview", from: "@k2b/ui" }}
-      description="Deletion, unavailable answers, a host-owned remember policy, and a routine with visible changes. Each question has its own answer."
+      chip={{ kind: "component", name: "Chat.Decision", from: "@k2b/ui" }}
+      description="Deletion, unavailable answers, a host-owned remember policy, and a routine schedule change. Each question has its own answer."
       code={`<Chat.Decision state={deleted() ? "decided" : "open"}
   kind={{ label: "Approval", icon: "ti ti-shield-check" }}
   source={{ name: "Files", icon: "ti ti-folder" }}
@@ -615,9 +549,7 @@ const DecisionPoliciesDemo = () => {
   confirm={{ label: "Delete report", onSelect: () => { setDeleted(true); } }}
   decline={{ label: "Keep report", onSelect: keepReport }}
   outcome={<Chat.Outcome current="done" lines={{ done: { tone: "done", text: "Deleted the old report." } }} />}
-/>
-<Chat.Preview.Sentence>Every <Chat.Mark change="added">Friday</Chat.Mark>, send the report.</Chat.Preview.Sentence>
-<Chat.Preview.People people={[{ name: "Lea Berg" }, { name: "Tom Weber" }]}>Lea Berg and Tom Weber</Chat.Preview.People>`}
+/>`}
     >
       <div style={{ display: "grid", gap: "2rem" }}>
         <Chat.Decision
@@ -712,22 +644,10 @@ const DecisionPoliciesDemo = () => {
           details={{
             label: "Details from Code",
             content: (
-              <Chat.Preview>
-                <Chat.Preview.Title>Weekly report</Chat.Preview.Title>
-                <Chat.Preview.Sentence>
-                  Every <Chat.Mark change="removed">Monday</Chat.Mark> <Chat.Mark change="added">Friday</Chat.Mark>, send the report to{" "}
-                  <ReferenceChip kind="person" name="Lea Berg" />.
-                </Chat.Preview.Sentence>
-                <Chat.Preview.People people={[{ name: "Lea Berg" }, { name: "Tom Weber" }]}>Lea Berg and Tom Weber</Chat.Preview.People>
-                <Chat.Preview.Lines label="Routine permissions">
-                  <Chat.Preview.Line icon="ti ti-send" mark="added">
-                    May send the weekly report.
-                  </Chat.Preview.Line>
-                  <Chat.Preview.Line icon="ti ti-lock" tone="muted">
-                    Cannot delete files.
-                  </Chat.Preview.Line>
-                </Chat.Preview.Lines>
-              </Chat.Preview>
+              <p>
+                Weekly report: move the schedule from Monday to Friday and send to Lea Berg and Tom Weber. May send the report; cannot
+                delete files.
+              </p>
             ),
           }}
           confirm={{

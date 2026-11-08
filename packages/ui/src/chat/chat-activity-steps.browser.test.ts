@@ -180,46 +180,6 @@ for (const dark of [false, true]) {
       }
     });
   }
-
-  test(`task previews inherit 13px only inside an activity body (${theme})`, async () => {
-    const preview = () =>
-      createComponent(Chat.Preview, {
-        get children() {
-          return createComponent(Chat.Preview.Lines, {
-            label: "Tasks",
-            get children() {
-              return [
-                createComponent(Chat.Preview.Line, { icon: "ti ti-check", meta: "Created", children: "Check inventory" }),
-                createComponent(Chat.Preview.Line, { icon: "ti ti-alert-triangle", tone: "warning", children: "Retry delivery task" }),
-              ];
-            },
-          });
-        },
-      });
-    const page = await browser.newPage();
-    try {
-      const inside = activity({
-        label: "Created tasks",
-        defaultOpen: true,
-        get children() {
-          return preview();
-        },
-      });
-      await content(page, `${inside}<div id="outside">${renderToString(preview)}</div>`, dark);
-      for (const [scope, expected] of [
-        [".k2b-chat-activity__body", ["13px", "13px", "13px", "13px"]],
-        ["#outside", ["14.5px", "14.5px", "13.5px", "13.5px"]],
-      ] as const) {
-        const sizes = await page
-          .locator(`${scope} .k2b-chat-preview, ${scope} .k2b-chat-preview__line, ${scope} .k2b-chat-preview__meta`)
-          .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).fontSize));
-        expect(sizes).toHaveLength(4);
-        expect(sizes).toEqual([...expected]);
-      }
-    } finally {
-      await page.close();
-    }
-  });
 }
 
 const longLabel = "Created tasks for the inventory review, delivery planning, and workshop preparation in Team Ops. ".repeat(4);

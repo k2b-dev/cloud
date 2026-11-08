@@ -202,7 +202,7 @@ test("390px has no horizontal overflow, even with long chip titles and mail addr
   }
 });
 
-test("dark question, done icon and added marks use the inherited dark tokens", async () => {
+test("dark question and done icon use the inherited dark tokens", async () => {
   const page = await open(1440, true);
   try {
     const colors = await page.evaluate(() => {
@@ -214,16 +214,12 @@ test("dark question, done icon and added marks use the inherited dark tokens", a
         return getComputedStyle(probe).color;
       };
       const sentence = getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!).color;
-      const mark = getComputedStyle(document.querySelector('.k2b-chat-mark[data-change="added"]')!).backgroundColor;
       const expectedText = color(root.getPropertyValue("--k2b-text"));
-      probe.style.backgroundColor = `color-mix(in srgb, ${root.getPropertyValue("--k2b-ai-accent")} 22%, transparent)`;
-      const expectedMark = getComputedStyle(probe).backgroundColor;
       const expectedSuccess = color(root.getPropertyValue("--k2b-success-text"));
       probe.remove();
-      return { sentence, mark, expectedText, expectedMark, expectedSuccess };
+      return { sentence, expectedText, expectedSuccess };
     });
     expect(colors.sentence).toBe(colors.expectedText);
-    expect(colors.mark).toBe(colors.expectedMark);
     await page.getByRole("button", { name: "Send to Lea", exact: true }).click();
     await page.evaluate(() => window.__finish());
     expect(await page.locator(".k2b-chat-outcome__icon i").evaluate((e) => getComputedStyle(e).color)).toBe(colors.expectedSuccess);
@@ -246,19 +242,6 @@ test("a rejected outcome action reaches onActionError instead of going unhandled
     expect(await page.evaluate(() => window.__calls)).toBe(1);
     expect(await page.evaluate(() => window.__errors)).toEqual(["Error: offline"]);
     expect(unhandled).toEqual([]);
-  } finally {
-    await page.close();
-  }
-});
-
-test("marking a line later keeps its retained children in place", async () => {
-  const page = await open();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  try {
-    await page.evaluate(() => window.__mark());
-    expect(errors).toEqual([]);
-    expect(await page.locator('.k2b-chat-mark[data-change="added"] #retained').textContent()).toBe("Retained words");
   } finally {
     await page.close();
   }

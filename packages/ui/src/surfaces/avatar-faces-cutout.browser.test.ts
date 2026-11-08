@@ -19,7 +19,6 @@ const GROUPS = {
   "AvatarFaces md": `<span class="k2b-avatar-stack__faces" data-faces-size="md">${faces(3)}</span>`,
   "AvatarFaces sm, right to left": `<span class="k2b-avatar-stack__faces" dir="rtl">${faces(3)}</span>`,
   DetailPresenceSlot: `<span class="k2b-detail-presence-slot">${faces(2)}</span>`,
-  "ChatPreview faces": `<span class="k2b-chat-preview__faces">${faces(3)}</span>`,
 };
 
 let browser: Browser;

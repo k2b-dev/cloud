@@ -38,6 +38,8 @@ compatibility path for writers.
   approval with `ApprovalCard`.
 - `Chat.Decision` in `@k2b/ui` requires `kind` and `source`, takes `details`
   instead of `preview`, and no longer accepts `confirm.variant`.
+- `Chat.Preview` and `Chat.Mark` were removed from `@k2b/ui`; use review `view`
+  blocks for Cloud approval details, or your own JSX in `details.content` elsewhere.
 
 **Operators:** open approvals and stored conversations stay valid. Cloud converts
 stored reviews with `preview` or `content` and stored table presentations into

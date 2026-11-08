@@ -132,9 +132,8 @@ changes only ground, edge, and shadow in 200 ms, without a transition under
 Use [ReferenceChip](/en/ui/content/label-chip#referencechip) for objects, places,
 people, and times inside the sentence. Chips show at most 40 user-perceived
 characters, cut in the middle, while retaining the full title as their accessible
-name and tooltip. Person chips show a name and avatar, never an address. Put
-addresses in `Chat.Preview.Header`. A gone object or place is struck through and
-has no link.
+name and tooltip. Person chips show a name and avatar, never an address. A gone
+object or place is struck through and has no link.
 
 Set `state` synchronously in each answer's `onSelect`, before awaiting work, so
 the question collapses immediately. `open` shows the question;
@@ -179,27 +178,11 @@ optional `remember` checkbox is host policy: when it is checked, `confirm` calls
 `remember.onSelect` instead of its own. The component neither stores consent nor
 widens permissions, and a draft in `edit` mode never offers it.
 
-Compose the actual content with `Chat.Preview`: header fields stand immediately
-before their values; `emphasis` identifies a Bcc label; `note` can say when a mail
-will be sent. `Excerpt` preserves line breaks and fades after about three lines.
-`ReadMore` should open the exact version being reviewed. When there is no such
-page, `ShowAll` shows the rest of an excerpt in place: give the `Excerpt` an
-`id`, pass it as `controls`, set `expanded` on show, and remove the button. The
-focus then moves to the text. Decide whether to offer it from the text itself,
-not from a measurement, so the server and the first browser frame agree, and
-set `expanded` on every text without a page that you do not offer it for, so an
-estimate that is too short never clips anything.
-`Lines` names a list of
-consequences, and `Line` can also stand alone for an attachment or warning.
-`People` shows overlapping decorative avatars followed by readable names.
-A preview inside an activity body uses 13 px, including metadata and warnings.
-Elsewhere it keeps 14.5 px.
+A standalone UI consumer passes its own JSX in `details.content`.
+Cloud applications never compose approval details themselves: Cloud's approval
+card draws the review's `view` blocks. See [Cloud approvals](/en/ui/cloud/approvals).
 
-Use `Chat.Mark change="added"` for new words and `change="removed"` for removed
-words, or mark an entire preview line with its `mark` prop. Screen readers hear
-"new:" / "removed:" in English and "neu:" / "weg:" in German. Added marks use
-`--k2b-mark-accent`, which defaults to `--k2b-ai-accent`; a host may override it
-for the local context. Use `Chat.Activity tone="warning"` for a partial result
+Use `Chat.Activity tone="warning"` for a partial result
 or an answer whose outcome is not yet known. An activity `label` may be a
 sentence with `ReferenceChip`s, such as "Read [Week 42]". With
 `Chat.Activity.Toggle`, chips in an expandable row keep their `href`. In the
@@ -219,7 +202,7 @@ export function MailQuestion() {
     status={current() === "declined" ? { label: "Declined", icon: "ti ti-circle-x", tone: "off" } : undefined}
     sentence={<>Send the draft to <ReferenceChip kind="person" name="Lea Berg" />?</>}
     reason={{ text: "You asked to check mail before sending." }}
-    details={{ label: "Details from Mail", content: <Chat.Preview><Chat.Preview.Title>Workshop delivery</Chat.Preview.Title></Chat.Preview> }}
+    details={{ label: "Details from Mail", content: <p>Workshop delivery</p> }}
     meta={[{ text: "Expires in 9 min", icon: "ti ti-clock" }]}
     confirm={{ label: "Send to Lea", onSelect: () => {
       setCurrent("running");
@@ -279,9 +262,9 @@ type ChatMention = { start: number; end: number; attachment: ChatAttachment };
 
 ```
 
-### Decision, outcome, preview, and marks
+### Decision and outcome
 
-`Chat.Decision`, `Chat.Outcome`, `Chat.Preview`, and `Chat.Mark` are members of
+`Chat.Decision` and `Chat.Outcome` are members of
 `Chat`; import their types directly from `@k2b/ui`.
 
 ```ts
@@ -314,39 +297,12 @@ type ChatOutcomeProps = {
   lines: Readonly<Record<string, ChatOutcomeLine>>; current: string;
   onActionError?: (error: unknown) => void; anchorId?: string | number; class?: string;
 };
-type ChatPreviewPerson = { name?: string; address?: string };
-type ChatPreviewHeaderRow = {
-  label: string; people?: readonly ChatPreviewPerson[]; value?: JSX.Element; emphasis?: boolean;
-};
-type ChatPreviewProps = { children: JSX.Element; class?: string };
-type ChatPreviewHeaderProps = { rows: readonly ChatPreviewHeaderRow[]; note?: JSX.Element };
-type ChatPreviewTitleProps = { children: JSX.Element; meta?: JSX.Element };
-type ChatPreviewReadMoreProps = { href: string; children: JSX.Element; title?: string };
-type ChatPreviewLineProps = {
-  icon: string; accent?: string; tone?: "default" | "muted" | "warning";
-  mark?: "added" | "removed"; meta?: JSX.Element; children: JSX.Element;
-};
-type ChatPreviewPeopleProps = {
-  people: readonly { name: string; src?: string | null }[]; children: JSX.Element;
-};
-type ChatMarkProps = { change: "added" | "removed"; children: JSX.Element };
 ```
 
 | Member | Props / behavior |
 | --- | --- |
 | `Chat.Decision` | `ChatDecisionProps`; confirm is the filled `ai` answer (`secondary` in `edit` mode), decline and back are `secondary` on the tint (decline `ghost` in `edit` mode), remember is a checkbox. Reason defaults to `neutral` and an info icon. |
 | `Chat.Outcome` | `ChatOutcomeProps`; tone chooses the default icon, `icon` overrides it. The root accepts programmatic focus with `tabindex=-1`. |
-| `Chat.Preview` | `ChatPreviewProps`; groups preview parts without a surface. |
-| `Chat.Preview.Header` | `ChatPreviewHeaderProps`; semantic description list with optional note. |
-| `Chat.Preview.Title` | `ChatPreviewTitleProps`; title with quiet trailing metadata. |
-| `Chat.Preview.Sentence` | `{ children: JSX.Element }`; a rule or instruction. |
-| `Chat.Preview.Excerpt` | `ChatPreviewExcerptProps`; fading text excerpt; `expanded` shows it whole and makes it focusable. |
-| `Chat.Preview.ReadMore` | `ChatPreviewReadMoreProps`; ordinary link to the reviewed version. |
-| `Chat.Preview.ShowAll` | `ChatPreviewShowAllProps`; quiet button that shows an excerpt whole in place and focuses it. |
-| `Chat.Preview.Lines` | `{ label?: string; children: JSX.Element }`; `ul` with an optional accessible name. |
-| `Chat.Preview.Line` | `ChatPreviewLineProps`; `li` inside Lines, otherwise `p`; accent colors its decorative icon. |
-| `Chat.Preview.People` | `ChatPreviewPeopleProps`; decorative avatars and host-supplied names. |
-| `Chat.Mark` | `ChatMarkProps`; semantic `mark` or `del` with a localized spoken prefix. |
 
 ### Commands and file selection
 

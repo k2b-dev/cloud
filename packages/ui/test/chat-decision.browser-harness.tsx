@@ -15,7 +15,6 @@ declare global {
     __expire: () => void;
     __check: () => void;
     __fail: () => void;
-    __mark: () => void;
     __errors: string[];
     __calls: number;
     __request: () => void;
@@ -62,12 +61,8 @@ function Fixture() {
     setCurrent("done");
     setState("decided");
   };
-  const [mark, setMark] = createSignal<"added" | undefined>();
-  // A retained element: marking its line later must not move it out of the page.
-  const retained = <b id="retained">Retained words</b>;
   window.__errors = [];
   window.__calls = 0;
-  window.__mark = () => setMark("added");
   window.__check = () => setCurrent("checkfail");
   window.__request = () => {
     setCurrent("requested");
@@ -185,40 +180,10 @@ function Fixture() {
         details={{
           label: "Details from Mail",
           content: (
-            <Chat.Preview>
-              <Chat.Preview.Header
-                rows={[
-                  { label: "From", people: [{ name: "Robin Example", address: `${"long.sender.".repeat(9)}@example.test` }] },
-                  { label: "To", people: [{ name: "Lea Berg", address: `${"long.recipient.".repeat(9)}@example.test` }] },
-                  { label: "Cc", people: [{ address: "team@example.test" }] },
-                  { label: "Bcc", emphasis: true, people: [{ name: "Tom Weber", address: "tom@example.test" }] },
-                ]}
-                note="Sends immediately after your answer."
-              />
-              <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
-              <Chat.Preview.Excerpt>
-                {
-                  "Hello Lea,\nThe delivery is ready for Friday.\nPlease find the full report attached.\nThank you for checking the details."
-                }
-              </Chat.Preview.Excerpt>
-              <Chat.Preview.Line icon="ti ti-file-type-pdf" accent="var(--k2b-reference-pdf)" meta="PDF · 240 KB">
-                Delivery report.pdf
-              </Chat.Preview.Line>
-              <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-                The draft contains outside content.
-              </Chat.Preview.Line>
-              <Chat.Preview.ReadMore href="#draft" title="Open this version of the draft">
-                Read full draft
-              </Chat.Preview.ReadMore>
-              <Chat.Preview.Lines label="Consequences">
-                <Chat.Preview.Line icon="ti ti-send" mark="added">
-                  Lea receives the report.
-                </Chat.Preview.Line>
-                <Chat.Preview.Line icon="ti ti-x" mark="removed" tone="muted">
-                  The previous attachment is removed.
-                </Chat.Preview.Line>
-              </Chat.Preview.Lines>
-            </Chat.Preview>
+            <p style={{ "overflow-wrap": "anywhere" }}>
+              Workshop delivery to Lea Berg ({`${"long.recipient.".repeat(9)}@example.test`}), from Robin Example (
+              {`${"long.sender.".repeat(9)}@example.test`}). Sends immediately after your answer.
+            </p>
           ),
         }}
         confirm={{
@@ -238,11 +203,6 @@ function Fixture() {
         }}
         outcome={<Chat.Outcome lines={lines} current={current()} onActionError={(error) => window.__errors.push(String(error))} />}
       />
-      <Chat.Preview>
-        <Chat.Preview.Line icon="ti ti-pencil" mark={mark()}>
-          {retained}
-        </Chat.Preview.Line>
-      </Chat.Preview>
       <Chat.Decision
         state="open"
         kind={{ label: "Approval", icon: "ti ti-shield-check" }}

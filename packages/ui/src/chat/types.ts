@@ -47,19 +47,6 @@ export type ChatOutcomeLine = {
   actions?: JSX.Element;
 };
 
-/** A person in a preview header: the name in the text colour, then the address the message really uses. */
-export type ChatPreviewPerson = { name?: string; address?: string };
-
-/** One header row, such as "To Lea Berg lea.berg@example.com". */
-export type ChatPreviewHeaderRow = {
-  label: string;
-  people?: readonly ChatPreviewPerson[];
-  /** Further content after the people, such as "and 2 more". */
-  value?: JSX.Element;
-  /** Draws the label stronger, for recipients others cannot see. */
-  emphasis?: boolean;
-};
-
 type ChatActionBase = {
   id: string;
   label: string;

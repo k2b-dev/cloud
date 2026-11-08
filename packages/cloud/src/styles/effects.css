@@ -113,7 +113,7 @@
   outline-offset: var(--k2b-focus-offset);
 }
 
-/* Assistant questions and outcome lines (card v4), built from @k2b/ui Chat.Decision, Chat.Preview, and Chat.Outcome.
+/* Assistant questions and outcome lines (card v4), built from @k2b/ui Chat.Decision and Chat.Outcome.
    Only what an older review needs lives here: values that keep their line breaks, a Markdown block, and the call's
    raw input on demand. Everything else is the shared primitives' look. */
 .k2b-ui .cloud-action-preview__value {
