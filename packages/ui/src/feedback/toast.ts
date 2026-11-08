@@ -1,6 +1,5 @@
 import { getK2bPortalRoot } from "../internal/portal";
 import { resolveUiMessages } from "../intl/messages";
-import { formatShortcut, keyboardPlatform } from "../intl/shortcut";
 import { announce, ensureLiveRegions } from "./announce";
 import { resolveToastMessages } from "./toast-messages";
 
@@ -78,7 +77,10 @@ const SWIPE_DISMISS_SPEED = 0.11;
 /** After a swipe, the click that ends it does not reach the toast's controls. */
 const SWIPE_CLICK_GUARD_MS = 350;
 /** Focuses the stack from anywhere on the page. */
-const STACK_SHORTCUT = "alt+t";
+const STACK_SHORTCUT = "Alt+T";
+/** Option+T types "†" on Apple keyboards. Read inline: the shortcut formatter's catalog would grow every island with a toast. */
+const appleKeyboard = (): boolean =>
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 /** Reading time: a short message stays 4 s, longer text about 1 s more per 30 characters, up to 12 s. */
 const READ_BASE_MS = 4_000;
 const READ_FREE_CHARACTERS = 40;
@@ -109,6 +111,13 @@ const defaultDuration = (variant: ToastVariant, text: string, hasAction: boolean
   const reading = Math.min(READ_MAX_MS, READ_BASE_MS + Math.max(0, text.length - READ_FREE_CHARACTERS) * READ_MS_PER_CHARACTER);
   return variant === "error" || hasAction ? Math.max(REACHABLE_MS, reading) : reading;
 };
+
+/**
+ * Links in a toast go to web pages, mail, and phone numbers only. A caller's `javascript:` or `data:` URL never runs
+ * from a toast: the link is left out, and an action with such a URL becomes a button that only closes the toast.
+ */
+const SAFE_HREF = /^(?:https?:|mailto:|tel:|[/?#.]|[^:/?#]*(?:[/?#]|$))/i;
+const safeHref = (href: string): string | null => (SAFE_HREF.test(href.trim()) ? href.trim() : null);
 
 const normalizedIconClass = (iconClass: string): string => {
   const tokens = iconClass
@@ -230,7 +239,7 @@ const wireDocument = (doc: Document): void => {
     const rail = shownRail(doc);
     if (!rail) return;
     // Option+T types a character on Apple keyboards; there the shortcut leaves text entry alone.
-    if (isTextEntry(event.target) && keyboardPlatform() === "apple") return;
+    if (isTextEntry(event.target) && appleKeyboard()) return;
     event.preventDefault();
     const active = doc.activeElement;
     if (active instanceof HTMLElement && !active.closest(`[${CONTAINER_ATTRIBUTE}]`) && active !== doc.body) shortcutOrigin = active;
@@ -289,8 +298,8 @@ const ensureContainer = (): HTMLElement | null => {
   container.setAttribute(CONTAINER_ATTRIBUTE, "");
   container.setAttribute("popover", "manual");
   container.setAttribute("role", "region");
-  container.setAttribute("aria-label", `${messages.notifications}, ${formatShortcut(STACK_SHORTCUT).name}`);
-  container.setAttribute("aria-keyshortcuts", "Alt+T");
+  container.setAttribute("aria-label", `${messages.notifications}, ${STACK_SHORTCUT}`);
+  container.setAttribute("aria-keyshortcuts", STACK_SHORTCUT);
   container.tabIndex = -1;
   // Keep the source rail geometry inline: it must defeat UA popover defaults
   // even when a consumer has not loaded the optional package stylesheet yet.
@@ -782,8 +791,9 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     titleElement.textContent = currentTitle ?? "";
     titleElement.hidden = !currentTitle;
     descriptionText.data = currentDescription;
-    if (currentLink) {
-      linkElement.href = currentLink.href;
+    const href = currentLink ? safeHref(currentLink.href) : null;
+    if (currentLink && href !== null) {
+      linkElement.href = href;
       linkElement.textContent = currentLink.label;
       if (!linkElement.isConnected) descriptionElement.append(" ", linkElement);
     } else if (linkElement.isConnected) {
@@ -872,9 +882,10 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
 
   const createAction = (action: ToastAction, variant: "primary" | "secondary" | "ghost"): HTMLAnchorElement | HTMLButtonElement => {
     let element: HTMLAnchorElement | HTMLButtonElement;
-    if ("href" in action) {
+    const href = "href" in action ? safeHref(action.href) : null;
+    if (href !== null) {
       element = doc.createElement("a");
-      element.href = action.href;
+      element.href = href;
     } else {
       element = doc.createElement("button");
       element.type = "button";
@@ -1005,18 +1016,7 @@ const showCustom = (content: HTMLElement): ToastSlot => {
   return { dismiss };
 };
 
-export const isPointInsideToast = (x: number, y: number): boolean => {
-  if (typeof document === "undefined") return false;
-  const inside = (rect: DOMRect, reach = 0) =>
-    x >= rect.left - reach && x <= rect.right + reach && y >= rect.top - reach && y <= rect.bottom + reach;
-  for (const card of Array.from(document.querySelectorAll<HTMLElement>(`[${CONTAINER_ATTRIBUTE}] [data-k2b-toast]`))) {
-    if (inside(card.getBoundingClientRect())) return true;
-    // The round close button reaches over the card's corner, and its hit area 10 px further.
-    const close = card.querySelector<HTMLElement>(":scope > .k2b-toast__close");
-    if (close && inside(close.getBoundingClientRect(), 10)) return true;
-  }
-  return false;
-};
+export { isPointInsideToast } from "./toast-hit";
 
 const toastFn = ((description: string, options?: ToastOptions) => showToast(description, options)) as ToastFn;
 toastFn.success = (description, options) => showToast(description, { ...options, variant: "success" });

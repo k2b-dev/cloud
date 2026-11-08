@@ -472,7 +472,7 @@ describe("@k2b/ui feedback runtime", () => {
     expect(rail?.className).toBe("");
     expect(rail?.getAttribute("role")).toBe("region");
     // The region names the shortcut that focuses it.
-    expect(rail?.getAttribute("aria-label")).toBe("Notifications, Alt T");
+    expect(rail?.getAttribute("aria-label")).toBe("Notifications, Alt+T");
     expect(rail?.getAttribute("aria-keyshortcuts")).toBe("Alt+T");
     expect(card?.dataset.tone).toBe("success");
     expect(card?.textContent).toContain("Saved");
@@ -737,6 +737,13 @@ describe("@k2b/ui feedback runtime", () => {
     expect(link()?.href).toBe("http://localhost/settings");
     shared.update("Link removed", { link: null });
     expect(link()).toBeNull();
+    // A script URL never runs from a toast: the link is left out, and such an action only closes the toast.
+    shared.update("Link created", { link: { label: "Open", href: " JavaScript:alert(1)" } });
+    expect(link()).toBeNull();
+    const unsafe = toast("Opened", { duration: 0, action: { label: "Open", href: "javascript:alert(1)" } });
+    const unsafeAction = Array.from(dom.document.querySelectorAll<HTMLElement>(".k2b-toast__action")).at(-1)!;
+    expect(unsafeAction.tagName).toBe("BUTTON");
+    unsafe.dismiss();
     shared.update("Link created again", { link: { label: "Open settings", href: "/settings" } });
     link()!.click();
     expect(card.dataset.closing).toBe("true");
