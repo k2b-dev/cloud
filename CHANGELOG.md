@@ -3,6 +3,66 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.69.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.68.0...cloud-v0.69.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** Cloud no longer serves speedtest transfer data, JavaScript or Python measurement scripts. Download the shared Node/Bun CLI from the standalone speedtest server; see its operator guide.
+
+### Features
+
+* **automation:** export Mail rules and routine definitions ([#2816](https://github.com/k2b-dev/cloud/issues/2816)) ([d64f84d](https://github.com/k2b-dev/cloud/commit/d64f84d67ba7efb6fd220af5e83dbe6dac64ceeb))
+* **chat:** automations hear posted messages and mentions ([#2808](https://github.com/k2b-dev/cloud/issues/2808)) ([4f1e3d9](https://github.com/k2b-dev/cloud/commit/4f1e3d96423123a1d57b0906bae5bd2bde83b309))
+* **cloud:** Assistant suggests the next message when it helps ([#2796](https://github.com/k2b-dev/cloud/issues/2796)) ([8c09060](https://github.com/k2b-dev/cloud/commit/8c0906044b7a3f55aa4a1fde4bb6aa101084101f))
+* **cloud:** Chat and Notebooks share one chart description owned by @k2b/ui ([#2778](https://github.com/k2b-dev/cloud/issues/2778)) ([05299cb](https://github.com/k2b-dev/cloud/commit/05299cb9d7451df2c91e712407614a267435b589))
+* **cloud:** the model trigger shows its level ([#2837](https://github.com/k2b-dev/cloud/issues/2837)) ([b11c3f6](https://github.com/k2b-dev/cloud/commit/b11c3f6c41167bb788bfb6b93a3a7ad86db100a4))
+* **contacts:** automations hear new and changed contacts ([#2809](https://github.com/k2b-dev/cloud/issues/2809)) ([afcc1e4](https://github.com/k2b-dev/cloud/commit/afcc1e4d09ac7179537e4ddc9afe56fad6568d78))
+* **grids:** expose integrity and document capabilities without workflows ([#2749](https://github.com/k2b-dev/cloud/issues/2749)) ([c0bf3e4](https://github.com/k2b-dev/cloud/commit/c0bf3e4c2f2b1ad51af6e76bb0110a74fe5a0316))
+* **grids:** publish transactional record events ([#2762](https://github.com/k2b-dev/cloud/issues/2762)) ([ffdfa99](https://github.com/k2b-dev/cloud/commit/ffdfa99669af20633e92a0abdac464a0c59f89f8))
+* **notebooks:** automations hear comments and may comment and create notes ([#2806](https://github.com/k2b-dev/cloud/issues/2806)) ([578f549](https://github.com/k2b-dev/cloud/commit/578f549217cd9af02f5b75d1f2dfdfdf52d71083))
+* **pulse:** SQL dashboards share portable chart descriptions ([#2781](https://github.com/k2b-dev/cloud/issues/2781)) ([0733391](https://github.com/k2b-dev/cloud/commit/07333918ae621a81bc7f0be787cf6bc07e6291cd))
+* **spaces:** automations hear comments, changes and due tasks ([#2801](https://github.com/k2b-dev/cloud/issues/2801)) ([366c110](https://github.com/k2b-dev/cloud/commit/366c110a70cdf9b81debca6c8a99bdd46ab7b6a1))
+* **speedtest:** add bounded standalone measurements ([#2827](https://github.com/k2b-dev/cloud/issues/2827)) ([67387e1](https://github.com/k2b-dev/cloud/commit/67387e1ee54e2f619aa20fe2d49f7f35e3dc1107))
+* **tools:** add bounded PDF page operations ([#2881](https://github.com/k2b-dev/cloud/issues/2881)) ([17879ae](https://github.com/k2b-dev/cloud/commit/17879aebbf8ea817974b3aeda39021d0ef834791))
+* **tools:** move speedtests to the shared standalone engine ([#2834](https://github.com/k2b-dev/cloud/issues/2834)) ([fc5b1e2](https://github.com/k2b-dev/cloud/commit/fc5b1e2836f75da65477e6a4ca3f400288271274))
+* **ui:** a leading checkbox on DetailPanel actions ([#2799](https://github.com/k2b-dev/cloud/issues/2799)) ([50e866e](https://github.com/k2b-dev/cloud/commit/50e866e2381db2bd36ed538f4f98afcb0bb6b8bf))
+* **ui:** a slider's reset names the value it returns to ([#2888](https://github.com/k2b-dev/cloud/issues/2888)) ([13a3d9a](https://github.com/k2b-dev/cloud/commit/13a3d9ad8f8a3ebf465bc33aee33250f104f470b))
+* **ui:** a wide split button gives its room to the main action ([#2889](https://github.com/k2b-dev/cloud/issues/2889)) ([5a4167a](https://github.com/k2b-dev/cloud/commit/5a4167a243fd747776a54aa7b36b84887a4b3ae4))
+* **ui:** commands confirm success and errors where their list was ([#2867](https://github.com/k2b-dev/cloud/issues/2867)) ([57b6f9b](https://github.com/k2b-dev/cloud/commit/57b6f9be4fefa55f169eb200829669785b19a169))
+* **ui:** dashboard panels as one shared component family ([#2813](https://github.com/k2b-dev/cloud/issues/2813)) ([1f0f47a](https://github.com/k2b-dev/cloud/commit/1f0f47a07a4639470a107873f2a93c99a09ea00b))
+* **ui:** MarkdownEditor can write in the sans font ([#2887](https://github.com/k2b-dev/cloud/issues/2887)) ([bab5b04](https://github.com/k2b-dev/cloud/commit/bab5b0409b985583618b8280328152159026d59c))
+* **ui:** one glass surface for layers over pictures and maps ([#2870](https://github.com/k2b-dev/cloud/issues/2870)) ([d31c85d](https://github.com/k2b-dev/cloud/commit/d31c85d542b4aa25f48545ece445f802af672a13))
+* **ui:** one period picker with presets and a custom range ([#2845](https://github.com/k2b-dev/cloud/issues/2845)) ([234c799](https://github.com/k2b-dev/cloud/commit/234c799b6486c1bedcbeeb91d0d94b2ca564fb15))
+* **ui:** PDFs draw with pdf.js in every browser ([#2880](https://github.com/k2b-dev/cloud/issues/2880)) ([a74d849](https://github.com/k2b-dev/cloud/commit/a74d849ddd68444eed2c8d2199331180dc8c38d5))
+* **ui:** slash commands dock above the composer and run with its text ([#2848](https://github.com/k2b-dev/cloud/issues/2848)) ([fd7d090](https://github.com/k2b-dev/cloud/commit/fd7d0904c580a5e40f95b52887151ea080cfe7a8))
+* **ui:** slash commands in MarkdownEditor and a shared CommandMenu ([#2797](https://github.com/k2b-dev/cloud/issues/2797)) ([a0a5047](https://github.com/k2b-dev/cloud/commit/a0a50472a6d42e374b7a84a885dbba8cb64145bd))
+* **ui:** sliders show a changed value and reset in place ([#2873](https://github.com/k2b-dev/cloud/issues/2873)) ([fb6f152](https://github.com/k2b-dev/cloud/commit/fb6f152bbf681106658fe23461b5ddf2d65cb724))
+* **ui:** split buttons read as one body with a light divider ([#2860](https://github.com/k2b-dev/cloud/issues/2860)) ([69c9faa](https://github.com/k2b-dev/cloud/commit/69c9faa8d5c5e87d98a1772000d374311de91eb9))
+* **ui:** stacked, grouped, compared and horizontal bars ([#2729](https://github.com/k2b-dev/cloud/issues/2729)) ([cbfea20](https://github.com/k2b-dev/cloud/commit/cbfea2061617aa5f24bef50aefd01f41d7d316e3))
+* **ui:** the choice slider reads as a slider ([#2811](https://github.com/k2b-dev/cloud/issues/2811)) ([8ea2260](https://github.com/k2b-dev/cloud/commit/8ea226095b4076fab7c90ca48977316788302bca))
+* **ui:** waterfall charts ([#2758](https://github.com/k2b-dev/cloud/issues/2758)) ([3b05ef2](https://github.com/k2b-dev/cloud/commit/3b05ef22952c7cb3b883f1d688ada671344db2c2))
+* **ui:** wide label–value rows stay readable ([#2819](https://github.com/k2b-dev/cloud/issues/2819)) ([3e751ef](https://github.com/k2b-dev/cloud/commit/3e751efb428682cad31f3b12e891d3f3001eecc8))
+
+
+### Bug Fixes
+
+* **assistant:** batch offline chart checks within browser deadlines ([#2842](https://github.com/k2b-dev/cloud/issues/2842)) ([9b795dd](https://github.com/k2b-dev/cloud/commit/9b795dd5b4ff765271d0de0520b4544aef6c9093))
+* **ci:** reserve measured slowdown headroom in WebKit shards ([#2804](https://github.com/k2b-dev/cloud/issues/2804)) ([2ab3846](https://github.com/k2b-dev/cloud/commit/2ab3846a534ec7afddfa1501615a5efd4775c172)), closes [#1998](https://github.com/k2b-dev/cloud/issues/1998)
+* **ci:** WebKit shards keep headroom for new browser files ([#2839](https://github.com/k2b-dev/cloud/issues/2839)) ([b6ef5b8](https://github.com/k2b-dev/cloud/commit/b6ef5b841d2781c55fb97cab2349c389b392ff67))
+* **cloud:** background runs never use remembered approvals ([#2858](https://github.com/k2b-dev/cloud/issues/2858)) ([d588867](https://github.com/k2b-dev/cloud/commit/d588867971ef011028470878734236644143f43e))
+* **cloud:** Chat loads chart drawing on first use ([#2791](https://github.com/k2b-dev/cloud/issues/2791)) ([da1b8f5](https://github.com/k2b-dev/cloud/commit/da1b8f5b7e1c1cc6b408e0650a37dc6c82d979ee))
+* **cloud:** localize chart points and keep schema assertions internal ([#2783](https://github.com/k2b-dev/cloud/issues/2783)) ([b2e4a1a](https://github.com/k2b-dev/cloud/commit/b2e4a1a6a396b733dbb5778abecf210febf54228))
+* **docs:** chart showcase draws its Sankeys, sizes cards by kind and lists each option once ([#2793](https://github.com/k2b-dev/cloud/issues/2793)) ([24cf0ba](https://github.com/k2b-dev/cloud/commit/24cf0baec56fdc9015176c74c723527f8231c909))
+* **files:** pace upload segments after measuring throughput ([#2835](https://github.com/k2b-dev/cloud/issues/2835)) ([b11fe90](https://github.com/k2b-dev/cloud/commit/b11fe90e5f36e69965265f4062db345aab5872dc))
+* **filesv2:** append entries with quiet load-more actions ([#2829](https://github.com/k2b-dev/cloud/issues/2829)) ([851797f](https://github.com/k2b-dev/cloud/commit/851797f888b8492813d4c84493c6df8dd903740c))
+* **filesv2:** estimate remaining upload time from byte throughput ([#2828](https://github.com/k2b-dev/cloud/issues/2828)) ([4bf8b4c](https://github.com/k2b-dev/cloud/commit/4bf8b4cdbdc7a2e2061d76f5e012c623a8431caf))
+* **mail:** unreadable mailboxes answer like unknown IDs ([afcc1e4](https://github.com/k2b-dev/cloud/commit/afcc1e4d09ac7179537e4ddc9afe56fad6568d78))
+* **notebooks:** await delivered print media transitions ([#2836](https://github.com/k2b-dev/cloud/issues/2836)) ([aa1a736](https://github.com/k2b-dev/cloud/commit/aa1a736866d95cb01815c036000f4cfc2df772da))
+* **test:** island size budgets measure live code, not naming noise from dead modules ([#2879](https://github.com/k2b-dev/cloud/issues/2879)) ([8b641c4](https://github.com/k2b-dev/cloud/commit/8b641c49f4e9bc46e6db35fc2074312394bcec9c))
+* **tools:** keep navigation consistent across utilities ([#2831](https://github.com/k2b-dev/cloud/issues/2831)) ([567162c](https://github.com/k2b-dev/cloud/commit/567162ce6cbab39e93e8ae94cfbea99484d453d8))
+* **ui:** status-line retry links are underlined and the chart showcase uses the dashboard grid ([#2883](https://github.com/k2b-dev/cloud/issues/2883)) ([c270f4d](https://github.com/k2b-dev/cloud/commit/c270f4d1ed5e42df293726a7f4b6e2ca6eb92fdb))
+
 ## [0.68.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.67.0...cloud-v0.68.0) (2026-11-07)
 
 
