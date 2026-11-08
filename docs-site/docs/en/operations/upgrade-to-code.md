@@ -38,10 +38,10 @@ These stay as they are:
 The exact list of removed routes, commands, capabilities and settings is in
 [Removed in the Gustav release](/en/docs/reference/code-release-removals).
 
-> **Status on `feat/code`:** routines are retired (merged). The Studio and
-> Mail rule retirements and Gustav's guided rebuild from export files are
-> still in review and ship with this release. This page describes the release
-> as a whole.
+> **Status on `feat/code`:** routines are retired and Gustav rebuilds
+> exported definitions (both merged). The Studio and Mail rule retirements
+> are still in review and ship with this release. This page describes the
+> release as a whole.
 
 ## 1. Freeze
 
@@ -170,22 +170,25 @@ After the upgrade, history stays readable but nothing old runs again:
 
 ## 6. Rebuild with Gustav
 
-People ask Gustav to rebuild what they still need, from the export files:
+People give Gustav a `cloud.mail-automation` or `cloud.chat-tasks` export file
+and pick one rule or routine. Gustav explains the old behaviour and drafts a
+replacement with fictional tests; see
+[Rebuild an exported automation](/en/docs/platform/gustav-code-tools#rebuild-an-exported-automation):
 
 - A **Mail rule** becomes mailbox Code with an `app.on("mail.message.received")`
   handler. Several rules of one mailbox become helper functions that one
   handler calls in a fixed order.
 - A **routine** becomes personal Code with `app.schedule` and an explicit
   `timeZone`, then `core.ai.chat.run` when the work needs Gustav and tools, or
-  `core.ai.chat.deliver` for a prepared result.
+  `core.ai.generate` and `core.ai.chat.deliver` for a prepared result. A
+  routine that relied on chat history, files or an open-ended tool loop needs
+  those inputs resolved first; Gustav leaves such gaps visible in the draft.
 - **Automatic replies** and **Studio apps** have nothing to rebuild.
 
 Gustav checks, tests and submits a version; it never switches Code on. No
 export, grant or enabled flag carries authority into Code. Old routine HTTP
 grants and Studio database grants do not transfer; Code has no replacement
-database. The guided rebuild from an export file ships with this release and
-is still in review; until then, give Gustav the exported definition in the
-chat and ask for Code.
+database.
 
 ## 7. Review and switch on
 

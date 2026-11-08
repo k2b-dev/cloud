@@ -81,9 +81,9 @@ for issuance and the `cld admin agents keys` commands.
 Code replaces Studio, Mail rules, automatic replies and scheduled Assistant
 routines. The upgrade is a one-way, coordinated cut; follow
 [Upgrade to Code](/en/docs/operations/upgrade-to-code) step by step.
-Routine retirement is merged; the Studio and Mail rule retirements and
-Gustav's guided rebuild from export files ship with this release and are
-still in review.
+Routine retirement and Gustav's rebuild from export files are merged; the
+Studio and Mail rule retirements ship with this release and are still in
+review.
 
 - **Before the upgrade:** on the old release, run
   `cld mail automation export --all --json` and
