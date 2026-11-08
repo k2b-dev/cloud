@@ -78,7 +78,7 @@ test("fields that share a grid align their controls through a subgrid", () => {
   const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \{([^}]*)\}`))?.[1] ?? "";
   expect(fieldRule).toContain("grid-template-rows: subgrid");
   expect(fieldRule).toContain("grid-row: span 4");
-  expect(indexCss).toContain(`${paired} > .k2b-field__label {\n    grid-row: 1;`);
+  expect(indexCss).toContain(`${paired} > :is(.k2b-field__label, .k2b-field__label-row) {\n    grid-row: 1;`);
   expect(indexCss).toContain(`${paired} > .k2b-field__description {\n    grid-row: 2;`);
   expect(indexCss).toContain(`${paired} > .k2b-field__error {\n    grid-row: 4;`);
 });

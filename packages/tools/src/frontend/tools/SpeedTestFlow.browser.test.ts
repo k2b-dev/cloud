@@ -208,7 +208,7 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
       await page.clock.runFor(250);
       expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("cancelled");
       expect(await geometry(page)).toEqual(initial);
-      expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("–");
+      expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("—");
       expect(await page.locator(".tools-speedtest-terminal").textContent()).toContain("Download: — Mbit/s");
       expect(await page.locator(".tools-speedtest-gauge").getAttribute("data-empty")).toBe("true");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -233,7 +233,7 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
         expect(await page.locator('[role="status"]').textContent()).toContain("Testlimit erreicht");
         expect(await page.locator('[role="status"]').getAttribute("class")).not.toContain("speedtest-danger");
         expect(await page.locator(".tools-speedtest-chart .k2b-chart__empty").count()).toBe(1);
-        expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("–");
+        expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("—");
         await page.clock.runFor(3_000);
         expect(await button.isEnabled()).toBe(true);
       }
