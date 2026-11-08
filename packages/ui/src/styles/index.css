@@ -4989,7 +4989,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 2rem;
   flex: 0 1 auto;
   box-sizing: border-box;
-  align-items: baseline;
+  /* Title and facts share one 20 px line box; centring them keeps the chip at
+     32 px in every engine, where baseline alignment of the two font sizes
+     adds a sub-pixel in WebKit and lifts the chip off the close button's line. */
+  align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 0.875rem;
   border-radius: 999px;
