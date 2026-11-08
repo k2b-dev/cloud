@@ -3,6 +3,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { type GotenbergConfig, GotenbergRenderError, type PdfToolOperation, pdfToolLimits } from "@k2b/cloud/services/pdf";
 import type { MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
+import { createToolsApiRouter } from ".";
 import { createPdfToolsRoutes } from "./pdf-tools";
 
 const config: GotenbergConfig = { url: "http://renderer.invalid", timeoutMs: 10_000, maxPdfBytes: 1024, maxHtmlBytes: 16 * 1024 };
@@ -366,6 +367,16 @@ describe("PDF tools API", () => {
     const app = setup();
     const response = await app.request("/", { method: "POST", body: "invalid", headers: { "x-cloud-locale": "de" } });
     expect((await response.json()).message).toBe("Wähle PDF-Dateien und gültige Seiten für diese Aktion.");
+  });
+
+  test("discovers PDF operations at the mounted Tools API path", async () => {
+    const specs = await generateSpecs(createToolsApiRouter());
+    const operation = specs.paths?.["/pdf"]?.post;
+    expect(operation?.summary).toContain("PDF");
+    expect(operation?.responses?.["200"]).toHaveProperty("content.application/pdf");
+    expect(operation?.responses?.["200"]).toHaveProperty("content.application/zip");
+    expect(operation?.requestBody).toHaveProperty("content.multipart/form-data");
+    expect(operation?.responses?.["401"]).toBeDefined();
   });
 
   test("publishes the factory's binary contract to OpenAPI", async () => {
