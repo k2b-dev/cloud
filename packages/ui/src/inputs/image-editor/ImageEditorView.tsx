@@ -1735,7 +1735,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       <div ref={chipsEl} class="k2b-image-editor__chips" role="group" aria-label={t().info}>
         <Show when={props.onCancel}>
           <IconButton
-            class="k2b-image-editor__chip k2b-image-editor__glass"
+            class="k2b-image-editor__chip k2b-overlay-surface"
             size="sm"
             variant="ghost"
             label={t().close}
@@ -1749,7 +1749,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         <Dynamic
           component={itemCount() > 1 ? "button" : "span"}
           type={itemCount() > 1 ? "button" : undefined}
-          class="k2b-image-editor__chip k2b-image-editor__glass k2b-image-editor__name"
+          class="k2b-image-editor__chip k2b-overlay-surface k2b-image-editor__name"
           aria-expanded={phone() && itemCount() > 1 ? stripOpen() : undefined}
           title={itemCount() > 1 ? (phone() ? t().showImages : t().toStrip) : undefined}
           onClick={() => {
@@ -1776,11 +1776,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             <i class="ti ti-chevron-down" aria-hidden="true" />
           </Show>
         </Dynamic>
-        <span class="k2b-image-editor__chip k2b-image-editor__glass k2b-image-editor__chip--size" data-optional="">
+        <span class="k2b-image-editor__chip k2b-overlay-surface k2b-image-editor__chip--size" data-optional="">
           {preview() ? px(rotated().width * state().crop.width, rotated().height * state().crop.height) : "… × … px"}
         </span>
         <Show when={sourceType()}>
-          <span class="k2b-image-editor__chip k2b-image-editor__glass" data-optional="">
+          <span class="k2b-image-editor__chip k2b-overlay-surface" data-optional="">
             {formatName(sourceType())}
             <Show when={bytes()}>
               <span class="k2b-image-editor__muted">{bytes()}</span>
@@ -1791,7 +1791,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           {(fact) => (
             // On phones a fact with an icon stays as the icon alone; one without an icon gives way.
             <span
-              class="k2b-image-editor__chip k2b-image-editor__glass k2b-image-editor__fact"
+              class="k2b-image-editor__chip k2b-overlay-surface k2b-image-editor__fact"
               data-optional={fact.icon ? undefined : ""}
               title={fact.tooltip}
             >
@@ -1803,13 +1803,13 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           )}
         </For>
         <Show when={dimensions()?.downscaled}>
-          <span class="k2b-image-editor__chip k2b-image-editor__glass" data-tone="warning" title={t().reducedTip}>
+          <span class="k2b-image-editor__chip k2b-overlay-surface" data-tone="warning" title={t().reducedTip}>
             <i class="ti ti-arrows-diagonal-minimize-2" aria-hidden="true" />
             <span data-optional="">{t().reducedChip}</span>
           </span>
         </Show>
         <Show when={saved() && !dirty()}>
-          <span class="k2b-image-editor__chip k2b-image-editor__glass k2b-image-editor__saved" data-tone="success" role="status">
+          <span class="k2b-image-editor__chip k2b-overlay-surface k2b-image-editor__saved" data-tone="success" role="status">
             <i class="ti ti-check" aria-hidden="true" />
             {t().saved}
           </span>
@@ -1821,8 +1821,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       </Show>
 
       <div ref={bottomEl} class="k2b-image-editor__bottom">
-        <div class="k2b-image-editor__bar k2b-image-editor__glass" role="toolbar" aria-label={t().view}>
-          <div class="k2b-image-editor__group">
+        {/* One glass bar on desktops; on phones the groups float apart and each carries the glass. */}
+        <div class="k2b-image-editor__bar" classList={{ "k2b-overlay-surface": !phone() }} role="toolbar" aria-label={t().view}>
+          <div class="k2b-image-editor__group" classList={{ "k2b-overlay-surface": phone() }}>
             <IconButton size="sm" variant="ghost" label={t().undo} tooltip={tip(t().undo, "mod+z")} disabled={!canUndo()} onClick={undo}>
               <i class="ti ti-arrow-back-up" aria-hidden="true" />
             </IconButton>
@@ -1837,7 +1838,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               <i class="ti ti-arrow-forward-up" aria-hidden="true" />
             </IconButton>
           </div>
-          <div class="k2b-image-editor__group">
+          <div class="k2b-image-editor__group" classList={{ "k2b-overlay-surface": phone() }}>
             <Button
               size="sm"
               variant="ghost"
@@ -1850,7 +1851,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               {t().compare}
             </Button>
           </div>
-          <div class="k2b-image-editor__group k2b-image-editor__zoom">
+          <div class="k2b-image-editor__group k2b-image-editor__zoom" classList={{ "k2b-overlay-surface": phone() }}>
             <IconButton
               size="sm"
               variant="ghost"
@@ -1887,7 +1888,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               <i class="ti ti-plus" aria-hidden="true" />
             </IconButton>
           </div>
-          <div class="k2b-image-editor__group">
+          <div class="k2b-image-editor__group" classList={{ "k2b-overlay-surface": phone() }}>
             <IconButton
               size="sm"
               variant="ghost"
@@ -1915,10 +1916,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       </div>
 
       <Show when={note()?.action && phone()}>
-        <div class="k2b-image-editor__toast k2b-image-editor__glass">{noteView()}</div>
+        <div class="k2b-image-editor__toast k2b-overlay-surface">{noteView()}</div>
       </Show>
 
-      <aside ref={paneEl} class="k2b-image-editor__pane k2b-image-editor__glass" aria-label={t().tools}>
+      <aside ref={paneEl} class="k2b-image-editor__pane k2b-overlay-surface" aria-label={t().tools}>
         <div class="k2b-image-editor__tabs" role="tablist" aria-label={t().tool}>
           <For each={tools()}>
             {(option) => (
@@ -1974,6 +1975,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           <button
             type="button"
             class="k2b-image-editor__output-trigger"
+            // On phones it floats beside the save actions over the photo, so it takes the shared glass.
+            classList={{ "k2b-overlay-surface": phone() }}
             aria-haspopup="dialog"
             aria-expanded={panel() === "output"}
             aria-controls={ids.output}
@@ -2046,7 +2049,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
 
   function strip() {
     return (
-      <nav class="k2b-image-editor__strip k2b-image-editor__glass" aria-label={t().images}>
+      <nav class="k2b-image-editor__strip k2b-overlay-surface" aria-label={t().images}>
         <ul ref={stripList} onScroll={stripFade} onKeyDown={stripKeys}>
           <For each={props.items ?? []}>
             {(item) => (

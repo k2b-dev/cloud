@@ -8,9 +8,10 @@ mounts in a browser; server rendering shows its loading state.
 The photo sits on one calm grey canvas. Floating overlays sit on top of it:
 info chips at the top, a view bar with an optional image strip at the bottom,
 and a tool pane on the right with the save actions at its foot. The photo can
-be panned and zoomed freely, also under these overlays. The overlays are
-translucent with a backdrop blur; menus, dialogs, and every control inside keep
-the shared solid styles.
+be panned and zoomed freely, also under these overlays. The overlays use the
+shared glass [`k2b-overlay-surface`](/en/ui/surfaces/utilities); menus,
+dialogs, and every control inside keep the shared solid styles. With reduced
+transparency or more contrast the overlays turn solid.
 
 ## Use ImageEditor
 

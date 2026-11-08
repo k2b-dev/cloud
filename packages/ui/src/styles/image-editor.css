@@ -1,18 +1,13 @@
 /*
  * Image editor: one calm canvas with floating overlays (info chips, view bar with image strip, tool pane).
- * Glass (translucent with backdrop blur) is used only for these overlays on the canvas; menus, dialogs and
- * every control inside keep the shared solid styles, edges and focus states.
+ * The overlays use the shared glass `k2b-overlay-surface`; menus, dialogs and every control inside keep the
+ * shared solid styles, edges and focus states.
  */
 .k2b-ui .k2b-image-editor {
   --k2b-image-editor-gap: 12px;
   --k2b-image-editor-pane: 300px;
   --k2b-image-editor-canvas: #e6e6e9;
   --k2b-image-editor-dots: rgb(9 9 11 / 0.1);
-  --k2b-image-editor-glass: rgb(255 255 255 / 0.78);
-  --k2b-image-editor-glass-hover: rgb(255 255 255 / 0.94);
-  --k2b-image-editor-glass-edge: rgb(255 255 255 / 0.7);
-  --k2b-image-editor-glass-ring: rgb(9 9 11 / 0.09);
-  --k2b-image-editor-glass-shadow: 0 12px 32px -18px rgb(9 9 11 / 0.35);
   --k2b-image-editor-placeholder: #d6d6da;
   --k2b-image-editor-value: var(--k2b-accent-800);
   --k2b-image-editor-image-ink: #7c3aed;
@@ -33,28 +28,9 @@
 :is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark .k2b-ui) .k2b-image-editor {
   --k2b-image-editor-canvas: #15191f;
   --k2b-image-editor-dots: rgb(255 255 255 / 0.06);
-  --k2b-image-editor-glass: rgb(30 36 44 / 0.86);
-  --k2b-image-editor-glass-hover: rgb(44 51 61 / 0.95);
-  --k2b-image-editor-glass-edge: rgb(255 255 255 / 0.08);
-  --k2b-image-editor-glass-ring: rgb(0 0 0 / 0.55);
-  --k2b-image-editor-glass-shadow: 0 12px 32px -16px rgb(0 0 0 / 0.7);
   --k2b-image-editor-placeholder: #1c2128;
   --k2b-image-editor-value: var(--k2b-accent-200);
   --k2b-image-editor-image-ink: #a78bfa;
-}
-.k2b-ui .k2b-image-editor__glass {
-  background: var(--k2b-image-editor-glass);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
-  box-shadow: inset 0 0 0 1px var(--k2b-image-editor-glass-edge), 0 0 0 1px var(--k2b-image-editor-glass-ring), var(--k2b-image-editor-glass-shadow);
-}
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  .k2b-ui .k2b-image-editor__glass,
-  .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__group {
-    background: var(--k2b-surface-elevated) !important;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
 }
 
 /* ---------- canvas ---------- */
@@ -304,10 +280,11 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.k2b-ui .k2b-image-editor__chip.k2b-image-editor__glass { box-shadow: inset 0 0 0 1px var(--k2b-image-editor-glass-edge), 0 0 0 1px var(--k2b-image-editor-glass-ring); }
+/* Chips sit flat in their row: the shared glass without its lift shadow. */
+.k2b-ui .k2b-image-editor__chip.k2b-overlay-surface { box-shadow: inset 0 0 0 1px var(--k2b-overlay-edge), 0 0 0 1px var(--k2b-overlay-ring); }
 .k2b-ui .k2b-image-editor__chip.k2b-icon-button { width: 32px; padding: 0; justify-content: center; }
 .k2b-ui button.k2b-image-editor__chip:not(:disabled) { cursor: pointer; }
-.k2b-ui button.k2b-image-editor__chip:not(:disabled):hover { background: var(--k2b-image-editor-glass-hover); }
+.k2b-ui button.k2b-image-editor__chip:not(:disabled):hover { background: var(--k2b-overlay-surface-hover); }
 .k2b-ui button.k2b-image-editor__chip:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-image-editor__chip i { font-size: 15px; }
 .k2b-ui .k2b-image-editor__chip[data-tone="warning"] { color: var(--k2b-warning-text); }
@@ -750,15 +727,16 @@
   padding: 0 8px 0 12px;
   border: 0;
   border-radius: var(--k2b-radius-control);
-  background: none;
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
   color: var(--k2b-text-secondary);
   font: inherit;
   font-size: 0.78125rem;
   text-align: left;
   cursor: pointer;
 }
-.k2b-ui .k2b-image-editor__output-trigger:hover:not(:disabled) { background: var(--k2b-edge-hover-bg); }
+/* In the pane it is a plain edged control; floating on phones it keeps the shared glass. */
+.k2b-ui .k2b-image-editor__output-trigger:not(.k2b-overlay-surface) { background: none; box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge); }
+.k2b-ui .k2b-image-editor__output-trigger:not(.k2b-overlay-surface):hover:not(:disabled) { background: var(--k2b-edge-hover-bg); }
+.k2b-ui .k2b-image-editor__output-trigger.k2b-overlay-surface:hover:not(:disabled) { background: var(--k2b-overlay-surface-hover); }
 .k2b-ui .k2b-image-editor__output-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
 .k2b-ui .k2b-image-editor__output-trigger > i:first-child { display: none; }
 .k2b-ui .k2b-image-editor__output-trigger b { color: var(--k2b-text); font-weight: 500; }
@@ -853,8 +831,7 @@
   padding: 0;
   justify-content: center;
   border-radius: 999px;
-  background: var(--k2b-image-editor-glass);
-  box-shadow: inset 0 0 0 1px var(--k2b-image-editor-glass-edge), 0 0 0 1px var(--k2b-image-editor-glass-ring);
+  box-shadow: inset 0 0 0 1px var(--k2b-overlay-edge), 0 0 0 1px var(--k2b-overlay-ring);
 }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__output-trigger > :not(i:first-child) { display: none; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__output-trigger > i:first-child { display: inline; font-size: 16px; }
@@ -864,20 +841,13 @@
   flex: 1;
   justify-content: space-between;
   padding: 0;
-  background: none;
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
   pointer-events: none;
 }
+/* On phones each group carries the shared glass itself (the view sets the class there). */
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__group {
   padding: 2px;
   border-radius: 12px;
   pointer-events: auto;
-  background: var(--k2b-image-editor-glass);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
-  box-shadow: inset 0 0 0 1px var(--k2b-image-editor-glass-edge), 0 0 0 1px var(--k2b-image-editor-glass-ring), var(--k2b-image-editor-glass-shadow);
 }
 .k2b-ui .k2b-image-editor[data-phone] :is(.k2b-image-editor__zoom, .k2b-image-editor__keys-button) { display: none; }
 .k2b-ui .k2b-image-editor__strip-top { position: absolute; z-index: 4; top: 52px; left: 10px; right: 10px; display: flex; }
