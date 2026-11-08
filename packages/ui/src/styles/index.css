@@ -175,6 +175,8 @@
   --k2b-radius-control: 0.5rem;
   /* One reading column for long text beside wide space: conversation history and its composer, the mail reader. */
   --k2b-reading-column: 47.5rem;
+  /* One measure for label–value rows (budgets, sums): the value stays within reach of its label on a wide screen. */
+  --k2b-row-measure: 40rem;
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: 0.875rem;
   /* One motion vocabulary: every time and curve comes from these tokens. */
@@ -2079,6 +2081,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
+/* Quiet continuation actions share link ink without acquiring a button surface. */
+.k2b-ui .k2b-button[data-variant="link"] {
+  padding-inline: 0;
+  border-inline-width: 0;
+  color: var(--k2b-action);
+  background: transparent;
+  font-weight: 400;
+  text-underline-offset: 0.2em;
+}
+
+.k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-action);
+  background: transparent;
+  text-decoration: underline;
+}
+
 /* A destructive text action, such as Remove at the foot of a menu, takes the
    danger ink that destructive menu items use, at rest and on hover. */
 .k2b-ui .k2b-button[data-variant="text"][data-danger="true"],
@@ -3689,8 +3707,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button,
-.k2b-ui .k2b-discussion__fold,
-.k2b-ui .k2b-discussion__load-more {
+.k2b-ui .k2b-discussion__fold {
   min-height: 1.75rem;
   padding: 0.25rem 0.5rem;
   border: 0;
@@ -3701,7 +3718,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui :is(.k2b-discussion__load-more, .k2b-discussion__fold) {
+.k2b-ui .k2b-discussion__fold {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
@@ -3711,8 +3728,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button:hover,
-.k2b-ui .k2b-discussion__fold:hover,
-.k2b-ui .k2b-discussion__load-more:hover {
+.k2b-ui .k2b-discussion__fold:hover {
   background: var(--k2b-surface-muted);
 }
 
@@ -3736,9 +3752,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
-.k2b-ui .k2b-discussion__load-more:disabled {
-  cursor: wait;
-  opacity: 0.7;
+.k2b-ui .k2b-discussion__load-more {
+  align-self: flex-start;
 }
 
 .k2b-ui .k2b-discussion__list {
@@ -6772,11 +6787,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
 }
 
-/* An unavailable command stays readable: muted text instead of transparency,
-   so its reason keeps its contrast. It can still be marked to hear the reason. */
-.k2b-ui .k2b-dropdown__item[aria-disabled="true"] {
+/* An unavailable command is greyed: muted label, faint icon or logo, its reason
+   in the description's place. It is never marked, by keys or pointer, and has
+   no hover fill, so nothing suggests it can be chosen. */
+.k2b-ui .k2b-dropdown__item[aria-disabled="true"],
+.k2b-ui .k2b-dropdown__item[aria-disabled="true"]:hover {
   color: var(--k2b-text-muted);
+  background: transparent;
   cursor: default;
+}
+
+.k2b-ui .k2b-command-list .k2b-dropdown__item[aria-disabled="true"] > :is(i:first-child, .k2b-command-list__image, .k2b-command-list__leading) {
+  opacity: 0.5;
 }
 
 .k2b-ui .k2b-command-list__leading {
@@ -6787,11 +6809,154 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: center;
 }
 
-.k2b-ui .k2b-command-list__hint {
+/* An entry's image, such as a service's logo: an icon-sized box that keeps its
+   size before the image loads, so the row never moves. With one image per
+   theme, only the matching one shows. */
+.k2b-ui .k2b-command-list__image {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.k2b-ui .k2b-command-list__image > img {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+.k2b-ui .k2b-command-list__image-dark,
+.k2b-ui[data-theme="dark"] .k2b-command-list__image-light,
+.k2b-ui.k2b-dark .k2b-command-list__image-light,
+.dark .k2b-ui .k2b-command-list__image-light {
+  display: none !important;
+}
+
+.k2b-ui[data-theme="dark"] .k2b-command-list__image-dark,
+.k2b-ui.k2b-dark .k2b-command-list__image-dark,
+.dark .k2b-ui .k2b-command-list__image-dark {
+  display: block !important;
+}
+
+/* A running command shows a spinner in its icon's place, at the icon's size. */
+.k2b-ui .k2b-command-list__busy {
   flex: 0 0 auto;
+  color: var(--k2b-action);
+}
+
+/* One line per entry: the label, then quietly its description, the reason it
+   is unavailable, or why it failed. The description gives way first, then the
+   label; an alert reads a failure in full. */
+.k2b-ui .k2b-command-list .k2b-command-list__text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__text > span {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__description {
+  min-width: 0;
+  max-inline-size: none;
+  flex: 1 1000 0%;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__error {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__error > i {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__error > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The state of entries on their way: one row, like an entry, at the end. */
+.k2b-ui .k2b-command-list__state {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0.4375rem 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-command-list__state > i {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-command-list__state[data-error] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-command-list__state > button {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* One leading slot for icons, images, avatars, and the busy spinner, so every
+   label starts on the same line. */
+.k2b-ui .k2b-command-list .k2b-dropdown__item > :is(i:first-child, .k2b-command-list__image, .k2b-command-list__leading) {
+  display: inline-flex;
+  width: 1.25rem;
+  min-width: 1.25rem;
+  flex: 0 0 1.25rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The hint gives way before the label: it shrinks first and leaves narrow
+   screens entirely. */
+.k2b-ui .k2b-command-list__hint {
+  min-width: 0;
+  flex: 0 1000 auto;
+  overflow: hidden;
   color: var(--k2b-text-muted);
   font-family: var(--k2b-font-mono);
   font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+  .k2b-ui .k2b-command-list__hint {
+    display: none;
+  }
 }
 
 .k2b-ui .k2b-command-list__next {
@@ -6846,12 +7011,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The slash menu of MarkdownEditor: the same width as CommandMenu. */
+/* Both command menus: as wide as their longest label, at least 20rem and at
+   most 28rem, and a viewport margin of 1rem as other menus keep. Labels stay
+   on one line; a narrow menu gives the hint up first. Once open, a menu keeps
+   at least the width it opened with, so filtering never narrows it. */
+.k2b-ui .k2b-autocomplete__options[data-commands],
+.k2b-ui .k2b-dropdown__menu.k2b-command-menu {
+  width: max-content;
+  min-width: min(20rem, 100vw - 2rem);
+  max-width: min(28rem, 100vw - 2rem);
+}
+
 .k2b-ui .k2b-autocomplete__options[data-commands] {
   display: none;
-  width: min(20rem, 100vw - 1rem);
-  min-width: 0;
-  max-height: min(20rem, calc(100dvh - 1rem));
+  max-height: min(24rem, calc(100dvh - 1rem));
   flex-direction: column;
+}
+
+/* Docked to its composer, a list takes the composer's width instead, and stays
+   flat beside it: its frame alone sets it apart, no shadow falls on the text. */
+.k2b-ui .k2b-autocomplete__options[data-commands][data-docked],
+.k2b-ui .k2b-dropdown__menu.k2b-command-menu[data-docked] {
+  min-width: 0;
+  max-width: none;
+  box-shadow: none;
 }
 
 .k2b-ui .k2b-autocomplete__options[data-commands]:popover-open {
@@ -16757,6 +16940,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 400;
   line-height: 1.25rem;
   letter-spacing: 0;
+}
+/* Opt-in fallback for a list that must span a very wide container: a dotted leader joins each term to its value,
+   which aligns right in tabular figures. Never the default; first keep rows within the row measure. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) {
+  grid-template-columns: fit-content(40%) minmax(1.5rem, 1fr) auto auto;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
+  grid-template-areas: "term leader description action";
+}
+/* Term and leader sit on the value's first line, so a wrapped value keeps its term beside where it starts. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item::before {
+  content: "";
+  grid-area: leader;
+  align-self: start;
+  height: 0;
+  margin-block-start: 1.375rem;
+  border-bottom: 1px dotted var(--k2b-border-strong);
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item :is(dt, dd) {
+  align-self: start;
+  padding-block-start: 0.5rem;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;

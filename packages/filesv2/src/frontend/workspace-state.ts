@@ -18,6 +18,7 @@ export type DirectoryView = Omit<DirectoryResult, "items"> & {
   total?: number | null;
   truncated?: boolean;
   failure?: string;
+  loadedPages?: number;
 };
 export type WorkspaceSnapshot = {
   source: string;
