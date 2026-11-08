@@ -44,7 +44,7 @@
     ],
     "catalog": {
       "@firecrawl/anydoc": "0.2.4",
-      "@k2b/stdlib": "0.30.0",
+      "@k2b/stdlib": "0.31.1",
       "@k2b/sync": "7.0.1",
       "@nats-io/jetstream": "3.4.0",
       "@nats-io/transport-node": "3.4.0",
@@ -118,7 +118,7 @@
     "release:preflight": "bun scripts/prod-upgrade-preflight.ts"
   },
   "devDependencies": {
-    "@k2b/stdlib": "0.30.0",
+    "@k2b/stdlib": "0.31.1",
     "@nats-io/transport-node": "3.4.0",
     "hono": "4.13.9",
     "jose": "6.2.12",

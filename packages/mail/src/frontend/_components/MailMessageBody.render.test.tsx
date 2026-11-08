@@ -24,7 +24,7 @@ const renderBody = (linksDisabled = false) =>
       html: null,
       plainText: "Reference: https://example.com/security.",
       attachments: [],
-      remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
+      remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "sender@example.com", domain: "example.com" },
       linksDisabled,
       onSelectionChange: () => {},
     }),
@@ -44,7 +44,7 @@ const renderLocalizedHtmlBody = (locale: string) =>
           html: '<p>Neuer Inhalt</p><blockquote type="cite">Alter Inhalt</blockquote>',
           plainText: null,
           attachments: [],
-          remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
+          remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "sender@example.com", domain: "example.com" },
           onSelectionChange: () => {},
         });
       },
@@ -85,7 +85,7 @@ const renderPlainBody = (plainText: string) =>
       html: null,
       plainText,
       attachments: [],
-      remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+      remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
       onSelectionChange: () => {},
     }),
   );
@@ -120,10 +120,10 @@ describe("HTML mail message locale", () => {
   });
 });
 
-describe("blocked remote images", () => {
-  test("explain the block in a calm notice that opens with its text, not an icon", () => {
-    const image = "00000000-0000-4000-8000-000000000001";
-    const html = renderToString(() =>
+describe("external images", () => {
+  const image = "00000000-0000-4000-8000-000000000001";
+  const renderRemote = (remoteContent: Record<string, unknown>) =>
+    renderToString(() =>
       createComponent(MailMessageBody, {
         theme: "light",
         colors: "adapted",
@@ -133,14 +133,74 @@ describe("blocked remote images", () => {
         html: `<p>Newsletter</p><img alt="Banner" data-mail-remote-image="${image}">`,
         plainText: null,
         attachments: [],
-        remoteContent: { imageIds: [image], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
+        remoteContent: {
+          imageIds: [image],
+          allowedByRule: false,
+          allowRules: [],
+          sender: "news@shop.example",
+          domain: "shop.example",
+          ...remoteContent,
+        },
         onSelectionChange: () => {},
       }),
     );
 
-    const body = /<div class="k2b-notice-card__body[^"]*">([\s\S]*)/.exec(html)?.[1] ?? "";
-    expect(html).toContain('data-tone="neutral"');
-    expect(body).toStartWith('<span class="min-w-48 flex-1">Remote images are blocked to protect your privacy.</span>');
+  test("a blocked message opens with one named row: image tile, short reason, and Load images with its menu", () => {
+    const html = renderRemote({});
+    expect(html).toContain('<section aria-label="External images"');
+    expect(html).toContain('data-remote-images="blocked"');
+    expect(html).toContain("data-row");
+    expect(html).toContain('class="k2b-notice-card__tile k2b-icon-tile"');
+    expect(html).toContain("External images blocked");
+    expect(html).toContain("Load images");
+    expect(html).toContain('aria-label="More options for external images"');
+    // The server already knows the rule, so the first render never flashes the blocked row.
+    expect(html.indexOf("External images blocked")).toBeLessThan(html.indexOf("<iframe"));
+  });
+
+  test("several senders get a plain Load images without the menu arrow", () => {
+    const html = renderRemote({ sender: null, domain: null });
+    expect(html).toContain("Load images");
+    expect(html).not.toContain("More options for external images");
+    expect(html).not.toContain("k2b-split-button");
+  });
+
+  test("an allowed sender shows the quiet line and its rule from the first render", () => {
+    const html = renderRemote({
+      allowedByRule: true,
+      allowRules: [{ id: "00000000-0000-4000-8000-0000000000aa", scope: "sender", value: "news@shop.example" }],
+    });
+    expect(html).toContain('data-remote-images="always"');
+    expect(html).not.toContain("External images blocked");
+    expect(html).toContain("news@shop.example</b>");
+    expect(html).toContain("Change");
+  });
+
+  test("German copy follows the mockup", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(MailMessageBody, {
+            theme: "light",
+            colors: "adapted",
+            mailboxId: "Box001",
+            messageId: "Msg001",
+            format: "html",
+            html: `<img alt="Banner" data-mail-remote-image="${image}">`,
+            plainText: null,
+            attachments: [],
+            remoteContent: { imageIds: [image], allowedByRule: false, allowRules: [], sender: "news@shop.example", domain: "shop.example" },
+            onSelectionChange: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain('aria-label="Externe Bilder"');
+    expect(html).toContain("Externe Bilder blockiert");
+    expect(html).toContain("Schutz vor Tracking beim Öffnen");
+    expect(html).toContain("Bilder laden");
+    expect(html).toContain('aria-label="Weitere Optionen für externe Bilder"');
   });
 });
 
@@ -156,7 +216,7 @@ describe("HTML mail message frame", () => {
         html: '<p><a href="https://example.com/login" target="_blank" rel="noopener noreferrer nofollow">Sign in</a></p>',
         plainText: null,
         attachments: [],
-        remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
+        remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "sender@example.com", domain: "example.com" },
         onSelectionChange: () => {},
       }),
     );
@@ -181,7 +241,7 @@ test("does not render a whitespace-only plain alternative", () => {
       html: null,
       plainText: "\n ",
       attachments: [],
-      remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+      remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
       onSelectionChange: () => {},
     }),
   );

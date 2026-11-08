@@ -157,6 +157,12 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
   gap: 0.75rem;
 }
+/* Plain cards carry no frame, so they sit closer; the negative inset puts their tiles on the heading's edge. */
+.k2b-ui .k2b-app-overview__cards[data-surface="plain"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: 0.125rem 0.75rem;
+  margin-inline: -0.625rem;
+}
 
 /* Cloud renders the compact `Placeholder` as a bare child of the panel and
    lets the placeholder's own `px-3 py-6` carry the inset; the 0.75rem margin

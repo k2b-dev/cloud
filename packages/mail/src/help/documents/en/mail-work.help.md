@@ -266,13 +266,15 @@ With **Manage** access, you can also create a public download link for an attach
 
 Mail blocks images that a message would load from an external server. Loading such an image can tell the sender that you opened the message. Images included directly in the message stay visible.
 
-When a message contains blocked images, choose:
+When a message contains blocked images, the line **External images blocked** appears above it. Choose:
 
 - **Load images** to load them for this open message only.
-- **Always for sender** to allow images in future messages from that exact address.
-- **Always for domain** to allow images from every address at that domain. Use this broader option only for a domain that you trust.
+- the arrow next to **Load images**, then **Always from …** with the address, to allow images in future messages from that exact address. Mail then loads the images at once.
+- the arrow, then **Always from everyone at …** with the domain, to allow images from every address at that domain. Use this broader option only for a domain that you trust.
 
-These preferences apply only to you in the current mailbox. They do not change what collaborators see. To review or remove saved preferences, open **… → Remote images**.
+A message with several senders offers only **Load images**. After loading, the line shows **Images loaded**; **Always load** still lets you allow the sender or the domain. When one of your preferences loads images on its own, the line says **… always load**. Choose **Change → Stop loading automatically** there to remove that preference again. When images cannot be loaded, the line stays with **Try again**. When a message is larger than the safe limit, Mail loads only some of its images and says so in the line.
+
+These preferences apply only to you in the current mailbox. They do not change what collaborators see. To review or remove saved preferences, open **… → Remote images** or **Rules for external images…** in the line.
 
 Mail loads allowed images through its protected image service, so your browser never gets the image address. The external server can still learn that someone requested its image. Keep images blocked for unknown or suspicious senders.
 
