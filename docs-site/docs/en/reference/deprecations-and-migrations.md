@@ -5,15 +5,15 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-05
+updated: 2026-11-08
 ---
 
 # Deprecations and migrations
 
 ## Saved signed bar rows render again
 
-The next patch restores bar charts saved with `layout: "rows"` and negative
-values under Cloud 0.69. Cloud 0.70 had incorrectly rejected them. Upgrade and
+Bar charts saved with `layout: "rows"` and negative values under Cloud 0.69
+render again. Cloud 0.70 had incorrectly rejected them. Upgrade and
 reopen the saved chart; no data migration or JSON edits are required.
 
 Signed rows retain source order and draw around zero. Nonnegative rows keep
