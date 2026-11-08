@@ -78,6 +78,12 @@ type Variants<N> =
       legend?: boolean;
       area?: boolean;
       smooth?: boolean;
+      step?: "after" | "before" | "middle";
+      zero?: boolean;
+      legendValues?: boolean;
+      forecast?: { from: number | string; band?: [number, number][] };
+      threshold?: { value: number; label: string };
+      marker?: { at: number | string; label: string };
       references?: Reference[];
     }
   | {

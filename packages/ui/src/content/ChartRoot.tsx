@@ -4,6 +4,7 @@ import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { calendarLayout } from "../charts/core/calendar";
+import { lineDetailsEnabled, lineLegendX } from "../charts/core/line-options";
 import type { ChartDrawingOptions } from "../charts/core/render";
 import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
 import { suppressTextSelection } from "../internal/text-selection";
@@ -185,9 +186,16 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
   const topLegend = () =>
     props.kind === "area"
       ? props.legend !== false
-      : props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+      : props.kind === "line" && props.legend === true && (props.legendPlacement === "top-start" || lineDetailsEnabled(props));
   const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
   const legendValue = (index: number) => {
+    if (props.kind === "line") {
+      const defaultX = lineLegendX(props);
+      const last = props.series[index]?.data.find((point) => point.x === defaultX);
+      return last && Number.isFinite(last.y)
+        ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format(last.y))
+        : "—";
+    }
     if (props.kind !== "area") return "";
     const last = props.x.length - 1;
     const amount = props.series[index]?.data[last];
@@ -645,16 +653,20 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
                       height="8"
                       rx="2"
                       class={`stdlib-chart-series-${index() % 8}`}
-                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"][index() % 8]})`}
+                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${
+                        (props.kind === "line" && lineDetailsEnabled(props)
+                          ? ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"]
+                          : ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"])[index() % 8]
+                      })`}
                       stroke="none"
                     />
                   </svg>
                   <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
-                  <Show when={props.kind === "area"}>
+                  <Show when={props.kind === "area" || (props.kind === "line" && lineDetailsEnabled(props))}>
                     <b
                       data-chart-legend-value
                       data-series-index={index()}
-                      data-field={props.kind === "area" && props.normalize ? "percent" : "value"}
+                      data-field={props.kind === "area" && props.normalize ? "percent" : props.kind === "line" ? "y" : "value"}
                       data-default={legendValue(index())}
                     >
                       {legendValue(index())}

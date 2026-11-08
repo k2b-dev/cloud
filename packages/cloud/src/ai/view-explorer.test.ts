@@ -53,7 +53,7 @@ test("filtering removes rows everywhere and retains empty palette slots", () => 
   if (input.kind !== "line") throw new Error("Expected line");
   expect(input.series[0]).toEqual({ label: "open", data: [] });
   expect(input.series[1]?.data).toEqual([{ x: 40, y: 5 }]);
-  expect(state.charts.line!.legend).toEqual([{ label: "paid", color: 1, style: "solid" }]);
+  expect(state.charts.line!.legend).toEqual([{ label: "paid", color: 1, seriesIndex: 1, style: "solid" }]);
   expect(cloudAiExplorerState(view, { visibleKeys: [] }, "en").rows).toEqual([]);
   expect(cloudAiExplorerState(view, {}, "en").rows).toHaveLength(6);
 });
@@ -72,8 +72,8 @@ test("comparison uses slot plus eight and keeps both steps in dataset order", ()
   expect(input.series[9]).toEqual({ label: "paid · 2025", role: "reference", data: [{ x: 20, y: 3 }] });
   expect(state.charts.line!.marks[9]).toEqual([1]);
   expect(state.charts.line!.legend).toEqual([
-    { label: "paid · 2026", color: 1, style: "solid" },
-    { label: "paid · 2025", color: 1, style: "dashed", reference: true },
+    { label: "paid · 2026", color: 1, seriesIndex: 1, style: "solid" },
+    { label: "paid · 2025", color: 1, seriesIndex: 9, style: "dashed", reference: true },
   ]);
 });
 test("domains and formats use the whole dataset across steps and filters", () => {

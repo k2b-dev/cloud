@@ -128,7 +128,8 @@ export const chartCatalog = [
   },
   {
     name: "line",
-    useFor: "A value that changes continuously, such as visitors, revenue or response time.",
+    useFor:
+      "A value that changes continuously, such as visitors, revenue or response time. Forecasts add forecast, threshold, marker, zero, step and legendValues.",
     avoidFor: "Categories without an order, such as products or countries; use a bar chart.",
     example: {
       kind: "line",

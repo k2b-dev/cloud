@@ -1,5 +1,5 @@
 import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
-import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
+import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { chartLocaleSchema } from "./chart-locale";
 
@@ -101,6 +101,7 @@ export const chartParts = (limits?: ChartLimits) => {
   );
   return {
     ChartLabel,
+    ChartCoordinate: z.union([z.number(), ChartDate]),
     ChartTooltip,
     ChartNumber,
     list,
@@ -115,13 +116,26 @@ export const chartParts = (limits?: ChartLimits) => {
     }),
     ChartCategory: z.object({ label: ChartLabel, value: ChartNumber }),
     ChartSlice: z.object({ label: ChartLabel, value: limits ? z.number().min(0) : ChartNumber }),
-    ChartSeries: (points: z.ZodArray<typeof ChartPoint>) =>
+    ChartSeries: <T extends z.ZodType>(points: z.ZodArray<T>) =>
       z.object({
         label: ChartLabel.optional(),
         data: points,
         role: z.literal("reference").optional(),
       }),
     ChartPoints: list(ChartPoint, 0, limits?.maxValues),
+    ChartLinePoints: list(
+      ChartPoint.extend({
+        y: (limits
+          ? z
+              .number()
+              .nullable()
+              .transform((value) => value ?? Number.NaN)
+          : ChartNumber
+        ).describe("line: value; null is a gap only with forecast, zero, threshold, marker or legendValues enabled."),
+      }),
+      0,
+      limits?.maxValues,
+    ),
     ChartBins: z
       .union([
         limits ? z.number().int().min(1).max(limits?.maxValues) : z.number().int().min(1),
@@ -156,7 +170,9 @@ export const chartKinds = (limits?: ChartLimits) => {
     ChartCommon,
     ChartTooltip,
     ChartLabel,
+    ChartCoordinate,
     ChartPoints,
+    ChartLinePoints,
     ChartSeries,
     ChartSlice,
     ChartReferences,
@@ -284,25 +300,78 @@ export const chartKinds = (limits?: ChartLimits) => {
         if (bar.rows.some((r) => r.values.length !== bar.series.length))
           ctx.addIssue({ code: "custom", message: "Horizontal bar values must match series." });
       }),
-    z.object({
-      kind: z.literal("line"),
-      ...ChartKindCommon,
-      series: list(
-        ChartSeries(
-          limits
-            ? ChartPoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
-            : ChartPoints,
-        ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
-        1,
-        limits?.maxSeries,
-      ),
-      xAxis: ChartAxis.optional(),
-      yAxis: ChartAxis.optional(),
-      legend: z.boolean().optional(),
-      area: z.boolean().optional(),
-      smooth: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
+    z
+      .object({
+        kind: z.literal("line"),
+        ...ChartKindCommon,
+        series: list(
+          ChartSeries(
+            limits
+              ? ChartLinePoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
+              : ChartLinePoints,
+          ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
+          1,
+          limits?.maxSeries,
+        ),
+        xAxis: ChartAxis.optional(),
+        yAxis: ChartAxis.optional(),
+        legend: z.boolean().optional(),
+        area: z.boolean().optional(),
+        smooth: z.boolean().optional(),
+        step: z.enum(["after", "before", "middle"]).optional(),
+        zero: z.boolean().optional(),
+        legendValues: z.boolean().optional(),
+        forecast: z
+          .object({
+            from: ChartCoordinate,
+            band: list(z.tuple([z.number(), z.number()]), 0, limits?.maxValues).optional(),
+          })
+          .optional(),
+        threshold: z.object({ value: z.number(), label: ChartLabel }).optional(),
+        marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (limits && !lineDetailsEnabled(spec))
+          spec.series.forEach((series, seriesIndex) => {
+            series.data.forEach((point, pointIndex) => {
+              if (!Number.isFinite(point.y))
+                ctx.addIssue({
+                  code: "custom",
+                  path: ["series", seriesIndex, "data", pointIndex, "y"],
+                  message: "Null gaps require forecast, zero, threshold, marker or legendValues enabled.",
+                });
+            });
+          });
+        const coordinate = (x: number | string) => (typeof x === "number" ? x : chartDateTime(x));
+        const at = spec.marker && coordinate(spec.marker.at);
+        if (at !== undefined && spec.xAxis?.domain && (at < spec.xAxis.domain[0]! || at > spec.xAxis.domain[1]!))
+          ctx.addIssue({ code: "custom", path: ["marker", "at"], message: "Marker must be inside the explicit X domain." });
+        if (!spec.forecast) return;
+        const from = coordinate(spec.forecast.from);
+        const points = spec.series[0]?.data ?? [];
+        if (!points.some((point) => coordinate(point.x) === from)) {
+          ctx.addIssue({ code: "custom", path: ["forecast", "from"], message: "Forecast must start at an X value of the first series." });
+        }
+        const count = points.filter((point) => {
+          const x = coordinate(point.x);
+          return x !== undefined && from !== undefined && x >= from;
+        }).length;
+        if (spec.forecast.band && spec.forecast.band.length !== count)
+          ctx.addIssue({
+            code: "custom",
+            path: ["forecast", "band"],
+            message: "Forecast band must match the first series from forecast.from, ordered by X.",
+          });
+        spec.forecast.band?.forEach(([lo, hi], index) => {
+          if (lo > hi)
+            ctx.addIssue({
+              code: "custom",
+              path: ["forecast", "band", index],
+              message: "Forecast lower bound must not exceed its upper bound.",
+            });
+        });
+      }),
     z.object({
       kind: z.literal("scatter"),
       ...ChartKindCommon,
