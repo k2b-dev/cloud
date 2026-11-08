@@ -10,7 +10,11 @@ const compile = (definitions: CapabilityDefinitions) => compileCapabilityManifes
 test("publishes the place contract and validates same-app target and bounded data", () => {
   const fixture = createAssistantPlaceFixture();
   const manifest = compile(fixture.capabilities);
-  expect(manifest.types[0]?.assistant).toEqual(fixture.capabilities.types.conversation.assistant);
+  expect(manifest.types[0]?.assistant).toEqual({
+    provider: "conversation.assistant",
+    tools: ["reply.set", "note.add"],
+    skills: ["contact-writing"],
+  });
   expect(assistantPlaceIssues(manifest)).toEqual([]);
   expect(() => assertAssistantPlaceSkills(manifest, fixture.skillNames)).not.toThrow();
   expect(() => assertAssistantPlaceSkills(manifest, new Set())).toThrow("contact-writing");

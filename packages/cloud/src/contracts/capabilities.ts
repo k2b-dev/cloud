@@ -916,16 +916,14 @@ export type CapabilityAssistantDefinition = {
 export const CapabilityAssistantSchema = z
   .object({
     provider: CapabilityLocalIdSchema,
-    tools: z.array(CapabilityLocalIdSchema).max(16),
-    skills: z
-      .array(
-        z
-          .string()
-          .min(1)
-          .max(64)
-          .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-      )
-      .max(8),
+    tools: z.array(CapabilityLocalIdSchema),
+    skills: z.array(
+      z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    ),
   })
   .strict();
 

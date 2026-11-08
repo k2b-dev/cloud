@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { skill } from "../../packages/cloud/src/ai/app-skills";
 import { actionReview } from "../../packages/cloud/src/capabilities/reviews";
 import { AssistantPlaceSchema } from "../../packages/cloud/src/contracts/assistant-place";
 import { type CapabilityExecutionContext, defineCapabilities } from "../../packages/cloud/src/contracts/capabilities";
@@ -111,5 +112,11 @@ export const createAssistantPlaceFixture = () => {
     },
     actions: { "reply.set": action("you"), "note.add": action("shared") },
   });
-  return { capabilities, places, permissions, calls, providerCalls, skillNames: new Set(["contact-writing"]) };
+  const skills = [
+    skill({
+      markdown:
+        "---\nname: contact-writing\ndescription: Write clear replies to customer questions in a contact conversation.\n---\nUse the conversation facts to prepare a concise reply. The person sends it.\n",
+    }),
+  ];
+  return { capabilities, skills, places, permissions, calls, providerCalls, skillNames: new Set(skills.map((skill) => skill.name)) };
 };

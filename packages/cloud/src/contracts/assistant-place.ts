@@ -7,7 +7,10 @@ export const ASSISTANT_PLACE_CONTEXT_MAX_BYTES = 32 * 1024;
 export const AssistantPlaceSchema = z
   .object({
     title: z.string().min(1).max(200),
-    context: z.string().max(ASSISTANT_PLACE_CONTEXT_MAX_BYTES),
+    context: z
+      .string()
+      .max(ASSISTANT_PLACE_CONTEXT_MAX_BYTES)
+      .refine((text) => new TextEncoder().encode(text).byteLength <= ASSISTANT_PLACE_CONTEXT_MAX_BYTES, "Context exceeds 32 KiB of UTF-8"),
     tools: z.array(z.string()).max(16),
     skills: z.array(z.string()).max(8),
     starters: z
@@ -17,7 +20,7 @@ export const AssistantPlaceSchema = z
   })
   .strict();
 export type AssistantPlace = z.infer<typeof AssistantPlaceSchema>;
-export type AssistantPlaceResult = AssistantPlace | { unavailable: true };
+export type AssistantPlaceResult = AssistantPlace | { unavailable: true; retry?: true };
 
 /** Validate a Type's provider and declared tool superset at startup and when consuming a live manifest. */
 export const assistantPlaceIssues = (manifest: CapabilityManifest, localType?: string): CapabilityContractIssue[] => {
@@ -38,18 +41,6 @@ export const assistantPlaceIssues = (manifest: CapabilityManifest, localType?: s
       );
       if (provider.appOnly || provider.openWorld || Object.keys(provider.refs ?? {}).length)
         add("Assistant provider must be closed-world, person-readable, and need only its target");
-      // Both directions require the exact shared result contract, including its bounds.
-      const expected = z.toJSONSchema(AssistantPlaceSchema);
-      const same = (left: unknown, right: unknown): boolean => {
-        if (left === right) return true;
-        if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
-        const keys = Object.keys(left);
-        return (
-          keys.length === Object.keys(right).length &&
-          keys.every((key) => Object.hasOwn(right, key) && same(Reflect.get(left, key), Reflect.get(right, key)))
-        );
-      };
-      if (!same(provider.dataSchema, expected)) add("Assistant provider data must be AssistantPlaceSchema");
     }
     for (const id of type.assistant.tools) {
       const action = manifest.actions.find((action) => action.localId === id);

@@ -1,7 +1,7 @@
 import { capabilityToolInputSchema, normalizeCapabilityCall } from "../capabilities/calls";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "../contracts/app-events";
 import { appStatusIssues } from "../contracts/app-status";
-import { assistantPlaceIssues } from "../contracts/assistant-place";
+import { AssistantPlaceSchema, assistantPlaceIssues } from "../contracts/assistant-place";
 import type { CapabilityInvocationBody } from "../contracts/capabilities";
 import {
   CapabilityAppStatusManifestSchema,
@@ -1151,6 +1151,16 @@ export const compileCapabilities = (
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  // Exact schema identity is a producer check; deployed consumers allow compatible versions.
+  for (const type of manifest.types) {
+    if (!type.assistant) continue;
+    const provider = manifest.queries.find((query) => query.localId === type.assistant!.provider);
+    if (
+      provider &&
+      capabilityHash(provider.dataSchema) !== capabilityHash(projectSchema(AssistantPlaceSchema, "Assistant place", "output"))
+    )
+      throw new Error(`Resource type ${type.localId}: assistant provider data must be AssistantPlaceSchema`);
+  }
   const placeIssues = assistantPlaceIssues(manifest);
   if (placeIssues.length) throw new Error(`assistant: ${placeIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
   const statusIssues = appStatusIssues(manifest);
