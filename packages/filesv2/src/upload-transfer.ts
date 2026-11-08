@@ -11,7 +11,7 @@ const CONTROL_DEADLINE = 30_000;
 const PUT_BASE_DEADLINE = 60_000;
 // Browser fetch cannot observe request-body bytes, so a size-proportional deadline replaces an inactivity timer.
 // 64 KiB/s (about 0.5 Mbit/s) is the slowest supported uplink.
-const MIN_UPLOAD_BYTES_PER_SECOND = 64 * 1024;
+export const MIN_UPLOAD_BYTES_PER_SECOND = 64 * 1024;
 const requestDeadline = (init?: RequestInit) => {
   if (init?.method !== "PUT") return CONTROL_DEADLINE;
   const body = init.body;
@@ -127,6 +127,7 @@ export async function transferUpload(
     signal: AbortSignal;
     renew: (id: string, signal: AbortSignal) => Promise<{ url: string }>;
     onProgress?: (bytes: number) => void;
+    request?: typeof fetch;
     failure: string;
   },
 ): Promise<void> {
@@ -153,7 +154,7 @@ export async function transferUpload(
       retryAfter = undefined;
       networkError = undefined;
       try {
-        const response = await fetch(input, { ...init, signal });
+        const response = await (options.request ?? fetch)(input, { ...init, signal });
         retryAfter = retryAfterMs(response.headers);
         const body = await response.arrayBuffer().catch((error: unknown) => {
           if (response.ok) throw error;

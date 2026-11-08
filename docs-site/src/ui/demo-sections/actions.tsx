@@ -2,6 +2,7 @@ import {
   activeDrag,
   Button,
   ButtonLink,
+  type CommandContext,
   type CommandItem,
   CommandMenu,
   ContextMenu,
@@ -45,11 +46,12 @@ const ButtonsDemo = () => (
       { kind: "component", name: "IconButtonLink", from: "@k2b/ui" },
       { kind: "component", name: "SplitButton", from: "@k2b/ui" },
     ]}
-    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy."
+    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy. Link actions use regular action-coloured ink for quiet list continuation."
     code={`<Button variant="primary">Save</Button>
 <Button variant="secondary">Preview</Button>
 <Button variant="ghost">Later</Button>
 <Button variant="text" size="xs">More</Button>
+<Button variant="link" size="sm">Load more <i class="ti ti-chevron-down" aria-hidden="true" /></Button>
 <Button variant="warning" size="xs">Undo send · 8s</Button>
 <Button variant="danger" size="sm">Delete</Button>
 <Button variant="subtle" size="xs">
@@ -107,6 +109,20 @@ const ButtonsDemo = () => (
         Save
       </Button>
       <Button disabled>Disabled</Button>
+    </div>
+    <div class="ui-demo-row">
+      <Button variant="link" size="sm">
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm" loading loadingLabel="Loading more entries">
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm">
+        Retry <i class="ti ti-refresh" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm" disabled>
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
     </div>
     <div class="ui-demo-row">
       <IconButton label="Settings">
@@ -202,21 +218,20 @@ const CopyRemoveDemo = () => {
   );
 };
 
+/** A neutral letter mark at icon size, standing in for a marketplace logo. */
+const letterMark = (letter: string, background: string, color = "#fff") =>
+  `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="${background}"/><text x="8" y="11.6" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" fill="${color}" text-anchor="middle">${letter}</text></svg>`,
+  )}`;
+
 const CommandMenuDemo = () => {
-  const [text, setText] = createSignal("");
+  const [text, setText] = createSignal("Guten Tag Frau Weber,\n\nvielen Dank für die Fotos der Eichentruhe (Art. 4711). ");
   const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
-  const [kind, setKind] = createSignal("Message");
+  const [composer, setComposer] = createSignal<HTMLDivElement>();
+  const [kind, setKind] = createSignal("Nachricht");
   const [done, setDone] = createSignal<string[]>([]);
   const note = (entry: string) => setDone((list) => [entry, ...list].slice(0, 3));
-  const people = ["Mara Brandt", "Jonas Öztürk", "Lea Krüger", "Tom Weiß"];
-  const tags = [
-    ["Urgent", "#dc2626"],
-    ["Waiting for reply", "#d97706"],
-    ["Pickup", "#2563eb"],
-  ];
-  const dot = (color: string) => () => (
-    <span style={{ display: "block", width: "0.625rem", height: "0.625rem", "border-radius": "999px", background: color }} />
-  );
+  const customers = ["Mara Brandt", "Jonas Öztürk", "Lea Krüger", "Tom Weiß", "Valentin Berg"];
   const initials = (name: string) => () => (
     <span
       style={{
@@ -236,106 +251,196 @@ const CommandMenuDemo = () => {
         .join("")}
     </span>
   );
-  const commands: CommandItem[] = [
+  /** Waits like a request to a marketplace, and stops when the person closes the list with Escape. */
+  const wait = (signal: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, 1200);
+      signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      });
+    });
+  const entries: CommandItem[] = [
     {
-      group: "Kind",
-      label: "Phone call",
-      hint: "/call",
+      group: "Art",
+      label: "Telefonat",
+      description: "Anruf festhalten",
       icon: "ti ti-phone",
-      keywords: ["anruf", "telefonat"],
-      onSelect: () => setKind("Phone call"),
+      keywords: ["anruf"],
+      onSelect: () => setKind("Telefonat"),
     },
     {
-      group: "Kind",
-      label: "Internal note",
-      hint: "/note",
+      group: "Art",
+      label: "Interne Notiz",
+      description: "Nur für das Team sichtbar",
       icon: "ti ti-note",
-      keywords: ["notiz"],
-      onSelect: () => setKind("Internal note"),
+      onSelect: () => setKind("Interne Notiz"),
     },
     {
-      group: "Kind",
-      label: "Confirm appointment",
-      hint: "/appointment",
+      group: "Vorlagen",
+      label: "Fotos erbeten",
+      description: "Bittet um Fotos der Rückseite",
+      icon: "ti ti-photo",
+      text: "Könnten Sie uns noch zwei Fotos von der Rückseite schicken?",
+    },
+    {
+      group: "Vorlagen",
+      label: "Abholung bestätigen",
+      description: "Termin für die Abholung",
+      icon: "ti ti-truck",
+      text: "Wir holen das Stück wie besprochen am Freitagvormittag ab.",
+    },
+    {
+      group: "Marktplätze",
+      label: "Marktpreis prüfen",
+      description: "Preis zur Artikelnummer im Text",
+      image: letterMark("T", "#0f766e"),
+      keywords: ["trödelplatz", "preis"],
+      // The callback gets the composer's text and inserts at its caret, like typing.
+      onSelect: async ({ text, insert, signal }) => {
+        const article = /Art\.\s*(\d+)/.exec(text)?.[1];
+        await wait(signal);
+        if (!article) throw new Error("Keine Artikelnummer im Text");
+        insert(`Vergleichbare Stücke erzielen derzeit 240–280 € (Art. ${article}).`);
+      },
+    },
+    {
+      group: "Marktplätze",
+      label: "Bei Kunstbörse einstellen",
+      description: "Entwurf mit Text und Fotos",
+      image: letterMark("K", "#7c3aed"),
+      onSelect: () => note("Entwurf bei Kunstbörse"),
+    },
+    {
+      group: "Marktplätze",
+      label: "Bei Antikmarkt einstellen",
+      description: "Entwurf mit Text und Fotos",
+      image: { light: letterMark("A", "#18181b"), dark: letterMark("A", "#f4f4f5", "#18181b") },
+      onSelect: () => note("Entwurf bei Antikmarkt"),
+    },
+    {
+      group: "Aktionen",
+      label: "Termin bestätigen",
       icon: "ti ti-calendar-check",
-      disabled: "Only with an announcement",
+      disabled: "Nur mit einer Ankündigung",
       onSelect: () => {},
     },
     {
-      group: "Snippets",
-      label: "Photos requested",
-      hint: "/photos",
-      icon: "ti ti-template",
-      text: "Could you send us a few photos of the piece?",
-    },
-    {
-      group: "Actions",
-      label: "Assign",
-      hint: "/assign",
+      group: "Aktionen",
+      label: "Zuweisen",
+      description: "An eine Person",
       icon: "ti ti-user-plus",
-      keywords: ["zuständig"],
+      keywords: ["zuständig", "assign"],
+      // "/zuw ⏎ val ⏎": Enter opens the person search, the name finds them, Enter assigns.
       next: {
-        label: "Search person",
-        items: people.map((name) => ({ label: name, leading: initials(name), onSelect: () => note(`Assigned ${name}`) })),
+        label: "Person suchen",
+        items: customers.map((name) => ({ label: name, leading: initials(name), onSelect: () => note(`Zugewiesen: ${name}`) })),
       },
     },
     {
-      group: "Actions",
-      label: "Tag",
-      hint: "/tag",
-      icon: "ti ti-tag",
+      group: "Aktionen",
+      label: "Beteiligen",
+      description: "Person und Rolle",
+      icon: "ti ti-users",
       next: {
-        label: "Search tag",
-        items: tags.map(([label, color]) => ({ label, leading: dot(color), onSelect: () => note(`Tagged ${label}`) })),
+        label: "Person suchen",
+        items: customers.map((name) => ({
+          label: name,
+          leading: initials(name),
+          // The third level knows the way here: the action and the person chosen.
+          next: {
+            label: "Rolle wählen",
+            items: ["Verantwortlich", "Beteiligt"].map((role) => ({
+              label: role,
+              onSelect: ({ path }: CommandContext) => note(`${path.at(-1)?.label} · ${role}`),
+            })),
+          },
+        })),
       },
     },
   ];
-  const insert = (snippet: string) => setText((current) => (current ? `${current.trimEnd()} ${snippet}` : snippet));
+  // Templates only where the slash starts the text; markets first when the text names an article; actions everywhere.
+  const commands = ({ atStart, text }: CommandContext) => {
+    const shown = entries.filter((entry) => atStart || entry.group !== "Vorlagen");
+    return /Art\.\s*\d+/.test(text)
+      ? shown.toSorted((a, b) => Number(b.group === "Marktplätze") - Number(a.group === "Marktplätze"))
+      : shown;
+  };
   return (
     <DemoCard
       id="command-menu"
       chip={[
         { kind: "component", name: "CommandMenu", from: "@k2b/ui" },
-        { kind: "component", name: "MarkdownEditor", from: "@k2b/ui" },
+        { kind: "component", name: "SlashCommands", from: "@k2b/ui" },
       ]}
-      description="One list of commands for three entry points: `/` in the text, the “+” button, and a chip. Groups, icons or a leading avatar or color, unavailable entries with their reason, snippets, and second lists such as people or tags. Type “anruf” or “zustaendig” to search by keyword without accents."
-      code={`const commands: CommandItem[] = [
-  { group: "Kind", label: "Phone call", hint: "/call", icon: "ti ti-phone", keywords: ["anruf"], onSelect: () => setKind("call") },
-  { group: "Kind", label: "Confirm appointment", icon: "ti ti-calendar-check", disabled: "Only with an announcement", onSelect: confirm },
-  { group: "Snippets", label: "Photos requested", icon: "ti ti-template", text: "Could you send us a few photos?" },
-  { group: "Actions", label: "Assign", icon: "ti ti-user-plus",
-    next: { label: "Search person", items: people.map((p) => ({ label: p.name, leading: () => <Avatar name={p.name} size="xs" />, onSelect: () => assign(p) })) } },
+      description="One list of commands for `/` in the text and the “+” button, docked above the composer at its full width. Entries carry an icon or a logo and a quiet description; a callback gets the composer's text and inserts at its caret, and an asynchronous one shows its progress and a failure on its row. The entries are a function of the context: templates only at the start of the text, actions everywhere, and markets first while the text names an article. Type “/zuw ⏎ val ⏎” to assign Valentin, “/bet” for a person and then a role, or “/preis” with and without an article number."
+      code={`const entries: CommandItem[] = [
+  { group: "Vorlagen", label: "Fotos erbeten", icon: "ti ti-photo", text: "Könnten Sie uns noch zwei Fotos schicken?" },
+  {
+    group: "Marktplätze",
+    label: "Marktpreis prüfen",
+    image: "/logos/troedelplatz.svg",
+    onSelect: async ({ text, insert, signal }) => {
+      const article = /Art\\.\\s*(\\d+)/.exec(text)?.[1];
+      if (!article) throw new Error("Keine Artikelnummer im Text");
+      insert(await priceHint(article, { signal }));
+    },
+  },
+  {
+    group: "Aktionen",
+    label: "Zuweisen",
+    icon: "ti ti-user-plus",
+    next: {
+      label: "Person suchen",
+      // A function of the context, also as a promise: people from the server, abortable.
+      items: ({ query, signal }) => searchPeople(query, { signal }).then((people) =>
+        people.map((person) => ({
+          label: person.name,
+          next: {
+            label: "Rolle wählen",
+            items: roles.map((role) => ({ label: role, onSelect: ({ path }) => assign(path.at(-1), role) })),
+          },
+        })),
+      ),
+    },
+  },
 ];
 
-const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
-<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
-<SlashCommands textarea={textarea()} items={commands} />
+// Templates only where the slash starts the text; actions everywhere.
+const commands = ({ atStart }: CommandContext) => entries.filter((entry) => atStart || entry.group !== "Vorlagen");
 
-<CommandMenu items={commands} label="Add to message" search="Search commands" onInsert={insert}>
-  <CommandMenu.Trigger iconOnly label="Add"><i class="ti ti-plus" aria-hidden="true" /></CommandMenu.Trigger>
-</CommandMenu>`}
+<div ref={setComposer} class="composer">
+  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
+  <CommandMenu items={commands} label="Hinzufügen" search="Befehle suchen" target={textarea()} dock={composer()}>
+    <CommandMenu.Trigger iconOnly label="Hinzufügen"><i class="ti ti-plus" aria-hidden="true" /></CommandMenu.Trigger>
+  </CommandMenu>
+</div>`}
     >
       <div style={{ display: "grid", gap: "0.5rem", "max-width": "36rem" }}>
-        <div style={{ border: "2px solid var(--k2b-border-strong)", "border-radius": "var(--k2b-radius-surface)", padding: "0.25rem" }}>
+        <div
+          ref={setComposer}
+          style={{ border: "2px solid var(--k2b-border-strong)", "border-radius": "var(--k2b-radius-surface)", padding: "0.25rem" }}
+        >
           <MarkdownEditor
-            aria-label="Message"
+            aria-label="Nachricht"
             variant="embedded"
             noToolbar
             showStats={false}
-            lines={3}
-            placeholder="Write a message, or type / for commands"
+            lines={4}
+            placeholder="Nachricht schreiben, / für Befehle"
             value={text()}
             onValueChange={setText}
             textareaRef={setTextarea}
           />
-          <SlashCommands textarea={textarea()} items={commands} />
+          <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
           <div class="ui-demo-row" style={{ padding: "0 0.25rem 0.25rem" }}>
-            <CommandMenu items={commands} label="Add to message" search="Search commands" onInsert={insert}>
-              <CommandMenu.Trigger iconOnly label="Add">
+            <CommandMenu items={commands} label="Hinzufügen" search="Befehle suchen" target={textarea()} dock={composer()}>
+              <CommandMenu.Trigger iconOnly label="Hinzufügen">
                 <i class="ti ti-plus" aria-hidden="true" />
               </CommandMenu.Trigger>
             </CommandMenu>
-            <CommandMenu items={commands.filter((item) => item.group === "Kind")} label="Kind" search="Search kinds">
+            <CommandMenu items={entries.filter((item) => item.group === "Art")} label="Art" search="Art suchen">
               <CommandMenu.Trigger size="sm" variant="secondary">
                 {kind()} <i class="ti ti-chevron-down" aria-hidden="true" />
               </CommandMenu.Trigger>
@@ -343,7 +448,7 @@ const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
           </div>
         </div>
         <p class="text-xs text-dimmed" role="status">
-          {done().length ? done().join(" · ") : "Nothing assigned or tagged yet."}
+          {done().length ? done().join(" · ") : "Noch nichts zugeordnet."}
         </p>
       </div>
     </DemoCard>

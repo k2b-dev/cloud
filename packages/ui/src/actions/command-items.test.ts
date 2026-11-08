@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type CommandItem, filterCommandItems, groupCommandItems, resolveCommandSource } from "./command-items";
+import { type CommandItem, commandPlace, filterCommandItems, groupCommandItems, resolveCommandSource } from "./command-items";
 
 const noop = () => undefined;
 const items: CommandItem[] = [
@@ -48,14 +48,22 @@ describe("command items", () => {
     expect(groups[2]!.entries[0]!.index).toBe(4);
   });
 
-  test("a function source filters itself", () => {
+  test("a function source decides which entries exist, with the context; the query still filters them", () => {
     const seen: string[] = [];
-    const source = (query: string) => {
-      seen.push(query);
+    const source = (context: { query: string; atStart: boolean }) => {
+      seen.push(`${context.query}:${context.atStart}`);
       return items.slice(0, 1);
     };
-    expect(labels(resolveCommandSource(source, "xyz"))).toEqual(["Phone call"]);
-    expect(seen).toEqual(["xyz"]);
+    const context = { query: "anruf", atStart: true } as Parameters<typeof resolveCommandSource>[1];
+    expect(labels(resolveCommandSource(source, context) as readonly CommandItem[])).toEqual(["Phone call"]);
+    expect(resolveCommandSource(source, { ...context, query: "xyz" })).toEqual([]);
+    expect(seen).toEqual(["anruf:true", "xyz:true"]);
+  });
+
+  test("commandPlace tells where a slash stands, leading whitespace aside", () => {
+    expect(commandPlace("  /tag", 2, 6)).toEqual({ text: "  ", before: "  ", atStart: true, lineStart: true });
+    expect(commandPlace("Hallo\n  /tag x", 8, 12)).toMatchObject({ text: "Hallo\n   x", atStart: false, lineStart: true });
+    expect(commandPlace("Hallo /tag", 6, 10)).toMatchObject({ before: "Hallo ", atStart: false, lineStart: false });
   });
 
   test("an entry changed in place is found by its new words", () => {

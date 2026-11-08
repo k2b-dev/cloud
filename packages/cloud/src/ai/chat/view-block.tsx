@@ -1,49 +1,30 @@
-import { DescriptionList, StatCell, type StatCellAccent, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
+import { DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
 import { importOnDemand } from "../../browser/reload";
-import { cloudAiNumberFormatters } from "../chart-block";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
-  CLOUD_AI_VIEW_MAX_BYTES,
-  type CloudAiDetailsView,
-  type CloudAiExplorerView,
-  type CloudAiStatsView,
-  type CloudAiTableView,
   type CloudAiView,
   type CloudAiViewSummary,
+  type CloudDetailsDescription,
+  type CloudExplorerDescription,
+  type CloudStatsDescription,
+  type CloudTableDescription,
+  type CloudViewDescription,
   cloudAiDetailsRows,
-  cloudAiStatsTiles,
-  cloudAiViewSummary,
-  isAiViewFile,
-  parseCloudAiView,
 } from "../view-block";
-import { CloudChartGroupView, CloudChartView } from "./chart-block";
-import { CloudExplorerView } from "./explorer-block";
 import { useAiChatActions } from "./message-actions";
 import { aiChatMessages } from "./messages";
 import { ReferenceText } from "./reference-text";
 import { CloudTablePlaceholder, type TableSummary } from "./table-placeholder";
 import { ViewHeading } from "./view-heading";
 
-/** Loads a view file with the viewer's access and validates it again: a file is untrusted whoever wrote it. */
-async function loadView(url: string, path: string, signal: AbortSignal): Promise<CloudAiView | null> {
-  try {
-    const response = await fetch(url, { signal });
-    if (!response.ok || !isAiViewFile({ path, origin: response.headers.get("X-Cloud-Ai-File-Origin") ?? "" })) return null;
-    const blob = await response.blob();
-    if (blob.size > CLOUD_AI_VIEW_MAX_BYTES) return null;
-    return parseCloudAiView(JSON.parse(await blob.text())) ?? null;
-  } catch {
-    return null;
-  }
-}
-
 type ChartSummary = Extract<CloudAiViewSummary, { view: "chart" }>;
 type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
 type ExplorerSummary = Extract<CloudAiViewSummary, { view: "explorer" }>;
 
 /** A table's controls and row renderer load only when a Chat first presents a table. */
-function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView | null | undefined }) {
+function CloudTableView(props: { summary: TableSummary; input: CloudTableDescription | null | undefined }) {
   const id = `cloud-view-${createUniqueId()}`;
   const [module, setModule] = createSignal<typeof import("./table-block") | null | undefined>();
   onMount(() => {
@@ -71,14 +52,8 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
 type StatsSummary = Extract<CloudAiViewSummary, { view: "stats" }>;
 type DetailsSummary = Extract<CloudAiViewSummary, { view: "details" }>;
 
-const DELTA_TONES = { better: "emerald", worse: "red", neutral: "zinc" } as const;
-const DELTA_ICONS = { up: "ti ti-trending-up", down: "ti ti-trending-down", flat: "ti ti-minus" } as const;
 /** One column per tile, up to the grid's six; its ladder narrows them on phones. */
 const STATS_COLUMNS: readonly StatGridColumns[] = [1, 2, 3, 4, 5, 6];
-
-/** The host picks the change's color from whether it is better; the model never chooses tones. */
-const deltaAccent = (delta: ReturnType<typeof cloudAiStatsTiles>[number]["delta"]): StatCellAccent | undefined =>
-  delta && { tone: DELTA_TONES[delta.tone], icon: DELTA_ICONS[delta.direction], text: delta.text };
 
 /** The loading or unavailable message, centered over the room the view reserved. */
 function ViewStatus(props: { loading: boolean }) {
@@ -96,10 +71,23 @@ function ViewStatus(props: { loading: boolean }) {
  * has a sparkline and a support line, which the summary records, so a hidden copy of the same grid reserves the exact
  * room while the file loads or when it is unavailable.
  */
-function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView | null | undefined }) {
-  const locale = useLocale();
+function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescription | null | undefined }) {
   const id = `cloud-view-${createUniqueId()}`;
-  const tiles = createMemo(() => (props.input ? cloudAiStatsTiles(props.input, locale()) : null));
+  const [module, setModule] = createSignal<typeof import("./stats-block") | null | undefined>();
+  onMount(() => {
+    let disposed = false;
+    onCleanup(() => {
+      disposed = true;
+    });
+    void importOnDemand(() => import("./stats-block")).then((loaded) => {
+      if (!disposed) setModule(loaded ?? null);
+    });
+  });
+  const ready = createMemo(() => {
+    const renderer = module();
+    const input = props.input;
+    return renderer && input ? { renderer, input } : undefined;
+  });
   const columns = () => STATS_COLUMNS[props.summary.items.length - 1];
   return (
     <section class="grid min-w-0 gap-3" aria-labelledby={id}>
@@ -109,7 +97,7 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView 
         subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
       />
       <Show
-        when={tiles()}
+        when={ready()}
         fallback={
           <div class="relative min-w-0">
             <div class="invisible" aria-hidden="true">
@@ -118,42 +106,27 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView 
                   {(item) => (
                     <StatCell
                       label={item().label}
+                      deltaPlacement="below"
                       value="0"
                       trend={item().sparkline ? [0, 1] : undefined}
                       sub={item().sub ? "\u00a0" : undefined}
-                      accent={item().delta ? { tone: "zinc", icon: DELTA_ICONS.flat, text: "0" } : undefined}
+                      delta={item().delta ? { value: 0 } : undefined}
+                      compare={item().compare ? { label: "\u00a0", value: "0" } : undefined}
                     />
                   )}
                 </Index>
               </StatGrid>
             </div>
             <div class="absolute inset-0">
-              <ViewStatus loading={props.input === undefined} />
+              <ViewStatus loading={module() !== null && props.input !== null} />
             </div>
           </div>
         }
       >
-        {(value) => (
-          <StatGrid columns={columns()}>
-            <Index each={value()}>
-              {(tile, index) => (
-                <StatCell
-                  label={tile().label}
-                  value={tile().value}
-                  title={tile().value}
-                  trend={tile().sparkline}
-                  trendTooltip={({ datum }) => {
-                    const point = tile().sparkline?.[datum.index];
-                    const format = cloudAiNumberFormatters(props.input?.items[index]?.format, locale()).value;
-                    return { rows: point === undefined ? [] : [{ label: tile().label, value: format(point) }] };
-                  }}
-                  sub={tile().sub}
-                  accent={deltaAccent(tile().delta)}
-                />
-              )}
-            </Index>
-          </StatGrid>
-        )}
+        {(ready) => {
+          const Tiles = ready().renderer.CloudStatsTiles;
+          return <Tiles input={ready().input} columns={columns()} />;
+        }}
       </Show>
     </section>
   );
@@ -180,7 +153,7 @@ const placeholder = (chars: number) =>
  * keeps its room in the first frame. More fields, or a value longer than its stand-in, scroll inside the viewport
  * instead of moving the chat.
  */
-function CloudDetailsView(props: { summary: DetailsSummary; input: CloudAiDetailsView | null | undefined }) {
+function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsDescription | null | undefined }) {
   const locale = useLocale();
   const id = `cloud-view-${createUniqueId()}`;
   const rows = createMemo(() => (props.input ? cloudAiDetailsRows(props.input, locale()) : null));
@@ -223,48 +196,6 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudAiDetail
   );
 }
 
-type Heading = { title: string; subtitle?: string };
-const sameHeading = (a: Heading, b: Heading | undefined) => a.title === b?.title && a.subtitle === b.subtitle;
-
-/**
- * Whether a loaded file still has everything its summary reserved: kinds, headings, layout and the linked cursor. A
- * changed file shows unavailable instead of moving views or linking charts its summary did not.
- */
-const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
-  if (view.view === "table") return summary.view === "table" && sameHeading(view, summary);
-  const loaded = cloudAiViewSummary(view);
-  // A record must keep the field count and the labels and value lengths that sized its viewport.
-  if (loaded.view === "details")
-    return (
-      summary.view === "details" &&
-      sameHeading(loaded, summary) &&
-      loaded.items === summary.items &&
-      JSON.stringify(loaded.fields) === JSON.stringify(summary.fields)
-    );
-  // A stats file must keep every tile's label and parts, which set the tile heights its summary reserved.
-  if (loaded.view === "stats")
-    return summary.view === "stats" && sameHeading(loaded, summary) && JSON.stringify(loaded.items) === JSON.stringify(summary.items);
-  if (loaded.view === "explorer")
-    return (
-      summary.view === "explorer" &&
-      sameHeading(loaded, summary) &&
-      loaded.step === summary.step &&
-      loaded.filter === summary.filter &&
-      loaded.compare === summary.compare &&
-      JSON.stringify(loaded.views) === JSON.stringify(summary.views)
-    );
-  if (loaded.view === "chart") return summary.view === "chart" && loaded.kind === summary.kind && sameHeading(loaded, summary);
-  return (
-    loaded.view === "group" &&
-    summary.view === "group" &&
-    sameHeading(loaded, summary) &&
-    loaded.linkX === summary.linkX &&
-    loaded.layout === summary.layout &&
-    loaded.charts.length === summary.charts.length &&
-    loaded.charts.every((chart, index) => chart.kind === summary.charts[index]?.kind && sameHeading(chart, summary.charts[index]))
-  );
-};
-
 /**
  * A presented view file. It takes its full size from the `present` summary in the first frame, then loads the file
  * with the viewer's access; a missing file or one that no longer matches its summary shows the unavailable state in
@@ -273,14 +204,16 @@ const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
 export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummary }) {
   const actions = useAiChatActions();
   // undefined while loading, null when unavailable.
-  const [view, setView] = createSignal<CloudAiView | null | undefined>(undefined);
+  const [view, setView] = createSignal<CloudViewDescription | null | undefined>(undefined);
   onMount(() => {
     const url = actions.fileUrl?.(props.path);
     if (!url) return setView(null);
     const abort = new AbortController();
     onCleanup(() => abort.abort());
-    void loadView(url, props.path, abort.signal).then((loaded) => {
-      if (!abort.signal.aborted) setView(loaded && matches(loaded, props.summary) ? loaded : null);
+    void importOnDemand(() => import("./view-file")).then(async (reader) => {
+      if (abort.signal.aborted) return;
+      const loaded = reader ? await reader.loadView(url, props.path, props.summary, abort.signal) : null;
+      if (!abort.signal.aborted) setView(loaded);
     });
   });
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
@@ -289,15 +222,15 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
   const statsSummary = (): StatsSummary | undefined => (props.summary.view === "stats" ? props.summary : undefined);
   const detailsSummary = (): DetailsSummary | undefined => (props.summary.view === "details" ? props.summary : undefined);
   const explorerSummary = (): ExplorerSummary | undefined => (props.summary.view === "explorer" ? props.summary : undefined);
-  function loaded(kind: "chart"): Extract<CloudAiView, { view: "chart" }> | null | undefined;
-  function loaded(kind: "table"): CloudAiTableView | null | undefined;
-  function loaded(kind: "group"): Extract<CloudAiView, { view: "group" }> | null | undefined;
-  function loaded(kind: "stats"): CloudAiStatsView | null | undefined;
-  function loaded(kind: "details"): CloudAiDetailsView | null | undefined;
-  function loaded(kind: "explorer"): CloudAiExplorerView | null | undefined;
+  function loaded(kind: "chart"): import("@k2b/ui/charts").ChartInput | null | undefined;
+  function loaded(kind: "table"): CloudTableDescription | null | undefined;
+  function loaded(kind: "group"): import("../view-block").CloudGroupDescription | null | undefined;
+  function loaded(kind: "stats"): CloudStatsDescription | null | undefined;
+  function loaded(kind: "details"): CloudDetailsDescription | null | undefined;
+  function loaded(kind: "explorer"): CloudExplorerDescription | null | undefined;
   function loaded(kind: CloudAiView["view"]) {
     const value = view();
-    return value && value.view !== kind ? null : value;
+    return value ? (("kind" in value ? kind === "chart" : value.block === kind) ? value : null) : value;
   }
   return (
     <div data-view-path={props.path} class="min-w-0">

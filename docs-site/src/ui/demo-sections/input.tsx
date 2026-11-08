@@ -10,6 +10,7 @@ import {
   ChoiceChips,
   ChoiceList,
   ChoiceSlider,
+  ChoiceSliderIndicator,
   ChoiceTiles,
   ColorChoices,
   ColorInput,
@@ -1338,7 +1339,9 @@ const ChoiceSliderDemo = () => {
   value={value}
   onValueChange={setValue}
   onActiveChange={setActive}
-/>`}
+/>
+
+<ChoiceSliderIndicator count={4} index={1} />`}
     >
       <div class="mx-auto grid w-full max-w-80 gap-1">
         <p class="text-center text-base font-semibold text-(--k2b-action)">{label()}</p>
@@ -1349,6 +1352,13 @@ const ChoiceSliderDemo = () => {
           onValueChange={setValue}
           onActiveChange={setActive}
         />
+        <p class="flex items-center justify-center gap-2 text-sm text-(--k2b-text-secondary)">
+          <ChoiceSliderIndicator
+            count={choiceSliderOptions.length}
+            index={choiceSliderOptions.findIndex((option) => option.value === value())}
+          />
+          Indicator for a trigger
+        </p>
       </div>
     </DemoCard>
   );
