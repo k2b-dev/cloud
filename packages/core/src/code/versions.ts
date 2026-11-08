@@ -314,7 +314,7 @@ export async function submitCodeVersion(
       throw new CodeVersionError("code_policy_never", "The current Code policy forbids this version.");
     let approvalId: string | null = null;
     let reviewDigest: string | null = null;
-    if (rows.some((row) => row.value === "admin")) {
+    if (rows.some((row) => row.value === "admin") || input.manifest.entrypoints.some((entry) => entry.route?.audience !== undefined)) {
       const review = reviewFor(code, binding, snapshot, comparison, context);
       if (!CapabilityActionCallReviewSchema.safeParse(review).success)
         throw new CodeDataError("BAD_INPUT", "The complete version review exceeds the approval content budget.");
@@ -605,7 +605,10 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
       decision.binding.manifestHash !== approvalArgsDigest(version.manifest))
   )
     throw new CodeVersionError("code_hash_mismatch", "Approval evidence does not match this version.");
-  if (rows.some((row) => row.value === "admin") && !decision?.approved)
+  if (
+    (rows.some((row) => row.value === "admin") || manifest.entrypoints.some((entry) => entry.route?.audience !== undefined)) &&
+    !decision?.approved
+  )
     throw new CodeVersionError("code_approval_required", "Cloud-admin version approval is required.");
   return { policyRevision: policy.revision };
 }

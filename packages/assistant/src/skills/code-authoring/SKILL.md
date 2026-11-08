@@ -54,6 +54,25 @@ place without data. `code_check` reports a wrong prop as a type error and a
 misplaced part as `code_page_child`. Forms and buttons POST to an own route
 (`app.post`), which answers with `c.page(...)` or `c.redirect(path)`.
 
+Hosted routes default to their owner's readers. For resource Code, Cloud asks
+the resource's normal reader as the visitor before running any handler; Code
+shares do not replace resource read access. Personal pages admit the owner and
+current Code reader/editor shares. App Code uses Code read access. An excluded
+signed-in visitor receives the same 404 as a missing route.
+
+Only widen when the person explicitly requests it: declare one literal
+`{ audience: "signed-in" }` or `{ audience: { groupId: "<Cloud group UUID>" } }`
+on each intended route. Discover the real group UUID; never invent one. The
+checker records the audience in the manifest. Explain it during review: the
+version requires Cloud-admin approval even if execution policy is automatic,
+and activation switches the audience. Public routes still use the explicit
+`{ public: true }` declaration and its existing policy. Do not combine public
+and audience options. Shared readers can submit forms and call mutating routes
+under the personal owner's mandate. Use `c.user` to narrow actions when needed.
+Execution still
+uses the Code's account or owner's mandate, so return only data meant for the
+declared audience. Never activate the version from authoring tools.
+
 <!-- code-page-example -->
 ```tsx
 import { app, jsx, Page, Stats, Stat, Section, Chart, Table, Column, Form, Field, Option } from "@sdk";

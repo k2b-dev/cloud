@@ -72,6 +72,33 @@ test("SDK runtime routes return description responses without cookies, HTML or a
   ).toEqual({ kind: "json", status: 200, body: "null" });
 });
 
+test("SDK route descriptors retain widened audiences and preserve the visitor projection", async () => {
+  const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  for (const [path, audience] of [
+    ["/people", "signed-in"],
+    ["/group", { groupId: "11111111-1111-4111-8111-111111111111" }],
+  ] as const) {
+    runtime.app.get(path, (c: { user: unknown; json(value: unknown): Response }) => c.json(c.user), { audience });
+    expect(runtime.__codeSdk.entries()).toContainEqual({
+      kind: "route",
+      entrypoint: `route:GET:${path}`,
+      cron: null,
+      route: { method: "GET", path, public: false, audience },
+    });
+    expect(
+      await runtime.__codeSdk.run(`route:GET:${path}`, {
+        method: "GET",
+        path,
+        query: "",
+        contentType: "text/plain",
+        body: "",
+        params: {},
+        user: { id: "visitor", groups: [] },
+      }),
+    ).toEqual({ kind: "json", status: 200, body: JSON.stringify({ id: "visitor", groups: [] }) });
+  }
+});
+
 test("personal Code registers private and public routes like resource Code", () => {
   for (const options of ["", ", { public: true }"]) {
     const result = analyzeCode({
@@ -107,4 +134,24 @@ test("checked manifests bind route descriptors and public classification", async
     expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, entrypoints: [entry], policyRows: ["public_routes"] }).success).toBe(
       false,
     );
+});
+
+test.each([
+  ['{ audience: "signed-in" }', "signed-in"],
+  ['{ audience: { groupId: "11111111-1111-4111-8111-111111111111" } }', { groupId: "11111111-1111-4111-8111-111111111111" }],
+] as const)("the checker records the literal audience %s as a manifest fact", (options, audience) => {
+  const result = analyze(`import { app } from "@sdk"; app.get("/", c => c.text("x"), ${options});`);
+  expect(result.diagnostics).toEqual([]);
+  expect(result.entrypoints[0]?.route).toEqual({ method: "GET", path: "/", public: false, audience });
+});
+
+test.each([
+  '{ public: true, audience: "signed-in" }',
+  '{ audience: String("signed-in") }',
+  '{ audience: { groupId: "" } }',
+  '{ audience: { groupId: "not-a-group-id" } }',
+  '{ audience: { groupId: "11111111-1111-4111-8111-111111111111", extra: true } }',
+  '{ ...{ audience: "signed-in" } }',
+])("the checker refuses an ambiguous, computed or malformed audience: %s", (options) => {
+  expect(analyze(`import { app } from "@sdk"; app.get("/", c => c.text("x"), ${options});`).diagnostics.length).toBeGreaterThan(0);
 });

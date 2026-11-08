@@ -118,6 +118,18 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
   return { title: result.data.data.view.title, admin: result.data.data.view.permission === "admin" };
 };
 
+/** Explicit Code shares, without the management surface's implicit administrator access. */
+export const codeSharePermission = async (codeId: string, context: CodeContext, db: SQL = sql) => {
+  const entries = await db<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id = ${codeId}`;
+  return getEffectivePermission(
+    {
+      accessIds: entries.map((row) => row.access_id),
+      subject: context.authority.accessSubject,
+    },
+    db,
+  );
+};
+
 /** Default editors are the personal owner or live owner administrators; explicit shares add editors/readers.
  * Unfiltered lists skip owner providers; edits fail visibly when live owner authority cannot be checked.
  */
@@ -130,14 +142,7 @@ export const codePermission = async (
   const user = codePerson(context);
   const cloudAdmin = user.roles.includes("admin");
   if (code.owner.kind === "person" && code.owner.userId === user.id) return "editor";
-  const entries = await db<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id = ${code.id}`;
-  const permission = await getEffectivePermission(
-    {
-      accessIds: entries.map((row) => row.access_id),
-      subject: context.authority.accessSubject,
-    },
-    db,
-  );
+  const permission = await codeSharePermission(code.id, context, db);
   if (permission === "write" || permission === "admin") return "editor";
   if (code.owner.kind !== "person" && ownerCheck !== "skip") {
     try {

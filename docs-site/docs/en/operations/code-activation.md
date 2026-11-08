@@ -5,7 +5,7 @@ section: Operations
 order: 1255
 description: Upgrade and recover Code activation while preserving normal shares and version entries.
 tags: [code, operations, recovery]
-updated: 2026-11-05
+updated: 2026-11-08
 ---
 
 # Code activation recovery
@@ -79,6 +79,28 @@ the narrowed owner projection. An older activation worker requires its old
 schema and is not a compatible application-only rollback. Keep a database
 backup under the installation's normal backup policy and prefer rolling
 forward. Never replay old activation plans to reconstruct rights.
+
+## Upgrade hosted page audiences
+
+This change is proposed on `feat/code`; it has no effect on `main` until the
+Gustav gate and the page-audience decision are approved.
+
+Deploy matching Core and Cloud library versions together. Existing checked
+manifests need no data rewrite: a route without `audience` immediately uses the
+new default. Resource-owned pages require the visitor's current resource reader;
+personal pages admit their owner and current Code shares. App-owned pages use
+Code read access. Existing explicit public routes retain their declaration and
+policy rules. Source, management access and execution grants stay unchanged.
+Existing personal Code shares also admit those readers to form submissions and mutating routes
+under the owner's mandate; review these routes before upgrading.
+
+Before upgrading a `feat/code` installation, review active pages and their
+intended readers. If a page should serve all signed-in people or one group,
+add a literal audience declaration, check and submit a new version, obtain
+Cloud-admin version approval, then activate it. A pending version does not
+widen the active page. Keep handler-level visitor checks for finer rules.
+No setting enables wider access globally. Removing a resource grant or group
+membership takes effect on the next request.
 
 ## Recover an unfinished activation
 

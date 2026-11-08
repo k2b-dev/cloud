@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+/** An explicit replacement for the owner-reader audience; omission keeps the owner boundary. */
+export const CodePageAudienceSchema = z.union([
+  z.literal("signed-in"),
+  z.strictObject({ groupId: z.uuid().describe("The one Cloud group allowed to visit this route.") }),
+]);
+
 /** Literal, segment-based route grammar shared by checker, Core and SDK. Declaration order wins. */
 export const CodeRouteSchema = z
   .object({
@@ -15,8 +21,10 @@ export const CodeRouteSchema = z
       })
       .describe("Code-relative path with optional named segments."),
     public: z.boolean().describe("Whether the route accepts anonymous visitors without a user."),
+    audience: CodePageAudienceSchema.optional().describe("Explicit signed-in or group audience; absent means owner readers."),
   })
-  .strict();
+  .strict()
+  .refine((route) => !route.public || route.audience === undefined, "Public routes cannot also declare a signed-in audience");
 export type CodeRoute = z.infer<typeof CodeRouteSchema>;
 /** Unambiguous first match; HEAD uses GET. URLs are decoded one segment at a time, never as a path. */
 export function matchCodeRoute(route: CodeRoute, method: string, path: string): Record<string, string> | null {

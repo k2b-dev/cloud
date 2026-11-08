@@ -44,6 +44,8 @@ function hosting(
   signed = false,
   response: Awaited<ReturnType<typeof requestCodeRoute>> = { kind: "json", status: 200, body: '{"returned":true}' },
   personalOwner: string | null = null,
+  readable = true,
+  audience?: "signed-in" | { groupId: string },
 ) {
   const rate = spyOn(server, "ratelimit").mockImplementation(({ id }) => ({
     id,
@@ -55,7 +57,7 @@ function hosting(
     () => rate.mockRestore(),
     () => groups.mockRestore(),
   );
-  const route = { method: "ALL" as const, path: "/", public: isPublic };
+  const route = { method: "ALL" as const, path: "/", public: isPublic, ...(audience === undefined ? {} : { audience }) };
   const manifest: CodeCheckedVersionManifest = {
     version: 1,
     entry: "code.ts",
@@ -80,6 +82,7 @@ function hosting(
     "/",
     createCodeHostingRoutes({
       version: async () => ({ versionId: "version", manifest, personalOwner }),
+      readable: async () => readable,
       request: async (input) => {
         calls.push(input);
         return response;
@@ -202,6 +205,7 @@ test("a cancelled request stops waiting on a dependency before dispatch", async 
   router.route(
     "/",
     createCodeHostingRoutes({
+      readable: async () => true,
       version: () => {
         entered();
         return new Promise(() => {});
@@ -220,20 +224,51 @@ test("a cancelled request stops waiting on a dependency before dispatch", async 
   expect(dispatched).toBe(false);
 });
 
-test("personal Code pages open only for their owner unless the route is public", async () => {
+test("non-readers receive the same 404 as a missing route before any handler runs", async () => {
+  const page = hosting(false, true, undefined, null, false);
+  const denied = await page.router.request(`/code/${codeId}/`);
+  const missing = await page.router.request(`/code/${codeId}/missing`);
+  expect(denied.status).toBe(404);
+  expect(await denied.json()).toEqual(await missing.json());
+  for (const method of ["HEAD", "POST", "PUT", "DELETE"])
+    expect((await page.router.request(`/code/${codeId}/`, { method })).status).toBe(404);
+  expect(page.calls).toHaveLength(0);
+});
+
+test("personal Code pages admit owners and shared readers and hide other people", async () => {
   const other = "22222222-2222-4222-8222-222222222222";
-  const foreign = hosting(false, true, undefined, other);
-  const refused = await foreign.router.request(`/code/${codeId}/`);
-  expect(refused.status).toBe(403);
-  expect(await refused.json()).toEqual({ code: "code_owner_only" });
+  const foreign = hosting(false, true, undefined, other, false);
+  expect((await foreign.router.request(`/code/${codeId}/`)).status).toBe(404);
   expect(foreign.calls).toHaveLength(0);
   expect((await hosting(false, false, undefined, id).router.request(`/code/${codeId}/`)).status).toBe(401);
-  const owner = hosting(false, true, undefined, id);
-  expect((await owner.router.request(`/code/${codeId}/`)).status).toBe(200);
-  expect(owner.calls[0]?.request.user).toEqual({ id, groups: ["group"] });
-  const open = hosting(true, true, undefined, other);
+  for (const ownerId of [id, other]) {
+    const reader = hosting(false, true, undefined, ownerId, true);
+    expect((await reader.router.request(`/code/${codeId}/`)).status).toBe(200);
+    expect(reader.calls[0]?.request.user).toEqual({ id, groups: ["group"] });
+  }
+  const open = hosting(true, false, undefined, other, false);
   expect((await open.router.request(`/code/${codeId}/`)).status).toBe(200);
   expect(open.calls[0]?.request.user).toBeNull();
+});
+
+test("explicit signed-in and group audiences can admit non-readers but still require a person", async () => {
+  for (const audience of ["signed-in", { groupId: "group" }] as const) {
+    const page = hosting(false, true, undefined, null, false, audience);
+    expect((await page.router.request(`/code/${codeId}/`)).status).toBe(200);
+    expect(page.calls[0]?.request.user).toEqual({ id, groups: ["group"] });
+    const unsigned = hosting(false, false, undefined, null, false, audience);
+    expect((await unsigned.router.request(`/code/${codeId}/`)).status).toBe(401);
+  }
+  const excluded = hosting(false, true, undefined, null, true, { groupId: "another-group" });
+  expect((await excluded.router.request(`/code/${codeId}/`)).status).toBe(404);
+  expect(excluded.calls).toHaveLength(0);
+});
+
+test("a group UUID is compared in canonical form", async () => {
+  const page = hosting(false, true, undefined, null, false, { groupId: "ABCDEFAB-1111-4111-8111-111111111111" });
+  const groups = spyOn(server, "getEffectiveGroups").mockResolvedValue([{ id: "abcdefab-1111-4111-8111-111111111111", name: "Team" }]);
+  restores.push(() => groups.mockRestore());
+  expect((await page.router.request(`/code/${codeId}/`)).status).toBe(200);
 });
 
 test("the island receives a checked tree only from hosting, never Code JSON shaped like one", async () => {

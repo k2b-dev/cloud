@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 import ts from "@typescript/typescript6";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
-import { CodeRouteSchema } from "../contracts/code-routes";
+import { CodePageAudienceSchema, CodeRouteSchema } from "../contracts/code-routes";
 import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/code-version";
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeCronSchedule } from "../shared/cron-schedule";
@@ -400,30 +400,42 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           if (["get", "post", "put", "delete", "all"].includes(method) && collecting) {
             const paths = node.arguments[0] && literals(node.arguments[0]);
             const opts = node.arguments[2];
-            // Public exposure must be an explicit literal, never a computed flag or spread.
+            // Exposure is one literal declaration, never a computed value or spread.
             let isPublic = false;
+            let audience: unknown;
             let validOptions = !opts;
             if (opts && ts.isObjectLiteralExpression(opts) && opts.properties.length === 1) {
               const prop = opts.properties[0]!;
-              if (
-                ts.isPropertyAssignment(prop) &&
-                prop.name.getText() === "public" &&
-                (prop.initializer.kind === ts.SyntaxKind.TrueKeyword || prop.initializer.kind === ts.SyntaxKind.FalseKeyword)
-              ) {
-                isPublic = prop.initializer.kind === ts.SyntaxKind.TrueKeyword;
-                validOptions = true;
+              if (ts.isPropertyAssignment(prop)) {
+                if (
+                  prop.name.getText() === "public" &&
+                  (prop.initializer.kind === ts.SyntaxKind.TrueKeyword || prop.initializer.kind === ts.SyntaxKind.FalseKeyword)
+                ) {
+                  isPublic = prop.initializer.kind === ts.SyntaxKind.TrueKeyword;
+                  validOptions = true;
+                } else if (prop.name.getText() === "audience") {
+                  const value = prop.initializer;
+                  if (ts.isStringLiteral(value)) audience = value.text;
+                  else if (ts.isObjectLiteralExpression(value) && value.properties.length === 1) {
+                    const group = value.properties[0]!;
+                    if (ts.isPropertyAssignment(group) && group.name.getText() === "groupId" && ts.isStringLiteral(group.initializer))
+                      audience = { groupId: group.initializer.text };
+                  }
+                  validOptions = CodePageAudienceSchema.safeParse(audience).success;
+                }
               }
             }
             const route = CodeRouteSchema.safeParse({
               method: method.toUpperCase(),
               path: paths?.length === 1 ? paths[0] : null,
               public: isPublic,
+              ...(audience === undefined ? {} : { audience }),
             });
             if (!route.success || !validOptions || !ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
               report(
                 node,
                 "code_static_route",
-                "Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false }.",
+                'Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false }, { audience: "signed-in" } oder { audience: { groupId: "UUID" } }.',
               );
             else {
               const name = "route:" + route.data.method + ":" + route.data.path;

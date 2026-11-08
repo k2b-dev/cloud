@@ -22,15 +22,15 @@ export class CodeRequestError extends Error {
   }
 }
 /** Admission snapshots the active checked manifest. No visitor credentials or grants enter data dispatch.
- * Personal Code runs with its owner's mandate, so only that owner may open its non-public routes. */
+ * Hosting checks the visitor separately; personal Code retains its owner's mandate. */
 export async function codeRequestVersion(codeId: string) {
-  const [row] = await sql<{ manifest: unknown; active_version_id: string; owner_user_id: string | null }[]>`SELECT v.manifest,
-    c.active_version_id,CASE WHEN c.owner_kind='person' THEN c.owner_user_id::text END AS owner_user_id FROM code.codes c
+  const [row] = await sql<{ manifest: unknown; active_version_id: string }[]>`SELECT v.manifest,
+    c.active_version_id FROM code.codes c
     JOIN code.versions v ON v.id=c.active_version_id
     WHERE c.id=${codeId} AND (c.service_account_id IS NOT NULL OR c.owner_kind='person') AND c.state='active'`;
   const parsed = CodeCheckedVersionManifestSchema.safeParse(row?.manifest);
   if (!row || !parsed.success) throw new CodeRequestError("code_route_not_found", 404);
-  return { versionId: row.active_version_id, manifest: parsed.data, personalOwner: row.owner_user_id };
+  return { versionId: row.active_version_id, manifest: parsed.data };
 }
 /** One bounded request/response job, backed by the normal run lease, mandate and audit trail.
  * No automatic retries: even a disconnected client must never cause an implicit second POST. */

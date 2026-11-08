@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Code SDK
@@ -490,7 +490,8 @@ app.post("/save", async c => {
 ```
 
 `get`, `post`, `put`, `delete` and `all` accept a handler and optional
-`{ public: true | false }`. Paths contain literal segments and named parameters
+`{ public: true | false }`, `{ audience: "signed-in" }` or
+`{ audience: { groupId: "<Cloud group UUID>" } }`. Choose one option. Paths contain literal segments and named parameters
 such as `:id`; declarations match in order. `HEAD` uses the GET handler.
 Handlers return `c.json(value, status?)`, `c.text(text, status?)` or
 `c.redirect(path, status?)`. Redirects stay inside this Code's namespace;
@@ -499,19 +500,52 @@ cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
 `text()` and `formData()`. Core forwards only the request data, never browser
 cookies or credentials.
 
-Personal Code runs its routes with its owner's mandate, like its schedules. Its
-non-public routes therefore open only for that owner; any other signed-in person
-receives `403` with `code_owner_only`. Public routes of personal Code follow the
-same rules as below and still run with the owner's mandate, so return only what
-any visitor may see.
+Non-public routes require a signed-in session. Before any handler runs, Core
+checks who may open the page:
 
-Routes require a signed-in session by default. `c.user` contains that person's
-ID and effective group IDs; check it in the handler when access depends on the
-visitor. Public routes also require the `public_routes` policy classification and version-bound
-administrator approval by default. Existing policy tables initially forbid this new
-classification until an operator chooses its rule. Public routes require the literal `{ public: true }` in the checked
-version and always receive `c.user === null`, including for signed-in visitors.
-There is no platform audience or implicit access to underlying resources.
+- Resource-owned Code uses the resource's normal reader under the visitor's
+  authority. The visitor must be able to read that resource. A Code share or
+  Cloud-administrator role alone does not replace the resource reader.
+- Personal Code admits its owner and people with a current Code reader or
+  editor share, including group shares.
+- App-owned Code admits people who may read that Code.
+
+A signed-in visitor outside the audience receives `404` with
+`code_route_not_found`, the same result as a missing route. No handler runs.
+Unavailable resource readers fail closed with `503`; restore the provider and retry.
+The check also applies to forms, JSON/text endpoints, HEAD and live reloads.
+
+To replace this default audience, declare one wider audience on each route:
+
+```ts
+app.get("/directory", c => c.text("For signed-in people"), { audience: "signed-in" });
+app.get("/team", c => c.text("For one group"), {
+  audience: { groupId: "11111111-1111-4111-8111-111111111111" },
+});
+```
+
+Use the group's current UUID from Cloud. Group membership is resolved on every
+request, including inherited membership. These declarations must be literals.
+The checker records them in `manifest.entrypoints[].route.audience`. Every version
+with one requires Cloud-admin version approval, even under an automatic execution
+policy. Submitting a draft keeps the active version and its audience unchanged;
+activate the approved version to switch. Changing the group or audience requires
+a new checked and approved version. A group audience admits only that group's
+members, including when another person can read the resource.
+
+`c.user` contains the signed-in visitor's ID and effective group IDs. Handlers
+may apply finer rules after the platform check. Personal Code still executes
+with its owner's mandate. Shared readers can submit forms and call mutating
+routes under that mandate; use `c.user` checks to narrow those actions when
+needed. Sharing does not change the visitor's own grants.
+
+Public routes keep the existing explicit `{ public: true }` declaration and
+`public_routes` policy classification. They require version-bound administrator
+approval by default; existing policy tables initially forbid this classification
+until an operator chooses its rule. Public handlers always receive
+`c.user === null`, including for signed-in visitors. Return only data intended
+for their declared audience.
+
 SDK calls retain the Code's execution principal and its existing grants;
 the visitor's grants never become data authority.
 

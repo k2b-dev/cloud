@@ -5,7 +5,7 @@ section: Platform services
 order: 681
 description: Check Code types, review called operations and targets, and build an immutable runner version.
 tags: [code, checker, permissions, runner]
-updated: 2026-11-01
+updated: 2026-11-08
 ---
 
 # Code checker
@@ -158,3 +158,14 @@ client result is refused. This check grants no execution permission.
 `code_job_failed`. Busy means
 retry later. Administration > Code bounds pending jobs and queue allowance;
 no caller waits indefinitely. Forward the request's cancellation signal.
+
+
+## Review page audiences
+
+A route without an audience declaration uses its owner's readers. An explicit
+`{ audience: "signed-in" }` or `{ audience: { groupId: "<Cloud group UUID>" } }`
+appears in the checked route descriptor as `audience`. The checker refuses
+computed declarations and combinations with `public`. Review this fact with
+the version's source: widening takes effect only after Cloud-admin version
+approval and activation. See [Serve routes](/en/docs/platform/code-sdk#serve-routes)
+for the entry rules and refusal responses.

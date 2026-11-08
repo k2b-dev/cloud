@@ -41,7 +41,7 @@ export const CodeVersionEntrypointSchema = z
   .strictObject({
     kind: z.enum(["schedule", "manual", "event", "route"]).describe("Scheduled, manually invoked, event-triggered or HTTP entrypoint."),
     event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),
-    route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
+    route: CodeRouteSchema.optional().describe("Checked method, path and audience declaration for a route handler."),
     entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
     title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
     cron: z.string().nullable().describe("Five-field cron expression; null for a one-time or manual entrypoint."),

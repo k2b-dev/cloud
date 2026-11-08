@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { CODE_REQUEST_LIMITS, CodeRouteRequestSchema, codeOwnPath, matchCodeRoute, validateCodePage } from "@k2b/cloud/code";
-import { auth, clientIp, clientIpBucket, getEffectiveGroups, middleware, ratelimit } from "@k2b/cloud/server";
+import { auth, clientIp, clientIpBucket, getEffectiveGroups, getLocale, middleware, ratelimit } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { canReadCodePage } from "./page-access";
 import { type CodePageHostingContext, codePageHandlers } from "./render-page";
 import { waitCodeRequest } from "./request-deadline";
 import { CodeRequestError, codeRequestVersion, requestCodeRoute } from "./requests";
@@ -41,7 +42,7 @@ export async function readCodeRequestBody(request: Request, maxBytes: number, si
     reader.releaseLock();
   }
 }
-export function createCodeHostingRoutes(deps = { version: codeRequestVersion, request: requestCodeRoute }) {
+export function createCodeHostingRoutes(deps = { version: codeRequestVersion, request: requestCodeRoute, readable: canReadCodePage }) {
   const router = new Hono<CodePageHostingContext>();
   router.use("/code/:codeId/*", middleware.noTransform(), auth.requireRole("*"));
   router.all(
@@ -71,8 +72,26 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           (c.get("credentialKind") !== "session" || actor?.kind !== "user" || subject?.type !== "user" || subject.userId !== actor.user.id)
         )
           return c.json({ code: "code_sign_in_required" }, 401);
-        if (!isPublic && version.personalOwner && actor?.kind === "user" && actor.user.id !== version.personalOwner)
-          return c.json({ code: "code_owner_only" }, 403);
+        const groups =
+          !isPublic && subject?.type === "user"
+            ? (await waitCodeRequest(getEffectiveGroups({ userId: subject.userId }), signal)).map((group) => group.id)
+            : [];
+        if (!isPublic) {
+          const audience = selected.route.audience;
+          const allowed =
+            audience === "signed-in" ||
+            (audience !== undefined && groups.includes(audience.groupId.toLowerCase())) ||
+            (audience === undefined &&
+              (await waitCodeRequest(
+                deps.readable(codeId, {
+                  authority: auth.getAuthority(c),
+                  locale: getLocale(c),
+                  signal,
+                }),
+                signal,
+              )));
+          if (!allowed) return c.json({ code: "code_route_not_found" }, 404);
+        }
         if (isPublic) {
           const limiter = ratelimit({ id: "code-public-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
           if (
@@ -113,7 +132,7 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           !isPublic && actor?.kind === "user" && subject?.type === "user"
             ? {
                 id: actor.user.id,
-                groups: (await waitCodeRequest(getEffectiveGroups({ userId: subject.userId }), signal)).map((group) => group.id),
+                groups,
               }
             : null;
         const response = await waitCodeRequest(

@@ -1,11 +1,17 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema, CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
 import { approvalArgsDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
+import { createConfig } from "@k2b/ssr";
+import { Hono } from "hono";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
@@ -24,7 +30,7 @@ import * as authoringChecks from "./authoring-check";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { addCodeShare, codeBundleHash, codeSourceHash, createCode, findCode, readCode, readCodeVersion } from "./store";
+import { addCodeShare, codeBundleHash, codeSourceHash, createCode, findCode, readCode, readCodeVersion, removeCodeShare } from "./store";
 import type { CodeCheckedVersionManifest, CodeVersionSubmission } from "./version-contracts";
 import { codeVersionDiff } from "./version-diff";
 import {
@@ -205,6 +211,142 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     setSystemTime();
+  });
+
+  test("hosting checks real reader shares and widens only after version approval under an automatic policy", async () => {
+    const code = await newCode();
+    const root = mkdtempSync(join(tmpdir(), "core-code-audience-"));
+    Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+    const { createCodeHostingRoutes } = await import("./hosting");
+    const { codeRequestVersion } = await import("./requests");
+    const { canReadCodePage } = await import("./page-access");
+    let visitorId = strangerId;
+    const router = new Hono<AuthContext>();
+    router.use("*", async (c, next) => {
+      c.set("actor", context(visitorId).authority.actor);
+      c.set("accessSubject", { type: "user", userId: visitorId });
+      c.set("credentialKind", "session");
+      c.set("sessionToken", "audience-fixture-session");
+      return next();
+    });
+    router.route(
+      "/",
+      createCodeHostingRoutes({
+        version: codeRequestVersion,
+        readable: canReadCodePage,
+        request: async (request) => {
+          // The same version-bound approval check as request admission, without starting a runner job.
+          const current = await findCode(request.codeId);
+          if (!current) throw new Error("Code missing");
+          await requireCodeVersionApproval(current, request.versionId, sql);
+          return { kind: "text", status: 200, body: "Page" };
+        },
+      }),
+    );
+    const originalDraft = input(code, "original", null, ["read"]);
+    originalDraft.manifest.entrypoints = [
+      {
+        kind: "route",
+        entrypoint: "route:ALL:/",
+        route: { method: "ALL", path: "/", public: false },
+        cron: null,
+        file: "code.ts",
+        line: 1,
+      },
+    ];
+    const original = await submitCodeVersion(originalDraft, author);
+    await activate(code, original);
+    await sql`INSERT INTO auth.groups(id,cn,name,provider) VALUES(${reviewerId}::uuid,'audience-group','Audience group','local')`;
+    await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${strangerId}::uuid,${reviewerId}::uuid)`;
+    // Exercise real Code shares through hosting before proposing a wider audience.
+    expect((await router.request(`/code/${code.id}/`)).status).toBe(404);
+    visitorId = authorId;
+    expect((await router.request(`/code/${code.id}/`)).status).toBe(200);
+    visitorId = reviewerId;
+    expect((await router.request(`/code/${code.id}/`)).status).toBe(404);
+    visitorId = strangerId;
+    for (const principal of [
+      { type: "user", userId: strangerId },
+      { type: "group", groupId: reviewerId },
+    ] as const) {
+      const shareId = await addCodeShare(code.id, principal, "reader", author);
+      const page = await router.request(`/code/${code.id}/`);
+      expect(page.status).toBe(200);
+      expect(
+        (
+          await router.request(`/code/${code.id}/`, {
+            method: "POST",
+            headers: { "X-Code-CSRF": page.headers.get("X-Code-CSRF")! },
+          })
+        ).status,
+      ).toBe(200);
+      await removeCodeShare(code.id, shareId, author);
+      expect((await router.request(`/code/${code.id}/`)).status).toBe(404);
+    }
+    const resourceReader = spyOn(provider, "invokeCapabilityWithDataSchema").mockResolvedValue({
+      ok: true,
+      data: { data: { view: { title: "Resource page owner", permission: "admin" } } },
+    });
+    try {
+      const resource = await createCode(
+        {
+          owner: { kind: "resource", ref: { type: "example.item", id: "page-owner" } },
+          title: "Resource page",
+        },
+        author,
+      );
+      const resourceDraft = input(resource, "resource page", null, ["read"]);
+      resourceDraft.manifest.entrypoints = originalDraft.manifest.entrypoints;
+      const resourceVersion = await submitCodeVersion(resourceDraft, author);
+      await activate(resource, resourceVersion);
+      await addCodeShare(resource.id, { type: "user", userId: strangerId }, "reader", author);
+      resourceReader.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+      expect((await router.request(`/code/${resource.id}/`)).status).toBe(404);
+      resourceReader.mockResolvedValue({
+        ok: true,
+        data: { data: { view: { title: "Resource page owner", permission: "read" } } },
+      });
+      expect((await router.request(`/code/${resource.id}/`)).status).toBe(200);
+      expect(resourceReader).toHaveBeenLastCalledWith(
+        expect.objectContaining({ appId: "example", capabilityId: "item.read", input: { id: "page-owner" } }),
+        expect.anything(),
+        expect.objectContaining({ authority: expect.objectContaining({ accessSubject: { type: "user", userId: strangerId } }) }),
+      );
+      resourceReader.mockRejectedValue(new Error("Reader unavailable"));
+      expect((await router.request(`/code/${resource.id}/`)).status).toBe(503);
+    } finally {
+      resourceReader.mockRestore();
+    }
+    let base = original.version.id;
+    for (const audience of ["signed-in", { groupId: reviewerId }] as const) {
+      const draft = input(code, JSON.stringify(audience), base, ["read"]);
+      draft.manifest.entrypoints = [
+        {
+          kind: "route",
+          entrypoint: "route:GET:/",
+          route: { method: "GET", path: "/", public: false, audience },
+          cron: null,
+          file: "code.ts",
+          line: 1,
+        },
+      ];
+      const next = await submitCodeVersion(draft, author);
+      expect(next.approvalId).not.toBeNull();
+      expect(next.status).toBe("pending");
+      await expect(activate(code, next)).rejects.toMatchObject({ code: "code_approval_required" });
+      expect((await findCode(code.id))?.activeVersionId).toBe(base);
+      const before = await router.request(`/code/${code.id}/`);
+      // The pending declaration never replaces the active default or previous audience.
+      expect(before.status).toBe(base === original.version.id ? 404 : 200);
+      await decideCodeVersion(next.binding, true, reviewer);
+      await activate(code, next);
+      expect((await findCode(code.id))?.activeVersionId).toBe(next.version.id);
+      expect((await router.request(`/code/${code.id}/`)).status).toBe(200);
+      base = next.version.id;
+    }
+    await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${reviewerId}::uuid`;
+    await expect(requireCodeVersionApproval(code, base, sql)).rejects.toMatchObject({ code: "code_approval_revoked" });
+    expect((await router.request(`/code/${code.id}/`)).status).toBe(503);
   });
 
   test("the Code pause Action forwards its target ID to the owning service", async () => {
