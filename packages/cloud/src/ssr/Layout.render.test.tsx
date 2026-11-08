@@ -339,7 +339,7 @@ describe("Cloud layouts SSR", () => {
   });
 
   test("keeps anonymous login and preferences visible without rendering the application rail", async () => {
-    const response = await server.request("/layout", {
+    const response = await server.request("/layout?tab=open", {
       headers: { Cookie: "theme=dark", "Accept-Language": "de-CH" },
     });
     const html = await response.text();
@@ -347,7 +347,8 @@ describe("Cloud layouts SSR", () => {
     expect(response.status).toBe(200);
     expect(html).toContain('<html lang="de-CH" class="dark"');
     expect(html).toContain("layout-header");
-    expect(html).toContain('href="/auth/login"');
+    // Sign in returns to the page, query included.
+    expect(html).toContain(`href="/auth/login?redirectTo=${encodeURIComponent("/layout?tab=open")}"`);
     expect(html).toContain("Anmelden");
     expect(html).toContain("Darstellung und Sprache");
     expect(html).toContain('aria-label="Darstellung: Dunkel. Wechselt zu Automatisch."');
@@ -367,7 +368,7 @@ describe("Cloud layouts SSR", () => {
     // Home and Sign in stay server markup, so focus on them survives the shell's mount.
     const chrome = withoutIslands(html).match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
     expect(chrome).toContain('href="/"');
-    expect(chrome).toContain('href="/auth/login"');
+    expect(chrome).toContain(`href="/auth/login?redirectTo=${encodeURIComponent("/layout")}"`);
     expect(html).not.toContain('class="cloud-tab-bar"');
   });
 

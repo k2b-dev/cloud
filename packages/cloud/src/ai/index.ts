@@ -388,6 +388,7 @@ export type {
   AiCapabilityToolPresentation,
   AiClientToolId,
   AiConversation,
+  AiConversationCounts,
   AiConversationDraft,
   AiConversationPage,
   AiConversationPlace,

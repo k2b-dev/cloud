@@ -28,6 +28,41 @@ describe("CloudResourceSearch selection", () => {
     return;
   }
 
+  test("renders an app's distinct result groups contiguously", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const results = [
+      item("ordinary-1"),
+      { ...item("place-1"), group: "An Orten" },
+      item("ordinary-2"),
+      { ...item("place-2"), group: "An Orten" },
+    ];
+    globalThis.fetch = Object.assign(
+      async () =>
+        Response.json({ query: "", count: 4, apps: [{ id: "notebooks", name: "Notebooks", icon: "ti ti-notebook" }], items: results }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    const dispose = render(() => <CloudResourceSearch initialAppId="notebooks" onClose={() => {}} onSelect={() => {}} />, dom.root);
+    try {
+      await waitFor(() => dom.root.querySelectorAll("[data-result-index]").length === 4, "all result groups");
+      expect(Array.from(dom.root.querySelectorAll(".cloud-resource-search__group"), (entry) => entry.textContent)).toEqual([
+        "Notebooks",
+        "An Orten",
+      ]);
+      expect(Array.from(dom.root.querySelectorAll("[data-result-index]"), (entry) => entry.textContent)).toEqual([
+        expect.stringContaining("ordinary-1"),
+        expect.stringContaining("ordinary-2"),
+        expect.stringContaining("place-1"),
+        expect.stringContaining("place-2"),
+      ]);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   test("applies picker filters and returns the selected resource", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;

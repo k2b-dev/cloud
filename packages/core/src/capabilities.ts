@@ -219,6 +219,7 @@ const ChatsSearchInputSchema = z
       .max(10)
       .optional()
       .describe("Require chats to contain every exact structured Cloud resource ref."),
+    place: CloudResourceRefSchema.optional().describe("Search only chats bound to this exact place. Omit to exclude place chats."),
     archived: z.boolean().default(false).describe("Search archived chats instead of active chats."),
     limit: z.number().int().min(1).max(20).default(10).describe("Maximum number of matching chats to return."),
   })
@@ -999,6 +1000,7 @@ export const aiCapabilities = defineCapabilities({
           ownerUserId: context.user.id,
           search: input.query || undefined,
           refs: input.refs,
+          place: input.place ? `${input.place.type}:${input.place.id}` : "none",
           archived: input.archived,
           limit: input.limit,
         });

@@ -47,6 +47,7 @@ const header = (authenticated: boolean) =>
           title: "Files",
           launchpad: true,
           breadcrumbs: authenticated ? undefined : [{ title: "Files", href: "/app/files" }],
+          signInHref: "/auth/login?redirectTo=%2Fapp%2Ffiles",
         });
       },
     }),

@@ -824,6 +824,7 @@ export const CloudResourceViewSchema = z
   .object({
     ref: CloudResourceRefSchema.describe("Stable identity of the result."),
     title: z.string().min(1).max(500).describe("Primary result label."),
+    group: z.string().min(1).max(120).optional().describe("Localized result group within this app, such as At places."),
     preview: z.string().max(2000).optional().describe("Short plain-text result preview."),
     icon: z.string().min(1).max(120).optional().describe("Optional presentation icon."),
     context: CloudResourceReferenceSchema.shape.context,

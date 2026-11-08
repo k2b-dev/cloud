@@ -190,6 +190,7 @@ export default ssr<AuthContext>(async (c) => {
       timeZone={timeZone}
       renderedAt={new Date().toISOString()}
       initialLiveCursor={initialLiveCursor}
+      initialCounts={sidebar.counts}
       initialConversations={initialConversations}
       initialDoneCount={sidebar.doneCount}
       initialQuestions={sidebar.questions}

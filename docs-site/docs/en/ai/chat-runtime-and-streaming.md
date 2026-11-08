@@ -49,6 +49,36 @@ promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
 be archived or marked done and do not become done through inactivity.
 
+## List place chats
+
+A place chat belongs to the person who sent its first message. Opening a place
+never creates a chat. There is one active chat per person and place; starting
+over archives it, and the next message creates its replacement.
+
+`GET /api/ai/conversations` and `/api/ai/conversations/page` accept `place`:
+
+| Value | Chats returned |
+| --- | --- |
+| `none` (default) | Chats without a place. |
+| `any` | Chats bound to a place. |
+| `<type>:<id>` | Chats bound to that exact resource reference. |
+
+The filter combines with the existing search, status, archive, and Project
+filters. Both endpoints return `place: { ref: { type, id }, title }` for place
+chats and `place: null` for ordinary chats. The title is the stored snapshot;
+listing a chat does not call the place provider. The place is also indexed as
+a conversation resource, so the existing exact `refs` filter can find it.
+
+`GET /api/ai/conversations/counts` returns `{ unread, needsAttention, places:
+{ total, unread, needsAttention } }` for the current person's non-archived chats.
+The first two counts include place chats; `places` gives their separate counts.
+Search presents place chats in **At places** (**An Orten** in German).
+The own-chat discovery tool excludes place chats unless its `place` input gives
+an exact resource reference.
+
+Use `cld assistant chats list --place any` or `--place example.conversation:Marta1`
+to list place chats. The default excludes them; table output has a `place` column.
+
 ## Observe work across conversations
 
 Sidebar snapshots include a compact `activity` projection: completed and total

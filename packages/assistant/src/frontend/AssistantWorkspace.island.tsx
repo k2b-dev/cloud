@@ -212,6 +212,7 @@ type Props = {
   /** The server's render time, so hydration builds the same day sections as the server. */
   renderedAt: string;
   initialLiveCursor: string;
+  initialCounts?: import("@k2b/cloud/ai").AiConversationCounts;
   initialConversations: AiConversation[];
   initialDoneCount: number;
   initialConversationId: string | null;
@@ -343,6 +344,7 @@ export default function AssistantWorkspace(props: Props) {
     initial: {
       source: "/api/assistant/workspace/sidebar",
       data: {
+        counts: props.initialCounts ?? { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
         conversations: props.initialConversations,
         projects: props.projects,
         doneCount: props.initialDoneCount,

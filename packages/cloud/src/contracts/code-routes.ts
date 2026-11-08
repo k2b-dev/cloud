@@ -15,6 +15,7 @@ export const CodeRouteSchema = z
       })
       .describe("Code-relative path with optional named segments."),
     public: z.boolean().describe("Whether the route accepts anonymous visitors without a user."),
+    layout: z.literal("plain").optional().describe("Pages of this route render without the Cloud layout; omitted, they render inside it."),
   })
   .strict();
 export type CodeRoute = z.infer<typeof CodeRouteSchema>;
