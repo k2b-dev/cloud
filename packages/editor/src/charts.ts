@@ -1059,6 +1059,23 @@ export function chartRows(
         }
         return all.table();
       }
+      if (input.kind === "treemap") {
+        const total = input.data.reduce((sum, item) => sum + item.value, 0);
+        input.data.forEach((item, index) => {
+          if (item.value !== 0 || rows.some((row) => row.key === chartMarkKey({ index }))) return;
+          add({
+            role: "item",
+            index,
+            label: item.label,
+            anchor: [0, 0],
+            values: [
+              { key: "group", value: item.group },
+              { key: "value", value: 0 },
+              { key: "percent", value: 0, formatted: total ? percent.format(0) : "–" },
+            ],
+          });
+        });
+      }
       return { columns: [...columns.values()], rows };
     },
   };

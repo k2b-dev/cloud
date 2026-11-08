@@ -5,7 +5,9 @@ import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /** Controls inside a notice may keep their icons; anywhere else an icon is decoration. */
-const CONTROLS = new Set(["Button", "ButtonLink", "IconButton", "IconButtonLink", "button", "a"]);
+const CONTROLS = new Set(["Button", "ButtonLink", "IconButton", "IconButtonLink", "SplitButton", "button", "a"]);
+/** NoticeRow is the one-line form of a notice and keeps the same calm content; its tile is a prop, not a child. */
+const NOTICES = new Set(["NoticeCard", "NoticeRow"]);
 /** Own text sizes, faded text, and palette colours, with any variant prefix such as `dark:` or `hover:`. */
 const OVERRIDE =
   /^(?:[\w-]+:)*(?:text-(?:xs|sm|base|lg|\[[^\]]*\])|opacity-\S+|(?:bg|text|border)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\S+)$/;
@@ -48,13 +50,13 @@ export const rule: Rule = {
     for (const file of sourceRoots.flatMap((root) => listFiles(root, /\.tsx$/)).sort()) {
       if (isTestFile(file)) continue;
       const source = readFileSync(file, "utf8");
-      if (!source.includes("<NoticeCard")) continue;
+      if (!source.includes("<NoticeCard") && !source.includes("<NoticeRow")) continue;
       const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const lineOf = (node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 
       const visit = (node: ts.Node, inNotice: boolean, inControl: boolean, inControlIcon: boolean): void => {
         const tag = tagName(node);
-        const notice = inNotice || tag === "NoticeCard";
+        const notice = inNotice || (tag !== undefined && NOTICES.has(tag));
         const control = inControl || (tag !== undefined && CONTROLS.has(tag));
         const controlIcon = tag === undefined ? inControlIcon : control && tag === "i";
         if (notice && tag === "i" && !control) {
