@@ -300,7 +300,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       const resourceVersion = await submitCodeVersion(resourceDraft, author);
       await activate(resource, resourceVersion);
       await addCodeShare(resource.id, { type: "user", userId: strangerId }, "reader", author);
-      resourceReader.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+      resourceReader.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "Not found", status: 404 } });
       expect((await router.request(`/code/${resource.id}/`)).status).toBe(404);
       resourceReader.mockResolvedValue({
         ok: true,
