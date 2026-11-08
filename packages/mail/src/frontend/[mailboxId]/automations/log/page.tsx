@@ -7,10 +7,11 @@ import { ssr } from "../../../../config";
 import { getAutomationLogItem, listAutomationLog } from "../../../../service/automation-log";
 import { getMailbox } from "../../../../service/mailboxes";
 import { readRetiredRuleRuns, retiredRunQuerySchema } from "../../../../service/retired-rule-runs";
+import { mailPageMessages } from "../../../pages-messages";
 import { resolveSsrMailboxId } from "../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
-  const de = getLocale(c).startsWith("de");
+  const { t } = mailPageMessages.resolve([getLocale(c)]);
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
   if (!mailboxId) return ssr.error(c, 404);
@@ -28,26 +29,28 @@ export default ssr<AuthContext>(async (c) => {
   if (!runsInput.success) return ssr.error(c, 400);
   const runs = await readRetiredRuleRuns(context, mailboxId, runsInput.data);
   if (runsInput.data.run && !runs.ok) return ssr.error(c, runs.error.status);
-  const title = de ? "Frühere Mail-Regeln" : "Retired Mail rules";
+  const title = t.retiredRuleHistoryTitle;
   const base = `/app/mail/${mailboxShortId}/automations/log`;
   return () => (
     <Layout
       c={c}
-      title={[{ title: "Mail", href: "/app/mail" }, { title: mailbox.data.name, href: `/app/mail/${mailboxShortId}` }, { title }]}
+      title={[{ title: t.breadcrumbMail, href: "/app/mail" }, { title: mailbox.data.name, href: `/app/mail/${mailboxShortId}` }, { title }]}
     >
       <main class="mx-auto max-w-4xl space-y-4 p-4" data-print-region>
         <h1 class="text-xl font-semibold">{title}</h1>
-        <p class="text-secondary">
-          {de
-            ? "Dieses Protokoll ist nur lesbar. Automatisierungen werden mit Code erstellt. Automatische Antworten gibt es nicht mehr."
-            : "This history is read-only. Create automations with Code. Automatic replies have been removed."}
-        </p>
+        <p class="text-secondary">{t.retiredRuleHistoryDescription}</p>
         <form method="get" class="flex gap-2">
           <label for="mail-rule-history-day">
-            {de ? "Tag (UTC)" : "Day (UTC)"}{" "}
-            <TextInput id="mail-rule-history-day" type="text" placeholder="YYYY-MM-DD" name="day" value={result.data.day} />
+            {t.retiredRuleHistoryDay}{" "}
+            <TextInput
+              id="mail-rule-history-day"
+              type="text"
+              placeholder={t.retiredRuleHistoryDatePlaceholder}
+              name="day"
+              value={result.data.day}
+            />
           </label>
-          <Button type="submit">{de ? "Anzeigen" : "Show"}</Button>
+          <Button type="submit">{t.retiredRuleHistoryShow}</Button>
         </form>
         <For each={result.data.items}>
           {(item) => (
@@ -64,13 +67,13 @@ export default ssr<AuthContext>(async (c) => {
         </Show>
         <Show when={result.data.nextCursor}>
           {(cursor) => (
-            <a href={`${base}?day=${result.data.day}&before=${encodeURIComponent(cursor())}`}>{de ? "Ältere Einträge" : "Older entries"}</a>
+            <a href={`${base}?day=${result.data.day}&before=${encodeURIComponent(cursor())}`}>{t.retiredRuleHistoryOlderEntries}</a>
           )}
         </Show>
         <Show when={runs.ok && runs.data}>
           {(history) => (
             <section class="space-y-3">
-              <h2 class="text-lg font-semibold">{de ? "Frühere Ausführungen" : "Earlier runs"}</h2>
+              <h2 class="text-lg font-semibold">{t.retiredRuleHistoryEarlierRuns}</h2>
               <For each={history().items}>
                 {(run) => (
                   <article class="rounded border border-default p-3">
@@ -84,9 +87,7 @@ export default ssr<AuthContext>(async (c) => {
                 )}
               </For>
               <Show when={history().nextCursor}>
-                {(cursor) => (
-                  <a href={`${base}?day=${result.data.day}&runAfter=${cursor()}`}>{de ? "Weitere Ausführungen" : "More runs"}</a>
-                )}
+                {(cursor) => <a href={`${base}?day=${result.data.day}&runAfter=${cursor()}`}>{t.retiredRuleHistoryMoreRuns}</a>}
               </Show>
             </section>
           )}
