@@ -51,4 +51,14 @@ export const chartFixtures = {
   stateTimeline: { kind: "stateTimeline", rows: [{ label: "Queue", intervals: [{ from: 1, to: 2, state: "ok" }] }] },
   treemap: { kind: "treemap", groups: ["Products"], data: [{ label: "Chairs", group: "Products", value: 40 }] },
   pareto: { kind: "pareto", labels: ["Current", "Previous"], data: [{ label: "Chairs", value: 40, prev: 30 }] },
+
+  bubble: {
+    kind: "bubble",
+    groups: ["North"],
+    xLabel: "Visits",
+    yLabel: "Opens",
+    averages: true,
+    data: [{ label: "Campaign A", group: "North", x: 20, y: 40, size: 25 }],
+  },
+  radar: { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Plan A", data: [4, 3, 2] }] },
 } satisfies { [K in ChartProps["kind"]]: Extract<ChartProps, { kind: K }> };

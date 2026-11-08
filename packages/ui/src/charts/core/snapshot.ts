@@ -85,7 +85,7 @@ export function prepareChartSnapshot(
     width,
     height,
     ...(calendar ? { minWidth: calendar.minWidth, maxWidth: calendar.maxWidth } : {}),
-    stretch: !calendar && !["map", "pie", "donut", "gauge"].includes(options.kind),
+    stretch: !calendar && !["map", "pie", "donut", "gauge", "radar"].includes(options.kind),
     marks,
   };
 }

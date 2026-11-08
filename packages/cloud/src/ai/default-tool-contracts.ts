@@ -125,8 +125,16 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
-    groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional().describe("treemap: group names."),
+    groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional().describe("treemap and bubble: group names."),
     labels: z.array(ChartLabel).length(2).optional().describe("pareto: current and previous period labels."),
+
+    axes: z.array(ChartLabel).min(3).max(8).optional(),
+    xLabel: ChartLabel.optional(),
+    yLabel: ChartLabel.optional(),
+    sizeLabel: ChartLabel.optional(),
+    averages: z.boolean().optional(),
+    xFormat: cloudAiNumberFormatSchema().optional(),
+    yFormat: cloudAiNumberFormatSchema().optional(),
     layout: z
       .enum(["columns", "rows", "grouped", "stacked", "calendar"])
       .optional()
@@ -144,8 +152,9 @@ const flatChartSchema = () => {
               group: ChartLabel.optional(),
               prev: z.number().optional(),
               values: z.array(z.number()).min(1).optional(),
-              x: ChartLabel.optional(),
-              y: ChartLabel.optional(),
+              size: z.number().nonnegative().optional(),
+              x: z.union([ChartLabel, z.number()]).optional(),
+              y: z.union([ChartLabel, z.number()]).optional(),
               min: z.number().optional(),
               max: z.number().optional(),
             }),
@@ -194,7 +203,10 @@ const flatChartSchema = () => {
       .array(
         z.union([
           ChartLabel,
-          ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
+          ChartSeries(ChartPoints.min(1)).extend({
+            data: z.union([ChartPoints.min(1), z.array(z.number()).min(3).max(8)]),
+            style: z.enum(["solid", "dashed", "dotted"]).optional(),
+          }),
           z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }),
         ]),
       )

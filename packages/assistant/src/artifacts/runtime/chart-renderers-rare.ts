@@ -7,10 +7,12 @@ import {
   gauge,
   histogram,
   renderAreaSvg,
+  renderBubbleSvg,
   renderFunnelLayoutSvg,
   renderHbarLayoutSvg,
   renderHeatmapSvg,
   renderParetoSvg,
+  renderRadarSvg,
   renderTreemapSvg,
   renderWaterfallLayoutSvg,
   scatter,
@@ -46,6 +48,11 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
       return renderTreemapSvg({ ...mapped, ...common, displayWidth: common.width });
     case "pareto":
       return renderParetoSvg({ ...mapped, ...common, displayWidth: common.width });
+
+    case "bubble":
+      return renderBubbleSvg({ ...mapped, ...common });
+    case "radar":
+      return renderRadarSvg({ ...mapped, ...common });
   }
   const unsupported: never = mapped;
   throw new Error(`Unsupported chart: ${String(unsupported)}`);
