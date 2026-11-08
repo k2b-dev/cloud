@@ -1,16 +1,17 @@
 import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { Button, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 import type { WaitingQuestionsView } from "./waiting-questions";
 
 /**
- * "Waiting for you" above the composer: every open question in its short form, those of other chats with the chat's
- * name. A press jumps to the question. There is deliberately no way to answer several questions at once: each answer
- * belongs to its own card, where the person sees what it does.
+ * "Gustav is waiting for your approval: <short>" above the composer, in the approval's tint, with **View**. One open
+ * approval names itself and View jumps to its card; several are counted, and View jumps to the first one of this chat
+ * or opens the list of approvals. There is deliberately no way to answer several at once: each answer belongs to its
+ * own card, where the person sees what it does.
  *
- * The strip is one row of fixed height that scrolls sideways, so a question opening or closing elsewhere never moves
- * the composer. `quiet` keeps that row in place but hides it.
+ * The line has a fixed height, so an approval opening or closing elsewhere never moves the composer. `quiet` keeps that
+ * line in place but hides it.
  */
 export function AssistantWaitingStrip(props: {
   view: WaitingQuestionsView;
@@ -22,42 +23,38 @@ export function AssistantWaitingStrip(props: {
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
+  const count = () => props.view.entries.length + props.view.more;
+  const first = () => props.view.entries[0];
+  const view = () => {
+    const question = first();
+    if (question && (count() === 1 || question.conversationId === props.conversationId)) props.onJump(question);
+    else props.onShowMore();
+  };
   return (
     <nav class="assistant-waiting" aria-label={t().needsAttention} data-quiet={props.quiet ? "" : undefined} inert={props.quiet}>
-      <span class="assistant-waiting__label" aria-hidden="true">
-        {t().needsAttention}
-      </span>
-      <ul class="assistant-waiting__list">
-        <For each={props.view.entries}>
+      <i class="assistant-waiting__mark ti ti-shield-check" aria-hidden="true" />
+      <p class="assistant-waiting__text">
+        <Show when={count() === 1 ? first() : undefined} fallback={t().waitingForApprovals({ count: count() })}>
           {(question) => (
-            <li>
-              <Button
-                variant="ghost"
-                class="assistant-waiting__entry"
-                style={question.app.accent ? { "--assistant-waiting-accent": question.app.accent } : undefined}
-                data-question={question.id}
-                onClick={() => props.onJump(question)}
-              >
-                <i class={`assistant-waiting__icon ${question.app.icon}`} aria-hidden="true" />
-                <span class="assistant-waiting__short k2b-truncate-fade">{question.short}</span>
-                <Show when={question.conversationId !== props.conversationId}>
-                  {/* Read as one name, "… in Team Ops"; the row's gap sets the visible space. */}{" "}
-                  <small class="assistant-waiting__chat k2b-truncate-fade">
-                    {question.conversationTitle ? t().waitingInChat({ title: question.conversationTitle }) : t().waitingInOtherChat}
-                  </small>
-                </Show>
-              </Button>
-            </li>
+            <>
+              {t().waitingForApproval}{" "}
+              <strong class="assistant-waiting__short" data-question={question().id}>
+                {question().short}
+              </strong>
+              <Show when={question().conversationId !== props.conversationId}>
+                {" "}
+                <small class="assistant-waiting__chat">
+                  {question().conversationTitle ? t().waitingInChat({ title: question().conversationTitle! }) : t().waitingInOtherChat}
+                </small>
+              </Show>
+            </>
           )}
-        </For>
-        <Show when={props.view.more > 0}>
-          <li>
-            <Button variant="ghost" class="assistant-waiting__entry" onClick={() => props.onShowMore()}>
-              {t().waitingMore({ count: props.view.more })}
-            </Button>
-          </li>
         </Show>
-      </ul>
+      </p>
+      <Button variant="secondary" size="sm" class="assistant-waiting__view" onClick={view}>
+        {t().waitingView}
+        <i class="ti ti-arrow-down" aria-hidden="true" />
+      </Button>
     </nav>
   );
 }
