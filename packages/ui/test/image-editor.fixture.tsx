@@ -49,7 +49,7 @@ function mount() {
     const items = parameters.has("items")
       ? ["a", "b", "c", "d"].map((id) => ({ id, name: `${id}.jpg`, thumbnail: id === "c" ? undefined : "/photo.jpg", dirty: id === "a" }))
       : undefined;
-    return (
+    const first = (
       <ImageEditor
         source={source()}
         title="photo.jpg"
@@ -98,6 +98,15 @@ function mount() {
           control.results.push(result);
         }}
       />
+    );
+    // Two editors on one page guard the same navigation, as several open photos do in Tools and Files.
+    return parameters.has("pair") ? (
+      <div style={{ display: "grid", "grid-template-columns": "1fr 1fr", height: "100%" }}>
+        {first}
+        <ImageEditor source="/photo.jpg" title="second.jpg" features={features} onSave={async () => {}} />
+      </div>
+    ) : (
+      first
     );
   }, document.getElementById("editor")!);
 }

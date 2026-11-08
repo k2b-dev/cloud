@@ -136,6 +136,12 @@ const sizes = [
 ] as const;
 const PHONE_WIDTH = 640;
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+/**
+ * The editors whose discard was confirmed for one navigation target. Shared because each editor guards the same
+ * navigation on its own; any cancelled discard prompt clears it, so a vetoed navigation leaves every edit dirty.
+ */
+let leavePass: { href: string; editors: Set<symbol> } | undefined;
+
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const sliderValue = (key: keyof ImageEditorAdjustments, adjustments: ImageEditorAdjustments) =>
   Math.round((adjustments[key] - (["brightness", "contrast", "saturation"].includes(key) ? 1 : 0)) * 100);
@@ -628,24 +634,35 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
 
   // ---------- guards, sizes, cleanup ----------
   const beforeUnload = (event: BeforeUnloadEvent) => {
-    if (dirty()) {
+    // A confirmed navigation may still end in a document load; it must not ask a second time.
+    if (dirty() && !leavePass?.editors.has(leaveKey)) {
       event.preventDefault();
       event.returnValue = "";
     }
   };
+  // A confirmed discard lets this editor pass the retried navigation without touching its history: if another
+  // editor's prompt is cancelled, every editor stays dirty and asks again next time.
+  const leaveKey = Symbol("image-editor");
+  const passes = (href: string) => leavePass?.href === href && leavePass.editors.has(leaveKey);
+  createEffect(on([history, draft, inlineText], () => leavePass?.editors.delete(leaveKey), { defer: true }));
   onBeforeLeave((event) => {
-    if (!dirty()) return;
+    const href = event.url.href;
+    if (!dirty() || passes(href)) return;
     event.preventDefault();
     void event.restored.then(async () => {
-      if (alive && (await confirmDiscard())) {
-        setHistory((h) => markImageEditorSaved(h));
-        setDraft(undefined);
-        setInlineText(undefined);
-        if (event.delta !== undefined && event.delta < 0) window.history.go(event.delta);
-        else void swapPage(event.url.href);
+      if (!alive) return;
+      if (!(await confirmDiscard())) {
+        leavePass = undefined;
+        return;
       }
+      if (!alive) return;
+      if (leavePass?.href !== href) leavePass = { href, editors: new Set() };
+      leavePass.editors.add(leaveKey);
+      if (event.delta !== undefined && event.delta < 0) window.history.go(event.delta);
+      else void swapPage(href);
     });
   });
+  onCleanup(() => leavePass?.editors.delete(leaveKey));
   onMount(() => {
     window.addEventListener("beforeunload", beforeUnload);
     const measure = () => {

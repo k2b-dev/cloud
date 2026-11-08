@@ -697,6 +697,49 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("a discard confirmed in one editor never marks it saved when another editor keeps the page", async () => {
+    const { page, errors } = await open("nav=1&pair=1");
+    try {
+      const editors = page.locator(".k2b-image-editor");
+      for (const index of [0, 1]) {
+        const editor = editors.nth(index);
+        await editor.getByRole("tab", { name: "Crop", exact: true }).click();
+        await editor.getByRole("button", { name: "Mirror", exact: true }).click();
+      }
+      const dirtyStates = () => editors.evaluateAll((all) => all.map((editor) => editor.getAttribute("data-dirty")));
+      expect(await dirtyStates()).toEqual(["true", "true"]);
+      const dialog = page.getByRole("dialog");
+      // Each editor asks in turn; the next prompt may open as soon as the previous one closes.
+      const answer = async (button: "Confirm" | "Cancel", prompts: number) => {
+        await page.waitForFunction((count) => (window as unknown as { prompted: number }).prompted >= count, prompts);
+        await dialog.getByRole("button", { name: button, exact: true }).click();
+        await settled(page);
+      };
+      await page.evaluate(() => {
+        Object.assign(window, { prompted: 0 });
+        new MutationObserver((records) => {
+          for (const record of records)
+            if (record.target instanceof HTMLDialogElement && record.target.open) (window as unknown as { prompted: number }).prompted++;
+        }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
+      });
+      // Confirm the first editor, keep the page in the second: both photos stay unsaved.
+      await page.locator("#destination-link").click();
+      await answer("Confirm", 1);
+      await answer("Cancel", 2);
+      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      expect(new URL(page.url()).pathname).toBe("/editing");
+      expect(await dirtyStates()).toEqual(["true", "true"]);
+      // The cancelled navigation used up the first confirmation, so the next attempt asks both again.
+      await page.locator("#destination-link").click();
+      await answer("Confirm", 3);
+      await answer("Confirm", 4);
+      await page.waitForFunction(() => document.querySelector("[data-nav-root]")?.getAttribute("data-path") === "/destination");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("cancel and enhanced navigation preserve dirty edits when the warning is dismissed", async () => {
     const { page, errors } = await open();
     try {
