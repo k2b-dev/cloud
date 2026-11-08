@@ -318,12 +318,13 @@
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
 }
+/* A dialog is flat inside (layers and shadows): the preview is a column beside
+   the results, set off by a hairline, not a grey box. */
 .cloud-resource-search__preview {
   display: none;
   min-width: 0;
   padding: 1.25rem;
-  border-radius: 0.6875rem;
-  background: var(--ui-surface-muted);
+  border-inline-start: 1px solid var(--k2b-border);
 }
 .cloud-resource-search__preview.is-empty p {
   margin: 0;
