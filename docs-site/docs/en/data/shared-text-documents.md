@@ -5,7 +5,7 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-10-31
+updated: 2026-11-08
 ---
 
 # Shared text documents
@@ -34,10 +34,24 @@ Sync tenants. JetStream reserves `retention.maxBytes` plus
 even when empty. Changing these values later is a resource change: a mismatch
 with the installed declaration raises `ResourceDriftError`.
 
-Size retention for updates waiting for a covering snapshot. Once a snapshot
-covers them, updates are no longer needed; retention eventually removes them.
-The platform snapshot pipeline saves documents and keeps idle cursors inside
-the retained window. The application queues work and schedules reconciliation. See [Topics and live events](/en/docs/automation/topics-and-live-events).
+Size retention for updates waiting for a covering snapshot. With an age limit,
+updates can expire before a snapshot covers them. The platform snapshot
+pipeline saves documents and keeps idle cursors inside the retained window.
+The application queues work and schedules reconciliation. See
+[Topics and live events](/en/docs/automation/topics-and-live-events).
+
+For a log that must retain accepted updates until snapshot coverage, pass
+`whenFull: "reject"` and omit `retention.maxAgeMs`. Sync 7.1 rejects new
+publishes with `StoreFullError` at its byte or message limit. After snapshots
+commit, `log.topic().prune({ through })` removes the inclusive stream prefix
+through the minimum persisted snapshot cursor across **all documents** in the
+log. A missing snapshot contributes sequence zero. The application owns this
+watermark and must serialize it with restores and lifecycle changes; the
+snapshot pipeline does not prune automatically. A stalled snapshot holds back
+pruning and can block writes. Keep rejected input available for retry, and
+keep snapshot work independent of new writes. This opt-in changes an existing
+stream's retention contract and raises `ResourceDriftError` until it is safely
+migrated. Existing log declarations retain their current policies.
 
 `log.id` identifies the resource. `log.topicConfig` exposes the exact readonly
 Sync declaration, passed through unchanged. `log.topic()` returns a fresh
