@@ -1000,8 +1000,9 @@ There is no second y axis. For related computed measures in chat, use
 `cloud.chart()` returns synchronously. In HTML apps, line, bar, pie, donut,
 stat and sparkline render immediately. Other kinds return a loading state
 that the frame fills after the markup enters the document, preserving its box
-size. The renderer is bundled with the frame and needs no network request,
-even on first use offline. A loading failure shows a retry button.
+size. The host keeps the renderers with its other assets and sends each frame
+only the kinds it draws, plus their shared helpers. Drawing needs no network
+request, even on first use offline. A loading failure shows a retry button.
 A rendering error (including a throwing format callback) shows its message
 without retry and is reported to the host. Tooltips,
 format callbacks and the print value table remain available after rendering.

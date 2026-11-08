@@ -165,7 +165,8 @@ test("a toolbar mounted inside a hidden ancestor gains a tab stop when shown", a
   const page = await open();
   try {
     const toolbar = page.locator('[aria-label="Initially hidden"]');
-    expect(await toolbar.locator('[tabindex="0"]').count()).toBe(0);
+    // While hidden it keeps one stop on its first control, so Tab right after it shows cannot pass it.
+    expect(await toolbar.locator('[tabindex="0"]').count()).toBe(1);
     await page.locator("#hidden-ancestor").evaluate((ancestor) => ancestor.classList.remove("hidden-ancestor"));
     await page.waitForSelector('#revealed-first[tabindex="0"]');
     expect(await toolbar.locator('[tabindex="0"]').count()).toBe(1);

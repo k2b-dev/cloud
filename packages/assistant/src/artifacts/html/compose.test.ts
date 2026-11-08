@@ -16,7 +16,10 @@ afterEach(() => {
 
 const options = {
   prelude: "/* prelude */",
-  chartModule: "/* chart module */",
+  chartParts: {
+    shared: { code: "/* chart module */", hash: "shared hash" },
+    kinds: { area: { code: "/* k2b-area-layer */", hash: "area hash" } },
+  },
   preludeHash: "'sha256-prelude'",
   baseCss: "@layer k2b-base{}",
   theme: "dark" as const,
@@ -56,6 +59,9 @@ test("the composer loads style.css and app.js, runs inline scripts as modules an
   expect(config).not.toContain("</script");
   expect(JSON.parse(config).modules["app.js"]).toBe('const tail = "</script><!--";');
   expect(JSON.parse(config).context).toEqual(options.context);
+  expect(JSON.parse(config).chartHashes).toEqual({ shared: "shared hash", kinds: { area: "area hash" } });
+  expect(wrapper).not.toContain("chart module");
+  expect(wrapper).not.toContain("k2b-area-layer");
   // The base stylesheet comes first, so every app stylesheet after it wins.
   const styles = [...doc.querySelectorAll("style")].map((style) => style.textContent);
   expect(styles[0]).toBe("@layer k2b-base{}");
