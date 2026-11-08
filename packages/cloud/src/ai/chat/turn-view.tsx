@@ -28,6 +28,7 @@ import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord, isSurveyToolName } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
+import type { AiStopNotice } from "./stop-notice";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
@@ -71,7 +72,8 @@ export type AiTurnSegment = {
   reconnect?: "line" | "row";
   /** Why the turn failed, shown in a notice at its end. Only the last segment of a failed turn carries it. */
   error?: AiTurnError | null;
-  /** The failed turn is the chat's newest and nothing runs, so a new message can pick up its work. */
+  stopNotice?: AiStopNotice | null;
+  /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
 };
 
@@ -534,10 +536,46 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
 }
 
 /**
- * Why a turn failed and what comes next, at its end. "Continue" sends a visible message through the host's normal
- * send path, so the person sees what was asked; it is offered only for the chat's newest turn and only when a new
- * turn can finish the work.
+ * Output-limit notices use the established multiline message surface, so their explanation stays readable on phones.
+ * Continue sends a visible follow-up through the host's normal send path, only while the newest turn is idle.
  */
+function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const actions = useAiChatActions();
+  const [continuing, setContinuing] = createSignal(false);
+  const [failed, setFailed] = createSignal(false);
+  const continueAnswer = async () => {
+    if (continuing()) return;
+    setContinuing(true);
+    setFailed(false);
+    try {
+      await actions.onContinueTurn?.(t().continueTurnMessage);
+    } catch {
+      setFailed(true);
+    } finally {
+      setContinuing(false);
+    }
+  };
+  return (
+    <NoticeCard
+      tone="warning"
+      class="ai-turn__notice"
+      title={props.notice.kind === "output_limit" ? t().outputLimitReached : t().turnErrorTitle}
+      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : undefined}
+    >
+      <Show when={props.continuable && actions.onContinueTurn}>
+        <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueAnswer()}>
+          <i class="ti ti-player-play" aria-hidden="true" /> {t().continueAnswer}
+        </Button>
+      </Show>
+      <Show when={failed()}>
+        <p role="alert">{t().continueAnswerFailed}</p>
+      </Show>
+    </NoticeCard>
+  );
+}
+
 function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
@@ -745,6 +783,9 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         </Show>
         <Show when={props.segment().error}>
           {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} />}
+        </Show>
+        <Show when={props.segment().stopNotice}>
+          {(notice) => <AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}
         </Show>
       </div>
     </AiToolDisclosureProvider>

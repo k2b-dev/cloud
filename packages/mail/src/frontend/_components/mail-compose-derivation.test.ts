@@ -77,6 +77,7 @@ const message = (overrides: Partial<MessageDetail> = {}): MessageDetail => ({
   remoteContent: {
     imageIds: [],
     allowedByRule: false,
+    allowRules: [],
     sender: null,
     domain: null,
   },
