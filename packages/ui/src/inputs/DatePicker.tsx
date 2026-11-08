@@ -46,8 +46,9 @@ import {
   weekendBands,
   yearMonth,
 } from "./date-picker";
-import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import type { ChoiceAppearance } from "./Select";
 
 export type { DateRangeValue } from "./date-picker";
@@ -81,10 +82,12 @@ export type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
   readOnly?: boolean;
 };
 
-export type DatePickerProps = DatePickerBaseProps<string | null> & {
-  /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
-  renderValue?: (value: string) => JSX.Element;
-};
+export type DatePickerProps = DatePickerBaseProps<string | null> &
+  /** A suggested day is a date key such as `2026-10-28`; only the default `field` appearance shows it. */
+  FieldSuggestionProps<string> & {
+    /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
+    renderValue?: (value: string) => JSX.Element;
+  };
 export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
   /** Trigger content for a set value, for example the date and time with a relative hint. */
   renderValue?: (value: string) => JSX.Element;
@@ -805,6 +808,12 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   const externalError = () => resolveMaybeAccessor(props.owner.error);
   const invalid = () => Boolean(failure() || externalError());
+  const suggestion = useFieldSuggestion({
+    props: props.owner,
+    meta,
+    value: props.value,
+    format,
+  });
   const status = createMemo((): { tone: DateStatusTone; text: JSX.Element } => {
     const failed = failure();
     if (failed) return { tone: "error", text: failed };
@@ -817,7 +826,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     const external = externalError();
     if (external) return { tone: "error", text: external };
     const value = props.value();
-    if (!value || result) return { tone: "rest", text: "" };
+    // With a suggestion the line shares the label row and speaks only while typing or on an error.
+    if (!value || result || suggestion.enabled) return { tone: "rest", text: "" };
     return { tone: "rest", text: props.owner.renderValue?.(value) ?? restStatusText(value, today(), locale()) };
   });
 
@@ -946,12 +956,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   return (
     <Field
-      class={props.owner.class}
+      class={suggestion.field(props.owner.class)}
       label={props.owner.label}
       description={props.owner.description}
       required={props.owner.required}
       disabled={props.owner.disabled}
       meta={meta}
+      labelEnd={suggestion.status}
     >
       <div
         class="k2b-date-picker k2b-date-field"
@@ -976,11 +987,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             aria-haspopup="dialog"
             aria-expanded={calendar.open() || sheetOpen()}
             aria-controls={sheetOpen() ? sheetId : popoverId}
-            aria-describedby={[props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
-              .filter(Boolean)
-              .join(" ")}
+            aria-describedby={suggestion.describe(
+              [props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
+                .filter(Boolean)
+                .join(" "),
+            )}
             aria-invalid={invalid() ? "true" : undefined}
-            placeholder={props.owner.placeholder ?? datePattern(locale(), t())}
+            placeholder={suggestion.placeholder() ?? props.owner.placeholder ?? datePattern(locale(), t())}
             value={text()}
             disabled={props.owner.disabled}
             readOnly={props.owner.readOnly}

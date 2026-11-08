@@ -1,10 +1,11 @@
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, relative, resolve } from "node:path";
+import { basename, dirname, relative, resolve } from "node:path";
 import { type PresetItem, transformAsync } from "@babel/core";
 import tsPreset from "@babel/preset-typescript";
 import solidPreset from "babel-preset-solid";
 import tailwind from "bun-plugin-tailwind";
 import { buildPlexFonts } from "./plex-fonts";
+import { buildTablerPreset } from "./tabler-fonts";
 
 const root = resolve(import.meta.dir, "..");
 const dist = resolve(root, "dist");
@@ -129,11 +130,6 @@ const builds = [
     entrypoint: resolve(root, "src/styles/entry.css"),
     plugins: [tailwind],
   },
-  {
-    name: "tabler",
-    entrypoint: resolve(root, "src/icons/tabler.css"),
-    plugins: [],
-  },
 ] as const;
 
 for (const build of builds) {
@@ -152,28 +148,12 @@ for (const build of builds) {
 }
 
 await buildPlexFonts(dist);
+await buildTablerPreset(dist);
 
 // The classless page stylesheet ships as written: it targets current engines and stays readable.
 await copyFile(resolve(root, "src/base/base.css"), resolve(dist, "base.css"));
 
 await writeFile(resolve(dist, "global.css"), '@import "./styles.css";\n@import "./plex.css";\n@import "./tabler.css";\n');
-
-const tablerPath = resolve(dist, "tabler.css");
-const tablerCss = await readFile(tablerPath, "utf8");
-const optimizedTablerCss = tablerCss.replace(
-  /src:url\(([^)]+\.woff2(?:[?#][^)]*)?)\)\s*format\("?woff2"?\),url\([^)]+\)\s*format\("?woff"?\),url\([^)]+\)\s*format\("?truetype"?\)/,
-  "src:url($1)format(woff2)",
-);
-if (optimizedTablerCss === tablerCss) {
-  throw new Error("@k2b/ui could not reduce the Tabler preset to WOFF2");
-}
-await writeFile(tablerPath, optimizedTablerCss);
-
-for (const asset of await readdir(dist)) {
-  if ([".woff", ".ttf"].includes(extname(asset))) {
-    await rm(resolve(dist, asset));
-  }
-}
 
 await writeFile(buildComplete, "");
 
