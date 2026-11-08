@@ -1071,6 +1071,8 @@ function createMailboxController(props: MailboxControllerProps) {
 
   const [composeStarting, setComposeStarting] = createSignal(false);
   let composeRequest: AbortController | null = null;
+  // A seed whose materialization has no answer yet: the next Compose retries it, so a lost answer creates no second draft.
+  let pendingComposeSeed: MailDraftSeed | null = null;
   let composeProgress: ToastHandle | null = null;
   const endComposeStart = () => {
     composeRequest = null;
@@ -1094,35 +1096,53 @@ function createMailboxController(props: MailboxControllerProps) {
     composeRequest = request;
     if (options.progressToast)
       composeProgress = toast(t().preparingMessage, { progress: "indeterminate", duration: 0, iconClass: "ti ti-pencil" });
+    // A navigation while the draft is created wins: the empty draft then goes again instead of taking the reader.
+    const routeAtStart = requestPath();
     let draft: MailDraft;
     try {
-      const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-        { param: { mailboxId }, json: mailComposeDraftSeedInput(identity.id) },
-        { init: { signal: request.signal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
-      const seed: MailDraftSeed = await response.json();
+      let seed = pendingComposeSeed?.mailboxId === mailboxId ? pendingComposeSeed : null;
+      if (!seed) {
+        const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+          { param: { mailboxId }, json: mailComposeDraftSeedInput(identity.id) },
+          { init: { signal: request.signal } },
+        );
+        if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
+        const created: MailDraftSeed = await response.json();
+        seed = created;
+        pendingComposeSeed = created;
+      }
       const materialized = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize.$post(
         { param: { mailboxId }, json: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content } },
         { init: { signal: request.signal } },
       );
       if (!materialized.ok) throw new Error(await readApiError(materialized, t().draftCreateFailed));
       draft = await materialized.json();
+      pendingComposeSeed = null;
     } catch (error) {
       if (disposed || request.signal.aborted) return;
       endComposeStart();
       void prompts.error(error instanceof Error ? error.message : t().draftCreateFailed, { title: t().startMessageFailed });
       return;
     }
-    if (disposed || data.mailbox.id !== mailboxId) return endComposeStart();
+    const stale = () => disposed || data.mailbox.id !== mailboxId || requestPath() !== routeAtStart;
+    if (stale()) {
+      endComposeStart();
+      if (!disposed)
+        void apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard
+          .$post({ param: { mailboxId, draftId: draft.id }, json: { expectedRevision: draft.revision } })
+          .catch(() => undefined);
+      return;
+    }
     writeMailSenderPreference(localStorage, mailboxId, identity.id);
+    // Drafts and Outbox have no reader: the new message opens in the mailbox's list.
+    if (data.scheduledMode || data.draftsMode) await transitionWorkspaceHref(`/app/mail/${encodeURIComponent(mailboxId)}`);
     // An open conversation steps aside; the new message takes the reader.
-    if (hasSelection()) {
+    else if (hasSelection()) {
       const listHref = buildMailListHref(new URL(requestPath(), window.location.origin));
       await closeConversationAt(listHref, (navigateOptions) => navigate(listHref, navigateOptions));
     }
     endComposeStart();
-    if (disposed || hasSelection()) return;
+    if (disposed || hasSelection() || data.scheduledMode || data.draftsMode) return;
     setNewMessage({ draftId: draft.id, initialDraft: draft, fresh: true });
     setDraftParam(draft.id);
   };
@@ -1319,7 +1339,10 @@ function createMailboxController(props: MailboxControllerProps) {
     ),
   );
   // The Events feed has no columns: it fills the main area until a conversation opens beside it.
-  const largeLayout = createMemo(() => resolveMailLargeLayout(data.eventsMode ? "auto" : viewPreference().large, hasSelection()));
+  // A new message takes the reader like an open conversation, in every layout.
+  const largeLayout = createMemo(() =>
+    resolveMailLargeLayout(data.eventsMode ? "auto" : viewPreference().large, hasSelection() || newMessage() !== null),
+  );
   /** Columns over the full main area: the list pane closes and the list takes the reader's place. */
   const columnsWide = () => !data.scheduledMode && !data.draftsMode && largeLayout().list === "full";
   const listPresence = createMemo(() => resolveMailListPresence(largeLayout(), hasSelection(), listCollapsed()));
@@ -1338,6 +1361,26 @@ function createMailboxController(props: MailboxControllerProps) {
     setNewMessageSummary({ subject: "", to: [] });
     setDraftParam(null, options);
   };
+  // Back, Forward, and every other committed route decide: `?draft=` without a conversation is the new message.
+  createEffect(
+    on(
+      requestPath,
+      (path) => {
+        const url = new URL(path, "http://mail.invalid");
+        const draftId = url.searchParams.get("draft");
+        const selected = url.searchParams.has("conversation") || url.searchParams.has("message");
+        const current = untrack(newMessage);
+        if (draftId && !selected) {
+          if (current?.draftId !== draftId) setNewMessage({ draftId, fresh: false });
+          setDraftOpen(true);
+        } else if (current && !draftId) {
+          setNewMessage(null);
+          setNewMessageSummary({ subject: "", to: [] });
+        }
+      },
+      { defer: true },
+    ),
+  );
   const toggleDraftFullscreen = () => {
     const next = !draftFullscreen();
     setDraftFullscreen(next);

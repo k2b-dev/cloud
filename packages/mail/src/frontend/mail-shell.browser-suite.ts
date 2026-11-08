@@ -4787,6 +4787,34 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      test("a collapsed suggestion waits as a row and does not open again by itself", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-draft-collapse]").click();
+          await page.locator('[data-mail-draft-row="DrfSug"]').waitFor();
+          // settled: nothing may reopen it after the collapse finished.
+          await settled(page);
+          expect(await page.locator("[data-mail-inline-draft]").count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("in the columns layout, Compose opens the new message in the reader too", async () => {
+        const page = await open(`${boxPath}?identity=1&layout=columns`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          await page.getByRole("link", { name: "Compose" }).first().click();
+          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
+        } finally {
+          await close(page);
+        }
+      });
+
       test("Compose starts a new message in the flow: a row at the top, an empty conversation, kept over reload", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?identity=1`, 1440, undefined, "reduce", async (next) => {
@@ -4812,6 +4840,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await ready(page);
           await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
           expect(await page.locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+          // Another conversation takes the reader; Back brings the new message back.
+          await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
+          expect(await page.locator("[data-mail-new-message]").count()).toBe(0);
+          await page.goBack();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("draft") === "DrfNew");
+          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
         } finally {
           await close(page);
         }
