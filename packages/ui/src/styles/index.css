@@ -10234,6 +10234,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-align: right;
 }
 
+/* A value away from its default shows in the accent color. */
+.k2b-ui .k2b-slider[data-changed="true"] output {
+  color: var(--k2b-action);
+}
+
+/* The reset button keeps its slot, so a change moves nothing; at the default it is invisible and out of reach. */
+.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-slider .k2b-slider__reset {
+  margin-inline-start: -0.5rem;
+}
+
 .k2b-ui .k2b-color-input {
   position: relative;
 }
