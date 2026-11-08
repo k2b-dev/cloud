@@ -11981,29 +11981,45 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-scrollbar-thumb);
 }
 
-/* Large workspace scrollers stay visually quiet until the pointer or keyboard
-   enters their region. The scrollbar geometry never changes, and touch or
-   coarse-pointer devices keep their normal always-visible treatment. */
+/* Large workspace scrollers, and every scroller marked `k2b-quiet-scrollbar`,
+   stay visually quiet until the pointer or keyboard enters their region. Only
+   the colour changes, never the scrollbar geometry, so nothing moves and no
+   fade runs when it appears. Touch or coarse-pointer devices keep their native
+   treatment. */
 @media (hover: hover) and (pointer: fine) {
   .k2b-ui .k2b-app-workspace__sidebar-body,
-  .k2b-ui .k2b-chat-timeline__viewport {
+  .k2b-ui .k2b-chat-timeline__viewport,
+  .k2b-ui .k2b-quiet-scrollbar {
     scrollbar-color: transparent transparent;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
   .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb {
+  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
     background: transparent;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within),
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within) {
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within),
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within) {
     scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
   }
 
+  /* WebKit repaints a styled scrollbar, such as a fixed track, only when the
+     scrollbar's own style changes, not when its thumb's does. This invisible
+     change makes the thumb appear there too. */
+  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar,
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar,
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar {
+    background: transparent;
+  }
+
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
     border: 1px solid transparent;
     border-radius: 9999px;
     background: var(--k2b-scrollbar-thumb);
@@ -12011,7 +12027,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover {
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover {
     background: var(--k2b-scrollbar-thumb-hover);
     background-clip: padding-box;
   }
@@ -16186,6 +16203,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui,
   .k2b-ui .k2b-app-workspace__sidebar-body,
   .k2b-ui .k2b-chat-timeline__viewport,
+  .k2b-ui .k2b-quiet-scrollbar,
   .k2b-ui .k2b-table-wrap {
     scrollbar-color: auto;
   }
@@ -16196,8 +16214,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui *::-webkit-scrollbar-thumb,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
   .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb {
+  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
     border: revert;
     background: revert;
   }
