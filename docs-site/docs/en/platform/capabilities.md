@@ -2761,3 +2761,9 @@ uses its generated SDK through the existing bridge. No dedicated tool or
 binding is needed. Inputs, typed probabilities, caller accounting, limits and
 provider-dependent images are described in
 [Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
+
+## Assistant context at a resource
+
+A Type can declare an `assistant` provider Query, allowed place Actions, and
+Skills for the person’s chat at that resource. See
+[Assistant at a place](/en/docs/ai/assistant-places) for the contract and limits.
