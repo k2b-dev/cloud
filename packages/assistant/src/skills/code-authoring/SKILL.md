@@ -59,6 +59,7 @@ checks the current policy, version approval and the account's access.
 | Classify with probabilities, such as category and urgency | `core.ai.decide` | [AI](references/ai.md) |
 | Put a result into the owner's Gustav chat | `core.ai.chat.deliver` (personal Code) | [AI](references/ai.md), [weekly report](references/template-weekly-report.md) |
 | Let Gustav do open-ended work with tools | `core.ai.chat.run` (personal Code) | [AI](references/ai.md) |
+| Rebuild an Assistant routine as Code | Personal Code: the routine's schedule and time zone, then `deliver` for a fixed result or `run` for open-ended work | [Schedules](references/schedules.md), [AI](references/ai.md) |
 | Post into a team chat conversation | `chat.message.post` | [Capabilities](references/capabilities.md), [event to chat](references/template-event-to-chat.md) |
 | Create or update a task in a Space | `spaces.task.create`, `spaces.task.update` | [Capabilities](references/capabilities.md), [form app](references/template-form-app.md) |
 | A page with key figures, charts and tables | `app.get` with `c.page(<Page>…)`: `Stats`/`Stat`, `Chart.*`, `Table`/`Column` | [Pages](references/pages.md), [dashboard](references/template-dashboard-page.md) |
@@ -88,9 +89,8 @@ checks the current policy, version approval and the account's access.
 
 ## Templates
 
-Each template is complete Code that passes the real checker. Its first line
-names the owner it was checked for. Adapt names, IDs and texts; keep the
-structure.
+Each template is complete Code for the owner named in the table and passes
+the real checker. Adapt names, IDs and texts; keep the structure.
 
 | Template | Owner | What it shows |
 | --- | --- | --- |
@@ -101,7 +101,7 @@ structure.
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |
 
 In the Cloud repository the templates are the files in `templates/` beside
-this skill; the Assistant receives each as a reference.
+this skill; the Assistant receives each as `references/template-<name>.md`.
 
 Detailed contracts: Fibel pages `/en/docs/platform/code-sdk`,
 `/en/docs/platform/code-runs`, `/en/docs/platform/mail-code-automations` and

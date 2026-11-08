@@ -74,7 +74,7 @@ and `Action` blocks share one row.
 ```tsx
 import { app, jsx, Page, Section, Stats, Stat, Chart } from "@sdk";
 
-const weeks = ["W40", "W41", "W42", "W43"];
+const weeks = ["2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"];
 const done = [12, 15, 9, 17];
 
 app.get("/", c => c.page(
@@ -95,7 +95,9 @@ app.get("/", c => c.page(
 export default app;
 ```
 
-A chart needs at least one value. When there is nothing to draw, return
+On `Chart.Line` and `Chart.Scatter`, every `x` is a number or an ISO date
+(`2026-10-05`, optionally with a local time such as `2026-10-05T14:30`, no offset); names such as `"W40"` fail when the
+page is drawn. Use `Chart.Bar` for named categories. A chart needs at least one value. When there is nothing to draw, return
 `Chart.Empty` with the same title, so the panel keeps its place and says why.
 Chart budgets: eight series, 200 values per series and 1,600 marks.
 

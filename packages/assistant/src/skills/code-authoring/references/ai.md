@@ -161,6 +161,11 @@ scoped to the run: a retry returns the first message; the same key with other
 text returns `IDEMPOTENCY_CONFLICT`. Mailbox and app Code, archived chats and
 other people's chats are refused. See the [weekly report](template-weekly-report.md).
 
+When you rebuild an Assistant routine, keep its prompt, timing and IANA time
+zone, use `deliver` for a bounded result and `run` when the work needs tools,
+and leave the original routine in place until the person has switched on the
+new version and accepts it.
+
 ## Start a Gustav turn
 
 When the work needs Gustav to choose and use tools, start a turn:

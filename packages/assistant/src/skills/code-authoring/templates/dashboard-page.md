@@ -1,7 +1,11 @@
-// check: resource mail.mailbox
-// Dashboard page of a mailbox's Code: open work by status and the conversations
-// that need action. The page reads live data on each request and loads again
-// after new mail arrives. It changes nothing.
+# Template: dashboard page
+
+Dashboard page of a mailbox's Code: open work by status and the conversations that need action. The page reads live data on each request and loads again after new mail arrives. It changes nothing.
+
+Owner: the Code of a mailbox. Copy it into `code.tsx`, replace the fictional IDs and names, then check, test and submit as usual.
+
+<!-- check: resource mail.mailbox -->
+```tsx
 import { app, Chart, Column, jsx, owner, Page, Section, Stat, Stats, Table } from "@sdk";
 
 const LIMIT = 50;
@@ -66,3 +70,4 @@ app.get("/", async c => {
 });
 
 export default app;
+```

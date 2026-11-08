@@ -19,8 +19,9 @@ chat and cannot be shared. Reuse an existing Cloud feature when it fits. For a
 quick reading of an uploaded PDF or Office document, `read_file` can return
 Markdown; use code for exact cells, calculations, original PDF text or positions.
 
-For lasting Code and schedules, load `code-authoring`. It uses editor-only tools
-to check, test and submit a version for human activation.
+For lasting Code (schedules, mail automations, Code pages, their tests and
+submitting a version), load `code-authoring`. It uses editor-only tools to
+check, test and submit a version for human activation.
 
 There are two kinds of Studio code:
 

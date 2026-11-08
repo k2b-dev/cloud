@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { join, resolve } from "node:path";
 import {
   CODE_CHECK_LIMITS,
   type CodeCheckResult,
@@ -12,29 +11,39 @@ import {
   generateCodeSdk,
   validateCodePage,
 } from "@k2b/cloud/code";
-import { type CapabilityManifest, capabilityActionPolicy } from "@k2b/cloud/contracts";
-import { chatCapabilities } from "../../../../chat/src/capabilities";
-import { contactsCapabilities } from "../../../../contacts/src/capabilities";
-import { aiCapabilities } from "../../../../core/src/capabilities";
+import { type CapabilityManifest, CapabilityManifestSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
+import { z } from "zod";
 import { acceptanceChecker } from "../../../../core/src/code/acceptance.test-fixture";
 import { codePolicyPreset, codePolicyRow } from "../../../../core/src/code/policy-contracts";
-import { filesCapabilities } from "../../../../filesv2/src/capabilities";
-import { mailCapabilities } from "../../../../mail/src/capabilities";
-import { notebooksCapabilities } from "../../../../notebooks/src/capabilities";
-import { spacesCapabilities } from "../../../../spaces/src/capabilities";
 
 // The skill's examples, templates and fixtures are its contract with Gustav and application authors.
 // Each one is checked against an SDK generated from the real manifests of the apps it documents,
-// with the AI classification and unattended rules of Core's Code bridge.
-const manifests: CapabilityManifest[] = [
-  compileCapabilityManifest("core", aiCapabilities),
-  compileCapabilityManifest("mail", mailCapabilities),
-  compileCapabilityManifest("filesv2", filesCapabilities),
-  compileCapabilityManifest("spaces", spacesCapabilities),
-  compileCapabilityManifest("chat", chatCapabilities),
-  compileCapabilityManifest("notebooks", notebooksCapabilities),
-  compileCapabilityManifest("contacts", contactsCapabilities),
-];
+// with the AI classification and unattended rules of Core's Code bridge. The apps resolve their own
+// `@/` imports, which this package's typecheck cannot follow, so a child process compiles them.
+const APPS = [
+  ["core", "core/src/capabilities.ts", "aiCapabilities"],
+  ["mail", "mail/src/capabilities.ts", "mailCapabilities"],
+  ["filesv2", "filesv2/src/capabilities.ts", "filesCapabilities"],
+  ["spaces", "spaces/src/capabilities.ts", "spacesCapabilities"],
+  ["chat", "chat/src/capabilities.ts", "chatCapabilities"],
+  ["notebooks", "notebooks/src/capabilities.ts", "notebooksCapabilities"],
+  ["contacts", "contacts/src/capabilities.ts", "contactsCapabilities"],
+] as const;
+const packages = resolve(import.meta.dir, "../../../..");
+const compile = Bun.spawnSync(
+  [
+    process.execPath,
+    "-e",
+    `const { compileCapabilityManifest } = await import(${JSON.stringify(join(packages, "cloud/src/capabilities/testing.ts"))});
+const apps = ${JSON.stringify(APPS.map(([id, file, name]) => [id, join(packages, file), name]))};
+const out = [];
+for (const [id, file, name] of apps) out.push(compileCapabilityManifest(id, (await import(file))[name]));
+process.stdout.write(JSON.stringify(out));`,
+  ],
+  { stdout: "pipe", stderr: "pipe" },
+);
+if (compile.exitCode !== 0) throw new Error(`Compiling app manifests failed: ${compile.stderr.toString()}`);
+const manifests: CapabilityManifest[] = z.array(CapabilityManifestSchema).parse(JSON.parse(compile.stdout.toString()));
 const OWNER_ID = "Mbx001";
 const skillDir = import.meta.dir;
 const personal = generateCodeSdk(manifests, { mode: "personal" });
@@ -70,8 +79,13 @@ let checker: Awaited<ReturnType<typeof acceptanceChecker>> | undefined;
 const lineOf = (text: string, index: number) => text.slice(0, index).split("\n").length + 1;
 
 beforeAll(async () => {
-  const references = (await readdir(join(skillDir, "references"))).filter((name) => name.endsWith(".md")).sort();
-  for (const name of ["SKILL.md", ...references.map((reference) => `references/${reference}`)])
+  const list = async (folder: string) =>
+    (await readdir(join(skillDir, folder)))
+      .filter((name) => name.endsWith(".md"))
+      .sort()
+      .map((name) => `${folder}/${name}`);
+  // Templates live in templates/ and ship to the Assistant as references/template-<name>.md.
+  for (const name of ["SKILL.md", ...(await list("references")), ...(await list("templates"))])
     docs.push({ name, text: await Bun.file(join(skillDir, name)).text() });
   for (const doc of docs) {
     let previous: Example | null = null;
@@ -88,12 +102,8 @@ beforeAll(async () => {
       previous = { where, mode: mode!, fails: fails ?? null, entry: `code.${language}`, source: body };
       examples.push(previous);
     }
-  }
-  for (const name of (await readdir(join(skillDir, "templates"))).sort()) {
-    const source = await Bun.file(join(skillDir, "templates", name)).text();
-    const mode = source.match(/^\/\/ check: (.+)\n/)?.[1];
-    if (!mode) throw new Error(`templates/${name}: the first line must be // check: <owner>`);
-    examples.push({ where: `templates/${name}`, mode, fails: null, entry: name.endsWith(".tsx") ? "code.tsx" : "code.ts", source });
+    if (doc.name.startsWith("templates/") && !examples.some((example) => example.where.startsWith(`${doc.name}:`) && !example.fails))
+      throw new Error(`${doc.name}: a template holds one complete checked example`);
   }
   checker = await acceptanceChecker();
   const queue = [...examples];
@@ -105,7 +115,9 @@ beforeAll(async () => {
           files: { [example.entry]: example.source },
           entry: example.entry,
           sdk,
-          aiOperations: sdk.manifest.operations.filter((op) => op.capability.startsWith("core.ai.") && !notAi.includes(op.capability)).map((op) => op.capability),
+          aiOperations: sdk.manifest.operations
+            .filter((op) => op.capability.startsWith("core.ai.") && !notAi.includes(op.capability))
+            .map((op) => op.capability),
           limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 },
         });
       }
@@ -131,7 +143,9 @@ test("every example and template passes the real checker; examples marked to fai
       return !result.ok && result.diagnostics.some((diagnostic) => diagnostic.code === example.fails)
         ? []
         : [`${example.where}: expected ${example.fails}, got ${JSON.stringify(result.ok ? "ok" : result.diagnostics)}`];
-    return result.ok ? [] : [`${example.where}: ${result.diagnostics.map((d) => `${d.code} ${d.line}:${d.column} ${d.message}`).join("; ")}`];
+    return result.ok
+      ? []
+      : [`${example.where}: ${result.diagnostics.map((d) => `${d.code} ${d.line}:${d.column} ${d.message}`).join("; ")}`];
   });
   expect(failures).toEqual([]);
 });
@@ -140,7 +154,9 @@ test("no example calls an operation that never runs unattended", () => {
   // An asking Action never runs unattended in this release; a version that calls one cannot be submitted.
   const never = passing().flatMap((example) =>
     example.result!.ok
-      ? example.result!.manifest.permissions.filter((row) => unattended(row.operation) === "never").map((row) => `${example.where}: ${row.operation}`)
+      ? example
+          .result!.manifest.permissions.filter((row) => unattended(row.operation) === "never")
+          .map((row) => `${example.where}: ${row.operation}`)
       : [],
   );
   expect(never).toEqual([]);
@@ -177,11 +193,14 @@ test("every fixture runs against the example above it with the fake bridge and m
       if (expected.value !== undefined && JSON.stringify(expected.value) !== JSON.stringify(outcome.value))
         failures.push(`${label}: value ${JSON.stringify(outcome.value)}`);
       if (expected.calls) {
-        if (expected.calls.length !== calls.length) failures.push(`${label}: ${calls.length} calls ${JSON.stringify(calls.map((c) => c.operation))}`);
+        if (expected.calls.length !== calls.length)
+          failures.push(`${label}: ${calls.length} calls ${JSON.stringify(calls.map((c) => c.operation))}`);
         for (const [position, call] of expected.calls.entries())
           for (const [field, value] of Object.entries(call))
             if (JSON.stringify(value) !== JSON.stringify((calls[position] as Record<string, unknown> | undefined)?.[field]))
-              failures.push(`${label}: call ${position + 1} ${field} is ${JSON.stringify((calls[position] as Record<string, unknown> | undefined)?.[field])}`);
+              failures.push(
+                `${label}: call ${position + 1} ${field} is ${JSON.stringify((calls[position] as Record<string, unknown> | undefined)?.[field])}`,
+              );
       }
     }
   }
@@ -198,7 +217,15 @@ test("pages that need no data render a valid page tree", async () => {
       if (entry.kind !== "route" || entry.route?.method !== "GET" || entry.route.path.includes(":")) continue;
       const bridge = createCodeTestBridge(sdkFor(example.mode).manifest, []);
       const module = await load(example.result.bundle);
-      const request = { method: "GET", path: entry.route.path, query: "", params: {}, contentType: "text/plain", body: "", user: { id: "u1", groups: [] } };
+      const request = {
+        method: "GET",
+        path: entry.route.path,
+        query: "",
+        params: {},
+        contentType: "text/plain",
+        body: "",
+        user: { id: "u1", groups: [] },
+      };
       try {
         const response = (await module[entry.entrypoint]!(request, bridge)) as { kind: string; tree?: unknown };
         if (response.kind !== "page") continue;
@@ -239,8 +266,10 @@ test("the capability tables state when each Action runs and list every Action of
   for (const match of doc.matchAll(/^\| `([a-z0-9.-]+)` \|.*\| ([a-zA-Z ]+) \|$/gm)) listed.set(match[1]!, match[2]!.trim());
   const wrong: string[] = [];
   for (const [capability, said] of listed)
-    if (words[said] !== unattended(capability)) wrong.push(`${capability}: the table says "${said}", the SDK and Admin preset give ${unattended(capability)}`);
-  const documented = (capability: string) => /^(mail|spaces|chat|notebooks|contacts|filesv2)\./.test(capability) || capability.startsWith("core.ai.");
+    if (words[said] !== unattended(capability))
+      wrong.push(`${capability}: the table says "${said}", the SDK and Admin preset give ${unattended(capability)}`);
+  const documented = (capability: string) =>
+    /^(mail|spaces|chat|notebooks|contacts|filesv2)\./.test(capability) || capability.startsWith("core.ai.");
   for (const op of personal.manifest.operations)
     if (op.kind === "action" && documented(op.capability) && !listed.has(op.capability))
       wrong.push(`${op.capability}: Action missing from the capability tables`);
