@@ -197,10 +197,10 @@ Queries: `notebooks.annotation.list`, `notebooks.annotation.read`, `notebooks.an
 | `notebooks.annotation.resolve` | Resolve or reopen a comment | notebooks.notebook | — | never |
 | `notebooks.annotation.restore` | Restore your recent deleted comment | notebooks.notebook | — | never |
 | `notebooks.annotation.undo-accept` | Undo an accepted passage suggestion | notebooks.notebook | required | never |
-| `notebooks.comment.create` | Add page discussion post | notebooks.notebook | required | never |
+| `notebooks.comment.create` | Add page discussion post | notebooks.notebook | required | admin approval |
 | `notebooks.comment.delete` | Delete page discussion post | notebooks.notebook | required | never |
 | `notebooks.comment.update` | Edit page discussion post | notebooks.notebook | — | never |
-| `notebooks.note.create` | Create note | notebooks.notebook | required | never |
+| `notebooks.note.create` | Create note | notebooks.notebook | required | admin approval |
 | `notebooks.note.edit` | Edit note | notebooks.notebook | — | never |
 | `notebooks.note.move` | Move note | notebooks.notebook | — | never |
 
@@ -217,8 +217,8 @@ Queries: `contacts.book.list`, `contacts.book.read`, `contacts.contact.list`, `c
 | `contacts.contact.move` | Move contact | contacts.book | required | never |
 | `contacts.contact.update` | Update contact | contacts.book | — | never |
 | `contacts.favorite.set` | Set contact favorite | contacts.book | — | never |
-| `contacts.note.create` | Create contact note | contacts.book | required | never |
-| `contacts.tag.change` | Change contact tags | contacts.book | — | never |
+| `contacts.note.create` | Create contact note | contacts.book | required | admin approval |
+| `contacts.tag.change` | Change contact tags | contacts.book | — | admin approval |
 
 Code can look up contacts, for example to recognise a sender; no Contacts
 Action runs unattended yet.
