@@ -1,4 +1,4 @@
-import { installPageSwap, swapPage } from "@k2b/ssr/nav";
+import { installPageSwap, onBeforeLeave, swapPage } from "@k2b/ssr/nav";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { allowsLeave } from "../../ssr/src/nav-veto";
@@ -39,6 +39,13 @@ const control = {
   accept: () => {},
   source: (_source: string) => {},
   dispose: () => {},
+  /** A page guard that is not an editor and vetoes the next navigation once, after the editors' own checks. */
+  vetoNextLeave: () => {
+    const stop = onBeforeLeave((event) => {
+      stop();
+      event.preventDefault();
+    });
+  },
 };
 Object.assign(window, { editorFixture: control });
 function mount() {

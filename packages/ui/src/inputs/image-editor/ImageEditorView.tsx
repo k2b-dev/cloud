@@ -141,6 +141,8 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
  * navigation on its own; any cancelled discard prompt clears it, so a vetoed navigation leaves every edit dirty.
  */
 let leavePass: { href: string; editors: Set<symbol> } | undefined;
+/** Navigation attempts (by their shared `restored` promise) that an editor stopped to ask its own question. */
+const editorVetoes = new WeakSet<Promise<void>>();
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const sliderValue = (key: keyof ImageEditorAdjustments, adjustments: ImageEditorAdjustments) =>
@@ -647,7 +649,16 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   createEffect(on([history, draft, inlineText], () => leavePass?.editors.delete(leaveKey), { defer: true }));
   onBeforeLeave((event) => {
     const href = event.url.href;
-    if (!dirty() || passes(href)) return;
+    if (!dirty()) return;
+    if (passes(href)) {
+      // `restored` resolves only when a later check vetoes. Another editor's question keeps this consent for the
+      // retry; any other veto ends the attempt, so the next navigation asks again.
+      void event.restored.then(() => {
+        if (!editorVetoes.has(event.restored)) leavePass = undefined;
+      });
+      return;
+    }
+    editorVetoes.add(event.restored);
     event.preventDefault();
     void event.restored.then(async () => {
       if (!alive) return;

@@ -740,6 +740,33 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("a discard confirmed for a navigation that another page guard stops is asked again next time", async () => {
+    const { page, errors } = await open("nav=1");
+    try {
+      await selectTool(page, "Crop");
+      await page.getByRole("button", { name: "Mirror", exact: true }).click();
+      await fixture(page, "vetoNextLeave()");
+      const dialog = page.getByRole("dialog");
+      await page.locator("#destination-link").click();
+      await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      await settled(page);
+      expect(new URL(page.url()).pathname).toBe("/editing");
+      expect(await dirty(page)).toBe("true");
+      // The stopped attempt used up the consent: leaving again asks again.
+      await page.locator("#destination-link").click();
+      await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      expect(new URL(page.url()).pathname).toBe("/editing");
+      expect(await dirty(page)).toBe("true");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("cancel and enhanced navigation preserve dirty edits when the warning is dismissed", async () => {
     const { page, errors } = await open();
     try {
