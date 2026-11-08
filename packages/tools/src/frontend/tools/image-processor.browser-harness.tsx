@@ -1,8 +1,20 @@
+import { files } from "@k2b/stdlib/browser";
 import { render } from "solid-js/web";
 import { ImageProcessorView } from "./ImageProcessor.island";
 
 const fixture = {
   downloads: [] as { filename: string; blob: Promise<Blob> }[],
+  archiveImages: async (): Promise<{ name: string; width: number; height: number }[]> => {
+    const archive = await fixture.downloads.find((item) => item.filename === "photos.zip")!.blob;
+    const entries = await files.extractZip(new Uint8Array(await archive.arrayBuffer()));
+    const images = [];
+    for (const entry of entries) {
+      const image = await createImageBitmap(new Blob([new Uint8Array(entry.data)], { type: "image/jpeg" }));
+      images.push({ name: entry.filename, width: image.width, height: image.height });
+      image.close();
+    }
+    return images;
+  },
   rejectArchive: false,
   dispose: () => {},
 };

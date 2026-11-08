@@ -39,9 +39,32 @@ afterAll(async () => {
   await browser?.close();
   server?.stop(true);
 });
-const open = async (query = "", width = 1440) => {
+const open = async (query = "", width = 1440, deferEditorResize = false) => {
   const page = await browser.newPage({ viewport: { width, height: 950 }, reducedMotion: "reduce" });
   const errors = pageErrors(page);
+  if (deferEditorResize) {
+    await page.addInitScript(() => {
+      const Native = ResizeObserver;
+      const pending = new Map<ResizeObserver, () => void>();
+      let hold = true;
+      Object.assign(window, {
+        deliverEditorResize: () => {
+          hold = false;
+          for (const deliver of pending.values()) deliver();
+          pending.clear();
+        },
+      });
+      window.ResizeObserver = class extends Native {
+        constructor(callback: ResizeObserverCallback) {
+          super((entries, observer) => {
+            if (hold && entries.some(({ target }) => target.closest(".k2b-image-editor")))
+              pending.set(observer, () => callback(entries, observer));
+            else callback(entries, observer);
+          });
+        }
+      };
+    });
+  }
   await page.goto(`${server.url}?${query}`);
   if (!query.includes("empty")) await page.getByRole("button", { name: "Download", exact: true }).waitFor();
   else await page.getByText("Choose photos to edit", { exact: true }).waitFor();
@@ -68,8 +91,12 @@ const shownCanvases = ".k2b-image-editor__image > canvas";
 
 describe("Tools public photo editor adoption", () => {
   test("archive opens unvisited editors, keeps names unique and clears dirty after the destination succeeds", async () => {
-    const { page, errors } = await open("", 390);
+    const { page, errors } = await open("", 390, true);
     try {
+      // Decode may finish before the observer delivers the phone overlay sizes. A later delivery must refit
+      // the image even when the canvas dimensions stay unchanged (the stale fit was only 40 px high).
+      await settled(page);
+      await page.evaluate("window.deliverEditorResize()");
       await settled(page);
       const image = await page.locator(".k2b-image-editor__image").boundingBox();
       expect(image!.height).toBeGreaterThanOrEqual(160);
@@ -91,6 +118,11 @@ describe("Tools public photo editor adoption", () => {
       expect(archive.magic).toEqual([80, 75, 3, 4]);
       expect(archive.text).toContain("photo.jpg");
       expect(archive.text).toContain("photo (2).jpg");
+      // Decode the actual ZIP members: neither the strip thumbnail nor the fitted display sets export size.
+      expect(await page.evaluate("window.photoFixture.archiveImages()")).toEqual([
+        { name: "photo.jpg", width: 1067, height: 1600 },
+        { name: "photo (2).jpg", width: 1600, height: 1067 },
+      ]);
       await page.waitForFunction(() => !document.querySelector(".k2b-image-editor[data-dirty=true]"));
       expect(await page.locator(".k2b-image-editor").count()).toBe(2);
       expect(errors).toEqual([]);
