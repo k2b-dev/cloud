@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { capabilityCallDigest, capabilityValueDigest } from "../capabilities/calls";
 import { CapabilityIdempotencyKeySchema, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
+import { CodeFileRefSchema } from "./file-ref";
 import { RunnerCallError, type RunnerJsonValue } from "./runner-protocol";
 import type { CodeTestCall, CodeTestMock } from "./test-contract";
 import type { CodeSdkManifest } from "./types";
@@ -58,12 +59,20 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
         Object.entries(spec.refs).some(([key, type]) => call.refs[key]?.type !== type)
       )
         return refuse("code_test_invalid_refs");
-      if (!z.fromJSONSchema(spec.inputSchema).safeParse(call.input).success) return refuse("code_test_invalid_input");
+      let domainInput = call.input;
+      if (spec.stream?.direction === "write") {
+        const input = z.record(z.string(), z.unknown()).safeParse(call.input);
+        const file = CodeFileRefSchema.safeParse(input.success ? input.data.file : null);
+        if (!input.success || !file.success || file.data.size > spec.stream.maxBytes) return refuse("code_test_invalid_input");
+        const { id: _opaque, ...metadata } = file.data;
+        domainInput = { ...input.data, file: metadata };
+      }
+      if (!z.fromJSONSchema(spec.inputSchema).safeParse(domainInput).success) return refuse("code_test_invalid_input");
       const key = metadata.idempotencyKey;
       if (spec.kind === "action" && spec.idempotency === "required" ? !key : key !== undefined)
         return refuse("code_test_invalid_idempotency");
       const receiptKey = JSON.stringify([operation, key]);
-      const digest = capabilityCallDigest(call);
+      const digest = capabilityCallDigest({ ...call, input: domainInput });
       const old = key ? receipts.get(receiptKey) : undefined;
       if (old) {
         if (old.digest !== digest) return refuse("idempotency_conflict", false);
@@ -88,7 +97,10 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
       if (!reply) return refuse("code_test_mock_exhausted");
       cursors.set(mock, cursor + 1);
       if (!reply.ok) return refuse(reply.error, false);
-      if (!z.fromJSONSchema(spec.dataSchema).safeParse(reply.data).success) return refuse("code_test_invalid_fixture");
+      const output = spec.stream?.direction === "read" ? CodeFileRefSchema : z.fromJSONSchema(spec.dataSchema);
+      const checked = output.safeParse(reply.data);
+      if (!checked.success || (spec.stream?.direction === "read" && CodeFileRefSchema.parse(checked.data).size > spec.stream.maxBytes))
+        return refuse("code_test_invalid_fixture");
       const data = structuredClone(reply.data);
       row.result = { ok: true, data };
       if (key) receipts.set(receiptKey, { digest, data: structuredClone(data) });

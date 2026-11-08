@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { Readable } from "node:stream";
 import * as decision from "@k2b/cloud/ai";
 import { err } from "@k2b/stdlib";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
@@ -23,10 +24,16 @@ import { migrate as migrateCode } from "../../../core/src/migrate/core/code";
 import { migrate as migratePolicy } from "../../../core/src/migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../../../core/src/migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../../../core/src/migrate/core/code-versions";
+import { migrate as migrateLogging } from "../../../core/src/migrate/core/logging";
 import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
+import { migrate as migrateWorkflows } from "../../../core/src/migrate/core/workflows";
+import { mailCapabilities } from "../../../mail/src/capabilities";
+import { migrate as migrateMail } from "../../../mail/src/migrate";
+import { storeReadableBlob } from "../../../mail/src/service/message-blobs";
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
+import { invokeCapabilityStream } from "../_internal/capability-streams";
 import * as registry from "../_internal/registry";
 import { aiModelFixture, aiSettingsFixture } from "../ai/model-fixture";
 import { migrateAiQuotas } from "../ai/quotas-migrate";
@@ -36,13 +43,15 @@ import {
   createCodeRunnerCallRoutes,
   dispatchCapability,
 } from "../api/capabilities";
+import { dispatchCapabilityStream } from "../api/capability-streams";
 import type { AppKey } from "../app-key";
 import { signAppProof } from "../app-proof";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CapabilityError, CodeCheckedVersionManifest } from "../contracts";
-import { capabilityResultSchema } from "../contracts/capabilities";
+import { type CapabilityExecutionContext, CapabilityFileMetadataSchema, capabilityResultSchema } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import { installLiveOutbox } from "../events/testing";
 import { sql } from "../runtime/clients";
 import { getEffectivePermission, hasPermission } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
@@ -56,8 +65,9 @@ import { issueInvocationToken } from "../services/identity/issue-invocation";
 import { mandates } from "../services/mandates";
 import { loadCodeRunCalls } from "../ssr/code-page/calls";
 import type { CodePageInvoke } from "../ssr/code-page/data";
+import { CodeFileRefSchema } from "./file-ref";
 import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
-import { RUNNER_PATHS, type RunnerCallRequest } from "./runner-protocol";
+import { RUNNER_PATHS, type RunnerCallRequest, type RunnerJsonValue } from "./runner-protocol";
 
 // real clock: Postgres fences use its own clock, so the frozen JS clock starts from the real time of this run.
 const now = new Date(Math.floor(Date.now() / 1000) * 1000);
@@ -155,6 +165,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let realRate = false;
   let realAdmission = false;
   let beforeIssue: (() => Promise<void>) | undefined;
+  let fileTransport: CapabilityDispatchDependencies["fetch"] | undefined;
+  let fileEntries = new Map<string, CapabilityRegistryEntry>();
+  let mailMigrated = false;
   const withSigner: NonNullable<CapabilityDispatchDependencies["withActiveSigner"]> = async (_, use) => {
     await beforeIssue?.();
     return sql.begin((db) => use({ ...signer, issuer, groupsAdmin: [] }, db));
@@ -168,11 +181,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       ...(realAdmission ? {} : { admit: async () => ({ limited: false, remaining: 1000, resetIn: 1000 }) }),
     },
     dispatch: {
-      getCapability: async (id: string) => (id === currentEntry.appId ? currentEntry : null),
+      getCapability: async (id: string) => fileEntries.get(id) ?? (id === currentEntry.appId ? currentEntry : null),
       withActiveSigner: withSigner,
       signInvocation: async (params, options) => issueInvocationToken(params, { ...options, groupsAdmin: [] }),
       fetch: async (_url, init) => {
         fetched++;
+        if (fileTransport) return fileTransport(_url, init);
         const headers = new Headers(init?.headers);
         const invocationBody = JSON.parse(String(init?.body));
         const operation =
@@ -354,7 +368,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       routes: [],
       access: { kind: "signedIn" },
     }));
-    capabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (id) => (id === currentEntry.appId ? currentEntry : null));
+    capabilitySpy = spyOn(registry, "getCapability").mockImplementation(
+      async (id) => fileEntries.get(id) ?? (id === currentEntry.appId ? currentEntry : null),
+    );
   });
   async function resetFixture(
     options: {
@@ -453,6 +469,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   beforeEach(async () => {
     await sql`TRUNCATE code.ai_daily_budget`;
     targetFailure = null;
+    fileTransport = undefined;
+    fileEntries = new Map();
     providerRequestsConfirmation = false;
     await resetFixture();
   });
@@ -1226,10 +1244,464 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
     await error({}, "code_call_limit", 200);
   });
-  test("streams are refused", async () => {
+  async function fileFixture(sourceAction = false) {
+    await resetFixture({ entry: true, policyRows: ["read", "silent_shared"] });
+    if (!mailMigrated) {
+      await installLiveOutbox(sql);
+      await migrateLogging();
+      await migrateWorkflows();
+      await migrateMail();
+      mailMigrated = true;
+    }
+    await sql`DELETE FROM mail.mailboxes WHERE short_id='Mb4g00'`;
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes(short_id,name) VALUES('Mb4g00','Invoices') RETURNING id`;
+    const [account] = await sql<{ service_account_id: string }[]>`SELECT service_account_id FROM code.codes WHERE id=${claims.codeId}`;
+    const [access] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(service_account_id,permission) VALUES(${account!.service_account_id}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO mail.mailbox_access(mailbox_id,access_id) VALUES(${mailbox!.id}::uuid,${access!.id}::uuid)`;
+    const payload = Buffer.from("%PDF-invoice-xml-private-".repeat(32_768));
+    const blob = await storeReadableBlob(Readable.from([payload]), payload.length);
+    const [message] = await sql<
+      { id: string }[]
+    >`INSERT INTO mail.message_contents(short_id,mailbox_id,internal_date,content_hash,hydration_status)
+      VALUES('Ms4g00',${mailbox!.id}::uuid,${now},${blob.contentHash},'complete') RETURNING id`;
+    const [part] = await sql<
+      { id: string }[]
+    >`INSERT INTO mail.message_parts(message_id,part_path,content_type,disposition,filename,size_bytes,blob_id,hydration_status)
+      VALUES(${message!.id}::uuid,'1','application/pdf','attachment','invoice.pdf',${payload.length},${blob.id}::uuid,'complete') RETURNING id`;
+    await sql`INSERT INTO mail.attachments(short_id,message_id,part_id,filename,content_type,size_bytes,blob_id)
+      VALUES('At4g00',${message!.id}::uuid,${part!.id}::uuid,'invoice.pdf','application/pdf',${payload.length},${blob.id}::uuid)`;
+    const source = compileCapabilities("mail", {
+      protocolVersion: 2,
+      ...(sourceAction
+        ? {
+            actions: {
+              "attachment.content.read": {
+                ...actionOp,
+                ...mailCapabilities.queries["attachment.content.read"],
+                destructive: false,
+                idempotency: "none",
+                policy: { silent: "shared" },
+              },
+            },
+          }
+        : { queries: { "attachment.content.read": mailCapabilities.queries["attachment.content.read"] } }),
+    });
+    let received: Uint8Array | undefined;
+    let targetWritable = true;
+    let writes = 0;
+    let sourceBytes = 0;
+    let targetBytes = 0;
+    let offerSize = payload.length;
+    let sourceExtraByte = false;
+    let revokeAtWrite = false;
+    let sourceLifetimeMs = 240_000;
+    const published = new Set<string>();
+    const reservations = new Map<string, z.infer<typeof CapabilityFileMetadataSchema>>();
+    async function requireTarget(context: CapabilityExecutionContext) {
+      const permission = await getEffectivePermission({ accessIds: [targetAccess], subject: context.accessSubject });
+      if (!targetWritable || !hasPermission(permission, "write")) throw err.forbidden("No import access");
+    }
+    const target = compileCapabilities("imports", {
+      protocolVersion: 2,
+      actions: {
+        import: {
+          ...actionOp,
+          input: z.object({ file: CapabilityFileMetadataSchema }).strict(),
+          data: z.object({ imported: z.boolean() }).strict(),
+          destructive: false,
+          idempotency: "required",
+          policy: { silent: "shared" },
+          async run(input, context) {
+            await requireTarget(context);
+            const id = context.idempotencyKey!;
+            reservations.set(id, input.file);
+            return {
+              ok: true,
+              data: {
+                data: { imported: false },
+                stream: {
+                  ...input.file,
+                  id,
+                  direction: "write",
+                  size: offerSize,
+                  expiresAt: new Date(now.getTime() + 240_000).toISOString(),
+                },
+              },
+            };
+          },
+          stream: {
+            direction: "write",
+            maxBytes: 100 * 1024 * 1024,
+            async write(stream, body, context) {
+              await requireTarget(context);
+              expect(reservations.has(stream.id)).toBe(true);
+              const bytes = new Uint8Array(await new Response(body).arrayBuffer());
+              await requireTarget(context);
+              received = bytes;
+              if (!published.has(stream.id)) {
+                writes++;
+                published.add(stream.id);
+              }
+              return { data: { imported: true } };
+            },
+            async status(_stream, context) {
+              await requireTarget(context);
+              return { state: "open" };
+            },
+            async abort(_stream, context) {
+              await requireTarget(context);
+            },
+          },
+        },
+      },
+    });
+    for (const compiled of [source, target])
+      fileEntries.set(compiled.manifest.appId, {
+        ...baseEntry,
+        appId: compiled.manifest.appId,
+        manifest: compiled.manifest,
+        endpoint: `http://${compiled.manifest.appId}.test/api/_internal/capabilities/v1`,
+      });
+    fileTransport = async (url, init) => {
+      const request = new Request(url, init);
+      const appId = new URL(request.url).hostname.split(".")[0]!;
+      const compiled = appId === "mail" ? source : target;
+      const segments = new URL(request.url).pathname.split("/");
+      const streamVerb = request.headers.has("x-cloud-stream-offer") ? segments.at(-1) : null;
+      const localId = streamVerb ? segments.at(-2)! : segments.at(-1)!;
+      const kind = compiled.queries.has(localId) ? "query" : "action";
+      const operation = (kind === "query" ? compiled.queries : compiled.actions).get(localId)!;
+      const verified = await verifyInvocationToken(
+        request.headers.get("authorization")!.slice(7),
+        {
+          targetAppId: appId,
+          operation: `${kind === "query" ? "capability.query" : "capability.action.run"}:${localId}`,
+          schemaHash: operation.manifest.schemaHash,
+        },
+        { issuer, key, now },
+      );
+      const authority = verified ? await resolveInvocationAuthority(verified, sql, []) : null;
+      if (!authority) throw new Error("File transfer lacks current Code authority");
+      const context: CapabilityExecutionContext = {
+        authority,
+        actor: authority.actor,
+        accessSubject: authority.accessSubject,
+        user: null,
+        locale: "en",
+        requestId: "file-ref-fixture",
+        origin: "app",
+        signal: request.signal,
+      };
+      if (streamVerb) {
+        if (appId === "imports" && revokeAtWrite) targetWritable = false;
+        const response = await invokeCapabilityStream({
+          compiled,
+          kind: kind === "query" ? "queries" : "actions",
+          localId,
+          verb: streamVerb,
+          request,
+          context,
+        });
+        if (appId === "mail" && response.ok && response.body)
+          return new Response(
+            response.body.pipeThrough(
+              new TransformStream({
+                transform(chunk, controller) {
+                  sourceBytes += chunk.byteLength;
+                  controller.enqueue(chunk);
+                },
+                flush(controller) {
+                  if (sourceExtraByte) controller.enqueue(new Uint8Array([1]));
+                },
+              }),
+            ),
+            { status: response.status, headers: response.headers },
+          );
+        if (appId === "imports") targetBytes = received?.length ?? 0;
+        return response;
+      }
+      const body = z.object({ input: z.unknown() }).parse(await request.json());
+      const outcome = await invokeCompiledCapability({
+        compiled,
+        kind,
+        localId,
+        input: body.input,
+        expectedSchemaHash: operation.manifest.schemaHash,
+        context: {
+          ...context,
+          ...(request.headers.has("idempotency-key") ? { idempotencyKey: request.headers.get("idempotency-key")! } : {}),
+        },
+      });
+      if (appId === "mail" && outcome.ok && outcome.data.stream)
+        outcome.data.stream.expiresAt = new Date(now.getTime() + sourceLifetimeMs).toISOString();
+      const wire = serializeCapabilityProviderResult(outcome);
+      return new Response(wire.body, { status: wire.status, headers: { "content-type": "application/json" } });
+    };
+    const read = async () => {
+      const response = await send({
+        operation: "mail.attachment.content.read",
+        input: {
+          call: {
+            capability: "mail.attachment.content.read",
+            target: null,
+            refs: {},
+            input: { id: "At4g00" },
+          },
+          metadata: {},
+        },
+      });
+      return response.json();
+    };
+    let serial = 0;
+    const write = (file: RunnerJsonValue, change?: Partial<CodeRunTokenInput>, businessKey?: string) =>
+      send({
+        change,
+        operation: "imports.import",
+        input: {
+          call: {
+            capability: "imports.import",
+            target: null,
+            refs: {},
+            input: { file },
+          },
+          metadata: { idempotencyKey: businessKey ?? `import-${++serial}` },
+        },
+      });
+    return {
+      read,
+      write,
+      payload,
+      source,
+      target,
+      mailboxId: mailbox!.id,
+      accessId: access!.id,
+      writes: () => writes,
+      received: () => received,
+      sourceBytes: () => sourceBytes,
+      targetBytes: () => targetBytes,
+      denyTarget: () => {
+        targetWritable = false;
+      },
+      extraByte: () => {
+        sourceExtraByte = true;
+      },
+      revokeAtWrite: () => {
+        revokeAtWrite = true;
+      },
+      expireIn: (ms: number) => {
+        sourceLifetimeMs = ms;
+      },
+      offerSize: (value: number) => {
+        offerSize = value;
+      },
+    };
+  }
+  test("4g Mail attachment passes through Core to a third-party import, with metadata only at the sandbox seam", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    if (!opened.ok) throw new Error(JSON.stringify(opened));
+    expect(opened.ok).toBe(true);
+    const file = CodeFileRefSchema.parse(opened.data);
+    expect(Object.keys(file).sort()).toEqual(["id", "mediaType", "name", "size"]);
+    expect(file).toMatchObject({ name: "invoice.pdf", mediaType: "application/pdf", size: fixture.payload.length });
+    expect(JSON.stringify(opened).length).toBeLessThan(8192);
+    expect(JSON.stringify(opened)).not.toContain("%PDF");
+    expect(fixture.sourceBytes()).toBe(0);
+    expect(await (await fixture.write(file)).json()).toEqual({ ok: true, data: { imported: true } });
+    expect(fixture.received()).toEqual(new Uint8Array(fixture.payload));
+    expect(fixture.sourceBytes()).toBe(fixture.payload.length);
+    expect(fixture.targetBytes()).toBe(fixture.payload.length);
+    expect(await (await fixture.write(file)).json()).toEqual({ ok: false, error: { code: "code_file_spent" } });
+    const rows = await sql`SELECT digest FROM code.file_redemptions WHERE run_id=${claims.runId}::uuid`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.digest).not.toBe(file.id);
+    // Interactive and foreign credentials cannot exchange the Code continuation.
+    expect(
+      (await dispatchCapabilityStream(new Request("http://core.test", { headers: { "x-cloud-stream-id": file.id } }), null, "read")).status,
+    ).toBe(403);
+  }, 30_000);
+  test("4g foreign account cannot obtain a Mail file, and another Code with its own valid mandate cannot redeem it", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    await resetFixture({ entry: true, policyRows: ["read", "silent_shared"] });
+    expect(await fixture.read()).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    expect(fixture.received()).toBeUndefined();
+  }, 30_000);
+  test("4g a read-stream Action uses its actual Action policy again when Core redeems its reference", async () => {
+    const fixture = await fileFixture(true);
+    const opened = await fixture.read();
+    expect(opened).toMatchObject({ ok: true });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: true, data: { imported: true } });
+    const fresh = await fixture.read();
+    fileEntries.get("mail")!.manifest.policies!["attachment.content.read"] = { ask: "app_asks" };
+    expect(await (await fixture.write(fresh.data)).json()).toMatchObject({ ok: false, error: { code: "code_file_source_refused" } });
+    expect(fixture.writes()).toBe(1);
+  }, 30_000);
+  test("4g references reject tampered metadata and another run or generation", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    for (const file of [
+      { ...opened.data, size: 1 },
+      { ...opened.data, name: "forged.xml" },
+      { ...opened.data, mediaType: "text/xml" },
+    ])
+      expect(await (await fixture.write(file)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    // A valid new run of the same executable cannot redeem the old run's reference.
+    const original = { ...claims };
+    const [run] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit)
+      VALUES(${claims.codeId},${claims.versionId}::uuid,'manual','weekly','running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
+    claims = { ...claims, runId: run!.id };
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    claims = original;
+    await sql`UPDATE code.runs SET generation=2 WHERE id=${claims.runId}::uuid`;
+    claims = { ...claims, generation: 2 };
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+  }, 30_000);
+  test("4g a file expires before the run token and cannot be redeemed", async () => {
+    const fixture = await fileFixture();
+    fixture.expireIn(30_000);
+    const opened = await fixture.read();
+    try {
+      setSystemTime(new Date(now.getTime() + 31_000));
+      expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+      expect(fixture.received()).toBeUndefined();
+    } finally {
+      setSystemTime(now);
+    }
+  }, 30_000);
+  test("4g a concurrent redemption has exactly one winner", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    const outcomes = await Promise.all([fixture.write(opened.data), fixture.write({ ...opened.data, id: opened.data.id.toUpperCase() })]);
+    const results = await Promise.all(outcomes.map((response) => response.json()));
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => result.error?.code === "code_file_spent")).toHaveLength(1);
+    expect(fixture.sourceBytes()).toBe(fixture.payload.length);
+  }, 30_000);
+  test("4g equivalent opaque reference encodings share the same single redemption", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    const file = CodeFileRefSchema.parse(opened.data);
+    expect(await (await fixture.write(file)).json()).toEqual({ ok: true, data: { imported: true } });
+    for (const id of [file.id.toUpperCase(), `${file.id.startsWith("01") ? "02" : "01"}${file.id.slice(2)}`]) {
+      expect(id).not.toBe(file.id);
+      expect(await (await fixture.write({ ...file, id })).json()).toEqual({ ok: false, error: { code: "code_file_spent" } });
+    }
+    expect(fixture.writes()).toBe(1);
+  }, 30_000);
+  test("4g current target stream access and the actual byte count still gate publication", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    fixture.revokeAtWrite();
+    expect(await (await fixture.write(opened.data)).json()).toEqual({
+      ok: false,
+      error: { code: "code_file_target_refused", status: 403 },
+    });
+    expect(fixture.received()).toBeUndefined();
+  }, 30_000);
+  test("4g an oversized source body fails without publishing a target result", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    fixture.extraByte();
+    expect(await (await fixture.write(opened.data)).json()).toMatchObject({ ok: false });
+    expect(fixture.received()).toBeUndefined();
+  }, 30_000);
+  test("4g a fresh run resumes its authorized idempotent target reservation without reusing the old file or publishing twice", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    expect(await (await fixture.write(opened.data, undefined, "invoice-business-key")).json()).toEqual({
+      ok: true,
+      data: { imported: true },
+    });
+    const [run] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit)
+      VALUES(${claims.codeId},${claims.versionId}::uuid,'manual','weekly','running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
+    claims = { ...claims, runId: run!.id };
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    const fresh = await fixture.read();
+    expect(await (await fixture.write(fresh.data, undefined, "invoice-business-key")).json()).toEqual({
+      ok: true,
+      data: { imported: true },
+    });
+    expect(fixture.writes()).toBe(1);
+  }, 30_000);
+  test("4g even the same run and account cannot redeem a file after its executable version or mandate revision changes", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    await sql`UPDATE auth.mandates SET revision=revision+1 WHERE id=${claims.mandateId}::uuid`;
+    claims = { ...claims, mandateRevision: claims.mandateRevision + 1 };
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    const fresh = await fixture.read();
+    const previousVersion = claims.versionId;
+    const [version] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
+      SELECT code_id,number+1,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by
+      FROM code.versions WHERE id=${previousVersion}::uuid RETURNING id`;
+    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding)
+      SELECT code_id,${version!.id}::uuid,jsonb_set(binding,'{versionId}',to_jsonb(${version!.id}::text)) FROM code.version_submissions WHERE version_id=${previousVersion}::uuid`;
+    const [account] = await sql<{ service_account_id: string }[]>`SELECT service_account_id FROM code.codes WHERE id=${claims.codeId}`;
+    const mandate = await mandates.create({
+      authority: { kind: "admin", userId },
+      subject: { type: "service_account", id: account!.service_account_id },
+      ownerAppId: "runner",
+      workloadType: "code.version",
+      workloadId: version!.id,
+      policy: null,
+    });
+    if (!mandate.ok) throw new Error(mandate.error.message);
+    await sql`UPDATE code.runs SET version_id=${version!.id}::uuid WHERE id=${claims.runId}::uuid`;
+    claims = { ...claims, versionId: version!.id, mandateId: mandate.data.id, mandateRevision: mandate.data.revision };
+    expect(await (await fixture.write(fresh.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    // The replacement version is admitted and can obtain its own reference.
+    expect(await fixture.read()).toMatchObject({ ok: true });
+    expect(fixture.received()).toBeUndefined();
+  }, 30_000);
+  test("4g the source's current advertised limit is checked again at redemption", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    fileEntries.get("mail")!.manifest.queries[0]!.stream!.maxBytes = fixture.payload.length - 1;
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_source_refused" } });
+    expect(fixture.sourceBytes()).toBe(0);
+    expect(fixture.received()).toBeUndefined();
+  }, 30_000);
+  test("4g both source and target recheck current access and failures consume the redemption", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    fixture.denyTarget();
+    expect(await (await fixture.write(opened.data)).json()).toMatchObject({ ok: false });
+    expect(fixture.received()).toBeUndefined();
+    expect(fixture.sourceBytes()).toBe(0);
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_spent" } });
+  }, 30_000);
+  test("4g source grant revoked after issuance refuses the actual read", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_source_refused" } });
+    expect(fixture.received()).toBeUndefined();
+  }, 30_000);
+  test("4g target limits and exact reservation sizes are enforced before source bytes are pulled", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    fileEntries.get("imports")!.manifest.actions[0]!.stream!.maxBytes = fixture.payload.length - 1;
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_size_limit" } });
+    fileEntries.get("imports")!.manifest.actions[0]!.stream!.maxBytes = 100 * 1024 * 1024;
+    fixture.offerSize(fixture.payload.length - 1);
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_mismatch" } });
+    expect(fixture.sourceBytes()).toBe(0);
+    expect(fixture.received()).toBeUndefined();
+  }, 30_000);
+  test("write streams without a file metadata input remain unavailable to Code", async () => {
     const entry = structuredClone(baseEntry);
-    entry.manifest.queries[0]!.stream = { direction: "read", maxBytes: 1024 };
-    await error({ operation: "example.read", entry }, "code_stream_forbidden");
+    entry.manifest.actions.find((action) => action.localId === "write")!.stream = { direction: "write", maxBytes: 1024 };
+    await error({ entry }, "code_stream_forbidden");
     await expectPolicyRefusal();
   });
   test("code:false is refused", async () => {

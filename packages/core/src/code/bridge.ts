@@ -227,6 +227,13 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           return mandates.withIssueAuthority(input, use, options);
         };
         response = await execute({
+          consumeFileRef: (digest) =>
+            sql.begin(async (tx) => {
+              await authorizeCall(call, tx);
+              const rows = await tx`INSERT INTO code.file_redemptions(run_id,digest)
+              VALUES(${call.claims.runId}::uuid,${digest}) ON CONFLICT DO NOTHING RETURNING digest`;
+              return rows.length === 1;
+            }),
           onRefusal: (kind) => {
             refusalKind = kind;
           },

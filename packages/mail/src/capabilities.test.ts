@@ -955,6 +955,7 @@ describe("mail capabilities", () => {
       "tag",
     ]);
     expect(Object.keys(mailCapabilities.queries).sort()).toEqual([
+      "attachment.content.read",
       "attachment.read",
       "attachment.read-content",
       "comment.read",
@@ -3278,6 +3279,64 @@ describe("mail capabilities", () => {
     expect(result.data.summary).toBe("Read attachment text from “roadmap.pdf”.");
   });
 
+  test("attachment file offers are metadata-only and the stream rechecks current access and source identity", async () => {
+    spyOn(resourceParents, "attachment").mockResolvedValue({ mailboxId: internalMailboxId, messageId: internalMessageId });
+    const opened = {
+      blobId: "11111111-1111-4111-8111-111111111111",
+      total: 3,
+      chunkSize: 65536,
+      chunkCount: 1,
+      contentHash: "a".repeat(64),
+      contentType: "application/pdf",
+      filename: "invoice.pdf",
+    };
+    const open = spyOn(messages, "openAttachment").mockResolvedValue({ ok: true, data: opened });
+    const stream = spyOn(messages, "createAttachmentStream").mockImplementation(
+      (params) =>
+        new ReadableStream({
+          async start(controller) {
+            await params.assertCurrentAccess?.();
+            controller.enqueue(new Uint8Array([1, 2, 3]));
+            controller.close();
+          },
+        }),
+    );
+    const definition = mailCapabilities.queries["attachment.content.read"];
+    const result = await definition.run({ id: attachmentId }, context);
+    if (!result.ok) throw new Error("Expected attachment file offer");
+    expect(result.data.data).toEqual({ name: "invoice.pdf", mediaType: "application/pdf", size: 3 });
+    expect(stream).not.toHaveBeenCalled();
+    const response = await definition.stream.read(result.data.stream, context);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open.mock.calls[0]![0]).toMatchObject({
+      context: { actor: context.actor, accessSubject: context.accessSubject },
+      attachmentId: internalAttachmentId,
+    });
+    open.mockResolvedValue({ ok: false, error: err.forbidden("Revoked") });
+    await expect(definition.stream.read(result.data.stream, context)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    open.mockResolvedValue({ ok: true, data: { ...opened, blobId: "22222222-2222-4222-8222-222222222222" } });
+    await expect(definition.stream.read(result.data.stream, context)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+  test("attachment file offers enforce Mail's existing 100 MiB limit before opening a body", async () => {
+    spyOn(resourceParents, "attachment").mockResolvedValue({ mailboxId: internalMailboxId, messageId: internalMessageId });
+    spyOn(messages, "openAttachment").mockResolvedValue({
+      ok: true,
+      data: {
+        blobId: "11111111-1111-4111-8111-111111111111",
+        total: 100 * 1024 * 1024 + 1,
+        chunkSize: 65536,
+        chunkCount: 1601,
+        contentHash: "a".repeat(64),
+        contentType: "application/pdf",
+        filename: "large.pdf",
+      },
+    });
+    const body = spyOn(messages, "createAttachmentStream");
+    const result = await mailCapabilities.queries["attachment.content.read"].run({ id: attachmentId }, context);
+    expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+    expect(body).not.toHaveBeenCalled();
+  });
   test("keeps the canonical attachment reader metadata-only", async () => {
     spyOn(resourceParents, "attachment").mockResolvedValue({ mailboxId: internalMailboxId, messageId: internalMessageId });
     spyOn(messages, "getMessage").mockResolvedValue({
