@@ -11,7 +11,7 @@ order: 120
 - Generatoren, Base64, Hex, Base32, Farbumrechnung, Hashing, Passwörter, Verschlüsselung und Bildbearbeitung sind für die direkte interaktive Nutzung auf der Seite gedacht.
 - **Dokument zu Markdown** sendet ein ausgewähltes Dokument an diesen Cloud-Server zur begrenzten Konvertierung im Arbeitsspeicher. Das Werkzeug speichert weder Upload noch Ergebnis dauerhaft.
 - **Markdown zu PDF** sendet Markdown und CSS an diesen Cloud-Server, der das PDF im Arbeitsspeicher erzeugt. Das Werkzeug speichert weder Eingabe noch PDF dauerhaft.
-- Der **Internet-Speedtest** tauscht anonyme Testdaten mit dem auf der Seite genannten Messserver aus. Er sieht deine IP-Adresse, erhält aber keine Cloud-Zugangsdaten oder persönlichen Dateien.
+- Der **Speedtest** tauscht anonyme Testdaten mit dem auf der Seite genannten Messserver aus. Er sieht deine IP-Adresse, erhält aber keine Cloud-Zugangsdaten oder persönlichen Dateien.
 - Der **Webhook-Tester** erstellt Endpunkte auf dem Server und speichert den Anfrageverlauf, damit du eingehende Aufrufe später untersuchen kannst.
 
 Der Webhook-Tester sendet nur an öffentliche Internetadressen, lehnt lokale, private und andere reservierte Netzwerkadressen ab und folgt keinen Weiterleitungen.

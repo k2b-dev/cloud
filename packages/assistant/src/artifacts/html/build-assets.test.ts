@@ -12,6 +12,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).toContain("k2b-area-layer");
   expect(normal).not.toContain("k2b-waterfall-bar");
   expect(rare).toContain("k2b-waterfall-bar");
+  expect(normal).toContain("Waterfall balances must be finite");
+  expect(rare).not.toContain("Waterfall balances must be finite");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
   for (const marker of ["k2b-chart-bubble-label", "k2b-chart-radar-axis"]) {
@@ -23,7 +25,14 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(62_900);
+  expect(Buffer.byteLength(rare)).toBeLessThan(63_200);
+
+  expect(normal).not.toContain("k2b-chart-group-heading");
+  expect(rare).toContain("k2b-chart-group-heading");
+  expect(normal).toContain("Horizontal bars require aligned nonnegative segment values");
+  expect(rare).not.toContain("Horizontal bars require aligned nonnegative segment values");
+  // Reference cells need only identity validation, not capability registration.
+  expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);

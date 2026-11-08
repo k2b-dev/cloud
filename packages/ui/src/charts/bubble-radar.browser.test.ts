@@ -130,6 +130,8 @@ for (const spec of cases)
           expect(await chart.locator("[data-inspected]").count()).toBe(0);
           const mark =
             spec.kind === "radar" ? chart.locator("[data-chart-datum]").last() : chart.locator("[data-chart-datum] circle").last();
+          if (spec.kind === "radar")
+            expect(await mark.locator(".k2b-chart-radar-axis").evaluate((e) => getComputedStyle(e).pointerEvents)).toBe("stroke");
           await mark.hover();
           await settled(page);
           expect(await chart.locator("[data-inspected]").count()).toBe(1);

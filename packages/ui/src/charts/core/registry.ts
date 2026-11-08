@@ -3,6 +3,7 @@ import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
 import { renderBubbleSvg } from "./bubble";
 import { renderHeatmapSvg } from "./calendar";
+import { renderHbarSvg } from "./hbar";
 import { map } from "./map";
 import { renderRadarSvg } from "./radar";
 import { barGauge, boxplot, donut, gauge, histogram, line, pie, scatter, sparkline, stat } from "./svg-renderers";
@@ -15,6 +16,7 @@ const createChartRenderers = () => ({
   area: renderAreaSvg,
   line: line,
   bar: renderBarChartSvg,
+  hbar: renderHbarSvg,
   pie: pie,
   donut: donut,
   scatter: scatter,

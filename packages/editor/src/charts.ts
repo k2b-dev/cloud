@@ -16,6 +16,8 @@ import {
   extendDomainToNice,
   gauge,
   type HeatmapChartOptions,
+  type HorizontalBarOptions,
+  hbarLayout,
   histogram,
   line,
   niceLogTicks,
@@ -25,6 +27,7 @@ import {
   renderAreaSvg,
   renderBarChartSvg,
   renderBubbleSvg,
+  renderHbarSvg,
   renderHeatmapSvg,
   renderRadarSvg,
   renderWaterfallSvg,
@@ -39,21 +42,23 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "waterfall"
-    ? WaterfallOptions
-    : K extends "area"
-      ? AreaOptions
-      : K extends "bubble"
-        ? BubbleOptions
-        : K extends "radar"
-          ? RadarOptions
-          : K extends "heatmap"
-            ? HeatmapChartOptions
-            : K extends "bar"
-              ? BarChartOptions
-              : K extends keyof typeof charts
-                ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-                : never);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "hbar"
+    ? HorizontalBarOptions
+    : K extends "waterfall"
+      ? WaterfallOptions
+      : K extends "area"
+        ? AreaOptions
+        : K extends "bubble"
+          ? BubbleOptions
+          : K extends "radar"
+            ? RadarOptions
+            : K extends "heatmap"
+              ? HeatmapChartOptions
+              : K extends "bar"
+                ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                : K extends keyof typeof charts
+                  ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                  : never);
 }[ChartInput["kind"]];
 
 /**
@@ -78,6 +83,7 @@ const labels = /* @__PURE__ */ i18n.define({
       outflow: "Out",
       after: "Balance after",
       value: "Value",
+      total: "Total",
       share: "Share",
       position: "Position",
       from: "From",
@@ -104,6 +110,7 @@ const labels = /* @__PURE__ */ i18n.define({
       outflow: "Raus",
       after: "Stand danach",
       value: "Wert",
+      total: "Gesamt",
       share: "Anteil",
       position: "Position",
       from: "Von",
@@ -165,7 +172,19 @@ export const chartReferenceValues = (input: ChartInput, name: "x" | "y") =>
 
 /** The value axes of a chart with what they show: the data checks and the label room read them alike. */
 export const chartValueAxes = (input: ChartInput): { values: number[]; axis?: ChartAxisInput; zero?: boolean; name: "x" | "y" }[] => {
-  if (input.kind === "bar") return [{ values: input.data.map((item) => item.value), axis: input.yAxis, zero: true, name: "y" }];
+  if (input.kind === "bar")
+    return [
+      {
+        values: [
+          ...input.data.map((item) => item.value),
+          ...(input.series?.flatMap((s) => s.data.filter((v): v is number => v !== null)) ?? []),
+          ...(input.compare?.data.filter((v): v is number => v !== null) ?? []),
+        ],
+        axis: input.yAxis,
+        zero: true,
+        name: "y",
+      },
+    ];
   if (input.kind === "boxplot") return [{ values: input.data.flatMap((item) => item.values), axis: input.yAxis, name: "y" }];
   if (input.kind === "histogram") {
     if (!input.references?.length) return [{ values: input.data, name: "x" }];
@@ -286,7 +305,14 @@ const formattedValues = (input: ChartInput): number[] => {
     case "scatter":
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...chartReferenceValues(input, "y")];
     case "bar":
-      return [...input.data.map((item) => item.value), ...chartReferenceValues(input, "y")];
+      return [
+        ...input.data.map((item) => item.value),
+        ...(input.series?.flatMap((s) => s.data.filter((v): v is number => v !== null)) ?? []),
+        ...(input.compare?.data.filter((v): v is number => v !== null) ?? []),
+        ...chartReferenceValues(input, "y"),
+      ];
+    case "hbar":
+      return input.rows.flatMap((r) => r.values.filter((v): v is number => v !== null));
     case "pie":
     case "donut":
       return input.data.map((item) => item.value);
@@ -357,6 +383,8 @@ export function chartLegend(
   input: ChartInput,
   locale: string,
 ): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean }[] {
+  // These category renderers own their live legends, including prepared snapshots.
+  if (input.kind === "hbar" || (input.kind === "bar" && input.series)) return [];
   if (input.kind === "bar")
     return input.colorByBar && input.legend ? input.data.map((entry, index) => ({ label: entry.label, color: index % 8 })) : [];
   if (input.kind === "area") return input.legend === false ? [] : input.series.map((s, i) => ({ label: s.label, color: i % 8 }));
@@ -429,6 +457,15 @@ export function chartRenderOptions(
         displayWidth: options.width,
         format: format.value,
       };
+    case "hbar":
+      return {
+        kind: "hbar",
+        locale,
+        series: input.series,
+        rows: input.rows,
+        legend: input.legend,
+        valueFormat: format.value,
+      };
     case "waterfall":
       return {
         kind: "waterfall",
@@ -458,14 +495,20 @@ export function chartRenderOptions(
       if (input.kind === "bar")
         return {
           kind: "bar",
+          locale,
           data: input.data,
+          x: input.x,
+          series: input.series,
+          layout: input.layout,
+          normalize: input.normalize,
+          compare: input.compare,
           xAxis: input.xAxis,
           yAxis: axis(yAxis, options.formats?.y ?? format.tick),
           // A host's own function format writes printed values like its ticks and table cells.
           valueFormat: options.formats?.value ?? options.formats?.y ?? format.value,
           colorByBar: input.colorByBar,
           showValues: input.showValues,
-          legend: options.legend === "outside" ? false : input.legend,
+          legend: input.series ? input.legend : options.legend === "outside" ? false : input.legend,
           references,
           ...(options.width === undefined ? {} : { displayWidth: options.width }),
         };
@@ -621,6 +664,8 @@ export const drawChart = (options: RenderOptions): string => {
       return renderBubbleSvg({ ...options, ...common });
     case "radar":
       return renderRadarSvg({ ...options, ...common });
+    case "hbar":
+      return renderHbarSvg({ ...options, ...common, height: hbarLayout(options).height });
     case "waterfall":
       return renderWaterfallSvg({ ...options, ...common });
     case "area":
@@ -758,7 +803,9 @@ export function chartRows(
       // Bars may hide some axis labels; the table names every category.
       const label =
         input.kind === "bar" || input.kind === "pie" || input.kind === "donut" || input.kind === "boxplot" || input.kind === "barGauge"
-          ? input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label
+          ? ((input.kind === "bar" && input.series
+              ? undefined
+              : input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label) ?? datum.label)
           : datum.label;
       if (label)
         cell(
@@ -796,6 +843,23 @@ export function chartRows(
       }
       if (typeof value === "string" && input.kind === "heatmap" && (field.key === "x" || field.key === "y")) {
         cell(field.key, field.key.toUpperCase(), value, value);
+        continue;
+      }
+      if (input.kind === "hbar" || (input.kind === "bar" && input.series)) {
+        const seriesIndex = field.key.startsWith("series:") ? Number(field.key.slice(7)) : undefined;
+        const label =
+          seriesIndex === undefined
+            ? field.key === "previous" && input.kind === "bar"
+              ? (input.compare?.label ?? field.key)
+              : field.key === "total"
+                ? t.total
+                : field.key === "delta"
+                  ? t.delta
+                  : field.key
+            : input.kind === "hbar"
+              ? input.series[seriesIndex]!
+              : input.series![seriesIndex]!.label;
+        cell(field.key, label, value, field.formatted ?? String(value));
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
@@ -893,6 +957,10 @@ export const chartMarks = (input: ChartInput): number => {
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);
+    case "bar":
+      return input.series ? (input.x?.length ?? 0) * (input.series.length + (input.compare ? 1 : 0)) : input.data.length;
+    case "hbar":
+      return input.rows.length * input.series.length;
     case "boxplot":
       return input.data.reduce((sum, box) => sum + box.values.length, 0);
     case "gauge":

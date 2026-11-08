@@ -137,6 +137,8 @@ Hover preserves each variant's color hierarchy. Pressing an immediate action add
 
 Use `SplitButton` when one immediate action has closely related alternatives. The main segment remains a native button; the icon-only segment opens the existing `DropdownItem` menu contract. `variant`, `size`, `disabled`, and `loading` apply to both segments. `menuLabel` is required as the secondary trigger's accessible name.
 
+Both segments form one body with the same height and outer radius; only the outer corners round. On a filled variant a fine line in the label colour divides the segments, so it stays light on every fill in both themes. Bordered variants share their light border as the divider, and it never darkens. Hover tints only the segment under the pointer. Each segment draws its focus ring inside itself, so exactly one segment shows focus and its ring never covers the other one.
+
 Links use normal document navigation by default. When the link renders in browser code, opt into the shared navigation contract explicitly:
 
 ```tsx
