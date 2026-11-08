@@ -8,6 +8,7 @@ describe("toolsHelp", () => {
       "tools-start",
       "tools-choose",
       "tools-document-markdown",
+      "tools-speedtest",
       "tools-markdown-pdf",
       "tools-image-converter",
       "tools-safety",

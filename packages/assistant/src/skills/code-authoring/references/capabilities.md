@@ -120,7 +120,7 @@ Queries: `spaces.calendar-destination.list`, `spaces.calendar-invitation.preview
 | --- | --- | --- | --- | --- |
 | `spaces.calendar-invitation.import` | Import calendar invitation | spaces.space | — | never |
 | `spaces.calendar-invitation.response.commit` | Commit calendar response draft | — | — | not in the SDK |
-| `spaces.comment.create` | Create comment | spaces.space | required | never |
+| `spaces.comment.create` | Create comment | spaces.space | required | admin approval |
 | `spaces.comment.delete` | Delete comment | spaces.space | required | never |
 | `spaces.comment.update` | Update comment | spaces.space | required | never |
 | `spaces.event.create` | Create calendar event | spaces.space | required | admin approval |
@@ -130,7 +130,7 @@ Queries: `spaces.calendar-destination.list`, `spaces.calendar-invitation.preview
 | `spaces.item.delete` | Delete Space item | spaces.space | required | never |
 | `spaces.item.reference.add` | Link a Cloud resource | spaces.space | — | admin approval |
 | `spaces.item.reference.remove` | Unlink a Cloud resource | spaces.space | — | never |
-| `spaces.item.tags.set` | Set item tags | spaces.space | — | never |
+| `spaces.item.tags.set` | Set item tags | spaces.space | — | admin approval |
 | `spaces.reaction.add` | Add reaction | spaces.space | required | never |
 | `spaces.reaction.remove` | Remove reaction | spaces.space | required | never |
 | `spaces.task.blocker.add` | Add task blocker | spaces.space | — | never |

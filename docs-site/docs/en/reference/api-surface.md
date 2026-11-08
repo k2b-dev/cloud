@@ -483,6 +483,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/descriptions` | Supported, SolidJS | `DescriptionPanel` draws a portable chart description or a Cloud block (`stats`, `table`, `details`, `budget`, `balance`, `flow`) in the `@k2b/ui` dashboard frame with every state; `DescriptionBlockPreview`, `resolveDescription`, `formatDescriptionNumber` | [Dashboards from descriptions](/en/docs/frontend/dashboards) |
 | `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution` and `CloudMapProps` for budgeted maps and browser snapshots; `AddressAutocomplete` for forms; `geoNavigationHref` and `geoNavigationPlatform` for navigation links | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
@@ -720,6 +721,24 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+
+## Workspace speedtest consumers
+
+The private `@k2b/speedtest` workspace shares one measurement contract between
+Tools, Cloud CLI and the standalone server's script. It has no Cloud dependency.
+Use its supported entries rather than importing source files:
+
+| Entry | Runtime and purpose |
+| --- | --- |
+| `@k2b/speedtest` | Browser/server: plans, engine, progress and result types |
+| `@k2b/speedtest/browser` | Browser: anonymous fetch and XHR upload progress |
+| `@k2b/speedtest/node` | Node/Bun: anonymous HTTP transport with socket backpressure |
+| `@k2b/speedtest/http` | Browser/server: shared HTTP response checks |
+| `@k2b/speedtest/udp-client` | Node/Bun: explicit UDP jitter/loss diagnostic |
+
+See [Run a speedtest server](/en/docs/operations/speedtest-server) for duration,
+statistics, anonymous budgets and migration from Cloud's legacy script URLs.
 
 Core's routine definition export uses the framework-owned `exportChatTasks`,
 `ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`

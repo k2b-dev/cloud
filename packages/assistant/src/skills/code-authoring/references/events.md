@@ -11,6 +11,8 @@ module level with a constant event name; one handler per event.
 | --- | --- | --- | --- |
 | `mail.message.received` | `mail.message` | `mail.mailbox` | Yes, in the mailbox's Code |
 | `spaces.item.created`, `spaces.item.completed` | `spaces.item` | `spaces.space` | No: Spaces offers no Code of a space yet |
+| `spaces.item.updated`, `spaces.item.due` | `spaces.item` | `spaces.space` | No: as above |
+| `spaces.comment.created` | `spaces.comment` | `spaces.space` | No: as above |
 | `notebooks.note.created`, `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | No: Notebooks offers no Code of a notebook yet |
 | `notebooks.notebook.created`, `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | No: as above |
 | `core.user.created` | `core.user` | none | No: events without a place start no Code |
