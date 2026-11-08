@@ -88,6 +88,15 @@ const intentIcon = (intent: DraftIntent): string =>
         ? "ti-arrow-forward-up"
         : "ti-send";
 
+/** What the host may start through the composer's own safe paths. */
+export type MailInlineDraftControls = {
+  collapse: () => Promise<void>;
+  /** The same Send as the draft's own button, with every review and guard. */
+  send: () => void;
+  /** Moves the caret back into the text, at its end. */
+  focusText: () => void;
+};
+
 /**
  * A conversation that shows the draft in place instead of a compose page. The composer keeps every save, lease, and
  * send rule; it only asks the host where to go instead of navigating.
@@ -102,7 +111,7 @@ export type MailComposerHost = {
   fullscreen: Accessor<boolean>;
   toggleFullscreen: () => void;
   /** The composer hands the host its safe close, so Esc and the host's own controls take the same path. */
-  register: (controls: { collapse: () => Promise<void> }) => void;
+  register: (controls: MailInlineDraftControls) => void;
   /** Who wrote a message of the conversation and when, for the quote line ("Marlene Hofbauer, today 09:12"). */
   messageLabel: (messageId: string) => string | null;
   /** A new message tells the list its subject and recipients while someone types them. */
@@ -1315,7 +1324,11 @@ export default function MailComposer(props: {
     if (untouched() && editable()) return void (await discardDraft(true));
     await leaveComposer();
   };
-  props.host?.register({ collapse });
+  props.host?.register({
+    collapse,
+    send: () => void sendDraft({}),
+    focusText: () => focusEditorAtEnd(),
+  });
 
   let conflictDialogOpen = false;
   let lastPromptedConflict = leaseConflict();

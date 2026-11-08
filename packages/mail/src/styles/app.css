@@ -1587,6 +1587,31 @@
   z-index: 2;
   background: var(--k2b-surface);
 }
+/* Full screen, scrolled into the history: one fixed row keeps the draft's Send, the way back to its text, and the
+   way out of full screen. It stands above the history with a hairline, as the mockup's compact bar does. */
+.k2b-ui .mail-draft-fullscreen-bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline: -0.25rem;
+  padding: 0.375rem 0.25rem;
+  background: var(--k2b-surface);
+  box-shadow: 0 1px 0 var(--k2b-border);
+}
+.k2b-ui .mail-draft-fullscreen-bar-title {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* F8: from 1500 px of reader width, the history stands beside the draft in full screen; the draft stays in place
    while the history scrolls. Lines keep the length the recipient sees. */
 @container mail-reader (min-width: 1500px) {

@@ -14,6 +14,7 @@ import {
   Dropdown,
   type DropdownAction,
   type DropdownItem,
+  IconButton,
   IconButtonLink,
   NoticeCard,
   Placeholder,
@@ -49,6 +50,7 @@ import type { MailWorkspaceMessage } from "../../service/workspace";
 import { automationLogHref } from "../automation-log-href";
 import { readApiError } from "./api-response";
 import MailAutomationTrace from "./MailAutomationTrace";
+import type { MailInlineDraftControls } from "./MailComposer";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
 import MailInlineDraft from "./MailInlineDraft";
@@ -846,7 +848,25 @@ export default function MailConversationReader(props: {
       : null,
   );
   const [inlineStarting, setInlineStarting] = createSignal(false);
-  let inlineDraftControls: { collapse: () => Promise<void> } | null = null;
+  let inlineDraftControls: MailInlineDraftControls | null = null;
+  // Full screen: once the draft scrolls out of view into the history, one fixed row keeps Send and the way back.
+  const [draftOutOfView, setDraftOutOfView] = createSignal(false);
+  createEffect(() => {
+    const open = visibleInlineDraft();
+    if (!open || !props.draftFullscreen || !historyScroller || typeof IntersectionObserver === "undefined") {
+      setDraftOutOfView(false);
+      return;
+    }
+    const frame = historyScroller.querySelector("[data-mail-inline-draft-frame]");
+    if (!frame) return;
+    const observer = new IntersectionObserver(([entry]) => setDraftOutOfView(!entry?.isIntersecting), { root: historyScroller });
+    observer.observe(frame);
+    onCleanup(() => observer.disconnect());
+  });
+  const backToText = () => {
+    historyScroller?.querySelector("[data-mail-inline-draft-frame]")?.scrollIntoView({ block: "start" });
+    inlineDraftControls?.focusText();
+  };
   const visibleInlineDraft = createMemo(() => {
     const open = inlineDraft();
     return open && open.conversationId === props.selectedConversationId ? open : null;
@@ -1901,6 +1921,27 @@ export default function MailConversationReader(props: {
                 data-mail-reading-column
                 data-draft-fullscreen={visibleInlineDraft() && props.draftFullscreen ? "" : undefined}
               >
+                <Show when={draftOutOfView()}>
+                  <div class="mail-draft-fullscreen-bar" data-mail-draft-bar role="group" aria-label={t().conversationActions}>
+                    <span class="mail-draft-fullscreen-bar-title">
+                      <i class="ti ti-arrow-back-up" aria-hidden="true" />
+                      {t().replyTo({ name: latestReplyNames() })}
+                    </span>
+                    <Button type="button" size="sm" variant="ghost" onClick={backToText}>
+                      <i class="ti ti-arrow-up" aria-hidden="true" />
+                      {t().backToDraftText}
+                    </Button>
+                    <Button type="button" size="sm" onClick={() => inlineDraftControls?.send()}>
+                      <i class="ti ti-send" aria-hidden="true" />
+                      {t().sendDraft}
+                    </Button>
+                    <Tooltip.Anchor content={t().leaveFullscreen}>
+                      <IconButton type="button" size="sm" label={t().leaveFullscreen} onClick={() => props.onToggleDraftFullscreen?.()}>
+                        <i class="ti ti-arrows-minimize" aria-hidden="true" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                  </div>
+                </Show>
                 <MailAutomationTrace
                   items={props.automationTrace}
                   where="top"

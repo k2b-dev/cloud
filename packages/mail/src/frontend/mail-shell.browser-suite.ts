@@ -4817,6 +4817,35 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      test("full screen, scrolled into the history: one fixed row keeps Send and leads back to the text", async () => {
+        // A laptop with little height: the history is longer than the reader, so the draft can scroll out of view.
+        const page = await open(`${boxPath}?conversation=Conv02&identity=1`, 1440, 560, "reduce", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          await readyDraft(page);
+          await page.locator("[data-mail-draft-fullscreen]").click();
+          expect(await page.locator("[data-mail-draft-bar]").count()).toBe(0);
+          // The whole history below the draft, then scroll until the draft has left the reader.
+          if (await page.locator("[data-mail-older-messages]").count()) await page.locator("[data-mail-older-messages]").click();
+          await page.evaluate(() => {
+            const frame = document.querySelector("[data-mail-inline-draft-frame]")!;
+            let scroller: Element | null = frame.parentElement;
+            while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
+            scroller?.scrollTo({ top: scroller.scrollHeight });
+          });
+          const bar = page.locator("[data-mail-draft-bar]");
+          await bar.waitFor();
+          expect(await bar.getByRole("button", { name: "Send" }).isVisible()).toBe(true);
+          await bar.getByRole("button", { name: "Back to the text" }).click();
+          await page.waitForFunction(() => document.activeElement?.closest("[data-mail-inline-draft] .cm-content") !== null);
+          await page.locator("[data-mail-draft-bar]").waitFor({ state: "detached" });
+        } finally {
+          await close(page);
+        }
+      });
+
       test("a conversation with a colleague's draft shows a draft chip with who writes it", async () => {
         const page = await open(`${boxPath}?drafts=1`, 1440);
         try {
