@@ -29,6 +29,7 @@ const draft = (overrides: Partial<DraftFolderItem> = {}): DraftFolderItem => ({
   revision: 4,
   attachmentCount: 1,
   bodyPreview: "Here are the numbers.",
+  suggestion: false,
   createdByDisplayName: "Mail provider",
   updatedAt: "2026-10-01T09:00:00.000Z",
   ...overrides,

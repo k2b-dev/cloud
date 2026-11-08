@@ -1110,6 +1110,7 @@ CREATE TABLE mail.drafts (
     sender_identity_id uuid NOT NULL,
     author_kind text NOT NULL,
     author_id uuid,
+    adopted_at timestamp with time zone,
     to_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     cc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     bcc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1172,6 +1173,9 @@ CREATE INDEX drafts_derived_message_idx ON mail.drafts USING btree (mailbox_id, 
 CREATE INDEX drafts_mailbox_state_idx ON mail.drafts USING btree (mailbox_id, state, updated_at DESC);
 
 CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING btree (mailbox_id, author_kind, author_id, materialization_key) WHERE (materialization_key IS NOT NULL);
+
+CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
+WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL;
 
 CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, origin, state, updated_at DESC);
 
@@ -2998,3 +3002,12 @@ CREATE OR REPLACE TRIGGER placements_invalidate_automation_state
 AFTER UPDATE OF flags, keywords, deleted_at ON mail.message_placements FOR EACH ROW
 WHEN (OLD.flags IS DISTINCT FROM NEW.flags OR OLD.keywords IS DISTINCT FROM NEW.keywords OR OLD.deleted_at IS DISTINCT FROM NEW.deleted_at)
 EXECUTE FUNCTION mail.invalidate_automation_observed_state();
+
+CREATE TABLE mail.draft_suggestion_requests (
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    service_account_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    request_hash text NOT NULL,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
+);

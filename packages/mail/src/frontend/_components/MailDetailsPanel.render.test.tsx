@@ -29,6 +29,7 @@ const draft: ConversationDraftSummary = {
   intent: "reply",
   subject: "Re: Quarterly review",
   bodyPreview: "Thanks for the update.",
+  suggestion: false,
   createdByDisplayName: "Valentin Kolb",
   updatedAt: now,
 };
