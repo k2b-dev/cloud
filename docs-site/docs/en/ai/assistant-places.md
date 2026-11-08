@@ -227,6 +227,9 @@ remains its selector even after the page changes. Context is marked as untrusted
 application data. Returned Skills join the permission-filtered catalog and are
 loaded through the normal Skill mechanism; listing one grants no access.
 
+Withdrawing consent removes place context, tools, and Skills from later rounds;
+pending place Actions end as `rejected`.
+
 If the resource disappears or the person loses access, their chat history
 remains readable. New rounds receive no place context, tools, or Skills. The panel shows **No longer have access to <title>**
 (**Kein Zugriff mehr auf <Titel>**) using the stored title when available.
