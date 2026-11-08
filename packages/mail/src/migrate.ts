@@ -236,6 +236,9 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`.simple();
+  // List pages ask for the open drafts of a few conversations; this keeps that lookup independent of all other drafts.
+  await tx`CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
+    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`

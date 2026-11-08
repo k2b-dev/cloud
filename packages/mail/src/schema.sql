@@ -1173,6 +1173,8 @@ CREATE INDEX drafts_mailbox_state_idx ON mail.drafts USING btree (mailbox_id, st
 
 CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING btree (mailbox_id, author_kind, author_id, materialization_key) WHERE (materialization_key IS NOT NULL);
 
+CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
+
 CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, origin, state, updated_at DESC);
 
 CREATE UNIQUE INDEX drafts_short_id_idx ON mail.drafts USING btree (short_id);
