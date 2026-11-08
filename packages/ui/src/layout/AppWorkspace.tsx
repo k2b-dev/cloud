@@ -2594,7 +2594,9 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
             initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
           }
           data-workspace-resizable={props.resizable === false ? "false" : "true"}
-          style={appWorkspaceLayoutStyle(initialLayoutState())}
+          // Written once: the controller owns the sizes after the first frame. In the root's effect, every rerun
+          // (a class that follows the view) rewrote the inline style and showed the restored widths for a frame.
+          style={/* @once */ appWorkspaceLayoutStyle(initialLayoutState())}
         >
           {contents()}
         </div>
