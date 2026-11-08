@@ -1,4 +1,5 @@
 import { projectAiNextMessages } from "./next-message-store";
+import { capabilityResultView } from "./result-view";
 import { resolveAiTurnShortIds } from "./store";
 import type { AiConversation, AiStoredMessage } from "./types";
 
@@ -7,12 +8,16 @@ export const projectPublicAiStoredMessages = (
   conversationId: string,
   turnShortIds: ReadonlyMap<string, string>,
 ): AiStoredMessage[] =>
-  messages.map((message) => ({
-    ...message,
-    id: message.shortId,
-    conversationId,
-    loopId: message.loopId ? (turnShortIds.get(message.loopId) ?? null) : null,
-  }));
+  messages.map((message) => {
+    const view = message.message.role === "tool_result" && !message.message.isError ? capabilityResultView(message.message.result) : null;
+    return {
+      ...message,
+      ...(view ? { meta: { ...message.meta, resultView: view } } : {}),
+      id: message.shortId,
+      conversationId,
+      loopId: message.loopId ? (turnShortIds.get(message.loopId) ?? null) : null,
+    };
+  });
 
 export const publicAiStoredMessages = async (
   messages: readonly AiStoredMessage[],

@@ -253,7 +253,7 @@ describe("global capability search", () => {
     }
   });
 
-  test.each(["invalid data", "unknown field", "invalid reference", "too many items", "invalid presentation"])(
+  test.each(["invalid data", "unknown field", "invalid reference", "too many items", "invalid view"])(
     "isolates %s across providers and concurrent or repeated requests",
     async (invalidCase) => {
       const providers = [provider(1), provider(2)];
@@ -279,10 +279,15 @@ describe("global capability search", () => {
                 return Response.json({ data: [{ ...item, ref: { ...item.ref, id: null } }] });
               case "too many items":
                 return Response.json({ data: Array.from({ length: 101 }, () => item) });
-              case "invalid presentation":
+              case "invalid view":
                 return Response.json({
                   data: [item],
-                  presentation: { kind: "table", rowsPath: ["missing"], columns: [{ path: ["title"], label: "Title" }] },
+                  view: {
+                    version: 1,
+                    blocks: [
+                      { kind: "Table", title: "Results", rows: { from: ["missing"] }, columns: [{ path: ["title"], label: "Title" }] },
+                    ],
+                  },
                 });
             }
           }

@@ -427,6 +427,25 @@ test("remembered approvals reject background runs with or without a mandate", ()
 });
 
 describe("nessi block event mapping", () => {
+  test("completed tools expose bound views while preserving the raw result", () => {
+    const mapper = createEventMapper(1, []);
+    const tool = { ...turn, callId: "call-view", name: "catalog__query__list", args: {} };
+    const result = {
+      data: { items: [{ label: "Count", value: 3 }] },
+      view: { version: 1, blocks: [{ kind: "Stats", items: { from: ["items"] } }] },
+    };
+    mapper.translate({ ...tool, type: "tool_execution_start" });
+    const [done] = mapper.translate({ ...tool, type: "tool_execution_end", result, isError: false });
+    expect(done).toMatchObject({
+      type: "block_set",
+      block: {
+        result,
+        view: { version: 1, blocks: [{ kind: "Stats", items: [{ label: "Count", value: 3 }] }] },
+      },
+    });
+    expect(result.view.blocks[0]?.items).toEqual({ from: ["items"] });
+  });
+
   test.each(["completed", "failed", "rejected"] as const)("timestamps the %s outcome, not running or waiting", (status) => {
     const mapper = createEventMapper(1, []);
     const tool = { ...turn, callId: "call-time", name: "send", args: {} };

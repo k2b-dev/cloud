@@ -2,7 +2,7 @@ import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/
 import { parseAiSse, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../chat-code/runtime/capabilities";
-import { printCapabilityTable } from "./capability-table";
+import { printCapabilityView } from "./capability-table";
 import { createCloudLinkRewriter } from "./cloud-links";
 import { printDeliveredBlock } from "./delivered-blocks";
 import { localToolTarget } from "./local-tool-target";
@@ -153,7 +153,7 @@ export const streamAssistantTurn = async (input: {
   };
   const emitTable = (callId: string, result: unknown) => {
     if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
-    if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
+    if (printCapabilityView(ctx, result)) renderedTables.add(callId);
   };
   // Cards and charts draw in the web chat; every text client prints what they show instead.
   const emitDelivered = async (block: Extract<AiTurnBlock, { kind: "tool" }>) => {

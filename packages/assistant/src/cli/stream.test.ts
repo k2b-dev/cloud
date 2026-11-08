@@ -564,12 +564,19 @@ test("held text delimiters print before a completed capability table", async () 
     status: "completed",
     result: {
       data: [{ title: "Belege prüfen" }],
-      presentation: { kind: "table", rowsPath: [], columns: [{ path: ["title"], label: "Title" }] },
+      view: { version: 1, blocks: [{ kind: "Table", title: "Items", rows: { from: [] }, columns: [{ path: ["title"], label: "Title" }] }] },
     },
   };
   const reply = await run([[delta("text", text), { ...wire(), type: "block_set", block }, finished([text])]]);
-  expect(reply.tables).toHaveLength(1);
-  expect(reply.ordered).toEqual(["write:I will create the task [Belege prüfen", "write:]", "print:", "table", "print:", "write:\n"]);
+  expect(reply.tables).toHaveLength(0);
+  expect(reply.ordered).toEqual([
+    "write:I will create the task [Belege prüfen",
+    "write:]",
+    "print:",
+    "print:Items\nTitle\nBelege prüfen",
+    "print:",
+    "write:\n",
+  ]);
 });
 
 test("a presented view prints its validated table and footer once in stream order", async () => {

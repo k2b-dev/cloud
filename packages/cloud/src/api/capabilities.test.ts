@@ -990,6 +990,71 @@ describe("capability API", () => {
     expect(await response.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
   });
 
+  test("result views are bound and checked against the responding app before returning the raw envelope", async () => {
+    const cases = [
+      { valid: true, blocks: [{ kind: "Text", text: "Read item" }] },
+      { valid: true, blocks: [{ kind: "Table", title: "Item", rows: [{ id: "one" }], columns: [{ path: ["id"], label: "ID" }] }] },
+      { valid: true, blocks: [{ kind: "Image", src: "/api/demo/images/one", alt: "Item" }] },
+      { valid: false, blocks: [{ kind: "Image", src: "/api/other/images/one", alt: "Item" }] },
+      { valid: false, blocks: [{ kind: "Link", label: "Open", href: "javascript:alert(1)" }] },
+      {
+        valid: false,
+        blocks: [{ kind: "Form", title: "Save", action: "/save", fields: [{ name: "x", label: "X", type: "text" }], submit: "Save" }],
+      },
+      {
+        valid: false,
+        blocks: [{ kind: "Table", title: "Missing", rows: { from: ["missing"] }, columns: [{ path: ["id"], label: "ID" }] }],
+      },
+      {
+        valid: false,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "pick",
+            title: "Pick",
+            mode: "one",
+            options: [{ id: "one", title: "One" }],
+            option: { id: ["id"], title: ["title"] },
+            submit: "Go",
+            then: { query: "demo.query.missing", field: "id", input: {} },
+          },
+        ],
+      },
+      {
+        valid: true,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "pick",
+            title: "Pick",
+            mode: "one",
+            options: [{ id: "one", title: "One" }],
+            option: { id: ["id"], title: ["title"] },
+            submit: "Go",
+            then: { query: "demo.query.get", field: "id", input: {} },
+          },
+        ],
+      },
+    ];
+    for (const fixture of cases) {
+      const body = { data: { id: "one" }, view: { version: 1, blocks: fixture.blocks } };
+      const routes = createCapabilityRoutes({
+        getCapability: async () => entry(),
+        getApp: async () => ({ ...summary(entry()), routes: ["/api/demo", "/app/demo"] }),
+        authenticate,
+        fetch: async () => Response.json(body),
+      });
+      const response = await routes.request("/capabilities/v1/queries/demo/get", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: { id: "one" } }),
+      });
+      expect(response.status).toBe(fixture.valid ? 200 : 502);
+      if (fixture.valid) expect(await response.json()).toEqual(body);
+      else expect(await response.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+    }
+  });
+
   test("preserves structured throttling errors from the owning app", async () => {
     const routes = createCapabilityRoutes({
       getCapability: async () => entry(),

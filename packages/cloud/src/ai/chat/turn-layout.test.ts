@@ -219,12 +219,17 @@ describe("turn layout", () => {
   test("an approved call or a Cloud action that returns a table keeps its receipt and shows its table", () => {
     const table = {
       data: { rows: [{ name: "Jana" }] },
-      presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] },
+      view: {
+        version: 1 as const,
+        blocks: [{ kind: "Table" as const, title: "People", rows: [{ name: "Jana" }], columns: [{ path: ["name"], label: "Name" }] }],
+      },
     };
-    const approved = layoutAiTurn([tool("lookup", "crm_lookup", { approved: true, result: table })], { phase: "completed" });
+    const approved = layoutAiTurn([tool("lookup", "crm_lookup", { approved: true, result: table, view: table.view })], {
+      phase: "completed",
+    });
     expect(approved.actions.map((action) => [action.id, action.state])).toEqual([["tool-lookup", "done"]]);
     expect(ids(approved.results)).toEqual(["tool-lookup"]);
-    const action = layoutAiTurn([capability("export", "action", { result: table })], { phase: "completed" });
+    const action = layoutAiTurn([capability("export", "action", { result: table, view: table.view })], { phase: "completed" });
     expect(ids(action.actions)).toEqual(["tool-export"]);
     expect(ids(action.results)).toEqual(["tool-export"]);
   });

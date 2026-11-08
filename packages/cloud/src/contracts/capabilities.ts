@@ -29,6 +29,9 @@ import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } 
 export * from "./capability-streams";
 
 import { z } from "zod";
+import { bindView, blockDataAtPath } from "../blocks/bind";
+import { assertBlockData } from "../blocks/data";
+import { type BlockView, BlockViewSchema } from "../blocks/schema";
 import type { RequestAuthority } from "../server/middleware/auth";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "./app-events";
 import { CommandPathSchema } from "./commands";
@@ -256,9 +259,11 @@ export const CAPABILITY_REACHES = ["you", "draft", "shared"] as const;
 export type CapabilityReach = (typeof CAPABILITY_REACHES)[number];
 export const CAPABILITY_ACTION_OUTCOMES = ["running", "done", "rejected", "not_run", "unknown"] as const;
 export type CapabilityActionOutcome = (typeof CAPABILITY_ACTION_OUTCOMES)[number];
-export const CAPABILITY_MAX_REVIEW_BYTES = 32 * 1024;
+export { CAPABILITY_MAX_REVIEW_BYTES, CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "./capability-limits";
+
+import { CAPABILITY_MAX_REVIEW_BYTES, CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "./capability-limits";
 /** Full review text and metadata, separate from the compact card and ordinary capability results. */
-export const CAPABILITY_MAX_REVIEW_CONTENT_BYTES = 16 * 1024 * 1024;
+
 export const CAPABILITY_MAX_REVIEW_RESPONSE_BYTES = CAPABILITY_MAX_REVIEW_CONTENT_BYTES + CAPABILITY_MAX_REVIEW_BYTES + 11;
 export const CapabilityActionPolicySchema = z.union([
   z.object({ silent: z.enum(CAPABILITY_REACHES), routines: z.literal(false).optional() }).strict(),
@@ -681,37 +686,13 @@ export type CapabilityPage = z.infer<typeof CapabilityPageSchema>;
 export const capabilityPage = (nextCursor?: string | null): CapabilityPage =>
   nextCursor === undefined || nextCursor === null ? { hasMore: false } : { hasMore: true, nextCursor };
 
-// Presentation work is bounded independently of the result's byte envelope.
-const CapabilityDataPathSchema = z.array(z.string().max(500)).max(16);
-export const CapabilityTablePresentationSchema = z
-  .object({
-    kind: z.literal("table"),
-    rowsPath: CapabilityDataPathSchema,
-    columns: z
-      .array(
-        z
-          .object({
-            path: CapabilityDataPathSchema,
-            label: z.string().max(500),
-            format: z.enum(["text", "number", "date", "datetime"]).optional(),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(100),
-    rowLinksPath: CapabilityDataPathSchema.optional(),
-  })
-  .strict();
-export type CapabilityTablePresentation = z.infer<typeof CapabilityTablePresentationSchema>;
-
-/** Resolve own JSON properties only. Paths are data, never expressions. */
+/** Resolve literal own JSON properties; unsafe paths and accessors never run. */
 export const capabilityDataAtPath = (data: unknown, path: readonly string[]): unknown => {
-  let value = data;
-  for (const segment of path) {
-    if (value === null || typeof value !== "object" || !Object.hasOwn(value, segment)) return undefined;
-    value = Object.getOwnPropertyDescriptor(value, segment)?.value;
+  try {
+    return blockDataAtPath(data, path);
+  } catch {
+    return undefined;
   }
-  return value;
 };
 
 export type CapabilityResult<T> = {
@@ -723,7 +704,7 @@ export type CapabilityResult<T> = {
   refs?: CloudResourceReference[];
   page?: CapabilityPage;
   links?: CapabilitySemanticLink[];
-  presentation?: CapabilityTablePresentation;
+  view?: BlockView;
 };
 
 // Published JSON schemas (Core's result check, each MCP tool's outputSchema) describe a receipt as an opaque object,
@@ -733,40 +714,47 @@ const resultSchema = <T extends z.ZodType>(
   data: T,
   options: { consumer?: boolean; opaqueReceipt: boolean },
 ): z.ZodType<CapabilityResult<z.output<T>>> =>
-  z
-    .object({
-      data,
-      stream: CapabilityStreamSchema.optional(),
-      summary: z.string().trim().min(1).max(500).optional(),
-      refs: z
-        .array(options.consumer ? LinkedCloudResourceReferenceSchema.strip() : CloudResourceReferenceSchema)
-        .max(100)
-        .optional(),
-      page: CapabilityPageSchema.optional(),
-      links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
-      receipt: options.opaqueReceipt
-        ? z.record(z.string(), z.unknown()).optional()
-        : options.consumer
-          ? CapabilityActionReceiptSchema.optional().catch(undefined)
-          : CapabilityActionReceiptSchema.optional(),
-      presentation: options.consumer
-        ? CapabilityTablePresentationSchema.optional().catch(undefined)
-        : CapabilityTablePresentationSchema.optional(),
-    })
-    .strict()
-    .superRefine((result, context) => {
-      if (
-        !options.consumer &&
-        result.presentation &&
-        !Array.isArray(capabilityDataAtPath(capabilityDataAtPath(result, ["data"]), result.presentation.rowsPath))
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["presentation", "rowsPath"],
-          message: "Table rowsPath must reference an array in data.",
-        });
+  z.preprocess(
+    (value, context) => {
+      if (value && typeof value === "object" && Object.getOwnPropertyDescriptor(value, "view") !== undefined) {
+        try {
+          assertBlockData(value);
+        } catch {
+          context.addIssue({ code: "custom", message: "Invalid capability block data" });
+          return z.NEVER;
+        }
       }
-    }) as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
+      return value;
+    },
+    z
+      .object({
+        data,
+        stream: CapabilityStreamSchema.optional(),
+        summary: z.string().trim().min(1).max(500).optional(),
+        refs: z
+          .array(options.consumer ? LinkedCloudResourceReferenceSchema.strip() : CloudResourceReferenceSchema)
+          .max(100)
+          .optional(),
+        page: CapabilityPageSchema.optional(),
+        links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
+        receipt: options.opaqueReceipt
+          ? z.record(z.string(), z.unknown()).optional()
+          : options.consumer
+            ? CapabilityActionReceiptSchema.optional().catch(undefined)
+            : CapabilityActionReceiptSchema.optional(),
+        view: options.opaqueReceipt ? z.record(z.string(), z.unknown()).optional() : BlockViewSchema.optional(),
+      })
+      .strict()
+      .superRefine((result, context) => {
+        if (!options.opaqueReceipt && result.view) {
+          try {
+            bindView(result.view, capabilityDataAtPath(result, ["data"]));
+          } catch {
+            context.addIssue({ code: "custom", path: ["view"], message: "Invalid capability block view" });
+          }
+        }
+      }),
+  ) as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
 
 export const capabilityResultSchema = <T extends z.ZodType>(
   data: T,

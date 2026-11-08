@@ -23,13 +23,13 @@ const callingProvider = (name: string, requests: ProviderRequest[]): Provider =>
   },
 });
 
-const run = async (calledName: string) => {
+const run = async (calledName: string, result: unknown = { data: [] }) => {
   const requests: ProviderRequest[] = [];
   const executed: string[] = [];
   const entries: StoreEntry[] = [];
   const tool = defineTool({ name: "contacts__query__list", description: "List contacts", inputSchema: z.object({}) }).server(async () => {
     executed.push("contacts__query__list");
-    return { data: [] };
+    return result;
   });
   const loop = nessi({
     loopId: "loop",
@@ -73,4 +73,16 @@ test("a call to a name the turn does not offer tells the model how to find a cal
     isError: true,
     result: expect.stringContaining("Unknown tool: code_run. Call only tools offered in this turn"),
   });
+});
+
+test("same-turn model calls see a block summary while durable tool results retain the raw view", async () => {
+  const result = {
+    data: [{ name: "Jana" }],
+    view: { version: 1, blocks: [{ kind: "Table", title: "Contacts", rows: { from: [] }, columns: [{ path: ["name"], label: "Name" }] }] },
+  };
+  const completed = await run("contacts.list", result);
+  expect(completed.stored).toMatchObject({ result });
+  const model = completed.toolResult(completed.requests[1]!.messages);
+  expect(model).toMatchObject({ result: { data: result.data, viewSummary: "Shown: table (1 rows)" } });
+  expect(model?.role === "tool_result" ? model.result : null).not.toHaveProperty("view");
 });

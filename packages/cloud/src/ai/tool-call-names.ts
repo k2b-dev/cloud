@@ -1,4 +1,5 @@
 import type { Message, Provider } from "@k2b/nessi";
+import { modelCapabilityMessage } from "./result-view";
 
 const UNKNOWN_TOOL_GUIDANCE =
   "Call only tools offered in this turn, by their exact names. Load a deferred tool with load_tools first and call it by the `call` name it returns; load_tools also says why a name cannot be loaded.";
@@ -34,7 +35,10 @@ export const acceptCanonicalToolNames = (provider: Provider, canonicalNames: Rea
       if (canonicalName !== name && offered.has(name) && !offered.has(canonicalName)) aliases.set(canonicalName, name);
     }
     const callName = (name: string) => aliases.get(name) ?? name;
-    for await (const event of provider.stream({ ...request, messages: request.messages.map(explainUnknownTool) })) {
+    for await (const event of provider.stream({
+      ...request,
+      messages: request.messages.map(explainUnknownTool).map(modelCapabilityMessage),
+    })) {
       if (event.type === "block_start" && event.kind === "tool_call" && event.name) yield { ...event, name: callName(event.name) };
       else if (event.type === "block_end" && event.block.type === "tool_call")
         yield { ...event, block: { ...event.block, name: callName(event.block.name) } };

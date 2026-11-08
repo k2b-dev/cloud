@@ -67,6 +67,7 @@ import {
 import { retryTransientProviderErrors } from "./provider-retry";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
+import { capabilityResultView } from "./result-view";
 import { assertInteractiveChatTurn } from "./retired-routines";
 import { compactCapabilityReview } from "./review-content";
 import { AiRunTimeout } from "./run-timeout";
@@ -323,7 +324,11 @@ const rebuildBlocksFromMessages = (
   pending: AiPendingTurnActionRecord[],
   steers: AiTurnSteer[] = [],
 ): AiTurnBlock[] => {
-  const blocks = buildBlocksFromMessages(messages);
+  const blocks = buildBlocksFromMessages(messages).map((block) =>
+    block.kind === "tool" && block.status === "completed" && !block.isError
+      ? { ...block, view: capabilityResultView(block.result) ?? undefined }
+      : block,
+  );
   const indexByCallId = new Map(blocks.map((block, index) => [block.kind === "tool" ? block.callId : `_${index}`, index]));
 
   for (const action of pending) {
@@ -519,6 +524,7 @@ const createEventMapper = (
       ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
       ...(receiptsOf(displayCallId) ? { receipts: receiptsOf(displayCallId) } : {}),
     };
+    if (block.status === "completed" && !block.isError) block.view = capabilityResultView(block.result) ?? undefined;
     toolBlocks.set(callId, block);
     return { type: "block_set", block };
   };
@@ -1454,7 +1460,11 @@ export class AiTurnExecutor {
     });
     // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
-    const turnBlocks = buildBlocksFromMessages(turnMessages);
+    const turnBlocks = buildBlocksFromMessages(turnMessages).map((block) =>
+      block.kind === "tool" && block.status === "completed" && !block.isError
+        ? { ...block, view: capabilityResultView(block.result) ?? undefined }
+        : block,
+    );
     const providerNamesByCallId = new Map(
       turnMessages.flatMap(({ message }) =>
         message.role === "assistant"

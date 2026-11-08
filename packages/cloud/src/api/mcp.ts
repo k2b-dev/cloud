@@ -32,6 +32,8 @@ import {
 } from "../_internal/help-catalog";
 import { getCapability, listApps } from "../_internal/registry";
 import { addCloudResourceHrefs } from "../ai/resource-refs";
+import { bindView } from "../blocks/bind";
+import { blocksText } from "../blocks/text";
 import { capabilityCallFromTool, capabilityInvocationBody, capabilityToolInputSchema } from "../capabilities/calls";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
@@ -893,10 +895,26 @@ const createMcpServer = (
         log.warn("MCP receipt text unavailable", { error: error instanceof Error ? error.message : String(error) });
       }
     }
+    let viewText: string | undefined;
+    if (response.ok && body.view) {
+      try {
+        const locale = preferredLocale(request.headers) ?? (await resolveHelpLocale());
+        const timeZone = normalizeTimeZone(
+          await (dependencies.getOperatorTimeZone ?? (() => get<string>("app.timezone")))().catch(() => "UTC"),
+        );
+        const view = bindView(body.view, body.data);
+        viewText = [typeof body.summary === "string" ? body.summary : undefined, blocksText(view.blocks, { locale, timeZone })]
+          .filter(Boolean)
+          .join("\n\n");
+      } catch (error) {
+        log.warn("MCP view text unavailable", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
     const resultFor = (value: Record<string, unknown>, withReceipt = true): CallToolResult => {
       const result = toolResult(value, !response.ok);
       if (origin) result.content.push(...semanticResourceLinks(value, origin));
       if (withReceipt && receiptText) result.content.unshift({ type: "text", text: receiptText });
+      if (withReceipt && viewText) result.content.unshift({ type: "text", text: viewText });
       return result;
     };
     // Both enrichments are optional: neither turns a result that fits into RESPONSE_TOO_LARGE.

@@ -1,6 +1,6 @@
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
-import { hasCapabilityTable } from "./capability-result";
+import { hasCapabilityView } from "./capability-result";
 import { isCardToolName, isChartToolName, isRecord, isSurveyToolName, isTextEditorToolName } from "./message-utils";
 import { isFailedTool } from "./tool-groups";
 
@@ -92,7 +92,7 @@ const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boole
   const delivered = block.status === "completed" || (live(phase) && block.status === "running" && block.args !== undefined);
   if (block.name === "map" || block.name === "present" || isCardToolName(block.name) || isChartToolName(block.name)) return delivered;
   if (block.name === "code_present") return codePresentations && delivered;
-  return hasCapabilityTable(block);
+  return hasCapabilityView(block);
 };
 
 const actionState = (block: ToolBlock, phase: AiTurnPhase): AiTurnActionState | null => {

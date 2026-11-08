@@ -13,6 +13,7 @@ import {
   steerMessageBlockId,
 } from "./protocol";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { capabilityResultView } from "./result-view";
 import { aiConversations } from "./store";
 import type { AiConversation } from "./types";
 
@@ -134,7 +135,11 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   attempt: active.turn.attempt,
   status: active.turn.status,
   seq: active.liveSeq,
-  blocks: [...active.liveBlocks],
+  blocks: active.liveBlocks.map((block) =>
+    block.kind === "tool" && block.status === "completed" && !block.isError
+      ? { ...block, view: capabilityResultView(block.result) ?? undefined }
+      : block,
+  ),
   modelId: active.turn.modelId,
   createdAt: active.turn.createdAt,
   actionWaitMs: active.actionWaitMs,

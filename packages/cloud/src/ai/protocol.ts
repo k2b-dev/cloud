@@ -1,4 +1,5 @@
 import type { CompactResult, InboundEvent, Message } from "@k2b/nessi";
+import type { BoundBlockView } from "../blocks/schema";
 import type { CapabilityActionReviewPresentation } from "../contracts/capabilities";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiConversation, AiFrontendToolMode, AiStoredMessage, AiToolPresentation, AiTurnStatus } from "./types";
@@ -45,6 +46,8 @@ export type AiTurnBlock =
       /** Localized transient host status, without tool payload data. */
       progress?: string;
       result?: unknown;
+      /** Bound on the server from the stored raw capability result. */
+      view?: BoundBlockView;
       isError?: boolean;
       /** Present while status is awaiting_approval. */
       approval?: {
@@ -255,6 +258,7 @@ export const buildBlocksFromMessages = (
     message: Message;
     meta?: {
       steerId?: string;
+      resultView?: BoundBlockView;
       toolPresentations?: Record<string, AiToolPresentation>;
       toolReviews?: Record<string, AiStoredActionReview>;
       toolChecks?: Record<string, AiActionCheck>;
@@ -313,6 +317,7 @@ export const buildBlocksFromMessages = (
         blocks[at!] = {
           ...existing,
           status: outcome === "rejected" ? "rejected" : message.isError ? "failed" : "completed",
+          ...(meta?.resultView ? { view: meta.resultView } : {}),
           result: message.isError && existing.result !== undefined ? existing.result : message.result,
           isError: message.isError,
           ...(createdAt ? { at: createdAt } : {}),

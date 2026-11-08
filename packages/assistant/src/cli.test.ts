@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { AI_LOCAL_TOOL_NAMES } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import assistantCli from "./cli";
-import { printCapabilityTable } from "./cli/capability-table";
+import { printCapabilityView } from "./cli/capability-table";
 import { collectCapabilityApproval, collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
 import { streamAssistantTurn } from "./cli/stream";
 
@@ -178,12 +178,18 @@ const noLocalContext = { instructions: [], skills: [], selectedSkills: [] };
 describe("assistant CLI", () => {
   const tableResult = {
     data: { rows: [{ amount: "9007199254740993.01", missing: null }] },
-    presentation: {
-      kind: "table",
-      rowsPath: ["rows"],
-      columns: [
-        { label: "Amount", path: ["amount"] },
-        { label: "Optional", path: ["missing"] },
+    view: {
+      version: 1,
+      blocks: [
+        {
+          kind: "Table",
+          title: "Amounts",
+          rows: { from: ["rows"] },
+          columns: [
+            { label: "Amount", path: ["amount"] },
+            { label: "Optional", path: ["missing"] },
+          ],
+        },
       ],
     },
     page: { hasMore: true, nextCursor: "cursor" },
@@ -194,36 +200,25 @@ describe("assistant CLI", () => {
     const { ctx, stdout } = createContext([], async () => json({}));
     const tables: unknown[] = [];
     ctx.table = (rows, columns) => tables.push({ rows, columns });
-    expect(printCapabilityTable(ctx, tableResult)).toBe(true);
-    expect(tables).toEqual([
-      {
-        rows: [{ "0": "9007199254740993.01", "1": "—" }],
-        columns: [
-          { key: "0", label: "Amount" },
-          { key: "1", label: "Optional" },
-        ],
-      },
-    ]);
+    expect(printCapabilityView(ctx, tableResult)).toBe(true);
+    expect(tables).toEqual([]);
+    expect(stdout.join("")).toContain("Amount | Optional\n9007199254740993.01 | —");
     expect(stdout.join("")).toContain("More results");
     expect(stdout.join("")).toContain("https://cloud.example/app/grids/Base01/query?q=test");
-    expect(printCapabilityTable(ctx, { data: {}, presentation: tableResult.presentation })).toBe(false);
-    expect(printCapabilityTable(ctx, { data: tableResult.data })).toBe(false);
+    expect(printCapabilityView(ctx, { data: {}, view: tableResult.view })).toBe(false);
+    expect(printCapabilityView(ctx, { data: tableResult.data })).toBe(false);
   });
 
   test("bounds and sanitizes table display without changing the result", () => {
     const { ctx, stdout } = createContext([], async () => json({}));
     const result = { ...tableResult, data: { rows: Array.from({ length: 101 }, () => ({ amount: `\u001b[2J${"x".repeat(100)}` })) } };
     const before = JSON.stringify(result);
-    ctx.table = (rows) => {
-      expect(rows).toHaveLength(100);
-      expect(String(rows[0]?.["0"])).not.toContain("\u001b");
-      expect(String(rows[0]?.["0"])).toHaveLength(60);
-    };
-    printCapabilityTable(ctx, result);
+    printCapabilityView(ctx, result);
     expect(JSON.stringify(result)).toBe(before);
-    expect(stdout.join("")).toContain("Showing 100 of 101");
+    expect(stdout.join("")).not.toContain("\u001b");
+    expect(stdout.join("").match(/x{100}/g)).toHaveLength(101);
     ctx.table = () => undefined;
-    printCapabilityTable(ctx, { ...tableResult, data: { rows: [] } });
+    printCapabilityView(ctx, { ...tableResult, data: { rows: [] } });
     expect(stdout.join("")).toContain("No rows.");
   });
 
@@ -261,7 +256,8 @@ describe("assistant CLI", () => {
           { type: "turn_finished", turnId: "turn-1", status: "completed", error: null, messages },
         ),
       });
-      expect(tables).toBe(output === "text" ? 1 : 0);
+      expect(tables).toBe(0);
+      if (output === "text") expect(stdout.join("").match(/Amounts/g)).toHaveLength(1);
       expect(JSON.stringify(result.messages)).toBe(JSON.stringify(messages));
       if (output === "json") expect(stdout).toEqual([]);
       if (output === "jsonl") expect(stdout.map((line) => JSON.parse(line).type)).toEqual(["tool", "turn_finished"]);
@@ -330,7 +326,7 @@ describe("assistant CLI", () => {
   });
 
   test("completed snapshot renders stored tool results when no live blocks remain", async () => {
-    const { ctx } = createContext([], async () => json({}));
+    const { ctx, stdout } = createContext([], async () => json({}));
     let tables = 0;
     ctx.table = () => {
       tables++;
@@ -345,7 +341,8 @@ describe("assistant CLI", () => {
         messages: [{ loopId: "turn-1", message: { role: "tool_result", callId: "call-1", result: tableResult } }],
       }),
     });
-    expect(tables).toBe(1);
+    expect(tables).toBe(0);
+    expect(stdout.join("")).toContain("Amounts");
   });
 
   test("documents the one-shot and management surface", () => {

@@ -19,6 +19,7 @@ import { publicCloudOrigin } from "../shared/app-url";
 import { capabilityMessages } from "../shared/capability-messages";
 import { LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
+import { validateReceivedCapabilityView } from "./result-view";
 import { combineCapabilitySignals } from "./signals";
 import type { CapabilityCatalogClientResult, CapabilityClientError, CapabilityClientResult, CapabilityInvocation } from "./types";
 
@@ -172,13 +173,16 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
             }
           : {}),
       });
-      return readCapabilityResponse(
-        outcome,
-        capabilityResultSchema(dataSchema, { consumer: true }),
-        CAPABILITY_MAX_RESULT_BYTES,
-        // Only a budgeted caller cancels reading a response that already arrived; others keep the received result.
-        charge ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
-        charged ? undefined : charge,
+      return validateReceivedCapabilityView(
+        await readCapabilityResponse(
+          outcome,
+          capabilityResultSchema(dataSchema, { consumer: true }),
+          CAPABILITY_MAX_RESULT_BYTES,
+          // Only a budgeted caller cancels reading a response that already arrived; others keep the received result.
+          charge ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
+          charged ? undefined : charge,
+        ),
+        invocation.appId,
       );
     }
     const brokerRequest = new Request(request, {
@@ -236,12 +240,15 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         return unavailable(undefined, undefined, caller.locale ?? undefined);
       }
     }
-    return readCapabilityResponse(
-      response,
-      capabilityResultSchema(dataSchema, { consumer: true }),
-      CAPABILITY_MAX_RESULT_BYTES,
-      caller.consumeResponseBytes ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
-      caller.consumeResponseBytes,
+    return validateReceivedCapabilityView(
+      await readCapabilityResponse(
+        response,
+        capabilityResultSchema(dataSchema, { consumer: true }),
+        CAPABILITY_MAX_RESULT_BYTES,
+        caller.consumeResponseBytes ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
+        caller.consumeResponseBytes,
+      ),
+      invocation.appId,
     );
   } catch (cause) {
     return unavailable(cause, invocation, caller.locale ?? undefined);

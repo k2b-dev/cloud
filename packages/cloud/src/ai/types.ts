@@ -14,6 +14,7 @@ import type { Usage } from "@k2b/nessi/ai";
 import type { SQL } from "bun";
 import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
+import type { BoundBlockView } from "../blocks/schema";
 import type {
   CapabilityActionCallReview,
   CapabilityActionReviewPresentation,
@@ -311,6 +312,8 @@ export type AiStoredMessage = {
   compactedAt: string | null;
   /** UI metadata (e.g. how many messages a compaction summary replaced). */
   meta: {
+    /** Server-bound result view; projected for readers, never persisted by the tool. */
+    resultView?: BoundBlockView;
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     codeOrigin?: AiCodeOrigin;

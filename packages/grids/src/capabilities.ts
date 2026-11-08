@@ -1,9 +1,9 @@
 import { sql } from "@k2b/cloud";
+import { BLOCK_LIMITS, BlockViewSchema, bindView, validateBlocks } from "@k2b/cloud/blocks";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
-  CapabilityTablePresentationSchema,
   CloudResourceReaderViewSchema,
   type CloudResourceReference,
   type CloudResourceView,
@@ -1443,23 +1443,33 @@ const gqlCapabilityResult = async (
     refs[index] = { type: ref.type, id: ref.id };
   }
   if (!showTableToUser) return ok(result);
-  const presentation = CapabilityTablePresentationSchema.safeParse(
-    data.columns.length
+  const view = BlockViewSchema.safeParse(
+    data.columns.length && data.columns.length <= BLOCK_LIMITS.columns && data.rows.length <= BLOCK_LIMITS.rows
       ? {
-          kind: "table" as const,
-          rowsPath: ["rows"],
-          columns: data.columns.map((column) => ({ path: ["values", column.key], label: column.label })),
-          rowLinksPath: ["links"],
+          version: 1,
+          blocks: [
+            {
+              kind: "Table",
+              title: base.name.trim().slice(0, 160) || "Results",
+              rows: { from: ["rows"] },
+              columns: data.columns.map((column) => ({ path: ["values", column.key], label: column.label.trim().slice(0, 80) || "Value" })),
+              ...(data.rows.every((row) => typeof row.recordId === "string") ? { rowId: ["recordId"] } : {}),
+              rowHref: ["links", "0", "href"],
+            },
+          ],
         }
       : undefined,
   );
-  // Presentation is optional; it must never turn a valid bounded data result into an oversized response.
-  return ok(
-    presentation.success &&
-      new TextEncoder().encode(JSON.stringify({ ...result, presentation: presentation.data })).byteLength <= CAPABILITY_MAX_RESULT_BYTES
-      ? { ...result, presentation: presentation.data }
-      : result,
-  );
+  // A view is optional; preserve valid data when its complete envelope would exceed the transport budget.
+  if (view.success && new TextEncoder().encode(JSON.stringify({ ...result, view: view.data })).byteLength <= CAPABILITY_MAX_RESULT_BYTES) {
+    try {
+      validateBlocks(bindView(view.data, data).blocks, "result", { appId: "grids", appPrefixes: ["/app/grids", "/api/grids"] });
+      return ok({ ...result, view: view.data });
+    } catch {
+      /* Some query shapes have no stable row identity or scalar cells; data remains available. */
+    }
+  }
+  return ok(result);
 };
 
 const gqlUnavailable = (error: unknown, locale?: string) =>
