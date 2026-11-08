@@ -113,8 +113,7 @@ the command reports itself is an answer that trying again does not change.
 
 Every outcome shows for at least 1.2 s, so a person who types on at once still sees it; their typing goes into the
 text, and the line goes when the 1.2 s are over. A new `/` replaces it with the list at once. The focus stays in the
-composer throughout. Both times are fixed for every application: `COMMAND_OUTCOME_MIN_MS` is 1200 and
-`COMMAND_OUTCOME_SUCCESS_MS` is 4000.
+composer throughout. Both times are the same in every application, so outcomes feel alike everywhere.
 
 ```tsx
 const assign = (person: Person): CommandItem => ({
