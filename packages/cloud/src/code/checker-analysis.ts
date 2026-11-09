@@ -177,6 +177,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     for (const segment of path) type = type && propertyType(type, segment, sdkSource);
     return type;
   };
+  const codeAppSymbol = sdkMemberType("app", [])?.aliasSymbol;
+  const isCodeApp = (type: ts.Type) => !!codeAppSymbol && type.aliasSymbol === codeAppSymbol;
   for (const spec of request.sdk.manifest.handles) {
     if (spec.type === null) continue;
     for (const signature of sdkMemberType(spec.exportName, spec.factoryPath)?.getCallSignatures() ?? []) {
@@ -254,6 +256,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   function sdkValue(type: ts.Type, ancestors = new Set<ts.Type>()): boolean {
     if (
       sdkNamespaces.has(type) ||
+      isCodeApp(type) ||
       sdkHandle(type) ||
       type.getCallSignatures().some((signature) => signature.declaration && factoryDeclarations.has(signature.declaration))
     )
@@ -312,7 +315,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     let wrapped = node;
     while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
     const use = wrapped.parent;
+    const app = isCodeApp(checker.getTypeAtLocation(wrapped));
+    if (app && ts.isExportAssignment(use) && !use.isExportEquals) return;
     if (ts.isCallExpression(wrapped) && ts.isExpressionStatement(use)) {
+      if (app && signatureInSdk(wrapped)) return;
       const declaration = checker.getResolvedSignature(wrapped)?.declaration;
       if (declaration && factoryDeclarations.has(declaration)) return;
     }
@@ -412,6 +418,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   // Permission calls and schedule handlers, joined after all files are visited: a handler may be declared anywhere.
   const placed: { index: number; node: ts.Node }[] = [];
   const handlers: { handler: ts.Expression; name: string }[] = [];
+  const middleware: { path: string; handler: ts.Expression }[] = [];
+  const validMiddlewarePath = (path: string) => path.length <= 200 && /^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?)?$/.test(path);
   /** The SDK block a JSX tag names, such as `Form` or `Field.Select`, also under an import alias; null otherwise. */
   const sdkFile = root + "sdk.d.ts";
   function sdkTag(tag: ts.JsxTagNameExpression): string | null {
@@ -582,6 +590,31 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         if (http) {
           // HTTP origin evidence is collected by httpCall above.
         } else if (app && method) {
+          if (method === "use" && collecting) {
+            const path = node.arguments[0];
+            // A type assertion is not evidence of the prefix evaluated at runtime.
+            const paths = node.arguments.length === 1 ? ["/"] : path && ts.isStringLiteralLike(path) ? [path.text] : undefined;
+            const handler = node.arguments[node.arguments.length - 1];
+            const statement = ts.isExpressionStatement(node.parent) && ts.isSourceFile(node.parent.parent);
+            const binding =
+              ts.isVariableDeclaration(node.parent) &&
+              node.parent.initializer === node &&
+              ts.isVariableDeclarationList(node.parent.parent) &&
+              (node.parent.parent.flags & ts.NodeFlags.Const) !== 0 &&
+              ts.isVariableStatement(node.parent.parent.parent) &&
+              ts.isSourceFile(node.parent.parent.parent.parent);
+            if (
+              node.arguments.length < 1 ||
+              node.arguments.length > 2 ||
+              !paths ||
+              paths.length !== 1 ||
+              !validMiddlewarePath(paths[0]!) ||
+              !handler ||
+              (!statement && !binding)
+            )
+              report(node, "code_static_middleware", "Deklariere app.use auf Modulebene mit optionalem konstantem Pfadpräfix.");
+            else middleware.push({ path: paths[0] === "/" ? "/" : paths[0]!.replace(/\/$/, ""), handler });
+          }
           if (method === "on" && collecting) {
             const explicit = node.arguments.length === 3;
             const eventNode = node.arguments[explicit ? 1 : 0];
@@ -669,6 +702,16 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               if (entryNames.has(name)) report(node, "code_duplicate_route", "Diese Route ist bereits registriert.");
               entryNames.add(name);
               if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
+              // A parameterized route may overlap a literal middleware prefix. Attribute conservatively.
+              const segments = route.data.path.replace(/\/$/, "").split("/");
+              for (const item of middleware) {
+                const prefix = item.path === "/" ? [] : item.path.split("/");
+                if (
+                  prefix.length <= segments.length &&
+                  prefix.every((part, index) => segments[index]?.startsWith(":") || segments[index] === part)
+                )
+                  handlers.push({ handler: item.handler, name });
+              }
               const sf = node.getSourceFile();
               result.entrypoints.push({
                 kind: "route",
@@ -793,6 +836,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             }
           }
         } else if (
+          !(
+            declaration &&
+            ts.isFunctionTypeNode(declaration) &&
+            ts.isTypeAliasDeclaration(declaration.parent) &&
+            declaration.parent.name.text === "CodeNext"
+          ) &&
           !http &&
           !(
             declarationOwner &&

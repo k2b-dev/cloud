@@ -1,7 +1,8 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CODE_REQUEST_LIMITS, type CodeContext, CodeRouteResponseSchema, generateCodeSdk } from "@k2b/cloud/code";
 import { type CodeCheckedVersionManifest, type User, UserSchema } from "@k2b/cloud/contracts";
 import type { AuthContext, RequestActor } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
@@ -42,7 +43,11 @@ afterEach(() => {
 function hosting(
   isPublic = false,
   signed = false,
-  response: Awaited<ReturnType<typeof requestCodeRoute>> = { kind: "json", status: 200, body: '{"returned":true}' },
+  response: Awaited<ReturnType<typeof requestCodeRoute>> | typeof requestCodeRoute = {
+    kind: "json",
+    status: 200,
+    body: '{"returned":true}',
+  },
   personalOwner: string | null = null,
   visitor: User = person,
   workload?: Extract<RequestActor, { kind: "service_account" }>,
@@ -87,11 +92,11 @@ function hosting(
       version: async () => ({ versionId: "version", manifest, personalOwner }),
       request: async (input) => {
         calls.push(input);
-        return response;
+        return typeof response === "function" ? response(input) : response;
       },
     }),
   );
-  return { router, calls, rate };
+  return { router, calls, rate, groups, manifest };
 }
 test("signed-in pages receive only the visitor projection; unsigned requests never reach the runner", async () => {
   const privatePage = hosting();
@@ -218,9 +223,9 @@ test("public handlers are anonymous even for signed-in people and return exactly
   expect(page.calls[0]?.request.user).toBeNull();
   expect(page.rate).toHaveBeenCalled();
 });
-test("POST, PUT and DELETE require a CSRF token bound to this session and Code", async () => {
+test("POST, PUT, PATCH and DELETE require a CSRF token bound to this session and Code", async () => {
   const page = hosting(false, true);
-  for (const method of ["POST", "PUT", "DELETE"]) {
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
     for (const token of [undefined, codeCsrf("other-session", codeId), codeCsrf("fixture-session", "other-code")]) {
       expect((await page.router.request(`/code/${codeId}/`, { method, headers: token ? { "X-Code-CSRF": token } : {} })).status).toBe(403);
     }
@@ -228,22 +233,119 @@ test("POST, PUT and DELETE require a CSRF token bound to this session and Code",
       (await page.router.request(`/code/${codeId}/`, { method, headers: { "X-Code-CSRF": codeCsrf("fixture-session", codeId) } })).status,
     ).toBe(200);
   }
-  expect(page.calls).toHaveLength(3);
+  expect(page.calls).toHaveLength(4);
 });
-test("public forms bind to an HttpOnly cookie and remove the CSRF field before executing Code", async () => {
-  const page = hosting(true);
-  const get = await page.router.request(`/code/${codeId}/`);
-  const cookie = get.headers.get("set-cookie")!.split(";", 1)[0]!;
-  expect(get.headers.get("set-cookie")).toContain("HttpOnly");
-  const token = get.headers.get("X-Code-CSRF")!;
-  const post = await page.router.request(`/code/${codeId}/`, {
-    method: "POST",
-    headers: { cookie, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ _csrf: token, value: "one" }),
+test("public forms need no CSRF token or binding cookie, even with a browser session", async () => {
+  const tree = { version: 1, kind: "Page", title: "Saved", children: [] };
+  for (const signed of [false, true]) {
+    const page = hosting(true, signed, { kind: "page", status: 200, tree });
+    for (const method of ["GET", "POST"]) {
+      const response = await page.router.request(`/code/${codeId}/`, {
+        method,
+        headers: { "X-Code-Page": "tree", "Content-Type": "application/x-www-form-urlencoded", cookie: "__Host-code-page-csrf=stale" },
+        ...(method === "POST" ? { body: new URLSearchParams({ value: "one" }) } : {}),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("set-cookie")).toBeNull();
+      expect(response.headers.get("X-Code-CSRF")).toBeNull();
+      expect(await response.json()).toEqual({ tree, csrf: null });
+    }
+    expect(page.calls[1]?.request.body).toBe("value=one");
+    expect(page.calls.every((call) => call.request.user === null)).toBe(true);
+    expect(page.groups).not.toHaveBeenCalled();
+    expect(JSON.stringify(page.calls)).not.toContain("fixture-session");
+    expect(JSON.stringify(page.calls)).not.toContain("stale");
+  }
+});
+
+test("external public webhook POSTs cross hosting and SDK middleware without browser metadata", async () => {
+  const runtimePath = join(root, "webhook-sdk.mjs");
+  writeFileSync(runtimePath, generateCodeSdk([], { mode: "personal" }).runtime);
+  const sdk = await import(runtimePath);
+  const visited: string[] = [];
+  sdk.app.use(async (c: CodeContext, next: () => Promise<Response>) => {
+    visited.push(new URL(c.req.raw.url).pathname);
+    if (!new URL(c.req.raw.url).pathname.startsWith("/hooks/") && !c.user) return c.json({ error: "forbidden" }, 403);
+    return next();
   });
-  expect(post.status).toBe(200);
-  expect(page.calls[1]?.request.body).toBe("value=one");
-  expect(page.calls[1]?.request.user).toBeNull();
+  sdk.app.post("/hooks/json", async (c: CodeContext) => c.json({ body: await c.req.json(), user: c.user }), { public: true });
+  sdk.app.post("/hooks/text", async (c: CodeContext) => c.json({ body: await c.req.text(), user: c.user }), { public: true });
+  sdk.app.post("/private", (c: CodeContext) => c.text("signed in"));
+  sdk.app.post("/outside", (c: CodeContext) => c.text("unexpected"), { public: true });
+  const page = hosting(true, false, async (input) =>
+    CodeRouteResponseSchema.parse(await sdk.__codeSdk.run(input.entrypoint, input.request)),
+  );
+  page.manifest.entrypoints = sdk.__codeSdk
+    .entries()
+    .map((entry: { kind: "route"; entrypoint: string; route: { method: "POST"; path: string; public: boolean }; cron: null }) => ({
+      ...entry,
+      file: "code.ts",
+      line: 1,
+    }));
+  for (const contentType of ["application/json", "application/json; charset=utf-8"]) {
+    const response = await page.router.request(`/code/${codeId}/hooks/json`, {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body: '{"id":"evt_1"}',
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ body: { id: "evt_1" }, user: null });
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("X-Code-CSRF")).toBeNull();
+    expect(page.calls.at(-1)?.request.contentType).toBe("application/json");
+  }
+  for (const contentType of ["application/json; charset=utf-8", "application/x-www-form-urlencoded"]) {
+    const body = contentType.startsWith("application/json") ? '{"id":"evt_2"}' : "id=evt_2";
+    const response = await page.router.request(`/code/${codeId}/hooks/text`, {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ body, user: null });
+  }
+  const oversized = await page.router.request(`/code/${codeId}/hooks/json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: "x".repeat(CODE_REQUEST_LIMITS.publicBodyBytes) }),
+  });
+  expect(oversized.status).toBe(413);
+  expect(page.calls).toHaveLength(4);
+  expect(visited).toEqual(["/hooks/json", "/hooks/json", "/hooks/text", "/hooks/text"]);
+  expect((await page.router.request(`/code/${codeId}/private`, { method: "POST" })).status).toBe(401);
+  expect(visited).toHaveLength(4);
+  const refused = await page.router.request(`/code/${codeId}/outside`, { method: "POST" });
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toEqual({ error: "forbidden" });
+});
+test("public page responses cannot authorize private form actions; opening a private page supplies its session token", async () => {
+  const tree = { version: 1, kind: "Page", title: "Mixed routes", children: [] };
+  const page = hosting(true, true, { kind: "page", status: 200, tree });
+  page.manifest.entrypoints = [true, false].map((isPublic) => ({
+    kind: "route",
+    entrypoint: `route:ALL:/${isPublic ? "public" : "private"}`,
+    route: { method: "ALL", path: isPublic ? "/public" : "/private", public: isPublic },
+    file: "code.ts",
+    line: 1,
+    cron: null,
+  }));
+  const open = (path: string) => page.router.request(`/code/${codeId}/${path}`, { headers: { "X-Code-Page": "tree" } });
+  const submit = (path: string, token?: string) =>
+    page.router.request(`/code/${codeId}/${path}`, {
+      method: "POST",
+      headers: { "X-Code-Page": "tree", "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(token ? { _csrf: token } : {}),
+    });
+  expect(await (await open("public")).json()).toEqual({ tree, csrf: null });
+  expect((await submit("private")).status).toBe(403);
+  expect(page.calls).toHaveLength(1);
+  const privatePage = await open("private");
+  const token = privatePage.headers.get("X-Code-CSRF")!;
+  expect(token).toBe(codeCsrf("fixture-session", codeId));
+  expect((await submit("private", token)).status).toBe(200);
+  expect(await (await submit("public", token)).json()).toEqual({ tree, csrf: null });
+  expect((await submit("private")).status).toBe(403);
+  expect(page.calls).toHaveLength(4);
 });
 test("streamed bodies, not only advertised sizes, stay within the request budget", async () => {
   const request = new Request("https://cloud.example/", {
@@ -280,9 +382,11 @@ test("public overload returns 429 without dispatching", async () => {
     check: async () => ({ limited: true, remaining: 0, resetIn: 60_000 }),
     checkOrThrow: async () => ({ limited: true, remaining: 0, resetIn: 60_000 }),
   }));
-  const response = await page.router.request(`/code/${codeId}/`);
-  expect(response.status).toBe(429);
-  expect(response.headers.get("Retry-After")).toBe("60");
+  for (const method of ["GET", "POST"]) {
+    const response = await page.router.request(`/code/${codeId}/`, { method });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+  }
   expect(page.calls).toHaveLength(0);
 });
 

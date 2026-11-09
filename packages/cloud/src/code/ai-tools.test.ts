@@ -67,6 +67,41 @@ test("only literal AI tools admit detached SDK methods and collect all target an
     expect(analyze(code).diagnostics.length).toBeGreaterThan(0);
 });
 
+test("AI tools inside typed middleware retain attribution for later matching routes only", () => {
+  const result = analyzeCode({
+    sdk,
+    entry: "code.ts",
+    aiOperations: ["core.ai.generate"],
+    files: {
+      "code.ts": `import { app, core, work_shop } from "@sdk";
+app.get("/private/before", c => c.text("before"));
+const routes = app.use<{ message: string }>("/private", async (c, next) => {
+  await work_shop.catalog.list({});
+  await core.ai.generate(${request.replace("TOOLS", '[core.catalog, work_shop.workshop("fixed").stock.list]')});
+  c.set("message", "checked");
+  return next();
+});
+routes.get("/private/after", c => c.text(c.get("message")));
+routes.post("/private/after", c => c.text(c.get("message")));
+routes.get("/public", c => c.text("public"), { public: true });
+export default routes;`,
+    },
+  });
+  expect(result.diagnostics).toEqual([]);
+  expect(result.ai).toBe(true);
+  expect(result.permissions).toHaveLength(4);
+  expect(result.permissions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ operation: "work-shop.catalog.list", target: null }),
+      expect.objectContaining({ operation: "core.ai.generate", target: null }),
+      expect.objectContaining({ operation: "core.catalog", target: null }),
+      expect.objectContaining({ operation: "work-shop.stock.list", target: { type: "work-shop.workshop", id: "fixed" } }),
+    ]),
+  );
+  for (const permission of result.permissions)
+    expect(permission.entrypoints?.toSorted()).toEqual(["route:GET:/private/after", "route:POST:/private/after"]);
+});
+
 test("runtime serializes registered app and target-bound methods and rejects detached copies or forgeries", async () => {
   const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
   const call = mock(async (_capability: string, input: unknown) => input);

@@ -123,7 +123,7 @@ test("SDK runtime routes return description responses without cookies, HTML or a
   ).toEqual({ kind: "json", status: 200, body: "null" });
 });
 
-test("route requests accept only Cloud visitor profiles and providers, with no additional identity fields", () => {
+test("route requests accept only explicit visitor fields and never incoming headers or cookies", () => {
   const request = {
     codeId: "c_one",
     method: "GET",
@@ -136,6 +136,8 @@ test("route requests accept only Cloud visitor profiles and providers, with no a
   } satisfies CodeRouteRequest;
   expect(CodeRouteRequestSchema.parse(request).user).toEqual(request.user);
   expect(CodeRouteRequestSchema.parse({ ...request, user: null }).user).toBeNull();
+  expect(CodeRouteRequestSchema.safeParse({ ...request, headers: { authorization: "browser-credential" } }).success).toBe(false);
+  expect(CodeRouteRequestSchema.safeParse({ ...request, cookies: { session_token: "browser-credential" } }).success).toBe(false);
   for (const user of [
     { ...request.user, kind: "agent" },
     { ...request.user, kind: "service_account" },

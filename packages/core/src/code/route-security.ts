@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-/** The authenticated session token remains server-only. Anonymous forms bind to a separate HttpOnly cookie. */
+/** Non-public forms bind to the authenticated session token, which remains server-only. Public forms need no token. */
 export const codeCsrf = (binding: string, codeId: string): string =>
   createHmac("sha256", binding).update(`cloud-code-page:v1:${codeId}`).digest("hex");
 export function checkCodeCsrf(binding: string | undefined, codeId: string, received: string | undefined): boolean {

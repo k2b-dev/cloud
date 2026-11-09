@@ -6,6 +6,8 @@ export type {
   CodeHandle,
   CodeHttp,
   CodeHttpResult,
+  CodeMiddleware,
+  CodeNext,
   CodeRequest,
   CodeScheduleContext,
   CodeScheduleHandler,

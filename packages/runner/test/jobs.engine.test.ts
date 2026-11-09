@@ -183,13 +183,17 @@ for (const termination of ["SIGTERM", "SIGKILL"] as const)
   }, 10000);
 
 // Checker and workerd run in the production image, including the response transport.
-test("checked TSX routes return pages through the real isolated request engine", async () => {
+test("checked TSX routes run typed middleware and return pages through the real isolated request engine", async () => {
   const input = JSON.stringify({
     kind: "check",
     request: {
       files: {
         "code.tsx": `import { app, jsx, Page, Text } from "@sdk";
-app.get("/hello/:name", c => c.page(<Page title="Hello"><Text>{c.req.param("name") + ":" + c.user?.id}</Text></Page>));`,
+const routes = app.use<{ greeting: string }>("/hello", async (c, next) => {
+  c.set("greeting", c.req.param("name") + ":" + c.user?.id);
+  return next();
+});
+routes.get("/hello/:name", c => c.page(<Page title="Hello"><Text>{c.get("greeting")}</Text></Page>));`,
       },
       entry: "code.tsx",
       sdk,

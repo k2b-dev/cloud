@@ -355,16 +355,19 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `export type CodeEvents = { ${events.join("; ")} };`,
       `/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
 export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
-      `export type CodeApp = {
-  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp;
+      `export type CodeApp<Variables extends object = {}> = {
+  /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
+  use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  use<Added extends object = {}>(path: string, middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
   /** The checked event is scoped to this resource Code owner. */
-  on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  get(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  post(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  put(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  delete(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  all(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
 };`,
       "export declare const app: CodeApp;",
     );

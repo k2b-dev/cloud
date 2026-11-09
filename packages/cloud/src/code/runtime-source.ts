@@ -22,6 +22,7 @@ const aiTools = new WeakMap();
 let bridge;
 const schedules = [];
 const routes = [];
+const middleware = [];
 const routeResponses = new WeakMap();
 const diagnostics = [];
 const node = () => Object.create(null);
@@ -105,6 +106,14 @@ if (manifest.owner) {
     : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
 }
 const app = node();
+app.use = (...args) => {
+  const [path, handler] = args.length === 1 ? ["/", args[0]] : args;
+  if (args.length < 1 || args.length > 2 || typeof path !== "string" ||
+      !/^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?)?$/.test(path) || path.length > 200 || typeof handler !== "function")
+    throw new CodeError("code_sdk_invalid_middleware");
+  middleware.push({ path: path === "/" ? "/" : path.replace(/\/$/, ""), handler });
+  return app;
+};
 app.schedule = (...args) => {
   const [when, fn] = args;
   const object = when && typeof when === "object" && !Array.isArray(when);
@@ -156,7 +165,7 @@ for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (pat
   const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
   const entrypoint = "route:" + route.method + ":" + path;
   if (routes.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_route");
-  routes.push({ entrypoint, route, handler });
+  routes.push({ entrypoint, route, handler, middleware: [...middleware] });
   return app;
 };
 Object.freeze(app);
@@ -196,7 +205,10 @@ const __codeSdk = Object.freeze({
       });
       const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
       const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new CodeError("code_invalid_response"); return value; };
+      const variables = new Map();
       const c = {
+        set: (key, value) => { variables.set(key, value); },
+        get: key => variables.get(key),
         user: registered.route.public || !input.user ? null : {
           id: input.user.id, username: input.user.username, groupIds: [...input.user.groupIds], groupNames: [...input.user.groupNames], kind: input.user.kind,
           name: input.user.name,
@@ -234,7 +246,33 @@ const __codeSdk = Object.freeze({
         },
         redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
       };
-      const response = await registered.handler(c);
+      const path = input.path.split("/").map(segment => decodeURIComponent(segment)).join("/");
+      const chain = registered.middleware.filter(value => value.path === "/" || path === value.path || path.startsWith(value.path + "/"));
+      let last = -1;
+      const dispatch = async index => {
+        if (index <= last) throw new CodeError("code_middleware_next_called_twice");
+        last = index;
+        if (index === chain.length) return registered.handler(c);
+        let following;
+        let settled;
+        let finished = false;
+        const next = () => {
+          if (finished || following) return Promise.reject(new CodeError("code_middleware_next_called_twice"));
+          following = dispatch(index + 1);
+          // Observe rejection immediately; the middleware may catch it or finish other work first.
+          settled = following.catch(() => {});
+          return following;
+        };
+        try {
+          const response = await chain[index].handler(c, next);
+          return response === undefined && following ? await following : response;
+        } finally {
+          finished = true;
+          // Drain work already started by next(), preserving a middleware's own response or error.
+          if (settled) await settled;
+        }
+      };
+      const response = await dispatch(0);
       const result = routeResponses.get(response);
       if (!result) throw new CodeError("code_invalid_response");
       return result;

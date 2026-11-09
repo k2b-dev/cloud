@@ -268,6 +268,25 @@ const expectEndClear = async (page: Page) => {
 };
 
 describe("Code page in a browser", () => {
+  test("a public page response removes stale CSRF fields and the next submit sends no token", async () => {
+    const { page, errors, close } = await open(1280);
+    try {
+      await settled(page);
+      expect(await page.locator('input[name="_csrf"]').count()).toBeGreaterThan(0);
+      const publicTree = withChildren(home, [{ kind: "Notice", tone: "success", title: "Public response" }, ...home.children]);
+      state.replies.push({ response: () => Response.json({ tree: publicTree, csrf: null }, { headers: { "X-Code-Page": "tree" } }) });
+      await page.getByRole("button", { name: "Mark ready", exact: true }).click();
+      await page.getByText("Public response", { exact: true }).waitFor();
+      expect(await page.locator('input[name="_csrf"]').count()).toBe(0);
+      state.replies.push({ response: () => Response.json({ tree: publicTree, csrf: null }, { headers: { "X-Code-Page": "tree" } }) });
+      await page.getByRole("button", { name: "Mark ready", exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll('button[aria-busy="true"]').length === 0);
+      expect(state.posts[1]).toEqual({ path: `/code/${codeId}/ready`, fields: { item: "W-1" }, tree: "tree" });
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
   test("a page with a form says not to enter passwords, readable at the edge, and the line follows the tree", async () => {
     for (const width of [1280, 390]) {
       const { page, errors, close } = await open(width);

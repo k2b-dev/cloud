@@ -28,12 +28,16 @@ const orders = [
 // Add the Cloud group IDs allowed to see and change these orders. Empty denies access.
 const allowedGroupIds: string[] = [];
 
-// Default: the Cloud layout. Every signed-in person can reach this handler, and it reads with this Code's rights,
-// not the visitor's: check the visitor here when only some people may see the data. c.user names the visitor only
-// on routes without public: true; a public route always gets null.
-app.get("/", c => {
+// Runs before every later HTTP route, including POSTs. SDK calls still use this Code's rights.
+// Scope this middleware to a private prefix if you add public routes; public routes get c.user === null.
+app.use(async (c, next) => {
   if (!c.user?.groupIds.some(id => allowedGroupIds.includes(id)))
     return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+
+// Default: the Cloud layout.
+app.get("/", c => {
   return c.page(
     <Page eyebrow="Example data" title="Orders" asOf={new Date().toISOString()} icon="ti ti-shopping-cart">
       <Stats>
@@ -73,8 +77,6 @@ app.get("/", c => {
   );
 });
 app.post("/orders", c => {
-  if (!c.user?.groupIds.some(id => allowedGroupIds.includes(id)))
-    return c.json({ error: "forbidden" }, 403);
   // Save the order with an SDK call here, then show the page again.
   return c.redirect("/");
 });

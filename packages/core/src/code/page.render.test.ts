@@ -68,6 +68,13 @@ test("SSR renders escaped content, own links, chart data and usable form control
   expect(html).toContain("Count");
   expect(html).toContain("Info");
 });
+test("public page forms and buttons render without an empty CSRF field", () => {
+  const html = renderToString(() => createComponent(Page, { tree, codeId: "c_page", csrf: null, locale: "en", timeZone: "UTC" }));
+  expect(html).toContain('action="/code/c_page/find"');
+  expect(html).toContain('action="/code/c_page/save"');
+  expect(html).toContain('method="post"');
+  expect(html).not.toContain('name="_csrf"');
+});
 test("the server draws every block with shared components, including the chart and the scan control", () => {
   const full = validateCodePage(codePageFixture, "c_page");
   const html = renderToString(() =>
@@ -166,6 +173,9 @@ test("Core hosts a complete page document and rejects invalid trees before rende
     expect(html.toLowerCase()).toContain("<!doctype html>");
     expect(html).toContain("data-code-page-version");
     expect(html).toContain("PageTree.island.tsx");
+    expect(html).not.toContain('name="_csrf"');
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(response.headers.get("X-Code-CSRF")).toBeNull();
     expect(response.headers.get("Cache-Control")).toContain("no-store");
     const head = await router.request("https://cloud.test/code/c_page/", { method: "HEAD" });
     expect(head.status).toBe(200);

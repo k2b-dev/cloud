@@ -48,13 +48,16 @@ const page = async (values: Values, errors: Errors = {}, created?: string) => {
 
 const empty: Values = { title: "", details: "", priority: "medium", due: "" };
 
-app.get("/", async c => {
+app.use(async (c, next) => {
   if (c.user?.id !== ALLOWED_USER) return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+
+app.get("/", async c => {
   return c.page(await page(empty));
 });
 
 app.post("/request", async c => {
-  if (c.user?.id !== ALLOWED_USER) return c.json({ error: "forbidden" }, 403);
   const form = await c.req.formData();
   const values: Values = {
     title: String(form.get("title") ?? "").trim(),
