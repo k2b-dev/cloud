@@ -84,7 +84,6 @@ export const MAIL_DRAFT_DOCUMENT_TERMINAL_CODES = [
   "ACCESS_DENIED",
   "DOCUMENT_NOT_FOUND",
   "INVALID_PAYLOAD",
-  "BACKPRESSURE",
   "DRAFT_DOCUMENT_STREAM_FULL",
 ] as const;
 
@@ -102,7 +101,7 @@ export const mailDraftDocumentMessages = i18n.define({
       network: "The editing connection was interrupted. Reconnecting…",
       streamFull: "Document storage is full. Your unsent changes remain on this device. Keep the draft open and retry saving.",
       pending: "Your changes could not yet be saved. Keep this draft open and retry saving.",
-      busy: "The editing connection could not keep up. Copy unsent text before reopening the draft.",
+      busy: "The server is busy. Your changes stay here and are sent again after reconnecting.",
     },
     de: {
       unsupported: "Gemeinsames Bearbeiten ist erst verfügbar, wenn die sichere Aufbewahrung der Entwürfe unterstützt und geprüft ist.",
@@ -116,7 +115,7 @@ export const mailDraftDocumentMessages = i18n.define({
       streamFull:
         "Der Entwurfsspeicher ist voll. Deine ungesendeten Änderungen bleiben auf diesem Gerät. Lass den Entwurf geöffnet und versuche das Speichern erneut.",
       pending: "Deine Änderungen konnten noch nicht gespeichert werden. Lass den Entwurf geöffnet und versuche das Speichern erneut.",
-      busy: "Die Verbindung konnte mit den Änderungen nicht Schritt halten. Kopiere ungesendeten Text, bevor du den Entwurf erneut öffnest.",
+      busy: "Der Server ist ausgelastet. Deine Änderungen bleiben hier und werden nach dem Wiederverbinden erneut gesendet.",
     },
   },
 });

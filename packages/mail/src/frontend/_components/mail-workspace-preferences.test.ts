@@ -5,11 +5,12 @@ import { mailWorkspaceCookie, readMailWorkspacePreferences, updateMailWorkspaceP
 describe("Mail workspace preferences", () => {
   test("reads the list layout preference", () => {
     const value = encodeURIComponent(
-      JSON.stringify({ listCollapsed: true, detailsOpen: true, toolbarActions: ["tags", "reply", "archive"] }),
+      JSON.stringify({ listCollapsed: true, detailsOpen: true, draftFullscreen: true, toolbarActions: ["tags", "reply", "archive"] }),
     );
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
       listCollapsed: true,
       detailsOpen: true,
+      draftFullscreen: true,
       toolbarActions: ["reply", "archive", "tags"],
       listMode: "conversations",
       lastMailboxId: null,
@@ -31,6 +32,7 @@ describe("Mail workspace preferences", () => {
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
       listCollapsed: false,
       detailsOpen: false,
+      draftFullscreen: false,
       toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
       listMode: "conversations",
       lastMailboxId: null,
@@ -43,6 +45,7 @@ describe("Mail workspace preferences", () => {
     expect(readMailWorkspacePreferences("cloud_mail_workspace=%7Bbroken")).toEqual({
       listCollapsed: false,
       detailsOpen: false,
+      draftFullscreen: false,
       toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
       listMode: "conversations",
       lastMailboxId: null,

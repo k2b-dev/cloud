@@ -338,6 +338,8 @@ export async function openMailDraftDocumentClient(options: {
     let durableState = encoding.fromBase64(authorization.durable.state);
     const waiters = new Set<() => void>();
     let structuralPending = 0;
+    /** A socket error the provider survives; a later replay proves the connection works again. */
+    let transportError = false;
     const emit = () => {
       // The action stays pending across a network drop; losing readiness is not a receipt.
       state.structuring = structuralPending > 0;
@@ -482,7 +484,7 @@ export async function openMailDraftDocumentClient(options: {
         encode: (packet) => packet,
         decode: (packet) => decodeMailDraftDocumentMessage(packet, options.draft.id),
         closeError: (code, reason) =>
-          [1008, 1009, 1013, 4401, 4403].includes(code) ? { code: "ACCESS_DENIED", message: reason || t().permission } : null,
+          [1008, 1009, 4401, 4403].includes(code) ? { code: "ACCESS_DENIED", message: reason || t().permission } : null,
       },
       reconnectDelayMs: (attempt) => Math.min(1_000 * 2 ** Math.min(attempt, 5), 30_000),
       generationMessages: { changed: t().generation, restored: t().frozen },
@@ -493,6 +495,11 @@ export async function openMailDraftDocumentClient(options: {
       },
       onReady: () => {
         state.ready = true;
+        if (transportError && !state.terminal) {
+          transportError = false;
+          state.error = false;
+          state.message = state.dirty ? t().pending : t().saved;
+        }
         if (!state.dirty && !state.error) state.message = t().saved;
         emit();
       },
@@ -514,6 +521,7 @@ export async function openMailDraftDocumentClient(options: {
         if (snapshot.generation === generation) acknowledge(snapshot.state);
       },
       onError: (error) => {
+        transportError = true;
         state.error = true;
         state.message = error.message;
         emit();

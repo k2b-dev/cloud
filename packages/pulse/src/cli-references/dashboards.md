@@ -77,6 +77,38 @@ Additional chart kinds use these selected SQL columns:
 | `budget` | Category `x`, `used`, optional `expected`, `limit`; currency in `unit`. |
 | `balance` | One row: `start`, `in`, `out`; no `x`/`series`, currency in `unit`. |
 | `heatmap` | Category `x`, row category in `series`, one numeric value; aggregate each x/row pair once. |
+| `barGrouped`, `barStacked`, `barPercent` | Category `x`, optional `series`, remaining values; grouped amounts, stacked amounts, or 100% stacked shares. |
+| `barCompare`, `pareto` | Category `x`, current and previous numeric columns in that order; no `series`. Pareto requires nonnegative, non-null amounts. |
+| `barRows`, `barList`, `funnelStages` | Category `x` and one value; signed rows, nonnegative ranked shares, or ordered funnel stages. No `series`. |
+| `hbar` | Category `x`, optional `series`, remaining nonnegative values; aligned horizontal comparisons. |
+| `dots` | Category `x`, repeated positive `total`, remaining nested counts in descending subset order; optional `series`. Each complete category produces 100 dots including the remainder; a missing count leaves a gap. |
+| `waterfall` | Category `x`, one signed value column: first row is the starting balance, middle rows are changes, final row is a null value whose label names the computed total. |
+| `calendarHeatmap` | ISO day `x` (`YYYY-MM-DD`) and one value, at most one row per day. |
+| `sankey` | Exactly `source`, `target`, `value`; nonempty text endpoints and positive amounts, without `x`/`series`. Aggregate duplicate edges; cycles are errors. |
+| `treemap` | Label `x`, group in `series`, one nonnegative value. |
+| `bubble` | Numeric `x`, group in `series`, fixed aliases `label`, `y`, optional nonnegative `size`. |
+| `radar` | Axis category `x`, repeated positive `max`, remaining measurements; optional `series`. Every series needs a value on every axis, between zero and max. |
+| `lineForecast` | Date/DateTime `x`, `value`, `forecast` (0 history, 1 forecast), optional paired `low`/`high`; no `series`. Forecast rows form a contiguous suffix ordered by time. |
+
+Saved `bar` panels keep flattened source labels and row order, including
+repeated category/series pairs. Choose `barGrouped`, `barStacked` or
+`barPercent` to align categories and series; missing pairs stay null and
+duplicate pairs are errors. Existing `funnel` panels retain their bar-gauge
+drawing; choose `funnelStages` for the catalog funnel. Ranked lists sort by descending value.
+`barRows` accepts signed values; share
+lists and funnels do not.
+
+Calendar nulls leave empty days. Treemap and bubble rows with missing values
+produce no mark; they still count toward the input limits. Radar, Pareto,
+Sankey and waterfall require the values described above rather than inventing
+zeroes. Forecast bounds must be ordered and contain each non-null forecast
+value, and are required for each forecast row when selected;
+historical bound cells may be null. A null forecast value leaves a line gap.
+
+Choose `width: "twoThirds"` for four of the six desktop columns; panels stack
+at phone widths. Before rolling Pulse back, remove panels using kinds the
+older version does not support. Strict stored-definition reads reject those
+kinds and prevent that base's dashboard list from loading.
 
 SQL `NULL` stays missing instead of becoming zero. Use `unit` for value labels
 and tooltips. A heatmap allows eight row categories and 480 column categories;

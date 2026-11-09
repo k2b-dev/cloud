@@ -37,6 +37,7 @@ import type {
   DeriveDraftFromMessageInput,
   DraftDerivationKind,
   DraftIntent,
+  MailDraft,
   MailDraftSeed,
   SenderIdentity,
 } from "../../contracts";
@@ -50,6 +51,7 @@ import { readApiError } from "./api-response";
 import MailAutomationTrace from "./MailAutomationTrace";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
+import MailInlineDraft from "./MailInlineDraft";
 import MailMessageCard from "./MailMessageCard";
 import { getMailAction, type MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
@@ -73,6 +75,7 @@ import {
 import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { getMailConversationToolbarSections, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { captureMailDraftMorph, playMailDraftClose, playMailDraftOpen } from "./mail-draft-morph";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
@@ -94,6 +97,15 @@ type DraftLookup = {
   conversationId: string;
   request: MailConversationComposerRequest;
   generation: number;
+};
+
+type InlineDraftState = {
+  conversationId: string;
+  draftId: string;
+  /** The draft as the click that created it received it. */
+  initialDraft?: MailDraft;
+  /** Created by this click: collapsing it unchanged discards it again. */
+  fresh: boolean;
 };
 
 /** The conversation details Detail in the mailbox workspace. */
@@ -188,6 +200,14 @@ export default function MailConversationReader(props: {
   onReconcile: () => Promise<void>;
   onReconcileAfterWrite: () => Promise<void>;
   onClose: (event: LinkNavigateEvent) => void | Promise<void>;
+  currentUserEmail?: string | null;
+  /** Live dictation is set up and allowed for this person. */
+  liveDictation?: boolean;
+  /** This browser's last choice for a draft: full screen moves the list and details aside (F7). */
+  draftFullscreen?: boolean;
+  onToggleDraftFullscreen?: () => void;
+  /** The draft open in this conversation, or null; the workspace keeps it in the URL. */
+  onDraftChange?: (draftId: string | null, options?: { history?: boolean }) => void;
 }) {
   const locale = useLocale();
   let seedStorage: Storage | undefined;
@@ -814,15 +834,159 @@ export default function MailConversationReader(props: {
       },
     ),
   );
-  const composerBusy = () => conversationDrafts().loading() || createdDraft().loading() || derivedDraft().loading();
+  // The draft open in this conversation. Reply, undo, and a draft row open it in place of the pill; the URL keeps it.
+  const initialDraftId = new URL(props.requestUrl, "http://mail.invalid").searchParams.get("draft");
+  const [inlineDraft, setInlineDraft] = createSignal<InlineDraftState | null>(
+    initialDraftId && props.selectedConversationId
+      ? { conversationId: props.selectedConversationId, draftId: initialDraftId, fresh: false }
+      : null,
+  );
+  const [inlineStarting, setInlineStarting] = createSignal(false);
+  let inlineDraftControls: { collapse: () => Promise<void> } | null = null;
+  const visibleInlineDraft = createMemo(() => {
+    const open = inlineDraft();
+    return open && open.conversationId === props.selectedConversationId ? open : null;
+  });
+  const closeInlineDraft = (draftId: string) => {
+    if (inlineDraft()?.draftId !== draftId) return;
+    const start = historyScroller ? captureMailDraftMorph(historyScroller) : null;
+    inlineDraftControls = null;
+    setInlineDraft(null);
+    props.onDraftChange?.(null);
+    if (historyScroller && start) playMailDraftClose(historyScroller, start);
+  };
+  /** Opens a draft here. An open one closes first through its own safe path; if that fails, it stays open. */
+  const openInlineDraft = async (next: InlineDraftState) => {
+    const current = visibleInlineDraft();
+    if (current?.draftId === next.draftId) return;
+    if (current && inlineDraftControls) {
+      await inlineDraftControls.collapse();
+      if (inlineDraft()?.draftId === current.draftId) return;
+    }
+    if (disposed || props.selectedConversationId !== next.conversationId) return;
+    const start = historyScroller ? captureMailDraftMorph(historyScroller) : null;
+    inlineDraftControls = null;
+    setInlineDraft(next);
+    props.onDraftChange?.(next.draftId);
+    // The layout already shows the draft; the motion runs from the pill's box to it.
+    const frame = historyScroller?.querySelector<HTMLElement>("[data-mail-inline-draft-frame]");
+    if (historyScroller && frame && start) playMailDraftOpen(historyScroller, frame, start);
+  };
+  // A draft belongs to its conversation: another conversation or mailbox unmounts it, and its session saves what is
+  // left before it releases the lease.
+  createEffect(
+    on(
+      () => [props.selectedConversationId, props.mailboxId] as const,
+      ([conversationId]) => {
+        const open = untrack(inlineDraft);
+        if (open && open.conversationId !== conversationId) {
+          inlineDraftControls = null;
+          setInlineDraft(null);
+          props.onDraftChange?.(null, { history: false });
+        }
+      },
+      { defer: true },
+    ),
+  );
+
+  /** The conversation's other drafts, newest first, as quiet rows under the open draft. */
+  const otherDrafts = createMemo(() => props.conversationDrafts.filter((draft) => draft.id !== visibleInlineDraft()?.draftId));
+  const draftIntentIcon = (intent: DraftIntent) =>
+    intent === "reply"
+      ? "ti-arrow-back-up"
+      : intent === "reply_all"
+        ? "ti-arrow-back-up-double"
+        : intent === "forward"
+          ? "ti-arrow-forward-up"
+          : "ti-pencil";
+
+  // Back and Forward return to a conversation with its draft open: the URL names the draft, the reader opens it.
+  createEffect(
+    on(
+      () => props.requestUrl,
+      (url) => {
+        const draftId = new URL(url, "http://mail.invalid").searchParams.get("draft");
+        const conversationId = props.selectedConversationId;
+        if (!draftId || !conversationId || untrack(inlineDraft)?.draftId === draftId) return;
+        void openInlineDraft({ conversationId, draftId, fresh: false });
+      },
+      { defer: true },
+    ),
+  );
+
+  const composerBusy = () => conversationDrafts().loading() || createdDraft().loading() || derivedDraft().loading() || inlineStarting();
+
+  /**
+   * Reply, Reply all, and Forward write in the conversation. An existing draft with the same intent opens again; a new
+   * one is created and saved before anyone types, so it has its identity from the start and nothing lives only in this
+   * browser.
+   */
+  const startInlineDraft = async (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string) => {
+    const conversationId = props.selectedConversationId;
+    if (!conversationId) return;
+    const generation = readerMailboxGeneration;
+    const stillHere = () => !disposed && generation === readerMailboxGeneration && props.selectedConversationId === conversationId;
+    const reusable = intent === "forward" || quotedBody === undefined;
+    const existing = reusable ? props.conversationDrafts.find((draft) => draft.intent === intent) : undefined;
+    if (existing) return void (await openInlineDraft({ conversationId, draftId: existing.id, fresh: false }));
+    setInlineStarting(true);
+    try {
+      const senderIdentityId = await chooseReplyIdentity({ conversationId, generation, request: { intent, message, quotedBody } });
+      if (!senderIdentityId || !stillHere()) return;
+      const param = { mailboxId: props.mailboxId };
+      const seedResponse = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post({
+        param,
+        json: {
+          origin: {
+            kind: "compose",
+            input: {
+              senderIdentityId,
+              to: [],
+              cc: [],
+              bcc: [],
+              subject: intent === "forward" ? forwardSubject(props.subject) : replySubject(props.subject),
+              body: quotedBody ?? "",
+              conversationId,
+              intent,
+              sourceMessageId: message.id,
+              includeSourceAttachments: intent === "forward" && message.attachments.length > 0,
+            },
+          },
+        },
+      });
+      if (!seedResponse.ok) throw new Error(await readApiError(seedResponse, t().createDraftFailed));
+      const seed = await seedResponse.json();
+      const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize.$post({
+        param,
+        json: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, t().createDraftFailed));
+      const draft = await response.json();
+      if (!stillHere()) {
+        // The person moved on while the empty draft was created; it goes again instead of waiting in that conversation.
+        void apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard
+          .$post({ param: { ...param, draftId: draft.id }, json: { expectedRevision: draft.revision } })
+          .catch(() => undefined);
+        return;
+      }
+      await openInlineDraft({ conversationId, draftId: draft.id, initialDraft: draft, fresh: true });
+    } catch (error) {
+      if (stillHere())
+        void prompts.error(error instanceof Error ? error.message : t().createDraftFailed, { title: t().startMessageFailed });
+    } finally {
+      setInlineStarting(false);
+    }
+  };
 
   const startComposer = (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string, target?: Window) => {
     const conversationId = props.selectedConversationId;
     if (!conversationId || composerBusy()) return void target?.close();
+    // A window of its own keeps the compose page; everything else writes in the conversation.
+    if (!target) return void startInlineDraft(intent, message, quotedBody);
     void conversationDrafts().mutate({
       generation: readerMailboxGeneration,
       conversationId,
-      request: { intent, message, quotedBody, ...(target ? { window: target } : {}) },
+      request: { intent, message, quotedBody, window: target },
     });
   };
 
@@ -1652,7 +1816,11 @@ export default function MailConversationReader(props: {
               scrollPreserveKey={`mail-reader-${props.selectionKey}`}
               onScroll={handleReaderScroll}
             >
-              <div class="mail-reading-column" data-mail-reading-column>
+              <div
+                class="mail-reading-column"
+                data-mail-reading-column
+                data-draft-fullscreen={visibleInlineDraft() && props.draftFullscreen ? "" : undefined}
+              >
                 <MailAutomationTrace
                   items={props.automationTrace}
                   where="top"
@@ -1679,7 +1847,81 @@ export default function MailConversationReader(props: {
                 </Show>
                 {/* One floating pill above the newest message, at every width: it sticks to the top of the reader
                     while the messages scroll. It runs the reader's existing actions and changes no compose logic. */}
-                <Show when={canRespondToLatest() || pillActions().length > 0}>
+                {/* The pill grows into the draft: an open draft stands in its place, above the newest message. */}
+                <Show when={visibleInlineDraft()} keyed>
+                  {(open) => (
+                    <div class="mail-inline-draft-frame" data-mail-inline-draft-frame>
+                      <MailInlineDraft
+                        mailboxId={props.mailboxId}
+                        draftId={open.draftId}
+                        initialDraft={open.initialDraft}
+                        currentUserId={props.currentUserId ?? ""}
+                        currentUserEmail={props.currentUserEmail ?? null}
+                        identities={props.identities}
+                        dateConfig={props.dateConfig}
+                        canAdmin={props.canAdmin}
+                        mailboxRecipientSuggestions={props.mailboxWide}
+                        calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+                        liveDictation={props.liveDictation ?? false}
+                        returnHref={props.requestUrl}
+                        host={{
+                          fresh: open.fresh,
+                          fullscreen: () => props.draftFullscreen ?? false,
+                          toggleFullscreen: () => props.onToggleDraftFullscreen?.(),
+                          register: (controls) => {
+                            inlineDraftControls = controls;
+                          },
+                          leave: (outcome) => {
+                            closeInlineDraft(open.draftId);
+                            // The sent message, the returned draft, or the removed one shows from the server's state.
+                            if (outcome !== "closed") void props.onReconcileAfterWrite().catch(() => undefined);
+                          },
+                          openDraft: (draftId) => {
+                            closeInlineDraft(open.draftId);
+                            void openInlineDraft({ conversationId: open.conversationId, draftId, fresh: false });
+                          },
+                        }}
+                      />
+                    </div>
+                  )}
+                </Show>
+                <Show when={otherDrafts().length > 0}>
+                  <ul class="mail-reader-drafts" aria-label={t().conversationDraftsLabel}>
+                    <For each={otherDrafts()}>
+                      {(draft) => (
+                        <li>
+                          <button
+                            type="button"
+                            class="mail-reader-draft-row"
+                            data-mail-draft-row={draft.id}
+                            disabled={inlineStarting()}
+                            onClick={() =>
+                              props.selectedConversationId &&
+                              void openInlineDraft({ conversationId: props.selectedConversationId, draftId: draft.id, fresh: false })
+                            }
+                          >
+                            <i class={`ti ${draftIntentIcon(draft.intent)}`} aria-hidden="true" />
+                            <span class="mail-reader-draft-row-intent">
+                              {draft.intent === "reply"
+                                ? t().draftRowReply
+                                : draft.intent === "reply_all"
+                                  ? t().draftRowReplyAll
+                                  : draft.intent === "forward"
+                                    ? t().draftRowForward
+                                    : t().draftRowMessage}
+                            </span>
+                            <span class="mail-reader-draft-row-meta">
+                              {draft.createdByDisplayName} · {dates.formatDateTimeRelative(draft.updatedAt, props.dateConfig)}
+                            </span>
+                            <span class="mail-reader-draft-row-preview">{draft.bodyPreview || draft.subject || t().noContent}</span>
+                            <span class="mail-reader-draft-row-open">{t().openDraft}</span>
+                          </button>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <Show when={!visibleInlineDraft() && (canRespondToLatest() || pillActions().length > 0)}>
                   <div class="mail-reader-reply-pill" data-mail-reply-pill>
                     {/* As the reader narrows, labels give way to icons (Reply keeps its word), then actions move into More. */}
                     <Toolbar label={t().conversationActions} variant="floating" edge="top">
@@ -1805,6 +2047,9 @@ export default function MailConversationReader(props: {
                                   refresh: props.onReconcile,
                                   reassign: props.onReassignMessage,
                                   split: props.onSplitMessage,
+                                  openDraft: (draftId) =>
+                                    props.selectedConversationId &&
+                                    void openInlineDraft({ conversationId: props.selectedConversationId, draftId, fresh: false }),
                                 }}
                               />
                             )}

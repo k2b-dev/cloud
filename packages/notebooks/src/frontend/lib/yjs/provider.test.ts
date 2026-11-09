@@ -615,6 +615,54 @@ describe("Yjs provider unconfirmed edits", () => {
     }
   });
 
+  test.each([
+    ["the note server", true, "BACKPRESSURE"],
+    ["the gateway", false, "proxy backpressure"],
+  ])("a busy %s reconnects and resends unsent text instead of ending the editor", (_source, serverError, reason) => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const fatal: string[] = [];
+    const provider = createYjsProvider({
+      doc,
+      awareness,
+      noteId: NOTE_ID,
+      appUrl: "http://localhost",
+      onFatal: (error) => fatal.push(error.code),
+    });
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    try {
+      provider.connect();
+      const socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      readyReplay(socket);
+      doc.getText("content").insert(0, "typed while the server is busy");
+      const [unsent] = syncPublishes(socket);
+      // Too many queued messages: the server (or gateway) asks to try again later.
+      if (serverError) socket.message({ type: notebooksYjs.wsType.error, payload: { code: "BACKPRESSURE", message: "Too many messages" } });
+      socket.close();
+      socket.onclose?.({ code: 1013, reason });
+
+      expect(fatal).toEqual([]);
+      expect(provider.hasUnsentChanges()).toBe(true);
+      timers.shift()!();
+      const next = FakeWebSocket.instances.at(-1)!;
+      expect(next).not.toBe(socket);
+      next.open();
+      readyReplay(next);
+      expect(syncPublishes(next)).toEqual([unsent!]);
+      echo(next, unsent!);
+      expect(provider.hasUnsentChanges()).toBe(false);
+      expect(fatal).toEqual([]);
+    } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+    }
+  });
+
   test("reconnect chunks large unconfirmed updates within the sync limit and clears their echoes", () => {
     using editor = localEditor();
     readyReplay(editor.socket);
@@ -1422,6 +1470,9 @@ describe("trusted awareness transport", () => {
     const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
     const publishes = (socket: FakeWebSocket) =>
       socket.sent.map((value) => JSON.parse(value)).filter((value) => value.type === notebooksYjs.wsType.awarenessPublish);
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
     try {
       awareness.setLocalStateField("cursor", { anchor: { tname: "codemirror" }, head: { tname: "codemirror" } });
       provider.connect();
@@ -1461,11 +1512,15 @@ describe("trusted awareness transport", () => {
         observed.destroy();
         observedDoc.destroy();
       }
+      // Cursor frames are throttled: a change inside the interval waits for its end, then the latest state goes out.
       awareness.setLocalState(null);
+      expect(publishes(socket)).toHaveLength(2);
+      timers.shift()!();
       expect(publishes(socket)).toHaveLength(3);
       provider.dispose();
       expect(publishes(socket)).toHaveLength(3);
     } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
       provider.dispose();
       awareness.destroy();
       doc.destroy();
