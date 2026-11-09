@@ -46,6 +46,7 @@ import {
   type SenderIdentity,
 } from "../../contracts";
 import { mailSharedDraftMessages } from "../../lib/draft-document-client";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import { readApiError, readApiFailure } from "./api-response";
 import MailComposerAttachments from "./MailComposerAttachments";
 import { openMailComposerCalendarDialog } from "./MailComposerCalendarDialog";
@@ -74,7 +75,6 @@ import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { writeMailSenderPreference } from "./mail-sender-preference";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 class ComposeSafetyCancelled extends Error {}
 class ComposeSafetyAttachmentRequested extends Error {}
@@ -304,6 +304,7 @@ export default function MailComposer(props: {
     leaseConflict,
     lifecycleTransition,
     status,
+    saveStatus,
     setStatus,
     statusMessage,
     setStatusMessage,
@@ -334,15 +335,36 @@ export default function MailComposer(props: {
   const sharedT = () => mailSharedDraftMessages.resolve([locale()]).t;
   onBeforeLeave((event) => {
     const current = sharedState();
-    if (!current || (!current.structuring && (!current.dirty || (current.remembering && current.locallySaved)))) return;
+    if (!current || (!current.rejectedEdit && !current.structuring && (!current.dirty || (current.remembering && current.locallySaved))))
+      return;
     event.preventDefault();
     void event.restored.then(() =>
-      prompts.error(current.structuring ? sharedT().tablePending : current.remembering ? sharedT().storageFailed : sharedT().notRemembered),
+      prompts.error(
+        current.rejectedEdit
+          ? sharedT().bodyEditFailed
+          : current.structuring
+            ? sharedT().tablePending
+            : current.remembering
+              ? sharedT().storageFailed
+              : sharedT().notRemembered,
+      ),
     );
   });
   const [tableNeedsCheck, setTableNeedsCheck] = createSignal(false);
   const sharedCanSend = () =>
-    !isShared() || Boolean(sharedState()?.connected && sharedState()?.ready && !sharedState()?.terminal && !sharedState()?.structuring);
+    !isShared() ||
+    Boolean(
+      sharedState()?.connected &&
+        sharedState()?.ready &&
+        !sharedState()?.terminal &&
+        !sharedState()?.structuring &&
+        !sharedState()?.rejectedEdit,
+    );
+  const saveState = () => {
+    if (status() === "error" || status() === "readonly") return "";
+    if (status() === "saving" || status() === "preparing") return t().savingDraft;
+    return saveStatus() === "saved" ? t().draftSaved : saveStatus() === "local" ? t().draftSavedLocally : t().draftSavePending;
+  };
   const conversationId = () => draft()?.conversationId ?? initial.conversationId;
   const composeWithAi = mutations.create<void, void>({
     mutation: async () => {
@@ -1532,11 +1554,6 @@ export default function MailComposer(props: {
       if ((intent !== "reply" && intent !== "reply_all") || !sourceMessageId) return null;
       return host.messageLabel(sourceMessageId);
     };
-    const saveState = () => {
-      if (status() === "saving" || status() === "preparing") return t().savingDraft;
-      if (status() === "saved" && draft()) return t().draftSaved;
-      return "";
-    };
     const draftMenu = (): DropdownItem[] => [
       {
         items: [
@@ -1943,10 +1960,13 @@ export default function MailComposer(props: {
               </Button>
             </Show>
           </span>
-          <span class="mail-inline-draft-status" role="status" aria-live="polite">
+          <span class="mail-inline-draft-status" data-mail-save-status={saveStatus()} role="status" aria-live="polite" title={saveState()}>
             <Show when={!suggestionUntouched()} fallback={<span class="mail-inline-draft-suggestion-hint">{t().suggestionHint}</span>}>
               <Show when={saveState()}>
-                <i class={`ti ${status() === "saved" ? "ti-cloud-check" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
+                <i
+                  class={`ti ${saveStatus() === "saved" ? "ti-cloud-check" : saveStatus() === "local" ? "ti-device-laptop" : "ti-clock"}`}
+                  aria-hidden="true"
+                />
                 {saveState()}
               </Show>
             </Show>
@@ -2051,6 +2071,11 @@ export default function MailComposer(props: {
         </header>
       </Show>
 
+      <Show when={!isShared() && saveState()}>
+        <div class="shrink-0 px-3 py-1 text-xs text-secondary" data-mail-save-status={saveStatus()} role="status" aria-live="polite">
+          {saveState()}
+        </div>
+      </Show>
       <Show when={draftSession.localCopyFailed()}>
         <div class="px-3 py-2 text-xs text-red-600 dark:text-red-300" role="status">
           {t().localRecoveryUnavailable}

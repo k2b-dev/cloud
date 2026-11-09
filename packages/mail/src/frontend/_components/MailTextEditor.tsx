@@ -164,18 +164,14 @@ export default function MailTextEditor(props: {
     if (current.terminal || current.error) return current.message;
     if (current.structuring) return st().tablePending;
     if (current.message === st().retainedColumn) return current.message;
-    return !current.connected
-      ? st().offline.replace("{count}", String(current.changes))
-      : current.dirty
-        ? st().pending
-        : !current.ready
-          ? st().connecting
-          : st().saved;
+    if (!current.ready && current.connected) return st().connecting;
+    const stored = current.dirty ? (current.locallySaved ? st().localSaved : st().pending) : st().saved;
+    return current.connected ? stored : `${st().offline} · ${stored}`;
   };
   const copy = async () => {
     if (!binding) return;
     try {
-      const content = binding.content();
+      const content = binding.state().rejectedEdit ?? binding.content();
       await navigator.clipboard.writeText(
         `${content.to.map((entry) => entry.address).join(", ")}\nCc: ${content.cc.map((entry) => entry.address).join(", ")}\nBcc: ${content.bcc.map((entry) => entry.address).join(", ")}\n${content.subject}\n\n${content.body}`,
       );
@@ -185,6 +181,13 @@ export default function MailTextEditor(props: {
   };
   const retry = () => {
     if (binding) void binding.retry().catch((error: unknown) => controls?.notify(error instanceof Error ? error.message : st().pending));
+  };
+  const restoreProposal = () => {
+    try {
+      binding?.restoreRejectedEdit();
+    } catch (error) {
+      controls?.notify(error instanceof Error ? error.message : st().bodyEditFailed);
+    }
   };
   return (
     <div class={props.inline ? "mail-inline-text-editor relative" : "relative h-full min-h-72"}>
@@ -298,6 +301,14 @@ export default function MailTextEditor(props: {
             when={unknownAction()}
             fallback={
               <>
+                <Show when={props.sharedState?.()?.rejectedEdit}>
+                  <Button size="sm" variant="secondary" disabled={props.sharedState?.()?.terminal} onClick={restoreProposal}>
+                    {st().restoreProposal}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => binding?.discardRejectedEdit()}>
+                    {st().discardProposal}
+                  </Button>
+                </Show>
                 <Button size="sm" variant="secondary" onClick={retry}>
                   {st().retry}
                 </Button>

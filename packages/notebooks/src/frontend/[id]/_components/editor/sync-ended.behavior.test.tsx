@@ -275,7 +275,7 @@ const mountNoteEditor = async ({
     return {
       reconnectNow,
       connect,
-      resume: () => {},
+      resume: () => "resumed",
       dispose,
       hasUnsentChanges: () => pending || (!ready && !!opts.undoManager?.undoStack.length),
       restoreRevision: () => (ready ? "0" : (opts.initialRestoreRevision ?? null)),

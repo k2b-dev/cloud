@@ -8,8 +8,8 @@ import * as Y from "yjs";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import type { DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from "../../contracts";
 import { createDraftDocument } from "../../lib/draft-document";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import { mailDraftJournalKey } from "./mail-draft-journal";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 const MAILBOX_ID = "Box001";
 const DRAFT_ID = "Drf001";
@@ -242,6 +242,20 @@ describe("Mail draft session", () => {
     return { session, current, setCurrent };
   };
 
+  test("shared transport echoes and offline input never claim durable server storage", async () => {
+    localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "no");
+    const f = await sharedFixture();
+    await f.session.ensureDraft();
+    await Bun.sleep(0);
+    f.setCurrent({ ...f.current(), body: "Unpersisted shared input" });
+    await Bun.sleep(0);
+    expect(f.session.shared()?.provider.hasUnsentChanges()).toBe(false);
+    expect(f.session.status()).not.toBe("saved");
+    expect(f.session.saveStatus()).toBe("pending");
+    FakeWebSocket.instances.find((socket) => socket.url.includes("/document/socket"))!.close(1006);
+    expect(f.session.saveStatus()).toBe("pending");
+  });
+
   test.each(["initialize", "save", "materialize-initialize", "materialize-save"])(
     "shared %s 401 keeps the sign-in action through client errors and later state updates",
     async (phase) => {
@@ -311,6 +325,7 @@ describe("Mail draft session", () => {
         await f.session.ensureDraft();
         f.setCurrent({ ...f.current(), body: "Only on this device" });
         await Bun.sleep(0);
+        expect(f.session.saveStatus()).toBe("pending");
         expect(await f.session.persist()).toBeNull();
         expect(f.session.authenticationRequired()).toBe(true);
         if (mode === "tab-only") {
@@ -329,6 +344,7 @@ describe("Mail draft session", () => {
           expect(finished).toBe(false); // A queued write is not yet a reload guarantee.
           write.resolve();
           expect(await outcome).toBe(mode === "remembered" ? "ready" : "blocked");
+          expect(f.session.saveStatus()).toBe(mode === "remembered" ? "local" : "pending");
           if (mode === "remembered") {
             dispose();
             await Bun.sleep(0);
@@ -426,6 +442,7 @@ describe("Mail draft session", () => {
   test("a draft that closes inside the page saves typing newer than a save in flight before it releases the lease", async () => {
     const firstSave = Promise.withResolvers<void>();
     let saves = 0;
+    let serverDraft = draft(1, content("", "first@example.test"));
     respondWith(async (method, url, body) => {
       if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "POST") return Response.json({ ...lease, token: crypto.randomUUID() });
       if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "DELETE") return new Response(null, { status: 204 });
@@ -433,7 +450,10 @@ describe("Mail draft session", () => {
         saves += 1;
         if (saves === 1) await firstSave.promise;
         const next = body as { expectedRevision: number; draft: DraftEditableContent };
-        return Response.json(draft(next.expectedRevision + 1, next.draft));
+        if (next.expectedRevision !== serverDraft.revision)
+          return Response.json({ code: "CONFLICT", message: "Draft changed" }, { status: 409 });
+        serverDraft = draft(serverDraft.revision + 1, next.draft);
+        return Response.json(serverDraft);
       }
       return Response.json({ code: "NOT_FOUND", message: `Unexpected ${method} ${url}` }, { status: 404 });
     });
@@ -472,6 +492,8 @@ describe("Mail draft session", () => {
       .filter((request) => request.method === "PUT")
       .map((request) => (request.body as { draft: DraftEditableContent }).draft.body);
     expect(puts).toEqual(["First", "LATEST"]);
+    expect(serverDraft.body).toBe("LATEST");
+    expect(serverDraft.revision).toBe(3);
     const order = requests.map((request) => request.method);
     expect(order.lastIndexOf("PUT")).toBeLessThan(order.indexOf("DELETE"));
   });
@@ -872,6 +894,16 @@ describe("Mail draft session", () => {
       expect(trace.every((entry) => entry.conflict === null)).toBe(true);
       expect(trace.map((entry) => entry.message).join("\n")).not.toMatch(/elsewhere|another tab|another session|an anderer Stelle/);
     };
+    test("lease edits stop claiming server storage during debounce and report device storage until confirmation", async () => {
+      const state = await mountSession();
+      state.setCurrent({ ...state.current(), body: "Unconfirmed input" });
+      await flush();
+      expect(state.session.status()).not.toBe("saved");
+      expect(state.session.saveStatus()).toBe("local");
+      expect(requests.filter((r) => r.method === "PUT" && !r.url.endsWith("/lease"))).toHaveLength(0);
+      await state.session.persist();
+      expect(state.session.saveStatus()).toBe("saved");
+    });
     const editableThroughout = (trace: Array<{ status: string }>) => {
       expect(trace.map((entry) => entry.status)).not.toContain("preparing");
       expect(trace.map((entry) => entry.status)).not.toContain("readonly");

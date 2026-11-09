@@ -42,6 +42,7 @@ import type {
   MailDraftSeed,
   SenderIdentity,
 } from "../../contracts";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import { deriveReplyAddressObjects } from "../../reply-recipients";
 import type { MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
@@ -83,7 +84,6 @@ import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import { mailSummaryMessages } from "./mail-summary-messages";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 

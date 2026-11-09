@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
+import { SHARED_TEXT_ACK_TIMEOUT_MS } from "@k2b/cloud/browser/shared-text";
 import { encoding } from "@k2b/stdlib";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -58,12 +59,14 @@ const workspaceSubscriptions = (socket: FakeWebSocket) =>
 let originalWebSocket: typeof WebSocket | undefined;
 
 beforeEach(() => {
+  setSystemTime(new Date("2026-11-09T12:00:00Z"));
   originalWebSocket = globalThis.WebSocket;
   FakeWebSocket.instances = [];
   Object.assign(globalThis, { WebSocket: FakeWebSocket });
 });
 
 afterEach(() => {
+  setSystemTime();
   if (originalWebSocket) Object.assign(globalThis, { WebSocket: originalWebSocket });
   else Reflect.deleteProperty(globalThis, "WebSocket");
 });
@@ -441,6 +444,7 @@ describe("Yjs provider storage exhaustion", () => {
     const random = spyOn(Math, "random").mockReturnValue(0);
     Object.assign(globalThis, {
       setTimeout: (fn: () => void, delay: number) => {
+        if (delay === SHARED_TEXT_ACK_TIMEOUT_MS) return originalSetTimeout(fn, delay);
         delays.push(delay);
         return timers.push(fn);
       },
@@ -590,7 +594,10 @@ describe("Yjs provider unconfirmed edits", () => {
     const merged = encoding.toBase64(Y.mergeUpdates(payloads.slice(1).map(encoding.fromBase64)));
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
     try {
       editor.socket.close();
       editor.socket.onclose?.({ code: 1006, reason: "" });
@@ -631,7 +638,10 @@ describe("Yjs provider unconfirmed edits", () => {
     });
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
     try {
       provider.connect();
       const socket = FakeWebSocket.instances.at(-1)!;
@@ -843,7 +853,10 @@ describe("Yjs provider unconfirmed edits", () => {
     expect(syncPublishes(next)).toEqual(payloads);
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
     try {
       editor.socket.onclose?.({ code: 1006, reason: "" });
       editor.socket.onopen?.();

@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import * as sharedText from "@k2b/cloud/browser/shared-text";
 import { encoding } from "@k2b/stdlib";
 import * as Y from "yjs";
@@ -6,6 +6,7 @@ import { createDomTestHarness } from "../../../ui/test/dom";
 import type { DraftEditableContent, MailDraft } from "../contracts";
 import { createDraftDocument, readDraftDocument } from "./draft-document";
 import { type MailDraftDocumentClient, openMailDraftDocumentClient } from "./draft-document-client";
+import { synchronizeMailDraftStorageUser } from "./mail-user-draft-storage";
 
 const base: DraftEditableContent = {
   quoteSource: null,
@@ -71,6 +72,7 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
   let restFailsOnce = false;
   let pendingGenerations: string[] = [];
   let reconnectSnapshot: Uint8Array | undefined;
+  let silent = false;
   const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockImplementation(async () => pendingGenerations);
   // Only the metadata enumeration is stubbed; native storage belongs to the browser suite.
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: {} });
@@ -128,6 +130,7 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     }
     send(raw: string) {
       this.sent.push(raw);
+      if (silent) return;
       const packet: { type: string; payload: { payload?: string } } = JSON.parse(raw);
       if (packet.type === "replayRequest")
         queueMicrotask(() => {
@@ -209,6 +212,13 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     requests,
     admitted,
     sockets,
+    silence: () => {
+      silent = true;
+    },
+    reload: async () => {
+      client?.dispose();
+      await Bun.sleep(0);
+    },
     expireSession: () => {
       expired = true;
     },
@@ -559,9 +569,201 @@ test("an external body compile failure changes no header or body and leaves visi
     const event = new window.Event("beforeunload", { cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
-    client.edit(client.content()); // The person explicitly reverted the proposal.
+    client.discardRejectedEdit();
     expect(await client.flushLocal()).toBe(true);
   } finally {
+    await f.cleanup();
+  }
+});
+
+test("a rejected proposal survives peer headers, durable snapshots and reload until explicitly discarded", async () => {
+  const f = fixture();
+  const storageController = new AbortController();
+  const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize, signal) => ({
+    authorization: await authorize(signal ?? new AbortController().signal),
+    state: null,
+    baseCursor: null,
+    session: {
+      signal: storageController.signal,
+      load: async () => null,
+      loadPending: async () => null,
+      save: async (bytes) => bytes,
+      acknowledgeSnapshot: async () => true,
+      forget: async () => {},
+      close: () => {},
+    },
+  }));
+  try {
+    const client = await f.open("1", true);
+    const proposed = { ...client.content(), subject: "My subject", body: "Valuable rejected body proposal" };
+    const now = Date.parse("2026-11-09T12:00:00Z");
+    setSystemTime(now);
+    const clock = spyOn(Date, "now")
+      .mockReturnValueOnce(now)
+      .mockReturnValue(now + 1000);
+    try {
+      expect(() => client.edit(proposed)).toThrow("applied safely");
+    } finally {
+      clock.mockRestore();
+    }
+    const peer = new Y.Doc();
+    try {
+      Y.applyUpdate(peer, Y.encodeStateAsUpdate(client.doc));
+      peer.getText("mail.subject").insert(0, "Peer ");
+      f.sockets[0]!.receive("syncPush", {
+        docId: "Draft1",
+        generation: "1",
+        updates: [{ generation: "1", cursor: "s6t.fixture.2", payload: encoding.toBase64(Y.encodeStateAsUpdate(peer)) }],
+      });
+    } finally {
+      peer.destroy();
+    }
+    // The owning session projects foreign content back into edit(). That is not an explicit discard.
+    client.edit(client.content());
+    await client.refresh();
+    expect(client.state().rejectedEdit).toEqual(proposed);
+    await expect(client.save()).rejects.toThrow("applied safely");
+    await f.reload();
+    const reopened = await f.open("1", true);
+    expect(reopened.state().rejectedEdit).toEqual(proposed);
+    reopened.restoreRejectedEdit();
+    expect(reopened.content()).toEqual(proposed);
+    expect(reopened.state().rejectedEdit).toBeNull();
+    await reopened.save();
+    const rejectAgain = spyOn(Date, "now")
+      .mockReturnValueOnce(now)
+      .mockReturnValue(now + 1000);
+    try {
+      expect(() => reopened.edit({ ...proposed, body: "Another refused proposal" })).toThrow("applied safely");
+    } finally {
+      rejectAgain.mockRestore();
+    }
+    storageController.abort(new Error("Device storage invalidated"));
+    reopened.discardRejectedEdit();
+    expect(reopened.state()).toMatchObject({ terminal: true, error: true, rejectedEdit: null });
+    expect(reopened.state().message).toContain("device could not save");
+    synchronizeMailDraftStorageUser(localStorage, "Usr002");
+    await reopened.discardLocal();
+    expect(reopened.state()).toMatchObject({ dirty: false, rejectedEdit: null });
+  } finally {
+    setSystemTime();
+    offline.mockRestore();
+    await f.cleanup();
+  }
+});
+
+test("retry after local backpressure keeps the real provider fenced and offers reopening", async () => {
+  const f = fixture();
+  const createProvider = sharedText.createSharedTextProvider;
+  const budget = spyOn(sharedText, "createSharedTextProvider").mockImplementation((options) =>
+    createProvider({ ...options, maxSyncPayloadLength: 1_000 }),
+  );
+  try {
+    const client = await f.open();
+    f.silence();
+    // Exercise the real provider's overflow with a small transport budget.
+    client.doc.getText("codemirror").insert(0, "x".repeat(1_000));
+    await Promise.resolve();
+    expect(client.state().terminal).toBe(true);
+    await expect(client.retry()).rejects.toThrow("reopen");
+    expect(client.state()).toMatchObject({ terminal: true, ready: false, error: true });
+    expect(f.sockets).toHaveLength(1);
+    expect(client.provider.hasUnsentChanges()).toBe(true);
+  } finally {
+    budget.mockRestore();
+    await f.cleanup();
+  }
+});
+
+test.each(["STREAM_FAILED", "ACCESS_DENIED"])("discarding a rejected proposal preserves %s feedback", async (code) => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    const proposed = { ...client.content(), body: "Keep this refused proposal" };
+    const now = Date.parse("2026-11-09T12:00:00Z");
+    const clock = spyOn(Date, "now")
+      .mockReturnValueOnce(now)
+      .mockReturnValue(now + 1000);
+    try {
+      expect(() => client.edit(proposed)).toThrow("applied safely");
+    } finally {
+      clock.mockRestore();
+    }
+    f.sockets[0]!.receive("error", { code, message: "Connection stopped", docId: "Draft1" });
+    client.discardRejectedEdit();
+    expect(client.state()).toMatchObject({ rejectedEdit: null, error: true, message: "Connection stopped" });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a shared draft still opens with visible feedback when account metadata cannot be written", async () => {
+  const f = fixture();
+  const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize, signal) => ({
+    authorization: await authorize(signal ?? new AbortController().signal),
+    state: null,
+    baseCursor: null,
+    session: {
+      signal: new AbortController().signal,
+      load: async () => null,
+      loadPending: async () => null,
+      save: async (bytes) => bytes,
+      acknowledgeSnapshot: async () => true,
+      forget: async () => {},
+      close: () => {},
+    },
+  }));
+  const storage = localStorage;
+  const full: Storage = {
+    get length() {
+      return storage.length;
+    },
+    key: (index) => storage.key(index),
+    getItem: (key) => storage.getItem(key),
+    removeItem: (key) => storage.removeItem(key),
+    clear: () => storage.clear(),
+    setItem: (key, value) => {
+      if (key === "cloud:mail:storage-user") throw new DOMException("Storage full", "QuotaExceededError");
+      storage.setItem(key, value);
+    },
+  };
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: full });
+  try {
+    const client = await f.open("1", true);
+    expect(client.state()).toMatchObject({ ready: true, terminal: false, error: true, locallySaved: false });
+    expect(client.state().message).toContain("device could not save");
+  } finally {
+    offline.mockRestore();
+    await f.cleanup();
+  }
+});
+
+test("sending over a silent socket stops waiting and retains input for retry", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    jest.useFakeTimers();
+    setSystemTime(new Date("2026-11-09T12:00:00Z"));
+    f.silence();
+    client.edit({ ...client.content(), body: "Do not lose this input" });
+    let outcome = "waiting";
+    const saving = client.save().then(
+      () => {
+        outcome = "saved";
+      },
+      () => {
+        outcome = "failed";
+      },
+    );
+    jest.advanceTimersByTime(30_000);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(outcome).toBe("failed");
+    await saving;
+    expect(client.state().saving).toBe(false);
+    expect(client.content().body).toBe("Do not lose this input");
+    expect(client.state().dirty).toBe(true);
+  } finally {
+    jest.useRealTimers();
     await f.cleanup();
   }
 });

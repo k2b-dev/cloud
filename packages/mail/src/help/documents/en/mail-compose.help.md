@@ -10,7 +10,7 @@ kind: task
 
 ## Start a message {icon="square-plus"}
 
-You write in the conversation itself. In a conversation, choose **Reply**, **Reply all**, or **Forward** in the floating bar above the newest message, or **Quote selection** on a message. The bar grows into the draft at the same place, above the newest message, and the cursor stands in the text. On a phone, the bar waits at the bottom, and the draft opens at the top over the full width. Mail creates the shared draft before you type, so nothing exists only in your browser.
+You write in the conversation itself. In a conversation, choose **Reply**, **Reply all**, or **Forward** in the floating bar above the newest message, or **Quote selection** on a message. The bar grows into the draft at the same place, above the newest message, and the cursor stands in the text. On a phone, the bar waits at the bottom, and the draft opens at the top over the full width. Mail creates the shared draft before you type.
 
 Choose **Compose** for a new message. It appears as **New message** at the top of the list, and the reader shows an empty conversation with the draft. After you send it, the message becomes a conversation.
 
@@ -86,6 +86,10 @@ Drafts belong to the mailbox, not only to the browser that created them. A conve
 A suggestion from Gustav is a real draft that is already open in the conversation, in plum, with **Type to take it over, or send it as it is**. It never sends by itself; **Send** sends it as it is. Once someone changes anything, recipients included, it is an ordinary draft, and Gustav never replaces it.
 
 Mail saves the shared draft while you work. It also keeps a recovery journal in the browser for changes that have not reached the server yet. After a reload or a broken connection, Mail can restore these browser changes.
+
+The save status distinguishes **Changes pending**, **Saved on this device**, and **Saved on server**. A device copy can survive a short offline period; it does not confirm that the server has saved the latest text. Plaintext recovery journals expire 24 hours after their last update and are cleared when Mail authorizes a different account on this browser.
+
+If a body change cannot be applied safely, Mail keeps the proposal separately. In the editor notice, choose **Apply proposal** to try it again or **Discard proposal** to remove it. **Copy draft** copies the proposal while it is pending. Updates from other people and reloading do not discard it. Resolve the proposal before sending. If synchronization takes too long, saving stops waiting and leaves your input available for retry or copying.
 
 Only the session that currently holds the editing lease can change the draft. Mail refuses saves, attachment changes, and discards from every other session, tab, agent, or CLI call, and it names the current editor. If nobody holds the lease, the next editor can change the draft again. Your own expired session therefore never blocks you.
 

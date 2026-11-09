@@ -4,11 +4,11 @@ import { ButtonLink, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
 import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import MailComposerPage from "./MailComposerPage";
 import { mailComposerMessages } from "./mail-composer-messages";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 import { readMailDraftSeed } from "./mail-draft-seed-store";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 export default function MailDraftSeedComposerPage(props: {
   mailboxId: string;

@@ -2,6 +2,7 @@ import {
   createSharedTextProvider,
   listSharedTextOfflineGenerations,
   openAuthorizedSharedTextOffline,
+  SHARED_TEXT_ACK_TIMEOUT_MS,
   type SharedTextInverseRequest,
   type SharedTextOfflineSession,
   type SharedTextProvider,
@@ -24,27 +25,32 @@ import {
 import { DRAFT_BODY, draftRecipientConfirmation, readDraftDocument, writeLocalDraftHeaders } from "./draft-document";
 import { draftRecoveryRequestId } from "./draft-document-client-recovery";
 import { decodeMailDraftDocumentMessage, MAIL_DRAFT_DOCUMENT_TERMINAL_CODES } from "./draft-document-protocol";
+import { openMailUserDraftStorage, synchronizeMailDraftStorageUser } from "./mail-user-draft-storage";
 
 export const mailSharedDraftMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
       connecting: "Connecting…",
-      saved: "Saved",
+      saved: "Saved on server",
+      localSaved: "Saved on this device",
       pending: "Changes awaiting durable storage",
-      offline: "Offline · {count} changes on this device",
+      offline: "Offline",
       storageFailed: "This device could not save your changes. Keep the draft open and retry, or copy your text.",
       notRemembered: "Changes stay in this tab only. Keep it open until saving succeeds.",
       remember: "Remember this device",
       forget: "Do not remember this device",
       retry: "Retry saving",
       copy: "Copy draft",
+      restoreProposal: "Apply proposal",
+      discardProposal: "Discard proposal",
       recover: "Recover unsent changes",
       frozen: "This draft was closed or replaced. Your unsent text remains here for recovery.",
       permission: "Editing is unavailable. Your unsent text remains here to copy.",
       syncFirst: "Wait for the connection and synchronization, then retry saving.",
       generation: "This draft changed. Keep your text and reopen the draft.",
       bodyEditFailed: "This body change could not be applied safely. Keep your proposed text and try a smaller change.",
+      syncTimeout: "Synchronization timed out. Your changes remain here. Retry saving or copy your text.",
       recipientsTitle: "Review changed recipients",
       recipients: "Someone changed the sender or recipients. Check them before sending.",
       confirm: "Send to these recipients",
@@ -62,9 +68,10 @@ export const mailSharedDraftMessages = i18n.define({
     },
     de: {
       connecting: "Verbindung wird hergestellt…",
-      saved: "Gespeichert",
+      saved: "Auf dem Server gespeichert",
+      localSaved: "Auf diesem Gerät gesichert",
       pending: "Änderungen warten auf dauerhafte Speicherung",
-      offline: "Offline · {count} Änderungen auf diesem Gerät",
+      offline: "Offline",
       storageFailed:
         "Dieses Gerät konnte deine Änderungen nicht speichern. Lass den Entwurf geöffnet und versuche es erneut oder kopiere deinen Text.",
       notRemembered: "Änderungen bleiben nur in diesem Tab. Lass ihn geöffnet, bis das Speichern gelingt.",
@@ -72,6 +79,8 @@ export const mailSharedDraftMessages = i18n.define({
       forget: "Dieses Gerät nicht merken",
       retry: "Speichern erneut versuchen",
       copy: "Entwurf kopieren",
+      restoreProposal: "Vorschlag übernehmen",
+      discardProposal: "Vorschlag verwerfen",
       recover: "Ungesendete Änderungen sichern",
       frozen: "Dieser Entwurf wurde geschlossen oder ersetzt. Dein ungesendeter Text bleibt hier zur Wiederherstellung.",
       permission: "Bearbeiten ist nicht möglich. Dein ungesendeter Text bleibt hier zum Kopieren.",
@@ -79,6 +88,7 @@ export const mailSharedDraftMessages = i18n.define({
       generation: "Dieser Entwurf hat sich geändert. Behalte deinen Text und öffne ihn erneut.",
       bodyEditFailed:
         "Diese Textänderung konnte nicht sicher übernommen werden. Behalte deinen vorgeschlagenen Text und versuche eine kleinere Änderung.",
+      syncTimeout: "Der Abgleich dauert zu lange. Deine Änderungen bleiben hier. Versuche das Speichern erneut oder kopiere deinen Text.",
       recipientsTitle: "Geänderte Empfänger prüfen",
       recipients: "Jemand hat Absender oder Empfänger geändert. Prüfe sie vor dem Senden.",
       confirm: "An diese Empfänger senden",
@@ -169,6 +179,8 @@ export type MailSharedDraftState = {
   recipientsChanged: boolean;
   recoveryDraft: MailDraft | null;
   restUnchanged: boolean;
+  /** A refused external proposal, independent of incoming document projections. */
+  rejectedEdit: DraftEditableContent | null;
 };
 
 export type MailDraftDocumentClient = {
@@ -178,6 +190,8 @@ export type MailDraftDocumentClient = {
   provider: SharedTextProvider;
   generation: string;
   edit: (content: DraftEditableContent) => void;
+  restoreRejectedEdit: () => void;
+  discardRejectedEdit: () => void;
   save: () => Promise<z.infer<typeof durableSchema>>;
   recover: () => Promise<z.infer<typeof restSchema>>;
   refresh: () => Promise<void>;
@@ -234,7 +248,8 @@ export async function openMailDraftDocumentClient(options: {
   const accountQuery = new URLSearchParams({ [DRAFT_DOCUMENT_EXPECTED_USER_QUERY]: options.userId }).toString();
   const identity = { userId: options.userId, draftId: options.draft.id, generation };
   const storageKey = `cloud:mail:shared:${identity.userId}:${identity.draftId}:${generation}`;
-  // Only metadata lives in localStorage; text is in the logout-fenced IndexedDB store.
+  // Yjs input lives in logout-fenced IndexedDB. Refused external proposals use
+  // Mail's separate expiring recovery journal; transport hints contain no text.
   let remembering = options.rememberDevice ?? deviceStorage?.getItem(`${storageKey}:remember`) !== "no";
   if (!remembering && previousGeneration !== undefined) throw new Error(t().storageFailed);
   if (options.rememberDevice !== undefined) deviceStorage?.setItem(`${storageKey}:remember`, remembering ? "yes" : "no");
@@ -256,7 +271,20 @@ export async function openMailDraftDocumentClient(options: {
     }
     return response.json();
   };
-  const authorize = async (signal: AbortSignal) => draftDocumentSessionSchema.parse(await request("", undefined, signal));
+  let metadataFailure = false;
+  const authorize = async (signal: AbortSignal) => {
+    const authorized = draftDocumentSessionSchema.parse(await request("", undefined, signal));
+    if (deviceStorage) {
+      try {
+        synchronizeMailDraftStorageUser(deviceStorage, options.userId);
+        metadataFailure = false;
+      } catch {
+        // Metadata failure must not prevent server editing or reading existing recovery input.
+        metadataFailure = remembering;
+      }
+    }
+    return authorized;
+  };
   let offline: SharedTextOfflineSession | undefined;
   let local: Uint8Array | null = null;
   let originalBaseCursor: string | null = null;
@@ -321,29 +349,53 @@ export async function openMailDraftDocumentClient(options: {
       changes: local ? 1 : 0,
       dirty: !draftSnapshotCovers(encoding.fromBase64(authorization.durable.state), Y.encodeStateAsUpdate(doc)),
       remembering,
-      locallySaved: Boolean(local),
+      locallySaved: Boolean(local) && !metadataFailure,
       saving: false,
-      message: closed ? t().frozen : t().connecting,
-      error: false,
+      message: closed ? t().frozen : metadataFailure ? t().storageFailed : t().connecting,
+      error: metadataFailure,
       structuring: false,
       recipientsChanged: draftRecipientConfirmation(projection) !== draftRecipientConfirmation(recipientBaseline),
       recoveryDraft: null,
       restUnchanged: false,
+      rejectedEdit: null,
     };
     let disposed = false;
     let storageQueue: Promise<void> = Promise.resolve();
-    let storageFailure: Error | null = null;
-    let metadataFailure = false;
+    let storageFailure: Error | null = metadataFailure ? new Error(t().storageFailed) : null;
+    let proposalStorage: ReturnType<typeof openMailUserDraftStorage> | undefined;
+    let proposalKey: string | undefined;
+    const openProposalStorage = () => {
+      if (deviceStorage) {
+        proposalStorage = openMailUserDraftStorage(deviceStorage, options.userId);
+        const pointer = `cloud:mail:rejected-editor:${options.userId}:${options.draft.id}`;
+        const editor = window.sessionStorage.getItem(pointer) ?? crypto.randomUUID();
+        window.sessionStorage.setItem(pointer, editor);
+        proposalKey = `rejected:${options.draft.id}:editor:${editor}`;
+        const raw = proposalStorage.getItem(proposalKey);
+        if (raw && !state.rejectedEdit) {
+          state.rejectedEdit = draftEditableContentInputSchema.parse(JSON.parse(raw));
+        }
+      }
+    };
+    if (remembering) {
+      try {
+        openProposalStorage();
+      } catch {
+        /* A rejected proposal will remain guarded in memory if device storage fails. */
+      }
+    }
     let storageVersion = 0;
     let durableState = encoding.fromBase64(authorization.durable.state);
     const waiters = new Set<() => void>();
     let structuralPending = 0;
     /** A socket error the provider survives; a later replay proves the connection works again. */
     let transportError = false;
+    const snapshotState = (): MailSharedDraftState =>
+      state.rejectedEdit && !state.terminal && !state.error ? { ...state, error: true, message: t().bodyEditFailed } : { ...state };
     const emit = () => {
       // The action stays pending across a network drop; losing readiness is not a receipt.
       state.structuring = structuralPending > 0;
-      if (!disposed) options.onState({ ...state });
+      if (!disposed) options.onState(snapshotState());
       for (const wake of waiters) wake();
     };
     const fail = (error: unknown) => {
@@ -523,7 +575,7 @@ export async function openMailDraftDocumentClient(options: {
       onError: (error) => {
         transportError = true;
         state.error = true;
-        state.message = error.message;
+        state.message = error.code === "SYNC_TIMEOUT" ? t().syncTimeout : error.message;
         emit();
       },
       onFatal: fatal,
@@ -553,7 +605,6 @@ export async function openMailDraftDocumentClient(options: {
         }),
     };
     let providerClosed = false;
-    let rejectedExternalEdit = false;
     const storeAborted = () => {
       if (disposed) return;
       storageFailure = new Error(t().storageFailed);
@@ -571,7 +622,6 @@ export async function openMailDraftDocumentClient(options: {
     const edit = (next: DraftEditableContent) => {
       if (disposed || state.terminal) return;
       if (JSON.stringify(next) === JSON.stringify(projection)) {
-        rejectedExternalEdit = false;
         return;
       }
       // Read once; transactions synchronously project composer signals and must not overwrite the submitted body.
@@ -582,25 +632,58 @@ export async function openMailDraftDocumentClient(options: {
         // Compile before changing ANY header or body field. Failure leaves the proposal available in the composer.
         bodyChanges = compileDraftTextChanges(before.body, next.body);
       } catch {
-        rejectedExternalEdit = true;
+        state.rejectedEdit = structuredClone(next);
+        if (remembering && proposalStorage && proposalKey) {
+          try {
+            proposalStorage.setItem(proposalKey, JSON.stringify(next));
+          } catch {
+            /* beforeunload and flushLocal retain the unsaved proposal guard. */
+          }
+        }
         const error = new Error(t().bodyEditFailed);
-        fail(error);
+        emit();
         throw error;
       }
       doc.transact(() => {
         writeLocalDraftHeaders(doc, before, next);
         applyDraftTextChanges(doc.getText(DRAFT_BODY), bodyChanges);
       }, "mail-headers");
-      rejectedExternalEdit = false;
+    };
+    const discardRejectedEdit = () => {
+      try {
+        if (proposalStorage && proposalKey) proposalStorage.removeItem(proposalKey);
+      } catch {
+        // Discard still clears this tab after another account invalidated its storage handle.
+        storageFailure = new Error(t().storageFailed);
+        state.error = true;
+        state.message = t().storageFailed;
+      }
+      state.rejectedEdit = null;
+      if (
+        !state.terminal &&
+        !storageFailure &&
+        !metadataFailure &&
+        !transportError &&
+        (!state.error || state.message === t().bodyEditFailed)
+      ) {
+        state.error = false;
+        state.message = state.dirty ? t().pending : t().saved;
+      }
+      emit();
     };
     const awaitSynchronized = async () => {
       if (!state.connected || !state.ready || state.terminal) throw new Error(state.message || t().syncFirst);
       if (provider.canStructure()) return;
       await new Promise<void>((resolve, reject) => {
         const stop = () => {
+          clearTimeout(timer);
           waiters.delete(check);
           options.signal.removeEventListener("abort", check);
         };
+        const timer = setTimeout(() => {
+          stop();
+          reject(new Error(t().syncTimeout));
+        }, SHARED_TEXT_ACK_TIMEOUT_MS);
         const check = () => {
           if (disposed || options.signal.aborted || state.terminal || !state.connected) {
             stop();
@@ -619,7 +702,7 @@ export async function openMailDraftDocumentClient(options: {
       state.saving = true;
       emit();
       try {
-        if (rejectedExternalEdit) throw new Error(t().bodyEditFailed);
+        if (state.rejectedEdit) throw new Error(t().bodyEditFailed);
         await awaitSynchronized();
         const submitted = Y.encodeStateAsUpdate(doc);
         const saved = durableSchema.parse(await request("/snapshot", { generation }));
@@ -652,7 +735,7 @@ export async function openMailDraftDocumentClient(options: {
     const recover = () => {
       if (recovering) return recovering;
       recovering = (async () => {
-        if (rejectedExternalEdit) throw new Error(t().bodyEditFailed);
+        if (state.rejectedEdit) throw new Error(t().bodyEditFailed);
         // Re-authorize before requesting recovery; permission failure leaves local bytes untouched.
         const current = await authorize(options.signal);
         if (current.lifecycle === "draft" && !current.frozen && current.generation === generation) throw new Error(t().generation);
@@ -686,7 +769,7 @@ export async function openMailDraftDocumentClient(options: {
     }
     const onOnline = () => provider.reconnectNow();
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (rejectedExternalEdit || state.structuring || (state.dirty && (!remembering || !state.locallySaved || storageFailure))) {
+      if (state.rejectedEdit || state.structuring || (state.dirty && (!remembering || !state.locallySaved || storageFailure))) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -700,6 +783,13 @@ export async function openMailDraftDocumentClient(options: {
       provider: publicProvider,
       generation,
       edit,
+      restoreRejectedEdit: () => {
+        if (!state.rejectedEdit) return;
+        if (disposed || state.terminal) throw new Error(t().generation);
+        edit(state.rejectedEdit);
+        discardRejectedEdit();
+      },
+      discardRejectedEdit,
       save,
       recover,
       postAction: async (body: unknown, signal: AbortSignal) => {
@@ -737,7 +827,7 @@ export async function openMailDraftDocumentClient(options: {
         void recover().catch(fail);
       },
       content: () => readDraftDocument(doc),
-      state: () => ({ ...state }),
+      state: snapshotState,
       recipientsConfirmed: () => {
         state.recipientsChanged = false;
         emit();
@@ -757,11 +847,17 @@ export async function openMailDraftDocumentClient(options: {
           if (current.generation !== generation || current.frozen || current.lifecycle !== "draft") return recover();
           if (providerClosed) throw new Error(t().generation);
           if (state.terminal) {
+            const result = provider.resume();
+            if (result !== "resumed") {
+              state.message = t().generation;
+              state.error = true;
+              emit();
+              throw new Error(t().generation);
+            }
             state.terminal = false;
             state.error = false;
             state.message = t().connecting;
             emit();
-            provider.resume();
             return;
           }
         }
@@ -776,6 +872,8 @@ export async function openMailDraftDocumentClient(options: {
           await flushStorage();
           if (!next) {
             if (offline) await offline.forget();
+            if (proposalStorage && proposalKey) proposalStorage.removeItem(proposalKey);
+            proposalStorage = undefined;
             if (deviceStorage?.getItem(pendingGenerationKey) === generation) deviceStorage?.removeItem(pendingGenerationKey);
             remembering = false;
             deviceStorage?.setItem(`${storageKey}:remember`, "no");
@@ -798,6 +896,9 @@ export async function openMailDraftDocumentClient(options: {
             offline = opened.session;
             offline.signal.addEventListener("abort", storeAborted, { once: true });
             remembering = true;
+            openProposalStorage();
+            if (state.rejectedEdit && proposalStorage && proposalKey)
+              proposalStorage.setItem(proposalKey, JSON.stringify(state.rejectedEdit));
             deviceStorage?.removeItem(`${storageKey}:remember`);
             if (opened.state) {
               originalBaseCursor = opened.baseCursor;
@@ -814,7 +915,7 @@ export async function openMailDraftDocumentClient(options: {
       flushLocal: async () => {
         await flushStorage();
         return (
-          !rejectedExternalEdit &&
+          !state.rejectedEdit &&
           (!state.dirty || (remembering && offline !== undefined && !offline.signal.aborted && state.locallySaved && !storageFailure))
         );
       },
@@ -825,6 +926,7 @@ export async function openMailDraftDocumentClient(options: {
         state.terminal = true;
         await flushStorage();
         if (offline) await offline.forget();
+        discardRejectedEdit();
         deviceStorage?.removeItem(pendingGenerationKey);
         pendingLocal = null;
         pendingSnapshot = null;
