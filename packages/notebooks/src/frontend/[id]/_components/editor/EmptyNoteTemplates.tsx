@@ -19,7 +19,7 @@ export function EmptyNoteTemplates(props: {
   view: Accessor<EditorView | undefined>;
   host: () => HTMLElement | undefined;
   notebookId: string;
-  /** Changes whenever the editor's text or geometry does, so the offer follows the title line. */
+  /** Changes whenever the editor's text or geometry does, so the offer follows the note's last line. */
   layout: Accessor<number>;
 }) {
   const locale = useLocale();
@@ -37,7 +37,8 @@ export function EmptyNoteTemplates(props: {
       if (!view || !host) return;
       view.requestMeasure({
         read: () => {
-          const line = view.domAtPos(view.state.doc.line(1).from).node;
+          // Below the last line: the empty line after the title of a new note holds the caret, never covered.
+          const line = view.domAtPos(view.state.doc.line(view.state.doc.lines).from).node;
           const element = (line instanceof Element ? line : line.parentElement)?.closest<HTMLElement>(".cm-line");
           if (!element) return null;
           const lineBox = element.getBoundingClientRect();
