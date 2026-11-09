@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../test/browser";
+import { hoverInPlace, launchBrowser } from "../test/browser";
 
 const ui = resolve(import.meta.dir, "..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -124,7 +124,7 @@ describe("input mode in a browser", () => {
       await page.keyboard.press("a");
       expect(await attribute(page, "data-k2b-kbd")).toBe("on");
       expect(await geometry(page)).toEqual(rest);
-      await page.locator(".k2b-progressive-row").hover();
+      await hoverInPlace(page.locator(".k2b-progressive-row"));
       expect(await opacity()).toBe("1");
       expect(await geometry(page)).toEqual(rest);
     } finally {

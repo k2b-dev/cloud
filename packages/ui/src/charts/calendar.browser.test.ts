@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { renderCalendarSvg } from "./core/calendar";
 
 // Resolve the CSS length in the SVG's query-container context, not in the host.
@@ -241,7 +241,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await chart.evaluate((e) => e.blur());
         const mark = chart.locator("[data-chart-datum]").first().locator("rect");
         const beforeTap = await chart.evaluate((e) => e.scrollLeft);
-        await mark.hover();
+        await hoverInPlace(mark);
         await settled(page);
         expect(await chart.locator("[data-inspected]").count()).toBe(1);
         expect(await mark.evaluate((e) => getComputedStyle(e).strokeWidth)).toBe("1.5px");
