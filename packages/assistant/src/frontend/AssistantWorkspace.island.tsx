@@ -2918,7 +2918,8 @@ export default function AssistantWorkspace(props: Props) {
       return { kind: "loading" };
     }
     const followable = panelShowsNothingToLose();
-    if (emptyAt() && !pagePlace.context()) return { kind: "consent", title: emptyAt()!.title, app: emptyAt()!.app, onAsk: askPanelConsent };
+    if (!chat.activeConversationId() && emptyAt() && !pagePlace.context())
+      return { kind: "consent", title: emptyAt()!.title, app: emptyAt()!.app, onAsk: askPanelConsent };
     if (page?.state === "consent" && followable) return { kind: "consent", title: null, app: null, onAsk: askPanelConsent };
     const here = emptyPlace();
     const offer = followablePlace(page) && !samePlace(page.ref, here?.ref) ? page : null;

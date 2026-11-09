@@ -501,6 +501,7 @@ describe("Gustav at a place", () => {
         await detail.handled;
       });
       await h.page.getByText("Hier ist eine Checkliste für 2026").waitFor();
+      expect(await bar(h.page).count()).toBe(0);
       await h.navigateHost(4, "u_erika");
       await bar(h.page).getByRole("button", { name: "Zu Erika Muster wechseln" }).waitFor();
       expect(new URL(h.page.url()).searchParams.get("conversation")).toBe("Steu42");
