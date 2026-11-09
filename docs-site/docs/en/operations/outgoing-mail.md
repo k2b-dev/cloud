@@ -5,7 +5,7 @@ section: Operations
 order: 945
 description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-10-22
+updated: 2026-11-08
 ---
 
 # Outgoing mail operations
@@ -24,18 +24,35 @@ Existing drafts need no migration. Already frozen send snapshots retain their
 stored HTML and text. Notebooks keeps formula calculation.
 See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
-## Mail draft compatibility during rollout
+## Shared drafts per mailbox
 
-This release adds document generations, shared draft snapshots and immutable
-send boundaries to the Mail schema. Existing and newly created drafts keep
-exclusive editing by default. Deploy the compatible release to every Mail
-instance before a later release enables shared drafts.
+Each mailbox has a draft editing mode, `lock` or `shared`. The default is
+`lock`: one person edits a draft at a time and others can take it over.
+With `shared`, everyone with write access edits the same draft at once.
+A mailbox administrator sets the mode with
+`cld mail configure --mailbox <id> --drafts shared|lock` or the mailbox API
+(`PATCH /api/mail/mailboxes/:mailboxId` with `draftEditMode`); the change is
+audited like other mailbox settings.
 
-Shared activation also requires a Sync topic contract that rejects full
-storage and retains uncovered updates until a durable snapshot permits
-pruning. The currently installed finite topic retention does not provide
-that guarantee. Do not manually switch draft modes to bypass this gate.
-Already scheduled messages keep their immutable send snapshots.
+- The mode applies to drafts created after the change. Existing drafts keep
+  the mode they were created with.
+- **Rollback:** setting the mailbox back to `lock` stops new shared drafts.
+  Drafts that are already shared keep shared editing, sending, Undo, and
+  recovery until they are sent or discarded. Mail never converts them, so no
+  typing is lost.
+- Mail refuses `shared` with `409 SHARED_DRAFTS_UNSUPPORTED` until the
+  installed Sync topic contract rejects new events when storage is full and
+  keeps updates until a durable snapshot covers them (k2b-dev/sync#4). Do not
+  switch draft modes in the database to bypass this gate.
+- When the document log is full, the editor keeps the text on the device,
+  shows the error, and offers Retry. Sending stays blocked until the text is
+  saved.
+- Sending always compares the content the sender saw with the stored draft.
+  If someone changed the draft in the same moment, Mail sends nothing and asks
+  to check the text again.
+
+Deploy the release to every Mail instance before an administrator turns on a
+shared mailbox. Already scheduled messages keep their immutable send snapshots.
 
 Shared revision saves use their authenticated original document state. A retry
 of the same actor's content against that same base reuses the retained log

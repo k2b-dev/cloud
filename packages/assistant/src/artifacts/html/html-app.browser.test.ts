@@ -4,7 +4,7 @@
 // prelude and host with in-memory services.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import { ChunkName, chunkSource } from "../runtime/chunks";
 import { buildBaseCss, buildChartParts, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
@@ -812,7 +812,7 @@ document.addEventListener('securitypolicyviolation', () => { document.querySelec
       };
       const open = () => tooltip.evaluate((element) => element.matches(":popover-open"));
       const title = () => tooltip.locator(".k2b-chart__tooltip-title").textContent();
-      const inspect = () => (hasTouch ? bar.tap() : bar.hover());
+      const inspect = () => (hasTouch ? bar.tap() : hoverInPlace(bar));
       const width = () =>
         chart.locator(".k2b-chart__svg").evaluate((element: HTMLElement) => element.style.getPropertyValue("--k2b-chart-width"));
       expect(await eventually(width, (value) => value !== "480px")).not.toBe("480px");

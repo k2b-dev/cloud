@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { DetailPanelHarness } from "./detail-panel.browser-harness";
 
 // Each fixture types its browser window locally; other harnesses use the same property.
@@ -491,7 +491,7 @@ for (const width of [320, 390, 768, 1440]) {
           expect(control.x + control.width).toBeLessThanOrEqual(width);
         }
         for (const control of [ai, view]) {
-          await control.hover();
+          await hoverInPlace(control);
           await settled(page);
           expect(await metrics()).toEqual(before);
         }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, devices } from "playwright";
-import { browserName, launchBrowser, pageErrors, settled } from "../../test/browser";
+import { browserName, hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import type {} from "../../test/text-editor-component-harness";
 
 let browser: Browser;
@@ -314,7 +314,7 @@ for (const [name, options] of Object.entries(profiles))
         ).toBe(0);
         const before = await cell(3, 1).boundingBox();
         if (name === "phone") await cell(3, 1).tap();
-        else await cell(3, 1).hover();
+        else await hoverInPlace(cell(3, 1));
         await settled(page);
         expect(await cell(3, 1).boundingBox()).toEqual(before);
         const geometry = await page.evaluate(() => {

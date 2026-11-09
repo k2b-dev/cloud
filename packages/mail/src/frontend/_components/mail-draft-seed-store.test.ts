@@ -15,6 +15,7 @@ const seed = (createdAt = new Date().toISOString()): MailDraftSeed => ({
   derivationKind: null,
   content: {
     signatureTemplateId: "Sign01",
+    quoteSource: null,
     senderIdentityId: "Send01",
     to: [],
     cc: [],
@@ -30,6 +31,7 @@ const seed = (createdAt = new Date().toISOString()): MailDraftSeed => ({
   origin: {
     kind: "compose",
     input: {
+      quoteSource: null,
       senderIdentityId: "Send01",
       to: [],
       cc: [],

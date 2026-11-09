@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 
 const indentLabel = "Indent";
 const outdentLabel = "Outdent";
@@ -525,7 +525,7 @@ describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (
         const button = page.getByRole("button", { name: label, exact: true });
         expect(await button.getAttribute("aria-disabled")).toBe("true");
         // The shared @k2b/ui disabled look, with no hover tint, while the button stays focusable.
-        if (name === "desktop") await button.hover({ force: true });
+        if (name === "desktop") await hoverInPlace(button);
         expect(await button.evaluate((element) => [getComputedStyle(element).opacity, getComputedStyle(element).backgroundColor])).toEqual([
           "0.4",
           "rgba(0, 0, 0, 0)",

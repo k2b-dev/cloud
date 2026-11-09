@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
+import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { Contact, ContactNote, ContactTree } from "../../service";
 import "./ssr-test-plugin";
 
-const { default: ContactDetailPanel } = await import("./ContactDetailPanel.island.tsx");
+const { default: ContactDetailPanel } = await import("./ContactDetailPanel.tsx");
 const { default: ContactOrgTreeView } = await import("./ContactOrgTreeView.tsx");
 const { default: ContactNotesSection } = await import("./ContactNotesSection.tsx");
-const { LocaleProvider } = await import("@k2b/ui");
+const { default: ContactsWorkspace } = await import("./ContactsWorkspace.island.tsx");
+const { AppWorkspace, LocaleProvider } = await import("@k2b/ui");
 
 const now = "2026-08-09T10:00:00.000Z";
 
@@ -118,19 +120,22 @@ const note: ContactNote = {
 };
 
 test("localizes the complete comments surface through the inherited locale", () => {
-  const html = renderToString(() => (
-    <LocaleProvider locale="de-CH">
-      <ContactNotesSection
-        bookId={contact.bookId}
-        contactId={contact.id}
-        currentUserId="user-1"
-        initialNotesPage={{ items: [{ ...note, updatedAt: "2026-08-09T10:05:00.000Z" }], page: 1, perPage: 30, total: 1, hasNext: false }}
-        canWrite
-      />
-    </LocaleProvider>
-  ));
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de-CH",
+      get children() {
+        return createComponent(ContactNotesSection, {
+          bookId: contact.bookId,
+          contactId: contact.id,
+          currentUserId: "user-1",
+          initialNotesPage: { items: [{ ...note, updatedAt: "2026-08-09T10:05:00.000Z" }], page: 1, perPage: 30, total: 1, hasNext: false },
+          canWrite: true,
+        });
+      },
+    }),
+  );
 
-  expect(html).toContain("Kommentare");
+  expect(html).toContain("Notizen");
   expect(html).toContain("Kommentar hinzufügen");
   expect(html).toContain('aria-label="Kommentar bearbeiten"');
   expect(html).toContain('aria-label="Kommentar löschen"');
@@ -145,6 +150,60 @@ const legacyDetailClasses = [
   'class="detail-row',
   'class="detail-facts',
 ];
+
+test.each([false, true])("SSR places contacts in main levels and gives the unselected list the full area (selected=%s)", (selected) => {
+  const html = renderToString(() =>
+    createComponent(AppWorkspace, {
+      get children() {
+        return createComponent(AppWorkspace.Content, {
+          get children() {
+            return createComponent(ContactsWorkspace, {
+              list: {
+                scope: "book",
+                title: "Team",
+                description: "Team contacts",
+                total: 1,
+                search: "Ada",
+                resultHref: "/app/contacts/team?search=Ada&contact=ada&contactBook=team",
+                bookId: "team",
+                perPage: 30,
+                searchPlaceholder: "Search contacts",
+                contacts: [contact],
+                bookNames: { team: "Team" },
+                initialSelectedContactId: selected ? contact.id : null,
+                initialSelectedBookId: selected ? contact.bookId : null,
+                writableBooks: [],
+                defaultCreateBookId: null,
+                currentPage: 1,
+                totalPages: 1,
+                initialFavoriteKeys: [],
+              },
+              reader: {
+                initialContact: selected ? contact : null,
+                initialContactId: selected ? contact.id : null,
+                initialBookId: selected ? contact.bookId : null,
+                initialNotesPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
+                contacts: [contact],
+                bookNames: { team: "Team" },
+                writableBooks: [],
+                adminBookIds: [],
+                memberBookIds: [],
+                currentUserId: "user-1",
+                initialFavoriteKeys: [],
+                timeZone: "UTC",
+              },
+            });
+          },
+        });
+      },
+    }),
+  );
+  expect(html).toContain(`data-workspace-level-count="${selected ? 2 : 1}"`);
+  expect(html).toContain('data-workspace-main-region="contacts-list"');
+  expect(html.includes('data-workspace-main-region="contacts-reader"')).toBe(selected);
+  expect(html).not.toContain('class="k2b-app-workspace__detail');
+  if (selected) expect(html).toContain('href="/app/contacts/team?search=Ada"');
+});
 
 describe("Contact birthday calendar dates (#1232)", () => {
   const previousTZ = process.env.TZ;
@@ -162,25 +221,28 @@ describe("Contact birthday calendar dates (#1232)", () => {
 
   const renderBirthday = (birthday: string, locale: string) => {
     const birthdayContact = { ...contact, birthday };
-    return renderToString(() => (
-      <LocaleProvider locale={locale}>
-        <ContactDetailPanel
-          initialContact={birthdayContact}
-          initialContactId={birthdayContact.id}
-          initialBookId={birthdayContact.bookId}
-          initialNotesPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
-          contacts={[birthdayContact]}
-          bookNames={{ team: "Team contacts" }}
-          writableBooks={[]}
-          adminBookIds={[]}
-          memberBookIds={[]}
-          currentUserId="user-1"
-          showEmpty={false}
-          initialFavoriteKeys={[]}
-          timeZone="UTC"
-        />
-      </LocaleProvider>
-    ));
+    return renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(ContactDetailPanel, {
+            initialContact: birthdayContact,
+            initialContactId: birthdayContact.id,
+            initialBookId: birthdayContact.bookId,
+            initialNotesPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
+            contacts: [birthdayContact],
+            bookNames: { team: "Team contacts" },
+            writableBooks: [],
+            adminBookIds: [],
+            memberBookIds: [],
+            currentUserId: "user-1",
+            showEmpty: false,
+            initialFavoriteKeys: [],
+            timeZone: "UTC",
+          });
+        },
+      }),
+    );
   };
 
   test.each([
@@ -200,81 +262,77 @@ describe("Contact birthday calendar dates (#1232)", () => {
   });
 });
 
-describe("Contacts detail panels", () => {
+describe("Contacts reader page", () => {
   test("who has access stands first under More about for members of the book, and is absent for public-only readers", () => {
     const render = (memberBookIds: string[]) =>
-      renderToString(() => (
-        <ContactDetailPanel
-          initialContact={contact}
-          initialContactId={contact.id}
-          initialBookId={contact.bookId}
-          initialNotesPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
-          contacts={[contact]}
-          bookNames={{ team: "Team contacts" }}
-          writableBooks={[]}
-          adminBookIds={[]}
-          memberBookIds={memberBookIds}
-          currentUserId="user-1"
-          showEmpty={false}
-          initialFavoriteKeys={[]}
-          timeZone="UTC"
-        />
-      ));
+      renderToString(() =>
+        createComponent(ContactDetailPanel, {
+          initialContact: contact,
+          initialContactId: contact.id,
+          initialBookId: contact.bookId,
+          initialNotesPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
+          contacts: [contact],
+          bookNames: { team: "Team contacts" },
+          writableBooks: [],
+          adminBookIds: [],
+          memberBookIds,
+          currentUserId: "user-1",
+          showEmpty: false,
+          initialFavoriteKeys: [],
+          timeZone: "UTC",
+        }),
+      );
     const member = render([contact.bookId]);
-    const more = member.slice(member.indexOf("More about this contact"));
+    const more = member.slice(member.indexOf("More about Ada Lovelace"));
     // The list loads after the first paint and keeps its place meanwhile.
     expect(more).toMatch(/>Access<\/span>[\s\S]*Loading who has access/);
-    expect(more.indexOf(">Access<")).toBeLessThan(more.indexOf(">Addresses<"));
+    expect(more.indexOf(">Access<")).toBeLessThan(more.indexOf(">Properties<"));
     expect(more).not.toContain("Manage access");
     expect(render([])).not.toContain(">Access<");
   });
-  test("composes contact details from the shared grouped panel contract", () => {
-    const html = renderToString(() => (
-      <ContactDetailPanel
-        initialContact={contact}
-        initialContactId={contact.id}
-        initialBookId={contact.bookId}
-        initialNotesPage={{ items: [note], page: 1, perPage: 30, total: 1, hasNext: false }}
-        contacts={[contact]}
-        bookNames={{ team: "Team contacts" }}
-        writableBooks={[{ id: "team", name: "Team contacts" }]}
-        adminBookIds={["team"]}
-        memberBookIds={[]}
-        currentUserId="user-1"
-        showEmpty={false}
-        initialFavoriteKeys={[]}
-        timeZone="UTC"
-      />
-    ));
-
-    expect(html).toContain('class="k2b-detail-panel"');
-    expect(html).toContain("<h2>Ada Lovelace</h2>");
-    // The shared outline (UI-27): a kind line instead of an avatar, an icon on every section, the comments after the
-    // fields, and the rarer details closed under "More about this contact", each saying in one line what it holds.
-    expect(html).toMatch(/class="k2b-detail-panel__kind"[^>]*>(<[^>]+>)*Contact</);
-    expect(html).not.toContain("k2b-detail-panel__header-leading");
-    for (const icon of ["ti-list-details", "ti-address-book", "ti-message-circle", "ti-sitemap", "ti-user", "ti-briefcase"])
-      expect(html).toContain(`ti ${icon}`);
-    expect(html).toMatch(/class="k2b-section k2b-discussion[^"]*"[^>]*data-icon="true"/);
-    expect(html).toMatch(
-      />Properties<\/h3>[\s\S]*>Reach<\/h3>[\s\S]*k2b-discussion[\s\S]*>Organization<\/h3>[\s\S]*More about this contact/,
+  test("composes a reader page with framed topics in order and flat secondary details", () => {
+    const html = renderToString(() =>
+      createComponent(ContactDetailPanel, {
+        initialContact: contact,
+        initialContactId: contact.id,
+        initialBookId: contact.bookId,
+        initialNotesPage: { items: [note], page: 1, perPage: 30, total: 1, hasNext: false },
+        contacts: [contact],
+        bookNames: { team: "Team contacts" },
+        writableBooks: [{ id: "team", name: "Team contacts" }],
+        adminBookIds: ["team"],
+        memberBookIds: [],
+        currentUserId: "user-1",
+        showEmpty: false,
+        initialFavoriteKeys: [],
+        timeZone: "UTC",
+      }),
     );
-    expect(html).toContain('class="k2b-detail-panel__primary-actions"');
-    // Email is the one main action; Call and Comment stay quiet beside it.
+
+    expect(html).toContain('<article class="contacts-reader');
+    expect(html).not.toContain('class="k2b-detail-panel"');
+    expect(html).toContain("<h2>Ada Lovelace</h2>");
+    expect(html).toContain('class="k2b-detail-panel__header-leading"');
+    expect(html).toMatch(/class="k2b-avatar [^"]*" data-size="lg"/);
+    for (const icon of ["ti-list-details", "ti-address-book", "ti-map-pin", "ti-message-circle", "ti-sitemap", "ti-user", "ti-briefcase"])
+      expect(html).toContain(`ti ${icon}`);
+    expect(html).toMatch(
+      />Reach<\/h2>[\s\S]*>Addresses<\/h2>[\s\S]*>Relationships<\/h2>[\s\S]*>Notes<\/h2>[\s\S]*>More about Ada Lovelace<\/h2>/,
+    );
+    expect(html.match(/data-size="md" data-frame="line" data-icon="true"/g)).toHaveLength(5);
+    expect(html).toContain("data-print-region");
     expect(html).toMatch(/<a href="mailto:ada@example.com" class="k2b-button contacts-details-main[^"]*"[^>]*data-variant="subtle"/);
     expect(html).toContain('aria-label="More contact actions"');
     expect(html).toContain(">Properties</h3>");
-    expect(html).toContain(">Reach</h3>");
-    expect(html).toContain("More about this contact");
+    expect(html).not.toContain('class="k2b-detail-panel__group"');
     expect(html.match(/<section class="k2b-section[^"]*"[^>]*data-open="true"/g)).toBeNull();
-    for (const summary of ["Office", "Birthday, Pronouns, Language", "Company, Department, Job title, VAT ID"])
-      expect(html).toContain(summary);
+    for (const summary of ["Birthday, Pronouns, Language", "Company, Department, Job title, VAT ID"]) expect(html).toContain(summary);
     expect(html).toContain('data-scroll-preserve="contacts-detail"');
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('href="mailto:ada@example.com"');
     expect(html).toContain('href="tel:+44 20 7946 0958"');
-    expect(html).toContain("Organization");
-    expect(html).toContain("Comments");
+    expect(html).toContain("Relationships");
+    expect(html).toContain("Notes");
     expect(html).toContain('class="k2b-discussion');
     expect(html).toContain('class="k2b-discussion__item');
     expect(html).toContain('aria-label="Edit comment"');
@@ -286,7 +344,7 @@ describe("Contacts detail panels", () => {
     expect(html).toContain('data-size="lg"');
     expect(html).toContain("ti ti-point k2b-tag__icon");
     expect(html).toContain("Research");
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
+    expect(html).not.toContain("k2b-detail-panel__body");
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
   });
 
@@ -313,33 +371,33 @@ describe("Contacts detail panels", () => {
       members: [],
       tags: [],
     };
-    const html = renderToString(() => (
-      <ContactDetailPanel
-        initialContact={sparseContact}
-        initialContactId={sparseContact.id}
-        initialBookId={sparseContact.bookId}
-        initialNotesPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
-        contacts={[sparseContact]}
-        bookNames={{ team: "Team contacts" }}
-        writableBooks={[]}
-        adminBookIds={[]}
-        memberBookIds={[]}
-        currentUserId="user-1"
-        showEmpty={false}
-        initialFavoriteKeys={[]}
-        timeZone="UTC"
-      />
-    ));
+    const html = renderToString(() =>
+      createComponent(ContactDetailPanel, {
+        initialContact: sparseContact,
+        initialContactId: sparseContact.id,
+        initialBookId: sparseContact.bookId,
+        initialNotesPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
+        contacts: [sparseContact],
+        bookNames: { team: "Team contacts" },
+        writableBooks: [],
+        adminBookIds: [],
+        memberBookIds: [],
+        currentUserId: "user-1",
+        showEmpty: false,
+        initialFavoriteKeys: [],
+        timeZone: "UTC",
+      }),
+    );
 
     expect(html).toContain("Read only contact");
     expect(html).toContain("Properties");
-    expect(html).toContain("Comments");
+    expect(html).toContain("Notes");
     // Only "More actions" (vCard) remains: no way to write, mail, or call.
     expect(html).toContain('aria-label="More contact actions"');
     expect(html).not.toContain("contacts-details-main");
     expect(html).not.toContain('class="k2b-detail-panel__group"');
     expect(html).not.toContain("Reach");
-    expect(html).not.toContain("Organization");
+    expect(html).not.toContain("Relationships");
     expect(html).not.toContain("Quick edit");
     expect(html).not.toContain("Add comment");
   });
@@ -382,7 +440,7 @@ describe("Contacts detail panels", () => {
       },
     };
 
-    const html = renderToString(() => <ContactOrgTreeView tree={tree} onSelect={() => {}} onBack={() => {}} />);
+    const html = renderToString(() => createComponent(ContactOrgTreeView, { tree, onSelect: () => {}, onBack: () => {} }));
 
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain('data-scroll-preserve="contacts-org-tree"');
@@ -406,26 +464,29 @@ describe("Contacts detail panels", () => {
 
 describe("Focused address workspace SSR", () => {
   const render = (initialAddressId: string, writable = true) =>
-    renderToString(() => (
-      <LocaleProvider locale="de">
-        <ContactDetailPanel
-          initialContact={contact}
-          initialContactId={contact.id}
-          initialBookId={contact.bookId}
-          initialAddressId={initialAddressId}
-          initialNotesPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
-          contacts={[contact]}
-          bookNames={{ team: "Team contacts" }}
-          writableBooks={writable ? [{ id: "team", name: "Team contacts" }] : []}
-          adminBookIds={[]}
-          memberBookIds={[]}
-          currentUserId="user-1"
-          initialFavoriteKeys={[]}
-          timeZone="UTC"
-          geoAvailability={{ configured: false, person: { exhausted: false, resetsAt: now }, cloud: { exhausted: false, resetsAt: now } }}
-        />
-      </LocaleProvider>
-    ));
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(ContactDetailPanel, {
+            initialContact: contact,
+            initialContactId: contact.id,
+            initialBookId: contact.bookId,
+            initialAddressId,
+            initialNotesPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
+            contacts: [contact],
+            bookNames: { team: "Team contacts" },
+            writableBooks: writable ? [{ id: "team", name: "Team contacts" }] : [],
+            adminBookIds: [],
+            memberBookIds: [],
+            currentUserId: "user-1",
+            initialFavoriteKeys: [],
+            timeZone: "UTC",
+            geoAvailability: { configured: false, person: { exhausted: false, resetsAt: now }, cloud: { exhausted: false, resetsAt: now } },
+          });
+        },
+      }),
+    );
   test("renders the selected address editor in the first server response without a dialog", () => {
     const html = render("address-1");
     expect(html).toContain('class="contacts-address-editor"');

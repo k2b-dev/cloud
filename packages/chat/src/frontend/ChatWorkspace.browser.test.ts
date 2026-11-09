@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema, ReadAllOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
@@ -511,7 +511,7 @@ const openMessageMenu = async (page: Page, name: string, item: Locator) => {
     await sheet.waitFor();
     return sheet;
   }
-  await item.locator(".k2b-message-row__bubble").hover();
+  await hoverInPlace(item.locator(".k2b-message-row__bubble"));
   await item.getByRole("button", { name: "Message actions", exact: true }).click();
   const menu = page.getByRole("menu", { name: "Message actions", exact: true });
   await menu.waitFor();
@@ -523,7 +523,7 @@ const chooseFromMessageMenu = async (page: Page, name: string, item: Locator, en
 };
 const rowAction = async (page: Page, name: string, chat: string, action: "Mark unread" | "Mark read") => {
   const link = row(page, name, chat);
-  await link.hover();
+  await hoverInPlace(link);
   await link
     .locator("..")
     .getByRole("button", { name: /^Actions for / })
