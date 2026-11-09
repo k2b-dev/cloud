@@ -2,14 +2,17 @@ import { sql } from "@k2b/cloud";
 import { type AiModelProfile, readAiSettingsState } from "@k2b/cloud/ai";
 import {
   type CapabilityDispatchDependencies,
+  type CodeBridgeAuthority,
   type CodeBridgeCall,
   type CodeBridgeHost,
   CodeBridgeRefusal,
   type CodeBridgeRefusalKind,
+  type CodeFileObservationHost,
   type CodeRunnerDispatchDependencies,
   codeBridgeLocalRefusalKind,
   createCodeRunnerCallRoutes,
 } from "@k2b/cloud/api";
+import { requireCodeCapabilityDeclared } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { RunnerCallResponseSchema } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
@@ -32,9 +35,10 @@ const CallVersionSchema = z.object({
   version: CodeCheckedVersionManifestSchema.shape.version,
   hashes: CodeCheckedVersionManifestSchema.shape.hashes,
   policyRows: CodeCheckedVersionManifestSchema.shape.policyRows,
+  permissions: CodeCheckedVersionManifestSchema.shape.permissions,
 });
 
-function denied(code: string, status: 200 | 409 | 503 = 200): never {
+function denied(code: string, status: 200 | 403 | 409 | 503 = 200): never {
   throw new CodeBridgeRefusal(code, status);
 }
 const refusalResponse = (error: CodeBridgeRefusal) =>
@@ -69,7 +73,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
   >`
     SELECT bundle_hash,source_hash,created_by,jsonb_build_object(
       'version',manifest->'version','hashes',manifest->'hashes',
-      'policyRows',manifest->'policyRows') AS manifest,
+      'policyRows',manifest->'policyRows','permissions',manifest->'permissions') AS manifest,
       manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::text::jsonb AS entrypoint_valid
     FROM code.versions WHERE id=${call.claims.versionId}::uuid AND code_id=${code.id}`;
   if (!version || version.bundle_hash !== call.claims.bundleHash) denied("code_bundle_mismatch");
@@ -90,6 +94,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
 }
 async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
+  if (call.kind !== "internet") requireCodeCapabilityDeclared(call.call, manifest.permissions);
   const row = codePolicyRow(
     call.call.capability.startsWith("core.ai.") && !["core.ai.chat.deliver", "core.ai.chat.run.read"].includes(call.call.capability)
       ? "ai"
@@ -157,47 +162,57 @@ async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "r
 }
 
 /** Postgres owns call ordering/budgets; the existing Valkey limiter owns shared admission across Core replicas. */
-export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => Promise<{ limited: boolean }> } = {}): CodeBridgeHost {
-  return {
-    async withCall(call, execute) {
-      // Commit the observation before an external effect. A crash leaves a visible running call, never an unrecorded effect.
-      const ordinal = await sql.begin(async (tx) => {
-        await lockCall(call, tx);
-        const limit = await codeSettings.get("core.code.calls_per_run");
-        const [used] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${call.claims.runId}::uuid`;
-        if ((used?.count ?? 0) >= limit) denied("code_call_limit");
-        const [run] = await tx<{ calls_limit: number }[]>`SELECT calls_limit FROM code.runs WHERE id=${call.claims.runId}::uuid`;
-        if ((used?.count ?? 0) >= (run?.calls_limit ?? 0)) denied("code_call_limit");
-        try {
-          const ordinal = await appendCodeCall(
-            { runId: call.claims.runId, kind: call.kind === "query" ? "query" : "action", call: call.call },
-            tx,
-          );
-          // Future db/kv/files writes must use an effectful kind too; query is reserved for reads.
-          if (call.kind !== "query") await tx`UPDATE code.runs SET effect_started=TRUE WHERE id=${call.claims.runId}::uuid`;
-          const payloadLimit = await codeSettings.get("core.code.payload_bytes");
-          const [payload] = await tx<
-            { valid: boolean }[]
-          >`SELECT octet_length(call::text) <= ${payloadLimit} AS valid FROM code.calls WHERE run_id=${call.claims.runId}::uuid AND ordinal=${ordinal}`;
-          if (!payload?.valid) denied("code_input_limit");
-          return ordinal;
-        } catch (error) {
-          if (error instanceof CodeDataError && error.code === "BAD_INPUT") denied("code_input_limit");
-          throw error;
-        }
-      });
-      let response: Response;
-      let refusalKind: CodeBridgeRefusalKind = "bridge";
-      let issuanceRefusal: CodeBridgeRefusal | undefined;
-      let aiReservation: string | null = null;
-      let aiProfiles: AiModelProfile[] = [];
-      let aiFailure: unknown;
+export function createCodeBridgeHost(
+  options: { checkRate?: (codeId: string) => Promise<{ limited: boolean }> } = {},
+): CodeBridgeHost & CodeFileObservationHost {
+  const runCall = async (
+    call: CodeBridgeCall,
+    execution: { capability: (authority: CodeBridgeAuthority) => Promise<Response> } | { observation: () => Promise<Response> },
+  ): Promise<Response> => {
+    // Commit the observation before an external effect. A crash leaves a visible running call, never an unrecorded effect.
+    const { ordinal, manifest } = await sql.begin(async (tx) => {
+      const { manifest } = await lockCall(call, tx);
+      const limit = await codeSettings.get("core.code.calls_per_run");
+      const [used] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${call.claims.runId}::uuid`;
+      if ((used?.count ?? 0) >= limit) denied("code_call_limit");
+      const [run] = await tx<{ calls_limit: number }[]>`SELECT calls_limit FROM code.runs WHERE id=${call.claims.runId}::uuid`;
+      if ((used?.count ?? 0) >= (run?.calls_limit ?? 0)) denied("code_call_limit");
       try {
-        const rate = await (
-          options.checkRate ??
-          (async (id) => ratelimit({ id: "code-bridge", limit: await codeSettings.get("core.code.calls_per_second") }).check(id))
-        )(call.claims.codeId);
-        if (rate.limited) denied("code_rate_limited");
+        const ordinal = await appendCodeCall(
+          { runId: call.claims.runId, kind: call.kind === "query" ? "query" : "action", call: call.call },
+          tx,
+        );
+        // Future db/kv/files writes must use an effectful kind too; query is reserved for reads.
+        if (call.kind !== "query") await tx`UPDATE code.runs SET effect_started=TRUE WHERE id=${call.claims.runId}::uuid`;
+        const payloadLimit = await codeSettings.get("core.code.payload_bytes");
+        const [payload] = await tx<
+          { valid: boolean }[]
+        >`SELECT octet_length(call::text) <= ${payloadLimit} AS valid FROM code.calls WHERE run_id=${call.claims.runId}::uuid AND ordinal=${ordinal}`;
+        if (!payload?.valid) denied("code_input_limit");
+        return { ordinal, manifest };
+      } catch (error) {
+        if (error instanceof CodeDataError && error.code === "BAD_INPUT") denied("code_input_limit");
+        throw error;
+      }
+    });
+    let response: Response;
+    let refusalKind: CodeBridgeRefusalKind = "bridge";
+    let issuanceRefusal: CodeBridgeRefusal | undefined;
+    let aiReservation: string | null = null;
+    let aiProfiles: AiModelProfile[] = [];
+    let aiFailure: unknown;
+    let localFailure: CodeBridgeRefusal | undefined;
+    try {
+      if ("capability" in execution && call.kind !== "internet") requireCodeCapabilityDeclared(call.call, manifest.permissions);
+      const rate = await (
+        options.checkRate ??
+        (async (id) => ratelimit({ id: "code-bridge", limit: await codeSettings.get("core.code.calls_per_second") }).check(id))
+      )(call.claims.codeId);
+      if (rate.limited) denied("code_rate_limited");
+      if ("observation" in execution) {
+        await sql.begin((tx) => lockCall(call, tx));
+        response = await execution.observation();
+      } else {
         if (
           call.call.capability.startsWith("core.ai.") &&
           !["core.ai.chat.deliver", "core.ai.chat.run", "core.ai.chat.run.read"].includes(call.call.capability)
@@ -218,6 +233,19 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
         const fencedIssue: NonNullable<CapabilityDispatchDependencies["withMandateIssueAuthority"]> = async (input, use, options) => {
           if (!options?.db) denied("code_bridge_unavailable", 503);
           try {
+            if (call.kind !== "internet") {
+              const issued = input.call;
+              const sameRef = (a: CodeBridgeCall["call"]["target"], b: CodeBridgeCall["call"]["target"]) =>
+                a === null ? b === null : b !== null && a.type === b.type && a.id === b.id;
+              if (
+                !issued ||
+                issued.capability !== call.call.capability ||
+                !sameRef(issued.target, call.call.target) ||
+                Object.keys(issued.refs).length !== Object.keys(call.call.refs).length ||
+                !Object.entries(call.call.refs).every(([key, ref]) => issued.refs[key] && sameRef(ref, issued.refs[key]))
+              )
+                denied("code_capability_undeclared", 403);
+            }
             const ownerAppId = await authorizeCall(call, options.db);
             input = { ...input, ownerAppId, codeRun: true };
             if (input.mandateId !== call.claims.mandateId || input.expectedRevision !== call.claims.mandateRevision)
@@ -234,7 +262,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           const trigger = event ? { type: event.type, subject: event.subject, ...(event.place ? { place: event.place } : {}) } : null;
           return mandates.withIssueAuthority(input, (authority) => use({ ...authority, trigger }), options);
         };
-        response = await execute({
+        response = await execution.capability({
           consumeFileRef: (digest) =>
             sql.begin(async (tx) => {
               await authorizeCall(call, tx);
@@ -253,40 +281,66 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           ownerAppId: "core",
           withMandateIssueAuthority: fencedIssue,
         });
-        if (issuanceRefusal) {
-          refusalKind = codeBridgeLocalRefusalKind(issuanceRefusal.code);
-          response = refusalResponse(issuanceRefusal);
-        }
-      } catch (error) {
-        refusalKind = error instanceof CodeBridgeRefusal ? codeBridgeLocalRefusalKind(error.code) : "bridge";
-        response = refusalResponse(error instanceof CodeBridgeRefusal ? error : new CodeBridgeRefusal("code_bridge_unavailable", 503));
       }
-      const result = RunnerCallResponseSchema.parse(await response.clone().json());
-      if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);
-      const success = result.ok;
-      await sql.begin(async (tx) => {
-        if (aiReservation !== null)
-          await settleCodeAiBudget(
-            call.claims,
-            ordinal,
-            issuanceRefusal
-              ? "0"
-              : codeAiReferenceCost(call.call.capability, aiFailure ? { ok: false, error: aiFailure } : result, aiProfiles, aiReservation),
-            tx,
-          );
-        await finishCodeCall(
-          {
-            runId: call.claims.runId,
-            ordinal,
-            state: success ? "succeeded" : "failed",
-            result,
-            refusalKind: success ? null : refusalKind,
-            endedAt: new Date(),
-          },
+      if (issuanceRefusal) {
+        refusalKind = codeBridgeLocalRefusalKind(issuanceRefusal.code);
+        response = refusalResponse(issuanceRefusal);
+      }
+    } catch (error) {
+      refusalKind = error instanceof CodeBridgeRefusal ? codeBridgeLocalRefusalKind(error.code) : "bridge";
+      localFailure = error instanceof CodeBridgeRefusal ? error : new CodeBridgeRefusal("code_bridge_unavailable", 503);
+      response = refusalResponse(localFailure);
+    }
+    // Viewer bodies may be bytes or streams. Observe only the outcome; never clone,
+    // buffer or persist file contents in the run log.
+    const result = RunnerCallResponseSchema.parse(
+      "observation" in execution
+        ? localFailure
+          ? { ok: false, error: { code: localFailure.code, status: localFailure.errorStatus } }
+          : response.ok
+            ? { ok: true, data: null }
+            : { ok: false, error: { code: "code_file_observation_failed", status: response.status >= 400 ? response.status : 503 } }
+        : await response.clone().json(),
+    );
+    if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);
+    const success = result.ok;
+    await sql.begin(async (tx) => {
+      if (aiReservation !== null)
+        await settleCodeAiBudget(
+          call.claims,
+          ordinal,
+          issuanceRefusal
+            ? "0"
+            : codeAiReferenceCost(call.call.capability, aiFailure ? { ok: false, error: aiFailure } : result, aiProfiles, aiReservation),
           tx,
         );
-      });
-      return response;
+      await finishCodeCall(
+        {
+          runId: call.claims.runId,
+          ordinal,
+          state: success ? "succeeded" : "failed",
+          result,
+          refusalKind: success ? null : refusalKind,
+          endedAt: new Date(),
+        },
+        tx,
+      );
+    });
+    return response;
+  };
+  return {
+    withCall: (call, execute) => runCall(call, { capability: execute }),
+    withFileObservation: (observation, execute) => {
+      if (!["core.code.file.read", "core.code.file.view"].includes(observation.operation))
+        throw new CodeBridgeRefusal("code_capability_undeclared", 403);
+      return runCall(
+        {
+          claims: observation.claims,
+          kind: "query",
+          call: { capability: observation.operation, target: null, refs: {}, input: observation.input },
+        },
+        { observation: execute },
+      );
     },
   };
 }

@@ -11,6 +11,7 @@ export type {
   CodeSecret,
   CodeUser,
 } from "./authoring-types";
+export { requireCodeCapabilityDeclared } from "./capability-set";
 export type { CodeCheckHost } from "./checker";
 export { checkCode } from "./checker";
 export type {

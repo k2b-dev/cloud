@@ -202,6 +202,7 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       foreignAccount?: boolean;
       expireFile?: boolean;
       input?: RunnerLease["input"];
+      permissions?: CodeCheckedVersionManifest["permissions"];
     } = {},
   ) {
     const ownerId = options.foreignAccount ? foreignUserId : userId;
@@ -213,7 +214,14 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       entry: "code.ts",
       entrypoints: [{ kind: "manual", entrypoint: "main", file: "code.ts", line: 1, cron: null }],
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: hash, sdk: "a".repeat(64) },
-      permissions: [],
+      // Declare the probe before testing the independent access/stream/file guard.
+      // Explicit overrides below exercise undeclared calls separately.
+      permissions:
+        options.permissions ??
+        (options.files
+          ? ["example.file.read", "example.file.read.read", "example.import"]
+          : ["example.code.access.set", "example.stream", "example.person"]
+        ).map((operation) => ({ operation, target: null, file: "code.ts", line: 1 })),
       policyRows: options.files ? ["read", "silent_shared"] : [],
       ai: false,
     };
@@ -556,13 +564,17 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       // delivers TERM. Drain is signalled while the accepted attempt is active.
       if (options.drain) expect(fetches).toBe(1);
       if (!options.files) expect(providerCalls).toBe(0);
-      const rows = await sql<{ result: unknown }[]>`SELECT result FROM code.calls WHERE run_id=${run!.id}::uuid ORDER BY ordinal`;
+      const rows = await sql<
+        { result: unknown; refusal_kind: string | null }[]
+      >`SELECT result,refusal_kind FROM code.calls WHERE run_id=${run!.id}::uuid ORDER BY ordinal`;
       return {
         outcome: result.outcome,
         readBytes,
         writes,
         responses,
         observations: rows.map((row) => row.result),
+        refusalKinds: rows.map((row) => row.refusal_kind),
+        providerCalls,
         attemptMs: completedAt - leasedAt,
       };
     } finally {
@@ -583,7 +595,21 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       } catch (error) { if (error.code !== expected) throw error; }
     }
   }`;
-  const refusal = (code: string) => ({ ok: false, error: { code } });
+  const refusalStatuses: Record<string, number> = {
+    code_access_forbidden: 403,
+    code_stream_forbidden: 403,
+    code_disabled: 403,
+    code_capability_undeclared: 403,
+    code_rate_limited: 429,
+    code_call_limit: 429,
+    runner_lease_lost: 409,
+    code_invalid_token: 403,
+  };
+  const refusal = (code: string) => {
+    const status = refusalStatuses[code];
+    if (status === undefined) throw new Error(`Missing fixture status for ${code}`);
+    return { ok: false, error: { code, status } };
+  };
 
   test("Code access, streams and code:false are refused to hostile bundles", async () => {
     const result = await execute(
@@ -599,6 +625,15 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     expect(result.observations).toEqual(expected);
   }, 30_000);
 
+  test("an undeclared hostile call is refused before access checks and durably recorded", async () => {
+    const result = await execute(deniedBundle([["example.person", "code_capability_undeclared"]]), { permissions: [] });
+    expect(result.outcome).toBe("succeeded");
+    expect(result.responses).toEqual([{ status: 403, body: refusal("code_capability_undeclared") }]);
+    expect(result.observations).toEqual([refusal("code_capability_undeclared")]);
+    expect(result.refusalKinds).toEqual(["policy"]);
+    expect(result.providerCalls).toBe(0);
+  }, 30_000);
+
   const fileBundle = (body: string) => `export async function main(input, cloud) {
     let serial = 0;
     const call = (operation, input = {}) => cloud.call(operation, {
@@ -611,6 +646,33 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     };
     ${body}
   }`;
+
+  test.each(["example.file.read", "example.import"])(
+    "an undeclared file operation %s cannot move bytes",
+    async (missing) => {
+      const result = await execute(
+        fileBundle(
+          missing === "example.file.read"
+            ? `await denied('example.file.read', {}, 'code_capability_undeclared');`
+            : `const file = await call('example.file.read'); await denied('example.import', {file}, 'code_capability_undeclared');`,
+        ),
+        {
+          files: true,
+          permissions: ["example.file.read", "example.import"]
+            .filter((operation) => operation !== missing)
+            .map((operation) => ({ operation, target: null, file: "code.ts", line: 1 })),
+        },
+      );
+      expect(result.outcome).toBe("succeeded");
+      expect(result.responses.at(-1)).toEqual({ status: 403, body: refusal("code_capability_undeclared") });
+      expect(result.observations.at(-1)).toEqual(refusal("code_capability_undeclared"));
+      expect(result.refusalKinds.at(-1)).toBe("policy");
+      expect(result.providerCalls).toBe(missing === "example.file.read" ? 0 : 1);
+      expect(result.readBytes).toBe(0);
+      expect(result.writes).toBe(0);
+    },
+    30_000,
+  );
 
   test("FileRefs expose metadata only; byte injection and replay are refused by the real bridge", async () => {
     const result = await execute(

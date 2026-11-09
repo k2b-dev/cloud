@@ -70,6 +70,7 @@ export const codeBridgeLocalRefusalKind = (code: string): CodeBridgeRefusalKind 
     "code_stream_forbidden",
     "code_disabled",
     "code_policy_never",
+    "code_capability_undeclared",
     "code_ai_budget_limit",
     "code_ai_daily_budget_limit",
     "code_ai_owner_daily_budget_limit",
@@ -112,10 +113,27 @@ export type CodeBridgeAuthority = {
 /**
  * C4/C11/C13 host seam. Persist a bounded call reservation BEFORE execute; finish it for both
  * refusals and results. Reject stale generations before reserving. No in-memory run state.
- * The host checks admin budgets. Every effect MUST use the returned mandate authority wrapper,
- * which checks current policy/approval, exact version mandate/subject and actual C2 grant.
+ * The host checks declared version operation/target/ref scope and admin budgets.
+ * Every effect MUST use the returned mandate authority wrapper, which rechecks
+ * declared scope, current policy/approval, exact version mandate/subject and actual C2 grant.
  * Internet calls use kind="internet" for policy and retain Action observations to prevent automatic effect retries.
  */
 export interface CodeBridgeHost {
   withCall(call: CodeBridgeCall, execute: (authority: CodeBridgeAuthority) => Promise<Response>): Promise<Response>;
+}
+
+/** Core-only accounting for server-created file viewers during an active run.
+ * No invocation authority is exposed. The callback response passes through unchanged;
+ * only HTTP success/failure is logged, never its body. Throw CodeBridgeRefusal for
+ * semantic failures. Input must contain metadata only, never bytes or stream grants.
+ */
+export interface CodeFileObservationHost {
+  withFileObservation(
+    observation: {
+      claims: CodeRunTokenClaims;
+      operation: "core.code.file.read" | "core.code.file.view";
+      input: CodeBridgeCall["call"]["input"];
+    },
+    execute: () => Promise<Response>,
+  ): Promise<Response>;
 }

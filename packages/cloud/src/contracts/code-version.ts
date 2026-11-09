@@ -104,14 +104,14 @@ export const CodePolicyManifestSchema = z.object({
 });
 /** Checked immutable version classifications; policyRows contains each used row once. */
 export type CodePolicyManifest = z.infer<typeof CodePolicyManifestSchema>;
-/** Checker permission, retaining separate source rows for targets and refs. Null id is a dynamic personal target. */
+/** Checker permission, retaining separate source rows for targets and refs. Null id is a dynamic target. */
 export const CodeVersionPermissionSchema = z
   .object({
     operation: z.string().min(1).describe("Fully qualified operation ID from the capability catalog."),
     target: z
       .object({
         type: z.string().min(1).describe("Fully qualified target resource Type."),
-        id: z.string().min(1).nullable().describe("Literal target ID, or null for a dynamic personal target."),
+        id: z.string().min(1).nullable().describe("Literal target ID, or null for a dynamic target."),
       })
       .strict()
       .nullable()
