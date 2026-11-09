@@ -91,6 +91,19 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   END $$`.simple();
   // One untouched suggestion per conversation and author. The earlier index allowed one per conversation, so a
   // second automated author received the first author's suggestion; every row it allowed also fits this one.
+  // An image without suggestions (after the documented rollback) can leave several untouched drafts of one account
+  // in a conversation. The newest stays the suggestion; the others become ordinary drafts with their content kept.
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'mail' AND indexname = 'drafts_untouched_suggestion_author_idx') THEN
+      UPDATE mail.drafts d SET adopted_at = now()
+      WHERE d.author_kind = 'service_account' AND d.adopted_at IS NULL AND d.conversation_id IS NOT NULL
+        AND d.state IN ('draft', 'scheduled', 'sending')
+        AND EXISTS (SELECT 1 FROM mail.drafts newer
+          WHERE newer.mailbox_id = d.mailbox_id AND newer.conversation_id = d.conversation_id
+            AND newer.author_kind = 'service_account' AND newer.author_id = d.author_id AND newer.adopted_at IS NULL
+            AND newer.state IN ('draft', 'scheduled', 'sending') AND (newer.created_at, newer.id) > (d.created_at, d.id));
+    END IF;
+  END $$`.simple();
   await tx`CREATE UNIQUE INDEX IF NOT EXISTS drafts_untouched_suggestion_author_idx
     ON mail.drafts (mailbox_id, conversation_id, author_id)
     WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL`.simple();

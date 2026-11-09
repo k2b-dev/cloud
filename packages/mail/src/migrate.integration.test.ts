@@ -165,6 +165,69 @@ suite("mail baseline schema", () => {
     }
   });
 
+  test("the documented rollback lets 0.71 start and store its drafts, and the next upgrade restores one suggestion per author", async () => {
+    // The SQL an operator runs, read from the operations note so the two cannot drift apart.
+    const note = await Bun.file(new URL("../../../docs-site/docs/en/operations/deployment-requirements.md", import.meta.url)).text();
+    const rollback = /To roll Mail back to 0\.71[\s\S]*?```sql\n([\s\S]*?)```/.exec(note)?.[1];
+    if (!rollback) throw new Error("The operations note lost its rollback SQL");
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
+      VALUES (${newShortId()}, 'Suggestion rollback') RETURNING id`;
+    const mailboxId = mailbox!.id;
+    try {
+      const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
+        (short_id, mailbox_id, label, from_address, automation_policy, status)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Sender', 'rollback@example.test', 'disabled', 'verified') RETURNING id`;
+      const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
+        (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Question', 'customer@example.test', now()) RETURNING id`;
+      const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+        (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, plain_text)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${crypto.randomUUID()}@example.test>`}, 'Question', now(),
+          1, ${"c6".padEnd(64, "0")}, 'complete', 'Question') RETURNING id`;
+      await migrate();
+      // One session, as an operator's psql runs it.
+      const operator = await sql.reserve();
+      try {
+        await operator.unsafe(rollback).simple();
+      } finally {
+        operator.release();
+      }
+      // 0.71's startup gate accepts exactly these markers.
+      expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
+        { version: 1, name: "baseline" },
+        { version: 2, name: "principal_assignees" },
+      ]);
+      // 0.71 knows no suggestions: one account stores two open drafts in a conversation, without adoption.
+      const author = crypto.randomUUID();
+      for (const [body, createdAt] of [
+        ["Older automated draft", "2026-11-01T00:00:00Z"],
+        ["Newer automated draft", "2026-11-02T00:00:00Z"],
+      ] as const)
+        await sql`INSERT INTO mail.drafts
+          (short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id, author_kind, author_id,
+            last_editor_kind, last_editor_id, body_markdown, created_at, updated_at)
+          VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversation!.id}::uuid, 'reply', ${message!.id}::uuid,
+            ${sender!.id}::uuid, 'service_account', ${author}::uuid, 'service_account', ${author}::uuid, ${body},
+            ${createdAt}, ${createdAt})`;
+      // Upgrading again restores the marker and the index; the newest stays the suggestion, no content changes.
+      await migrate();
+      expect(await sql`SELECT 1 FROM mail.schema_migrations WHERE version = 3 AND name = 'suggestions_per_author'`).toHaveLength(1);
+      expect(
+        await sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'mail' AND indexname = 'drafts_untouched_suggestion_author_idx'`,
+      ).toHaveLength(1);
+      expect(
+        await sql<{ body_markdown: string; suggestion: boolean }[]>`SELECT body_markdown, adopted_at IS NULL AS suggestion
+          FROM mail.drafts WHERE mailbox_id = ${mailboxId}::uuid ORDER BY created_at`,
+      ).toEqual([
+        { body_markdown: "Older automated draft", suggestion: false },
+        { body_markdown: "Newer automated draft", suggestion: true },
+      ]);
+    } finally {
+      await migrate();
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    }
+  });
+
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;
