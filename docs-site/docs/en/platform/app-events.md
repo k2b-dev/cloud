@@ -587,7 +587,9 @@ workload. Cancellation fences outstanding delivery claims; an admission that
 committed first is already separate workload work. Offline consumer code leaves
 work retrying without spending handler attempts. Resource consumers share the
 existing broker, delivery table, eight-attempt retry policy, retention and
-per-subscription subject ordering; no second transport is installed.
+ordering by consumer, workload key and place across event types. Pending or
+retrying admissions hold that place; a failed admission holds later deliveries
+for the same subject until recovery. No second transport is installed.
 
 For deliberate recovery after a workload change, the host can call
 `replayResourceEventDelivery` in its authorized workload transaction. It moves
@@ -662,10 +664,18 @@ ordinary Type reader checks the principal's current read access. The proof is
 usable only while a delivery of that event for that mandate is claimed and
 cannot authorize an Action or a workload run.
 
-Code's resource-owned `app.on` registrations use these workload subscriptions,
-with their checked owner, event version and execution mandate. Delivery commits
+Code's `app.on` registrations use these workload subscriptions, with each
+checked event/place pair and the executing user or Code account's mandate. Delivery commits
 the event-to-run receipt before acknowledgment. See
 [Code event deliveries](/en/docs/platform/code-runs#understand-event-deliveries).
+
+For an event place without an explicit `access.readable` hook, Cloud derives
+its app-only readability query from the place's ordinary Type reader. The
+reader runs as each current requested principal with read authority; only the
+readable principal subset leaves the provider. An existing hook remains the
+provider's batch implementation. A contained event-place Type needs its own
+batch hook to check the expected container. Apps declare events and permission-aware
+readers through the generic platform contract.
 
 ## Resolve an occurrence for catch-up
 

@@ -143,9 +143,13 @@ a failed run with `code_admission_refused`.
 
 ## Understand event deliveries
 
-Each checked `app.on` registration subscribes only to the resource that owns
-its Code. Cloud rechecks the execution mandate, active version, owner place and
-current resource read access before delivery. The event carries references;
+Each checked `app.on` registration subscribes to its exact declared place.
+Without a handle that is the resource owning the Code; an explicit handle can
+name another readable place. Personal Code uses its owner account, while
+resource-owned and app-owned Code use their dedicated account. Cloud rechecks
+the execution mandate, active version, declared place and current resource
+read access before delivery, and repeats the place read check before every
+run, retry and rerun. The event carries references;
 it does not grant read or write access.
 
 Admission commits one pinned `event` run, its event receipt and the existing
@@ -155,8 +159,8 @@ The receipt is keyed by Code and event ID, survives run-detail retention and
 version switches, and is deleted with the Code. Receipts are permanent deduplication
 state: deleting one while the publisher can repeat that event ID could admit it twice.
 Its input is the event reference
-envelope. Runs for one event registration and resource place start in admission
-order without overlapping, including different message subjects, even when the
+envelope. Runs for one Code and resource place start in admission
+order, across all event types, without overlapping, including different message subjects, even when the
 operator raises per-Code concurrency. Different resource Codes retain their
 ordinary concurrency limits.
 
@@ -171,7 +175,9 @@ check. This recovery never repeats a run that has started. Revoked or expired ma
 accounts and lost read access cannot admit a new run.
 
 `core.code.event_backlog` bounds queued and running event runs per Code
-(default 100). When full, admission retries through the platform's existing
+(default 100), and the number of event registrations in a version. Loss of
+read access is visible in event deliveries or a failed run as
+`resource_access_revoked`; restore the share before retrying. When full, admission retries through the platform's existing
 delivery queue and then becomes a visible failed delivery. Failed deliveries
 stay visible for deliberate replay. After bounded admission attempts, a failed
 resource delivery allows different subjects at that place to proceed. Successors

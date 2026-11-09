@@ -47,7 +47,7 @@ export type CodeSdkOperation = {
   stream?: { direction: "read" | "write"; maxBytes: number };
 };
 
-/** Discovered event contract; resource registrations bind the owner place. */
+/** Discovered event contract; registrations bind an exact readable place. */
 export type CodeSdkEvent = {
   type: string;
   version: number;

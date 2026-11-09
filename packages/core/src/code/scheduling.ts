@@ -11,6 +11,7 @@ import type { SQL } from "bun";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { codeAdmissionLock } from "./admission";
 import { requireCodeRunFence } from "./bridge";
+import { checkCodeEventBeforeRun } from "./event-access";
 import { checkCodeOwnerBeforeRun } from "./owner-check";
 import {
   CODE_RUN_HEARTBEAT_MS,
@@ -141,7 +142,7 @@ async function enqueue(
     db,
   );
   if (entry.kind === "event" && entry.event)
-    await db`UPDATE code.runs SET event_subject_key=${`${entry.event.type}@${entry.event.version}:${entry.event.place.type}:${entry.event.place.id}`},
+    await db`UPDATE code.runs SET event_subject_key=${`${entry.event.place.type}:${entry.event.place.id}`},
       event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
   if (historicalRerun)
     await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${`historical:rerun:${runId}`},${runId}::uuid)`;
@@ -254,7 +255,8 @@ export async function claimCodeRuns(
         AND EXISTS(SELECT 1 FROM code.runs r WHERE r.code_id=c.id AND r.state='queued'
           AND r.version_id=c.active_version_id AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())
           AND (r.event_subject_key IS NULL OR NOT EXISTS(SELECT 1 FROM code.runs earlier WHERE earlier.code_id=r.code_id
-            AND earlier.event_subject_key=r.event_subject_key AND earlier.state IN ('queued','running')
+            AND earlier.event_subject_key IS NOT NULL AND earlier.input->'place'=r.input->'place'
+          AND earlier.state IN ('queued','running')
             AND (earlier.state='running' OR earlier.event_sequence<r.event_sequence))))
         AND (SELECT count(*) FROM code.runs r WHERE r.code_id=c.id AND r.state='running')<${limits.perCode}
         AND (SELECT count(*) FROM code.runs r JOIN code.codes o ON o.id=r.code_id WHERE r.state='running'
@@ -285,11 +287,13 @@ export async function claimCodeRuns(
         await db`UPDATE code.codes SET last_dispatched_at=clock_timestamp() WHERE id=${code.id}`;
         continue;
       }
+      // Envelope places also match runs admitted before rollout with event-qualified ordering keys.
       const [run] = await db<ClaimedRun[]>`WITH next AS (
         SELECT r.id FROM code.runs r WHERE r.code_id=${code.id} AND r.version_id=${code.activeVersionId}::uuid AND r.state='queued'
         AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())
         AND (r.event_subject_key IS NULL OR NOT EXISTS(SELECT 1 FROM code.runs earlier WHERE earlier.code_id=r.code_id
-          AND earlier.event_subject_key=r.event_subject_key AND earlier.state IN ('queued','running')
+          AND earlier.event_subject_key IS NOT NULL AND earlier.input->'place'=r.input->'place'
+          AND earlier.state IN ('queued','running')
           AND (earlier.state='running' OR earlier.event_sequence<r.event_sequence))) ORDER BY r.created_at,r.id LIMIT 1 FOR NO KEY UPDATE
       ), leased AS (
         UPDATE code.runs r SET state='running',generation=generation+1,runner_instance_id=${instanceId ?? null}::uuid,
@@ -334,6 +338,14 @@ export async function codeRunnerLease(
     await sql`UPDATE code.runs SET state=${current?.pauseReason === "owner_not_found" ? "skipped" : "failed"},outcome=${current?.pauseReason === "owner_not_found" ? "owner_not_found" : "code_not_active"},ended_at=clock_timestamp(),lease_expires_at=NULL
       WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
     return null;
+  }
+  if (run.trigger === "event") {
+    const refusal = await checkCodeEventBeforeRun(code, run, signal);
+    if (refusal) {
+      await sql`UPDATE code.runs SET state='failed',outcome=${refusal},ended_at=clock_timestamp(),lease_expires_at=NULL
+        WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
+      return null;
+    }
   }
   signal.throwIfAborted();
   // Refresh the delivery lease after the bounded owner read. Never revive an expired or superseded generation.

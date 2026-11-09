@@ -21,7 +21,7 @@ errors (`code_type_suppression`).
 | `code_static_schedule`, `code_invalid_cron`, `code_duplicate_schedule` | Timing not constant, invalid cron, a repeated name | Use constants and unique names ([Schedules](schedules.md)) |
 | `code_static_title` | A computed or invalid schedule title | One line of constant plain text, 1–200 characters |
 | `code_static_route`, `code_duplicate_route` | A route declared inside a function, or twice | Declare each route once at module level with a literal path |
-| `code_dynamic_event`, `code_event_owner`, `code_static_event`, `code_duplicate_on` | Event not constant, not at this Code's own place, not at module level, or a second handler | One `app.on` per event in the owning resource's Code ([Events](events.md)) |
+| `code_dynamic_event`, `code_event_owner`, `code_static_event`, `code_duplicate_on` | Event or place not constant, event place type mismatch, not at module level, or a duplicate event/place handler | One `app.on` per declared event and readable place ([Events](events.md)) |
 | `code_http_origin_dynamic`, `code_http_origin_invalid`, `code_http_allow_literal` | A computed or invalid HTTPS origin | Use literal URLs or a literal `http.allow([...])` |
 | `code_http_grant_limit` | More than 50 origins and operations together | Reduce the destinations |
 | `code_import_elided` | Imports changed between analysis and bundling | Check the imports and check again |

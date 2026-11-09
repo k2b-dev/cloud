@@ -1001,7 +1001,7 @@ test("a legacy version entry shows the reconfirmation hint", () => {
 });
 
 test("failed event delivery remains visible and only an active editor can retry it", () => {
-  const page = (permission: "editor" | "reader", state: "active" | "paused") => {
+  const page = (permission: "editor" | "reader", state: "active" | "paused", outcome = "code_event_backlog_full") => {
     const data = codePageFixture("runs");
     if (data.state.kind !== "ready") throw new Error("Missing ready fixture");
     data.state.permission = permission;
@@ -1015,7 +1015,7 @@ test("failed event delivery remains visible and only an active editor can retry 
           eventId: "22222222-2222-4222-8222-222222222222",
           eventType: "fixture.changed",
           state: "failed",
-          code: "code_event_backlog_full",
+          code: outcome,
           attempts: 8,
           createdAt: "2026-11-06T12:00:00Z",
         },
@@ -1037,6 +1037,10 @@ test("failed event delivery remains visible and only an active editor can retry 
   expect(markup).toContain('data-tone="error"');
   expect(page("reader", "active")).not.toContain("Retry delivery");
   expect(page("editor", "paused")).not.toContain("Retry delivery");
+  const revoked = page("editor", "active", "resource_access_revoked");
+  expect(revoked).toContain("can no longer read the event place");
+  expect(revoked).toContain("Restore access to the place and its app");
+  expect(revoked).toContain("Retry delivery");
 });
 
 test.each(["de", "en"])("Code page shows database use and storage in %s", (locale) => {

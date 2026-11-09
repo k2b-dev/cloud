@@ -309,13 +309,13 @@ export const CODE_SETTINGS = {
     default: 100,
     label: "Outstanding event runs per Code",
     description:
-      "Queue budget: at most 100 queued or running event runs per Code by default. Further deliveries retry in the platform event service.",
+      "Event budget: at most 100 registrations and 100 queued or running event runs per Code by default. Further deliveries retry in the platform event service.",
     presentation: {
       translations: {
         de: {
           label: "Offene Ereignis-Läufe je Code",
           description:
-            "Warteschlangenbudget: standardmäßig höchstens 100 wartende oder laufende Ereignis-Läufe je Code. Weitere Zustellungen warten im Ereignisdienst.",
+            "Ereignisbudget: standardmäßig höchstens 100 Registrierungen sowie 100 wartende oder laufende Ereignis-Läufe je Code. Weitere Zustellungen warten im Ereignisdienst.",
         },
       },
     },
