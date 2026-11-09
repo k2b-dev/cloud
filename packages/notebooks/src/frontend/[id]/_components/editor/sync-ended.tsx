@@ -174,10 +174,7 @@ export function SyncEndedBar(props: {
     if (document.activeElement?.closest(".cm-editor") || document.activeElement === document.body) primary.focus();
   });
   return (
-    <div
-      class="notebooks-editor-toolbar mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed"
-      data-sync-ended={props.ended.code}
-    >
+    <div class="notebooks-editor-toolbar text-base text-dimmed" data-sync-ended={props.ended.code}>
       {/* This bar replaces the toolbar, so it keeps the workspace's navigation and Details buttons. */}
       <NavigationButton />
       <InlineGuidance

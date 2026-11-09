@@ -5,6 +5,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { chartFixtures } from "../../test/charts/fixtures";
+import { lineCompatibilitySpecs } from "../../test/charts/line-compatibility-specs";
 import type ChartComponent from "../content/Chart";
 
 const uiRoot = resolve(import.meta.dir, "../..");
@@ -49,7 +50,7 @@ const buildFixture = async (contents: string, legacy = false, hydratable = false
 
 test("all registered kinds match server SVG and geometry on the first client render", async () => {
   const ServerChart: typeof ChartComponent = (await import(resolve(uiRoot, "dist/ssr/content/Chart.js"))).default;
-  const specs = Object.values(chartFixtures);
+  const specs = [...Object.values(chartFixtures), ...lineCompatibilitySpecs.map((spec) => ({ kind: "line" as const, ...spec }))];
   const html = specs
     .map(
       (spec, index) =>

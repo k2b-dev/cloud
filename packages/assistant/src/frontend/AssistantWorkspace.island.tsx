@@ -801,10 +801,24 @@ export default function AssistantWorkspace(props: Props) {
       return conversation;
     },
   });
+  // The draft's own save creates its chat in the background. Meanwhile the field stays editable, and whatever needs
+  // the new chat, such as a send or an app command, continues in that one.
+  const [draftCreation, setDraftCreation] = createSignal<Promise<AiConversation | null>>();
   const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
+    const drafting = projectId ? undefined : draftCreation();
+    if (drafting) return drafting;
     if (newConversation.loading() || composerPicking() > 0) return null;
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
+  };
+  const createDraftConversation = () => {
+    let creation!: Promise<AiConversation | null>;
+    // One update: the field never sees the creation without knowing it is the draft's.
+    batch(() => {
+      creation = createConversation(false);
+      setDraftCreation(() => creation);
+    });
+    return creation.finally(() => setDraftCreation(undefined));
   };
   type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
   let confirmedUnknownExit: UnknownExit | undefined;
@@ -982,8 +996,9 @@ export default function AssistantWorkspace(props: Props) {
       if (composerSessionKey() !== key || session(key).conflict) return;
       let conversationId = target;
       if (!conversationId) {
-        const created = await createConversation(false);
-        if (!created) return;
+        const created = await createDraftConversation();
+        // A send that started meanwhile took this draft along; it saves no older copy after it.
+        if (!created || composerSubmitting()) return;
         conversationId = created.id;
       }
       await saveComposer(conversationId, conversationId);
@@ -1056,7 +1071,7 @@ export default function AssistantWorkspace(props: Props) {
     () =>
       canUseComposer() &&
       !composerBusy() &&
-      !newConversation.loading() &&
+      (!newConversation.loading() || Boolean(draftCreation())) &&
       !chat.loadingConversation() &&
       !chat.running() &&
       !chat.activeTurn(),
@@ -2372,7 +2387,7 @@ export default function AssistantWorkspace(props: Props) {
             !canUseComposer() ||
             panelStorageFailed() ||
             submissionUnknown(sessionKey()) ||
-            (newConversation.loading() && !commandCreating()) ||
+            (newConversation.loading() && !commandCreating() && !draftCreation()) ||
             chat.loadingConversation()
           }
           state={

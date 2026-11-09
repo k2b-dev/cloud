@@ -247,17 +247,10 @@
 }
 
 .chat-notifications__note {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.375rem;
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: 0.78125rem;
   line-height: 1.35;
-}
-
-.chat-notifications__note > i {
-  margin-top: 0.0625rem;
 }
 
 .chat-notifications__following {

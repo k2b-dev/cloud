@@ -18,6 +18,7 @@ source). Without `rows`, use these payloads:
 | Kind | Payload |
 | --- | --- |
 | `bar`, `pie`, `donut` | `data: [{label, value}]` |
+| `bar`, `marks: "dots"`, `layout: "nested"` | `x: string[]`, aligned `series: [{label, data: (number \| null)[]}]`; each series is a subset of the previous one; positive `total`, even `dots` (default 100) |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]` |
 | `histogram`, `sparkline` | `data: number[]` |
 | `boxplot` | `data: [{label, values: number[]}]` |
@@ -25,6 +26,15 @@ source). Without `rows`, use these payloads:
 | `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters |
 | `gauge`, `stat` | `value` |
 | every other kind | as in [Chart kinds](chart-kinds.md), which has one example per kind |
+
+For counts inside a capacity, such as clicks inside opens, use nested dots.
+The drawing is two dots wide per category; unused capacity stays grey and
+missing counts leave a gap. Tooltips and the table keep exact values. Dot
+marks round visually and each counts toward the host's mark limit. Use
+`format: {style: "percent"}` with fractions and `total: 1` for shares; the
+legend shows the latest category or the category at the cursor.
+
+Use the [nested dot example](charts.md) as the spec for `cloud.view.chart`.
 
 Canonical x values are finite numbers or `YYYY-MM-DD[THH:mm[:ss]]`, wall-clock
 time without an offset. All series use the same x type. No markup, functions,
@@ -73,6 +83,15 @@ show shares; their `format` applies to the values in tooltips and the table.
 
 Bar takes `colorByBar`, `showValues`, `legend`; line/scatter take `legend`;
 line also takes `area`, `smooth` and series `style: "solid" | "dashed" | "dotted"`.
+Line also accepts `forecast: {from, band?: [lower, upper][]}`, `marker: {at, label}`,
+`threshold: {value, label}`, `zero`, `step: "before" | "after" | "middle"` and
+`legendValues`. The forecast begins at an existing first-series x; bounds match
+that series' sorted suffix and lower is at most upper. Forecast, marker,
+threshold, `zero: true` or `legendValues: true` enable gaps for null y.
+The marker sets the resting legend value;
+inspection shows the value at the cursor. See the complete
+[cash outlook example](charts.md#forecast-lines), valid for `cloud.view.chart`.
+
 Line/scatter series may have `role: "reference"` for a comparison period:
 line defaults to dashed unless style is set, scatter uses hollow points in chat.
 Pie/donut take `legend`, `showLabels`; sparkline takes `area`.

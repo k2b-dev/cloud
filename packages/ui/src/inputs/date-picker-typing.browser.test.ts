@@ -341,6 +341,8 @@ describe("typed date field", () => {
       await rangeSheet.waitFor();
       await rangeSheet.locator('[data-date-day="2026-11-24"]').tap();
       expect(await picked()).toEqual(["2026-11-24"]);
+      // An unsaved pick stays in the sheet: the field never shows it, so a dismissal has nothing to undo (#2986).
+      expect(await field(page, "Zeitraum: Start").inputValue()).toBe("");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector("dialog[open]") === null);
       expect(await field(page, "Zeitraum: Start").inputValue()).toBe("");

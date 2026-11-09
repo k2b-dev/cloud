@@ -9,16 +9,13 @@ import { buildTablerIconAssets } from "./tabler-assets";
 let output: string | undefined;
 let browser: Browser;
 let css: Buffer;
-let font: Buffer;
 
 // Share process and asset setup; each viewport spends its budget on its own layout.
 beforeAll(async () => {
   output = await mkdtemp(join(tmpdir(), "cloud-tabler-box-"));
   await buildTablerIconAssets(output);
   css = await readFile(join(output, "tabler-icons.css"));
-  const fontUrl = css.toString().match(/url\((\/public\/fonts\/tabler-icons-[a-f0-9]{64}\.woff2)\)/)?.[1];
-  expect(fontUrl).toBeDefined();
-  font = await readFile(join(output, fontUrl!.slice("/public/".length)));
+  expect(css.toString()).toMatch(/url\(\/public\/fonts\/tabler-icons-[a-f0-9]{64}\.woff2\)/);
   browser = await launchBrowser();
 });
 
@@ -51,7 +48,7 @@ for (const [device, width] of [
       if (path.endsWith(".woff2")) {
         requested();
         await held;
-        return route.fulfill({ contentType: "font/woff2", body: font });
+        return route.fulfill({ contentType: "font/woff2", path: join(output!, path.slice("/public/".length)) });
       }
       if (path.endsWith(".css")) return route.fulfill({ contentType: "text/css", body: css });
       return route.fulfill({
@@ -70,19 +67,20 @@ for (const [device, width] of [
             return { x, y, width, height };
           }),
         );
+      // The states of the icon font faces the page asked for; a split font leaves the faces it does not use unloaded.
       const fontStatus = () =>
         page.evaluate(() => {
-          const statuses: FontFaceLoadStatus[] = [];
+          const statuses = new Set<FontFaceLoadStatus>();
           document.fonts.forEach((face) => {
-            if (face.family === "tabler-icons") statuses.push(face.status);
+            if (face.family === "tabler-icons" && face.status !== "unloaded") statuses.add(face.status);
           });
-          return statuses;
+          return [...statuses];
         });
       expect(await fontStatus()).toEqual(["loading"]);
       const before = await geometry();
       expect(before.filter((_, index) => index % 2 === 0).map((box) => box.width)).toEqual([24, 24, 24]);
       release();
-      await page.evaluate(() => document.fonts.load('24px "tabler-icons"').then(() => undefined));
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
       expect(await fontStatus()).toEqual(["loaded"]);
       expect(await geometry()).toEqual(before);
     } finally {

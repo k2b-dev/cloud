@@ -11,6 +11,7 @@ import {
   NoticeCard,
   NumberInput,
   prompts,
+  Section,
   SegmentedControl,
   Select,
   Slider,
@@ -1007,7 +1008,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
               {(color) => (
                 <button
                   type="button"
-                  class="h-8 w-8 rounded border border-black/15 shadow-sm dark:border-white/20"
+                  class="h-8 w-8 rounded border border-black/15 dark:border-white/20"
                   classList={{ "ring-2 ring-blue-500 ring-offset-1": markupColor() === color.value }}
                   style={{ "background-color": color.value }}
                   onClick={() => setMarkupColor(color.value)}
@@ -1383,7 +1384,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
               <Show when={editorMode() === "markup"}>
                 <DetailPanel.Group label={t().markupControls}>
-                  <DetailPanel.Section title={t().tool}>
+                  <Section title={t().tool}>
                     <div class="flex flex-col gap-2">
                       <div class="grid grid-cols-7 gap-1">
                         <For
@@ -1447,11 +1448,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                         </Tooltip.Anchor>
                       </div>
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
                   <Show when={markupTool() === "shape" || isSizedMarkupTool(markupTool())}>
-                    <DetailPanel.Section title={t().style}>
+                    <Section title={t().style}>
                       <MarkupSettings />
-                    </DetailPanel.Section>
+                    </Section>
                   </Show>
                 </DetailPanel.Group>
               </Show>
@@ -1460,7 +1461,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 <>
                   <DetailPanel.Group label={t().geometry}>
                     {/* Crop */}
-                    <DetailPanel.Section title={t().crop}>
+                    <Section title={t().crop}>
                       <div class="flex flex-col gap-2">
                         <div class="flex gap-2">
                           <Show
@@ -1513,10 +1514,10 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           </Button>
                         </Show>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
 
                     {/* Transform */}
-                    <DetailPanel.Section title={t().transform}>
+                    <Section title={t().transform}>
                       <div class="flex flex-col gap-2">
                         <Slider
                           label={t().rotation}
@@ -1535,12 +1536,12 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           <Switch label={t().flipV} value={() => adj().flipV} onValueChange={(v) => setAdj("flipV", v)} />
                         </div>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
                   </DetailPanel.Group>
 
                   <DetailPanel.Group label={t().appearance}>
                     {/* Adjustments */}
-                    <DetailPanel.Section
+                    <Section
                       title={t().adjustments}
                       actions={
                         <Button variant="ghost" size="xs" onClick={resetAdjustments}>
@@ -1641,10 +1642,10 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${Math.round(v * 200)}%`}
                         />
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
 
                     {/* Presets */}
-                    <DetailPanel.Section title={t().presets}>
+                    <Section title={t().presets}>
                       <div class="grid grid-cols-4 gap-1">
                         <For each={Object.keys(PRESETS)}>
                           {(key) => (
@@ -1654,10 +1655,10 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           )}
                         </For>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
 
                     {/* Copy / Paste Edits */}
-                    <DetailPanel.Section title={t().edits}>
+                    <Section title={t().edits}>
                       <div class="grid grid-cols-3 gap-1">
                         <Button variant="secondary" size="sm" onClick={copyEdits} title={t().copyAdjustmentsTitle}>
                           <i class="ti ti-copy" /> {t().copy}
@@ -1681,7 +1682,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           <i class="ti ti-clipboard-check" /> {t().pasteAll}
                         </Button>
                       </div>
-                    </DetailPanel.Section>
+                    </Section>
                   </DetailPanel.Group>
                 </>
               </Show>

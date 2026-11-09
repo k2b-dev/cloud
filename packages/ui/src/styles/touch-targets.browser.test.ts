@@ -24,6 +24,7 @@ const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
 const { default: PdfPreview } = await import("../content/PdfPreview");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
+const { Section } = await import("../surfaces/Section");
 const { default: Select } = await import("../inputs/Select");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
@@ -528,7 +529,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
 
   // DetailPanel.Action rows of every kind, read on a touch screen and on a device without one.
   const section = html(() =>
-    createComponent(DetailPanel.Section, {
+    createComponent(Section, {
       title: "Actions",
       get actions() {
         return icon("Add action");
@@ -554,7 +555,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
   const heights = async (page: Page) => {
     await show(page, `<main style="width:22rem;padding:2rem">${section}</main>`);
     return await page.evaluate(() =>
-      Array.from(document.querySelectorAll<HTMLElement>(".k2b-detail-panel__section-body .k2b-button")).map((control) => {
+      Array.from(document.querySelectorAll<HTMLElement>(".k2b-section__body .k2b-button")).map((control) => {
         const box = control.getBoundingClientRect();
         const reaches = (y: number) => document.elementFromPoint(box.left + box.width / 2, y)?.closest("a, button") === control;
         // 21 px from the centre up and down: at least 42 px, which a 31 px row never reaches.
@@ -570,7 +571,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
 
   test("give stacked DetailPanel.Action rows a 44 px row on touch that keeps its neighbours' and the section header's edges", async () => {
     // Grids and Spaces stack their rows flush; Files keeps 0.25rem between them.
-    const filesColumn = `<style>.k2b-detail-panel__section-body{display:flex;flex-direction:column;gap:0.25rem}</style>`;
+    const filesColumn = `<style>.k2b-section__body{display:flex;flex-direction:column;gap:0.25rem}</style>`;
     const page = await browser.newPage(phone);
     try {
       expect(await takenPixels(page, section)).toEqual({});

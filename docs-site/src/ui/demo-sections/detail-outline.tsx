@@ -9,6 +9,7 @@ import {
   fileKindLabel,
   IconButton,
   MultiSelectInput,
+  Section,
   SegmentedControl,
   StatusBadge,
 } from "@k2b/ui";
@@ -58,7 +59,7 @@ export const DetailPanelOutlineDemo = () => {
         { kind: "component", name: "DescriptionList", from: "@k2b/ui" },
       ]}
       description="One outline for every details panel: header, properties as quiet rows, linked items, the first five attachments, notes, then collapsed context that says what it holds."
-      code={`<DetailPanel.Section title="Attachments" count={files.length}>
+      code={`<Section title="Attachments" count={files.length}>
   <FileGrid
     rows={files}
     getRowId={(file) => file.id}
@@ -76,11 +77,11 @@ export const DetailPanelOutlineDemo = () => {
     ]}
     onOpen={openPreview}
   />
-</DetailPanel.Section>
+</Section>
 
 <DetailPanel.Group title="More about this conversation">
-  <DetailPanel.Section title="Activity" count={4} collapsible summary="Lena Hoffmann assigned herself">…</DetailPanel.Section>
-  <DetailPanel.Section title="Technical details" collapsible summary="Sender, headers, original">…</DetailPanel.Section>
+  <Section title="Activity" count={4} collapsible summary="Lena Hoffmann assigned herself">…</Section>
+  <Section title="Technical details" collapsible summary="Sender, headers, original">…</Section>
 </DetailPanel.Group>`}
     >
       <div class="flex flex-col gap-3">
@@ -110,7 +111,7 @@ export const DetailPanelOutlineDemo = () => {
               }
             />
             <DetailPanel.Body>
-              <DetailPanel.Section title="Properties">
+              <Section title="Properties">
                 <DescriptionList
                   layout="rows"
                   size="sm"
@@ -162,8 +163,8 @@ export const DetailPanelOutlineDemo = () => {
                     },
                   ]}
                 />
-              </DetailPanel.Section>
-              <DetailPanel.Section title="Linked" count={2}>
+              </Section>
+              <Section title="Linked" count={2}>
                 <DetailPanel.Action
                   href="#detail-panel-outline"
                   leading={<i class="ti ti-layout-kanban" aria-hidden="true" />}
@@ -176,8 +177,8 @@ export const DetailPanelOutlineDemo = () => {
                   title="Offer brochure 2026"
                   description="Mail · 14 Oct"
                 />
-              </DetailPanel.Section>
-              <DetailPanel.Section title="Attachments" count={files().length}>
+              </Section>
+              <Section title="Attachments" count={files().length}>
                 <FileGrid
                   rows={files()}
                   getRowId={(file) => file.id}
@@ -208,7 +209,7 @@ export const DetailPanelOutlineDemo = () => {
                   ]}
                   onOpen={() => {}}
                 />
-              </DetailPanel.Section>
+              </Section>
               <Discussion label="Team notes" count={2}>
                 <Discussion.List>
                   <For
@@ -227,15 +228,15 @@ export const DetailPanelOutlineDemo = () => {
                 <Discussion.Composer label="Note for the team" placeholder="Note for the team" submitLabel="Post" onSubmit={() => {}} />
               </Discussion>
               <DetailPanel.Group title="More about this conversation">
-                <DetailPanel.Section title="People" count={2} collapsible summary="Kai Brandt · info@northern-light.example">
+                <Section title="People" count={2} collapsible summary="Kai Brandt · info@northern-light.example">
                   Kai Brandt, info@northern-light.example
-                </DetailPanel.Section>
-                <DetailPanel.Section title="Activity" count={4} collapsible summary="Lena Hoffmann assigned herself">
+                </Section>
+                <Section title="Activity" count={4} collapsible summary="Lena Hoffmann assigned herself">
                   Assigned, tagged by a rule, received, replied
-                </DetailPanel.Section>
-                <DetailPanel.Section title="Technical details" collapsible summary="Sender, headers, original">
+                </Section>
+                <Section title="Technical details" collapsible summary="Sender, headers, original">
                   Message-ID, headers, original
-                </DetailPanel.Section>
+                </Section>
               </DetailPanel.Group>
             </DetailPanel.Body>
           </DetailPanel>

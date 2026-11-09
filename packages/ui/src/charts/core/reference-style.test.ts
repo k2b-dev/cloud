@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { renderBarChartSvg } from "../../content/chart-bar";
+import { renderBarChartSvg } from "./bar-render";
 import { type ChartDrawingOptions, renderChartSvg } from "./render";
 import { line, type ReferenceLine, referenceLineAttributes } from "./svg";
 

@@ -1,5 +1,5 @@
 import { createComponent } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile, unwrap } from "solid-js/store";
 import { render } from "solid-js/web";
 import MailMessageBody from "./MailMessageBody";
 
@@ -19,6 +19,8 @@ declare global {
     ) => void;
     /** Applies a live update to the mounted message, as a reconciled snapshot does. */
     updateMailMessageBody: (props: Partial<Omit<MailMessageBodyProps, "onSelectionChange">>) => void;
+    /** Mounts the message body again with its current props, as the reader does when the message format changes. */
+    remountMailMessageBody: () => void;
     mailMessageBodyTrace: MailMessageBodyTrace;
   }
 }
@@ -35,8 +37,13 @@ window.mountMailMessageBody = (props) => {
     ...props,
     onSelectionChange: () => {},
   });
-  window.updateMailMessageBody = (update) => setCurrent(update);
-  render(() => createComponent(MailMessageBody, current), host);
+  // The reader reconciles snapshots, so arrays such as the allow rules keep their identity and change in place.
+  window.updateMailMessageBody = (update) => setCurrent(reconcile({ ...unwrap(current), ...update }));
+  let dispose = render(() => createComponent(MailMessageBody, current), host);
+  window.remountMailMessageBody = () => {
+    dispose();
+    dispose = render(() => createComponent(MailMessageBody, current), host);
+  };
   const frame = host.querySelector("iframe");
   if (!frame) {
     if (props.format === "html") throw new Error("Missing message frame");

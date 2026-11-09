@@ -1,0 +1,112 @@
+import type { ChartShowcaseExample } from "./types";
+
+export const dotsExamples = [
+  {
+    id: "dots-nested",
+    kind: "dots",
+    question: "compare",
+    title: "Campaign engagement",
+    summary: "Opened and clicked counts share a zero baseline; unused capacity stays grey.",
+    spec: {
+      kind: "bar",
+      title: "Campaign engagement",
+      layout: "nested",
+      marks: "dots",
+      total: 1000,
+      dots: 100,
+      x: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      series: [
+        { label: "Opened", data: [780, 620, 810, 690, 570] },
+        { label: "Clicked", data: [320, 210, 420, 290, 190] },
+      ],
+    },
+    height: 254,
+    width: "half",
+    useFor: ["Counts nested inside a known capacity"],
+    avoidFor: ["Independent series or exact small differences"],
+    a11y: [
+      "One category is one inspection target, regardless of the number of dots.",
+      "The tooltip and data table retain exact source counts; the drawing rounds to the nearest dot.",
+    ],
+    options: [
+      { name: "marks", type: '"dots"', description: "Draw two columns of dots." },
+      { name: "layout", type: '"nested"', description: "Each later series must be a subset of the previous one." },
+      {
+        name: "total",
+        type: "positive number",
+        description: "Capacity per category; defaults to the largest observed count, at least one.",
+      },
+      {
+        name: "dots",
+        type: "even positive integer",
+        description: "Dots per category; defaults to 100. Every dot counts toward a host's mark budget.",
+      },
+    ],
+  },
+  {
+    id: "dots-gaps",
+    kind: "dots",
+    question: "compare",
+    title: "Read deliveries by region",
+    summary: "An unknown category remains a gap; zero counts leave all dots grey.",
+    spec: {
+      kind: "bar",
+      title: "Read deliveries by region",
+      layout: "nested",
+      marks: "dots",
+      total: 100,
+      dots: 40,
+      x: ["North", "South", "East", "West"],
+      series: [
+        { label: "Delivered", data: [80, null, 0, 95] },
+        { label: "Read", data: [30, null, 0, 65] },
+      ],
+    },
+    height: 254,
+    width: "half",
+    useFor: ["Nested counts with missing observations"],
+    avoidFor: ["Treating missing counts as zero"],
+    a11y: ["Exact source values remain available for a category with no visible dots."],
+    options: [
+      {
+        name: "data",
+        type: "(number | null)[]",
+        description: "Aligned arrays; any missing nested count leaves the category drawing as a gap.",
+      },
+    ],
+  },
+  {
+    id: "dots-shares",
+    kind: "dots",
+    question: "compare",
+    title: "Newsletter shares",
+    summary: "Each month shows a share of recipients; the legend shows the latest month or the category at the cursor.",
+    spec: {
+      kind: "bar",
+      title: "Newsletter shares",
+      layout: "nested",
+      marks: "dots",
+      total: 1,
+      dots: 20,
+      x: ["Jan", "Feb", "Mar"],
+      series: [
+        { label: "Opened", data: [0.45, 0.55, 0.6] },
+        { label: "Clicked", data: [0.15, 0.2, 0.25] },
+      ],
+      format: { style: "percent" },
+    },
+    height: 254,
+    width: "half",
+    useFor: ["Nested engagement rates over time"],
+    avoidFor: ["Adding percentages across months"],
+    a11y: ["Keyboard inspection reads the month's exact shares; Escape restores the latest values in the legend."],
+    options: [
+      { name: "format.style", type: '"percent"', description: "The portable renderer uses latest-category legend values automatically." },
+      {
+        name: "legendValues",
+        type: '"total" | "latest"',
+        description: "Direct Chart.Bar calls with a custom share formatter use latest; count series default to total.",
+      },
+    ],
+  },
+] satisfies ChartShowcaseExample[];

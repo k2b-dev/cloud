@@ -1641,7 +1641,7 @@ Loading, empty, error, and populated states then keep the same height. Use
 The default preview remains content-sized; do not nest another scrollport.
 
 Previews are `HoverPreview` cards (see Feedback): they open beside the row, use
-the same surface, border, and inner depth, and keep their content in the shared
+the same surface, edge, and float shadow, and keep their content in the shared
 `ScrollArea`. Overflowing content fades at the top and bottom while the card
 border remains visible. Fades follow the current scroll position and disappear
 when an edge is reached.
