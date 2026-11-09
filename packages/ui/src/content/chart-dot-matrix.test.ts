@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { renderBarChartSvg, seriesBarLayout } from "./chart-bar";
+import { basename, resolve } from "node:path";
+import { renderBarChartSvg } from "../charts/core/bar-render";
+import { seriesBarLayout } from "./chart-bar";
 
 const spec = {
   x: ["A"],
@@ -87,4 +89,53 @@ test("share legends show the latest period, while count legends retain period to
     expect(
       seriesBarLayout({ ...shares, series: [{ label: "Missing", data: [0.5, 0.6, missing] }] }).legendLayout.items[0]?.total,
     ).toBeNull();
+});
+
+test("frame sizing leaves series and dot painting in the lazy drawing closure", async () => {
+  const core = resolve(import.meta.dir, "../../dist/browser/charts/core/index.js");
+  const result = await Bun.build({
+    entrypoints: ["bar-sizing"],
+    target: "browser",
+    minify: true,
+    splitting: true,
+    metafile: true,
+    plugins: [
+      {
+        name: "bar-split-entries",
+        setup(build) {
+          build.onResolve({ filter: /^bar-(sizing|drawing)$/ }, ({ path }) => ({ path, namespace: "bar-split" }));
+          build.onLoad({ filter: /.*/, namespace: "bar-split" }, ({ path }) => ({
+            contents:
+              path === "bar-sizing"
+                ? `export { barChartLayout } from ${JSON.stringify(core)}; export const drawing = () => import("bar-drawing");`
+                : `export { renderBarChartSvg } from ${JSON.stringify(core)};`,
+            loader: "js",
+          }));
+        },
+      },
+    ],
+  });
+  expect(result.success).toBe(true);
+  const graph = result.metafile!.outputs;
+  const entry = Object.keys(graph).find((path) => graph[path]!.entryPoint?.endsWith("bar-sizing"));
+  expect(entry).toBeDefined();
+  const closure = new Set<string>();
+  const visit = (path: string) => {
+    if (closure.has(path)) return;
+    closure.add(path);
+    for (const edge of graph[path]!.imports) if (edge.kind !== "dynamic-import" && graph[edge.path]) visit(edge.path);
+  };
+  visit(entry!);
+  const staticCode = (
+    await Promise.all(
+      result.outputs
+        .filter((output) => [...closure].some((path) => basename(path) === basename(output.path)))
+        .map((output) => output.text()),
+    )
+  ).join("\n");
+  const allCode = (await Promise.all(result.outputs.map((output) => output.text()))).join("\n");
+  for (const marker of ["data-dot-series", "data-chart-legend-value"]) {
+    expect(allCode).toContain(marker);
+    expect(staticCode).not.toContain(marker);
+  }
 });

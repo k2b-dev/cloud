@@ -1,5 +1,6 @@
 import type { BarChartOptions, SeriesBarLayout } from "../../content/chart-bar";
-import { chartTextWidth, dotStyle, fmt, headerHeight, renderHeader, tickFormat, wrapLabel } from "./bar-common";
+import { dotStyle, fmt, headerHeight, renderHeader, tickFormat, wrapLabel } from "./bar-common";
+import { visibleCategoryLabels } from "./bar-labels";
 import { chartDatumSvg, escapeXml, svgRoot } from "./svg-common";
 
 /** Draw prepared series geometry without importing any bar layout or data-only renderer. */
@@ -147,19 +148,4 @@ export const renderSeriesBarLayoutSvg = (
     }
   if (opts.xAxis?.label) parts.push(text((g.left + g.right) / 2, opts.height - 2, opts.xAxis.label, "stdlib-chart-axis-label", "middle"));
   return svgRoot(opts, parts.join("")).replace("<svg ", '<svg data-bar-layout="columns" ');
-};
-
-export const visibleCategoryLabels = (labels: string[], left: number, slot: number, width: number, units: number) => {
-  const labelPx = Math.max(0, ...labels.map((label) => chartTextWidth(label))) + 6;
-  const step = Math.max(1, Math.ceil(labelPx / (slot / units)));
-  const inside = (i: number) => {
-    const half = (chartTextWidth(labels[i]!) * units) / 2,
-      center = left + slot * (i + 0.5);
-    return center - half >= 0 && center + half <= width;
-  };
-  const first = Math.max(
-    0,
-    labels.findIndex((_, i) => inside(i)),
-  );
-  return new Set(labels.flatMap((_, i) => (i >= first && (i - first) % step === 0 && inside(i) ? [i] : [])));
 };

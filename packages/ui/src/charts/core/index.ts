@@ -5,8 +5,6 @@ export {
   type BarChartOptions,
   barChartLayout,
   rankedBarLayout,
-  renderBarBaseSvg,
-  renderBarChartSvg,
   type SeriesBarLayout,
   seriesBarLayout,
 } from "../../content/chart-bar";
@@ -20,6 +18,8 @@ export {
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { calendarTimeLabel, calendarTimeTicks, chartTimeStep } from "../../content/chart-time-calendar";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
+export { renderBarBaseSvg } from "./bar-base-render";
+export { renderBarChartSvg } from "./bar-render";
 export * from "./bubble";
 export * from "./calendar";
 export { nestedDotOptions } from "./dot-options";

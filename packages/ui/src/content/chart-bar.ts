@@ -1,8 +1,6 @@
 import { chartTextWidth, fmt, headerHeight, renderHeader, tickFormat, wrapLabel } from "../charts/core/bar-common";
-import { barPercent } from "../charts/core/bar-labels";
-import { renderSeriesBarLayoutSvg, visibleCategoryLabels } from "../charts/core/bar-series";
+import { barPercent, visibleCategoryLabels } from "../charts/core/bar-labels";
 import { nestedDotOptions } from "../charts/core/dot-options";
-import { renderDotMatrixLayoutSvg } from "../charts/core/dots";
 
 import {
   type AxisOptions,
@@ -455,20 +453,8 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
   return parts.join("");
 };
 
-/**
- * Render a bar chart in which every category has its label. Few short labels stand below vertical columns; otherwise
- * each category becomes a horizontal row with its label left of the bar and its value at the bar's end. Rows grow the
- * drawing instead of dropping labels: use {@link barChartLayout} for its logical height.
- */
-export const renderBarChartSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
-  if (opts.series && opts.marks === "dots") return renderDotMatrixLayoutSvg(opts, seriesBarLayout(opts, opts));
-  return renderBarBaseSvg(opts);
-};
-
-/** Bar drawing without the optional dot renderer, for small app-frame preludes. */
-export const renderBarBaseSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
-  if (opts.marks === "dots") throw new RangeError("Use the dot renderer");
-  if (opts.series) return renderSeriesBarLayoutSvg(opts, seriesBarLayout(opts, opts));
+/** Internal legacy/category drawing; the series drawing entry loads separately from frame sizing. */
+export const renderBarDataSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
   if (rankedRows(opts)) return renderRankedBars(opts);
   const plan = barChartPlan(opts, opts.width);
   // The empty drawing of stdlib's bar chart, written here so bundles leave out stdlib's whole bar renderer.

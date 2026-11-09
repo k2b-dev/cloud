@@ -5,7 +5,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { dotMatrixFixtures } from "../../test/chart-dot-matrix-fixtures";
-import { renderBarChartSvg } from "./chart-bar";
+import { renderBarChartSvg } from "../charts/core/bar-render";
 
 const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
 Bun.plugin(plugin());
