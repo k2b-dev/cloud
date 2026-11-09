@@ -30,6 +30,8 @@ export type ChartExplorerColumn<T> = {
 export type ChartLegendEntry = {
   label: string;
   color: number;
+  /** Source series index when entries omit empty series or use a wrapped palette. Defaults to the entry position. */
+  seriesIndex?: number;
   /** Line pattern of a line series; a solid series shows a filled swatch. */
   style?: "solid" | "dashed" | "dotted";
   /** A comparison series, drawn hollow like its marks. */
@@ -148,8 +150,15 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
           ? "percent"
           : "value"
         : "y";
+    const sourceX = snapshot()?.kind === "line" ? snapshot()?.svg.match(/data-line-default-x="([^"]+)"/)?.[1] : undefined;
     const field = marks
-      .find((mark) => mark.datum.seriesIndex === index && mark.datum.anchor[0] === latest)
+      .find(
+        (mark) =>
+          mark.datum.seriesIndex === index &&
+          (sourceX === undefined
+            ? mark.datum.anchor[0] === latest
+            : mark.datum.values.some((field) => field.key === "x" && field.value === Number(sourceX))),
+      )
       ?.datum.values.find((field) => field.key === valueField);
     return field
       ? (field.formatted ??
@@ -489,10 +498,12 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         aria-hidden="true"
                       />
                       {entry.label}
-                      <Show when={snapshot()?.kind === "area"}>
+                      <Show
+                        when={snapshot()?.kind === "area" || (snapshot()?.kind === "line" && snapshot()?.svg.includes("data-line-details"))}
+                      >
                         <b
                           data-chart-legend-value
-                          data-series-index={index()}
+                          data-series-index={entry.seriesIndex ?? index()}
                           data-field={
                             snapshot()?.kind === "area"
                               ? snapshot()?.marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
@@ -500,9 +511,9 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                                 : "value"
                               : "y"
                           }
-                          data-default={legendValue(index())}
+                          data-default={legendValue(entry.seriesIndex ?? index())}
                         >
-                          {legendValue(index())}
+                          {legendValue(entry.seriesIndex ?? index())}
                         </b>
                       </Show>
                     </li>

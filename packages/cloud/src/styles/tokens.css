@@ -45,7 +45,8 @@
   --ui-control-recess: none;
   /* A transparent no-op shadow keeps composite box-shadow lists valid. */
   --ui-control-bevel: 0 0 0 transparent;
-  --ui-control-press: inset 0 1px 2px rgb(22 38 29 / 0.12);
+  /* Controls never cast or sink a shadow (Linie B): a press changes only the fill. */
+  --ui-control-press: none;
   --ui-check-surface: var(--ui-field);
   --ui-check-border: var(--ui-border-strong);
   --ui-check-shadow: none;
@@ -66,10 +67,8 @@
   --ui-dialog-available-width: calc(100vw - 1.5rem);
   --ui-context-menu-surface: var(--ui-surface-raised);
   --ui-context-menu-radius: var(--ui-radius-surface);
-  --ui-context-menu-shadow: var(--ui-shadow-float);
   --ui-dropdown-menu-surface: rgb(246 247 246);
   --ui-dropdown-menu-radius: var(--ui-radius-surface);
-  --ui-dropdown-menu-shadow: var(--ui-shadow-float);
   --ui-menu-hover: var(--ui-hover);
   --ui-state-icon-surface: var(--ui-surface-muted);
   --ui-state-icon-border: var(--ui-border);
@@ -84,7 +83,6 @@
   --ui-tooltip-border: var(--color-zinc-800);
   --ui-tooltip-text: var(--color-white);
   --ui-tooltip-radius: var(--ui-radius-control);
-  --ui-tooltip-shadow: var(--ui-shadow-float);
   --ui-segment-surface: var(--ui-surface-muted);
   --ui-segment-border: transparent;
   --ui-segment-shadow: none;
@@ -115,12 +113,6 @@
   /* Mail is under active parallel development. Remove this one compatibility
      alias when MailOverview migrates to --ui-shadow-surface. */
   --theme-shadow-elevated: var(--ui-shadow-surface);
-  --ui-shadow-frame:
-    0 -3px 10px -8px rgb(15 23 19 / 0.16), 0 0 16px -9px rgb(15 23 19 / 0.16), 0 14px 36px -32px rgb(15 23 19 / 0.22),
-    0 1px 5px rgb(15 23 19 / 0.04);
-  --ui-shadow-float: 0 18px 46px -18px rgb(0 0 0 / 0.22), 0 5px 16px rgb(0 0 0 / 0.08);
-  --ui-shadow-hover: 0 12px 28px -24px rgb(22 38 29 / 0.28), 0 3px 12px rgb(22 38 29 / 0.06);
-  --ui-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.1), 3px 0 6px -5px rgb(0 0 0 / 0.1);
   --ui-paper-highlighted: var(--ui-surface-subtle);
 }
 
@@ -173,7 +165,6 @@
   --ui-field-focus-border: transparent;
   --ui-divider: var(--ui-border);
   --ui-control-recess: none;
-  --ui-control-press: inset 0 1px 3px rgb(0 0 0 / 0.48);
   --ui-check-surface: var(--ui-field);
   --ui-check-border: var(--ui-border-strong);
   --ui-check-shadow: none;
@@ -191,12 +182,23 @@
   --ui-segment-active-text: var(--color-zinc-100);
   --ui-pagination-current-text: var(--color-blue-200);
   --ui-shadow-surface: none;
-  --ui-shadow-frame:
-    inset 0 0 0 1px var(--ui-border), 0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56),
-    0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);
-  --ui-shadow-float: 0 22px 54px -18px rgb(0 0 0 / 0.72), 0 6px 18px rgb(0 0 0 / 0.3);
-  --ui-shadow-hover: 0 14px 32px -24px rgb(0 0 0 / 0.8), 0 3px 12px rgb(0 0 0 / 0.22);
-  --ui-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.28), 3px 0 6px -5px rgb(0 0 0 / 0.28);
+}
+
+/* Cloud's shadow names are aliases of the @k2b/ui layer tokens (layers and
+   shadows, /en/ui/surfaces/elevation). Those tokens live on `.k2b-ui`, the
+   body of every Cloud page, so the aliases resolve there too; each element
+   reads the token of its own theme. */
+.k2b-ui {
+  --ui-shadow-frame: var(--k2b-shadow-frame);
+  --ui-shadow-float: var(--k2b-shadow-float);
+  --ui-context-menu-shadow: var(--k2b-shadow-float);
+  --ui-dropdown-menu-shadow: var(--k2b-shadow-float);
+  --ui-tooltip-shadow: var(--k2b-shadow-float);
+}
+
+.dark .k2b-ui,
+.k2b-ui.dark {
+  --ui-shadow-frame: inset 0 0 0 1px var(--ui-border), var(--k2b-shadow-frame);
 }
 
 /* Custom properties resolve where declared. Each app scope must re-read its
