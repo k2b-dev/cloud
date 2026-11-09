@@ -217,19 +217,26 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       await page.setContent(`<!doctype html>
         <style>
           body { margin: 0; font: 16px/20px sans-serif; }
-          p { width: 150px; margin: 20px; }
+          p { margin: 20px; white-space: nowrap; }
           ::view-transition-group(root) { animation-duration: 400ms; }
           iframe { position: absolute; top: 200px; left: 100px; width: 200px; height: 100px; border: 0; }
         </style>
-        <p>Some words before <a id="link" href="#">a link that wraps</a></p>
+        <p>Some words before <a id="link" href="#">a<br>b</a></p>
         <button id="target" style="position: absolute; top: 120px; left: 20px">Target</button>
         <iframe srcdoc="<button id=inner style='margin: 30px'>Inner</button>"></iframe>`);
       await page.frameLocator("iframe").locator("#inner").waitFor();
       const hovered = (selector: string, frame = page.mainFrame()) =>
         frame.waitForFunction((selector) => document.querySelector(`${selector}:hover`) !== null, selector);
 
-      // The link's box spans two lines; its center lies between them, beside the link's text.
-      expect(await page.locator("#link").evaluate((element) => element.getClientRects().length)).toBe(2);
+      // The link's box spans two lines whatever the font: "a" ends the first line, "b" starts the second, so the
+      // center of the whole box lies between the lines, beside the link's text.
+      expect(
+        await page.locator("#link").evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const center = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return center !== null && element.contains(center);
+        }),
+      ).toBe(false);
       await hoverInPlace(page.locator("#link"));
       await hovered("#link");
 
