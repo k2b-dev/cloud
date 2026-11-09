@@ -169,7 +169,7 @@ export default function HomePage(props: HomePageProps) {
                   <FeatCodeIcon />
                   feat/code
                 </p>
-                <h2 id="cloud-feat-code-title">What if n8n, Workers, TypeScript, SQLite and S3 were one thing?</h2>
+                <h2 id="cloud-feat-code-title">What if n8n, Workers, TypeScript, SQL and S3 were one thing?</h2>
               </div>
               <div class="cloud-feat-code-intro">
                 <p class="cloud-feat-code-lead">
@@ -182,11 +182,11 @@ export default function HomePage(props: HomePageProps) {
                 <p class="cloud-formula">
                   <span>n8n</span>
                   <i>+</i>
-                  <span>Workers</span>
+                  <span>Worker</span>
                   <i>+</i>
-                  <span>TypeScript</span>
+                  <span>TS</span>
                   <i>+</i>
-                  <span>SQLite</span>
+                  <span>SQL</span>
                   <i>+</i>
                   <span>S3</span>
                   <i>=</i>
