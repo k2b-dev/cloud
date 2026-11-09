@@ -353,12 +353,22 @@ test("ToolbarDock keeps two pills at the edges and brings moved actions back whe
     });
     // Both pills sit at the dock's inner edge, 1rem from the column edge.
     expect(edges).toEqual({ start: 16, end: 16 });
+    // Actions with `text` show their labels while the pill has room.
+    const page2 = page.getByRole("toolbar", { name: "Page" });
+    const compact = () => page2.evaluate((toolbar) => toolbar.hasAttribute("data-compact"));
+    const labels = () => page2.locator(".k2b-toolbar__text:visible").count();
+    expect(await compact()).toBe(false);
+    expect(await labels()).toBe(2);
     await page.evaluate(() => window.toolbarFixture.resizeDock(360));
     await frame();
     expect((await moved("Formatting")).length).toBeGreaterThan(0);
+    // When room runs out, the labels go first, before any of the pill's actions moves into More.
+    expect(await compact()).toBe(true);
+    expect(await labels()).toBe(0);
     await page.evaluate(() => window.toolbarFixture.resizeDock(720));
     await frame();
     expect([...(await moved("Formatting")), ...(await moved("Page"))]).toEqual([]);
+    expect(await labels()).toBe(2);
   } finally {
     await page.close();
   }

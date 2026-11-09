@@ -24,6 +24,20 @@ Use `variant="floating"` for selection actions at the bottom of a column. It is 
 
 The floating toolbar is a pill on layer 3 of [Layers and shadows](/en/ui/surfaces/elevation): fully rounded, a light 1 px edge, a solid elevated surface, and `--k2b-shadow-toolbar`. A toolbar that stays open is softer than a menu that opens for a moment, so it never uses the menu shadow. Apps do not add a shadow of their own.
 
+A floating toolbar never reaches past its row. It measures the row, not the window, in three steps: with room, an action with `text` shows its label beside the icon; when the row gets narrow, all labels go first and every action keeps its icon (with its name as tooltip and accessible name); only then do actions move into More by `priority`. A fixed control such as a `Button` with a word keeps it.
+
+`edge="top"` makes the floating toolbar stick to the top of its column in its place in the flow, for example above the newest message of a conversation; the default `bottom` floats it at the bottom.
+
+```tsx
+<Toolbar label="Conversation actions" variant="floating" edge="top">
+  <Button variant="ghost" onClick={reply}><i class="ti ti-arrow-back-up" aria-hidden="true" />Reply</Button>
+  <Toolbar.Action label="Reply all" icon="ti ti-arrow-back-up-double" text priority={2} />
+  <Toolbar.Action label="Forward" icon="ti ti-arrow-forward-up" text priority={2} />
+  <Toolbar.Separator />
+  <Toolbar.Action label="Done" icon="ti ti-check" text priority={1} />
+</Toolbar>
+```
+
 For two pills at the start and end edge of one column, wrap both in `ToolbarDock`. The dock is the one floating row: it sticks to the bottom of the column, places the first pill at the start edge and the last at the end edge, and keeps the end of the content reachable above it. Each pill measures its own room and moves its lower-priority actions into More when the row gets narrow.
 
 ```tsx
@@ -75,7 +89,7 @@ container clips it.
 
 ## Toolbar.Action
 
-Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its tooltip, and its row in the More menu; `icon` takes a class such as `"ti ti-archive"`. `disabled` applies to both the button and its menu row. `onClick` runs from either place.
+Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its tooltip, and its row in the More menu; `icon` takes a class such as `"ti ti-archive"`. `disabled` applies to both the button and its menu row. `onClick` runs from either place. `text` also shows the label beside the icon while a floating toolbar has room; the labels are the first thing a narrow toolbar gives up.
 
 In a floating toolbar, `priority` lets an action move into More when the column is too narrow. **1 is most important.** Larger numbers move first; equal priorities move the later action first. Omit `priority` to keep an action fixed. More is the last control and lists the moved actions in their original order. Widening the column brings them back. Inline toolbars keep every action in place; use `wrap` there.
 

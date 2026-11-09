@@ -41,6 +41,12 @@ test("floating Toolbar is a pill with the toolbar shadow, reserves height, and k
   const strip = declarations(".k2b-ui .k2b-toolbar-float");
   expect(strip.get("position")).toEqual(["sticky"]);
   expect(strip.get("margin-block-start")).toEqual(["auto"]);
+  // `edge="top"` sticks the strip to the top of its column in its place in the flow.
+  const top = declarations('.k2b-ui .k2b-toolbar-float[data-edge="top"]');
+  expect(top.get("inset-block")).toEqual(["0 auto"]);
+  expect(top.get("margin-block-start")).toEqual(["0"]);
+  // Compact: labels go before any action moves into More.
+  expect(declarations(".k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__text").get("display")).toEqual(["none"]);
   expect(strip.get("pointer-events")).toEqual(["none"]);
   expect(declarations(".k2b-ui .k2b-toolbar .k2b-toolbar__hint").get("position")).toEqual(["absolute"]);
   // Measuring never shows or hides More, which would drop focus from it: an idle More keeps its box out of the flow.
