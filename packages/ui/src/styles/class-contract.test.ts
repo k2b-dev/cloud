@@ -223,7 +223,10 @@ const splitTopLevel = (text: string, separator: RegExp): string[] => {
   return parts;
 };
 
-const hasRule = (token: string) => new RegExp(`\\.${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(styles);
+// Every class the shipped stylesheet names, read once: a fresh pattern over the whole stylesheet per token took
+// seconds and ran past the test timeout on a loaded machine.
+const styledClasses = new Set(Array.from(styles.matchAll(/\.([\w-]+)/g), (match) => match[1]!));
+const hasRule = (token: string) => styledClasses.has(token);
 
 describe("@k2b/ui package class contract", () => {
   test("renders no class the shipped stylesheet cannot style", () => {

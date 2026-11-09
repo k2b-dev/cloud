@@ -65,9 +65,13 @@ test("the server renders the waiting row of every case as the first client frame
       }),
     );
     expect([name, waitingStripSummary(html)]).toEqual([name, fixture.server]);
-    // Chats with an open question carry the dot from the first paint, in the list and in the phone menu's data.
+    // Chats with an open question carry the dot from the first paint, in the list, the collapsed rail's chat menu, and
+    // the phone menu's data.
     if (name === "three") {
-      expect(html.match(/<i class="assistant-chat-waiting"/g)?.length).toBe(2);
+      expect(html.match(/<span class="assistant-chat-marker" data-tone="attention"[^>]*><i class="assistant-chat-waiting"/g)?.length).toBe(
+        2,
+      );
+      expect(html.match(/<i class="assistant-chat-waiting"/g)?.length).toBe(4);
       expect(html.match(/"status":\{"icon":"assistant-chat-waiting"/g)?.length).toBe(2);
     }
   }
