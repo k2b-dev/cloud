@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -86,7 +86,15 @@ afterAll(() => rmSync(fixture.directory, { recursive: true, force: true }));
 
 describe("@k2b/ui fields without a suggestion", () => {
   test("render the same server markup as before field suggestions, byte for byte, hydration markers included", () => {
-    const rendered = fixture.render();
+    // The date field's status line names its day relative to today ("Wednesday, 11 days ago"), so the clock stands
+    // on the day the expectation was recorded; otherwise the frozen markup goes stale at every midnight.
+    setSystemTime(new Date("2026-11-08T12:00:00Z"));
+    let rendered: Record<string, string>;
+    try {
+      rendered = fixture.render();
+    } finally {
+      setSystemTime();
+    }
     expect(Object.keys(rendered)).toEqual(Object.keys(expected));
     for (const [name, html] of Object.entries(rendered)) expect(html, name).toBe(expected[name as keyof typeof expected]);
   });
