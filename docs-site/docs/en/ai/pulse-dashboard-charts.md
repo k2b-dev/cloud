@@ -4,22 +4,22 @@ navTitle: Pulse chart columns
 section: AI
 order: 1080
 tags: [pulse, dashboards, charts, sql]
-updated: 2026-11-07
+updated: 2026-11-09
 description: Choose SQL output columns for Pulse dashboard charts.
 ---
 
 # Pulse dashboard chart columns
 
 Save a Pulse dashboard with SQL and an explicit list of output `columns`.
-Choose a panel `kind` and the columns below. The order returned by SQL is the
-order shown; add `ORDER BY` when order matters. Columns outside the saved
+Choose a panel `kind` and the columns below. Add `ORDER BY` when observation
+order matters; ranked lists and Pareto sort by value. Columns outside the saved
 projection never reach the dashboard or its published link.
 
 | Panel kind | SQL column mapping |
 | --- | --- |
 | `number` | One numeric value. Optional DateTime `x` adds a trend; String `unit`, `detail`, `detailTone` add presentation. |
 | `line` | Date, DateTime or DateTime64 `x`, optional `series` group, remaining columns numeric values. |
-| `bar` | Category `x`, optional `series` group, remaining columns numeric values. Existing labels combine category, group and value-column name. |
+| `bar` | Category `x`, optional `series` group, remaining columns numeric values. Multiple series align by category; single-value bars retain source labels and order. |
 | `area`, `areaPercent` | Category `x`, optional `series` group, remaining columns nonnegative numeric values. Aligned stacked amounts or 100% shares. |
 | `budget` | Category `x`, numeric `used` and `limit`, optional numeric `expected`; `unit` is an uppercase ISO 4217 currency such as `EUR`. |
 | `balance` | One row with numeric `start`, `in`, `out`; no `x` or `series`. `unit` is the currency. |
@@ -34,12 +34,57 @@ projection never reach the dashboard or its published link.
 | `sparkline` | One numeric observation column, without `x` or `series`, in SQL order. |
 | `map` | ISO 3166-1 alpha-2 country `x` and one nonnegative numeric value; empty country codes stay off the map. |
 | `table` | Any selected columns, in their saved order. |
+| `barGrouped`, `barStacked`, `barPercent` | Category `x`, optional `series`, remaining values; grouped amounts, stacked amounts, or 100% shares. Stacks require nonnegative values. |
+| `barCompare`, `pareto` | Category `x`, current and previous columns in that order, without `series`. Pareto values must be nonnegative and non-null. |
+| `barRows`, `barList`, `funnelStages` | Category `x` and one value, without `series`: signed rows, nonnegative ranked shares, or ordered funnel stages. |
+| `hbar` | Category `x`, optional `series`, remaining nonnegative values; aligned horizontal comparisons. |
+| `dots` | Category `x`, repeated positive `total`, then nested count columns in descending subset order; optional `series`. Each complete category draws 100 dots including the remainder. |
+| `waterfall` | Category `x`, one value: starting balance, signed changes, then a final null value naming the computed total. |
+| `calendarHeatmap` | ISO day `x` (`YYYY-MM-DD`) and one value; each date appears once. |
+| `sankey` | Exactly `source`, `target`, `value`, without `x` or `series`. Nonempty text endpoints and positive amounts form an acyclic graph. |
+| `treemap` | Label `x`, group in `series`, one nonnegative value. |
+| `bubble` | Numeric `x`, group in `series`, fixed aliases `label`, `y`, optional nonnegative `size`. |
+| `radar` | Axis category `x`, repeated positive `max`, remaining numeric measurements; optional `series`. Every series fills every axis, between zero and max. |
+| `lineForecast` | Date/DateTime `x`, `value`, `forecast` (0 history, 1 forecast), optional paired `low`/`high`; no `series`. Forecast flags form a contiguous suffix ordered by time. |
 
 SQL numeric strings are accepted. A SQL `NULL` stays a missing observation;
 it never becomes zero. Funnel stages and map values require numbers, and a
 gauge requires one value. Line times read in the base timezone, including
 local DateTime text. Viewers keep that timezone while formatting labels in
 their own locale.
+
+Use `funnelStages` for the catalog funnel; saved `funnel` panels retain their
+bar-gauge appearance. Bar series share the category order first encountered
+in SQL, with absent or null observations left as gaps. Aggregate duplicate
+category/series pairs before displaying them. `barRows` accepts negative
+amounts; `barList` ranks nonnegative shares by value. Comparison and Pareto
+measure names come from the two selected
+value-column names. Pareto ranks categories by the current amount, and its
+accessible chart name is the panel title.
+
+Calendar nulls leave empty days. Treemap and bubble rows with missing values
+produce no point, while still consuming their input position. Radar, Pareto,
+Sankey and waterfall reject missing values where their semantics require a
+number. A missing nested count leaves that category's dot matrix empty.
+Forecast values may be null gaps; when bounds are selected, each
+forecast row needs finite `low`/`high` values containing its value. Historical
+bound cells may be null. SQL times still read in the base's timezone.
+
+For example, a flow query can select `shipping_method AS target`, the literal
+`'Orders' AS source`, and `count() AS value`, grouped by shipping method.
+Choose `kind: "sankey"`, `columns: ["source", "target", "value"]` and omit
+`x` and `series`. For grouped bars use category `x` with two value columns;
+`barCompare` interprets those columns as current and previous instead.
+
+Panel widths are `third`, `half`, `twoThirds`, or `full` (2, 3, 4, or 6 desktop
+columns). Phone panels stack at full width. Number panels keep their existing
+section placement.
+
+**Rolling back:** A dashboard saved with a new kind cannot be read by an
+older Pulse version that does not recognize it. Strict stored-definition
+validation then prevents that base's dashboard list from loading. Replace
+or remove unsupported panels before rolling back. Existing dashboards need
+no migration.
 
 Area charts align each series to the category order first encountered in SQL.
 A missing category/series pair stays a gap; duplicate pairs produce a panel

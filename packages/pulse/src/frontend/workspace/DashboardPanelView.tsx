@@ -71,6 +71,9 @@ export default function DashboardPanelView(props: {
     </IconButton>
   );
   const data = () => props.result?.lastGood?.data;
+  const alignedBar = () =>
+    props.panel.kind === "bar" &&
+    (!!props.panel.series || props.panel.columns.filter((name) => name !== props.panel.x && name !== props.panel.series).length > 1);
   const lineResult = createMemo(() => {
     if (!data() || props.panel.kind !== "line") return { value: null, error: false };
     try {
@@ -89,7 +92,7 @@ export default function DashboardPanelView(props: {
   });
   const line = () => lineResult().value;
   const categoryResult = createMemo(() => {
-    if (!data() || !["bar", "funnel"].includes(props.panel.kind)) return { data: [], error: false };
+    if (!data() || !["bar", "funnel"].includes(props.panel.kind) || alignedBar()) return { data: [], error: false };
     try {
       return { data: dashboardCategories(props.panel, data()!, locale()), error: false };
     } catch {
@@ -97,7 +100,11 @@ export default function DashboardPanelView(props: {
     }
   });
   const catalog = createMemo(() => {
-    if (!data()?.rows.length || ["number", "line", "bar", "funnel", "table", "map", "budget", "balance"].includes(props.panel.kind))
+    if (
+      !data()?.rows.length ||
+      ["number", "line", "funnel", "table", "map", "budget", "balance"].includes(props.panel.kind) ||
+      (props.panel.kind === "bar" && !alignedBar())
+    )
       return { options: null, error: false };
     try {
       return { options: dashboardChartRenderOptions(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }), error: false };
@@ -375,7 +382,7 @@ export default function DashboardPanelView(props: {
               </div>
             )}
           </Show>
-          <Show when={props.panel.kind === "bar"}>
+          <Show when={props.panel.kind === "bar" && !alignedBar()}>
             <div class="pulse-dashboard__plot">
               <Chart
                 kind="bar"
@@ -429,9 +436,9 @@ export default function DashboardPanelView(props: {
                   const chart = options();
                   // Pareto labels name its measures, rather than the shared inspector controls.
                   return chart.kind === "pareto" ? (
-                    <Chart {...chart} interactive />
+                    <Chart {...chart} title={props.panel.title} interactive />
                   ) : (
-                    <Chart {...chart} interactive labels={{ interactiveChart: props.panel.title }} />
+                    <Chart {...chart} interactive labels={{ interactiveChart: props.panel.title, interactiveLine: props.panel.title }} />
                   );
                 })()}
               </div>
