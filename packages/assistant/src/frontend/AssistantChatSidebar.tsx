@@ -694,7 +694,6 @@ export function AssistantChatSidebarContent(props: {
             when={!props.search.active()}
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
-
             <Section
               title={copy().results}
               class="assistant-sidebar-results"
