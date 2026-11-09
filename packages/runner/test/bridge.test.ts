@@ -1,4 +1,4 @@
-import { expect, jest, test } from "bun:test";
+import { expect, jest, spyOn, test } from "bun:test";
 import { chmod, mkdtemp, rmdir, symlink, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -150,6 +150,40 @@ test("Core calls use the explicit abort budget rather than Bun's five-minute idl
   );
   await new CoreBridge(key, "http://core", send).configure(new AbortController().signal);
   expect(timeout).toBe(false);
+});
+
+test("SDK model calls retain the run signal and use the existing long-call transport window", async () => {
+  const windows: number[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    windows.push(ms);
+    return new AbortController().signal;
+  });
+  const send: typeof fetch = Object.assign(
+    async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      expect(init?.signal?.aborted).toBe(false);
+      return Response.json(String(url).endsWith(RUNNER_PATHS.config) ? config : { ok: true, data: { data: { output: "done" } } });
+    },
+    { preconnect: fetch.preconnect },
+  );
+  try {
+    const bridge = new CoreBridge(key, "http://core", send);
+    const controller = new AbortController();
+    await bridge.configure(controller.signal);
+    await bridge.call(
+      { runId: INSTALLATION_ID, generation: 1, token: "run-token", operation: "core.ai.generate", input: {} },
+      controller.signal,
+    );
+    expect(windows.at(-1)).toBe(240_000);
+    controller.abort();
+    await expect(
+      bridge.call(
+        { runId: INSTALLATION_ID, generation: 1, token: "run-token", operation: "core.ai.generate", input: {} },
+        controller.signal,
+      ),
+    ).rejects.toBeInstanceOf(Error);
+  } finally {
+    timeout.mockRestore();
+  }
 });
 
 test("mounted runner key requires supervisor ownership, exact 0400 and a regular file", async () => {

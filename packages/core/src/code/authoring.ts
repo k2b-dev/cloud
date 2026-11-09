@@ -20,6 +20,7 @@ import {
   codeInitialFiles,
 } from "./authoring-contracts";
 import { type Code, codeQueryContracts } from "./contracts";
+import { readCodeDetails } from "./database";
 import { simulateCodeEvent } from "./event-preview";
 import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
@@ -209,6 +210,9 @@ export const codeAuthoringServices = {
         },
       ],
     };
+  },
+  async show(input: CodeAuthoringInput<"show">, context: CodeContext): Promise<CodeAuthoringData<"show">> {
+    return { version: 1, ...(await readCodeDetails(input.codeId, context)) };
   },
   async runs(input: CodeAuthoringInput<"runs">, context: CodeContext): Promise<CodeAuthoringData<"runs">> {
     return { version: 1, ...(await listCodeRunsWithEvents(input, context)) };

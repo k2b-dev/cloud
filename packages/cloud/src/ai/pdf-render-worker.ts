@@ -9,7 +9,8 @@ import { z } from "zod";
 const MAX_BYTES = 10 * 1024 * 1024;
 const inputSchema = z.object({
   pdf: z.string().max(Math.ceil((MAX_BYTES * 4) / 3)),
-  pages: z.array(z.number().int().positive()).min(1).max(3),
+  maxPages: z.number().int().positive().max(20).default(20),
+  pages: z.array(z.number().int().positive()).min(1).max(20).optional(),
 });
 const require = createRequire(import.meta.url);
 const root = dirname(require.resolve("pdfjs-dist/package.json"));
@@ -31,11 +32,12 @@ try {
   });
   try {
     const document = await task.promise;
-    if (input.pages.some((page) => page > document.numPages))
+    const selected = input.pages ?? Array.from({ length: Math.min(input.maxPages, document.numPages) }, (_, index) => index + 1);
+    if (selected.some((page) => page > document.numPages))
       throw new Error(`PDF has ${document.numPages} pages. Choose pages within that range.`);
     const pages: { page: number; png: string }[] = [];
     let outputBytes = 0;
-    for (const number of input.pages) {
+    for (const number of selected) {
       const page = await document.getPage(number);
       const original = page.getViewport({ scale: 1 });
       if (!(original.width > 0 && original.height > 0 && Number.isFinite(original.width + original.height)))
@@ -48,7 +50,10 @@ try {
         await page.render({ canvas: canvas as unknown as HTMLCanvasElement, viewport }).promise;
         const png: Uint8Array = canvas.toBuffer("image/png");
         outputBytes += png.byteLength;
-        if (outputBytes > MAX_BYTES) throw new Error("Rendered PDF exceeds the 10 MiB image budget.");
+        if (outputBytes > MAX_BYTES) {
+          if (!input.pages && pages.length) break;
+          throw new Error("Rendered PDF exceeds the 10 MiB image budget.");
+        }
         pages.push({ page: number, png: Buffer.from(png).toString("base64") });
       } finally {
         canvas.width = 0;

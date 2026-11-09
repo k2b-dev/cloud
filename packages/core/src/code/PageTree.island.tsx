@@ -35,7 +35,7 @@ import { type CodePageEventSource, codePageFormBody, requestCodePage } from "./p
 type PageProps = {
   tree: CodePageTree;
   codeId: string;
-  csrf: string;
+  csrf: string | null;
   locale: string;
   /** The reader's time zone, so the server and the browser show the same time. */
   timeZone: string;
@@ -312,7 +312,7 @@ function CodePageContent(props: PageProps) {
    * Shows a tree. Focus goes where the person continues: a new page starts at its heading, a returned form at its
    * first invalid field, otherwise at the control they used; a background load moves focus only back to that control.
    */
-  const show = (tree: CodePageTree, csrf: string, url: string | null, mode: "push" | "replace", focus: "submit" | "keep") => {
+  const show = (tree: CodePageTree, csrf: string | null, url: string | null, mode: "push" | "replace", focus: "submit" | "keep") => {
     const key = focusKey(document.activeElement);
     const previous = page().tree.title;
     setPage({ tree, csrf });
@@ -471,7 +471,7 @@ function CodePageContent(props: PageProps) {
     });
   });
 
-  const csrfField = () => <input type="hidden" name="_csrf" value={page().csrf} />;
+  const csrfField = () => <Show when={page().csrf}>{(token) => <input type="hidden" name="_csrf" value={token()} />}</Show>;
 
   const action = (item: Extract<CodePageNode, { kind: "Button" }>) => (
     <form action={href(item.action)} method="post" data-code-block={item.kind} onSubmit={(event) => void send(event, item, "action")}>

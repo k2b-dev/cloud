@@ -9,6 +9,7 @@ import {
   CloudResourceRefSchema,
 } from "../contracts/capabilities";
 import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
+import { CODE_DATABASE_MESSAGES } from "./database-contract";
 import { hasFileInput } from "./file-ref";
 import * as pageTypes from "./page-authoring-types.ts" with { type: "text" };
 import { CODE_PAGE_LIMITS, CodeChartDescriptionSchema, CodePageTreeSchema } from "./page-contract";
@@ -41,6 +42,7 @@ const quote = JSON.stringify;
 const forbiddenProperties = new Set(["__proto__", "prototype", "constructor"]);
 const reservedExports = new Set([
   "FileRef",
+  "CodeAiTool",
   "Page",
   "Section",
   "Text",
@@ -289,6 +291,13 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
         inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => name !== "file"));
       fields.push({ name: "file", type: "FileRef", required: true });
     }
+    if (["core.ai.generate", "core.ai.decide"].includes(op.capability)) {
+      const properties = inputSchema.properties;
+      if (properties && typeof properties === "object")
+        inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => !["files", "tools"].includes(name)));
+      fields.push({ name: "files", type: "FileRef[]", required: false });
+      if (op.capability === "core.ai.generate") fields.push({ name: "tools", type: "CodeAiTool[]", required: false });
+    }
     const input = schemaTypes(inputSchema, `Input${index}`, fields);
     const output = schemaTypes(op.dataSchema, `Data${index}`);
     declarations.push(
@@ -298,7 +307,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `type Data${index} = ${output.type};`,
     );
     const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<Data${index}>` : `Data${index}`;
-    methods.set(op, `(input: Input${index}) => Promise<${result}>`);
+    methods.set(
+      op,
+      Object.keys(op.refs).length
+        ? `(input: Input${index}) => Promise<${result}>`
+        : `((input: Input${index}) => Promise<${result}>) & CodeAiTool`,
+    );
   }
   const handleNames = new Map<string, string>();
   for (const [index, handle] of manifest.handles.entries()) {
@@ -342,16 +356,19 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `export type CodeEvents = { ${events.join("; ")} };`,
       `/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
 export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
-      `export type CodeApp = {
-  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp;
+      `export type CodeApp<Variables extends object = {}> = {
+  /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
+  use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  use<Added extends object = {}>(path: string, middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
   /** The checked event is scoped to this resource Code owner. */
-  on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  get(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  post(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  put(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  delete(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  all(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
 };`,
       "export declare const app: CodeApp;",
     );
@@ -377,6 +394,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     pageTypes.default.replace(/^import[^\n]*\n/gm, ""),
   );
   declarations.push("export declare const secrets: Readonly<Record<string, CodeSecret>>;", "export declare const http: CodeHttp;");
+  if (options.mode !== "code_run") declarations.push("export declare const db: CodeDatabase;");
   const runtimeExports = [
     "export const secrets = __codeSdk.secrets;",
     "export const http = __codeSdk.http;",
@@ -384,7 +402,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     "export const CodeError = __codeSdk.CodeError;",
     ...manifest.apps.map((app) => `export const ${app.exportName} = __codeSdk.namespaces[${quote(app.exportName)}];`),
     ...(options.owner ? ["export const owner = __codeSdk.owner;"] : []),
-    ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;"]),
+    ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;", "export const db = __codeSdk.db;"]),
   ];
   const runtimeManifest = {
     apps: manifest.apps.map(({ exportName }) => ({ exportName })),
@@ -402,6 +420,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     appMethods: manifest.appMethods,
     events: manifest.events.map(({ type, version, place }) => ({ type, version, place })),
     pageLimits: CODE_PAGE_LIMITS,
+    databaseMessages: CODE_DATABASE_MESSAGES,
   };
   return {
     declarations: `${declarations.join("\n\n")}\n`,

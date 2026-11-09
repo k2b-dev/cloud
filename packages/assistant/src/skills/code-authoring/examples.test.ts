@@ -11,7 +11,13 @@ import {
   generateCodeSdk,
   validateCodePage,
 } from "@k2b/cloud/code";
-import { type CapabilityManifest, CapabilityManifestSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
+import {
+  type CapabilityManifest,
+  CapabilityManifestSchema,
+  CodeHttpRequestSchema,
+  CodeSecretBindingSchema,
+  capabilityActionPolicy,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { acceptanceChecker } from "../../../../core/src/code/acceptance.test-fixture";
 import { codePolicyPreset, codePolicyRow } from "../../../../core/src/code/policy-contracts";
@@ -164,6 +170,58 @@ test("no example calls an operation that never runs unattended", () => {
       : [],
   );
   expect(never).toEqual([]);
+});
+
+test("the webhook example declares the bound service and acts only on confirmed service state", async () => {
+  const example = passing().find((example) => example.source.includes("secrets.EVENTS_API"));
+  if (!example?.result?.ok) throw new Error("Missing checked webhook example");
+  expect(example.result.manifest.internet).toEqual(["https://events.example.com"]);
+  const section = docs.find((doc) => doc.name === "references/access.md")!.text.split("## Webhooks (R1: ohne Secret)")[1]!;
+  const binding = CodeSecretBindingSchema.parse(JSON.parse(section.match(/```json\n([\s\S]*?)```/)![1]!));
+  expect(example.result.manifest.internet).toContain(binding.origin);
+  for (const status of ["ready", "cancelled", "malformed"]) {
+    const calls: { operation: string; input: unknown }[] = [];
+    const bridge = {
+      async call(operation: string, input: unknown) {
+        calls.push({ operation, input });
+        if (operation === "http.fetch") {
+          const request = CodeHttpRequestSchema.parse(input);
+          expect(request.url).toBe(`${binding.origin}${binding.pathPrefix}/evt_1`);
+          expect(binding.headers).toContain("authorization");
+          expect(request.headers).toEqual({ authorization: "Bearer [secret:EVENTS_API]" });
+          return {
+            status: 200,
+            headers: {},
+            body: Buffer.from(
+              status === "malformed" ? "not-json" : JSON.stringify({ id: "evt_1", status, title: "Bestätigte Rückmeldung" }),
+            ).toString("base64"),
+          };
+        }
+        expect(operation).toBe("spaces.task.create");
+        expect(input).toMatchObject({
+          call: { input: { title: "Bestätigte Rückmeldung" } },
+          metadata: { idempotencyKey: "service-event:evt_1" },
+        });
+        return {};
+      },
+    };
+    const module = await load(example.result.bundle);
+    const response = await module["route:POST:/hooks/events"]!(
+      {
+        codeId: "c_webhook",
+        method: "POST",
+        path: "/hooks/events",
+        query: "",
+        params: {},
+        contentType: "application/json",
+        body: JSON.stringify({ id: "evt_1", status: "ready", title: "Untrusted title" }),
+        user: null,
+      },
+      bridge,
+    );
+    expect(response).toMatchObject({ kind: "json", status: status === "ready" ? 200 : status === "malformed" ? 502 : 409 });
+    expect(calls.map((call) => call.operation)).toEqual(status === "ready" ? ["http.fetch", "spaces.task.create"] : ["http.fetch"]);
+  }
 });
 
 test("every fixture runs against the example above it with the fake bridge and meets its expectations", async () => {

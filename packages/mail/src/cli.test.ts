@@ -427,6 +427,7 @@ test("conversation drafts lists resumable work for one conversation", async () =
       intent: "reply",
       subject: "Re: Support request",
       bodyPreview: "We are looking into this.",
+      suggestion: false,
       createdByDisplayName: "Writer",
       updatedAt: "2026-07-23T09:00:00.000Z",
     },

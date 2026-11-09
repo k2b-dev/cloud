@@ -146,8 +146,9 @@ API keys or scopes cannot replace this chain.
 Responses use `RunnerCallResponse`: `{ ok: true, data }` or
 `{ ok: false, error: { code, status?, origin? } }`. For a failed capability call,
 `error.status` preserves the capability dispatch HTTP status (400–599) in the
-stored call result. This includes failures returned by Cloud before the target
-application runs. Core separately records `refusalKind` on each failed admitted
+stored call result. This includes Core refusals and failures returned by Cloud
+before the target application runs. Supervisor failures and older stored calls
+may omit the status; the SDK defaults it to 503. Core separately records `refusalKind` on each failed admitted
 call: `target_refused` for a target application's 403 or 404, `policy` for a
 policy or unattended-operation refusal, `approval` for `code_approval_required`,
 `code_approval_revoked` or `code_hash_mismatch`, `app_not_allowed` when app

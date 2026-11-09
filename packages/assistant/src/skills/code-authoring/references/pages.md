@@ -139,8 +139,12 @@ import { app, jsx, owner, Page, Notice, Stats, Stat, Chart, Table, Column } from
 const TEAM = "00000000-0000-4000-8000-0000000000aa";
 const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length}+` : items.length);
 
-app.get("/", async c => {
+app.use(async (c, next) => {
   if (!c.user?.groupIds.includes(TEAM)) return c.json({ error: "Forbidden" }, 403);
+  return next();
+});
+
+app.get("/", async c => {
   const { data: open, page: openPage } = await owner.conversation.list({ view: "needs_action", limit: 50 });
   const { data: waiting, page: waitingPage } = await owner.conversation.list({ view: "waiting", limit: 50 });
   const rows = open.map(item => ({ title: item.title, from: item.participants, messages: item.messageCount }));
@@ -173,8 +177,10 @@ visible again.
 
 ## Forms
 
-A `Form` POSTs its fields to an own route. Cloud adds and removes the CSRF
-token; `_csrf` is a reserved field name. The handler answers with:
+A `Form` POSTs its fields to an own route. On non-public pages, Cloud adds
+and removes the session-bound CSRF token; public forms omit it. `_csrf` is a
+reserved field name. Public forms must target public POST routes; for a private
+action, open its non-public page first to obtain a token. The handler answers with:
 
 - `c.page(...)`: replaces the page in place. To report invalid input, return
   the form again with the submitted values and an `error` on each wrong field.
@@ -297,3 +303,50 @@ export default app;
 
 Signed-in page requests share a limit of 20 requests per minute per visitor,
 across Code pages. Public routes retain their per-IP and per-Code limits.
+
+## Middleware and request variables
+
+`app.use(async (c, next) => …)` runs before all HTTP routes registered after
+it. `app.use("/private", …)` applies to `/private` and its child paths, but not
+`/privately`. Write the optional prefix as a string literal of path segments;
+path variables and casts are rejected. Use `/` or omit it for all paths. Several middleware functions run in
+registration order. Code after `await next()` runs in reverse order as the
+handler returns. Return a context Response to stop, or call `next()` once.
+Use `return next()` when no work follows it. Catch errors around `await next()`
+to return your own failure response. Check access before calling `next()`:
+work already started downstream is allowed to finish. Without a Response or
+a call to `next()`, the request fails with `code_invalid_response`.
+
+Declare request variables once with the generic on `use`, and capture its
+returned app for the later registrations:
+
+<!-- check: personal -->
+```ts
+import { app } from "@sdk";
+type Variables = { kunde: { id: string }; requestLabel: string };
+const routes = app.use<Variables>(async (c, next) => {
+  c.set("kunde", { id: c.req.query("kunde") ?? "default" });
+  c.set("requestLabel", "Account");
+  return next();
+});
+routes.get("/account", c => c.json({
+  customerId: c.get("kunde").id,
+  label: c.get("requestLabel"),
+}));
+export default routes;
+```
+
+`c.set` accepts only declared keys and their value types; `c.get` returns
+the declared value type. Values live for one request, including while it
+awaits SDK calls. They are never copied to the next request. Initialize a
+variable before reading it; if it may be missing, include `undefined` in
+its declared type. A prefix-scoped initializer must cover every route that
+reads its variables. `app` and the returned `routes` register on the same
+app; the return carries the variable types for subsequent handlers.
+
+Middleware runs on matching public routes too; `c.user` remains `null`.
+[Access checks](access.md#zugriff-pr%C3%BCfen) shows how to keep public paths reachable.
+SDK calls in middleware use the same Code account, approval and declared-set
+checks as calls in handlers. Register `use` at module scope, as a statement
+or as the initializer of a `const` binding. Schedules and events do not run
+HTTP middleware.

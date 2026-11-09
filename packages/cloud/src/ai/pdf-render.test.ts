@@ -29,7 +29,8 @@ test.skipIf(process.platform !== "linux")("PDF renderer selects one-based pages 
 });
 
 test.skipIf(process.platform !== "linux")("PDF renderer rejects invalid selection, oversized inputs and damaged documents", async () => {
-  for (const pages of [[], [0], [1, 1], [1, 2, 3, 4]]) expect(PdfPages.safeParse(pages).success).toBe(false);
+  for (const pages of [[], [0], [1, 1], Array.from({ length: 21 }, (_, index) => index + 1)])
+    expect(PdfPages.safeParse(pages).success).toBe(false);
   await expect(renderPdfPages(new Uint8Array(PDF_MAX_BYTES + 1))).rejects.toThrow("10 MiB");
   await expect(renderPdfPages(new TextEncoder().encode("not a PDF"))).rejects.toThrow("invalid or damaged");
   await expect(renderPdfPages(visionPdfFixture(), [3])).rejects.toThrow("PDF has 2 pages");
@@ -42,7 +43,7 @@ test.skipIf(process.platform !== "linux")("PDF rendering cancellation terminates
   const pending = renderPdfPages(visionPdfFixture(), [1], controller.signal);
   controller.abort();
   await expect(pending).rejects.toBeInstanceOf(Error);
-  expect((await renderPdfPages(visionPdfFixture())).pages.map((page) => page.page)).toEqual([1]);
+  expect((await renderPdfPages(visionPdfFixture())).pages.map((page) => page.page)).toEqual([1, 2]);
 });
 
 test.skipIf(process.platform !== "linux")("PDF decoder keeps a fixed thread set so its memory limit holds on any core count", async () => {
@@ -60,7 +61,7 @@ test.skipIf(process.platform !== "linux")("PDF decoder keeps a fixed thread set 
       for (const [name, count] of threadCounts(spawned.value.pid)) peak.set(name, Math.max(peak.get(name) ?? 0, count));
       await Bun.sleep(1);
     }
-    expect((await render).pages).toHaveLength(1);
+    expect((await render).pages).toHaveLength(2);
     // Each pool must be seen, so a renamed thread fails here instead of passing unchecked.
     expect(peak.get("tokio-rt-worker")).toBeGreaterThan(0);
     expect(peak.get("tokio-rt-worker")).toBeLessThanOrEqual(2);

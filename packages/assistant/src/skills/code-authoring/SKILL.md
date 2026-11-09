@@ -66,6 +66,14 @@ stays with a person. Open-ended routines schedule `core.ai.chat(chatId).run` in 
 owner's original Gustav chat; deterministic routines keep explicit operations.
 Automatic replies remain reference evidence and are not rebuilt as sending Code.
 
+## Code-owned database
+
+Every lasting Code has its own lazy SQLite database through `db` from `@sdk`.
+It survives versions and is deleted with the Code or owner. Always bind SQL
+parameters; use atomic `db.batch` for related writes. The checker records DB
+use. `code_run` has no lasting owner and cannot use `db`. Read [Data](references/data.md)
+and start with the [database template](references/template-database.md).
+
 ## Choose the building block
 
 | Need | Use | Read |
@@ -73,6 +81,7 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | React to each incoming message of a mailbox | `app.on("mail.message.received", …)` in mailbox Code | [Events](references/events.md) |
 | Sort, tag, assign, set status, summarise, draft a reply | Mail Actions on `owner` | [Capabilities](references/capabilities.md), [mail template](references/template-mail-automation.md) |
 | Run at a local time, weekly or once | `app.schedule({ cron | at, timeZone?, name?, title? }, handler)` | [Schedules](references/schedules.md) |
+| Run a model loop with bound SDK tools or FileRefs | `core.ai.generate({ tools: […], files: […] })` | [AI](references/ai.md), [FileRef](references/file-ref.md) |
 | Summarise or extract fields with AI | `core.ai.generate` | [AI](references/ai.md) |
 | Classify with probabilities, such as category and urgency | `core.ai.decide` | [AI](references/ai.md) |
 | Put a result into the owner's Gustav chat | `core.ai.chat(chatId).deliver` (personal Code) | [AI](references/ai.md), [weekly report](references/template-weekly-report.md) |
@@ -83,7 +92,7 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | A page with key figures, charts and tables | `app.get` with `c.page(<Page>…)`: `Stats`/`Stat`, `Chart.*`, `Table`/`Column` | [Pages](references/pages.md), [dashboard](references/template-dashboard-page.md) |
 | A form that changes something | `Form` with `Field.*`, handled by `app.post` | [Pages](references/pages.md), [form app](references/template-form-app.md) |
 | Show one record | `Detail` with `Item` | [Pages](references/pages.md) |
-| Keep data between runs | State in the owning app, read again each run | [Data](references/data.md) |
+| Keep Code-owned data between runs | `db.query`, `db.exec`, atomic `db.batch` | [Data](references/data.md) |
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
@@ -91,11 +100,23 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 
 ## Zugriff prüfen
 
-Check `c.user.id`, `username`, `groupIds` or `groupNames` explicitly before
-reading data or performing an effect, in every handler. Never compare an
-identifier against a mixed list. [Access checks](references/access.md#zugriff-pr%C3%BCfen)
+Start with `app.use("/private", async (c, next) => { … })` before protected
+routes. Compare `c.user.id`, `username`, `groupIds` or `groupNames` explicitly;
+return a 403 Response to deny or `return next()` to continue. Add route-specific
+checks in handlers. Middleware covers every later matching HTTP route; a global
+access check must let intended public routes through, for example by using a
+private path prefix. Never compare an identifier against a mixed list. [Access checks](references/access.md#zugriff-pr%C3%BCfen)
 shows fixed user IDs, handles, groups and a Grids allowlist; each denied
 request returns 403. Public routes have `c.user === null`.
+
+## Webhooks (R1: ohne Secret)
+
+Use a public POST route; R1 has no signature verification and forwards no
+incoming headers or cookies to Code. **ID nehmen → beim Dienst nachlesen → handeln**:
+read only the notification's ID, fetch the real state through `http.fetch`
+with a secret placeholder and approved origin, then act. Never put a secret
+in the source or a token in the URL. See the [checked webhook example and
+secret binding](references/access.md#webhooks-r1-ohne-secret).
 
 ## Rules that hold everywhere
 

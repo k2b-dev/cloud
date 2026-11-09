@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
-import { codeAiBudgetRemainder, codeAiReferenceCost } from "../../../core/src/code/ai-budget";
+import { codeAiBudgetRemainder, codeAiReferenceCost, codeAiReservesAttemptBudget } from "../../../core/src/code/ai-budget";
 import { aiModelFixture } from "../ai/model-fixture";
 
 const profiles = [aiModelFixture({ id: "clef", pricing: { inputPerMillion: 1, outputPerMillion: 2 } })];
@@ -64,4 +64,38 @@ test("failed generation settles measured repairs and known zero but keeps unknow
   expect(codeAiReferenceCost("core.ai.generate", failed({ input: 0, output: 0 }), profiles, "1")).toBe("0.000000000000");
   for (const usage of [null, { input: -1, output: 0 }, { input: 2 }])
     expect(codeAiReferenceCost("core.ai.generate", failed(usage), profiles, "1")).toBe("1");
+});
+
+test("loop settlement sums every model and failed fallback without freeing unknown usage", () => {
+  const models = [aiModelFixture({ id: "vision", pricing: { inputPerMillion: 2, outputPerMillion: 4 } }), ...profiles];
+  const usage = {
+    input: 30,
+    output: 10,
+    byModel: [
+      { model: { id: "vision" }, input: 10, output: 5 },
+      { model: { id: "clef" }, input: 20, output: 5 },
+    ],
+  };
+  const value = { model: { id: "clef" }, usage };
+  const success = { ok: true, data: { data: value } };
+  for (const capability of ["core.ai.generate", "core.ai.decide"]) {
+    expect(codeAiReferenceCost(capability, success, models, "1")).toBe("0.000070000000");
+    expect(
+      codeAiReferenceCost(capability, { ok: false, error: { code: "quota_exhausted", details: { aiUsage: value } } }, models, "1"),
+    ).toBe("0.000070000000");
+    expect(
+      codeAiReferenceCost(capability, { ok: false, error: { code: "quota_exhausted", details: { aiUsageUnknown: true } } }, models, "1"),
+    ).toBe("1");
+  }
+});
+
+test.each(["core.ai.skills.list", "core.ai.skill.read", "core.ai.chats.search", "core.ai.skill.reference.read", "core.ai.chat.read"])(
+  "%s does not enter inference reservation",
+  (capability) => expect(codeAiReservesAttemptBudget(capability)).toBe(false),
+);
+
+test("synchronous inference keeps attempt admission while chat turns use their own daily and interactive admission", () => {
+  for (const capability of ["core.ai.generate", "core.ai.decide"]) expect(codeAiReservesAttemptBudget(capability)).toBe(true);
+  for (const capability of ["core.ai.chat.run", "core.ai.chat.run.read", "core.ai.chat.deliver", "mail.message.read"])
+    expect(codeAiReservesAttemptBudget(capability)).toBe(false);
 });

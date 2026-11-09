@@ -13,6 +13,7 @@ export type CodeAnalysis = {
   permissions: CodePermission[];
   entrypoints: CodeVersionManifest["entrypoints"];
   ai: boolean;
+  database: boolean;
   internet: string[];
   modules: string[];
 };
@@ -78,7 +79,15 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   include(request.entry);
   let collecting = false;
   const checker = program.getTypeChecker();
-  const result: CodeAnalysis = { diagnostics: [], permissions: [], entrypoints: [], ai: false, internet: [], modules: [...reachable] };
+  const result: CodeAnalysis = {
+    diagnostics: [],
+    permissions: [],
+    entrypoints: [],
+    ai: false,
+    database: false,
+    internet: [],
+    modules: [...reachable],
+  };
   const report = (node: ts.Node, code: string, message: string) => {
     const sf = node.getSourceFile();
     const location = sf.getLineAndCharacterOfPosition(node.getStart(sf));
@@ -127,11 +136,45 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     }
     return { base, path };
   }
+  function sdkOperation(expression: ts.Expression) {
+    for (const signature of checker.getTypeAtLocation(expression).getCallSignatures()) {
+      const op = signature.declaration && appOperations.get(signature.declaration);
+      if (op) return { op, target: null };
+    }
+    const { base, path } = member(expression);
+    const target = handle(base);
+    if (!target) return null;
+    const appId = target.type === "cloud.app" ? target.ids?.[0] : target.type.split(".")[0];
+    const op = request.sdk.manifest.operations.find(
+      (op) => op.appId === appId && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === path.join("."),
+    );
+    return op ? { op, target: op.target ? target : null } : null;
+  }
+  /** The sole detached position is a literal tools element of a real generated AI call. */
+  function aiToolElement(node: ts.Expression) {
+    let value = node;
+    while (ts.isParenthesizedExpression(value.parent)) value = value.parent;
+    const array = value.parent;
+    if (!ts.isArrayLiteralExpression(array) || !array.elements.includes(value)) return null;
+    const property = array.parent;
+    if (
+      !ts.isPropertyAssignment(property) ||
+      property.initializer !== array ||
+      !((ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === "tools")
+    )
+      return null;
+    const object = property.parent;
+    if (!ts.isObjectLiteralExpression(object) || !ts.isCallExpression(object.parent) || object.parent.arguments[0] !== object) return null;
+    const call = sdkOperation(object.parent.expression);
+    if (!call || !["core.ai.generate", "core.ai.decide"].includes(call.op.capability)) return null;
+    return sdkOperation(node);
+  }
   const signatureInSdk = (node: ts.CallExpression) =>
     checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
   // Bind calls to declarations from this generated SDK, including namespace aliases and
   // callable factory/method intersections. Spelling alone must never identify a factory.
   const appOperations = new Map<ts.Node, CodeSdkOperation>();
+  const operationDeclarations = new Set<ts.Node>();
   const sdkNamespaces = new Set<ts.Type>();
   const factoryDeclarations = new Set<ts.Node>();
   const sdkSource = program.getSourceFile(root + "sdk.d.ts")!;
@@ -143,6 +186,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     for (const segment of path) type = type && propertyType(type, segment, sdkSource);
     return type;
   };
+  const codeAppSymbol = sdkMemberType("app", [])?.aliasSymbol;
+  const isCodeApp = (type: ts.Type) => !!codeAppSymbol && type.aliasSymbol === codeAppSymbol;
   for (const spec of request.sdk.manifest.handles) {
     if (spec.type === null) continue;
     for (const signature of sdkMemberType(spec.exportName, spec.factoryPath)?.getCallSignatures() ?? []) {
@@ -153,6 +198,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           if (namespace) sdkNamespaces.add(namespace);
           namespace = namespace && propertyType(namespace, segment, sdkSource);
         }
+        for (const method of namespace?.getCallSignatures() ?? []) if (method.declaration) operationDeclarations.add(method.declaration);
       }
     }
   }
@@ -168,7 +214,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       }
     }
     for (const signature of sdkMemberType(app.exportName, op.methodPath)?.getCallSignatures() ?? [])
-      if (signature.declaration) appOperations.set(signature.declaration, op);
+      if (signature.declaration) {
+        appOperations.set(signature.declaration, op);
+        operationDeclarations.add(signature.declaration);
+      }
   }
   const sdkMemberAccess = (node: ts.Node, receiver: ts.Expression): boolean => {
     if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
@@ -189,6 +238,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
     const use = wrapped.parent;
     return (
+      aiToolElement(node) !== null ||
       sdkMemberAccess(use, wrapped) ||
       (ts.isCallExpression(use) && use.expression === wrapped) ||
       (allowJsx &&
@@ -215,6 +265,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   function sdkValue(type: ts.Type, ancestors = new Set<ts.Type>()): boolean {
     if (
       sdkNamespaces.has(type) ||
+      isCodeApp(type) ||
       sdkHandle(type) ||
       type.getCallSignatures().some((signature) => signature.declaration && factoryDeclarations.has(signature.declaration))
     )
@@ -273,7 +324,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     let wrapped = node;
     while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
     const use = wrapped.parent;
+    const app = isCodeApp(checker.getTypeAtLocation(wrapped));
+    if (app && ts.isExportAssignment(use) && !use.isExportEquals) return;
     if (ts.isCallExpression(wrapped) && ts.isExpressionStatement(use)) {
+      if (app && signatureInSdk(wrapped)) return;
       const declaration = checker.getResolvedSignature(wrapped)?.declaration;
       if (declaration && factoryDeclarations.has(declaration)) return;
     }
@@ -373,6 +427,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   // Permission calls and schedule handlers, joined after all files are visited: a handler may be declared anywhere.
   const placed: { index: number; node: ts.Node }[] = [];
   const handlers: { handler: ts.Expression; name: string }[] = [];
+  const middleware: { path: string; handler: ts.Expression }[] = [];
+  const validMiddlewarePath = (path: string) => path.length <= 200 && /^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?)?$/.test(path);
   /** The SDK block a JSX tag names, such as `Form` or `Field.Select`, also under an import alias; null otherwise. */
   const sdkFile = root + "sdk.d.ts";
   function sdkTag(tag: ts.JsxTagNameExpression): string | null {
@@ -449,6 +505,25 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         ) {
           report(node, "code_import_forbidden", "Erlaubt sind nur @sdk und eigene Quelldateien im Code-Projekt.");
         }
+        if (
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(spec) &&
+          spec.text === "@sdk" &&
+          !node.importClause?.isTypeOnly &&
+          node.importClause?.namedBindings &&
+          ts.isNamedImports(node.importClause.namedBindings)
+        ) {
+          for (const binding of node.importClause.namedBindings.elements)
+            if (!binding.isTypeOnly && (binding.propertyName ?? binding.name).text === "db") {
+              if (request.sdk.manifest.mode === "code_run")
+                report(
+                  binding,
+                  "code_db_temporary",
+                  "db gehört zu einem dauerhaften Code. code_run hat keinen Code, der eine Datenbank besitzt.",
+                );
+              else if (collecting) result.database = true;
+            }
+        }
         if (ts.isExportDeclaration(node) && ts.isStringLiteral(spec) && spec.text === "@sdk")
           report(node, "code_reserved_sdk", "Das SDK darf nicht weiter exportiert werden.");
         if (
@@ -461,9 +536,25 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           report(node, "code_reserved_sdk", "Importiere benannte SDK-Exporte.");
       }
     }
+    if (
+      ts.isBindingElement(node) &&
+      ts.isIdentifier(node.name) &&
+      checker
+        .getTypeAtLocation(node.name)
+        .getCallSignatures()
+        .some((signature) => signature.declaration && operationDeclarations.has(signature.declaration))
+    )
+      report(node, "code_detached_sdk_method", "SDK-Methoden dürfen nicht durch Destrukturierung abgelöst werden.");
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const signatures = checker.getTypeAtLocation(node).getCallSignatures();
+      const tool = aiToolElement(node);
+      if (tool) {
+        if (Object.keys(tool.op.refs).length)
+          report(node, "code_unresolved_ref", "Ein KI-Werkzeug darf keine ungebundenen zusätzlichen Ziele haben.");
+        else permission(node, tool.op.capability, tool.target);
+      }
       if (
+        !tool &&
         signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts" && !factoryDeclarations.has(s.declaration)) &&
         !isAllowedSdkReference(node, true)
       )
@@ -524,9 +615,37 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           httpCall(node, name);
         }
         const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
-        if (http) {
+        const database = declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeDatabase";
+        if (database) {
+          if (collecting) result.database = true;
+        } else if (http) {
           // HTTP origin evidence is collected by httpCall above.
         } else if (app && method) {
+          if (method === "use" && collecting) {
+            const path = node.arguments[0];
+            // A type assertion is not evidence of the prefix evaluated at runtime.
+            const paths = node.arguments.length === 1 ? ["/"] : path && ts.isStringLiteralLike(path) ? [path.text] : undefined;
+            const handler = node.arguments[node.arguments.length - 1];
+            const statement = ts.isExpressionStatement(node.parent) && ts.isSourceFile(node.parent.parent);
+            const binding =
+              ts.isVariableDeclaration(node.parent) &&
+              node.parent.initializer === node &&
+              ts.isVariableDeclarationList(node.parent.parent) &&
+              (node.parent.parent.flags & ts.NodeFlags.Const) !== 0 &&
+              ts.isVariableStatement(node.parent.parent.parent) &&
+              ts.isSourceFile(node.parent.parent.parent.parent);
+            if (
+              node.arguments.length < 1 ||
+              node.arguments.length > 2 ||
+              !paths ||
+              paths.length !== 1 ||
+              !validMiddlewarePath(paths[0]!) ||
+              !handler ||
+              (!statement && !binding)
+            )
+              report(node, "code_static_middleware", "Deklariere app.use auf Modulebene mit optionalem konstantem Pfadpräfix.");
+            else middleware.push({ path: paths[0] === "/" ? "/" : paths[0]!.replace(/\/$/, ""), handler });
+          }
           if (method === "on" && collecting) {
             const explicit = node.arguments.length === 3;
             const eventNode = node.arguments[explicit ? 1 : 0];
@@ -614,6 +733,16 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               if (entryNames.has(name)) report(node, "code_duplicate_route", "Diese Route ist bereits registriert.");
               entryNames.add(name);
               if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
+              // A parameterized route may overlap a literal middleware prefix. Attribute conservatively.
+              const segments = route.data.path.replace(/\/$/, "").split("/");
+              for (const item of middleware) {
+                const prefix = item.path === "/" ? [] : item.path.split("/");
+                if (
+                  prefix.length <= segments.length &&
+                  prefix.every((part, index) => segments[index]?.startsWith(":") || segments[index] === part)
+                )
+                  handlers.push({ handler: item.handler, name });
+              }
               const sf = node.getSourceFile();
               result.entrypoints.push({
                 kind: "route",
@@ -738,6 +867,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             }
           }
         } else if (
+          !(
+            declaration &&
+            ts.isFunctionTypeNode(declaration) &&
+            ts.isTypeAliasDeclaration(declaration.parent) &&
+            declaration.parent.name.text === "CodeNext"
+          ) &&
           !http &&
           !(
             declarationOwner &&

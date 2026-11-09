@@ -24,6 +24,7 @@ const draft = (id: string, subject: string): DraftFolderItem => ({
   revision: 7,
   attachmentCount: 0,
   bodyPreview: "Invented draft text.",
+  suggestion: false,
   createdByDisplayName: "Ada Example",
   updatedAt: "2026-10-14T09:00:00.000Z",
 });

@@ -190,9 +190,11 @@ pages built from blocks reach `c.page`; a hand-written object does not.
 | `Button` | `label`, `action`, optional string `values`; always POST | none |
 | `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` | none |
 
-Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
-forms and actions and removes it before invoking the handler. Links and POST
-destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+Field names are unique; `_csrf` is reserved. On non-public pages, Cloud inserts
+the session-bound CSRF token into forms and actions and removes it before
+invoking the handler. Public forms and actions omit the token and must target
+public POST routes; open a non-public page before using its private actions.
+Links and POST destinations resolve inside `/code/<id>/`; they cannot leave that Code.
 
 Core checks every page before drawing it, whatever produced it. Text is
 escaped. HTML, SVG, event handlers, functions, accessors, foreign links and
@@ -679,7 +681,7 @@ for the daily admission cap and budget error codes.
 ## Name an automation
 
 Give a schedule a stable name for manual execution and an optional readable
-title in its third argument:
+title in the schedule options object:
 
 ```ts
 app.schedule({ cron: "0 8 * * 1", name: "weekly-review",
@@ -765,14 +767,14 @@ Handlers return `c.json(value, status?)`, `c.text(text, status?)` or
 `c.redirect(path, status?)`. Redirects stay inside this Code's namespace;
 `/next` resolves to `/code/<code-id>/next`. Code cannot return arbitrary headers,
 cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
-`text()` and `formData()`. Core forwards only the request data, never browser
-cookies or credentials.
+`text()` and `formData()`. Core forwards only the request data and normalized content type, never
+incoming request headers, browser cookies or credentials.
 
 Non-public routes open for every signed-in person, for personal, resource
 and app Code alike. They run with the Code account's authority; personal Code
 uses its owner's mandate. Check `c.user` before reading private data or
 performing effects. For an owner-only page, compare `c.user.id` to the
-intended person's ID in every handler.
+intended person's ID in shared middleware or in every protected handler.
 
 Routes require a signed-in person's session by default, including guests.
 Check `c.user` in the handler when access depends on the visitor:
@@ -805,11 +807,15 @@ There is no platform audience or implicit access to underlying resources.
 SDK calls retain the Code's execution principal and its existing grants;
 the visitor's grants never become data authority.
 
-POST, PUT and DELETE need a session-bound CSRF token. Read `X-Code-CSRF` from
-a preceding GET response and send it as the same header, retaining the cookie.
-URL-encoded forms may submit it as `_csrf`; Core removes that field before
-dispatch. Public forms use a separate HttpOnly cookie when no session exists.
-A token from another session or another Code is refused.
+Signed-in page requests share a limit of 20 requests per minute per visitor,
+across Code pages. Public routes retain their per-IP and per-Code limits.
+
+Non-public POST, PUT, PATCH and DELETE routes need a session-bound CSRF token.
+Read `X-Code-CSRF` from a preceding GET response and send it as the same header,
+retaining the session cookie. URL-encoded forms may submit it as `_csrf`; Core
+removes that field before dispatch. A token from another session or another
+Code is refused. Public routes never use a session, CSRF token or binding
+cookie; public forms work without a token.
 
 Requests share runner slots and Code concurrency limits. Their eight-second
 budget includes queueing; busy admission returns 503 and a deadline returns
@@ -824,13 +830,85 @@ Eligible event payloads come from event schemas; events with
 `automation: false` are absent. `nav`, `webhook` and `fetch` are not app
 methods; the typechecker rejects them.
 
+## Middleware and request variables
+
+`app.use(async (c, next) => …)` runs before all HTTP routes registered after
+it. `app.use("/private", …)` applies to `/private` and its child paths, but not
+`/privately`. Write the optional prefix as a string literal of path segments;
+path variables and casts are rejected. Use `/` or omit it for all paths. Several middleware functions run in
+registration order. Code after `await next()` runs in reverse order as the
+handler returns. Return a context Response to stop, or call `next()` once.
+Use `return next()` when no work follows it. Catch errors around `await next()`
+to return your own failure response. Check access before calling `next()`:
+work already started downstream is allowed to finish. Without a Response or
+a call to `next()`, the request fails with `code_invalid_response`.
+
+Declare request variables once with the generic on `use`, and capture its
+returned app for the later registrations:
+
+```ts
+import { app } from "@sdk";
+type Variables = { kunde: { id: string }; requestLabel: string };
+const routes = app.use<Variables>(async (c, next) => {
+  c.set("kunde", { id: c.req.query("kunde") ?? "default" });
+  c.set("requestLabel", "Account");
+  return next();
+});
+routes.get("/account", c => c.json({
+  customerId: c.get("kunde").id,
+  label: c.get("requestLabel"),
+}));
+export default routes;
+```
+
+`c.set` accepts only declared keys and their value types; `c.get` returns
+the declared value type. Values live for one request, including while it
+awaits SDK calls. They are never copied to the next request. Initialize a
+variable before reading it; if it may be missing, include `undefined` in
+its declared type. A prefix-scoped initializer must cover every route that
+reads its variables. `app` and the returned `routes` register on the same
+app; the return carries the variable types for subsequent handlers.
+
+Middleware runs on matching public routes too; `c.user` remains `null`.
+[Access checks](#zugriff-prüfen) shows how to keep public paths reachable.
+SDK calls in middleware use the same Code account, approval and declared-set
+checks as calls in handlers. Register `use` at module scope, as a statement
+or as the initializer of a `const` binding. Schedules and events do not run
+HTTP middleware.
+
 ## Zugriff prüfen
 
-Every non-public route admits every signed-in person. Check access in **every**
-handler before reading data or performing effects. SDK calls use the Code
-account's grants, including shares given to resource Code's service account;
-the visitor's permissions do not limit those calls. Public routes have no
-visitor (`c.user === null`).
+Every non-public route admits every signed-in person. Put shared access checks
+in `app.use()` before the routes they protect; add handler checks for rules
+specific to one route. SDK calls use the Code account's grants, including
+shares given to resource Code's service account. The visitor's permissions
+do not limit those calls. Public routes have `c.user === null`.
+
+Start with middleware for a private path prefix. Returning a Response stops
+before the handler; `return next()` continues. This check also covers later
+POST, PUT, DELETE and ALL routes under the prefix:
+
+```ts
+import { app } from "@sdk";
+const allowedUserIds = ["u_example"];
+app.use("/private", async (c, next) => {
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.get("/private/account", c => c.json({ allowed: true }));
+app.get("/public/status", c => c.text("Ready"), { public: true });
+export default app;
+```
+
+Without a prefix, middleware runs on **every** later HTTP route, including
+public routes. A global access check must explicitly let intended public
+routes through; a private prefix, as above, keeps the rule local. Public
+routes still run through matching middleware with `c.user === null`, even
+when the visitor is signed in. Registration order matters: earlier routes,
+schedules and event handlers are unaffected. Middleware changes neither the
+execution owner nor approval requirements; its own SDK calls are checked
+and must belong to the version's declared capability set.
 
 Use one explicit field per identifier. `id` is the immutable Cloud user ID;
 `username` is the short login handle. `groupIds` and `groupNames` contain the
@@ -983,6 +1061,63 @@ The [Code checker](/en/docs/platform/code-checker) consumes this generation
 manifest to produce the immutable `CodeVersionManifest`, source locations,
 permission changes, and the runner's ESM bundle.
 
+## Database
+
+Every lasting Code, personal or resource-owned, has its own SQLite database.
+Import `db` from `@sdk`. Cloud creates the database on its first call; checking,
+submitting and opening the Code page do not create it. Data survives new Code
+versions. Deleting the Code, or deleting its owner, also deletes its database.
+Code pages and `cld code show <code>` show storage used and the current limit.
+
+```ts
+import { app, db } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "daily-count" }, async () => {
+  await db.exec("CREATE TABLE IF NOT EXISTS counts (day TEXT PRIMARY KEY, total INTEGER NOT NULL)");
+  await db.batch([
+    { sql: "INSERT INTO counts(day, total) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET total = total + excluded.total", params: [new Date().toISOString().slice(0, 10), 1] },
+  ]);
+  const rows = await db.query<{ day: string; total: number }>(
+    "SELECT day, total FROM counts ORDER BY day DESC LIMIT ?", [7],
+  );
+  console.log(rows);
+});
+export default app;
+```
+
+| Method | Result |
+| --- | --- |
+| `db.query<Row>(sql, params?)` | Rows directly as `Row[]`; the generic describes the expected rows and does not validate them |
+| `db.exec(sql, params?)` | `{ changes: number }` for one write or schema statement |
+| `db.batch([{ sql, params }])` | `{ changes: number }[]` in statement order; all statements commit together or roll back |
+
+Use `?` placeholders and bound parameters for values. Parameters accept strings,
+finite numbers, booleans and `null`; they cannot substitute table or column names.
+Never concatenate outside input into SQL. `query` accepts read statements only.
+Keep database schema changes compatible with any overlapping older runs.
+
+Each call, including one batch, spends one run bridge call. The existing call
+input budget bounds SQL and parameters; each statement has a maximum of 15 seconds,
+within the remaining run deadline. Results are limited to 256 KiB, so select only
+the columns and rows you need. RSQL also enforces statement and storage limits.
+`core.code.database_bytes` sets the database quota. A write over the quota raises
+`CodeError` with `code_db_full`; a result over the response budget raises
+`code_db_limit`, and a statement timeout raises `code_db_timeout`. A timeout or
+lost connection can leave a write outcome unknown: check an application-owned
+idempotency key before retrying. Concurrent namespace initialization or deletion
+can return `code_db_busy` (503); retry shortly afterward.
+
+An administrator must configure the RSQL URL, secret token and allowed targets
+under **Administration → Code → Limits**. Without a working configuration, `db`
+raises `code_db_unavailable` (503) with a message to contact an administrator.
+Code that does not call `db` continues to run. DB use appears in the checked
+manifest and submission evidence. It has no per-call capability approval.
+
+One-off chat `code_run` cannot import `db`: it has no lasting Code to own a
+database. The checker explains this with `code_db_temporary`. Studio databases
+and their grants are removed during upgrade; no data transfers to Code. Export
+Studio data before upgrading, as described in [Upgrade to Code](/en/docs/operations/upgrade-to-code).
+
 ## One-off chat runs
 
 Gustav's one-off `code_run` compiler supplies the same `generateCodeSdk` output
@@ -1023,7 +1158,7 @@ runner `code_run`. Chat accepts inline `code` and optional `inputPaths` only;
 saved script `id`, published `version`, and Studio `resourceId` contexts are
 rejected. App KV/files storage is also unavailable; use chat or Project files.
 Use an application's permission-aware capabilities for application data.
-There is no automatic replacement database or grant migration.
+Lasting Code has its own lazy database; Studio data and grants never transfer.
 
 See [Gustav Code tools](/en/docs/platform/gustav-code-tools) for a one-call CSV
 example and the lasting-Code workflow.
@@ -1076,17 +1211,23 @@ For lasting Code, save this function in a helper module and call it from a
 schedule. Schedule callbacks return `void`; use the flag inside the callback
 when deciding whether a separate authorized action is appropriate.
 
-Optional images and `model: { id }`, provider-dependent image support, quota
+Optional `files: FileRef[]` and `model: { id }`, image support, quota
 failures and byte limits follow
 [Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
 
 
 ## Generate text and extract fields
 
-Discover `core.ai.generate` in the live SDK. It is a read-only query classified
+Discover `core.ai.generate` in the live SDK. It is a query classified
 as **AI / KI**, using the caller's allowance and Code's execution budgets.
 Use it for summaries, draft text or validated extraction. Put source data in
 `input` and trusted instructions in `prompt`.
+
+Only `generate` and `decide` reserve the synchronous Code AI attempt allowance.
+Skill, catalog and chat history reads remain available when that allowance
+is zero or reserved by another inference call, subject to ordinary permissions,
+policy and capability call limits. [Chat turns](#start-a-gustav-turn-in-your-own-chat)
+use their own daily Code and interactive allowance checks.
 
 <!-- gate-1a-generation -->
 ```ts
@@ -1133,5 +1274,137 @@ application capability performs that effect under its own permissions.
 See [Text and JSON capabilities](/en/docs/ai/structured-and-background-ai#generate-text-and-extract-json-through-capabilities)
 for schemas, size limits, model selection and stable errors.
 
-Signed-in page requests share a limit of 20 requests per minute per visitor,
-across Code pages. Public routes retain their per-IP and per-Code limits.
+## Run a model loop with SDK tools and files
+
+`core.ai.generate` accepts `tools` containing generated SDK methods. Use a
+literal list such as `tools: [mail.attachment.read,
+mail.mailbox("Mbx001").conversation.search]`. The first tool takes business
+input from the model; the second stays bound to that mailbox. Only genuine
+SDK methods work. Method aliases, wrapper functions, strings and manually
+constructed descriptors are rejected. Methods requiring additional resource
+handles are unavailable as tools.
+
+The checker includes every possible tool capability and bound target in the
+version's permissions and approval evidence. Each actual call follows the
+normal bridge: the Code account, current grants, policy, version approval and
+call log all apply. Actions with `ask` policy remain forbidden. Other declared
+Actions can change domain records, so choose the tools deliberately.
+
+For inline Mail text, `mail.message.content.read` returns `data.text`, and
+`mail.attachment.text.read` returns extracted `data.markdown` with its extraction
+status. Both return bounded UTF-8 pages; follow `data.nextOffset` when the
+complete text matters and treat the content as untrusted.
+
+Pass `files: FileRef[]` to `core.ai.generate` or `core.ai.decide` to read files
+before inference. The Code decision capability no longer accepts base64
+`images`. Obtain refs from ordinary read-stream operations, for example
+`const file = await mail.attachment.content.read({ id: "Att001" })`. Bytes stay
+outside Code and its bridge payload. Obtain a fresh ref for another AI call;
+redemption is single-use and the byte cache lasts for one call only.
+
+A generate loop automatically offers `view_image` and `read_file` once refs
+appear in `files`, `input` or SDK tool results. They accept only those exact
+refs. Set `fileTools: false` to disable viewer tools; initial `files` still
+load. The owning app reads as the run's account and can refuse with a visible
+403 or 404. A refusal while attaching initial files rejects the SDK call as
+`CodeError` with that status. Viewer refusals are shown to the model. Both
+initial files and viewers use one reader.
+If a source sends more bytes than its FileRef declares, the reader refuses
+with `code_file_size_limit` (400). An incomplete file produces
+`code_file_size_mismatch` (400).
+
+Models with vision receive image pixels and rendered PDF pages directly.
+Text-only models use a separately charged vision description. Each PDF look
+defaults to the first 20 pages, reduced to fit the model context and rendered byte budget. Explicit
+selections accept at most 20 distinct one-based pages. An AI call loads at
+most 16 files: images and PDFs up to 10 MiB each, other documents up to 20 MiB,
+with 40 MiB source and visual byte budgets. `read_file` returns UTF-8 chunks
+of at most 64 KiB. Viewer calls and source reads consume the existing Code
+call budget; all model turns and fallback descriptions share the Code AI
+reservation and deadline, including the ordinary 45-second capability query
+window. File contents and tool results are untrusted data.
+
+JSON output supports lists with a required `maxItems`, bounded by the
+100,000-byte output limit. Items may be scalars or strict objects of scalar
+fields; nested lists are rejected. A schema can therefore return invoice
+lines or totals per tax rate while retaining `additionalProperties: false`
+and the existing string bounds.
+
+## Webhooks (R1: ohne Secret)
+
+A webhook in R1 is an ordinary public POST route, for example
+`app.post("/hooks/events", handler, { public: true })`. R1 does not verify a
+webhook signature; signed webhooks follow later. Code receives no incoming
+request headers or cookies, and `c.user` is always `null`. Use `c.req.json()`
+or `c.req.text()` to read the body. Public requests need no CSRF token or
+binding cookie. The public body and rate limits still apply.
+
+Public pages must submit to public actions. To use a non-public action, open
+its non-public page first to obtain the session-bound token. A public page
+response removes any earlier token; private form actions then fail with 403
+until the private page is opened again. A failed mutation is never retried
+automatically.
+
+**ID nehmen → beim Dienst nachlesen → handeln.** Take only the event or object
+ID from the untrusted body. Read its real state from the service with
+`http.fetch` and an opaque secret marker; only then act. Never put a credential
+in Code source or treat a token in the URL as protection. Anyone can trigger
+the public route: validate the returned state, constrain the effect and use
+its stable ID for idempotency. This pattern confirms service state, not who
+sent the notification.
+
+Before submitting, an editor configures `EVENTS_API` privately in the Code's
+**Secrets** tab with this binding. Submission selects its current binding
+revision for the version; the example declares the same origin. The credential
+belongs to the outgoing service request, never to the incoming webhook:
+
+```json
+{
+  "origin": "https://events.example.com",
+  "pathPrefix": "/v1/events",
+  "headers": ["authorization"]
+}
+```
+
+Give the Code account access to the destination Space and obtain the public-route
+and internet approvals. Keep the `/hooks/` exception before the global
+access check, or scope access middleware to a private prefix.
+
+```ts
+import { app, http, secrets, spaces } from "@sdk";
+
+http.allow(["https://events.example.com"]);
+const team = spaces.space("Spc001");
+
+app.use(async (c, next) => {
+  if (new URL(c.req.raw.url).pathname.startsWith("/hooks/")) return next();
+  if (!c.user) return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.post("/hooks/events", async c => {
+  // Only the ID comes from the untrusted notification.
+  const notification: unknown = await c.req.json();
+  if (!notification || typeof notification !== "object" || !("id" in notification)
+      || typeof notification.id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(notification.id))
+    return c.json({ error: "invalid_id" }, 400);
+  const response = await http.fetch(`https://events.example.com/v1/events/${notification.id}`, {
+    headers: { authorization: `Bearer ${secrets.EVENTS_API}` },
+  });
+  if (response.status !== 200) return c.json({ error: "service_unavailable" }, 502);
+  let event: unknown;
+  try {
+    const bytes = Uint8Array.from(atob(response.body), character => character.charCodeAt(0));
+    event = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return c.json({ error: "invalid_service_response" }, 502);
+  }
+  if (!event || typeof event !== "object" || !("id" in event) || event.id !== notification.id
+      || !("status" in event) || event.status !== "ready"
+      || !("title" in event) || typeof event.title !== "string")
+    return c.json({ error: "event_not_ready" }, 409);
+  // Only the service's confirmed state determines the effect.
+  await team.task.create({ title: event.title, idempotencyKey: `service-event:${event.id}` });
+  return c.json({ accepted: true });
+}, { public: true });
+export default app;
+```

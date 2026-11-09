@@ -68,6 +68,23 @@ export function codeOperationCommands(locale?: string) {
     return flags.preset ? codePolicyPreset(flags.preset) : JSON.parse(await readCodeInput(flags.from!));
   }
   return [
+    command("show", {
+      summary: t("Show Code and its database storage", "Code und Datenbankspeicher anzeigen"),
+      args: { code: arg.required({ description: t("Code ID", "Code-ID") }) },
+      async run({ ctx, args }) {
+        const data = await request(ctx, "show", { codeId: args.code });
+        if (printStructured(ctx, data)) return;
+        ctx.print(`${data.code.id} · ${data.code.title} · ${data.code.state}`);
+        const db = data.code.database;
+        if (db) {
+          const mb = (bytes: number) =>
+            new Intl.NumberFormat(locale ?? "en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(bytes / 1048576);
+          ctx.print(
+            `${t("Database", "Datenbank")}: ${db.bytes === null ? t("unavailable", "nicht verfügbar") : mb(db.bytes) + " MB"} ${t("of", "von")} ${mb(db.limit)} MB`,
+          );
+        }
+      },
+    }),
     command("status", {
       summary: t(
         "Compare all local Code with server versions, approval and execution",

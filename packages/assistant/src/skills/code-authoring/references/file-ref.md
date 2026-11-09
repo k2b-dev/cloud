@@ -18,13 +18,16 @@ type FileRef = {
 
 A `FileRef` has no body, bytes, URL or download method. Code cannot read,
 change or create file content; it can only pass a reference on. Use `name`,
-`mediaType` and `size` to decide whether to pass it.
+`mediaType` and `size` to decide whether to pass it. `core.ai.generate` and
+`core.ai.decide` also accept `files: FileRef[]`; the model receives content
+through Cloud while Code still holds no bytes. The generate loop offers
+`view_image` and `read_file` for refs already seen in that call; see [AI](ai.md).
 
 ## Where FileRefs come from and go
 
 | Direction | Operation | Notes |
 | --- | --- | --- |
-| Read | `mail.attachment.content.read({ id })` | A mail attachment, up to Mail's 100 MiB limit. `mail.attachment.read` stays metadata only; `mail.attachment.read-content` returns extracted text. |
+| Read | `mail.attachment.content.read({ id })` | A mail attachment, up to Mail's 100 MiB limit. `mail.attachment.read` stays metadata only; `mail.attachment.text.read` returns extracted text. |
 | Read | `filesv2.content.read({ id })` | A file in Files, up to 50 MiB. |
 | Write | An Action with a write stream and a `file` input | The SDK types `file` as `FileRef` and returns the Action's ordinary data after the transfer. Find these in `code_sdk`; the example below uses a fictional `imports` app. |
 
@@ -64,7 +67,8 @@ transfer but does not undo a publication the target already committed.
 | Code | Meaning |
 | --- | --- |
 | `code_file_invalid` | The `file` is not a live reference from this run, has expired, or its name, media type or size were changed |
-| `code_file_size_limit` | The file is larger than the target accepts |
+| `code_file_size_limit` | The file is larger than the target accepts, or its AI read exceeds the declared size (400) |
+| `code_file_size_mismatch` | An AI read ended before the declared size (400); obtain a fresh reference before trying again |
 | `code_file_spent` | The reference was already used |
 | `code_stream_forbidden`, `code_stream` | The Action has a write stream without a `file` input |
 | `code_test_invalid_input`, `code_test_invalid_fixture` | In tests: the `file` or the mocked FileRef does not match, or exceeds the stream limit |

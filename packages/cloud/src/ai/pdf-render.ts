@@ -4,22 +4,27 @@ import { spawnCanvasWorker } from "../_internal/canvas-worker";
 declare const __CLOUD_PDF_RENDER_WORKER__: string | undefined;
 let activeRenders = 0;
 export const PDF_MAX_BYTES = 10 * 1024 * 1024;
+export const PDF_MAX_PAGES = 20;
 export const PdfPages = z
   .array(z.number().int().positive())
   .min(1)
-  .max(3)
+  .max(PDF_MAX_PAGES)
   .refine((pages) => new Set(pages).size === pages.length, "Choose each page only once.");
 const RenderResult = z.object({
   totalPages: z.number().int().positive(),
   pages: z
     .array(z.object({ page: z.number().int().positive(), png: z.string() }))
     .min(1)
-    .max(3),
+    .max(PDF_MAX_PAGES),
 });
 
 /** Isolate native decoding from the server: abort/deadline kills the process. */
-export async function renderPdfPages(bytes: Uint8Array, pages: number[] = [1], signal?: AbortSignal) {
-  PdfPages.parse(pages);
+export async function renderPdfPages(bytes: Uint8Array, pages?: number[], signal?: AbortSignal, maxPages = PDF_MAX_PAGES) {
+  z.number().int().positive().max(PDF_MAX_PAGES).parse(maxPages);
+  if (pages !== undefined) {
+    PdfPages.parse(pages);
+    if (pages.length > maxPages) throw new Error("PDF page token budget exceeded.");
+  }
   if (bytes.byteLength > PDF_MAX_BYTES) throw new Error("PDF exceeds the 10 MiB view_image limit.");
   if (process.platform !== "linux") throw new Error("PDF page inspection requires the Linux Cloud runtime with memory isolation.");
   const boundedSignal = AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]);
@@ -31,7 +36,7 @@ export async function renderPdfPages(bytes: Uint8Array, pages: number[] = [1], s
       typeof __CLOUD_PDF_RENDER_WORKER__ === "string"
         ? new URL(__CLOUD_PDF_RENDER_WORKER__, import.meta.url)
         : new URL("./pdf-render-worker.ts", import.meta.url);
-    const child = spawnCanvasWorker(worker, "pdf-decoder", JSON.stringify({ pdf: Buffer.from(bytes).toString("base64"), pages }));
+    const child = spawnCanvasWorker(worker, "pdf-decoder", JSON.stringify({ pdf: Buffer.from(bytes).toString("base64"), pages, maxPages }));
     const stop = () => child.kill("SIGKILL");
     boundedSignal.addEventListener("abort", stop, { once: true });
     if (boundedSignal.aborted) stop();

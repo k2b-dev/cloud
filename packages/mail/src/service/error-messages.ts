@@ -1,4 +1,5 @@
 import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
+import { draftAdoptionMessages } from "../draft-adoption-messages";
 import { localizedComposeRenderMessage } from "./compose-render-errors";
 import { localizedMailboxLogoMessage } from "./mailbox-logo-errors";
 
@@ -58,6 +59,9 @@ const genericGermanMessage = (error: HumanFacingError): string => {
 
 /** Localizes a final API or capability error while preserving its stable code and status. */
 export const localizeMailError = <T extends HumanFacingError>(error: T, locale?: string | null): T => {
+  if (error.code === "DRAFT_ADOPTED") return { ...error, message: draftAdoptionMessages.resolve([locale ?? "en"]).t.adopted };
+  if (error.code === "DRAFT_SUGGESTION_CONFLICT")
+    return { ...error, message: draftAdoptionMessages.resolve([locale ?? "en"]).t.mergeConflict };
   const logoMessage = localizedMailboxLogoMessage(error, locale ?? "en");
   if (logoMessage) return { ...error, message: logoMessage };
   const renderMessage = localizedComposeRenderMessage(error, locale ?? "en");

@@ -5,7 +5,7 @@ import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../config";
 import CodePageHost from "./PageHost";
 
-export type HostedCodePage = { tree: CodePageTree; codeId: string; csrf: string; layout?: "plain" };
+export type HostedCodePage = { tree: CodePageTree; codeId: string; csrf: string | null; layout?: "plain" };
 export type CodePageHostingContext = AuthContext & { Variables: { hostedCodePage: HostedCodePage } };
 /**
  * Hosting validates the description before this final SSR handler. Only the tree is sent to the island. A page renders

@@ -5,7 +5,7 @@ section: Platform services
 order: 681
 description: Check Code types, review called operations and targets, and build an immutable runner version.
 tags: [code, checker, permissions, runner]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Code checker
@@ -65,6 +65,16 @@ A second `app.on` for the same event and place also reports
 `code_duplicate_on`, including an explicit owner handle after an implicit owner
 subscription.
 
+Declare `app.use()` at module scope, as a statement or a `const` initializer,
+with an optional string-literal path prefix; prefix variables and casts are
+rejected. Keep app registrations direct, without reflection or erased aliases.
+Invalid registrations report
+`code_static_middleware`. Calls inside a middleware callback contribute ordinary
+capability evidence and are attributed to subsequent routes its prefix may
+match, including public routes. They add no permission of their own and do not
+change approval or runtime admission. Request-variable keys and values are
+checked against the types declared through `app.use<Variables>()`.
+
 Declare schedules as module-level calls with a constant five-field cron expression
 or a constant `{ at, timeZone }` for a [one-time run](/en/docs/platform/code-sdk#run-once-at-a-chosen-time), and an
 optional constant name and human `title` in the declaration options. Titles follow
@@ -108,6 +118,10 @@ contract, shared with the version service, contains:
   automation from it ("for “weekly”") and leave the line out when it is absent;
   it never affects authorization;
 - `ai`: whether the detected calls use AI;
+- `database: true` when the Code imports or calls `db`; omitted otherwise. Core
+  records the same use in submission evidence and requires both before allowing
+  a database call. `code_run` reports `code_db_temporary` because it has no lasting
+  Code to own a database;
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk`, and `bundle`.
 
 The source hash covers `JSON.stringify({ entry, files })`, with `files` holding

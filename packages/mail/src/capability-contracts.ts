@@ -667,6 +667,7 @@ export const DraftDataSchema = z
     bccTruncated: z.boolean(),
     attachments: z.array(DraftAttachmentDataSchema).max(50),
     attachmentsTruncated: z.boolean(),
+    suggestion: z.boolean(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     createdAt: TimestampSchema,
@@ -681,6 +682,7 @@ export const DraftSummaryDataSchema = compactResourceViewSchema("mail.draft")
     recipients: z.string().max(320),
     recipientsTruncated: z.boolean(),
     attachmentCount: z.number().int().nonnegative(),
+    suggestion: z.boolean(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     updatedAt: TimestampSchema,
@@ -706,6 +708,7 @@ export const DraftMutationDataSchema = z
       )
       .max(50),
     attachmentsTruncated: z.boolean(),
+    suggestion: z.boolean(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
     formattingWarnings: composeFormattingWarningsSchema

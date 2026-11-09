@@ -2,7 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { mailCapabilities } from "../../../mail/src/capabilities";
 import { capabilityCallDigest, normalizeCapabilityCall } from "../capabilities/calls";
+import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CodeHttp } from "./authoring-types";
 import { fileImportManifest } from "./file-ref.test-fixture";
 import { generateCodeSdk } from "./generator";
@@ -72,6 +74,23 @@ function callableFixture() {
 }
 
 describe("Code SDK generation", () => {
+  test("Mail content paths distinguish inline text from original attachment FileRefs without aliases", () => {
+    const sdk = generateCodeSdk([compileCapabilityManifest("mail", mailCapabilities)], { mode: "personal" });
+    const names = ["mail.message.content.read", "mail.attachment.text.read", "mail.attachment.content.read"];
+    const operations = sdk.manifest.operations.filter((operation) => names.includes(operation.capability));
+    expect(operations).toHaveLength(3);
+    expect(sdk.manifest.operations.map((operation) => operation.localId)).not.toContain("message.read-content");
+    expect(sdk.manifest.operations.map((operation) => operation.localId)).not.toContain("attachment.read-content");
+    expect(sdk.declarations).not.toContain("read_content");
+    expect(
+      operations.map(({ capability, methodPath, dataSchema, stream }) => ({
+        capability,
+        methodPath,
+        dataSchema,
+        stream,
+      })),
+    ).toMatchSnapshot("Mail content operations");
+  });
   test("snapshots a complete SDK generated from a third-party capability contract", () => {
     const sdk = generated();
     expect(sdk.declarations).toMatchSnapshot("declarations");

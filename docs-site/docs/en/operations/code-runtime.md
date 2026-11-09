@@ -5,7 +5,7 @@ section: Operations
 order: 920
 description: Size and diagnose Code route requests in the shared runner pool.
 tags: [code, runner, limits]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Operate Code requests
@@ -34,7 +34,13 @@ capability's idempotency contract when repeating an intended effect.
 Core declares `/code` in the gateway registry and checks each path against the
 active version's manifest. Sign-in is required unless that exact matched route
 was reviewed as public. Public responses contain only the data that Code
-returns. Keep the shared runner, NATS, Postgres and Valkey healthy; request
+returns. Public routes never use visitor session authority, CSRF tokens or
+an anonymous binding cookie; public forms omit the token. Non-public mutations
+still require a session-bound CSRF token. Incoming request headers and cookies
+are not forwarded to Code. R1 webhooks use ordinary public POST routes without
+signature verification; handlers take an ID, read its state back with bound
+secret HTTP, then act ([example](/en/docs/platform/code-sdk#webhooks-r1-ohne-secret)).
+Keep the shared runner, NATS, Postgres and Valkey healthy; request
 capacity competes with scheduled runs and authoring checks.
 
 Page responses use wire format version 1 and the same runner response budget.
@@ -44,6 +50,15 @@ tree to 64 KiB, 256 nodes and 12 levels, with 200 rows per table and 40 fields
 per form. Page inputs, trees and visitor identities are transient; the retained
 run records the outcome and timings. Rendering uses Core's assets and only the
 checked description reaches the browser; no Code source runs there.
+
+## Mail capability compatibility
+
+Deploy Mail and its capability consumers from the same release. R1 names the
+text readers `mail.message.content.read` and `mail.attachment.text.read`;
+`mail.attachment.content.read` opens the original file as a stream. Refresh
+generated SDKs and resubmit preview Code after upgrading. There are no aliases
+for the previous text-reader names; update external capability clients as
+described in [Deprecations](/en/docs/reference/deprecations-and-migrations#code-sdk-declarations-are-simpler).
 
 ## Schedule and result delivery compatibility
 
@@ -118,3 +133,13 @@ the intended import's business idempotency key. Expired references and reference
 from another attempt cannot be resumed. Providers remain responsible for
 reclaiming abandoned upload reservations. Cancellation does not undo a
 publication already committed by the receiving application.
+
+## Middleware in checked Code
+
+The generated SDK supports `app.use()` for HTTP routes registered after it.
+Keep Core, checker and runner images on the same release, and pull the current
+SDK before checking sources that use middleware. Existing checked versions
+continue using their bundled SDK. Middleware adds no policy classification;
+its SDK calls use the version's ordinary declared capabilities and the Code
+account's current grants. Request variables remain transient, per request.
+See [Middleware and request variables](/en/docs/platform/code-sdk#middleware-and-request-variables).

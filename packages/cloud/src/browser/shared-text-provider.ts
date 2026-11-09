@@ -53,7 +53,10 @@ export type SharedTextProviderTransport<Event = never, Participant = never> = {
   url: string;
   encode: (request: SharedTextProviderRequest) => unknown;
   decode: (packet: unknown) => SharedTextProviderMessage<Event, Participant> | null;
-  /** Include application-specific terminal reasons; nonterminal drops reconnect. */
+  /**
+   * Include application-specific terminal reasons; nonterminal drops reconnect.
+   * Close code 1013 (try again later) always reconnects with backoff and never reaches this mapping.
+   */
   closeError: (code: number, reason: string) => SharedTextProviderError | null;
 };
 
@@ -121,6 +124,21 @@ export type SharedTextProviderOptions<Event = never, Participant = never> = {
 /** Consecutive storage refusals before termination; replay alone does not reset the budget. */
 export const MAX_SHARED_TEXT_STORAGE_RETRIES = 5;
 
+/**
+ * WebSocket close code 1013 ("try again later"): a busy server or proxy shed this connection.
+ * Like a plain drop, it reconnects with backoff and the replay resends every unsent edit.
+ */
+const TRY_AGAIN_LATER = 1013;
+/** Server error code with the same meaning as {@link TRY_AGAIN_LATER}; it never ends the session. */
+const BUSY_ERROR_CODE = "BACKPRESSURE";
+/**
+ * Local awareness is last-state-wins, so a selection drag or a held arrow key collapses into at
+ * most one cursor frame per interval, about one frame of a 10 Hz cursor animation. Each frame
+ * costs the server an access check and a broker publish, so unthrottled cursor moves (60 per
+ * second while dragging) queue up faster than the server works them off.
+ */
+const SHARED_TEXT_AWARENESS_INTERVAL_MS = 100;
+
 /** Browser Yjs lifecycle for one document and generation, with an application-owned wire adapter. */
 export function createSharedTextProvider<Event = never, Participant = never>(opts: SharedTextProviderOptions<Event, Participant>) {
   const { doc, awareness } = opts;
@@ -145,6 +163,8 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   let isTerminated = false;
   let needsReopen = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let awarenessTimer: ReturnType<typeof setTimeout> | null = null;
+  let awarenessDue = false;
   let failedConnects = 0;
   let storageFailures = 0;
   let lastCursor = opts.initialCursor ?? null;
@@ -258,6 +278,20 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   const sendAwarenessPublish = (data: Uint8Array): boolean =>
     send({ type: "awarenessPublish", payload: { docId: activeDocId, payload: encoding.toBase64(data), generation } });
 
+  /** Leading edge at once, then the latest local state once per interval while it keeps changing. */
+  const publishOwnAwareness = () => {
+    if (awarenessTimer) {
+      awarenessDue = true;
+      return;
+    }
+    awarenessDue = false;
+    sendAwarenessPublish(awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID]));
+    awarenessTimer = setTimeout(() => {
+      awarenessTimer = null;
+      if (awarenessDue && !isDisposed && !isTerminated && replayReady) publishOwnAwareness();
+    }, SHARED_TEXT_AWARENESS_INTERVAL_MS);
+  };
+
   const sendReplayRequest = (fromCursor: string | null): boolean =>
     send({ type: "replayRequest", payload: { docId: activeDocId, fromCursor, generation } });
 
@@ -351,7 +385,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     if (origin === "remote") return;
     if (!replayReady) return;
     if (!added.includes(doc.clientID) && !updated.includes(doc.clientID) && !removed.includes(doc.clientID)) return;
-    sendAwarenessPublish(awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID]));
+    publishOwnAwareness();
   };
 
   const parseJsonMessage = (raw: string): SharedTextProviderMessage<Event, Participant> | null => {
@@ -374,6 +408,11 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     if (error.code === "STORAGE_EXHAUSTED") {
       storageFailures += 1;
       if (storageFailures >= MAX_SHARED_TEXT_STORAGE_RETRIES) terminate(error);
+      return true;
+    }
+    if (error.code === BUSY_ERROR_CODE) {
+      // Unacknowledged input stays pending; the next replay resends it after the backoff.
+      ws?.close();
       return true;
     }
     if (error.code === "RESYNC_REQUIRED") {
@@ -447,6 +486,8 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     }
     opts.onReady?.();
     sendLocalStateIfNeeded();
+    // A new connection always receives the current cursor at once; a pending throttled frame is covered by it.
+    awarenessDue = false;
     sendAwarenessPublish(awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID]));
     return true;
   };
@@ -612,7 +653,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       replayReady = false;
       localStateSent = false;
 
-      const closeError = opts.transport.closeError(event.code, event.reason ?? "");
+      const closeError = event.code === TRY_AGAIN_LATER ? null : opts.transport.closeError(event.code, event.reason ?? "");
       if (closeError) {
         opts.onError?.(closeError);
         terminate(closeError);
@@ -699,6 +740,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       isDisposed = true;
       actionHistory?.dispose();
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (awarenessTimer) clearTimeout(awarenessTimer);
       awarenessProtocol.removeAwarenessStates(awareness, [doc.clientID], "disconnect");
       doc.off("update", onDocUpdate);
       awareness.off("update", onAwarenessUpdate);

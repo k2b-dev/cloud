@@ -222,7 +222,7 @@ for mutation boundaries, bulk summaries, and table/base lifecycle events.
 is the stable identity of the first eligible provider placement. Keep it as
 an opaque business key; the envelope's event ID remains the delivery deduplication
 key. Use the public `subject.id` with `mail.message.read` or
-`mail.message.read-content` to read authorized content. The event contains no
+`mail.message.content.read` to read authorized content. The event contains no
 headers, addresses, subject text, body, attachment metadata, or conversation data.
 The body may still be loading when the event arrives; readers report its state.
 

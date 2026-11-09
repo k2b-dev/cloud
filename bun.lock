@@ -6,7 +6,7 @@
       "name": "@k2b/cloud-workspace",
       "devDependencies": {
         "@biomejs/biome": "2.5.14",
-        "@k2b/stdlib": "0.31.1",
+        "@k2b/stdlib": "0.32.0",
         "@nats-io/transport-node": "3.4.0",
         "@types/bun": "1.4.2",
         "@types/node": "26.6.3",
@@ -161,15 +161,15 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.63.0",
+      "version": "0.64.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
-        "@k2b/editor": "0.9.0",
+        "@k2b/editor": "0.10.0",
         "@k2b/nessi": "1.2.0",
         "@k2b/ssr": "0.21.1",
-        "@k2b/stdlib": "0.31.1",
+        "@k2b/stdlib": "0.32.0",
         "@k2b/sync": "7.1.0",
-        "@k2b/ui": "0.52.0",
+        "@k2b/ui": "0.53.0",
         "@modelcontextprotocol/sdk": "1.32.1",
         "@napi-rs/canvas": "1.0.9",
         "@nats-io/jetstream": "3.4.0",
@@ -226,7 +226,7 @@
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
-      "version": "0.70.0",
+      "version": "0.71.0",
       "bin": {
         "cld": "src/index.ts",
       },
@@ -268,6 +268,7 @@
         "@fontsource/ibm-plex-sans-condensed": "5.3.0",
         "@k2b/cloud": "workspace:*",
         "@k2b/editor": "workspace:*",
+        "@k2b/rsql": "1.1.0",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/sync": "catalog:",
@@ -309,7 +310,7 @@
     },
     "packages/editor": {
       "name": "@k2b/editor",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "dependencies": {
         "@codemirror/autocomplete": "6.20.3",
         "@codemirror/commands": "6.10.4",
@@ -332,8 +333,8 @@
         "@codemirror/search": "6.7.2",
         "@codemirror/state": "6.7.1",
         "@codemirror/view": "6.43.7",
-        "@k2b/stdlib": "0.31.1",
-        "@k2b/ui": "0.52.0",
+        "@k2b/stdlib": "0.32.0",
+        "@k2b/ui": "0.53.0",
         "@lezer/common": "1.5.3",
         "@lezer/highlight": "1.2.4",
         "@lezer/markdown": "1.7.2",
@@ -798,7 +799,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.52.0",
+      "version": "0.53.0",
       "dependencies": {
         "@codemirror/commands": "6.10.4",
         "@codemirror/language": "6.12.4",
@@ -806,7 +807,7 @@
         "@codemirror/view": "6.43.7",
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",
-        "@k2b/stdlib": "0.31.1",
+        "@k2b/stdlib": "0.32.0",
         "@lezer/highlight": "1.2.4",
         "@lezer/markdown": "1.7.2",
         "@tabler/icons-webfont": "3.48.0",
@@ -972,7 +973,7 @@
     "@codemirror/view": "6.43.7",
     "@firecrawl/anydoc": "0.2.4",
     "@k2b/nessi": "1.2.0",
-    "@k2b/stdlib": "0.31.1",
+    "@k2b/stdlib": "0.32.0",
     "@k2b/sync": "7.1.0",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
@@ -1335,11 +1336,13 @@
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 
+    "@k2b/rsql": ["@k2b/rsql@1.1.0", "", {}, "sha512-FSbkeNee2bwfXZkNWIr9C5VOp+WLeCFuwuI1wBYXr3gNOkGkePFVR6jO2d9y3kHhw+WUkiZbyMJAJLJQgUquGA=="],
+
     "@k2b/speedtest": ["@k2b/speedtest@workspace:packages/speedtest"],
 
     "@k2b/ssr": ["@k2b/ssr@workspace:packages/ssr"],
 
-    "@k2b/stdlib": ["@k2b/stdlib@0.31.1", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "ibantools": "^4.5.4", "lean-qr": "", "libxml2-wasm": "0.6.0", "pdf-lib": "1.17.1", "saxes": "^6.0.0", "solid-js": "", "zod": "^4.4.3" }, "optionalPeers": ["ibantools", "lean-qr", "libxml2-wasm", "pdf-lib", "saxes", "solid-js", "zod"] }, "sha512-0mdt3GOoBSNv99v1R3gNK2EWsJRPGYVx+j63o4JR4Hukcm43gVfgZQljfVOq3tTN4+Mae+72NYIC5/1xJnToOg=="],
+    "@k2b/stdlib": ["@k2b/stdlib@0.32.0", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "ibantools": "^4.5.4", "lean-qr": "", "libxml2-wasm": "0.6.0", "pdf-lib": "1.17.1", "saxes": "^6.0.0", "solid-js": "", "zod": "^4.4.3" }, "optionalPeers": ["ibantools", "lean-qr", "libxml2-wasm", "pdf-lib", "saxes", "solid-js", "zod"] }, "sha512-W2SNX9P3TWaxa0oWR9d4ZdfjX43/4iYv9hIOO5Monpl2HPcy69+JZ3fhOSeVbvkeeQIHO0NdczPvbDSzs/8ftg=="],
 
     "@k2b/sync": ["@k2b/sync@7.1.0", "", { "dependencies": { "@nats-io/jetstream": "3.4.0", "@nats-io/kv": "3.4.0", "@nats-io/nats-core": "3.4.0", "@nats-io/obj": "3.4.0" } }, "sha512-3vRO0a5EkdWt5ly890DSttHHtIzHFYh7hrFNeHDpO8VthBlMc7xSR0a5lXEllKNSyC+XLNkKbA1v09KPdPfoMg=="],
 

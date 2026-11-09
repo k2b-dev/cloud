@@ -2567,6 +2567,7 @@ export const draftSchema = z.object({
   requestDeliveryReceipt: z.boolean(),
   requestReadReceipt: z.boolean(),
   attachments: z.array(draftAttachmentSchema),
+  suggestion: z.boolean(),
   createdBy: draftActorRefSchema,
   lastEditedBy: draftActorRefSchema,
   lastEditedByDisplayName: z.string().min(1),
@@ -2608,7 +2609,7 @@ export const conversationListDraftsSchema = z
   .strict();
 export type ConversationListDrafts = z.infer<typeof conversationListDraftsSchema>;
 
-export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subject" | "updatedAt"> & {
+export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subject" | "updatedAt" | "suggestion"> & {
   bodyPreview: string;
   createdByDisplayName: string;
 };

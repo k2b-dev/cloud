@@ -97,7 +97,7 @@ import { Field, Section } from "@k2b/ui";
 | `count` | `number` | none | Count chip after the title; `0` reads "None yet". |
 | `meta` | `JSX.Element` | none | Short state after the title, such as "2 of 4 done". |
 | `description` | `JSX.Element` | none | One quiet line below the title. |
-| `actions` | `JSX.Element` | none | Exactly one control at the end of the heading. |
+| `actions` | `JSX.Element` | none | Exactly one control at the end of the heading. When the row is too narrow, it moves to a second line at the end, so the title stays whole. |
 | `footer` | `JSX.Element` | none | Commands for the whole topic, at the end of the body. |
 | `state` | `"ready" \| "loading" \| "error"` | `"ready"` | Replaces the body while loading or after an error. |
 | `errorMessage` | `JSX.Element` | generic sentence | Says what did not load. |

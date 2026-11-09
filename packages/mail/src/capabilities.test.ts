@@ -209,6 +209,7 @@ const draftFixture = {
       createdAt: timestamp,
     },
   ],
+  suggestion: false,
   createdBy: { kind: "user", userId },
   lastEditedBy: { kind: "user", userId },
   lastEditedByDisplayName: "Ada",
@@ -580,6 +581,63 @@ describe("mail capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: { signatureTemplateId: signatureTemplateId ?? null } } });
   });
 
+  test("a deduplicated service-account create returns the existing suggestion without adding attachments", async () => {
+    spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: { ...mutableDraftFixture, suggestion: true } });
+    const original = spyOn(drafts, "isOriginalDraftMaterialization").mockResolvedValue({ ok: true, data: false });
+    const upload = spyOn(draftUploads, "uploadDraftAttachmentStream").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    const action = mailCapabilities.actions["draft.create"];
+    const actor: CapabilityExecutionContext["actor"] = {
+      kind: "service_account",
+      serviceAccount: {
+        id: userId,
+        name: "Gustav",
+        kind: "agent",
+        status: "active",
+        delegatedUserId: null,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+        createdBy: null,
+        createdAt: timestamp,
+      },
+      delegatedUser: null,
+      scopes: ["mail:write"],
+    };
+    const result = await action.run(
+      action.input.parse({
+        senderIdentityId,
+        body: "Another suggestion",
+        attachments: [{ filename: "extra.txt", contentType: "text/plain", base64: Buffer.from("extra").toString("base64") }],
+      }),
+      {
+        ...context,
+        actor,
+        accessSubject: { type: "service_account", serviceAccountId: userId },
+        user: null,
+        idempotencyKey: "another-suggestion",
+      },
+    );
+    expect(original).toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: true, data: { data: { id: draftId, suggestion: true } } });
+  });
+
+  test("adoption refusals are ordinary localized capability errors", async () => {
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    spyOn(drafts, "updateDraft").mockResolvedValue(
+      fail({ code: "DRAFT_ADOPTED", status: 409, message: "A person has edited this draft. Ask them to initiate further changes." }),
+    );
+    for (const locale of ["en", "de"]) {
+      const patch = mailCapabilities.actions["draft.patch"];
+      const result = await patch.run(patch.input.parse({ draftId, expectedRevision: 2, patch: { subject: "Blocked" } }), {
+        ...context,
+        locale,
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: "DRAFT_ADOPTED", status: 409 } });
+      if (!result.ok) expect(result.error.message).toContain(locale === "de" ? "beauftragt" : "initiate");
+    }
+  });
+
   test.each([undefined, null, "Sign01"])("draft.update and draft.patch resolve the signature choice %j", async (signatureTemplateId) => {
     spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
     const update = spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
@@ -757,7 +815,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: { plainText: text, forwardText: null, subject: "Reply here" },
     } as never);
-    const query = mailCapabilities.queries["message.read-content"];
+    const query = mailCapabilities.queries["message.content.read"];
     let offset = 0;
     let collected = "";
     do {
@@ -920,7 +978,7 @@ describe("mail capabilities", () => {
     expect(mailCapabilities.queries.search.description).toContain("direct cross-mailbox entry");
     expect(mailCapabilities.queries["conversation.search"].description).toContain("use search instead when no mailbox is known");
     expect(mailCapabilities.queries["conversation.read"].description).toContain("call message.read");
-    expect(mailCapabilities.queries["message.read"].description).toContain("attachment.read-content");
+    expect(mailCapabilities.queries["message.read"].description).toContain("attachment.text.read");
     expect(mailCapabilities.queries["draft.send.review"].description).toContain("immediately before draft.send");
   });
 
@@ -974,7 +1032,7 @@ describe("mail capabilities", () => {
     expect(Object.keys(mailCapabilities.queries).sort()).toEqual([
       "attachment.content.read",
       "attachment.read",
-      "attachment.read-content",
+      "attachment.text.read",
       "comment.read",
       "conversation.activity.list",
       "conversation.comment.list",
@@ -1000,11 +1058,11 @@ describe("mail capabilities", () => {
       "mailing-list.subscription.get",
       "mailing-list.subscription.list",
       "message.catchup",
+      "message.content.read",
       "message.event",
       "message.event-preview",
       "message.list",
       "message.read",
-      "message.read-content",
       "reminder.read",
       "search",
     ]);
@@ -1269,6 +1327,7 @@ describe("mail capabilities", () => {
         requestDeliveryReceipt: false,
         requestReadReceipt: false,
         attachments: [],
+        suggestion: false,
         createdBy: { kind: "user", userId },
         lastEditedBy: { kind: "user", userId },
         lastEditedByDisplayName: "Ada",
@@ -1329,6 +1388,7 @@ describe("mail capabilities", () => {
         requestDeliveryReceipt: false,
         requestReadReceipt: false,
         attachments: [],
+        suggestion: false,
         createdBy: { kind: "user", userId },
         lastEditedBy: { kind: "user", userId },
         lastEditedByDisplayName: "Ada",
@@ -3281,7 +3341,7 @@ describe("mail capabilities", () => {
       updatedAt: "2026-08-19T00:00:00.000Z",
     });
 
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
     if (!result.ok) throw new Error("Expected attachment content success");
     expect(AttachmentContentReadDataSchema.parse(result.data.data)).toMatchObject({
       id: attachmentId,
@@ -3422,7 +3482,7 @@ describe("mail capabilities", () => {
     spyOn(messages, "openAttachment").mockResolvedValue({ ok: true, data: { blobId: "blob-id" } } as never);
     const enqueue = spyOn(attachmentExtraction, "enqueueAttachmentExtraction").mockResolvedValue({ id: "job-id" } as never);
 
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
 
     if (!result.ok) throw new Error("Expected pending attachment content result");
     expect(AttachmentContentReadDataSchema.parse(result.data.data)).toMatchObject({
@@ -3444,7 +3504,7 @@ describe("mail capabilities", () => {
       error: { code: "FORBIDDEN", message: "Forbidden", status: 403 },
     });
     const load = spyOn(attachmentExtraction, "loadAttachmentExtraction");
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
     expect(result).toEqual({ ok: false, error: { code: "FORBIDDEN", message: "Forbidden", status: 403 } });
     expect(load).not.toHaveBeenCalled();
   });
@@ -3471,7 +3531,7 @@ describe("mail capabilities", () => {
     });
 
     for (const offset of [2, 7]) {
-      const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset, length: 256 }, context);
+      const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset, length: 256 }, context);
       expect(result.ok).toBeFalse();
       if (!result.ok) expect(result.error).toMatchObject({ code: "BAD_INPUT", status: 400 });
     }
@@ -3500,6 +3560,7 @@ describe("mail capabilities", () => {
       recipients: "r".repeat(320),
       recipientsTruncated: true,
       attachmentCount: 1000,
+      suggestion: false,
       revision: 1,
       state: "draft" as const,
       updatedAt: timestamp,

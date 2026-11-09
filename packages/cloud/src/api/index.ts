@@ -160,7 +160,13 @@ export { createAppBootstrapRoutes } from "./app-bootstrap";
 export { createAppMigrationProbeRoutes } from "./app-migration-probe";
 /** Core-owned app-key request authentication. */
 export { authenticateSignedAppRequest } from "./authenticate-app-request";
-export { type CodeRunnerDispatchDependencies, codeHttpOriginAllowed, createCodeRunnerCallRoutes } from "./capabilities";
+export {
+  type CodeRunnerDispatchDependencies,
+  codeHttpOriginAllowed,
+  createCodeRunnerCallRoutes,
+  dispatchCodeSdkCall,
+} from "./capabilities";
+export { readCodeAiFile } from "./code-file-reader";
 export {
   CLOUD_MCP_PATH,
   CLOUD_MCP_PROTECTED_RESOURCE_PATH,

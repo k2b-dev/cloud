@@ -355,6 +355,8 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
         navTop: Math.round(nav.getBoundingClientRect().top),
         panelTop: Math.round(panel.getBoundingClientRect().top),
         identityInFrame: !!main.querySelector("h1")!.closest(".paper, .k2b-paper"),
+        // Account pages are settings: the one frame stands flat, with its edge and no shadow (a quiet area).
+        frameShadow: getComputedStyle(panel).boxShadow,
         frames,
         tubs,
         current: nav.querySelector('[aria-current="page"]')?.getAttribute("href"),
@@ -492,6 +494,7 @@ describe("account pages in a browser", () => {
             tubs: [],
           });
           for (const frame of result.sectionFrames) expect(frame).toBe("0px rgba(0, 0, 0, 0)");
+          expect(result.frameShadow, label).toBe("rgba(0, 0, 0, 0) 0px 0px 0px 0px");
           expect(result.overflow).toBeLessThanOrEqual(0);
         }
   }, 120_000);

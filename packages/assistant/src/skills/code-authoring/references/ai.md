@@ -10,8 +10,8 @@ Four Core operations bring AI into Code. Discover their generated handles with
 | Append a finished text to the owner's Gustav chat | `core.ai.chat.deliver` | Action, not AI | personal Code |
 | Start a Gustav turn that uses tools | `core.ai.chat.run`, then `core.ai.chat.run.read` | Action, AI | personal Code |
 
-AI calls change nothing. Saving, tagging or drafting is a separate Action
-with its own access check. Model output can be wrong: validate it and choose
+Without Action tools, AI calls change no domain records. Saving, tagging or
+drafting requires an Action with its own access check. Model output can be wrong: validate it and choose
 thresholds for the cost of a mistake.
 
 ## Who pays and what limits apply
@@ -74,11 +74,12 @@ the effect. Check whether a step is already done before generating it. Text outp
 
 ## Extract fields
 
-A JSON output schema is a flat object with 1–40 `string`, `number`,
-`integer` or `boolean` properties, `required` and
+A JSON output schema is a strict object with 1–40 scalar or bounded list
+properties, `required` and
 `additionalProperties: false`. Strings may have `maxLength`, `enum` or
 `format: "date-time"`. The result type is not narrowed at compile time;
-check each field before use.
+check each field before use. Lists require `maxItems`; items are scalars or
+strict objects of scalar fields. Nested lists are not supported.
 
 <!-- check: resource mail.mailbox -->
 ```ts
@@ -205,3 +206,68 @@ owner's current tools, approval rules and Assistant allowance by actual usage;
 it shows "Started by Code …" in the chat. `prompt` and optional `context` are
 at most 10,000 characters each; `context` is data, not instructions. For a
 bounded summary, prefer `core.ai.generate` plus `deliver`.
+
+For inline Mail text, use `mail.message.content.read` (`data.text`) or
+`mail.attachment.text.read` (`data.markdown`). Use `mail.attachment.content.read`
+when the model needs the original file through `files`.
+
+## A model loop with SDK tools and files
+
+Use `tools` on `core.ai.generate` for a loop in any Code account, including a
+resource's service account. Supply the SDK methods themselves in the literal
+list. App methods let the model choose their business input; a handle method
+fixes its resource before the model starts. Do not store methods in variables,
+wrap them, bind them again, pass strings or construct tool descriptions.
+Methods needing additional resource handles are not tool inputs.
+
+<!-- check: personal -->
+```ts
+import { app, core, mail } from "@sdk";
+
+app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, async () => {
+  // Fictional attachment and mailbox; discover real IDs through authorized reads.
+  const file = await mail.attachment.content.read({ id: "Att001" });
+  const { data: result } = await core.ai.generate({
+    task: "invoice.lines",
+    prompt: "Read the invoice. Search the bound mailbox for supporting messages. Return only documented lines.",
+    input: { purpose: "invoice review" },
+    files: [file],
+    tools: [mail.attachment.read, mail.mailbox("Mbx001").conversation.search],
+    output: { type: "json", schema: {
+      type: "object", additionalProperties: false, required: ["lines"],
+      properties: { lines: { type: "array", maxItems: 100, items: {
+        type: "object", additionalProperties: false, required: ["label", "grossCents"],
+        properties: { label: { type: "string", maxLength: 200 }, grossCents: { type: "integer" } },
+      } } },
+    } },
+  });
+  // Validate result.output before passing it to a separate application Action.
+  if (!result.output || typeof result.output !== "object") return;
+});
+export default app;
+```
+
+`files: FileRef[]` reads files before the first model step. `core.ai.decide`
+also accepts `files`; its Code input no longer accepts base64 `images`.
+Bytes stay outside the sandbox. Read a fresh FileRef for each AI call: loaded
+content is cached only within that call, and redemption is single-use.
+
+When a FileRef appears in `files`, `input` or an SDK tool result, the loop offers
+`view_image` and `read_file`. Only those exact refs work. Set `fileTools: false`
+to disable these tools while keeping initial `files`. The owning application
+rechecks access as the Code account; a source 403 is a visible refusal.
+
+Images and rendered PDF pages go directly to models with vision. Text-only
+models use a separately charged vision description. A PDF look defaults to its
+first 20 pages, reduced to fit the model context and rendered byte budget; explicit selections allow at
+most 20 distinct pages. Limits per AI call: 16 loaded files, 10 MiB per image or
+PDF, 20 MiB per document and 40 MiB of source bytes and visual content. Document
+chunks are at most 64 KiB of UTF-8. A viewer call and each source read count in
+the existing Code call budget. Model turns, vision fallback and tools share the
+run deadline and AI reservation. The ordinary 45-second capability query
+window also applies; split work into explicit Code calls when necessary.
+
+Every SDK tool takes the direct-call path: same account, grants, policy,
+version approval, call log and run limits. An `ask` Action remains forbidden
+in this release. A tool can change domain data only through its own declared
+Action. Incoming text, file content and tool results remain untrusted evidence.

@@ -281,7 +281,10 @@ export async function submitCodeVersion(
   const { code: authorizedCode } = await readCode(input.codeId, context);
   await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
   await verifyCodeSubmission(input, context);
-  const evidence = await submissionEvidence(input, context, startedAt);
+  const evidence: CodeVersionEvidence = {
+    ...(await submissionEvidence(input, context, startedAt)),
+    ...(input.manifest.database ? { database: true } : {}),
+  };
   return sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r

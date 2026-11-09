@@ -2569,7 +2569,21 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
       updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL, UNIQUE(model_id,slug),
       CHECK(id = CASE WHEN slug = 'standard' THEN model_id ELSE model_id || ':' || slug END)
     )`;
-  await db`ALTER TABLE ai.models ADD COLUMN IF NOT EXISTS output_token_limit INTEGER CHECK(output_token_limit > 0)`;
+  // Older services parse to_jsonb(ai.models) strictly, so new metadata lives separately.
+  await db`CREATE TABLE IF NOT EXISTS ai.model_output_limits (
+      model_id TEXT PRIMARY KEY REFERENCES ai.models(id) ON DELETE CASCADE,
+      output_token_limit INTEGER NOT NULL CHECK(output_token_limit > 0)
+    )`;
+  // Repair databases that ran the unreleased column migration, atomically preserving its values.
+  await db`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ai' AND table_name='models' AND column_name='output_token_limit') THEN
+        LOCK TABLE ai.models IN ACCESS EXCLUSIVE MODE;
+        INSERT INTO ai.model_output_limits(model_id,output_token_limit)
+          SELECT id,output_token_limit FROM ai.models WHERE output_token_limit IS NOT NULL
+          ON CONFLICT(model_id) DO UPDATE SET output_token_limit=EXCLUDED.output_token_limit;
+        ALTER TABLE ai.models DROP COLUMN output_token_limit;
+      END IF;
+    END $$`;
   await db`CREATE TABLE IF NOT EXISTS ai.model_assignments (
       slot TEXT PRIMARY KEY CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio','liveAudio','decision')),
       variant_id TEXT REFERENCES ai.model_variants(id), revision INTEGER NOT NULL DEFAULT 1,

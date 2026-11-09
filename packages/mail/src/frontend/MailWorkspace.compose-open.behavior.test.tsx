@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } f
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
-import type { MailDraftSeed, SenderIdentity } from "../contracts";
+import type { MailDraft, MailDraftSeed, SenderIdentity } from "../contracts";
 import type { MailboxPageData } from "../service/workspace";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { mailTestFolder } from "./_components/mail-list-test-fixtures";
@@ -21,7 +21,6 @@ const load = async () => {
       nav: await import("@k2b/ssr/nav"),
       commands: await import("@k2b/cloud/browser/testing"),
       ui: await import("@k2b/ui"),
-      store: await import("./_components/mail-draft-seed-store"),
     };
   } finally {
     dom.cleanup();
@@ -94,6 +93,39 @@ const seed: MailDraftSeed = {
   origin: { kind: "compose", input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "", body: "" } },
   createdAt: now,
 };
+/** The draft the server materializes from the seed: a new message starts in the flow, not on a compose page. */
+const materializedDraft = (senderIdentityId: string): MailDraft => ({
+  id: "Drf0New1",
+  mailboxId: "Box001",
+  conversationId: null,
+  intent: "new",
+  sourceMessageId: null,
+  derivedFromMessageId: null,
+  derivationKind: null,
+  quoteSource: null,
+  senderIdentityId,
+  to: [],
+  cc: [],
+  bcc: [],
+  subject: "",
+  body: "",
+  format: "markdown",
+  priority: "normal",
+  requestDeliveryReceipt: false,
+  requestReadReceipt: false,
+  attachments: [],
+  suggestion: false,
+  createdBy: { kind: "user", userId: "user-1" },
+  lastEditedBy: { kind: "user", userId: "user-1" },
+  lastEditedByDisplayName: "Reader",
+  recoveryCopyCount: 0,
+  revision: 1,
+  state: "draft",
+  deliveryClass: "normal",
+  signatureTemplateId: null,
+  createdAt: now,
+  updatedAt: now,
+});
 
 const MAILBOX_ID = "Box001";
 
@@ -215,11 +247,10 @@ const waitFor = async (condition: () => boolean) => {
   }
 };
 
-describe.skipIf(isServer)("mailbox compose opens one document", () => {
+describe.skipIf(isServer)("mailbox compose opens one new message", () => {
   const m = modules!;
   const path = "/app/mail/Box001";
   const intentHref = "/app/mail/compose?mailbox=Box001&autostart=1";
-  const seedHref = `${path}/compose/local/${seed.id}?return=%2Fapp%2Fmail%2FBox001`;
   const preferenceKey = "cloud:mail:last-sender:Box001";
   const originalFetch = globalThis.fetch;
   const originalWebSocket = globalThis.WebSocket;
@@ -238,6 +269,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
   let identities: SenderIdentity[];
   let responseGate: ReturnType<typeof Promise.withResolvers<Response>> | undefined;
   let failure: string | null;
+  let materializeFailure: string | null;
 
   beforeEach(() => {
     setSystemTime(new Date(now));
@@ -252,6 +284,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     identities = structuredClone(data.identities);
     responseGate = undefined;
     failure = null;
+    materializeFailure = null;
     dispose = () => {};
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -265,6 +298,13 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
           if (responseGate) return responseGate.promise;
           return failure ? Response.json({ code: "DRAFT_FAILED", message: failure }, { status: 500 }) : Response.json(seed);
         }
+        if (url.pathname === "/api/mail/mailboxes/Box001/draft-seeds/materialize" && request.method === "POST") {
+          if (materializeFailure) return Response.json({ code: "DRAFT_FAILED", message: materializeFailure }, { status: 500 });
+          return Response.json(materializedDraft((recorded.body as { draft: { senderIdentityId: string } }).draft.senderIdentityId));
+        }
+        // What the inline draft loads beside the materialized draft.
+        if (url.pathname.endsWith("/attachment-uploads") || url.pathname.endsWith("/compose-templates")) return Response.json([]);
+        if (url.pathname.endsWith("/compose-signature-defaults")) return Response.json([]);
         if (url.pathname.endsWith("/sender-identities")) return Response.json(identities);
         if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
         throw new Error(`Unexpected fetch: ${request.method} ${url.pathname}`);
@@ -319,29 +359,32 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     );
   };
   const composeLink = () => dom.root.querySelector<HTMLAnchorElement>("[data-workspace-primary]")!;
-  const posts = () => requests.filter((request) => request.method === "POST");
+  /** Draft creation only; the opened draft's own lease and saves are the composer's business. */
+  const posts = () => requests.filter((request) => request.method === "POST" && request.path.includes("/draft-seeds"));
   const runComposeCommand = () => {
     const command = m.commands.contextCommandsWithShortcuts().find((command) => command.id === "mail.compose");
     expect(command).toMatchObject({ id: "mail.compose", title: "New email", shortcut: "mod+alt+n" });
     if (typeof command?.action !== "function") throw new Error("Missing compose command action");
     return command.action();
   };
-  const expectDirectCompose = async (sender = "Send01") => {
-    await waitFor(() => navigation.document.mock.calls.length > 0);
-    expect(posts()).toEqual([
-      {
-        path: "/api/mail/mailboxes/Box001/draft-seeds",
-        method: "POST",
-        body: mailComposeDraftSeedInput(sender),
-      },
-    ]);
-    expect(navigation.document).toHaveBeenCalledTimes(1);
-    expect(navigation.document).toHaveBeenCalledWith(seedHref);
+  const seedPost = (sender: string) => ({
+    path: "/api/mail/mailboxes/Box001/draft-seeds",
+    method: "POST",
+    body: mailComposeDraftSeedInput(sender),
+  });
+  const materializePath = "/api/mail/mailboxes/Box001/draft-seeds/materialize";
+  /** v4: Compose creates the draft (seed, then materialize) and opens it as "New message" in the flow, on this page. */
+  const expectNewMessage = async (sender = "Send01") => {
+    await waitFor(() => new URL(window.location.href).searchParams.get("draft") === "Drf0New1");
+    expect(posts().map(({ path }) => path)).toEqual([seedPost(sender).path, materializePath]);
+    expect(posts()[0]).toEqual(seedPost(sender));
+    expect((posts()[1]!.body as { idempotencyKey: string }).idempotencyKey).toBe(seed.id);
+    await waitFor(() => dom.root.querySelector("[data-mail-new-message-row]") !== null);
+    expect(navigation.document).not.toHaveBeenCalled();
     expect(navigation.navigateTo).not.toHaveBeenCalled();
     expect(navigation.assign).not.toHaveBeenCalled();
     expect(navigation.replace).not.toHaveBeenCalled();
-    expect(`${window.location.pathname}${window.location.search}`).toBe(path);
-    expect(JSON.parse(localStorage.getItem(`cloud:user:user-1:mail:cloud:mail:draft-seed:Box001:${seed.id}`)!)).toEqual(seed);
+    expect(window.location.pathname).toBe(path);
     expect(localStorage.getItem(preferenceKey)).toBe(sender);
   };
   const dialog = () => dom.document.querySelector('dialog[open][aria-label="Could not start message"]');
@@ -353,14 +396,14 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     expect(composeLink().hasAttribute("aria-busy")).toBe(false);
   };
 
-  test("a1 desktop head Compose creates one seed and navigates directly to its composer", async () => {
+  test("a1 desktop head Compose creates one draft and opens it as a new message in the flow", async () => {
     mount();
     expect(composeLink().getAttribute("href")).toBe(intentHref);
     composeLink().click();
-    await expectDirectCompose();
+    await expectNewMessage();
   });
 
-  test("a2 phone head Compose shows progress while preparing and opens one document", async () => {
+  test("a2 phone head Compose shows progress while preparing and opens one new message", async () => {
     dom.window.innerWidth = 375;
     dom.window.innerHeight = 740;
     mount();
@@ -372,13 +415,13 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     expect(link.querySelector(".ti-loader-2")).not.toBeNull();
     expect(navigation.document).not.toHaveBeenCalled();
     responseGate.resolve(Response.json(seed));
-    await expectDirectCompose();
+    await expectNewMessage();
   });
 
-  test("a3 mail.compose retains its shortcut and opens one document", async () => {
+  test("a3 mail.compose retains its shortcut and opens one new message", async () => {
     mount();
     runComposeCommand();
-    await expectDirectCompose();
+    await expectNewMessage();
   });
 
   for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
@@ -446,20 +489,30 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     m.ui.dialogCore.close();
     failure = null;
     composeLink().click();
-    await waitFor(() => navigation.document.mock.calls.length === 1);
-    expect(posts()).toEqual(
-      [1, 2].map(() => ({
-        path: "/api/mail/mailboxes/Box001/draft-seeds",
-        method: "POST",
-        body: mailComposeDraftSeedInput("Send01"),
-      })),
-    );
-    expect(navigation.document).toHaveBeenCalledTimes(1);
-    expect(navigation.document).toHaveBeenCalledWith(seedHref);
+    await waitFor(() => new URL(window.location.href).searchParams.get("draft") === "Drf0New1");
+    expect(posts()).toEqual([seedPost("Send01"), seedPost("Send01"), expect.objectContaining({ path: materializePath })]);
+    expect(navigation.document).not.toHaveBeenCalled();
+  });
+
+  test("b7 a failed materialize reports its reason and the retry finishes the same seed, never a second one", async () => {
+    mount();
+    materializeFailure = "Draft storage unavailable";
+    composeLink().click();
+    await expectFailure(materializeFailure);
+    m.ui.dialogCore.close();
+    materializeFailure = null;
+    composeLink().click();
+    await waitFor(() => new URL(window.location.href).searchParams.get("draft") === "Drf0New1");
+    expect(posts().map(({ path }) => path)).toEqual([seedPost("Send01").path, materializePath, materializePath]);
+    expect(
+      posts()
+        .filter(({ path }) => path === materializePath)
+        .map(({ body }) => (body as { idempotencyKey: string }).idempotencyKey),
+    ).toEqual([seed.id, seed.id]);
   });
 
   for (const second of ["click", "command"]) {
-    test(`b4 click then ${second} while preparing creates only one seed, including after navigation`, async () => {
+    test(`b4 click then ${second} while preparing creates only one seed and one new message`, async () => {
       mount();
       responseGate = Promise.withResolvers<Response>();
       composeLink().click();
@@ -469,11 +522,8 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
       expect(posts()).toHaveLength(1);
       expect(navigation.document).not.toHaveBeenCalled();
       responseGate.resolve(Response.json(seed));
-      await expectDirectCompose();
-      composeLink().click();
-      runComposeCommand();
-      expect(posts()).toHaveLength(1);
-      expect(navigation.document).toHaveBeenCalledTimes(1);
+      await expectNewMessage();
+      expect(dom.root.querySelectorAll("[data-mail-new-message-row]")).toHaveLength(1);
     });
   }
 
@@ -487,7 +537,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
       localStorage.setItem(preferenceKey, preferred!);
       mount();
       composeLink().click();
-      await expectDirectCompose(expected);
+      await expectNewMessage(expected);
     });
   }
 
@@ -511,21 +561,5 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     expect(link.querySelector(".ti-pencil")).not.toBeNull();
     expect(link.querySelector(".ti-loader-2")).toBeNull();
     expect({ classes: link.className, text: link.textContent, children: link.childElementCount }).toEqual(before);
-  });
-
-  test("b7 a local seed storage failure reports recovery and clears pending without navigation", async () => {
-    const storing = spyOn(m.store, "storeMailDraftSeed").mockImplementation(() => {
-      throw new Error("Quota exceeded");
-    });
-    try {
-      mount();
-      composeLink().click();
-      await expectFailure("The browser could not keep this message locally. Free some site storage and try again.");
-      expect(storing).toHaveBeenCalledTimes(1);
-      expect(posts()).toHaveLength(1);
-      expect(localStorage.getItem(`cloud:user:user-1:mail:cloud:mail:draft-seed:Box001:${seed.id}`)).toBeNull();
-    } finally {
-      storing.mockRestore();
-    }
   });
 });

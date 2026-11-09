@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { capabilityCallDigest, capabilityValueDigest } from "../capabilities/calls";
 import { CapabilityIdempotencyKeySchema, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
+import { CodeDatabaseRequestSchema } from "./database-contract";
 import { CodeFileRefSchema } from "./file-ref";
 import { RunnerCallError, type RunnerJsonValue } from "./runner-protocol";
 import type { CodeTestCall, CodeTestMock } from "./test-contract";
@@ -31,7 +32,21 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
     calls: () => structuredClone(calls),
     failure: () => failure,
     async call(operation: string, raw: RunnerJsonValue): Promise<RunnerJsonValue> {
-      const parsed = InvocationSchema.safeParse(raw);
+      const database = ["db.query", "db.exec", "db.batch"].includes(operation);
+      if (
+        database &&
+        (manifest.mode === "code_run" ||
+          !raw ||
+          typeof raw !== "object" ||
+          Array.isArray(raw) ||
+          !CodeDatabaseRequestSchema.safeParse({ ...raw, operation }).success)
+      ) {
+        failure ??= "code_test_invalid_call";
+        throw new RunnerCallError(failure);
+      }
+      const parsed = InvocationSchema.safeParse(
+        database ? { call: { capability: operation, target: null, refs: {}, input: raw }, metadata: {} } : raw,
+      );
       if (!parsed.success) {
         failure ??= "code_test_invalid_call";
         throw new RunnerCallError(failure);
@@ -51,7 +66,18 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
         if (fixtureFailure) failure ??= code;
         throw new RunnerCallError(code);
       };
-      const spec = manifest.operations.find((value) => value.capability === operation);
+      const spec = database
+        ? {
+            capability: operation,
+            target: null,
+            refs: {},
+            kind: operation === "db.query" ? ("query" as const) : ("action" as const),
+            idempotency: "none",
+            inputSchema: {},
+            dataSchema: {},
+            stream: undefined,
+          }
+        : manifest.operations.find((value) => value.capability === operation);
       if (!spec || call.capability !== operation || (spec.target === null ? call.target !== null : call.target?.type !== spec.target))
         return refuse("code_test_invalid_call");
       if (
@@ -67,7 +93,7 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
         const { id: _opaque, ...metadata } = file.data;
         domainInput = { ...input.data, file: metadata };
       }
-      if (!z.fromJSONSchema(spec.inputSchema).safeParse(domainInput).success) return refuse("code_test_invalid_input");
+      if (!database && !z.fromJSONSchema(spec.inputSchema).safeParse(domainInput).success) return refuse("code_test_invalid_input");
       const key = metadata.idempotencyKey;
       if (spec.kind === "action" && spec.idempotency === "required" ? !key : key !== undefined)
         return refuse("code_test_invalid_idempotency");
@@ -99,12 +125,21 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
       if (!reply.ok) return refuse(reply.error, false);
       if ((spec.kind !== "query" || spec.stream?.direction === "read") && reply.page !== undefined)
         return refuse("code_test_invalid_fixture");
-      const output = spec.stream?.direction === "read" ? CodeFileRefSchema : z.fromJSONSchema(spec.dataSchema);
+      const changes = z.object({ changes: z.number().int().nonnegative() }).strict();
+      const output = database
+        ? operation === "db.query"
+          ? z.array(z.record(z.string(), z.json()))
+          : operation === "db.batch"
+            ? z.array(changes)
+            : changes
+        : spec.stream?.direction === "read"
+          ? CodeFileRefSchema
+          : z.fromJSONSchema(spec.dataSchema);
       const checked = output.safeParse(reply.data);
       if (!checked.success || (spec.stream?.direction === "read" && CodeFileRefSchema.parse(checked.data).size > spec.stream.maxBytes))
         return refuse("code_test_invalid_fixture");
       const data = structuredClone(
-        spec.kind === "query" && spec.stream?.direction !== "read"
+        !database && spec.kind === "query" && spec.stream?.direction !== "read"
           ? { data: reply.data, ...(reply.page === undefined ? {} : { page: reply.page }) }
           : reply.data,
       );

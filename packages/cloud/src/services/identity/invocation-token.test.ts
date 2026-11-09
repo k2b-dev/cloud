@@ -268,6 +268,30 @@ describe("Cloud invocation JWT", () => {
     expect(await verify(await token({ ...baseClaims(), workload_run: "r1" }))).toBeNull();
   });
 
+  test("Code attempt generation is signed only for direct mandate-bound Code runs", async () => {
+    const current = {
+      ...baseClaims(),
+      credential_kind: "mandate",
+      mandate_id: "10ec1c74-858b-4a98-9ba7-ab2276754c69",
+      mandate_revision: 1,
+      workload_type: "code.version",
+      workload_id: "version",
+      workload_run: "run",
+      workload_generation: 3,
+    };
+    expect(await verify(await token(current))).toMatchObject({ workload_generation: 3 });
+    for (const change of [
+      { workload_run: undefined },
+      { workload_type: "other" },
+      { credential_kind: "session" },
+      { workload_generation: 0 },
+      { workload_generation: -1 },
+      { workload_generation: 1.5 },
+      { parent_invocation_id: jti },
+    ])
+      expect(await verify(await token({ ...current, ...change }))).toBeNull();
+  });
+
   test("Code trigger coordinates round-trip only with a complete run binding", async () => {
     const current = {
       ...baseClaims(),

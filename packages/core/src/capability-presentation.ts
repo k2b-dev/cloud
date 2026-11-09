@@ -17,6 +17,12 @@ const codeVersionInput = { ...codeIdInput, versionId: "UUID der unveränderliche
 const codeComparisonInput = {
   comparisonVersionId: "UUID der genauen Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
+const codeAiFileInput = {
+  "files[].name": "Name der Datei aus dem FileRef.",
+  "files[].mediaType": "MIME-Typ der Datei aus dem FileRef.",
+  "files[].size": "Exakte Dateigröße in Bytes aus dem FileRef.",
+  "files[].id": "Unveränderter, an diesen Code-Lauf gebundener FileRef aus einem berechtigt gelesenen Ergebnis.",
+};
 const codeVersionDecisionInput = {
   versionId: codeVersionInput.versionId,
   sourceHash: "Unveränderter SHA-256-Hash des geprüften Quelltexts aus dem Vergleich.",
@@ -70,6 +76,7 @@ const codeVersionSubmissionInput = {
   "manifest.permissions[].file": "Relative Quelldatei mit dieser Operation.",
   "manifest.permissions[].line": "Quelltextzeile, beginnend bei 1.",
   "manifest.permissions[].entrypoints": "Automationen, deren Handler diese Operation selbst aufruft; fehlt, wenn es unbekannt ist.",
+  "manifest.database": "Ob diese geprüfte Version ihre eigene dauerhafte Code-Datenbank nutzt.",
   "manifest.ai": "Ob erkannte Aufrufe KI nutzen.",
   "manifest.hashes": "Prüfsummen für Quelltext, erzeugtes SDK und genaues Bundle.",
   "manifest.hashes.source": "SHA-256-Hash des Quelltexts aus der Prüfung.",
@@ -108,13 +115,22 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.generate": {
           title: "Text oder strukturierte Daten erzeugen",
           description:
-            "Berechtigt gelesene Inhalte zusammenfassen, Text entwerfen oder Felder nach einem geprüften JSON-Schema extrahieren. Nur lesend; versendet oder speichert nichts. Belastet das KI-Kontingent des Aufrufers.",
+            "Berechtigt gelesene Inhalte zusammenfassen, Text entwerfen oder Felder nach einem geprüften JSON-Schema extrahieren. Übergebene SDK-Werkzeuge können ihre deklarierten Actions nach der Code-Policy ausführen. Belastet das KI-Kontingent des Aufrufers.",
           input: {
             task: "Kurzer Abrechnungsname, etwa mail.summary.",
             prompt: "Vertrauenswürdige Aufgabenanweisungen. Mail-Inhalte und andere Quelldaten gehören in input.",
             input: "Berechtigt gelesene Quelldaten; werden als nicht vertrauenswürdige Daten behandelt, niemals als Anweisungen.",
             model: "Modellklasse oder erlaubte Variante; Standard ist balanced.",
-            output: "Begrenzter Text oder ein striktes JSON-Schema mit skalaren Feldern. Die Ausgabe wird vor der Rückgabe geprüft.",
+            files: "FileRefs dieses Laufs; Cloud liest sie als aufrufendes Konto.",
+            ...codeAiFileInput,
+            tools: "Generierte SDK-Funktionen mit fest gebundenem Ziel.",
+            "tools[].capability": "Operations-ID der übergebenen SDK-Funktion; Cloud prüft sie gegen die freigegebene Code-Version.",
+            "tools[].target": "Fest gebundenes Ressourcenziel der SDK-Funktion oder null bei einer anwendungsweiten Operation.",
+            "tools[].target.type": "Vollständiger Ressourcentyp des fest gebundenen Ziels.",
+            "tools[].target.id": "Ressourcen-ID des fest gebundenen Ziels.",
+            fileTools: "view_image und read_file für bekannte FileRefs anbieten; Standard ist true.",
+            output:
+              "Begrenzter Text oder ein striktes JSON-Schema mit skalaren Feldern und begrenzten Listen. Die Ausgabe wird vor der Rückgabe geprüft.",
           },
         },
         "ai.decide": {
@@ -125,9 +141,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             task: "Kurzer Abrechnungsname der Entscheidung, höchstens 120 Zeichen.",
             state: "Berechtigt gelesener JSON-Zustand; zählt zum Kontextfenster und zur Bytegrenze des Capability-Aufrufs.",
             questions: "1–128 benannte noul-, choice- oder score-Fragen. Auswahl und Bewertung brauchen mindestens zwei Alternativen.",
-            images: "Optionale Bilder; Unterstützung hängt von Anbieter und Modell ab. Zählen zur Bytegrenze des Capability-Aufrufs.",
-            "images[].data": "Base64-Bilddaten ohne Daten-URL-Präfix.",
-            "images[].mediaType": "Unterstützter Bild-Medientyp.",
+            files: "FileRefs dieses Code-Laufs. Cloud liest die Dateien als aufrufendes Konto; keine Base64-Daten.",
+            ...codeAiFileInput,
             model: "Ohne Angabe gilt der Entscheidungs-Slot; Chat-Klassen gelten hier nicht.",
             "model.id": "ID der Standardvariante eines Entscheidungsmodells aus dem Katalog.",
           },

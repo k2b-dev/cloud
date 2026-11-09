@@ -142,7 +142,7 @@ export type RunnerCallRequest = z.infer<typeof RunnerCallRequestSchema>;
 export const RunnerCallErrorSchema = z
   .object({
     code: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
-    /** Capability dispatch HTTP failure status; absent for local refusals and older stored calls. */
+    /** Capability or Core refusal status; supervisor failures and older stored calls may omit it. */
     status: z.number().int().min(400).max(599).optional(),
     origin: CodeInternetOriginSchema.optional(),
   })
