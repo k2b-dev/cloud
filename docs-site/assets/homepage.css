@@ -1644,9 +1644,17 @@ html:not(.dark) :where(.cloud-site, .fibel-app) .fibel-control-icon-button:hover
   font-style: normal;
 }
 
+/* "= feat/code" stays together on narrow screens. */
 .cloud-formula b {
   color: var(--c-accent-ink);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.cloud-formula b i {
+  margin-right: 0.3rem;
+  color: var(--c-muted);
+  font-weight: 400;
 }
 
 .cloud-feat-code-grid {

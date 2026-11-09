@@ -189,8 +189,9 @@ export default function HomePage(props: HomePageProps) {
                   <span>SQL</span>
                   <i>+</i>
                   <span>S3</span>
-                  <i>=</i>
-                  <b>feat/code</b>
+                  <b>
+                    <i>=</i> feat/code
+                  </b>
                 </p>
               </div>
             </div>
