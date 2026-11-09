@@ -17227,6 +17227,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
   flex-shrink: 0;
 }
+/* `edge="top"`: the strip sticks to the top of its column instead, in its
+   place in the flow, such as above the newest message of a conversation. */
+.k2b-ui .k2b-toolbar-float[data-edge="top"] {
+  inset-block: 0 auto;
+  margin-block-start: 0;
+}
 /* ToolbarDock: one floating row for several pills, the first at the start
    edge and the last at the end edge. The row keeps its place in the flow, so
    the end of the content always stays reachable above it. */
@@ -17289,6 +17295,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
   height: 1.5rem;
+}
+/* An action with `text` shows its label beside the icon while there is room;
+   a compact toolbar keeps only the icon, at the same height. */
+.k2b-ui .k2b-toolbar .k2b-toolbar__action[data-text] {
+  width: auto;
+  gap: 0.375rem;
+  padding-inline: 0.75rem;
+}
+.k2b-ui .k2b-toolbar .k2b-toolbar__text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__action[data-text] {
+  padding-inline: 0;
+}
+.k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__text {
+  display: none;
 }
 /* A toolbar at a text selection (SelectionToolbar): in the top layer, so no scroll container clips it. */
 .k2b-ui .k2b-selection-toolbar {
