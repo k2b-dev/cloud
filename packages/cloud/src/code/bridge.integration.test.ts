@@ -1440,8 +1440,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               mailCapabilities,
               "message.received",
               {
-                subject: "Ms4g00",
-                place: "Mb4g00",
+                // This probe owns a separate slot from the Mail file fixture.
+                subject: "Ms4g99",
+                place: "Mb4g99",
                 data: { receiptId: "44444444-4444-4444-8444-444444444444" },
               },
               { appId: "mail", id: "55555555-5555-4555-8555-555555555555", time: now.toISOString() },

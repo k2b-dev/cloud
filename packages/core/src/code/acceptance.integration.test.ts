@@ -3,7 +3,13 @@ import * as cloud from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
 import { signCodeRunToken } from "@k2b/cloud/code/run-token";
-import { type CloudRuntime, capabilityResultSchema, NormalizedCapabilityCallSchema, type User } from "@k2b/cloud/contracts";
+import {
+  type CloudRuntime,
+  type CodeCheckedVersionManifest,
+  capabilityResultSchema,
+  NormalizedCapabilityCallSchema,
+  type User,
+} from "@k2b/cloud/contracts";
 import { type AuthContext, userFromActor } from "@k2b/cloud/server";
 import { accounts, session } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
@@ -489,17 +495,51 @@ suiteFor(
     ).toHaveLength(1);
     expect(await sql`SELECT id FROM mail.drafts WHERE mailbox_id=${mailboxId}::uuid AND subject='Montagsbericht'`).toHaveLength(1);
 
+    // The original literal version independently refuses an injected target.
+    const undeclared = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-undeclared" }, author);
+    fleet.foreignRuns.set(undeclared.run.runId, { target: { type: "spaces.space", id: foreignId }, status: 403 });
+    const undeclaredResult = await completed(codeId, undeclared.run.runId);
+    expect(undeclaredResult.run.state).toBe("failed");
+    expect(NormalizedCapabilityCallSchema.parse(undeclaredResult.calls[0]?.call).target).toEqual({ type: "spaces.space", id: foreignId });
+    expect(undeclaredResult.calls[0]).toMatchObject({
+      state: "failed",
+      refusalKind: "policy",
+      result: { ok: false, error: { code: "code_capability_undeclared" } },
+    });
+    expect(await sql`SELECT id FROM spaces.items WHERE space_id=${foreignSpaceId}::uuid`).toHaveLength(0);
+
+    // Admit a dynamic target in checked evidence so the foreign-target probe
+    // reaches the provider's current account rights rather than the version guard.
+    const dynamicVersion = await code.submit(
+      {
+        codeId,
+        entry: "code.ts",
+        files: source(
+          `const target: string = String("${spaceId}"); await spaces.space(target).task.create({ columnId: "${columnId}", title: "Rechnung 2026-025 prüfen", idempotencyKey: "invoice:2026-025" });`,
+        ),
+        baseVersionId: submitted.submission.version.id,
+      },
+      author,
+    );
+    const [dynamicEvidence] = await sql<
+      { permissions: CodeCheckedVersionManifest["permissions"] }[]
+    >`SELECT manifest->'permissions' AS permissions FROM code.versions WHERE id=${dynamicVersion.submission.version.id}::uuid`;
+    expect(dynamicEvidence?.permissions).toContainEqual(
+      expect.objectContaining({ operation: "spaces.task.create", target: { type: "spaces.space", id: null } }),
+    );
+    await approve(dynamicVersion.submission);
+    await activate(codeId, dynamicVersion.submission.version.id, proof(manager));
     const foreign = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-foreign" }, author);
-    fleet.foreignRuns.set(foreign.run.runId, { type: "spaces.space", id: foreignId });
+    fleet.foreignRuns.set(foreign.run.runId, { target: { type: "spaces.space", id: foreignId }, status: 200 });
     const foreignResult = await completed(codeId, foreign.run.runId);
     expect(foreignResult.run.state).toBe("failed");
     expect(NormalizedCapabilityCallSchema.parse(foreignResult.calls[0]?.call).target).toEqual({ type: "spaces.space", id: foreignId });
     expect(foreignResult.calls[0]?.result).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(await sql`SELECT id FROM spaces.items WHERE space_id=${foreignSpaceId}::uuid`).toHaveLength(0);
 
-    // The new immutable version uses current resource rights; checker operations are review evidence.
+    // The new immutable version uses current resource rights within its declared scope.
     const updateVersion = await code.submit(
-      { codeId, entry: "code.ts", files: update, baseVersionId: submitted.submission.version.id },
+      { codeId, entry: "code.ts", files: update, baseVersionId: dynamicVersion.submission.version.id },
       author,
     );
     await approve(updateVersion.submission);
@@ -637,6 +677,7 @@ suiteFor(
     const resourceRunIds = [
       ...runs.filter((run) => run.code_id === codeId).map((run) => run.id),
       repeat.run.runId,
+      undeclared.run.runId,
       foreign.run.runId,
       amended.run.runId,
       revoked.run.runId,
