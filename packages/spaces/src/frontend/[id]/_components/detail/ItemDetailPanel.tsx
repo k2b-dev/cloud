@@ -21,6 +21,7 @@ import {
   MultiSelectInput,
   NumberInput,
   prompts,
+  Section,
   Select,
   StatusBadge,
   Tag,
@@ -1133,7 +1134,7 @@ export default function ItemDetailPanel(props: Props) {
 
         <DetailPanel.Body scrollPreserveKey={props.scrollPreserveKey}>
           <Show when={propertyItems().length > 0}>
-            <DetailPanel.Section
+            <Section
               title={t.properties}
               icon="ti ti-list-details"
               actions={
@@ -1143,11 +1144,11 @@ export default function ItemDetailPanel(props: Props) {
               }
             >
               <DescriptionList layout="rows" size="sm" items={propertyItems()} />
-            </DetailPanel.Section>
+            </Section>
           </Show>
 
           <Show when={props.item.description}>
-            <DetailPanel.Section
+            <Section
               class="[view-transition-name:space-item-detail-description]"
               title={t.description}
               icon="ti ti-align-left"
@@ -1163,7 +1164,7 @@ export default function ItemDetailPanel(props: Props) {
               }
             >
               <MarkdownView markdown={props.item.description!} headingScale="compact" class="text-sm" />
-            </DetailPanel.Section>
+            </Section>
           </Show>
 
           {/* Order of use (UI-27): fields, then the discussion, then the item's own content and what belongs to it. */}
@@ -1208,7 +1209,7 @@ export default function ItemDetailPanel(props: Props) {
           </Show>
 
           <Show when={!isEvent() && (canEditItem() || hasChecklist())}>
-            <DetailPanel.Section
+            <Section
               title={t.checklist}
               icon="ti ti-checklist"
               meta={`${(props.checklist ?? []).filter((entry) => entry.completed).length}/${props.checklist?.length ?? 0}`}
@@ -1220,7 +1221,7 @@ export default function ItemDetailPanel(props: Props) {
                 canWrite={canEditItem()}
                 onChanged={reconcileAfterWrite}
               />
-            </DetailPanel.Section>
+            </Section>
           </Show>
 
           <Show when={canShowInvitations()}>
@@ -1229,19 +1230,19 @@ export default function ItemDetailPanel(props: Props) {
 
           <Show when={!isEvent() && props.work?.progress}>
             {(note) => (
-              <DetailPanel.Section title={t.workProgress} icon="ti ti-progress">
+              <Section title={t.workProgress} icon="ti ti-progress">
                 <MarkdownView markdown={note().content} headingScale="compact" class="text-sm" />
-              </DetailPanel.Section>
+              </Section>
             )}
           </Show>
           <Show when={!isEvent() && props.work?.result}>
             {(result) => (
-              <DetailPanel.Section title={t.workResult} icon="ti ti-flag-check">
+              <Section title={t.workResult} icon="ti ti-flag-check">
                 <MarkdownView markdown={result().content} headingScale="compact" class="text-sm" />
                 <Show when={result().commit}>
                   <code class="text-xs break-all">{result().commit}</code>
                 </Show>
-              </DetailPanel.Section>
+              </Section>
             )}
           </Show>
 

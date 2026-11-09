@@ -16,6 +16,7 @@ import {
   type LightboxImage,
   Placeholder,
   prompts,
+  Section,
   TextInput,
   toast,
   useLocale,
@@ -693,7 +694,8 @@ export function AssistantChatSidebarContent(props: {
             when={!props.search.active()}
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
-            <DetailPanel.Section
+
+            <Section
               title={copy().results}
               class="assistant-sidebar-results"
               // No count while empty: the body already says there are no results yet.
@@ -767,10 +769,10 @@ export function AssistantChatSidebarContent(props: {
                   </For>
                 </div>
               </Show>
-            </DetailPanel.Section>
+            </Section>
 
             <Show when={yourFiles().count}>
-              <DetailPanel.Section title={copy().yourFiles} count={yourFiles().count}>
+              <Section title={copy().yourFiles} count={yourFiles().count}>
                 <For each={yourFiles().recent}>{(file) => <FileRow file={file} open={() => void openUpload(file)} />}</For>
                 <Show when={yourFiles().olderCount}>
                   <Disclosure
@@ -814,7 +816,7 @@ export function AssistantChatSidebarContent(props: {
                     </For>
                   </Disclosure>
                 </Show>
-              </DetailPanel.Section>
+              </Section>
             </Show>
 
             <Show when={snapshot().sourceCount}>
@@ -822,7 +824,7 @@ export function AssistantChatSidebarContent(props: {
             </Show>
 
             <Show when={working().count || props.runCount}>
-              <DetailPanel.Section
+              <Section
                 collapsible
                 open={workingOpen()}
                 onOpenChange={setWorkingOpen}
@@ -876,7 +878,7 @@ export function AssistantChatSidebarContent(props: {
                     {(count) => <p class="assistant-sidebar-hint">{copy().hiddenGroups({ count: count() })}</p>}
                   </Show>
                 </Show>
-              </DetailPanel.Section>
+              </Section>
             </Show>
 
             <ContextSection snapshot={snapshot()} project={props.project ?? null} state={props.state} actions={props.actions} />
@@ -1134,7 +1136,7 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
   const entries = createMemo(() => buildSourceEntries(pages.sources()));
   const groups = createMemo(() => groupByTime(entries(), (entry) => entry.at, props.snapshot.now, props.snapshot.timeZone));
   return (
-    <DetailPanel.Section collapsible open={open()} onOpenChange={setOpen} title={copy().sources} count={props.snapshot.sourceCount}>
+    <Section collapsible open={open()} onOpenChange={setOpen} title={copy().sources} count={props.snapshot.sourceCount}>
       <Show when={open()}>
         <Show
           when={all()}
@@ -1167,7 +1169,7 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
           </Show>
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -1193,7 +1195,7 @@ function ContextSection(props: {
   const Heading = (headingProps: { children: JSX.Element }) => <p class="assistant-sidebar-timegroup__label">{headingProps.children}</p>;
   const [open, setOpen] = createSignal(false);
   return (
-    <DetailPanel.Section collapsible open={open()} onOpenChange={setOpen} title={copy().context} summary={summary()}>
+    <Section collapsible open={open()} onOpenChange={setOpen} title={copy().context} summary={summary()}>
       <Show when={open()}>
         <Show when={props.project}>
           {(project) => (
@@ -1286,7 +1288,7 @@ function ContextSection(props: {
           />
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -1345,12 +1347,12 @@ function SidebarSearchResults(props: {
     <>
       <Show when={debounced().length >= SEARCH_MIN_CHARS}>
         <Show when={results().length}>
-          <DetailPanel.Section title={copy().results}>
+          <Section title={copy().results}>
             <For each={results()}>{(result) => <ResultRow result={result} actions={props.actions} files={props.files} />}</For>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         <Show when={fileHits().length}>
-          <DetailPanel.Section title={copy().files}>
+          <Section title={copy().files}>
             <For each={fileHits()}>
               {(hit) => (
                 <DetailPanel.Action
@@ -1363,12 +1365,12 @@ function SidebarSearchResults(props: {
                 />
               )}
             </For>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         <Show when={sourceHits().length}>
-          <DetailPanel.Section title={copy().sources}>
+          <Section title={copy().sources}>
             <For each={sourceHits()}>{(entry) => <SourceRow entry={entry} actions={props.actions} />}</For>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         <Show when={hits.loading && !hits.latest}>
           <Placeholder state="loading" align="left" title={copy().loading} />

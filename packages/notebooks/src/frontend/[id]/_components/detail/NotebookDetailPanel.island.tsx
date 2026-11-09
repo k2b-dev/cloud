@@ -33,6 +33,7 @@ import {
   Placeholder,
   ProgressBar,
   prompts,
+  Section,
   Tooltip,
   toast,
   useLocale,
@@ -1075,18 +1076,18 @@ export default function NotebookDetailPanel(props: Props) {
           />
 
           <Show when={tasks().total > 0}>
-            <DetailPanel.Section
+            <Section
               title={t().tasks}
               icon="ti ti-list-check"
               class="notebook-tasks"
               meta={t().tasksDone({ done: tasks().done, total: tasks().total })}
             >
               <ProgressBar label={t().completedTasks} size="xs" value={(tasks().done / Math.max(1, tasks().total)) * 100} />
-            </DetailPanel.Section>
+            </Section>
           </Show>
 
           <Show when={outline().length >= 2}>
-            <DetailPanel.Section
+            <Section
               title={t().contents}
               icon="ti ti-list-tree"
               count={outline().length}
@@ -1112,7 +1113,7 @@ export default function NotebookDetailPanel(props: Props) {
                   )}
                 </Index>
               </div>
-            </DetailPanel.Section>
+            </Section>
           </Show>
 
           <DetailTags
@@ -1127,7 +1128,7 @@ export default function NotebookDetailPanel(props: Props) {
           <DetailLinks incoming={backlinks().map(linkItem)} outgoing={relations().outgoing.map(linkItem)} />
 
           <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
-            <DetailPanel.Section
+            <Section
               title={t().attachments}
               icon="ti ti-paperclip"
               count={visibleAttachments().length > 0 ? visibleAttachments().length : undefined}
@@ -1194,11 +1195,11 @@ export default function NotebookDetailPanel(props: Props) {
                   onOpen={(attachment) => openAttachment(props.notebookId, attachment)}
                 />
               </Show>
-            </DetailPanel.Section>
+            </Section>
           </Show>
 
           <Show when={namedBlocks().length > 0}>
-            <DetailPanel.Section
+            <Section
               title={t().references}
               icon="ti ti-at"
               count={namedBlocks().length}
@@ -1221,7 +1222,7 @@ export default function NotebookDetailPanel(props: Props) {
                   )}
                 </Index>
               </div>
-            </DetailPanel.Section>
+            </Section>
           </Show>
 
           {/* The log has no count: it is a stream, not a finite set. It loads after the first paint and is the last
@@ -1252,13 +1253,7 @@ export default function NotebookDetailPanel(props: Props) {
               items={properties()}
               summary={t().propertiesSummary({ words: t().words({ count: words() }), created: relative(createdAt()) })}
             />
-            <DetailPanel.Section
-              title={t().activity}
-              icon="ti ti-activity"
-              class="notebook-activity"
-              collapsible
-              summary={activitySummary()}
-            >
+            <Section title={t().activity} icon="ti ti-activity" class="notebook-activity" collapsible summary={activitySummary()}>
               <div class="notebook-panel-rows" aria-busy={noteActivity.loading() ? "true" : undefined}>
                 <Show when={noteActivity.loading() && activityItems().length === 0 && !noteActivity.error()}>
                   <For each={[0, 1, 2, 3]}>
@@ -1346,7 +1341,7 @@ export default function NotebookDetailPanel(props: Props) {
                   />
                 </Tooltip.Anchor>
               </div>
-            </DetailPanel.Section>
+            </Section>
           </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>

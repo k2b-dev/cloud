@@ -1,5 +1,5 @@
 import { type InfiniteQueryResult, query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, prompts, Skeleton, toast, useLocale } from "@k2b/ui";
+import { Button, DetailPanel, prompts, Section, Skeleton, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createMemo, createSignal, For, Match, mapArray, Show, Switch } from "solid-js";
 import type { ShareAccessCounts, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
@@ -91,7 +91,7 @@ export default function ShareHistory(props: ShareHistoryProps) {
   return (
     <Show when={props.shares.length > 0}>
       <DetailPanel.Group label={h().publicLink}>
-        <DetailPanel.Section title={h().publicLink} icon="ti ti-world" tone="neutral" count={props.shares.length}>
+        <Section title={h().publicLink} icon="ti ti-world" tone="neutral" count={props.shares.length}>
           <div class="filesv2-share-history">
             <For each={props.shares}>
               {(item) => (
@@ -107,7 +107,7 @@ export default function ShareHistory(props: ShareHistoryProps) {
               )}
             </For>
           </div>
-        </DetailPanel.Section>
+        </Section>
       </DetailPanel.Group>
     </Show>
   );

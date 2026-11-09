@@ -4,12 +4,13 @@ import type { DropdownItem } from "../actions/Dropdown";
 import { Avatar, type AvatarShape } from "../surfaces/Avatar";
 import { AvatarStack, type AvatarStackPerson } from "../surfaces/AvatarStack";
 import { personColor } from "../surfaces/person-color";
+import { Section } from "../surfaces/Section";
 import DetailPanel from "./DetailPanel";
 import { useDetailPanelMessages } from "./detail-panel-messages";
 import { useDetailSectionMessages } from "./detail-sections-messages";
 
 /*
- * Shared sections of an object's detail panel. Each one is a `DetailPanel.Section` with its icon, title, and count, so
+ * Shared sections of an object's detail panel. Each one is a `Section` with its icon, title, and count, so
  * its content starts on the title's text edge, and each keeps its height while its data changes. Apps pass data; the
  * order of sections is a convention (see the DetailPanel UI context).
  */
@@ -209,7 +210,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
   const meta = () => (state() === "live" && others().length === 0 ? t().onlyYou : undefined);
 
   return (
-    <DetailPanel.Section
+    <Section
       title={props.title ?? t().hereNow}
       icon="ti ti-users"
       count={count()}
@@ -284,7 +285,7 @@ export function DetailPresence(props: DetailPresenceProps): JSX.Element {
           <p class="k2b-detail-presence__where k2b-truncate-fade">{where()}</p>
         </Show>
       </div>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -378,7 +379,7 @@ export function DetailAccess(props: DetailAccessProps): JSX.Element {
     );
   };
   return (
-    <DetailPanel.Section
+    <Section
       title={props.title ?? t().access}
       icon="ti ti-lock-access"
       count={state() === "ready" ? props.entries.length : undefined}
@@ -450,7 +451,7 @@ export function DetailAccess(props: DetailAccessProps): JSX.Element {
           <p class="k2b-detail-section-note">{props.note}</p>
         </Show>
       </div>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -606,7 +607,7 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
     <Show
       when={total() > 0}
       fallback={
-        <DetailPanel.Section
+        <Section
           title={props.title ?? t().links}
           icon="ti ti-arrows-exchange"
           count={state() === "ready" ? 0 : undefined}
@@ -618,10 +619,10 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
               {footer()}
             </div>
           </Show>
-        </DetailPanel.Section>
+        </Section>
       }
     >
-      <DetailPanel.Section
+      <Section
         title={props.title ?? t().links}
         icon="ti ti-arrows-exchange"
         count={state() === "ready" ? total() : undefined}
@@ -640,7 +641,7 @@ export function DetailLinks(props: DetailLinksProps): JSX.Element {
           {pending()}
           {footer()}
         </div>
-      </DetailPanel.Section>
+      </Section>
     </Show>
   );
 }
@@ -675,7 +676,7 @@ export type DetailPropertiesProps = {
 export function DetailProperties(props: DetailPropertiesProps): JSX.Element {
   const t = useDetailSectionMessages();
   return (
-    <DetailPanel.Section
+    <Section
       title={props.title ?? t().properties}
       icon={props.icon ?? "ti ti-info-square"}
       collapsible
@@ -705,7 +706,7 @@ export function DetailProperties(props: DetailPropertiesProps): JSX.Element {
         </For>
       </dl>
       {props.children}
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -731,7 +732,7 @@ export type DetailTagsProps = {
 export function DetailTags(props: DetailTagsProps): JSX.Element {
   const t = useDetailSectionMessages();
   return (
-    <DetailPanel.Section title={props.title ?? t().tags} icon="ti ti-hash" count={props.tags.length} class={props.class}>
+    <Section title={props.title ?? t().tags} icon="ti ti-hash" count={props.tags.length} class={props.class}>
       <Show when={props.tags.length > 0} fallback={props.emptyHint ? <p class="k2b-detail-section-note">{props.emptyHint}</p> : undefined}>
         <ul class="k2b-detail-tags">
           <For each={props.tags}>
@@ -749,6 +750,6 @@ export function DetailTags(props: DetailTagsProps): JSX.Element {
           </For>
         </ul>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }

@@ -1,7 +1,7 @@
 import type { CapabilityExecution } from "@k2b/cloud/capabilities/store";
 import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
-import { ButtonLink, DescriptionList, DetailPanel, IconButtonLink, StatusBadge, useLocale } from "@k2b/ui";
+import { ButtonLink, DescriptionList, DetailPanel, IconButtonLink, Section, StatusBadge, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { statusLabel } from "../labels";
 import { type CapabilityOpsMessages, capabilityOpsMessages } from "../ops-messages";
@@ -68,7 +68,7 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
         />
         <DetailPanel.Body>
           {props.executions.map((execution) => (
-            <DetailPanel.Section title={single ? t.properties : label(execution)} meta={single ? undefined : statusBadge(execution)}>
+            <Section title={single ? t.properties : label(execution)} meta={single ? undefined : statusBadge(execution)}>
               <DescriptionList
                 layout="rows"
                 size="sm"
@@ -128,10 +128,10 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
                   {t.aiUsage}
                 </ButtonLink>
               ) : null}
-            </DetailPanel.Section>
+            </Section>
           ))}
           <DetailPanel.Group title={t.moreAboutCall}>
-            <DetailPanel.Section title={t.technicalDetails}>
+            <Section title={t.technicalDetails}>
               <DescriptionList
                 layout="rows"
                 size="sm"
@@ -143,7 +143,7 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
                   })),
                 ]}
               />
-            </DetailPanel.Section>
+            </Section>
           </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>

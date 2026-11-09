@@ -88,9 +88,7 @@ export type {
   DetailPanelHeaderProps,
   DetailPanelProps,
   DetailPanelRowProps,
-  DetailPanelSectionProps,
   DetailPanelSummaryProps,
-  DetailPanelTone,
 } from "./DetailPanel";
 export { default as DetailPanel } from "./DetailPanel";
 export type {
