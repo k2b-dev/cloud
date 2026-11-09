@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 setDefaultTimeout(20_000);
 const root = mkdtempSync(resolve(tmpdir(), "k2b-sidebar-chips-"));
@@ -330,6 +330,8 @@ for (const [width, height] of [
         const dialog = page.getByRole("dialog", { name: "Notebooks", exact: true });
         await dialog.waitFor();
         expect(await all(page).getAttribute("aria-expanded")).toBe("true");
+        // On a phone the sheet slides in from below the edge first.
+        await settled(page);
         const bounds = (await dialog.boundingBox())!;
         if (width < 768) expect(bounds.y + bounds.height).toBeCloseTo(height, 0);
         else {

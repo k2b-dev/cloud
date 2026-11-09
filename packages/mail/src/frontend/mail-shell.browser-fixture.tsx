@@ -503,6 +503,7 @@ export function mailboxData(url: URL): MailboxPageData {
                 revision: 3,
                 attachmentCount: index === 1 ? 1 : 0,
                 bodyPreview: "Invented draft text for the compact mailbox view.",
+                suggestion: false,
                 createdByDisplayName: "Example writer",
                 // Keep relative wording stable while the browser clock advances through hydration.
                 updatedAt: "2026-10-13T04:00:00.000Z",

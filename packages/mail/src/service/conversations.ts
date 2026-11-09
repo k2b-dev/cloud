@@ -3,6 +3,7 @@ import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { MergeConversationsInput, ReassignConversationMessageInput, SplitConversationInput } from "../contracts";
 import { MAIL_CONVERSATION_ASSIGNEE_LIMIT } from "../contracts";
+import { draftAdoptionMessages } from "../draft-adoption-messages";
 import { withShortIdDb } from "../lib/short-id";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission, writeConversationAssignees } from "./collaboration";
@@ -11,6 +12,7 @@ import { mergeConversationReferencesInTransaction } from "./conversation-referen
 import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
+import { databaseErrorCode, databaseErrorConstraint } from "./database-errors";
 import { type MailActivityChange, mailLive } from "./live";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { MAIL_NOTIFICATION_DEFINITION_IDS } from "./notification-targets";
@@ -538,6 +540,8 @@ export const mergeConversations = async (params: {
     if (result.ok && events.length > 0) mailLive.wake();
     return result;
   } catch (error) {
+    if (databaseErrorCode(error) === "23505" && databaseErrorConstraint(error) === "drafts_untouched_suggestion_idx")
+      return fail({ code: "DRAFT_SUGGESTION_CONFLICT", status: 409, message: draftAdoptionMessages.resolve(["en"]).t.mergeConflict });
     log.error("Failed to merge conversations", {
       mailboxId: params.mailboxId,
       targetConversationId: params.targetConversationId,
