@@ -17,9 +17,9 @@ Third-party applications use the same path as built-in applications.
 
 SDK generation rejects invalid app IDs, capability paths, target types and event
 names with a validation error. App IDs use the capability app-ID grammar; local
-names use `CapabilityLocalIdSchema`. Named `refs` fields must be identifiers
-(`A–Z`, `a–z`, `_` or `$` first, then letters, digits, `_` or `$`). Fix the
-application declaration and refresh its manifest before pulling the SDK again.
+names and ref target types use `CapabilityLocalIdSchema`. Ref field names remain
+literal property keys of 1–100 characters, including spaces and punctuation.
+Fix the application declaration and refresh its manifest before pulling the SDK again.
 Valid manifests retain the same declarations, runtime and manifest hashes.
 
 `secrets.NAME` supplies a secret marker and `http.fetch` dispatches a bounded public HTTPS request.

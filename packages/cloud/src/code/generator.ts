@@ -23,15 +23,7 @@ const sdkLocalId = CapabilityLocalIdSchema.refine((value) => !/\s/.test(value), 
 const sdkLocalName = z.object({ localId: sdkLocalId });
 const sdkOperationNames = sdkLocalName.extend({
   target: sdkLocalId.optional(),
-  refs: z
-    .record(
-      z
-        .string()
-        .max(100)
-        .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$(?![\s\S])/, "Use an SDK field identifier"),
-      sdkLocalId,
-    )
-    .optional(),
+  refs: z.record(z.string().min(1).max(100), sdkLocalId).optional(),
 });
 const sdkManifestNames = z.object({
   appId: CapabilityAppIdSchema.refine((value) => !/\s/.test(value), "Use an SDK app ID without whitespace"),

@@ -87,11 +87,6 @@ describe("Code SDK generation", () => {
         const invalid = { ...fixture, [kind]: fixture[kind].map((entry, i) => (i === 0 ? { ...entry, localId: value } : entry)) };
         expect(() => generateCodeSdk([invalid], { mode: "personal" })).toThrow();
       }
-      const refField = {
-        ...fixture,
-        queries: fixture.queries.map((entry, i) => (i === 0 ? { ...entry, refs: { [value]: "workshop" } } : entry)),
-      };
-      expect(() => generateCodeSdk([refField], { mode: "personal" })).toThrow();
       for (const field of ["localId", "subject", "place"] as const) {
         const invalid = { ...fixture, events: fixture.events?.map((entry, i) => (i === 0 ? { ...entry, [field]: value } : entry)) };
         expect(() => generateCodeSdk([invalid], { mode: "personal" })).toThrow();
@@ -293,6 +288,34 @@ describe("generated runtime through the canonical call seam", () => {
     expect(source).not.toHaveProperty("catalog");
     expect(sdk.work_shop.item("item")).not.toHaveProperty("stock");
   });
+  test("preserves literal ref-field names through SDK generation and canonical calls", async () => {
+    const fields = ["parent-id", "ziel ordner", '*/\n"; process.exit(); ` ${value}'];
+    const manifest = {
+      ...fixture,
+      actions: fixture.actions.map((op) =>
+        op.localId === "item.move" ? { ...op, refs: Object.fromEntries(fields.map((field) => [field, "workshop"])) } : op,
+      ),
+    };
+    const sdk = await runtime(options, manifest);
+    const calls: CodeSdkInvocation[] = [];
+    sdk.__codeSdk.bind({
+      async call(_operation, invocation) {
+        if (!("call" in invocation)) throw new Error("Expected a capability call");
+        calls.push(invocation);
+        return { moved: true };
+      },
+    });
+    const destination = sdk.work_shop.workshop("destination");
+    const input = { itemId: "item", ...Object.fromEntries(fields.map((field) => [field, destination])) };
+    expect(await sdk.owner.item.move(input)).toEqual({ moved: true });
+    const expected = normalizeCapabilityCall("work-shop", manifest.actions.find((op) => op.localId === "item.move")!, {
+      target: options.owner?.kind === "resource" ? options.owner.ref : null,
+      refs: Object.fromEntries(fields.map((field) => [field, { type: "work-shop.workshop", id: "destination" }])),
+      input: { itemId: "item" },
+    });
+    expect(calls[0]?.call).toEqual(expected);
+    expect(Object.keys(input)).toEqual(["itemId", ...fields]);
+  });
   test("fails visibly on missing keys, forged/wrong refs, absent bridge and downstream refusals", async () => {
     const sdk = await runtime();
     await expect(sdk.owner.item.create({ title: "test", idempotencyKey: "key" })).rejects.toThrow("bridge_unbound");
@@ -386,6 +409,7 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
         ...fixture,
         queries: fixture.queries.map((op) => ({
           ...op,
+          refs: { [literal]: "workshop" },
           dataSchema: {
             type: "object",
             properties: { [literal]: { const: literal } },
@@ -417,7 +441,7 @@ import { workshop } from "./ids";
 import { work_shop as callable } from "./callable";
 import { _eval, _arguments, manifest } from "./reserved";
 import { work_shop as literals } from "./literals";
-literals.app().catalog.list({});
+literals.app().catalog.list({ [${JSON.stringify(literal)}]: literals.workshop("destination") });
 _eval.app(); _arguments.app(); manifest.app();
 callable.app("resource");
 callable.app().branch({ title: "x", idempotencyKey: "key" });
