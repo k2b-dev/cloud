@@ -357,7 +357,7 @@ for (const width of [1440, 390])
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       const proposal = "Keep this rejected body proposal";
       expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
-      await expect(page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).count()).resolves.toBe(1);
+      expect(await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).count()).toBe(1);
       const recovery = page.getByRole("button", { name: "Vorschlag verwerfen", exact: true });
       expect(
         await recovery.evaluate((button) => {
