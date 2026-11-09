@@ -20,7 +20,7 @@ A separator groups clusters with space, not a drawn line, and keeps `role="separ
 
 ## Floating variant
 
-Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. Its buttons have 44 × 44 px targets.
+Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. Every button in it is round with a 44 × 44 px target, also one you wrap in your own element or a tooltip anchor, so no small control sits at the pill's edge. Buttons inside its menus keep their own size. A host whose own pills are lower sets `--k2b-toolbar-control` once (for example `2.375rem` for 48 px pills); the controls and the pill follow it, and touch screens keep the 44 px hit area.
 
 The floating toolbar is a pill on layer 3 of [Layers and shadows](/en/ui/surfaces/elevation): fully rounded, a light 1 px edge, a solid elevated surface, and `--k2b-shadow-toolbar`. A toolbar that stays open is softer than a menu that opens for a moment, so it never uses the menu shadow. Apps do not add a shadow of their own.
 
@@ -50,6 +50,29 @@ For two pills at the start and end edge of one column, wrap both in `ToolbarDock
 Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container: the strip sticks to the bottom and reserves its own height after the rows. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
+
+### Danger tone
+
+When the work behind a floating toolbar stops, such as an editor that can no longer save, set `tone="danger"` on one floating toolbar and render it in place of the row's usual pills. It stays a pill with the same height and toolbar shadow; only its surface, edge, and ink turn to the danger tokens, so nothing moves when it appears. Inside `ToolbarDock` or its own strip it spans the row.
+
+- Lead with a `Toolbar.Label` that says what happened, with the tone's icon first: a short state as its text ("Changes not saved") and the reason as `detail` (". Connection closed"). The detail shows while it fits and disappears whole on a narrow row, before the actions give up their labels; the state keeps its full width until actions have moved into More. The label is announced to screen readers at once with its detail, again whenever its text changes. Add no `role="alert"` of your own.
+- Put a `Toolbar.Spacer` between the message and the actions; the spacer counts only its minimum when the toolbar measures.
+- Give the one way out that must always stay, such as Copy text or Sign in again, no `priority`. Other actions take a `priority` and move into More on a narrow row.
+- Keep the workspace controls the row had, such as navigation and detail toggles, inside the pill.
+
+```tsx
+<ToolbarDock>
+  <Toolbar label="Saving stopped" variant="floating" tone="danger">
+    <Toolbar.Label detail=". Connection closed"><i class="ti ti-alert-triangle" aria-hidden="true" />Changes not saved</Toolbar.Label>
+    <Toolbar.Spacer />
+    <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={copy} />
+    <Toolbar.Action label="Keep on this device" icon="ti ti-device-floppy" text priority={2} onClick={keep} />
+    <Toolbar.Action label="Discard device changes" icon="ti ti-trash" text priority={3} onClick={discard} />
+  </Toolbar>
+</ToolbarDock>
+```
+
+Use it only for a stopped state. A notice that work continues, such as reconnecting, stays a quiet status inside the usual pill.
 
 ## Selection toolbar
 
@@ -101,7 +124,7 @@ To hide an action, stop rendering it, for example with `<Show>`. A `Toolbar.Grou
 
 ## Toolbar.Label
 
-`Toolbar.Label` is non-interactive text for a selection count or event title. It never moves into More. It stays on one line, can shrink, and truncates with an ellipsis at about 10rem.
+`Toolbar.Label` is non-interactive text for a selection count or event title. It never moves into More. It stays on one line, can shrink, and truncates with an ellipsis at about 10rem. Give it a `detail` for text that may follow while it fits; a narrow toolbar hides the detail whole and counts only the label's own text when it measures. In a danger toolbar it carries the message, has no width cap, and is announced at once.
 
 ## Accessibility
 

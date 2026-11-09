@@ -31,6 +31,8 @@ function Harness() {
     if (current) editorState.attach(current);
   });
   const [toolbarMounted, setToolbarMounted] = createSignal(true);
+  // A device copy the pill offers to keep or discard, as after a reload with pending text.
+  const [deviceCopy, setDeviceCopy] = createSignal(false);
   const locale = new URLSearchParams(window.location.search).get("locale") ?? "en";
   let pending = false;
   const sync = createSyncEnded({
@@ -96,10 +98,11 @@ function Harness() {
       blur() {
         editor.contentDOM.blur();
       },
-      endSync(code: string, unsent: boolean) {
+      endSync(code: string, unsent: boolean, recovery = false) {
         const known = Object.values(notebooksYjs.errorCode).find((value) => value === code);
         if (!known) throw new Error(`Unknown sync error: ${code}`);
         pending = unsent;
+        setDeviceCopy(recovery);
         sync.end({ code: known, message: code });
       },
       resumeSync() {
@@ -157,6 +160,7 @@ function Harness() {
               sync={sync}
               markdown={() => view()?.state.doc.toString() ?? ""}
               noteHref={() => "/app/notebooks/Book01/Note01"}
+              recovery={deviceCopy() ? { kept: false, canKeep: true, keep: () => undefined, discard: () => undefined } : undefined}
             />
           )}
         </Show>
@@ -187,7 +191,7 @@ export type ToolbarHarness = {
   read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
   caretRect: () => { top: number; bottom: number } | null;
   blur: () => void;
-  endSync: (code: string, unsent: boolean) => void;
+  endSync: (code: string, unsent: boolean, recovery?: boolean) => void;
   resumeSync: () => void;
   remountToolbar: () => Promise<void>;
   settle: () => Promise<void>;
