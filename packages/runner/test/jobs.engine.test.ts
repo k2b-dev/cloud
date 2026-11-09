@@ -164,7 +164,8 @@ for (const termination of ["SIGTERM", "SIGKILL"] as const)
         try {
           await readFile(`/proc/${pid}/stat`, "utf8");
         } catch (error) {
-          if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+          // The init can be reaped between open() and read(): open fails with ENOENT, read with ESRCH. Both mean it is gone.
+          if (error && typeof error === "object" && "code" in error && (error.code === "ENOENT" || error.code === "ESRCH")) {
             stopped = true;
             break;
           }
