@@ -34,6 +34,11 @@ if (testInfra.database && testInfra.nats) {
     await database.drop();
     throw error;
   });
+  // A fresh database and namespace have no expired draft-log prefix, so the
+  // recovery marking Mail runs after startup has nothing to mark. Suites that
+  // test that step delete this checkpoint themselves; none prune by default.
+  const { sql } = await import("@k2b/cloud");
+  await sql`INSERT INTO mail.draft_document_log_policy (log_id) VALUES ('cloud:mail:draft-documents') ON CONFLICT DO NOTHING`;
 
   afterAll(async () => {
     try {

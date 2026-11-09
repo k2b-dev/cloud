@@ -81,8 +81,8 @@ above the home indicator.
 Below 768 px, including narrow tablet split views, the signed-in canvas
 shows the app gradient. Its title row has no line or surface fill and holds
 the app's name, search, help, and the app menu in that order. There is no
-bottom bar and no panel button: the app menu leads with **Home** (**Start** in
-German) before the shortcuts and apps of the person's app bar and every other
+bottom bar and no panel button: the app menu's first tile is **Home** (**Start**
+in German), followed by the person's app bar shortcuts and then every other
 app, and help opens the panel, whose tabs lead to the other panels.
 
 The phone's content is a soft card with 28 px top corners that reaches the
@@ -621,11 +621,11 @@ default app selection and an empty shortcut list at once and offers
 
 App and shortcut hints open immediately to the right on hover or keyboard
 focus. The app list scrolls when space is limited, keeping the launcher and
-global controls reachable. On mobile, app bar shortcuts remain available in
-the app launcher. Shortcuts occupy a compact first row of smaller icon tiles,
-with labels below the icons and spacing before the app catalog. The row has
-no visible heading or divider. All shortcuts use a persistent neutral icon
-background without button borders.
+global controls reachable. The app launcher (**Apps** on the desktop, the
+app menu on phones) shows app bar shortcuts as ordinary app tiles: they come
+first, in their app bar order, and the other apps follow. A pinned app appears
+once, in its pinned place. A link shortcut takes the same tile, with its own
+icon and a tone derived from its ID, as an app without an accent does.
 
 Core stores these preferences per user; the platform loads them before SSR
 through a shared Valkey cache. Applications do not need to fetch or
@@ -661,7 +661,7 @@ confirmation. Concurrent changes return a conflict instead of overwriting
 another administrator's configuration; reload the page before trying again.
 
 Global shortcuts appear before personal shortcuts in the desktop app bar and
-the mobile launcher. Users see them under **Provided by the administration**
+the app launcher. Users see them under **Provided by the administration**
 in their personal editor and cannot change or remove them. Resetting personal
 settings preserves global shortcuts. An app pinned globally and personally is
 shown once, while the personal pin stays saved and reappears if the global pin

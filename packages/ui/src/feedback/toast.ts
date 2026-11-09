@@ -44,16 +44,33 @@ export type ToastHandle = {
   update: (description: string, options?: ToastOptions) => void;
 };
 
+export type ToastSlotOptions = {
+  /** Names the slot's close button: "Close: {label}". */
+  label?: string;
+  /**
+   * Shows the round close button and allows a swipe and Escape to close. Leave it off while work runs, so running work
+   * never disappears silently; turn it on through `update` when nothing runs any more.
+   */
+  closable?: boolean;
+  /** The close button, a swipe, or Escape asks the owner to close; it calls `dismiss` when it agrees. Without it, they dismiss the slot. */
+  onClose?: () => void;
+};
+
 export type ToastSlot = {
   dismiss: () => void;
+  /** Changes the slot's name or whether it can be closed; omitted keys keep their value. */
+  update: (options: Pick<ToastSlotOptions, "label" | "closable">) => void;
 };
 
 export interface ToastFn {
   (description: string, options?: ToastOptions): ToastHandle;
   success: (description: string, options?: Omit<ToastOptions, "variant">) => ToastHandle;
   error: (description: string, options?: Omit<ToastOptions, "variant">) => ToastHandle;
-  /** Places an application-owned element at the edge of the toast rail, in toast chrome; the caller owns its content and lifetime. */
-  custom: (content: HTMLElement) => ToastSlot;
+  /**
+   * Places an application-owned element at the edge of the toast rail, in toast chrome, as a socket that toasts stack
+   * in front of; the caller owns its content and lifetime. It has no timer and stays out of the limit and `dismissAll`.
+   */
+  custom: (content: HTMLElement, options?: ToastSlotOptions) => ToastSlot;
   dismissAll: () => void;
 }
 
@@ -607,7 +624,12 @@ const resisted = (distance: number): number => distance / (1.5 + Math.abs(distan
  * Swiping towards the nearest screen edge dismisses a toast: down or right at the bottom edge, up or sideways at the
  * top. A tap on a touch screen fans the stack out or folds it. Swiping is a shortcut; the close button stays.
  */
-const attachGestures = (item: RailItem, card: HTMLElement, dismiss: (swiped: boolean) => void): (() => void) => {
+const attachGestures = (
+  item: RailItem,
+  card: HTMLElement,
+  dismiss: (swiped: boolean) => void,
+  custom?: { swipeable: () => boolean },
+): (() => void) => {
   let gesture: { id: number; x: number; y: number; at: number; axis: "x" | "y" | null; dx: number; dy: number } | null = null;
   const slot = item.slot;
   const rail = () => slot.parentElement;
@@ -619,6 +641,9 @@ const attachGestures = (item: RailItem, card: HTMLElement, dismiss: (swiped: boo
     const target = event.target instanceof Element ? event.target : null;
     // A mouse selects the message and presses the controls; a finger can start a swipe anywhere.
     if (event.pointerType === "mouse" && target?.closest("a, button, .k2b-toast__content")) return;
+    // A custom slot is swiped only by a finger, only once its owner lets it close, and never from a list it scrolls.
+    if (custom && (event.pointerType === "mouse" || !custom.swipeable() || target?.closest("ol, ul, [role='region'], a, button, input")))
+      return;
     gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, at: event.timeStamp, axis: null, dx: 0, dy: 0 };
     setHold(gestureHolds, card, true);
   });
@@ -664,7 +689,7 @@ const attachGestures = (item: RailItem, card: HTMLElement, dismiss: (swiped: boo
         dismiss(true);
         return;
       }
-    } else if (!ended.axis && !cancelled && event.pointerType !== "mouse" && owner) {
+    } else if (!ended.axis && !cancelled && event.pointerType !== "mouse" && owner && !custom) {
       const target = event.target instanceof Element ? event.target : null;
       if (!target?.closest("a, button")) setHold(tapHolds, owner, !tapHolds.has(owner));
     }
@@ -1003,11 +1028,14 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
  * front of it instead of covering it. It has no timer, close button, swipe, or live region of its own, and neither
  * the toast limit nor `dismissAll` removes it: the application that placed it decides when it goes.
  */
-const showCustom = (content: HTMLElement): ToastSlot => {
+const showCustom = (content: HTMLElement, options?: ToastSlotOptions): ToastSlot => {
   const initialContainer = ensureContainer();
-  if (!initialContainer) return { dismiss: () => {} };
+  if (!initialContainer) return { dismiss: () => {}, update: () => {} };
+  const doc = initialContainer.ownerDocument;
   let dismissed = false;
-  const slotElement = document.createElement("div");
+  let label = options?.label;
+  let closable = options?.closable === true;
+  const slotElement = doc.createElement("div");
   slotElement.className = "k2b-toast";
   slotElement.dataset.k2bToast = "";
   slotElement.dataset.custom = "true";
@@ -1015,14 +1043,74 @@ const showCustom = (content: HTMLElement): ToastSlot => {
   slotElement.dataset.persistent = "true";
   slotElement.append(content);
   const item = railItem(slotElement);
-  const dismiss = () => {
+  const dismiss = (swiped = false) => {
     if (dismissed) return;
     dismissed = true;
-    item.close();
+    cancelGesture();
+    item.close({ swiped });
+  };
+  const requestClose = (swiped = false) => {
+    if (options?.onClose) options.onClose();
+    else dismiss(swiped);
+  };
+
+  // While its owner keeps it open, the slot has no close button at all, so no hidden or dead control is in reach.
+  let closeButton: HTMLButtonElement | null = null;
+  const render = () => {
+    slotElement.dataset.closable = String(closable);
+    if (closable && !closeButton) {
+      closeButton = doc.createElement("button");
+      closeButton.type = "button";
+      closeButton.className = "k2b-toast__close";
+      const icon = doc.createElement("i");
+      icon.className = "ti ti-x";
+      icon.setAttribute("aria-hidden", "true");
+      closeButton.append(icon);
+      closeButton.addEventListener("click", () => requestClose());
+      slotElement.prepend(closeButton);
+    } else if (!closable && closeButton) {
+      const focused = closeButton.contains(doc.activeElement);
+      closeButton.remove();
+      closeButton = null;
+      if (focused)
+        (content.querySelector<HTMLElement>("button, a[href], [tabindex]:not([tabindex='-1'])") ?? content).focus?.({
+          preventScroll: true,
+        });
+    }
+    closeButton?.setAttribute("aria-label", resolveToastMessages().dismissNamed({ name: label ?? resolveToastMessages().notifications }));
+  };
+  render();
+
+  // Escape closes a slot that may close; on running work it folds the stack and gives focus back.
+  slotElement.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (closable) requestClose();
+    else {
+      const rail = item.slot.parentElement;
+      if (rail) foldStack(rail);
+    }
+  });
+  const cancelGesture = attachGestures(item, slotElement, (swiped) => (swiped ? dismissSwiped() : requestClose()), {
+    swipeable: () => closable,
+  });
+  // A swipe has already flown the slot out; the owner still decides, so it closes the slot the same way.
+  const dismissSwiped = () => {
+    dismiss(true);
+    options?.onClose?.();
   };
   promoteToTopLayer(initialContainer).appendChild(item.slot);
   item.open();
-  return { dismiss };
+  return {
+    dismiss: () => dismiss(),
+    update: (next) => {
+      if (dismissed) return;
+      if (Object.prototype.hasOwnProperty.call(next, "label")) label = next.label;
+      if (next.closable !== undefined) closable = next.closable;
+      render();
+    },
+  };
 };
 
 export { isPointInsideToast } from "./toast-hit";

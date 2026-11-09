@@ -51,6 +51,7 @@ import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./co
 import { requireSelectableSignature, resolveDefaultSignatureTemplateId } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { humanDraftEditor, refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
+import { withDraftDocumentCommit } from "./draft-document-log";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { newDraftEditMode } from "./draft-edit-mode";
@@ -1802,7 +1803,7 @@ export const updateDraft = async (params: {
   const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
   if (!lease.ok) return lease;
   try {
-    const result = await sql.begin(async (tx) => {
+    const result = await withDraftDocumentCommit(async (tx) => {
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
@@ -1848,7 +1849,7 @@ export const updateDraft = async (params: {
           .finally(() => {
             published = locked.data.publishedCursor !== null;
           });
-        if (!merged.ok && merged.error.code === "DRAFT_ADOPTED") return merged;
+        if (!merged.ok && (merged.error.code === "DRAFT_DOCUMENT_STREAM_FULL" || merged.error.code === "DRAFT_ADOPTED")) return merged;
         if (!merged.ok || merged.data.status === "recoveryRequired") {
           await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
           return conflict("Draft update requires recovery; the submitted content was saved as a recovery copy");
@@ -2106,7 +2107,7 @@ export const listDraftFolder = async (params: {
 };
 
 export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> =>
-  sql.begin(async (db) => {
+  withDraftDocumentCommit(async (db) => {
     const allowed = await requireDraftAccess(context, mailboxId, draftId, "read", db);
     if (!allowed.ok) return allowed;
     const load = () => db<(DbDraft & { stored_signature_template_id: string | null })[]>`
@@ -2198,7 +2199,7 @@ export const restoreDraftRecoveryCopy = async (params: {
     >`SELECT edit_mode FROM mail.drafts WHERE id = ${draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid`;
     if (!mode) return fail(err.notFound("Draft"));
     const restore = () =>
-      sql.begin(async (tx) => {
+      withDraftDocumentCommit(async (tx) => {
         const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
         if (!allowed.ok) return allowed;
         const [draft] = await tx<
@@ -2432,7 +2433,7 @@ export const removeDraftAttachment = async (params: {
   const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
   if (!lease.ok) return lease;
   try {
-    const result = await sql.begin(async (tx) => {
+    const result = await withDraftDocumentCommit(async (tx) => {
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const { draftId, attachmentId } = params;
@@ -2756,7 +2757,7 @@ export const persistDraftDocument = async (params: {
   signal?: AbortSignal;
 }) => {
   try {
-    return await sql.begin(async (db) => {
+    return await withDraftDocumentCommit(async (db) => {
       const locked = await lockDraftDocumentInTransaction({ ...params, db });
       if (!locked.ok) return locked;
       if (locked.data.generation !== params.generation) return conflict("Draft generation changed; reopen before saving");

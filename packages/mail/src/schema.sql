@@ -1102,6 +1102,11 @@ CREATE INDEX draft_recovery_copies_unresolved_idx ON mail.draft_recovery_copies 
 
 -- mail.drafts -------------------------------------------------------------
 
+CREATE TABLE mail.draft_document_log_policy (
+    log_id text PRIMARY KEY,
+    recovered_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE mail.drafts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     short_id text NOT NULL,
@@ -1117,6 +1122,7 @@ CREATE TABLE mail.drafts (
     subject text DEFAULT ''::text NOT NULL,
     body_markdown text DEFAULT ''::text NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
+    doc_idle_through bigint,
     state text DEFAULT 'draft'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
