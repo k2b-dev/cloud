@@ -4,7 +4,7 @@ import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { resolveUiMessages } from "../intl/messages";
-import { isPointInsideToast } from "./toast";
+import { isPointInsideToast } from "./toast-hit";
 
 export type DialogClose<T> = (result?: T) => void;
 

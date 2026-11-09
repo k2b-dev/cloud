@@ -11,8 +11,7 @@ const markup = `
   <button class="k2b-button" data-variant="primary">Save</button>
   <i class="k2b-spin">Loading</i>
   <dialog class="k2b-dialog k2b-bottom-sheet-frame"><div class="k2b-bottom-sheet-viewport">Sheet</div></dialog>
-  <div data-k2b-toast-container><div class="k2b-toast" data-k2b-toast data-tone="success">Saved</div></div>
-  <progress class="k2b-toast__progress"></progress>
+  <div data-k2b-toast-container><div class="k2b-toast-slot" style="--k2b-toast-opacity: 0; --k2b-toast-y: 18px"><div class="k2b-toast" data-k2b-toast data-tone="success">Saved</div></div></div>
   <div class="k2b-gesture-menu" data-swipe="right"><span class="k2b-gesture-menu__swipe"></span></div>
   <span class="k2b-chart-group-controls__loading" data-loading></span>`;
 const sizes = {
@@ -43,20 +42,21 @@ for (const [size, options] of Object.entries(sizes)) {
             <body class="k2b-ui">${markup}</body></html>`);
           const entry = await page.evaluate(async () => {
             const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            // Establish the toast's closed style, then use its real open state.
+            // Establish the toast's entering place, then move it to its place in the stack as the stack does.
             await frame();
-            document.querySelector(".k2b-toast")!.setAttribute("data-open", "true");
+            const toast = document.querySelector<HTMLElement>(".k2b-toast-slot")!;
+            toast.style.setProperty("--k2b-toast-opacity", "1");
+            toast.style.setProperty("--k2b-toast-y", "0px");
             document.querySelector("dialog")!.showModal();
             // Read the started motion in the same task: getAnimations() flushes
             // style, and a short entry cannot end before it is read.
-            const toast = document.querySelector(".k2b-toast");
             // animation-settle: all timelines - Count fixture motion; there are no navigation labels.
             const started = document.getAnimations().map((animation) => ({
               name: animation instanceof CSSAnimation ? animation.animationName : "",
               toast: animation.effect instanceof KeyframeEffect && animation.effect.target === toast,
               length: Number(animation.effect?.getComputedTiming().activeDuration ?? 0),
             }));
-            const sampled = [".k2b-button", ".k2b-spin", ".k2b-bottom-sheet-frame", ".k2b-toast"];
+            const sampled = [".k2b-button", ".k2b-spin", ".k2b-bottom-sheet-frame", ".k2b-toast-slot", ".k2b-toast"];
             const durations = sampled.map((selector) =>
               getComputedStyle(document.querySelector(selector)!)
                 .transitionDuration.split(",")
@@ -65,14 +65,12 @@ for (const [size, options] of Object.entries(sizes)) {
             await frame();
             // animation-settle: all timelines - Verify reduced motion stops all fixture animations.
             const running = document.getAnimations().filter((animation) => animation.playState === "running").length;
-            // Presentation swaps, not only timing: a muted full track instead of a
-            // frozen segment, and the swipe icon above the content that stays put.
-            const progress = getComputedStyle(document.querySelector(".k2b-toast__progress")!).backgroundImage;
+            // Presentation swaps, not only timing: the swipe icon above the content that stays put.
             const swipe = getComputedStyle(document.querySelector(".k2b-gesture-menu__swipe")!).zIndex;
             // A delay that debounces a loader is not motion: it outlasts reduced motion.
             const loader = getComputedStyle(document.querySelector(".k2b-chart-group-controls__loading")!);
             const debounce = { delay: loader.transitionDelay, duration: loader.transitionDuration };
-            return { started, durations, running, progress, swipe, debounce };
+            return { started, durations, running, swipe, debounce };
           });
           const moving = entry.started.filter((animation) => animation.length > 0);
           if (state === "normal") {
@@ -80,12 +78,10 @@ for (const [size, options] of Object.entries(sizes)) {
             expect(moving.some((animation) => animation.name === "k2b-spin")).toBe(true);
             expect(moving.some((animation) => animation.name === "k2b-bottom-sheet-enter")).toBe(true);
             expect(moving.some((animation) => animation.toast)).toBe(true);
-            expect(entry.progress).toContain("linear-gradient");
             expect(entry.swipe).toBe("auto");
             expect(entry.debounce).toEqual({ delay: "0.2s", duration: "0.15s" });
           } else {
             expect(entry.debounce).toEqual({ delay: "0.2s", duration: "0s" });
-            expect(entry.progress).toBe("none");
             expect(entry.swipe).toBe("1");
             expect(entry.durations.every((durations) => durations.every((duration) => duration === "0s"))).toBe(true);
             expect(moving).toEqual([]);
