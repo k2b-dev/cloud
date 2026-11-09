@@ -248,15 +248,23 @@ test("the actual shared browser provider consumes Mail packets without treating 
     expect(provider.hasUnsentChanges()).toBe(true);
     socket.message({ type: "error", payload: { docId, code: "PENDING_PERSISTENCE", message: "Keep this draft open" } });
     expect(errors).toEqual(["PENDING_PERSISTENCE"]);
+    socket.message({ type: "error", payload: { docId, code: "DRAFT_DOCUMENT_STREAM_FULL", message: "Retry saving" } });
+    expect(errors).toEqual(["PENDING_PERSISTENCE", "DRAFT_DOCUMENT_STREAM_FULL"]);
+    expect(provider.recoveryInput().text).toBe("Server local");
+    expect(provider.hasUnsentChanges()).toBe(true);
+    provider.resume();
+    const retrySocket = Socket.current;
+    retrySocket.onopen?.();
+    retrySocket.message({ type: "replayReady", payload: { docId, generation, cursor: "base.1", peerId: "server-peer" } });
     expect(snapshots).toHaveLength(1);
-    socket.message({
+    retrySocket.message({
       type: "syncPush",
       payload: { docId, generation, updates: [{ payload: publication.payload.payload, generation, cursor: "base.2" }] },
     });
     expect(provider.hasUnsentChanges()).toBe(false);
     expect(snapshots).toHaveLength(1);
     Y.applyUpdate(server, encoding.fromBase64(publication.payload.payload));
-    socket.message({
+    retrySocket.message({
       type: "syncPush",
       payload: {
         docId,
@@ -268,11 +276,11 @@ test("the actual shared browser provider consumes Mail packets without treating 
     expect(snapshots).toHaveLength(2);
     expect(snapshots[1]?.cursor).toBe("base.2");
     local.getText("codemirror").insert(12, " pending");
-    socket.message({ type: "error", payload: { docId, code: "RESYNC_REQUIRED", message: "Copy before reopening", reopen: true } });
+    retrySocket.message({ type: "error", payload: { docId, code: "RESYNC_REQUIRED", message: "Copy before reopening", reopen: true } });
     expect(provider.recoveryInput().text).toBe("Server local pending");
     expect(provider.hasUnsentChanges()).toBe(true);
     provider.resume();
-    expect(Socket.current).toBe(socket);
+    expect(Socket.current).toBe(retrySocket);
   } finally {
     provider.dispose();
     awareness.destroy();

@@ -3676,6 +3676,9 @@ const specialistCommands = {
         sync: flag.enum(["enabled", "disabled"] as const, {
           description: "Enable or pause provider synchronization",
         }),
+        drafts: flag.enum(["lock", "shared"] as const, {
+          description: "How new drafts are edited: lock (one person at a time) or shared (together); existing drafts keep theirs",
+        }),
       },
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
@@ -3689,9 +3692,10 @@ const specialistCommands = {
               }
             : {}),
           ...(flags.sync !== undefined ? { syncEnabled: flags.sync === "enabled" } : {}),
+          ...(flags.drafts !== undefined ? { draftEditMode: flags.drafts } : {}),
         };
         if (Object.keys(update).length === 0) {
-          throw new Error("Pass --name, --description, --search-backend, --automatic-replies, or --sync.");
+          throw new Error("Pass --name, --description, --search-backend, --automatic-replies, --sync, or --drafts.");
         }
         const updated = await readApi<Mailbox>(ctx, `/mailboxes/${mailbox.id}`, jsonRequest("PATCH", update));
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", updated))) return;
