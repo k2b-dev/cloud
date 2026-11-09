@@ -1,0 +1,6 @@
+### A shared settings cache expired between OAuth signing and verification
+
+- **What happened:** The admin credential matrix in #3035 rejected a newly issued fixture token during setup, before the fixture expired its account.
+- **Root cause:** The Code acceptance suite wrote its private database's `app.url` without restoring it, leaving the value in shared Valkey for five minutes. The matrix did not declare an issuer. Its verifier could cache that foreign origin before the Valkey entry expired, while Core subsequently signed with the shared database's origin. The CI timestamps place the five-minute expiry inside the failing setup; the original cache value was not logged.
+- **Error class:** Shared integration configuration leaks across private databases and expires between a cached read and a fresh read.
+- **Guard:** Both suites declare and restore their issuer through `useTestSettings`. The matrix forces a settings-cache miss after loading verifier configuration and asserts that every issued user token keeps the declared issuer. Existing settings-fixture integration tests cover conflicting incoming issuers and restoration of Postgres, Valkey and the identity configuration cache.

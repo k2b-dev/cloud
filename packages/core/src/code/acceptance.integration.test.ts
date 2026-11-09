@@ -5,8 +5,9 @@ import * as catalog from "@k2b/cloud/capabilities/server";
 import { signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { type CloudRuntime, capabilityResultSchema, NormalizedCapabilityCallSchema, type User } from "@k2b/cloud/contracts";
 import { type AuthContext, userFromActor } from "@k2b/cloud/server";
-import { accounts, coreSettings, session } from "@k2b/cloud/services";
+import { accounts, session } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
+import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
 import { createSync, type Sync, type Worker } from "@k2b/sync";
 import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
@@ -76,6 +77,7 @@ suiteFor(
   "nats",
   "valkey",
 )("C25 mailbox schedule acceptance with two stateless runners", () => {
+  useTestSettings({ "app.url": issuer });
   let lea: User, ben: User, reviewer: User;
   let author: ReturnType<typeof context>, manager: ReturnType<typeof context>;
   let mailboxId: string, mailboxRef: { type: string; id: string }, senderId: string;
@@ -560,7 +562,6 @@ suiteFor(
       ),
     );
     try {
-      await coreSettings.set("app.url", issuer);
       const response = await pageApp.request("/page", { headers: { cookie: "session_token=c25-page-lea" } });
       const pageValue: unknown = await response.json();
       const page = z
