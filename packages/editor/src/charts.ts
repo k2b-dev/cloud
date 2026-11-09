@@ -574,6 +574,14 @@ export function chartBaseRenderOptions(
           series: input.series,
           layout: input.layout,
           normalize: input.normalize,
+          // Rates describe each category; summing percentages across periods has no meaning.
+          legendValues:
+            input.format?.style === "percent" || (yAxis?.format && "style" in yAxis.format && yAxis.format.style === "percent")
+              ? "latest"
+              : "total",
+          marks: input.marks,
+          total: input.total,
+          dots: input.dots,
           share: input.share,
           limit: input.limit,
           tone: input.tone,
@@ -1216,7 +1224,11 @@ export const chartMarks = (input: ChartInput): number => {
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);
     case "bar":
-      return input.series ? (input.x?.length ?? 0) * (input.series.length + (input.compare ? 1 : 0)) : input.data.length;
+      return input.marks === "dots"
+        ? (input.x?.length ?? 0) * (input.dots ?? 100)
+        : input.series
+          ? (input.x?.length ?? 0) * (input.series.length + (input.compare ? 1 : 0))
+          : input.data.length;
     case "hbar":
       return input.rows.length * input.series.length;
     case "boxplot":

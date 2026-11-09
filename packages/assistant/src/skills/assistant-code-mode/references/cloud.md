@@ -213,6 +213,12 @@ type ChartPoint = { x: number | Date | string /* ISO date */; y: number };
 type ChartSeries = { label?: string; data: ChartPoint[] };
 type ChartItem = { label: string; value: number };
 type ChartOptions =
+  | (ChartBase & {
+      kind: "bar"; marks: "dots"; layout: "nested"; x: string[];
+      series: { label: string; data: (number | null)[] }[];
+      total?: number; dots?: number; legend?: boolean;
+      format?: { style?: "number" | "percent" | "currency"; currency?: string; decimals?: number; compact?: boolean; unit?: string };
+    })
   | (ChartBase & { kind: "bar"; data: ChartItem[]; yAxis?: AxisOptions; colorByBar?: boolean; showValues?: boolean; legend?: boolean })
   | (ChartBase & {
       kind: "line";

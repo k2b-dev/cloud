@@ -134,10 +134,10 @@ for (const width of [1200, 390])
           await page.screenshot({ path: `${process.env.CHART_LOADING_SHOTS}/charts-loading-light-${width}.png` });
         }
         await release(page);
-        await app(page).locator('[data-chart-kind="histogram"] svg').waitFor();
-        await app(page).locator('[data-chart-kind="gauge"] svg').waitFor();
+        // Keep both visibility conditions in the read's locator. Separate waits
+        // spend the cold frame's deadline on extra browser round trips.
         const rendered = await app(page)
-          .locator("#charts")
+          .locator('#charts:has([data-chart-kind="histogram"] svg:visible):has([data-chart-kind="gauge"] svg:visible)')
           .evaluate((element) => {
             const box = {
               height: element.getBoundingClientRect().height,
@@ -159,10 +159,9 @@ for (const width of [1200, 390])
           .locator("[data-chart-datum]")
           .first()
           .dispatchEvent("pointermove", { pointerType: "mouse", clientX: 100, clientY: 150 });
-        await chart.focus();
+        // locator.press focuses the chart before sending the real key event.
         await chart.press("ArrowRight");
-        const tooltip = chart.locator(".k2b-chart__tooltip");
-        await tooltip.waitFor();
+        const tooltip = chart.locator(".k2b-chart__tooltip:visible");
         expect(await tooltip.textContent()).toContain("Day ");
         await chart.press("Escape");
         await app(page).locator("#draw").click();
@@ -231,6 +230,64 @@ test("frames receive only drawn kinds and one shared part, never chart source in
     await context.close();
   }
 });
+
+for (const width of [1200, 390])
+  test(`dot matrices load only dots and shared offline, preserve boxes and resolve PDF markup, ${width}px`, async () => {
+    const script = `
+      globalThis.receivedParts=[];
+      addEventListener("message",event=>{
+        const part=event.data?.type==="result" && event.data.value;
+        if(part && typeof part.code==="string") globalThis.receivedParts.push(part.hash);
+      });
+      document.querySelector("#draw").addEventListener("click",async()=>{
+        const markup=cloud.chart({kind:"bar",title:"Newsletter",marks:"dots",layout:"nested",total:1,dots:20,x:["May","Jun"],format:{style:"percent"},series:[{label:"Opened",data:[0.5,0.6]},{label:"Clicked",data:[0.2,0.25]}]});
+        document.querySelector("#charts").innerHTML=markup;
+        await cloud.pdf.render({html:String(markup)});
+        document.querySelector("#result").textContent="PDF ready";
+      });`;
+    const source = delayed + assets.chartParts.shared.code;
+    const sharedHash = new Bun.CryptoHasher("sha256").update(source).digest("hex");
+    const { page, context, requests } = await open(width, source, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const pending = await boxes(page);
+      await release(page);
+      await app(page).getByText("PDF ready", { exact: true }).waitFor();
+      await app(page).locator(".k2b-chart-dot").last().waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(pending);
+      expect(await app(page).locator(".k2b-chart-dot").count()).toBe(40);
+      expect(await app(page).locator("[data-chart-legend-value]").allTextContents()).toEqual(["60%", "25%"]);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "receivedParts").sort()),
+      ).toEqual([sharedHash, assets.chartParts.kinds.dots!.hash].sort());
+      await app(page).locator(".k2b-chart").focus();
+      await app(page).locator(".k2b-chart").press("Home");
+      await app(page).locator('[role="tooltip"]:popover-open').waitFor();
+      expect(await app(page).locator("[data-chart-legend-value]").allTextContents()).toEqual(["50%", "20%"]);
+      await app(page).locator(".k2b-chart").press("Escape");
+      expect(await app(page).locator("[data-chart-legend-value]").allTextContents()).toEqual(["60%", "25%"]);
+      const pdf = await page.evaluate(() => globalThis.lazyChartHarness.pdfs[0]);
+      expect(pdf).toHaveProperty("html");
+      const html = pdf && typeof pdf === "object" && "html" in pdf && typeof pdf.html === "string" ? pdf.html : "";
+      expect(html.match(/class="k2b-chart-dot"/g)).toHaveLength(40);
+      expect(html).not.toContain("data-chart-pending");
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
+      expect(await page.evaluate(() => globalThis.lazyChartHarness.events.filter((event) => event.type === "error"))).toEqual([]);
+      if (process.env.CHART_DOTS_SHOTS) {
+        await mkdir(process.env.CHART_DOTS_SHOTS, { recursive: true });
+        await page.screenshot({ path: `${process.env.CHART_DOTS_SHOTS}/dots-offline-ready-light-${width}.png` });
+      }
+    } finally {
+      await context.close();
+    }
+  });
 
 test("a corrupt host-held kind is rejected before import and offers retry offline", async () => {
   const { page, context, requests } = await open(

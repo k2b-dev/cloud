@@ -1314,6 +1314,19 @@ Use `kind="bar" layout="rows"` for category values, including negative values. I
 Unordered nonnegative values without those drawing options use a ranked list. Rows sort descending, with stable order for ties. `share` prints each row's share of the entire input. `limit` shows that many rows and a final “n more · total” summary; the data table retains every source row. `tone="in" | "out"` records flow direction and uses the theme’s incoming or outgoing flow color, falling back to the neutral chart palette. The portable schema rejects `share`, `limit` or `tone` on signed data with “Share, limit and tone need nonnegative values.” Automatic rows in existing data-only bars retain their original layout.
 
 Both descriptions accept `format: NumberFormat` for source values. Percentage calculations keep their own format. The inherited locale formats shares and the remainder label. They use the same category band, keyboard inspection, touch guard and fixed host states as other category charts.
+
+### Nested dot matrix
+
+Use `kind="bar" marks="dots" layout="nested"` for counts inside a shared capacity. Each later series must be a subset of the previous series: clicks are part of opens, so both measure from zero. Counts must be nonnegative and no larger than `total`.
+
+Each category is two dots wide. The smallest nested subset uses the strongest color, the larger set's remainder is lighter, and unused capacity is grey. `total` defaults to the largest observed count (at least one); `dots` defaults to 100 and must be an even positive integer. Values round to the nearest dot; tooltips, live legend values and the data table retain the exact counts. Every dot counts toward the host's mark budget before rendering.
+
+A missing nested observation leaves the category drawing as a gap. Zero counts retain a fully grey matrix. The full category is one hover, keyboard and tap target, and the tooltip stays at the top of the plot when moving between its dots. Comparisons, logarithmic scales and normalization are unavailable for nested matrices.
+
+The DOM-free `nestedDotOptions` helper from `@k2b/ui/charts/core` shares these checks with the portable schema and returns the resolved capacity and dot count. Direct calls throw on invalid options; schema hosts can pass an issue callback as the second argument to collect validation errors.
+
+Percentage bar and dot-matrix descriptions show the latest category in their legend until inspection shows the category at the cursor. They never sum percentages across periods. For direct `Chart.Bar` calls with a custom percentage formatter, set `legendValues="latest"`; count series keep summed totals by default.
+
 ## Balance flows across periods
 
 `Chart.BalanceFlow` and `kind="balanceFlow"` explain a settlement balance in one

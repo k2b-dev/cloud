@@ -11,6 +11,7 @@ import * as bubbleExamples from "./bubble";
 import * as budgetExamples from "./budget";
 import * as calendarExamples from "./calendar";
 import * as donutExamples from "./donut";
+import * as dotsExamples from "./dots";
 import * as flowExamples from "./flow";
 import * as funnelExamples from "./funnel";
 import * as gaugeExamples from "./gauge";
@@ -44,6 +45,7 @@ export const exampleModules: Record<string, unknown>[] = [
   budgetExamples,
   calendarExamples,
   donutExamples,
+  dotsExamples,
   flowExamples,
   funnelExamples,
   gaugeExamples,

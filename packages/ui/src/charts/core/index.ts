@@ -5,7 +5,7 @@ export {
   type BarChartOptions,
   barChartLayout,
   rankedBarLayout,
-  renderBarChartSvg,
+  type SeriesBarLayout,
   seriesBarLayout,
 } from "../../content/chart-bar";
 export {
@@ -24,6 +24,8 @@ export { balanceFlowFields } from "./balance-flow-fields";
 export * from "./balance-flow-frame";
 export { balanceFlowWords } from "./balance-flow-messages";
 export * from "./balance-flow-size";
+export { renderBarBaseSvg } from "./bar-base-render";
+export { renderBarChartSvg } from "./bar-render";
 export * from "./bubble";
 export { renderCalendarSvg, renderHeatmapSvg } from "./calendar";
 export {
@@ -36,6 +38,8 @@ export {
   calendarWords,
   type HeatmapChartOptions,
 } from "./calendar-layout";
+export { nestedDotOptions } from "./dot-options";
+export { renderDotMatrixLayoutSvg } from "./dots";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
 export { renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout } from "./hbar-layout";

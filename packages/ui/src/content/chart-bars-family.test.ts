@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { renderBarChartSvg } from "../charts/core/bar-render";
 import { hbarLayout, renderHbarSvg } from "../charts/core/hbar";
-import { renderBarChartSvg, seriesBarLayout } from "./chart-bar";
+import { seriesBarLayout } from "./chart-bar";
 
 const series = [
   { label: "Shop", data: [10, 0, null] },

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type BarChartOptions, barChartLayout, chartTextWidth, renderBarChartSvg } from "./chart-bar";
+import { renderBarChartSvg } from "../charts/core/bar-render";
+import { type BarChartOptions, barChartLayout, chartTextWidth } from "./chart-bar";
 
 const draw = (options: BarChartOptions) => {
   const { layout, height } = barChartLayout(options);

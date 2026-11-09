@@ -59,16 +59,16 @@ test("an option, an enum value or a null the schema does not take is an issue fo
   const wrong = [
     {
       ...bar,
-      // Dot matrices are not in this build: the text promised a field and a layout value the schema lacks.
-      useFor: ['Nested bars as dots with marks: "dots".'],
-      options: [...bar.options, { name: "layout", type: '"columns" | "dots"', description: "Rows or columns." }],
+      // The text promises a field and a layout value the schema lacks.
+      useFor: ['Nested bars as hexagons with shape: "hexagons".'],
+      options: [...bar.options, { name: "layout", type: '"columns" | "hexagons"', description: "Rows or columns." }],
     },
     { ...waterfall, options: [{ name: "steps", type: "{ label, value }[]", description: "A missing step is null." }] },
   ];
   expect(chartCatalogIssues(wrong)).toEqual([
-    'bar, code: layout does not take "dots"',
-    'bar, code: "marks" is no field',
-    'bar, chat: "marks" is no field',
+    'bar, code: layout does not take "hexagons"',
+    'bar, code: "shape" is no field',
+    'bar, chat: "shape" is no field',
     "waterfall, code: steps does not take null",
   ]);
 });
