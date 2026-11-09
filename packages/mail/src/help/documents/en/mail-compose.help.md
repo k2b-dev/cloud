@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-20
+updated: 2026-11-09
 order: 30
 kind: task
 ---
@@ -25,6 +25,10 @@ The draft head shows the recipients, **Cc, Bcc**, **…**, **Full screen**, and 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
 
 While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
+
+To add several people at once, type or paste a list separated by commas, semicolons, or line breaks, also in the form `Name <address>`. Each address becomes its own recipient; a part that is not an address stays in the field, marked. Text that is still in a recipient field when you send goes with the message if it is a complete address. Otherwise Mail does not send, keeps the text, and puts the cursor in that field.
+
+**Ctrl+Enter** (**⌘+Enter** on a Mac) sends from any field of the draft, with the same checks as **Send**. While Mail saves or sends, the text keeps its cursor and toolbar; typing waits until the step ends. A draft in its own window closes that window after sending or discarding.
 
 When you open another conversation or mailbox while a draft is open, Mail saves the latest changes before it releases the editing lease. Back and reload open the conversation with the draft open again.
 

@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-20
+updated: 2026-11-09
 order: 30
 ---
 
@@ -24,6 +24,10 @@ Der Kopf des Entwurfs zeigt die Empfänger, **Cc, Bcc**, **…**, **Vollbild** u
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
 
 Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte aus dem Kontaktverzeichnis vor. Danach folgen Adressen, an die dieses Postfach geschrieben oder von denen es E-Mails erhalten hat. Diese Vorschläge funktionieren auch ohne die Contacts-App. Ein Briefsymbol kennzeichnet sie. Mit den Pfeiltasten markierst du einen Vorschlag, mit der Eingabetaste fügst du ihn hinzu. Wer nur zugewiesene Unterhaltungen sieht, bekommt keine Vorschläge aus dem Postfach.
+
+Für mehrere Personen auf einmal tippst oder fügst du eine Liste ein, getrennt durch Komma, Semikolon oder Zeilenumbruch, auch in der Form `Name <Adresse>`. Jede Adresse wird ein eigener Empfänger; ein Teil, der keine Adresse ist, bleibt markiert im Feld stehen. Steht beim Senden noch Text in einem Empfängerfeld, geht er mit, wenn er eine vollständige Adresse ist. Sonst sendet Mail nicht, behält den Text und setzt die Schreibmarke in dieses Feld.
+
+**Strg+Enter** (**⌘+Enter** auf dem Mac) sendet aus jedem Feld des Entwurfs, mit denselben Prüfungen wie **Senden**. Während Mail speichert oder sendet, behält der Text Schreibmarke und Werkzeugleiste; Tippen wartet, bis der Schritt fertig ist. Ein Entwurf im eigenen Fenster schließt das Fenster nach dem Senden oder Verwerfen.
 
 Öffnest du mit offenem Entwurf eine andere Unterhaltung oder ein anderes Postfach, speichert Mail die letzten Änderungen, bevor es die Bearbeitungssperre freigibt. Zurück und Neuladen öffnen die Unterhaltung wieder mit offenem Entwurf.
 
