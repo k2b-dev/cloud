@@ -148,7 +148,12 @@ const confirmationCompiled = compileCapabilities("example", {
 });
 const decisionCompiled = compileCapabilities("core", {
   protocolVersion: 2,
-  queries: { "ai.decide": aiDecisionQuery, "ai.generate": aiGenerationQuery, "ai.skills.list": op },
+  queries: {
+    "ai.decide": aiDecisionQuery,
+    "ai.generate": aiGenerationQuery,
+    "ai.skills.list": op,
+    "ai.skill.read": { ...op, input: z.object({ id: z.string() }).strict() },
+  },
 });
 const baseEntry: CapabilityRegistryEntry = {
   appId: "example",
@@ -877,7 +882,67 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       run.mockRestore();
     }
   });
-  test("a successful non-model AI query releases its reservation without spending the budget", async () => {
+  test.each(["zero", "reserved"] as const)("Skill reads work with %s inference allowance", async (budgetState) => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = budgetState === "zero" ? 0 : 0.000046;
+    if (budgetState === "reserved")
+      expect(await sql.begin((db) => reserveCodeAiBudget(claims, 99, aiBudget, db, { code: 1, owner: 1, timeZone: "UTC" }))).toEqual({
+        ok: true,
+        reserved: "0.000046000000",
+      });
+    try {
+      const before = await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+        FROM code.runs WHERE id=${claims.runId}::uuid`;
+      for (const operation of ["core.ai.skills.list", "core.ai.skill.read"]) {
+        const response = await send({
+          entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+          operation,
+          input: {
+            call: { capability: operation, target: null, refs: {}, input: operation === "core.ai.skill.read" ? { id: "Sk1234" } : {} },
+            metadata: {},
+          },
+        });
+        expect(await response.json()).toEqual({ ok: true, data: { data: { value: "done" } } });
+        expect(
+          await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+          FROM code.runs WHERE id=${claims.runId}::uuid`,
+        ).toEqual(before);
+        const [observation] =
+          await sql`SELECT state,refusal_kind FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
+        expect(observation).toEqual({ state: "succeeded", refusal_kind: null });
+      }
+    } finally {
+      if (budgetState === "reserved") await sql.begin((db) => settleCodeAiBudget(claims, 99, "0", db));
+    }
+  });
+  test("zero Code AI budget refuses generate before model dispatch and records a policy refusal", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0;
+    const before = fetched;
+    const run = spyOn(decision, "runAiStructured").mockRejectedValue(new Error("Model must not run"));
+    try {
+      const response = await send({
+        entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+        operation: "core.ai.generate",
+        input: {
+          call: {
+            capability: "core.ai.generate",
+            target: null,
+            refs: {},
+            input: { task: "mail.summary", prompt: "Summarize.", input: { body: "Message" }, output: { type: "text", maxChars: 500 } },
+          },
+          metadata: {},
+        },
+      });
+      expect(await response.json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit", status: 429 } });
+      expect(run).not.toHaveBeenCalled();
+      expect(fetched).toBe(before);
+      await expectPolicyRefusal();
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("a non-model AI query leaves the inference allowance available", async () => {
     await resetFixture({ entry: true, policyRows: ["ai"] });
     aiBudget = 0.000046;
     const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);

@@ -681,7 +681,7 @@ for the daily admission cap and budget error codes.
 ## Name an automation
 
 Give a schedule a stable name for manual execution and an optional readable
-title in its third argument:
+title in the schedule options object:
 
 ```ts
 app.schedule({ cron: "0 8 * * 1", name: "weekly-review",
@@ -1165,6 +1165,12 @@ Discover `core.ai.generate` in the live SDK. It is a query classified
 as **AI / KI**, using the caller's allowance and Code's execution budgets.
 Use it for summaries, draft text or validated extraction. Put source data in
 `input` and trusted instructions in `prompt`.
+
+Only `generate` and `decide` reserve the synchronous Code AI attempt allowance.
+Skill, catalog and chat history reads remain available when that allowance
+is zero or reserved by another inference call, subject to ordinary permissions,
+policy and capability call limits. [Chat turns](#start-a-gustav-turn-in-your-own-chat)
+use their own daily Code and interactive allowance checks.
 
 <!-- gate-1a-generation -->
 ```ts

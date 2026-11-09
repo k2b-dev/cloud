@@ -3,6 +3,12 @@ import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { aiCostDecimal, aiCostUnits, aiDecimalUnits } from "@k2b/cloud/shared";
 import type { SQL } from "bun";
 import { z } from "zod";
+/** Synchronous inference reserves the Code attempt allowance. Chat turns have
+ * their own daily Code and interactive allowance admission in ai-chat-run.ts. */
+export function codeAiReservesAttemptBudget(capability: string): boolean {
+  return capability === "core.ai.generate" || capability === "core.ai.decide";
+}
+
 /** Exact arithmetic shared by attempt/day admission; zero disables even an unpriced AI call. */
 export function codeAiBudgetRemainder(limit: number, spent: string): bigint {
   const remaining = aiDecimalUnits(limit.toFixed(12)) - aiDecimalUnits(spent);
@@ -37,7 +43,7 @@ const beforeModelCodes = new Set([
 ]);
 /** Unknown outcomes or model identities keep the reservation spent; known pre-model refusals release it. */
 export function codeAiReferenceCost(capability: string, result: unknown, profiles: readonly AiModelProfile[], reserved: string): string {
-  const failureUsage = ["core.ai.generate", "core.ai.decide"].includes(capability)
+  const failureUsage = codeAiReservesAttemptBudget(capability)
     ? z.object({ ok: z.literal(false), error: z.object({ details: z.object({ aiUsage: usageData }) }) }).safeParse(result)
     : null;
   if (failureUsage?.success)
@@ -55,8 +61,7 @@ export function codeAiReferenceCost(capability: string, result: unknown, profile
   const parsed = usageResult.safeParse(result);
   if (!parsed.success) {
     // Core's other AI catalog/history operations do not perform inference.
-    if (!["core.ai.decide", "core.ai.generate"].includes(capability) && z.object({ ok: z.literal(true) }).safeParse(result).success)
-      return "0";
+    if (!codeAiReservesAttemptBudget(capability) && z.object({ ok: z.literal(true) }).safeParse(result).success) return "0";
     return reserved;
   }
   // The base parser strips unknown fields; read the verified Core result for per-model vision/loop usage.
