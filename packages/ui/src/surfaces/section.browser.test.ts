@@ -122,34 +122,55 @@ describe("Section in a real engine", () => {
         },
       });
     const section = (id: string, title: string, count: number, label: string) =>
-      createComponent(Section, { id, size: "md", icon: "ti ti-message-circle", title, count, actions: action(label), children: "…" });
-    // Contacts on a phone: a 350 px card with "Notizen", "Noch keine", and "Kommentar hinzufügen" cut the title to "Not…".
-    const sections = renderToString(() =>
-      createComponent(LocaleProvider, {
-        locale: "de",
-        get children() {
-          return [
-            section("fits", "Kommentare", 12, "Neu"),
-            section("short", "Notizen", 0, "Kommentar hinzufügen"),
-            section("long", "Kommentare aus dem Kundengespräch zur Lieferung im November", 12, "Kommentar hinzufügen"),
-          ];
-        },
-      }),
-    );
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(Section, {
+              id,
+              size: "md",
+              icon: "ti ti-message-circle",
+              title,
+              count,
+              actions: action(label),
+              children: "…",
+            });
+          },
+        }),
+      );
+    // Contacts on a phone: "Notizen", "Noch keine", and "Kommentar hinzufügen" cut the title to "Not…". The test has no
+    // web font, so text widths follow each engine's system font: in the WebKit container this row needs about 298 px,
+    // in Chromium about 359 px. A 300 px card is too narrow for it in both, a 350 px card leaves room for "fits".
+    const cards = [
+      [350, section("fits", "Kommentare", 12, "Neu")],
+      [300, section("short", "Notizen", 0, "Kommentar hinzufügen")],
+      [300, section("long", "Kommentare aus dem Kundengespräch zur Lieferung im November", 12, "Kommentar hinzufügen")],
+    ] as const;
     const page = await browser.newPage({ viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true });
     try {
       await page.setContent(
-        `<!doctype html><html lang="de"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:1rem"><div style="width:350px">${sections}</div></body></html>`,
+        `<!doctype html><html lang="de"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:1rem">` +
+          cards.map(([width, html]) => `<div style="width:${width}px;margin-bottom:1rem">${html}</div>`).join("") +
+          `</body></html>`,
       );
       await settled(page);
       const read = (id: string) =>
         page.evaluate((id) => {
           const section = document.getElementById(id)!;
+          const header = section.querySelector<HTMLElement>(":scope > header")!;
           const title = section.querySelector<HTMLElement>(".k2b-section__title")!;
           const button = section.querySelector<HTMLElement>(".k2b-section__actions .k2b-button")!;
           const box = section.getBoundingClientRect();
           const buttonBox = button.getBoundingClientRect();
+          // What the heading needs on one line: icon, gap, the title's full text, its count or "None yet", gap, action.
+          const width = (selector: string) => header.querySelector<HTMLElement>(selector)?.getBoundingClientRect().width ?? 0;
+          const gap = Number.parseFloat(getComputedStyle(header).columnGap);
+          const inner = Number.parseFloat(getComputedStyle(header.querySelector(".k2b-section__heading")!).columnGap);
+          const count = width(".k2b-count-chip") + width(".k2b-section__none");
+          const oneLine =
+            width(".k2b-section__icon") + gap + title.scrollWidth + (count ? inner + count : 0) + gap + width(".k2b-section__actions");
           return {
+            tight: oneLine > header.getBoundingClientRect().width + 0.5,
             truncated: title.scrollWidth > title.clientWidth + 0.5,
             actionInside: buttonBox.left >= box.left - 0.5 && buttonBox.right <= box.right + 0.5,
             actionBelowTitle: buttonBox.top >= title.getBoundingClientRect().bottom - 0.5,
@@ -157,11 +178,17 @@ describe("Section in a real engine", () => {
           };
         }, id);
       // Where everything fits, the action stays on the title's line.
-      expect(await read("fits")).toEqual({ truncated: false, actionInside: true, actionBelowTitle: false, titleInside: true });
-      // The title reads whole; the action keeps its full label inside the card on the line below.
-      expect(await read("short")).toEqual({ truncated: false, actionInside: true, actionBelowTitle: true, titleInside: true });
+      expect(await read("fits")).toEqual({
+        tight: false,
+        truncated: false,
+        actionInside: true,
+        actionBelowTitle: false,
+        titleInside: true,
+      });
+      // Too narrow for one line: the title reads whole; the action keeps its full label inside the card on the line below.
+      expect(await read("short")).toEqual({ tight: true, truncated: false, actionInside: true, actionBelowTitle: true, titleInside: true });
       // A title longer than the card still ends in an ellipsis inside the card.
-      expect(await read("long")).toEqual({ truncated: true, actionInside: true, actionBelowTitle: true, titleInside: true });
+      expect(await read("long")).toEqual({ tight: true, truncated: true, actionInside: true, actionBelowTitle: true, titleInside: true });
     } finally {
       await page.close();
     }
