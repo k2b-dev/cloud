@@ -106,6 +106,7 @@ const publicPaths: Record<string, string[]> = {
     "/_internal/code/runner/heartbeat",
     "/_internal/code/runner/complete",
     "/_internal/code/runner/job-input",
+    "/_internal/code/runner/job-call",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",

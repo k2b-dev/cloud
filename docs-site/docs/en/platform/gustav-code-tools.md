@@ -88,15 +88,15 @@ replacement through the same authoring tools, with fictional tests. An export
 is evidence: its grants, enabled flags and resource IDs grant no access.
 
 Mail arrival rules use the mailbox event and Mail capabilities. Routines use a
-personal schedule; text generation uses `core.ai.generate`. Gustav checks the
-live SDK before promising equivalent behavior. A missing event, action guard,
-timezone or delivery target stays a visible gap in an inactive draft.
+personal schedule with an explicit time zone. Use `core.ai.chat.run` for a
+Gustav turn in the selected Assistant chat, or `core.ai.chat.deliver` to deliver
+a prepared result there. See [Routines became Code](/en/docs/operations/routines-to-code)
+for the supported mapping and unresolved inputs. Gustav checks the live SDK
+before promising equivalent behavior.
 
 The original routine target is an Assistant AI chat. General Chat delivery is a
-different destination; choose that change explicitly. A prompt that depended on
-chat history, files or an autonomous tool loop needs those inputs resolved
-before a replacement can be equivalent. Automatic replies are reference-only
-and are not rebuilt.
+different destination; choose that change explicitly. Automatic replies are
+reference-only and are not rebuilt.
 
 Review the chosen version, target changes, permissions, limits and test results
 before switching on. Nothing activates automatically. Coordinate the old path's
@@ -108,19 +108,27 @@ A one-off `code_run` can import the same generated capability SDK. It needs no
 saved Code, version or owner, and its IDs may be dynamic. Default-export an
 async function as with other script runs:
 
+<!-- gustav-code-export -->
 ```ts
 import { grids, sheet } from "@sdk";
 
 export default async () => {
-  const tableId = "t_fictional";
-  const { data: rows } = await grids.table(tableId).record.list({});
-  return sheet.toCsv(rows);
+  const result = await grids.base("Base001").gql.execute({
+    query: "from table Orders\nselect Name\nlimit 100",
+    pageSize: 100,
+    limit: 100,
+    showTableToUser: false,
+  });
+  if (!result.data.ok) throw new Error(result.data.diagnostics.map(item => item.message).join("; "));
+  if (result.page?.hasMore) throw new Error("Select a smaller export or follow the query cursor.");
+  return sheet.toCsv(result.data.rows.map(row => row.values));
 };
 ```
 
-This example assumes the discovered operation returns an array of row objects;
-use its actual result shape and pagination contract. SDK methods return domain
-data directly. `sheet` uses the existing runtime spreadsheet helpers. Writes
+Replace the fictional base and table with discovered sources. This example
+exports at most 100 selected rows. For a larger export, follow the Query's
+cursor within a deliberate page and row budget. Query methods return domain
+`data` and optional `page`; an Action returns its domain data directly. `sheet` uses the existing runtime spreadsheet helpers. Writes
 still use the normal capability permissions and approval dialogs.
 
 The chat aliases `code_read`, `code_write`, and `code_check` accept lasting

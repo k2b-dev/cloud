@@ -4,7 +4,15 @@ import { CodeAutomationTitleSchema, type NormalizedCapabilityCall, NormalizedCap
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import type { SQL, TransactionSQL } from "bun";
 import type { z } from "zod";
-import { type CodeContext, CodeDataError, codePermission, codePerson, readCodeOwner, requireCodePermission } from "./access";
+import {
+  type CodeContext,
+  CodeDataError,
+  CodeOwnerUnavailableError,
+  codePermission,
+  codePerson,
+  readCodeOwner,
+  requireCodePermission,
+} from "./access";
 import {
   CODE_INLINE_JSON_BYTES,
   CODE_RESULT_STORAGE_BYTES,
@@ -76,6 +84,17 @@ export const readCode = async (codeId: string, context: CodeContext) => {
   const code = await findCode(codeId);
   if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const permission = await requireCodePermission(code, context);
+  // Detail reads refresh presentation separately; permission checks and previews stay read-only.
+  if (code.owner.kind !== "person") {
+    try {
+      const owner = await readCodeOwner(code.owner, context);
+      if (owner && code.serviceAccountId)
+        await sql`UPDATE auth.service_accounts SET title=${owner.title} WHERE id=${code.serviceAccountId}::uuid
+          AND kind='code' AND title IS DISTINCT FROM ${owner.title}`;
+    } catch (error) {
+      if (!(error instanceof CodeOwnerUnavailableError)) throw error;
+    }
+  }
   const [legacy] = await sql`SELECT id FROM auth.mandates
     WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
       AND workload_id=${code.activeVersionId} AND policy IS NOT NULL AND state IN ('active','paused')

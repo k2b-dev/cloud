@@ -6,6 +6,7 @@ export const invocationAuthorityFromMandate = (authority: {
   subject: { type: "user" | "service_account"; id: string };
   workloadType: string;
   workloadId: string;
+  trigger?: InvocationAuthority["workload_trigger"];
 }): InvocationAuthority => ({
   sub: authority.subject.id,
   principal_type: authority.subject.type,
@@ -17,4 +18,5 @@ export const invocationAuthorityFromMandate = (authority: {
   mandate_revision: authority.mandateRevision,
   workload_type: authority.workloadType,
   workload_id: authority.workloadId,
+  ...(authority.trigger !== undefined ? { workload_trigger: authority.trigger } : {}),
 });

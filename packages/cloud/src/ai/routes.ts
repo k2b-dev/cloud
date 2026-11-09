@@ -38,7 +38,7 @@ import { readThemeFromCookieHeader } from "../shared/theme";
 import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
 import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
-import { buildAiCapabilityCatalog } from "./capabilities";
+import { buildAiCapabilityCatalog, buildAiCapabilityHistoryCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
@@ -80,7 +80,9 @@ import {
 } from "./message-queue";
 import { createAiNextMessageTool } from "./next-message";
 import { dismissAiNextMessage } from "./next-message-store";
+import { loadPlaceAssistant } from "./place-assistant";
 import { AiConversationPlaceFilterSchema } from "./place-filter";
+import { placeAssistantRoutes } from "./place-routes";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
@@ -346,6 +348,7 @@ export const aiRoutes = (() => {
       .use("*", noTransform())
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
+      .route("/places", placeAssistantRoutes)
       .route("/conversations", aiMapRoutes)
       .get("/status", async (c) => {
         const [status, enabled] = await Promise.all([
@@ -608,6 +611,27 @@ export const aiRoutes = (() => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const body = c.req.valid("json");
+        if (body.place) {
+          const place = await loadPlaceAssistant(c, body.place);
+          if (place.state === "consent_required") return respond(c, fail(err.forbidden("Allow Assistant to see the current place first.")));
+          if (place.state !== "available") return respond(c, fail(err.notFound("Place")));
+          try {
+            const conversation = await aiConversations.createPlaceConversation({
+              requestId: body.requestId,
+              ownerUserId: ctx.ownerUserId,
+              place: { ref: body.place, title: place.title },
+              draft: body.draft!.content,
+            });
+            const project = conversation.projectId ? await aiProjects.get(conversation.projectId, resourceContext(c), "read") : null;
+            if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
+            return respond(c, ok(publicConversation(conversation, project?.shortId ?? null)), 201);
+          } catch (error) {
+            if (error instanceof AiConversationCreationError) {
+              return respond(c, fail(error.reason === "conflict" ? err.conflict(error.message) : err.notFound("Conversation")));
+            }
+            throw error;
+          }
+        }
         const project = body.projectId ? await aiProjects.getByShortId(body.projectId, resourceContext(c), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));
         const draft = await prepareLaunchDraft(body, resourceContext(c), appAccessAuthority(c));
@@ -1311,7 +1335,7 @@ export const aiRoutes = (() => {
             message.message.role === "assistant"
               ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
               : undefined;
-          const catalog = buildAiCapabilityCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
+          const catalog = buildAiCapabilityHistoryCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
           const presentation = message.meta?.toolPresentations?.[callId];
           const entry = catalog.find(
             (entry) =>

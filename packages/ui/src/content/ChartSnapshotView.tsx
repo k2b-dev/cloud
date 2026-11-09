@@ -48,6 +48,7 @@ export function ChartSnapshotView(props: {
       closeChartInspectionOnOutside({
         container: () => container,
         tooltip: () => tooltip,
+        scroll: inspection.scroll,
         close: inspection.close,
       }),
     );
@@ -64,6 +65,8 @@ export function ChartSnapshotView(props: {
       aria-label={chartMessages().interactiveChart}
       tabIndex={0}
       onPointerDown={inspection.down}
+      onPointerUp={inspection.up}
+      onPointerCancel={inspection.up}
       onPointerMove={inspection.move}
       onClick={inspection.click}
       onPointerLeave={inspection.leave}

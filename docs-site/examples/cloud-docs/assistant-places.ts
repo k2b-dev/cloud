@@ -1,3 +1,4 @@
+import { askPanelConsent } from "@k2b/cloud/browser/panel";
 import { AssistantPlaceSchema, type CapabilityExecutionContext, defineCapabilities } from "@k2b/cloud/contracts";
 import { Layout } from "@k2b/cloud/ssr";
 import { z } from "zod";
@@ -65,3 +66,5 @@ export const renderPlacePage = (c: Parameters<typeof Layout>[0]["c"], conversati
     context: { scope: { type: "example.conversation", id: conversation.id } },
     children: null,
   });
+
+export const requestPlaceConsent = () => askPanelConsent();

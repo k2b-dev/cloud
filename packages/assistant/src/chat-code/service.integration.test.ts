@@ -11,6 +11,7 @@ import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/se
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
+import { createAssistantPlaceFixture, PLACE_FIXTURE_APP_ID, PLACE_FIXTURE_TYPE } from "../../../../scripts/fixtures/assistant-place";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { createAgentHost } from "./agent-host";
 import { createChatCodeServiceRoutes } from "./api";
@@ -475,6 +476,63 @@ databaseSuite()("Assistant chat runner persistence", () => {
       await expect(httpService.prepare(make(), owner)).rejects.toMatchObject({ code: "HTTP_SECRET" });
     } finally {
       conversation.mockRestore();
+    }
+  });
+
+  test("a saved script approval follows current place declarations and can still be declined", async () => {
+    const conversationId = crypto.randomUUID();
+    await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
+    const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
+      request.ownerUserId === owner.user.id ? checkConversation(request.conversationId, owner.user.id) : null,
+    );
+    const { capabilities } = createAssistantPlaceFixture();
+    const manifest = compileCapabilityManifest(PLACE_FIXTURE_APP_ID, capabilities);
+    const app = { appId: PLACE_FIXTURE_APP_ID, appName: "Fixture", appDescription: "Invented", appIcon: "ti ti-message", manifest };
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { ...app, manifest: { ...manifest, types: manifest.types.map(({ assistant: _assistant, ...type }) => type) } },
+    });
+    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({
+      ok: true,
+      data: { message: "Write at Marta?", approvalScope: "legacy-place:marta" },
+    });
+    const invoke = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
+    const wording = spyOn(capabilityClient, "getCapabilityActionWording").mockResolvedValue(null);
+    const request = {
+      id: crypto.randomUUID(),
+      name: `${PLACE_FIXTURE_APP_ID}.note.add`,
+      input: { text: "Hi" },
+      target: { type: PLACE_FIXTURE_TYPE, id: "marta" },
+      conversationId,
+    };
+    const caller = { cookie: "test-cookie", locale: "en", origin: "assistant" as const };
+    try {
+      expect(await runtimeCapabilities.prepare(request, owner, caller)).toMatchObject({ status: "approval" });
+      // The app now reserves this existing Action for checked place tools.
+      catalog.mockResolvedValue({ ok: true, data: app });
+      await expect(runtimeCapabilities.resolve(request.id, { approved: true }, owner, caller)).rejects.toMatchObject({
+        code: "ACCESS_DENIED",
+      });
+      expect(review).toHaveBeenCalledTimes(1);
+      expect(invoke).not.toHaveBeenCalled();
+      const [pending] = await sql`SELECT status FROM assistant.code_capability_calls WHERE id=${request.id}::uuid`;
+      expect(pending).toMatchObject({ status: "pending" });
+      catalog.mockResolvedValue({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Unavailable", status: 503 } });
+      expect(await runtimeCapabilities.resolve(request.id, { approved: false }, owner, caller)).toEqual({ status: "denied" });
+      expect(catalog).toHaveBeenCalledTimes(2);
+      const [denied] = await sql`SELECT call.status,approval.status AS approval_status
+        FROM assistant.code_capability_calls call JOIN approvals.requests approval ON approval.id=call.approval_id
+        WHERE call.id=${request.id}::uuid`;
+      expect(denied).toMatchObject({ status: "denied", approval_status: "rejected" });
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      conversation.mockRestore();
+      catalog.mockRestore();
+      review.mockRestore();
+      invoke.mockRestore();
+      wording.mockRestore();
+      await sql`DELETE FROM assistant.code_capability_calls WHERE id=${request.id}::uuid`;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversationId}::uuid`;
     }
   });
 

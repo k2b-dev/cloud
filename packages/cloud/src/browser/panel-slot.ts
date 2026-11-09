@@ -26,7 +26,13 @@ import {
 } from "./panel-context-bridge";
 import { panelCanLeave } from "./panel-leave";
 import PanelMenu from "./panel-menu";
-import { isPanelCloseMessage, isPanelNavigateMessage, isPanelReadyMessage, isPanelSearchMessage } from "./panel-messages";
+import {
+  isPanelCloseMessage,
+  isPanelConsentAskMessage,
+  isPanelNavigateMessage,
+  isPanelReadyMessage,
+  isPanelSearchMessage,
+} from "./panel-messages";
 import { importOnDemand } from "./reload";
 
 export const PANEL_READY_TIMEOUT_MS = 10_000;
@@ -668,7 +674,13 @@ export function installPanelSlot(): () => void {
     if (!frame || event.source !== frame.contentWindow || event.origin !== location.origin) return;
     if (isPanelReadyMessage(event.data, provider.id)) markReady();
     else if (isPanelCloseMessage(event.data)) close();
-    else if (isPanelNavigateMessage(event.data)) {
+    else if (isPanelConsentAskMessage(event.data)) {
+      // The provider can only bring the question back; an answer still needs the person's click in the slot.
+      if (!isOpen() || !provider.consent || saving.has(provider.id) || answers.get(provider.id) === true) return;
+      answers.set(provider.id, null);
+      update();
+      focusPanel();
+    } else if (isPanelNavigateMessage(event.data)) {
       if (!URL.canParse(event.data.href)) return;
       const url = new URL(event.data.href, location.origin);
       if (url.origin !== location.origin || !showsProvider(false)) return;

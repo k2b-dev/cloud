@@ -5,7 +5,7 @@ section: Platform services
 order: 962
 description: Submit checked Code, compare complete source versions and decide hash-bound Cloud-admin approvals.
 tags: [code, approvals, versions]
-updated: 2026-11-01
+updated: 2026-11-08
 ---
 
 # Code versions and approval
@@ -15,6 +15,10 @@ and requests a Cloud administrator's approval when the current
 [Code policy](/en/docs/platform/code-policy) requires it. The previous active
 version keeps running while the new version waits. Approval alone does not
 activate a version or grant resource access.
+
+File operations supported by the generated SDK also work when saving a version:
+read streams return a FileRef, and write streams accept one through their file
+metadata input. Write streams without that input remain unavailable.
 
 ## Submit a version
 

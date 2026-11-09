@@ -5,7 +5,7 @@ section: AI
 order: 575
 description: Declare resource-specific context, tools, skills, and starters for a person's Assistant chat.
 tags: [ai, assistant, capabilities, context]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Assistant at a place
@@ -170,18 +170,33 @@ resource permissions in their domain service.
 Cloud checks the person's consent to share page context before it invokes the
 provider. The initial server render and later navigation use the same
 `loadPlaceAssistant(c, scope)` loader from `@k2b/cloud/ai/server`. Panel hosts can
-read the same projection from `GET /api/ai/places/:type/:id`.
+read the same projection from `GET /api/ai/places/:type/:id`. The response state
+is one of the following:
 
 | State | What the host can show |
 | --- | --- |
 | `none` | No place context; keep the ordinary panel. |
 | `consent_required` | The existing consent flow, before querying the provider. |
-| `available` | Place title, application identity, Type title, selected tool policies, Skills, starters, and the person's existing chat or `null`. |
+| `available` | Place title, application identity, Type title, selected tool policies, Skills, starters, and the person's `conversationId` and `conversation` (both `null` before the first message). |
 | `unavailable` | Stored title and the person's chat ID when known; no current place tools or context. `retry: true` means the provider may recover. |
 
 The response contains display metadata, never the provider's raw `context`.
 Loading it is read-only. Opening the panel, navigating to a place, and clicking
-a starter without sending do not create a chat.
+a starter without sending do not create a chat. Starters only fill the composer.
+
+When consent is missing, a panel provider can ask the shell to show its existing
+question again:
+
+```ts
+import { askPanelConsent } from "@k2b/cloud/browser/panel";
+
+export const requestPlaceConsent = () => askPanelConsent();
+```
+
+This also works after **Don't share**. The person must answer in the shell; the
+call itself grants no consent. An allowed answer arrives through
+`onContextChange`, after which the panel loads the place again. Missing consent
+does not mean the place is gone. See [Panel consent](/en/docs/platform/panels#consent-belongs-to-the-shell).
 
 ## Keep one personal chat per place
 
@@ -241,15 +256,23 @@ Cloud cannot tell a removal from a restart.
 ## Fixed targets and current access
 
 Cloud removes Actions declared in `assistant.tools` from the general Assistant
-catalog. In a place chat, only the current provider selection is available.
+catalog, including the SDK and capability calls of one-off `code_run` scripts.
+In a place chat, only the current provider selection is available.
 Their tool schemas omit the target field: Cloud supplies the resource stored on
 the chat. Other explicit resource references remain ordinary Action inputs.
 
 Before each place Action, including execution after an approval or a resumed
-turn, Cloud reloads the person and the provider. An inactive person, unavailable
-place, or Action absent from the current selection ends the call as `rejected`.
+turn, Cloud reloads the person, checks panel context consent, and asks the provider
+again. Without consent, Cloud neither calls the provider nor offers place tools.
+An inactive person, unavailable place, or Action absent from the current selection
+ends the call as `rejected`.
 A previous approval grants no continued resource access. Action policies and
 remembered approvals otherwise follow the normal Assistant flow.
 
 The chat stays readable after place access is lost. Tool audit rows retain their
 conversation link, which supplies the person and immutable place coordinates.
+
+A person's saved Action outcome check remains available in the chat even when
+that Action is no longer offered as a place tool. The check uses the application's
+read-only outcome Query under the person's current authority; it never repeats
+the Action.

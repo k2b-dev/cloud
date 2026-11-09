@@ -102,6 +102,9 @@ export function createRuntimeCapabilities() {
     const query = catalog.data.manifest.queries.find((item) => item.localId === localId);
     const action = catalog.data.manifest.actions.find((item) => item.localId === localId);
     if (Boolean(query) === Boolean(action)) throw new ArtifactError("INVALID_INPUT");
+    // One-off scripts have no checked place binding, including calls sent through Core's HTTP transport.
+    if (action && catalog.data.manifest.types.some((type) => type.assistant?.tools.includes(localId)))
+      throw new ArtifactError("ACCESS_DENIED");
     return {
       appId,
       appName: catalog.data.appName,
