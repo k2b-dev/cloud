@@ -15,6 +15,7 @@ import { getAiCredential } from "./credentials";
 import { AiBackgroundAdmissionError, AiBackgroundCostError, type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
 import { aiModelAccess } from "./model-access";
+import { PDF_MAX_PAGES } from "./pdf-render";
 import { PROVIDER_TIMEOUTS } from "./provider";
 import { classifyProviderFailure, recordAiProviderStatus } from "./provider-connections";
 import { AiProviderError } from "./provider-errors";
@@ -57,10 +58,15 @@ export type RunAiDecisionInput<TQuestions extends DecisionQuestions> = {
   appId?: string;
   signal?: AbortSignal;
   traceParent?: TraceContext;
+  /** Observe the settled attempt, including failures, without a second charge. */
+  onUsage?: (call: { model: AiResolvedModelRef; usage: AiDecisionUsage | undefined }) => void;
   /** Same test seam as runAiStructured; production callers use the catalog. */
   resolveModel?: () => Promise<AiResolvedDecisionModel>;
 };
-export type AiDecisionUsage = Usage & { estimated?: boolean };
+export type AiDecisionUsage = Usage & {
+  estimated?: boolean;
+  byModel?: Array<{ model: AiResolvedModelRef; input: number; output: number }>;
+};
 export type RunAiDecisionResult<TQuestions extends DecisionQuestions> = {
   answers: DecisionAnswers<TQuestions>;
   model: AiResolvedModelRef;
@@ -198,7 +204,7 @@ const validateInput = (input: RunAiDecisionInput<DecisionQuestions>) => {
     throw invalidInput();
   }
   const images = input.images ?? [];
-  if (!Array.isArray(images) || images.length > AI_TURN_ATTACHMENT_MAX_ITEMS) throw invalidInput();
+  if (!Array.isArray(images) || images.length > Math.max(AI_TURN_ATTACHMENT_MAX_ITEMS, PDF_MAX_PAGES)) throw invalidInput();
   let totalBytes = 0;
   for (const image of images) {
     if (
@@ -244,6 +250,7 @@ export const runAiDecision = async <const TQuestions extends DecisionQuestions>(
       let usage: AiDecisionUsage | undefined;
       let succeeded = false;
       let failure: unknown;
+      let bookingFailed = false;
       try {
         signal.throwIfAborted();
         resolved = await (input.resolveModel?.() ?? resolveAiDecisionModel(input));
@@ -329,9 +336,15 @@ export const runAiDecision = async <const TQuestions extends DecisionQuestions>(
                   : transport.firstByteAt - requestStartedAt,
             });
           } catch {
+            bookingFailed = true;
             logger("ai:decision").error("AI cost booking failed", { callId, code: "ai_cost_booking_failed" });
           }
         }
+        if (resolved)
+          input.onUsage?.({
+            model: { id: resolved.profile.id },
+            usage: bookingFailed ? undefined : (usage ?? { input: 0, output: 0, total: 0 }),
+          });
         await safelyRecordStructuredRun({
           task: input.task,
           appId: input.appId,

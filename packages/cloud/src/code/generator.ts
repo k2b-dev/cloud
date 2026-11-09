@@ -41,6 +41,7 @@ const quote = JSON.stringify;
 const forbiddenProperties = new Set(["__proto__", "prototype", "constructor"]);
 const reservedExports = new Set([
   "FileRef",
+  "CodeAiTool",
   "Page",
   "Section",
   "Text",
@@ -278,6 +279,13 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
         inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => name !== "file"));
       fields.push({ name: "file", type: "FileRef", required: true });
     }
+    if (["core.ai.generate", "core.ai.decide"].includes(op.capability)) {
+      const properties = inputSchema.properties;
+      if (properties && typeof properties === "object")
+        inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => !["files", "tools"].includes(name)));
+      fields.push({ name: "files", type: "FileRef[]", required: false });
+      if (op.capability === "core.ai.generate") fields.push({ name: "tools", type: "CodeAiTool[]", required: false });
+    }
     const input = schemaTypes(inputSchema, `Input${index}`, fields);
     const output = schemaTypes(op.dataSchema, `Data${index}`);
     declarations.push(
@@ -287,7 +295,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `type Data${index} = ${output.type};`,
     );
     const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<Data${index}>` : `Data${index}`;
-    methods.set(op, `(input: Input${index}) => Promise<${result}>`);
+    methods.set(
+      op,
+      Object.keys(op.refs).length
+        ? `(input: Input${index}) => Promise<${result}>`
+        : `((input: Input${index}) => Promise<${result}>) & CodeAiTool`,
+    );
   }
   const handleNames = new Map<string, string>();
   for (const [index, handle] of manifest.handles.entries()) {

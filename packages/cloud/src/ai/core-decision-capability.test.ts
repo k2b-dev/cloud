@@ -92,9 +92,9 @@ test("input uses decision limits and rejects invented question kinds and caller 
     { ...input, images: Array.from({ length: 17 }, () => ({ data: "YQ==", mediaType: "image/png" })) },
   ])
     expect(aiDecisionInput.safeParse(invalid).success).toBe(false);
-  expect(aiDecisionInput.safeParse({ ...input, model: { id: "clef" }, images: [{ data: "YQ==", mediaType: "image/png" }] }).success).toBe(
-    true,
-  );
+  expect(
+    aiDecisionInput.safeParse({ ...input, model: { id: "clef" }, files: [{ id: "run-ref", size: 1, mediaType: "image/png" }] }).success,
+  ).toBe(true);
 });
 
 test.each([

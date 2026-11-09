@@ -18,7 +18,10 @@ type FileRef = {
 
 A `FileRef` has no body, bytes, URL or download method. Code cannot read,
 change or create file content; it can only pass a reference on. Use `name`,
-`mediaType` and `size` to decide whether to pass it.
+`mediaType` and `size` to decide whether to pass it. `core.ai.generate` and
+`core.ai.decide` also accept `files: FileRef[]`; the model receives content
+through Cloud while Code still holds no bytes. The generate loop offers
+`view_image` and `read_file` for refs already seen in that call; see [AI](ai.md).
 
 ## Where FileRefs come from and go
 

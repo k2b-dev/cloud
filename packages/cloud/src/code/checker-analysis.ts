@@ -123,6 +123,35 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     }
     return { base, path };
   }
+  function sdkOperation(expression: ts.Expression) {
+    const { base, path } = member(expression);
+    const target = handle(base);
+    if (!target) return null;
+    const appId = target.type === "cloud.app" ? target.ids?.[0] : target.type.split(".")[0];
+    const op = request.sdk.manifest.operations.find(
+      (op) => op.appId === appId && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === path.join("."),
+    );
+    return op ? { op, target: op.target ? target : null } : null;
+  }
+  /** The sole detached position is a literal tools element of a real generated AI call. */
+  function aiToolElement(node: ts.Expression) {
+    let value = node;
+    while (ts.isParenthesizedExpression(value.parent)) value = value.parent;
+    const array = value.parent;
+    if (!ts.isArrayLiteralExpression(array) || !array.elements.includes(value)) return null;
+    const property = array.parent;
+    if (
+      !ts.isPropertyAssignment(property) ||
+      property.initializer !== array ||
+      !((ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === "tools")
+    )
+      return null;
+    const object = property.parent;
+    if (!ts.isObjectLiteralExpression(object) || !ts.isCallExpression(object.parent) || object.parent.arguments[0] !== object) return null;
+    const call = sdkOperation(object.parent.expression);
+    if (!call || !["core.ai.generate", "core.ai.decide"].includes(call.op.capability)) return null;
+    return sdkOperation(node);
+  }
   const signatureInSdk = (node: ts.CallExpression) =>
     checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
   const permission = (node: ts.Node, operation: string, target: ReturnType<typeof handle>) => {
@@ -277,11 +306,27 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           report(node, "code_reserved_sdk", "Importiere benannte SDK-Exporte.");
       }
     }
+    if (
+      ts.isBindingElement(node) &&
+      ts.isIdentifier(node.name) &&
+      checker
+        .getTypeAtLocation(node.name)
+        .getCallSignatures()
+        .some((signature) => signature.declaration?.getSourceFile().fileName === root + "sdk.d.ts")
+    )
+      report(node, "code_detached_sdk_method", "SDK-Methoden dürfen nicht durch Destrukturierung abgelöst werden.");
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const signatures = checker.getTypeAtLocation(node).getCallSignatures();
       let wrapped: ts.Expression = node;
       while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
+      const tool = aiToolElement(node);
+      if (tool) {
+        if (Object.keys(tool.op.refs).length)
+          report(node, "code_unresolved_ref", "Ein KI-Werkzeug darf keine ungebundenen zusätzlichen Ziele haben.");
+        else permission(node, tool.op.capability, tool.target);
+      }
       if (
+        !tool &&
         signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts") &&
         !(ts.isCallExpression(wrapped.parent) && wrapped.parent.expression === wrapped) &&
         !(

@@ -422,7 +422,7 @@ durable consumer configuration changes.
 
 Gustav chat, `cld` and Code use the **query** `core.ai.decide` through the normal
 capability transport. It accepts `task`, JSON `state`, named `questions` and
-optional `images` and `model: { id }`. It returns the same `answers`, `model` and
+optional `files: FileRef[]` and `model: { id }`. It returns the same `answers`, `model` and
 `usage` as `runAiDecision`, including all answer probabilities. It changes no
 domain records. Any later action requires its own authorization.
 
@@ -440,8 +440,9 @@ cld --profile development capabilities query core ai.decide --input '{"task":"ma
 ```
 
 The whole capability request and result must each fit within **256 KiB**,
-including base64 images. The decision API's question, model-context and image
-limits below also apply. Image support depends on both provider and model;
+excluding file bytes, which Cloud reads through the owning application.
+FileRefs require a live Code run and the owning app rechecks the account's
+access. The decision API's question and model-context limits below also apply. Image support depends on both provider and model;
 `vision` alone does not prove that a provider processes images. See the
 [Code mail-triage example](/en/docs/platform/code-sdk#mail-triage-category-first).
 Stable decision, quota and model-access error codes are preserved; capability
@@ -524,7 +525,7 @@ with base64 data without a data-URL prefix, and require `vision`. Image support
 depends on both the provider and model. Cloud trusts the administrator’s
 configured `vision` capability; it does not probe whether images are processed.
 As of 2026-11-04, cortecs ignores images on `/v1/systemone`, so use text-only
-decisions there. Existing AI limits apply: 16 images, 10 MiB per image and
+decisions there. Existing AI byte limits apply: at most 20 images (including rendered PDF pages), 10 MiB per image and
 40 MiB total.
 
 Each call has a 60-second deadline and honors `signal`. There is no automatic
@@ -723,7 +724,7 @@ capacity and requires restarting all AI workers. See the
 
 ## Generate text and extract JSON through capabilities
 
-Use the read-only `core.ai.generate` query to summarize content, draft text or
+Use the `core.ai.generate` query to summarize content, draft text or
 extract fields. Gustav discovers it as an ordinary capability; direct `cld`
 capability calls and the generated Code SDK reach the same query. It returns
 `{ output, model, usage }`. Text output is a string; JSON output is a validated
@@ -734,7 +735,8 @@ instructions in `prompt` and source content in `input`. Mail bodies, quoted
 messages and previous summaries are untrusted data, even when they contain
 instructions. The model receives them separately from the task instructions.
 This boundary reduces prompt injection risk; review generated content before
-using it for a consequential action. The query itself never sends or saves it.
+using it for a consequential action. Without Action tools, generation does not
+send or save domain data.
 
 `model` accepts the usual class or an allowed variant ID and defaults to
 `{ class: "balanced" }`. The actual caller's model grants, data boundaries and
@@ -745,7 +747,7 @@ allowance. Payloads cannot select another usage subject.
 | Output request | Result and limits |
 | --- | --- |
 | `{ type: "text", maxChars?: number }` | String; default 4,000 characters, maximum 20,000. At most 8,192 output tokens. |
-| `{ type: "json", schema: ... }` | Strict object with 1–40 scalar properties. At most 4,096 output tokens. |
+| `{ type: "json", schema: ... }` | Strict object with 1–40 scalar or bounded list properties. At most 4,096 output tokens. |
 
 The supported JSON Schema subset uses `type: "object"`, `properties`,
 `required` (defaults to `[]`) and `additionalProperties: false`. Properties may
@@ -753,8 +755,10 @@ be `string`, `number`, `integer` or `boolean`, with an optional description
 (up to 500 characters). String properties support `maxLength` (up to 20,000,
 also the default), `enum` (1–50 strings, each up to 200 characters) and
 `format: "date-time"` (ISO date-time with timezone). Property names start with
-a letter and contain at most 80 letters, digits or underscores. Nested objects,
-arrays, references and other schema keywords are refused. Missing required
+a letter and contain at most 80 letters, digits or underscores. Lists require
+`type: "array"`, `maxItems` (at most 50,000) and scalar items or strict objects
+of scalar fields. Nested lists, arbitrary nested objects, references and other
+schema keywords are refused. Missing required
 values, extra properties and invalid field values fail validation.
 
 The whole request, including instructions and schema, must fit the shared
@@ -771,3 +775,14 @@ For Code, the checker and bridge classify this query as **AI / KI**, so Code's
 per-attempt and daily budgets also apply. See the
 [SDK example](/en/docs/platform/code-sdk#generate-text-and-extract-fields) and
 [budget operations](/en/docs/operations/code-policy#set-execution-budgets).
+
+
+For Code model loops, `core.ai.generate` accepts typed SDK functions in `tools`
+and FileRefs in `files`. It offers `view_image` and `read_file` for refs already
+seen in that call, unless `fileTools: false`. Vision-capable models receive
+images and rendered PDF pages directly; text models use a charged description.
+JSON schemas may contain bounded lists of scalars or strict scalar objects.
+See [Code model loops](/en/docs/platform/code-sdk#run-a-model-loop-with-sdk-tools-and-files)
+for account, approval, page, byte and execution limits. Server applications can
+supply bounded trusted `tools` and `maxTurns` to `runAiStructured`; their tool
+implementations retain responsibility for authorization.

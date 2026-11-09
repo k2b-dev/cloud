@@ -5,10 +5,11 @@ import { AiModelInputSchema, AiProviderSchema, aiModelSupportsSlot } from "../sh
 import * as credentials from "./credentials";
 import { AiDecisionError, createAiDecisionProvider, runAiDecision, selectAiDecisionProfile } from "./decision";
 import * as calls from "./inference-calls";
-import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
+import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
 import { aiModelAccess } from "./model-access";
 import { validateAiCatalogModel } from "./model-catalog";
 import { aiAssignmentFixture, aiModelFixture, aiSettingsFixture } from "./model-fixture";
+import { PDF_MAX_PAGES } from "./pdf-render";
 import { createAiProvider } from "./provider";
 import * as connection from "./provider-connections";
 import { AiProviderError } from "./provider-errors";
@@ -256,11 +257,12 @@ test("128 questions are accepted and images require vision and respect shared co
   };
   await runAiDecision({ task: "test", state: "test", questions, images: [image], resolveModel });
   expect(requests.at(-1)?.body).toMatchObject({ images: ["data:image/png;base64,aGVsbG8="] });
+  await runAiDecision({ task: "test", state: "test", questions, images: Array(PDF_MAX_PAGES).fill(image), resolveModel });
   const oversized = { ...image, data: Buffer.alloc(AI_IMAGE_INPUT_MAX_BYTES + 1).toString("base64") };
   for (const images of [
     [{ ...image, mediaType: "application/pdf" }],
     [{ ...image, data: "data:image/png;base64,aGVsbG8=" }],
-    Array(AI_TURN_ATTACHMENT_MAX_ITEMS + 1).fill(image),
+    Array(PDF_MAX_PAGES + 1).fill(image),
   ])
     await expect(runAiDecision({ task: "test", state: "test", questions, images, resolveModel })).rejects.toMatchObject({
       code: "decision_input_invalid",

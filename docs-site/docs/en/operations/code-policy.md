@@ -5,7 +5,7 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Code policy operations
@@ -135,3 +135,27 @@ versions. Pending versions leave the current version running.
 [Code versions and approval](/en/docs/platform/code-versions) describes the
 checker manifest, hash-bound decisions, sole-admin confirmation and the
 pause/resume checks. Sending without a person remains blocked in Phase 1.
+
+
+## Model loops and file inspection
+
+Deploy Core and Runner together when enabling SDK `tools` and `files` on Code
+AI calls. Direct Code invocations now carry their fenced attempt generation;
+nested capability invocations cannot start another Code model loop. No new
+setting or database migration is required.
+
+SDK tools use the same per-call authorization, approval and durable call log as
+direct Code. File viewer calls and owning-app source reads consume the existing
+call limit. Model steps and vision fallback reserve their worst-case priced
+cost from the admitted AI reservation before contacting a provider; the final
+settlement includes every model used. Unknown usage keeps the reservation
+spent. The existing run deadline bounds the entire loop. Policy changes and
+revoked grants take effect at subsequent calls and model steps.
+
+
+SDK execution calls use the existing 240-second long-call transport window,
+separate from the runner's short bootstrap and heartbeat timeout. The run's
+abort signal still cancels the request, and ordinary capability deadlines
+continue to apply (45 seconds per query). A model loop must fit that query
+window as well as its remaining run time; use a faster model, fewer steps or
+separate explicit Code calls when it cannot.

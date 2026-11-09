@@ -43,8 +43,10 @@ import {
   codeHttpOriginAllowed,
   createCodeRunnerCallRoutes,
   dispatchCapability,
+  dispatchCodeSdkCall,
 } from "../api/capabilities";
 import { dispatchCapabilityStream } from "../api/capability-streams";
+import { readCodeAiFile } from "../api/code-file-reader";
 import type { AppKey } from "../app-key";
 import { signAppProof } from "../app-proof";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
@@ -72,8 +74,9 @@ import { issueInvocationToken } from "../services/identity/issue-invocation";
 import { mandates } from "../services/mandates";
 import { loadCodeRunCalls } from "../ssr/code-page/calls";
 import type { CodePageInvoke } from "../ssr/code-page/data";
+import { createCodeAiTools } from "./ai-tools";
 import { CodeFileRefSchema } from "./file-ref";
-import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
+import { CodeRunTokenClaimsSchema, type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest, type RunnerJsonValue } from "./runner-protocol";
 
 // real clock: Postgres fences use its own clock, so the frozen JS clock starts from the real time of this run.
@@ -1538,6 +1541,98 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       },
     };
   }
+  const aiClaims = () =>
+    CodeRunTokenClaimsSchema.parse({
+      ...claims,
+      ver: 1,
+      token_use: "code_run",
+      iss: issuer,
+      aud: "cloud-code-bridge",
+      iat: Math.floor(now.getTime() / 1000),
+      nbf: Math.floor(now.getTime() / 1000),
+      exp: Math.floor(now.getTime() / 1000) + 300,
+    });
+  const aiRead = (ref: unknown, maximum = 20 * 1024 * 1024) =>
+    readCodeAiFile({
+      ref: CodeFileRefSchema.parse(ref),
+      claims: aiClaims(),
+      request: new Request(issuer),
+      maxBytes: maximum,
+      dependencies: dependencies(),
+    });
+  test("AI file reader reuses the owning Mail authorization and logs its read, including a visible 403", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    expect(await aiRead(opened.data)).toEqual(fixture.payload);
+    const [logged] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${claims.runId}::uuid AND call->>'capability'='mail.attachment.content.read'`;
+    expect(logged!.count).toBe(2);
+    const denied = await fixture.read();
+    await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
+    await expect(aiRead(denied.data)).rejects.toMatchObject({ code: "code_file_source_refused", status: 403 });
+  }, 30_000);
+  test("AI file reader rejects changed metadata, another run, byte overflow and the durable call limit", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    await expect(aiRead({ ...opened.data, size: 1 })).rejects.toMatchObject({ code: "code_file_invalid" });
+    await expect(aiRead(opened.data, fixture.payload.length - 1)).rejects.toMatchObject({ code: "code_file_size_limit" });
+    const original = { ...claims };
+    claims = { ...claims, runId: crypto.randomUUID() };
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_invalid" });
+    claims = original;
+    fixture.extraByte();
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_size_limit" });
+    const fresh = await fixture.read();
+    callLimit = 1;
+    await expect(aiRead(fresh.data)).rejects.toMatchObject({ code: "code_call_limit" });
+  }, 30_000);
+  test("AI SDK tools use the exact direct-call policy, approval, target, account and durable call log", async () => {
+    const invoke = async (capability: string) => {
+      const tools = await createCodeAiTools({
+        bindings: [{ capability, target: item }],
+        permissions: [{ operation: capability, target: item, file: "code.ts", line: 1 }],
+        requestId: "ai-loop",
+        registerFiles: () => {},
+        getCapability: dependencies().dispatch.getCapability,
+        invoke: async (invocation) =>
+          (
+            await dispatchCodeSdkCall({
+              claims: aiClaims(),
+              invocation,
+              operationId: capability,
+              request: new Request(issuer),
+              dependencies: dependencies(),
+            })
+          ).json(),
+      });
+      return tools[0]!.execute(
+        {},
+        {
+          signal: new AbortController().signal,
+          requestApproval: async () => {
+            throw new Error("No independent tool approval");
+          },
+          requestClientTool: async () => {
+            throw new Error("No client tools");
+          },
+        },
+      );
+    };
+    await resetFixture({ entry: true });
+    expect(await invoke("example.write")).toEqual(await (await send()).json());
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
+    expect(await invoke("example.read")).toMatchObject({ ok: false, error: { code: "code_approval_required" } });
+    expect(await (await send({ operation: "example.read" })).json()).toMatchObject({
+      ok: false,
+      error: { code: "code_approval_required" },
+    });
+    expect(await invoke("example.asks")).toMatchObject({ ok: false, error: { code: "code_unattended_forbidden" } });
+    await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
+    expect(await invoke("example.write")).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
+    const [logged] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${claims.runId}::uuid`;
+    expect(logged!.count).toBe(6);
+  });
   test("Mail event work changes use the stored trigger across the real signed bridge and provider", async () => {
     const event = appEventFixture(
       mailCapabilities,

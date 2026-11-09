@@ -53,7 +53,7 @@ export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contra
 export { type AiConversationWatch, aiApprovalUnwatched, watchAiConversation } from "./conversation-watchers";
 export { listAiCredentialProviderIds } from "./credentials";
 export type { AiDecisionErrorCode, AiDecisionUsage, RunAiDecisionInput, RunAiDecisionResult } from "./decision";
-export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, runAiDecision } from "./decision";
+export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, resolveAiDecisionModel, runAiDecision } from "./decision";
 export {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -294,6 +294,7 @@ export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
 export { isConversationResourceCursor } from "./resource-refs";
 export type { AiRoutes } from "./routes";
+export { type AiRunFileRef, AiRunReadInput, AiRunViewInput, createAiRunFiles } from "./run-files";
 export {
   isAiVisionModelConfigured,
   listAiModels,

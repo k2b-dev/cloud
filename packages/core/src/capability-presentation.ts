@@ -108,13 +108,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.generate": {
           title: "Text oder strukturierte Daten erzeugen",
           description:
-            "Berechtigt gelesene Inhalte zusammenfassen, Text entwerfen oder Felder nach einem geprüften JSON-Schema extrahieren. Nur lesend; versendet oder speichert nichts. Belastet das KI-Kontingent des Aufrufers.",
+            "Berechtigt gelesene Inhalte zusammenfassen, Text entwerfen oder Felder nach einem geprüften JSON-Schema extrahieren. Übergebene SDK-Werkzeuge können ihre deklarierten Actions nach der Code-Policy ausführen. Belastet das KI-Kontingent des Aufrufers.",
           input: {
             task: "Kurzer Abrechnungsname, etwa mail.summary.",
             prompt: "Vertrauenswürdige Aufgabenanweisungen. Mail-Inhalte und andere Quelldaten gehören in input.",
             input: "Berechtigt gelesene Quelldaten; werden als nicht vertrauenswürdige Daten behandelt, niemals als Anweisungen.",
             model: "Modellklasse oder erlaubte Variante; Standard ist balanced.",
-            output: "Begrenzter Text oder ein striktes JSON-Schema mit skalaren Feldern. Die Ausgabe wird vor der Rückgabe geprüft.",
+            files: "FileRefs dieses Laufs; Cloud liest sie als aufrufendes Konto.",
+            tools: "Generierte SDK-Funktionen mit fest gebundenem Ziel.",
+            fileTools: "view_image und read_file für bekannte FileRefs anbieten; Standard ist true.",
+            output:
+              "Begrenzter Text oder ein striktes JSON-Schema mit skalaren Feldern und begrenzten Listen. Die Ausgabe wird vor der Rückgabe geprüft.",
           },
         },
         "ai.decide": {
@@ -125,9 +129,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             task: "Kurzer Abrechnungsname der Entscheidung, höchstens 120 Zeichen.",
             state: "Berechtigt gelesener JSON-Zustand; zählt zum Kontextfenster und zur Bytegrenze des Capability-Aufrufs.",
             questions: "1–128 benannte noul-, choice- oder score-Fragen. Auswahl und Bewertung brauchen mindestens zwei Alternativen.",
-            images: "Optionale Bilder; Unterstützung hängt von Anbieter und Modell ab. Zählen zur Bytegrenze des Capability-Aufrufs.",
-            "images[].data": "Base64-Bilddaten ohne Daten-URL-Präfix.",
-            "images[].mediaType": "Unterstützter Bild-Medientyp.",
+            files: "FileRefs dieses Code-Laufs. Cloud liest die Dateien als aufrufendes Konto; keine Base64-Daten.",
             model: "Ohne Angabe gilt der Entscheidungs-Slot; Chat-Klassen gelten hier nicht.",
             "model.id": "ID der Standardvariante eines Entscheidungsmodells aus dem Katalog.",
           },

@@ -473,6 +473,8 @@ export type InvocationProvenance = {
   workloadId?: string;
   /** One concrete run of this workload, when its owner tracks runs. */
   workloadRun?: string;
+  /** Signed Code attempt fence; absent on nested queries. */
+  workloadGeneration?: number;
 };
 
 export type UserRequestActor = {
