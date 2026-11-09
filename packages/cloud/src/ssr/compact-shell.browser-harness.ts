@@ -354,6 +354,12 @@ let browser: Browser;
 let css: string;
 let controller: string;
 const spies: { mockRestore(): void }[] = [];
+// The shell geometry suites measure the icon app bar, which the names setting keeps at every width when it is off;
+// rail-names.browser.test.ts turns it on.
+let railNames = false;
+export const setRailNames = (on: boolean) => {
+  railNames = on;
+};
 // Register hooks in each importing test file; Bun caches this module across files.
 // Keeping hooks at module scope would leave the second file with a closed browser.
 /**
@@ -366,7 +372,7 @@ export function installCompactShellHarness(launch: typeof launchBrowser) {
   setDefaultTimeout(30_000);
   beforeAll(async () => {
     spies.push(
-      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(railSnapshot, "readRailSnapshot").mockImplementation(async () => ({ ...defaultRailPreferences(), showNames: railNames })),
       spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
       spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
     );

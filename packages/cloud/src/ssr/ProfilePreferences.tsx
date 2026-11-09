@@ -52,16 +52,13 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
     ...items(),
   ]);
 
-  const avatar = () => <Avatar name={props.name} src={props.avatarSrc} size="sm" />;
+  // The person's name shows beside the avatar on wide windows, so it is also part of the spoken name.
+  const avatar = () => [<Avatar name={props.name} src={props.avatarSrc} size="sm" />, <span class="rail-item-label">{props.name}</span>];
+  const menuLabel = () => `${props.name}, ${preferences.messages().menuLabel}`;
 
   return (
     <div class="layout-profile-preferences">
-      <button
-        type="button"
-        class="layout-profile-preferences__link"
-        aria-label={preferences.messages().menuLabel}
-        data-cloud-shell-focus-return=""
-      >
+      <button type="button" class="layout-profile-preferences__link" aria-label={menuLabel()} data-cloud-shell-focus-return="">
         {avatar()}
       </button>
       <div class="layout-profile-preferences__panel dropdown-menu-surface">
@@ -116,7 +113,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
           appearance="plain"
           class="layout-profile-preferences__dropdown-trigger"
           iconOnly
-          label={preferences.messages().menuLabel}
+          label={menuLabel()}
           tooltip={false}
           data-cloud-shell-focus-return=""
         >

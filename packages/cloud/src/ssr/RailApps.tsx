@@ -1,10 +1,12 @@
-import { ScrollArea, Tooltip, useLocale } from "@k2b/ui";
+import { ScrollArea, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import { AppBadge, useAppBadgeDescription } from "./AppBadge";
 import { appAccentStyle } from "./app-appearance";
 import { watchAppBadges } from "./app-badges";
+import { RailItemHint } from "./RailItemHint";
 import { RAIL_PREFERENCES_EVENT, readRailContext } from "./rail-context";
+import { syncRailNames } from "./rail-names";
 import { projectRailNavigation, type RailApp, type RailLink, railLinkActive } from "./rail-navigation";
 
 function RailIcon(props: { link: RailLink; currentPath: string }) {
@@ -22,10 +24,10 @@ function RailIcon(props: { link: RailLink; currentPath: string }) {
         style={appAccentStyle(props.link.accent)}
       >
         <i class={`${props.link.iconClass} text-xl`} aria-hidden="true" />
-        <span class="sr-only">{props.link.label}</span>
+        <span class="rail-item-label">{props.link.label}</span>
         <AppBadge endpoint={props.link.badge} appId={props.link.appId} />
       </a>
-      <Tooltip target={() => target} content={props.link.label} placement="right" delay={0} />
+      <RailItemHint target={() => target} content={props.link.label} />
     </>
   );
 }
@@ -36,7 +38,11 @@ export default function RailApps(props: { apps: RailApp[]; settings: RailSnapsho
   const [currentPath, setCurrentPath] = createSignal(props.currentPath);
   const navigation = createMemo(() => projectRailNavigation(props.apps, settings(), locale()));
   onMount(() => {
-    const sync = () => setSettings(readRailContext()?.settings ?? props.settings);
+    const sync = () => {
+      const next = readRailContext()?.settings ?? props.settings;
+      setSettings(next);
+      syncRailNames(next.showNames);
+    };
     const syncLocation = () => setCurrentPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
     sync();
     syncLocation();

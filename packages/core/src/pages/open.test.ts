@@ -21,6 +21,7 @@ const railSpy = spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue({
   revision: 0,
   visibility: {},
   shortcuts: [],
+  showNames: true,
   managedShortcuts: [],
 });
 const sessionSpy = spyOn(session, "authenticateRequest").mockResolvedValue(null);

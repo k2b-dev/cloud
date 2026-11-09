@@ -660,6 +660,116 @@ solid-island {
   }
 }
 
+/* Names: from 1680 px the app bar shows each entry's name beside its icon and
+   grows from 56 to 216 px, still on the canvas without a surface, edge, or
+   shadow. The person's app bar setting allows it: the server renders
+   `data-rail-names` from it, so the first frame has the final width. Without
+   the setting, below 1680 px, or while the app bar is hidden, nothing
+   changes. Icons keep their column 28 px from the edge; a name too long for
+   the row ends in an ellipsis and shows in full in the entry's hint; a count
+   stands at the end of the row. Search shows its shortcut there. */
+@media (min-width: 1680px) {
+  .cloud-app-canvas[data-layout-authenticated]:not([data-shell-focus]) > .layout-rail[data-rail-names] {
+    width: calc(13.5rem + env(safe-area-inset-left, 0px));
+
+    & > .layout-rail-logo {
+      justify-content: flex-start;
+      padding-inline: 0.375rem 0.5rem;
+    }
+    & > .layout-rail-logo > a {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+    }
+    & > .layout-rail-logo img {
+      flex: none;
+      margin-inline: 0.75rem 0.375rem;
+    }
+    & :is(.layout-rail-navigation, [data-cloud-rail-apps], .layout-rail-actions) {
+      align-items: stretch;
+    }
+    & :is(.layout-rail-navigation, [data-cloud-rail-apps]) {
+      gap: 0.125rem;
+    }
+    & .rail-item {
+      width: auto;
+      height: 2.5rem;
+      margin-inline: 0.375rem 0.5rem;
+      justify-content: flex-start;
+    }
+    & .rail-item > i {
+      flex: none;
+      width: 2.75rem;
+      text-align: center;
+    }
+    & :is(.rail-item, .layout-rail-logo, .layout-profile-preferences) .rail-item-label {
+      position: static;
+      width: auto;
+      height: auto;
+      flex: 1;
+      min-width: 0;
+      clip-path: none;
+      padding-inline-end: 0.5rem;
+      text-overflow: ellipsis;
+      text-align: start;
+      color: var(--k2b-text-secondary);
+      font-size: 0.875rem;
+      font-weight: 500;
+      line-height: 1.25rem;
+    }
+    & .layout-rail-logo .rail-item-label {
+      font-size: 0.8125rem;
+      font-weight: 600;
+    }
+    & .rail-item-active .rail-item-label {
+      color: inherit;
+      font-weight: 600;
+    }
+    & .rail-item > .cloud-app-badge {
+      position: static;
+      flex: none;
+      min-width: 1.25rem;
+      height: 1.125rem;
+      margin-inline-end: 0.625rem;
+      padding-inline: 0.375rem;
+      font-size: 0.6875rem;
+      line-height: 1.125rem;
+    }
+    /* The open app's 1 px edge moves neither its icon nor its count. */
+    & .rail-item-active > i {
+      margin-inline-start: -1px;
+    }
+    & .rail-item-active > .cloud-app-badge {
+      margin-inline-end: calc(0.625rem - 1px);
+    }
+    & .rail-item-keys {
+      display: inline-flex;
+      flex: none;
+      margin-inline-end: 0.625rem;
+    }
+    & [data-cloud-rail-apps] > [role="separator"] {
+      margin-inline-start: 1.125rem;
+    }
+    & .layout-profile-preferences,
+    & .layout-profile-preferences > .layout-profile-preferences__dropdown {
+      flex: 1;
+      min-width: 0;
+    }
+    & .layout-profile-preferences {
+      display: flex;
+    }
+    & :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger) {
+      flex: 1;
+      width: auto;
+      min-width: 0;
+      margin-inline: 0.375rem 0.5rem;
+      padding-inline-start: 0.375rem;
+      justify-content: flex-start;
+      gap: 0.375rem;
+    }
+  }
+}
+
 /* Focus: the app bar and the outermost workspace's navigation hide together
    (Cmd/Ctrl+\, the profile menu's first entry, or the command). The canvas
    carries the state from the `cloud_shell_focus` cookie, so the server renders

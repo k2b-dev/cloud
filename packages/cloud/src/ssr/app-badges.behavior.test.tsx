@@ -29,7 +29,7 @@ const apps: RailApp[] = [
     badge: "/api/notes/badge",
   },
 ];
-const settings = { revision: 0, visibility: {}, shortcuts: [] };
+const settings = { revision: 0, visibility: {}, shortcuts: [], showNames: true };
 
 let dom: DomTestHarness;
 let visibility: DocumentVisibilityState;
