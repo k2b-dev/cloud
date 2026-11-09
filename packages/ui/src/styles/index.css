@@ -183,6 +183,7 @@
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
   --k2b-motion-sheet: 220ms; /* panels, sheets, period changes */
+  --k2b-motion-stack: 400ms; /* a toast stack fans out, folds, and makes room */
   --k2b-motion-morph: 280ms; /* one large surface changes size or place: a pill grows into a draft */
   --k2b-motion-celebrate: 600ms; /* completion moments only */
   --k2b-fresh-fade: 1600ms; /* color only: a highlight fades out */
@@ -255,6 +256,7 @@
     --k2b-motion-fast: 0ms;
     --k2b-motion-base: 0ms;
     --k2b-motion-sheet: 0ms;
+    --k2b-motion-stack: 0ms;
     --k2b-motion-morph: 0ms;
     --k2b-motion-celebrate: 0ms;
     --k2b-fresh-fade: 0ms;
@@ -279,6 +281,7 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-fast: 0ms;
   --k2b-motion-base: 0ms;
   --k2b-motion-sheet: 0ms;
+  --k2b-motion-stack: 0ms;
   --k2b-motion-morph: 0ms;
   --k2b-motion-celebrate: 0ms;
   --k2b-fresh-fade: 0ms;

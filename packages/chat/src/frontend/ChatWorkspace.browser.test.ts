@@ -903,7 +903,7 @@ describe("ChatWorkspace browser read state", () => {
           expect(await jump.isVisible()).toBe(true);
           expect(chatReads(chat).at(-1)!.seq).toBe(8);
           // On a phone the error toast overlays the header. Dismiss it before using the same recovery control.
-          await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+          await page.getByRole("button", { name: `Close: ${chatMessages.resolve(["en"]).t.openFailed}`, exact: true }).click();
           await page.getByText(chatMessages.resolve(["en"]).t.openFailed, { exact: true }).waitFor({ state: "detached" });
           const reloaded = page.waitForResponse((response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.ok());
           await jump.click();
