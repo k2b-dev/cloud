@@ -5,7 +5,7 @@ section: Operations
 order: 1138
 description: JetStream storage reserved for Notebook live editing, how it is sized, and how per-note topics from older releases are retired.
 tags: [notebooks, nats, jetstream, storage, migration]
-updated: 2026-10-31
+updated: 2026-11-08
 ---
 
 # Size and migrate the Notebook document log
@@ -43,6 +43,13 @@ With `SYNC_REPLICAS` replicas, the reservation is
 `(1 GiB + 16 MiB) × SYNC_REPLICAS`. At the default three replicas, this is
 3.05 GiB. The awareness topic, snapshot jobs, and other Notebook resources
 reserve their own fixed limits. None of them grows with the number of notes.
+
+Cloud's upgrade to Sync 7.1 leaves these declarations unchanged. Sync now
+supports rejecting new events without age expiry and pruning through a
+persisted snapshot watermark. Enabling that policy requires a separate
+cutover: existing discard or age settings fail the drift check, and the
+application must supply a safe watermark across every document before
+deleting events. See [Shared text documents](/en/docs/data/shared-text-documents).
 
 Check the account against these limits with an authorized NATS context:
 

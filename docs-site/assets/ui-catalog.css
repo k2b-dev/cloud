@@ -406,6 +406,185 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* A customer file: the page's own grid of section cards. */
+.ui-section-demo-page {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  align-items: start;
+  gap: 1rem;
+}
+
+.ui-section-demo-page__full {
+  grid-column: 1 / -1;
+}
+
+.ui-section-demo-page__column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ui-section-demo-todos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  column-gap: 1.5rem;
+}
+
+.ui-section-demo-todo {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.ui-section-demo-todo > span {
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.ui-section-demo-todo > span[data-late="true"] {
+  color: var(--k2b-danger-text);
+}
+
+.ui-section-demo-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.625rem;
+  padding-block: 0.25rem;
+}
+
+.ui-section-demo-kpis small,
+.ui-section-demo-kpis em {
+  display: block;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-style: normal;
+}
+
+.ui-section-demo-kpis em {
+  color: var(--k2b-success-text);
+}
+
+.ui-section-demo-kpis b {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+
+.ui-section-demo-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.ui-section-demo-prose {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+/* Layers and shadows: one workspace with a main content area, a flat docked
+   column, and two floating pills. The shadows come only from the components. */
+.ui-elevation-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+  height: 24rem;
+  overflow: hidden;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-dialog);
+  background: var(--k2b-surface);
+}
+
+.ui-elevation-demo__main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.ui-elevation-demo__scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem;
+}
+
+.ui-elevation-demo__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ui-elevation-demo__cards > .k2b-link-card {
+  flex: 1 1 14rem;
+}
+
+.ui-elevation-demo__topic {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.875rem 1rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.ui-elevation-demo__topic > strong {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+}
+
+.ui-elevation-demo__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: 0.5rem;
+}
+
+.ui-elevation-demo__tile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem;
+  border-color: transparent;
+  background: var(--k2b-surface-muted);
+  font-size: 0.75rem;
+}
+
+.ui-elevation-demo__column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-left: 1px solid var(--k2b-border);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 47.999rem) {
+  .ui-elevation-demo {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .ui-elevation-demo__main {
+    height: 24rem;
+  }
+
+  .ui-elevation-demo__column {
+    border-top: 1px solid var(--k2b-border);
+    border-left: 0;
+  }
+}
+
 .ui-paper-demo-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1764,9 +1943,17 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: 0.75rem;
-  background: var(--k2b-surface);
+  /* A gallery card is an island (layers and shadows), like a DashboardFrame; everything in it is flat. */
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
+}
+
+.ui-charts-card > *,
+.ui-charts-card .k2b-ui {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-surface-beneath: var(--k2b-island-surface);
 }
 
 .ui-charts-card header h3 {

@@ -3,7 +3,9 @@
 `StatGrid` presents a row of comparable key figures. Each `StatCell` is a
 framed tile of its own: an optional icon and the label at the top, the figure
 with its change below, and one support line with the comparison, a note, and
-the trend.
+the trend. The tile is an island (layers and shadows): lifted in the main
+content, flat inside another island, a column, a panel, or a dialog. A muted
+grid tints its tiles instead and never lifts them.
 
 The application owns the values, their scope, and the links used to investigate them.
 

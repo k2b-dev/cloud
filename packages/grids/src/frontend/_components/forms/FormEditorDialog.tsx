@@ -5,13 +5,13 @@ import {
   Checkbox,
   CopyButton,
   confirmDiscardIfDirty,
-  DetailPanel,
   dialogCore,
   ImageInput,
   NoticeCard,
   PanelDialog,
   panelDialogWideOptions,
   prompts,
+  Section,
   TextInput,
   useLocale,
 } from "@k2b/ui";
@@ -474,9 +474,9 @@ function FormEditorSection(props: { title: string; subtitle?: string; icon: stri
     <Show
       when={props.primary}
       fallback={
-        <DetailPanel.Section collapsible title={props.title} description={props.subtitle} icon={props.icon}>
+        <Section collapsible title={props.title} description={props.subtitle} icon={props.icon}>
           <div class="flex flex-col gap-4 min-w-0">{props.children}</div>
-        </DetailPanel.Section>
+        </Section>
       }
     >
       <PanelDialog.Section title={props.title} subtitle={props.subtitle} icon={props.icon}>

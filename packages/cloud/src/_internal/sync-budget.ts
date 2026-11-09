@@ -243,6 +243,7 @@ const deferTopic = <T>(topic: Topic<T>, ready: () => Promise<void>): Topic<T> =>
     resumeConsumer: (input) => whenReady(() => topic.resumeConsumer(input)),
     latestCursor: (options) => whenReady(() => topic.latestCursor(options)),
     head: () => whenReady(() => topic.head()),
+    prune: (input) => whenReady(() => topic.prune(input)),
     live: (options) => iterateWhenReady(() => topic.live(options)),
     replay: (options) => iterateWhenReady(() => topic.replay(options)),
     follow: (options) => iterateWhenReady(() => topic.follow(options)),

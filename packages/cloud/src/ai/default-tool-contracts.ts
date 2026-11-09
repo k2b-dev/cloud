@@ -114,6 +114,7 @@ const flatChartSchema = () => {
     ChartBins,
     ChartCommon,
     ChartLabel,
+    ChartCoordinate,
     ChartPoints,
     ChartSeries,
     ChartReferences,
@@ -128,6 +129,22 @@ const flatChartSchema = () => {
     groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional().describe("treemap and bubble: group names."),
     labels: z.array(ChartLabel).length(2).optional().describe("pareto: current and previous period labels."),
 
+    nodes: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          label: ChartLabel,
+          tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
+        }),
+      )
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe("sankey: unique nodes; labels name each stage."),
+    links: z
+      .array(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }))
+      .max(CLOUD_AI_VIEW_MAX_MARKS)
+      .optional()
+      .describe("sankey: positive flows between existing node ids, without cycles."),
     axes: z.array(ChartLabel).min(3).max(8).optional(),
     xLabel: ChartLabel.optional(),
     yLabel: ChartLabel.optional(),
@@ -185,9 +202,12 @@ const flatChartSchema = () => {
       .optional()
       .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
-    share: z.boolean().optional(),
-    limit: z.number().int().positive().optional(),
-    tone: z.enum(["in", "out"]).optional(),
+    marks: z.enum(["bars", "dots"]).optional().describe("Bar: nested, nonnegative subset counts."),
+    total: z.number().positive().optional().describe("Dots: capacity; shares use 1. Latest/cursor legend, never summed rates."),
+    dots: z.number().int().min(2).optional().describe("Even dots per category (default 100); counted toward mark limit."),
+    share: z.boolean().optional().describe("bar rows ranked list: show shares; requires nonnegative values."),
+    limit: z.number().int().positive().optional().describe("bar rows ranked list: number of visible rows; requires nonnegative values."),
+    tone: z.enum(["in", "out"]).optional().describe("bar rows ranked list: flow direction; requires nonnegative values."),
     normalize: z.boolean().optional().describe("stacked bar, area: normalize positive totals to 100 percent."),
     rows: z
       .array(
@@ -205,7 +225,22 @@ const flatChartSchema = () => {
         z.union([
           ChartLabel,
           ChartSeries(ChartPoints.min(1)).extend({
-            data: z.union([ChartPoints.min(1), z.array(z.number()).min(3).max(8)]),
+            data: z.union([
+              z
+                .array(
+                  ChartPoints.element.extend({
+                    y: z
+                      .number()
+                      .nullable()
+                      .describe(
+                        "line: null is a gap only with forecast, zero, threshold, marker or legendValues enabled. Scatter requires a number.",
+                      ),
+                  }),
+                )
+                .min(1)
+                .max(CLOUD_AI_CHART_MAX_VALUES),
+              z.array(z.number()).min(3).max(8),
+            ]),
             style: z.enum(["solid", "dashed", "dotted"]).optional(),
           }),
           z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }),
@@ -222,12 +257,29 @@ const flatChartSchema = () => {
       .describe("line, scatter: x axis. bar: label titles categories; ordered keeps their sequence."),
     yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis; label names the value, format sets units."),
     legend: z
-      .boolean()
+      .union([
+        z.boolean(),
+        z
+          .array(z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }))
+          .max(CLOUD_AI_CHART_MAX_SERIES),
+      ])
       .optional()
-      .describe("bar (colorByBar), line, scatter, pie, donut: legend; defaults to several series or unlabeled slices."),
+      .describe("sankey: explicit {tone,label}[] color meanings. Other kinds: boolean legend."),
     colorByBar: z.boolean().optional().describe("bar: one palette color per bar."),
     showValues: z.boolean().optional().describe("bar: print values, by default when they stay readable. heatmap: print values."),
     area: z.boolean().optional().describe("line, sparkline: fill under the line."),
+    step: z.enum(["after", "before", "middle"]).optional().describe("line: hold each observation until the next, or change before it."),
+    legendValues: z.boolean().optional().describe("line: opt in to values at the cursor in bounded legends."),
+    zero: z.boolean().optional().describe("line: include zero and tint the negative plot region."),
+    forecast: z
+      .object({
+        from: ChartCoordinate,
+        band: z.array(z.array(z.number()).length(2)).max(CLOUD_AI_CHART_MAX_VALUES).optional(),
+      })
+      .optional()
+      .describe("line: dashed from this first-series X value; band [low, high] pairs match its sorted suffix, including gaps."),
+    threshold: z.object({ value: z.number(), label: ChartLabel }).optional().describe("line: labelled warning threshold."),
+    marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional().describe("line: labelled vertical marker, for example Today."),
     smooth: z.boolean().optional().describe("line: smooth curves."),
     showLabels: z.boolean().optional().describe("pie, donut: name slices next to them."),
     bins: ChartBins.optional(),
@@ -261,10 +313,10 @@ const chartInputSchema = () => {
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
       layout: z
-        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "calendar"])
+        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "calendar", "nested"])
         .optional()
         .describe(
-          "Groups: stack/grid. Bar: columns, rows, grouped or stacked. Area: stacked. heatmap: calendar uses ISO date/value pairs.",
+          "Groups: stack/grid. Bar: columns, rows, grouped, stacked or nested. Area: stacked. heatmap: calendar uses ISO date/value pairs.",
         ),
     })
     .superRefine((value, context) => {

@@ -45,6 +45,12 @@ type Props = {
   dictation?: DictationSource;
 };
 
+/**
+ * The scroller's scroll padding beside the floating pills: the caret keeps clear of the fades and of the pills at the
+ * bottom edge (`--notebook-pill-room`, set on `.notebook-editor-frame[data-notebook-pills]`).
+ */
+export const pillScrollPadding = "var(--scroll-fade-top, 0px) calc(var(--scroll-fade-bottom, 0px) + var(--notebook-pill-room, 0px))";
+
 /** Formatting shortcuts; headings match the physical digit keys like the @k2b/ui MarkdownEditor and the list keys. */
 export function formattingKeymap(opts: { notebookId: string }) {
   const command = (run: (view: EditorView) => void | Promise<void>) => (view: EditorView) => {
@@ -266,7 +272,8 @@ export default function EditorToolbar(props: Props) {
     <Toolbar
       editor={props.editor}
       label={t().formatting}
-      class="notebooks-editor-toolbar mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed"
+      class="notebooks-editor-toolbar text-base text-dimmed"
+      mainClass="notebooks-editor-pill notebooks-editor-pill--format"
       toolsClass="notebooks-editor-toolbar__tools no-scrollbar min-w-0 flex-1 overflow-x-auto"
       liftAboveKeyboard
       groups={[
@@ -332,7 +339,7 @@ export default function EditorToolbar(props: Props) {
       dictation={props.dictation ? { source: props.dictation } : undefined}
       start={<NavigationButton />}
       end={
-        <>
+        <div class="notebooks-editor-pill notebooks-editor-pill--page">
           <Show when={showDisconnected()}>
             <span class="flex shrink-0 items-center gap-1 text-xs" role="status">
               <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
@@ -372,7 +379,7 @@ export default function EditorToolbar(props: Props) {
             </IconButtonLink>
           </Tooltip.Anchor>
           <DetailsButton />
-        </>
+        </div>
       }
     />
   );
