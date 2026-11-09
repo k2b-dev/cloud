@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { barFamilyFixtures } from "../../test/chart-bars-family-fixtures";
 import { renderBarChartSvg } from "../charts/core/bar-render";
 import { renderHbarSvg } from "../charts/core/hbar";
@@ -82,10 +82,8 @@ for (const width of [1440, 390])
         const marks = chart.locator("[data-chart-datum]");
         const legendValue = chart.locator("[data-chart-legend-value]").first();
         const legendDefault = await legendValue.textContent();
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .hover({ position: { x: 3, y: 3 } });
+        // Without hover()'s retry scroll: `before` is a viewport box, so only the page may move it.
+        await hoverInPlace(marks.first().locator(".k2b-chart-category-band"), { x: 3, y: 3 });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
@@ -112,10 +110,7 @@ for (const width of [1440, 390])
             .evaluate((n) => getComputedStyle(n).fill),
         ).not.toBe("none");
         const tipBox = await chart.locator('[role="tooltip"]').boundingBox();
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .hover({ position: { x: 5, y: 12 } });
+        await hoverInPlace(marks.first().locator(".k2b-chart-category-band"), { x: 5, y: 12 });
         await settled(page);
         expect(await chart.locator('[role="tooltip"]').textContent()).toBe(first);
         expect(await chart.locator('[role="tooltip"]').boundingBox()).toEqual(tipBox);

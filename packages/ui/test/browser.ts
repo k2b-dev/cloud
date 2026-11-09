@@ -563,6 +563,26 @@ export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: (
 };
 
 /**
+ * Moves the pointer onto `position` inside `target` without scrolling, after checking that the target is the
+ * element there, as `hover()` does. Use it where a test compares boxes in viewport coordinates around a hover:
+ * `Locator.hover()` retries a failed actionability check with its own `scrollIntoView` (`block: "end"`, then
+ * `"center"` and `"start"`), so one transient retry moves the page and the test measures Playwright, not the
+ * page (#3013). Here a covered or off-screen point fails at once instead.
+ */
+export const hoverInPlace = async (target: Locator, position: { x: number; y: number }): Promise<void> => {
+  const hit = await target.evaluate((element, offset) => {
+    const box = element.getBoundingClientRect();
+    const x = box.x + offset.x;
+    const y = box.y + offset.y;
+    const top = element.ownerDocument.elementFromPoint(x, y);
+    const name = (node: Element | null) => (node ? `${node.tagName.toLowerCase()}${node.id ? `#${node.id}` : ""}` : "nothing");
+    return { x, y, inside: top !== null && (top === element || element.contains(top)), top: name(top) };
+  }, position);
+  if (!hit.inside) throw new Error(`hoverInPlace: ${hit.top} is at the point, not the target`);
+  await target.page().mouse.move(hit.x, hit.y);
+};
+
+/**
  * Guards against state sampled before it settled (#1476, #1499).
  * Waits for fonts, running finite document-timeline animations, then two frames.
  * Infinite, scroll-driven, and paused animations are not waited for. A page that
