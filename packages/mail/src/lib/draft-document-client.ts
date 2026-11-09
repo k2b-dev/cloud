@@ -338,6 +338,8 @@ export async function openMailDraftDocumentClient(options: {
     let durableState = encoding.fromBase64(authorization.durable.state);
     const waiters = new Set<() => void>();
     let structuralPending = 0;
+    /** A socket error the provider survives; a later replay proves the connection works again. */
+    let transportError = false;
     const emit = () => {
       // The action stays pending across a network drop; losing readiness is not a receipt.
       state.structuring = structuralPending > 0;
@@ -493,6 +495,11 @@ export async function openMailDraftDocumentClient(options: {
       },
       onReady: () => {
         state.ready = true;
+        if (transportError && !state.terminal) {
+          transportError = false;
+          state.error = false;
+          state.message = state.dirty ? t().pending : t().saved;
+        }
         if (!state.dirty && !state.error) state.message = t().saved;
         emit();
       },
@@ -514,6 +521,7 @@ export async function openMailDraftDocumentClient(options: {
         if (snapshot.generation === generation) acknowledge(snapshot.state);
       },
       onError: (error) => {
+        transportError = true;
         state.error = true;
         state.message = error.message;
         emit();
