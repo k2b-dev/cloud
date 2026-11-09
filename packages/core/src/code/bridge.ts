@@ -41,7 +41,8 @@ const CallVersionSchema = z.object({
 function denied(code: string, status: 200 | 403 | 409 | 503 = 200): never {
   throw new CodeBridgeRefusal(code, status);
 }
-const refusalResponse = (error: CodeBridgeRefusal) => Response.json({ ok: false, error: { code: error.code } }, { status: error.status });
+const refusalResponse = (error: CodeBridgeRefusal) =>
+  Response.json({ ok: false, error: { code: error.code, status: error.errorStatus } }, { status: error.status });
 /** C13 also uses this fence for bundle/heartbeat/completion. No process-local lease or token registry. Lock policy, Code, then run. */
 export async function requireCodeRunFence(claims: CodeRunTokenClaims, db: SQL): Promise<void> {
   const [run] = await db<{ code_id: string; version_id: string; entrypoint: string; generation: number; valid: boolean }[]>`

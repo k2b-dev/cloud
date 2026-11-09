@@ -32,11 +32,12 @@ export type CodeQueryResult<Data> = {
 /** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
 export type CodeUser = {
   id: string;
-  groups: string[];
+  /** Cloud login handle, distinct from the immutable user ID. */
+  username: string;
+  groupIds: string[];
+  groupNames: string[];
   /** The signed-in person's Cloud account profile. Workload accounts cannot visit private pages. */
   kind: "user" | "guest";
-  /** Stable identity provider ID, never a credential. */
-  provider: "local" | "ipa";
   name: string;
 };
 /** Request helpers for hosted routes. No middleware system is part of Code. */
@@ -58,12 +59,16 @@ export type CodeContext = {
   page(page: CodePageBlock): Response;
   redirect(location: string, status?: number): Response;
 };
-/** A webhook is anonymous and must verify its request explicitly. */
-export type CodeWebhookContext = Omit<CodeContext, "user"> & { verify(secret: string): Promise<boolean> };
-/** Future navigation is presentation only; handlers must still authorize requests. */
-export type CodeNavigationItem = { title: string; path: string };
-/** A synchronous or asynchronous schedule callback, also used for a manual start. */
-export type CodeScheduleHandler = () => void | Promise<void>;
+/** One schedule occurrence, stable across retries. Manual runs have scheduledAt null. */
+export type CodeScheduleContext = { runId: string; scheduledAt: string | null; input: unknown };
+export type CodeScheduleHandler = (context: CodeScheduleContext) => void | Promise<void>;
+/** A refused SDK call. Codes are lowercase snake_case; status distinguishes forbidden and missing targets. */
+export declare class CodeError extends Error {
+  readonly code: string;
+  readonly status: number;
+  readonly details: unknown;
+  constructor(code: string, status?: number, message?: string, details?: unknown);
+}
 
 /** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
 declare const __codeSecret: unique symbol;
@@ -113,7 +118,7 @@ type Data6 = ({ "moved": (boolean) });
 
 type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": (((input: Input0) => Promise<CodeQueryResult<Data0>>) & CodeAiTool) }; readonly "workshop": { readonly "read": (((input: Input3) => Promise<CodeQueryResult<Data3>>) & CodeAiTool) } };
 
-type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "item": { readonly "inspect": (((input: Input5) => Promise<Data5>) & CodeAiTool) } };
+type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "inspect": (((input: Input5) => Promise<Data5>) & CodeAiTool) };
 
 type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": (((input: Input4) => Promise<Data4>) & CodeAiTool); readonly "move": ((input: Input6) => Promise<Data6>) }; readonly "stock": { readonly "export": (((input: Input1) => Promise<FileRef>) & CodeAiTool); readonly "list": (((input: Input2) => Promise<CodeQueryResult<Data2>>) & CodeAiTool) } };
 
@@ -133,7 +138,7 @@ export type CodeEvents = { "work-shop.changed": CodeEvent<"work-shop.changed", (
 export type CodeRouteOptions = { public?: boolean; layout?: "plain" };
 
 export type CodeApp = {
-  schedule(when: string | { cron: string; timeZone?: string; name?: string } | { at: string; timeZone: string }, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp;
   /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
@@ -142,16 +147,11 @@ export type CodeApp = {
   put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
   delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
   all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  /** Phase 2; check reports code_phase_unavailable. */
-  nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
-  /** Phase 3; check reports code_phase_unavailable. */
-  webhook(path: string, handler: (c: CodeWebhookContext) => Response | Promise<Response>): CodeApp;
-  fetch(request: Request): Promise<Response>;
 };
 
 export declare const app: CodeApp;
 
-type CodePageRef0 = ((((({ "kind": ("Text") & (string); "text": (string) }) | ({ "kind": ("Heading") & (string); "level"?: (((2) & (number) | (3) & (number) | (4) & (number))); "text": (string) }) | ({ "columns": (Array<({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string) }); "key": (string); "label": (string); "priority"?: (((1) & (number) | (2) & (number) | (3) & (number))); "states"?: ({ [key: string]: ({ "label": (string); "tone": (("info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral")) & (string) }) }); "type"?: (("text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta")) & (string) })>); "empty"?: (string); "kind": ("Table") & (string); "rows": (Array<({ [key: string]: (((string) | (number) | (boolean) | (null))) })>); "search"?: (boolean); "subtitle"?: (string); "title": (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "action": (string); "fields": (Array<({ "error"?: (string); "label": (string); "name": (string); "options"?: (Array<({ "label": (string); "value": (string) })>); "required"?: (boolean); "type": (("text" | "email" | "number" | "textarea" | "select" | "checkbox" | "scan")) & (string); "value"?: (((string) | (number) | (boolean))) })>); "kind": ("Form") & (string); "submit": (string); "title": (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "height"?: (("sm" | "md" | "lg")) & (string); "items": (Array<({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label": (string); "value": (((string) | (number) | (boolean) | (null))) })>); "kind": ("Detail") & (string); "title": (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "description"?: ((({ "end": ({ "label": (string) }); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("waterfall") & (string); "start": ({ "label": (string); "value": (number) }); "steps": (Array<({ "label": (string); "value": (number) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("area") & (string); "layout": ("stacked") & (string); "legend"?: (boolean); "normalize"?: (boolean); "series": (Array<({ "data": (Array<(((number) | (null)))>); "label": (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "x": (Array<(((number) | (string)))>) }) | ({ "colorByBar"?: (boolean); "compare"?: ({ "data": (Array<((number | null))>); "label": (string) }); "data"?: (Array<({ "label": (string); "value": (number) })>); "dots"?: (number); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("bar") & (string); "layout"?: (("columns" | "rows" | "grouped" | "stacked" | "nested")) & (string); "legend"?: (boolean); "limit"?: (number); "marks"?: (("bars" | "dots")) & (string); "normalize"?: (boolean); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "series"?: (Array<({ "data": (Array<((number | null))>); "label": (string) })>); "share"?: (boolean); "showValues"?: (boolean); "subtitle"?: (string); "title": (string); "tone"?: (("in" | "out")) & (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "total"?: (number); "x"?: (Array<(string)>); "xAxis"?: ({ "label"?: (string); "ordered"?: (boolean) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }) }) | ({ "data": (Array<({ "label": (string); "value": (((number) | (null))) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("funnel") & (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("hbar") & (string); "legend"?: (boolean); "rows": (Array<({ "group"?: (string); "label": (string); "values": (Array<(((number) | (null)))>) })>); "series": (Array<(string)>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "area"?: (boolean); "forecast"?: ({ "band"?: (Array<([(number), (number)])>); "from": (((number) | (string))) }); "kind": ("line") & (string); "legend"?: (boolean); "legendValues"?: (boolean); "marker"?: ({ "at": (((number) | (string))); "label": (string) }); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "series": (Array<({ "data": (Array<({ "x": (((number) | (string))); "y": ((number | null)) })>); "label"?: (string); "role"?: ("reference") & (string); "style"?: (("solid" | "dashed" | "dotted")) & (string) })>); "smooth"?: (boolean); "step"?: (("after" | "before" | "middle")) & (string); "subtitle"?: (string); "threshold"?: ({ "label": (string); "value": (number) }); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "xAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }); "zero"?: (boolean) }) | ({ "kind": ("scatter") & (string); "legend"?: (boolean); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "series": (Array<({ "data": (Array<({ "x": (((number) | (string))); "y": (number) })>); "label"?: (string); "role"?: ("reference") & (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "xAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }) }) | ({ "data": (Array<({ "label": (string); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": (("pie" | "donut")) & (string); "legend"?: (boolean); "showLabels"?: (boolean); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "bins"?: (((number) | (Array<(number)>))); "data": (Array<(number)>); "kind": ("histogram") & (string); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("gauge") & (string); "label"?: (string); "max"?: (number); "min"?: (number); "subtitle"?: (string); "thresholds"?: (Array<({ "label"?: (string); "value": (number) })>); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string); "value": (number) }) | ({ "area"?: (boolean); "data": (Array<(number)>); "kind": ("sparkline") & (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "data": (Array<({ "label": (string); "values": (Array<(number)>) })>); "kind": ("boxplot") & (string); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }) }) | ((({ "data": (Array<([(string), ((number | null))])>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("heatmap") & (string); "label"?: (string); "layout": ("calendar") & (string); "locale"?: (string); "scale": (("sequential" | "diverging")) & (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "data": (Array<({ "value": (number); "x": (string); "y": (string) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("heatmap") & (string); "layout"?: never; "max"?: (number); "min"?: (number); "showValues"?: (boolean); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }))) | ({ "data": (Array<({ "label": (string); "max"?: (number); "min"?: (number); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("barGauge") & (string); "max"?: (number); "min"?: (number); "subtitle"?: (string); "thresholds"?: (Array<({ "label"?: (string); "value": (number) })>); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string) }) | ({ "better"?: (("up" | "down")) & (string); "delta"?: (number); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("stat") & (string); "sparkline"?: (Array<(number)>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string); "value": (number) }) | ({ "data": (Array<({ "group": (string); "label": (string); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "groups": (Array<(string)>); "kind": ("treemap") & (string); "legend"?: (boolean); "locale"?: (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "data": (Array<({ "label": (string); "prev": (number); "rest"?: (boolean); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("pareto") & (string); "labels": ([(string), (string)]); "locale"?: (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("sankey") & (string); "legend"?: (Array<({ "label": (string); "tone": (("in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax")) & (string) })>); "links": (Array<({ "source": (string); "target": (string); "value": (number) })>); "locale"?: (string); "nodes": (Array<({ "id": (string); "label": (string); "tone"?: (("in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax")) & (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "averages"?: (boolean); "data": (Array<({ "group": (string); "label": (string); "size"?: (number); "x": (number); "y": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "groups": (Array<(string)>); "kind": ("bubble") & (string); "legend"?: (boolean); "locale"?: (string); "sizeLabel"?: (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "xFormat"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "xLabel": (string); "yFormat"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "yLabel": (string) }) | ({ "axes": (Array<(string)>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("radar") & (string); "legend"?: (boolean); "locale"?: (string); "max": (number); "series": (Array<({ "data": (Array<(number)>); "label": (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string) }))); "empty"?: (string); "height"?: (("sm" | "md" | "lg")) & (string); "kind": ("Chart") & (string); "title"?: (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "items": (Array<({ "compare"?: ({ "label": (string); "value": (number) }); "delta"?: ({ "better"?: (("up" | "down")) & (string); "unit"?: ("points") & (string); "value": (number) }); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "icon"?: (string); "label": (string); "tone"?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); "trend"?: (Array<(number)>); "value": (((number) | (string) | (null))) })>); "kind": ("Stats") & (string) }) | ({ "href": (string); "kind": ("Link") & (string); "label": (string) }) | ({ "action": (string); "kind": (("Button" | "Action")) & (string); "label": (string); "values"?: ({ [key: string]: (string) }) }) | ({ "kind": ("Notice") & (string); "text"?: (string); "title": (string); "tone": (("info" | "success" | "warning" | "danger")) & (string) }))) | ({ "children": (Array<(CodePageRef0)>); "color"?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); "description"?: (string); "icon"?: (string); "kind": ("Section") & (string); "title": (string) })));
+type CodePageRef0 = ((((({ "kind": ("Text") & (string); "text": (string) }) | ({ "kind": ("Heading") & (string); "level"?: (((2) & (number) | (3) & (number) | (4) & (number))); "text": (string) }) | ({ "columns": (Array<({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string) }); "key": (string); "label": (string); "priority"?: (((1) & (number) | (2) & (number) | (3) & (number))); "states"?: ({ [key: string]: ({ "label": (string); "tone": (("info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral")) & (string) }) }); "type"?: (("text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta")) & (string) })>); "empty"?: (string); "kind": ("Table") & (string); "rows": (Array<({ [key: string]: (((string) | (number) | (boolean) | (null))) })>); "search"?: (boolean); "subtitle"?: (string); "title": (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "action": (string); "fields": (Array<({ "error"?: (string); "label": (string); "name": (string); "options"?: (Array<({ "label": (string); "value": (string) })>); "required"?: (boolean); "type": (("text" | "email" | "number" | "textarea" | "select" | "checkbox" | "scan")) & (string); "value"?: (((string) | (number) | (boolean))) })>); "kind": ("Form") & (string); "submit": (string); "title": (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "height"?: (("sm" | "md" | "lg")) & (string); "items": (Array<({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label": (string); "value": (((string) | (number) | (boolean) | (null))) })>); "kind": ("Detail") & (string); "title": (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "description"?: ((({ "end": ({ "label": (string) }); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("waterfall") & (string); "start": ({ "label": (string); "value": (number) }); "steps": (Array<({ "label": (string); "value": (number) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("area") & (string); "layout": ("stacked") & (string); "legend"?: (boolean); "normalize"?: (boolean); "series": (Array<({ "data": (Array<(((number) | (null)))>); "label": (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "x": (Array<(((number) | (string)))>) }) | ({ "colorByBar"?: (boolean); "compare"?: ({ "data": (Array<((number | null))>); "label": (string) }); "data"?: (Array<({ "label": (string); "value": (number) })>); "dots"?: (number); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("bar") & (string); "layout"?: (("columns" | "rows" | "grouped" | "stacked" | "nested")) & (string); "legend"?: (boolean); "limit"?: (number); "marks"?: (("bars" | "dots")) & (string); "normalize"?: (boolean); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "series"?: (Array<({ "data": (Array<((number | null))>); "label": (string) })>); "share"?: (boolean); "showValues"?: (boolean); "subtitle"?: (string); "title": (string); "tone"?: (("in" | "out")) & (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "total"?: (number); "x"?: (Array<(string)>); "xAxis"?: ({ "label"?: (string); "ordered"?: (boolean) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }) }) | ({ "data": (Array<({ "label": (string); "value": (((number) | (null))) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("funnel") & (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("hbar") & (string); "legend"?: (boolean); "rows": (Array<({ "group"?: (string); "label": (string); "values": (Array<(((number) | (null)))>) })>); "series": (Array<(string)>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "area"?: (boolean); "forecast"?: ({ "band"?: (Array<([(number), (number)])>); "from": (((number) | (string))) }); "kind": ("line") & (string); "legend"?: (boolean); "legendValues"?: (boolean); "marker"?: ({ "at": (((number) | (string))); "label": (string) }); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "series": (Array<({ "data": (Array<({ "x": (((number) | (string))); "y": ((number | null)) })>); "label"?: (string); "role"?: ("reference") & (string); "style"?: (("solid" | "dashed" | "dotted")) & (string) })>); "smooth"?: (boolean); "step"?: (("after" | "before" | "middle")) & (string); "subtitle"?: (string); "threshold"?: ({ "label": (string); "value": (number) }); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "xAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }); "zero"?: (boolean) }) | ({ "kind": ("scatter") & (string); "legend"?: (boolean); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "series": (Array<({ "data": (Array<({ "x": (((number) | (string))); "y": (number) })>); "label"?: (string); "role"?: ("reference") & (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "xAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }) }) | ({ "data": (Array<({ "label": (string); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": (("pie" | "donut")) & (string); "legend"?: (boolean); "showLabels"?: (boolean); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "bins"?: (((number) | (Array<(number)>))); "data": (Array<(number)>); "kind": ("histogram") & (string); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("gauge") & (string); "label"?: (string); "max"?: (number); "min"?: (number); "subtitle"?: (string); "thresholds"?: (Array<({ "label"?: (string); "value": (number) })>); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string); "value": (number) }) | ({ "area"?: (boolean); "data": (Array<(number)>); "kind": ("sparkline") & (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "data": (Array<({ "label": (string); "values": (Array<(number)>) })>); "kind": ("boxplot") & (string); "references"?: (Array<({ "axis"?: (("x" | "y")) & (string); "label"?: (string); "style"?: (("solid" | "dashed" | "dotted")) & (string); "tone"?: (("neutral" | "info" | "success" | "warning" | "danger")) & (string); "value": (((number) | (string))) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "yAxis"?: ({ "domain"?: (Array<(number)>); "format"?: ((({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }) | ({ "date": (("day" | "minute" | "second")) & (string) }))); "label"?: (string); "scale"?: (("linear" | "log")) & (string); "ticks"?: (number) }) }) | ((({ "data": (Array<([(string), ((number | null))])>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("heatmap") & (string); "label"?: (string); "layout": ("calendar") & (string); "locale"?: (string); "scale": (("sequential" | "diverging")) & (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "data": (Array<({ "value": (number); "x": (string); "y": (string) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("heatmap") & (string); "layout"?: never; "max"?: (number); "min"?: (number); "showValues"?: (boolean); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }))) | ({ "data": (Array<({ "label": (string); "max"?: (number); "min"?: (number); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("barGauge") & (string); "max"?: (number); "min"?: (number); "subtitle"?: (string); "thresholds"?: (Array<({ "label"?: (string); "value": (number) })>); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string) }) | ({ "better"?: (("up" | "down")) & (string); "delta"?: (number); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("stat") & (string); "sparkline"?: (Array<(number)>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string); "value": (number) }) | ({ "data": (Array<({ "group": (string); "label": (string); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "groups": (Array<(string)>); "kind": ("treemap") & (string); "legend"?: (boolean); "locale"?: (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "data": (Array<({ "label": (string); "prev": (number); "rest"?: (boolean); "value": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("pareto") & (string); "labels": ([(string), (string)]); "locale"?: (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("sankey") & (string); "legend"?: (Array<({ "label": (string); "tone": (("in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax")) & (string) })>); "links": (Array<({ "source": (string); "target": (string); "value": (number) })>); "locale"?: (string); "nodes": (Array<({ "id": (string); "label": (string); "tone"?: (("in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax")) & (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }) }) | ({ "averages"?: (boolean); "data": (Array<({ "group": (string); "label": (string); "size"?: (number); "x": (number); "y": (number) })>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "groups": (Array<(string)>); "kind": ("bubble") & (string); "legend"?: (boolean); "locale"?: (string); "sizeLabel"?: (string); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "xFormat"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "xLabel": (string); "yFormat"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "yLabel": (string) }) | ({ "axes": (Array<(string)>); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "kind": ("radar") & (string); "legend"?: (boolean); "locale"?: (string); "max": (number); "series": (Array<({ "data": (Array<(number)>); "label": (string) })>); "subtitle"?: (string); "title": (string); "tooltip"?: ({ "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "label"?: (string) }); "unit"?: (string) }))); "empty"?: (string); "height"?: (("sm" | "md" | "lg")) & (string); "kind": ("Chart") & (string); "title"?: (string); "width"?: (("third" | "half" | "twoThirds" | "full")) & (string) }) | ({ "items": (Array<({ "compare"?: ({ "label": (string); "value": (number) }); "delta"?: ({ "better"?: (("up" | "down")) & (string); "unit"?: ("points") & (string); "value": (number) }); "format"?: ({ "compact"?: (boolean); "currency"?: (string); "decimals"?: (number); "style"?: (("number" | "percent" | "currency")) & (string); "unit"?: (string) }); "icon"?: (string); "label": (string); "tone"?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); "trend"?: (Array<(number)>); "value": (((number) | (string) | (null))) })>); "kind": ("Stats") & (string) }) | ({ "href": (string); "kind": ("Link") & (string); "label": (string) }) | ({ "action": (string); "kind": ("Button") & (string); "label": (string); "values"?: ({ [key: string]: (string) }) }) | ({ "kind": ("Notice") & (string); "text"?: (string); "title": (string); "tone": (("info" | "success" | "warning" | "danger")) & (string) }))) | ({ "children": (Array<(CodePageRef0)>); "color"?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); "description"?: (string); "icon"?: (string); "kind": ("Section") & (string); "title": (string) })));
 
 export type CodePageTree = ({ "asOf"?: (string); "children": (Array<(CodePageRef0)>); "color"?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); "eyebrow"?: (string); "follow"?: (Array<(string)>); "icon"?: (string); "kind": ("Page") & (string); "subtitle"?: (string); "title": (string); "version": (1) & (number) });
 
@@ -209,8 +209,7 @@ export declare const Field: {
 /** Sends its fields to an own route with POST; its children are \`Field\` blocks. */
 export declare const Form: CodePageComponent<Omit<CodeNodeProps<"Form">, "fields"> & Parts>;
 export declare const Link: CodePageComponent<CodeNodeProps<"Link"> & NoChildren>;
-export declare const Button: CodePageComponent<Omit<Extract<CodePageNode, { kind: "Button" | "Action" }>, "kind"> & NoChildren>;
-export declare const Action: typeof Button;
+export declare const Button: CodePageComponent<Omit<Extract<CodePageNode, { kind: "Button" }>, "kind"> & NoChildren>;
 export declare const Notice: CodePageComponent<CodeNodeProps<"Notice"> & NoChildren>;
 
 type CodeChartProps<K> = CodeChartDescription extends infer D
@@ -247,9 +246,26 @@ export declare const http: CodeHttp;
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
 "// Generated from Cloud capability manifests. Do not edit.
 const __codeSdk = (() => {
-const manifest = {"appMethods":{"all":1,"delete":1,"fetch":2,"get":1,"nav":2,"on":1,"post":1,"put":1,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"events":[{"place":null,"type":"work-shop.changed","version":1}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":[],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.export","idempotency":"none","kind":"query","methodPath":["stock","export"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}},"pageLimits":{"bytes":65536,"columns":20,"depth":12,"details":100,"fields":40,"follow":8,"nodes":256,"rows":200,"stats":6,"trend":60}};
+const manifest = {"appMethods":{"all":1,"delete":1,"get":1,"on":1,"post":1,"put":1,"schedule":1},"apps":[{"exportName":"work_shop"}],"events":[{"place":null,"type":"work-shop.changed","version":1}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":[],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.export","idempotency":"none","kind":"query","methodPath":["stock","export"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}},"pageLimits":{"bytes":65536,"columns":20,"depth":12,"details":100,"fields":40,"follow":8,"nodes":256,"rows":200,"stats":6,"trend":60}};
 const RESOURCE_ID_MAX = 512;
 
+class CodeError extends Error {
+  constructor(code, status = 400, message = code, details = null) {
+    super(message);
+    this.name = "CodeError";
+    this.code = code.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    this.status = status;
+    this.details = details;
+  }
+}
+async function invoke(operation, input) {
+  try { return await bridge.call(operation, input); }
+  catch (error) {
+    if (error instanceof CodeError) throw error;
+    const code = typeof error?.code === "string" ? error.code : "code_bridge_unavailable";
+    throw new CodeError(code, error?.status ?? 503, error?.message ?? "The Code call failed.", error?.details ?? (error?.origin ? { origin: error.origin } : null));
+  }
+}
 const handles = new WeakMap();
 const aiTools = new WeakMap();
 let bridge;
@@ -274,26 +290,26 @@ function setPath(root, path, value) {
 }
 function coordinate(handle, type) {
   const ref = handles.get(handle);
-  if (!ref || ref.type !== type) throw new Error("code_sdk_invalid_handle");
+  if (!ref || ref.type !== type) throw new CodeError("code_sdk_invalid_handle");
   return { type: ref.type, id: ref.id };
 }
 function handle(appId, type, id) {
-  if (typeof id !== "string" || id.length === 0 || id.length > RESOURCE_ID_MAX) throw new Error("code_sdk_invalid_id");
+  if (typeof id !== "string" || id.length === 0 || id.length > RESOURCE_ID_MAX) throw new CodeError("code_sdk_invalid_id");
   const result = node();
   const ref = Object.freeze({ type: type ?? "cloud.app", id });
   handles.set(result, ref);
   Object.defineProperties(result, { type: { value: ref.type, enumerable: true }, id: { value: ref.id, enumerable: true } });
   for (const op of manifest.operations.filter(op => op.appId === appId && op.target === type)) {
     const method = async (args) => {
-      if (!bridge) throw new Error("code_sdk_bridge_unbound");
-      if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("code_sdk_invalid_input");
+      if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
+      if (!args || typeof args !== "object" || Array.isArray(args)) throw new CodeError("code_sdk_invalid_input");
       const input = { ...args };
       if (op.capability === "core.ai.generate" || op.capability === "core.ai.decide") {
         if (input.tools !== undefined) {
-          if (!Array.isArray(input.tools)) throw new Error("code_ai_tool_invalid");
+          if (!Array.isArray(input.tools)) throw new CodeError("code_ai_tool_invalid");
           input.tools = input.tools.map(tool => {
             const binding = aiTools.get(tool);
-            if (!binding) throw new Error("code_ai_tool_invalid");
+            if (!binding) throw new CodeError("code_ai_tool_invalid");
             return binding;
           });
         }
@@ -306,14 +322,14 @@ function handle(appId, type, id) {
       const metadata = {};
       if (op.kind === "action") {
         const key = input.idempotencyKey;
-        if (op.idempotency === "required" && (typeof key !== "string" || key.trim().length === 0)) throw new Error("code_sdk_idempotency_required");
-        if (op.idempotency === "none" && key !== undefined) throw new Error("code_sdk_idempotency_not_allowed");
-        if (key !== undefined && (typeof key !== "string" || key.trim().length > 200 || !/^[\\x21-\\x7e]+$/.test(key.trim()))) throw new Error("code_sdk_invalid_idempotency_key");
+        if (op.idempotency === "required" && (typeof key !== "string" || key.trim().length === 0)) throw new CodeError("code_sdk_idempotency_required");
+        if (op.idempotency === "none" && key !== undefined) throw new CodeError("code_sdk_idempotency_not_allowed");
+        if (key !== undefined && (typeof key !== "string" || key.trim().length > 200 || !/^[\\x21-\\x7e]+$/.test(key.trim()))) throw new CodeError("code_sdk_invalid_idempotency_key");
         if (key !== undefined) metadata.idempotencyKey = key.trim();
         delete input.idempotencyKey;
       }
       const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
-      return bridge.call(op.capability, { call, metadata });
+      return invoke(op.capability, { call, metadata });
     };
     if (Object.keys(op.refs).length === 0) aiTools.set(method, Object.freeze({ capability: op.capability,
       target: type === null ? null : Object.freeze(coordinate(result, type)) }));
@@ -326,7 +342,7 @@ for (const spec of manifest.handles.filter(value => value.type === null))
   namespaces[spec.exportName] = handle(spec.appId, null, spec.appId);
 for (const spec of manifest.handles.filter(value => value.type !== null)) {
   setPath(namespaces[spec.exportName], spec.factoryPath, (...args) => {
-    if (args.length !== 1) throw new Error("code_sdk_invalid_id");
+    if (args.length !== 1) throw new CodeError("code_sdk_invalid_id");
     return Object.freeze(handle(spec.appId, spec.type, args[0]));
   });
 }
@@ -338,37 +354,35 @@ if (manifest.owner) {
     : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
 }
 const app = node();
-function unavailable(method) {
-  const phase = manifest.appMethods[method];
-  const diagnostic = { code: "code_phase_unavailable", method, phase, message: "app." + method + " kommt in Phase " + phase };
-  diagnostics.push(diagnostic);
-  throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code });
-}
-app.schedule = (when, fn, options) => {
+app.schedule = (...args) => {
+  const [when, fn] = args;
   const object = when && typeof when === "object" && !Array.isArray(when);
   const once = object && "at" in when;
   const recurring = object && !once;
-  if (typeof fn !== "function" || (!object && (typeof when !== "string" || !when.trim()))) throw new Error("code_sdk_invalid_schedule");
+  if (args.length !== 2 || !object || typeof fn !== "function") throw new CodeError("code_sdk_invalid_schedule");
   if (once) {
-    if (Object.keys(when).some(key => key !== "at" && key !== "timeZone") || typeof when.at !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(when.at) || !Number.isFinite(Date.parse(when.at)) || typeof when.timeZone !== "string" || !when.timeZone) throw new Error("code_sdk_invalid_schedule");
+    if (Object.keys(when).some(key => !["at", "timeZone", "name", "title"].includes(key)) || typeof when.at !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(when.at) || !Number.isFinite(Date.parse(when.at))) throw new CodeError("code_sdk_invalid_schedule");
     const date = when.at.slice(0, 10);
-    if (new Date(date + "T00:00:00Z").toISOString().slice(0, 10) !== date || Number(when.at.slice(11, 13)) > 23) throw new Error("code_sdk_invalid_schedule");
-    try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new Error("code_sdk_invalid_schedule"); }
-  }
-  if (recurring) {
-    if (Object.keys(when).some(key => !["cron", "timeZone", "name"].includes(key)) || typeof when.cron !== "string" || !when.cron.trim()) throw new Error("code_sdk_invalid_schedule");
+    if (new Date(date + "T00:00:00Z").toISOString().slice(0, 10) !== date || Number(when.at.slice(11, 13)) > 23) throw new CodeError("code_sdk_invalid_schedule");
     if (when.timeZone !== undefined) {
-      if (typeof when.timeZone !== "string" || !when.timeZone) throw new Error("code_sdk_invalid_schedule");
-      try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new Error("code_sdk_invalid_schedule"); }
+      if (typeof when.timeZone !== "string" || !when.timeZone) throw new CodeError("code_sdk_invalid_schedule");
+      try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new CodeError("code_sdk_invalid_schedule"); }
     }
   }
-  const timing = once ? { cron: null, at: when.at, timeZone: when.timeZone } : recurring ? { cron: when.cron, ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) } : { cron: when };
-  const name = recurring && when.name !== undefined ? when.name : options?.name;
-  if ((options !== undefined || (recurring && when.name !== undefined)) && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
+  if (recurring) {
+    if (Object.keys(when).some(key => !["cron", "timeZone", "name", "title"].includes(key)) || typeof when.cron !== "string" || !when.cron.trim()) throw new CodeError("code_sdk_invalid_schedule");
+    if (when.timeZone !== undefined) {
+      if (typeof when.timeZone !== "string" || !when.timeZone) throw new CodeError("code_sdk_invalid_schedule");
+      try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new CodeError("code_sdk_invalid_schedule"); }
+    }
+  }
+  const timing = { ...(once ? { cron: null, at: when.at } : { cron: when.cron }), ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) };
+  const name = when.name;
+  if ((name !== undefined) && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new CodeError("code_sdk_invalid_schedule_name");
   const entrypoint = name ?? "schedule:" + schedules.filter(value => value.kind === "schedule").length;
-  if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_schedule_name");
-  const title = typeof options?.title === "string" ? options.title.trim() : options?.title;
-  if (options?.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]/u.test(title))) throw new Error("code_sdk_invalid_schedule_title");
+  if (schedules.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_schedule_name");
+  const title = typeof when.title === "string" ? when.title.trim() : when.title;
+  if (when.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]/u.test(title))) throw new CodeError("code_sdk_invalid_schedule_title");
   schedules.push({ kind: "schedule", entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
   return app;
 };
@@ -380,44 +394,43 @@ app.on = (...args) => {
   const spec = manifest.events.find(event => event.type === eventType);
   if (typeof fn !== "function" || !spec || manifest.owner?.kind !== "resource" || !place ||
       spec.place !== manifest.owner.ref.type || place.type !== manifest.owner.ref.type || place.id !== manifest.owner.ref.id)
-    throw new Error("code_event_owner");
+    throw new CodeError("code_event_owner");
   const entrypoint = "event:" + eventType + "@" + spec.version;
-  if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_duplicate_on");
+  if (schedules.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_duplicate_on");
   schedules.push({ kind: "event", entrypoint, cron: null, event: { type: eventType, version: spec.version, place: { type: place.type, id: place.id } }, handler: fn });
   return app;
 };
-for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
 for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, handler, options) => {
-  if (typeof path !== "string" || typeof handler !== "function") throw new Error("code_sdk_invalid_route");
+  if (typeof path !== "string" || typeof handler !== "function") throw new CodeError("code_sdk_invalid_route");
   const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
   const entrypoint = "route:" + route.method + ":" + path;
-  if (routes.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_route");
+  if (routes.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_route");
   routes.push({ entrypoint, route, handler });
   return app;
 };
 Object.freeze(app);
 const secrets = new Proxy(node(), {
   get(_target, name) {
-    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new Error("code_sdk_invalid_secret_name");
+    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new CodeError("code_sdk_invalid_secret_name");
     return "[secret:" + name + "]";
   },
-  set() { throw new Error("code_sdk_readonly_secrets"); },
+  set() { throw new CodeError("code_sdk_readonly_secrets"); },
 });
 const http = Object.freeze({
   allow(_origins) {},
   async fetch(url, options = {}) {
-    if (!bridge) throw new Error("code_sdk_bridge_unbound");
-    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new Error("code_sdk_invalid_input");
-    return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
+    if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
+    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new CodeError("code_sdk_invalid_input");
+    return invoke("http.fetch", { method: "GET", headers: {}, ...options, url });
   },
 });
 // Pages that the SDK's blocks built; c.page draws only these, never a hand-written description.
 const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
   markPage: page => { builtPages.add(page); return page; },
-  namespaces, owner, app, secrets, http,
+  namespaces, owner, app, secrets, http, CodeError,
   bind(cloud) {
-    if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
+    if (bridge || !cloud || typeof cloud.call !== "function") throw new CodeError("code_sdk_invalid_bridge");
     bridge = cloud;
   },
   entries: () => [...schedules.map(({ kind, entrypoint, cron, at, timeZone, title, event }) => ({ kind, entrypoint, cron, ...(at === undefined ? {} : { at }), ...(timeZone === undefined ? {} : { timeZone }), ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
@@ -431,11 +444,11 @@ const __codeSdk = Object.freeze({
         ...(input.method === "GET" || input.method === "HEAD" ? {} : { body: input.body }),
       });
       const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
-      const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new Error("code_invalid_response"); return value; };
+      const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new CodeError("code_invalid_response"); return value; };
       const c = {
         user: registered.route.public || !input.user ? null : {
-          id: input.user.id, groups: [...input.user.groups], kind: input.user.kind,
-          provider: input.user.provider, name: input.user.name,
+          id: input.user.id, username: input.user.username, groupIds: [...input.user.groupIds], groupNames: [...input.user.groupNames], kind: input.user.kind,
+          name: input.user.name,
         },
         req: { raw, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
           json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
@@ -444,46 +457,46 @@ const __codeSdk = Object.freeze({
         page: tree => {
           const ancestors = new Set(); let count = 0; let bytes = 0;
           const visit = (value, depth) => {
-            if (++count > manifest.pageLimits.bytes || depth > manifest.pageLimits.depth * 3) throw new Error("code_page_limit");
-            if (typeof value === "string") { bytes += new TextEncoder().encode(value).byteLength; if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit"); return; }
+            if (++count > manifest.pageLimits.bytes || depth > manifest.pageLimits.depth * 3) throw new CodeError("code_page_limit");
+            if (typeof value === "string") { bytes += new TextEncoder().encode(value).byteLength; if (bytes > manifest.pageLimits.bytes) throw new CodeError("code_page_limit"); return; }
             if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) return;
-            if (typeof value !== "object" || ancestors.has(value)) throw new Error("code_page_data_only");
-            if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null && !Array.isArray(value)) throw new Error("code_page_data_only");
+            if (typeof value !== "object" || ancestors.has(value)) throw new CodeError("code_page_data_only");
+            if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null && !Array.isArray(value)) throw new CodeError("code_page_data_only");
             ancestors.add(value);
             for (const key of Reflect.ownKeys(value)) {
               if (Array.isArray(value) && key === "length") continue;
               const descriptor = Object.getOwnPropertyDescriptor(value, key);
-              if (typeof key !== "string" || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error("code_page_data_only");
+              if (typeof key !== "string" || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new CodeError("code_page_data_only");
               // An optional prop set to undefined is absent, as in JSON; a hole in a list stays an error.
               if (descriptor.value === undefined && !Array.isArray(value)) continue;
               bytes += new TextEncoder().encode(key).byteLength;
-              if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit");
+              if (bytes > manifest.pageLimits.bytes) throw new CodeError("code_page_limit");
               visit(descriptor.value, depth + 1);
             }
             ancestors.delete(value);
           };
-          if (!builtPages.has(tree)) throw new Error("code_page_blocks");
+          if (!builtPages.has(tree)) throw new CodeError("code_page_blocks");
           visit(tree, 0);
-          if (tree.kind !== "Page" || tree.version !== 1) throw new Error("code_page_root");
-          if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new Error("code_page_limit");
+          if (tree.kind !== "Page" || tree.version !== 1) throw new CodeError("code_page_root");
+          if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new CodeError("code_page_limit");
           return output({ kind: "page", status: 200, tree });
         },
         redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
       };
       const response = await registered.handler(c);
       const result = routeResponses.get(response);
-      if (!result) throw new Error("code_invalid_response");
+      if (!result) throw new CodeError("code_invalid_response");
       return result;
     }
     const schedule = schedules.find(value => value.entrypoint === entrypoint);
-    if (!schedule) throw new Error("code_sdk_missing_entrypoint");
+    if (!schedule) throw new CodeError("code_sdk_missing_entrypoint");
     if (schedule.kind === "event") {
       if (!input || input.type !== schedule.event.type || input.version !== schedule.event.version ||
           input.place?.type !== schedule.event.place.type || input.place.id !== schedule.event.place.id || typeof input.id !== "string")
-        throw new Error("code_event_input");
+        throw new CodeError("code_event_input");
       return schedule.handler(input);
     }
-    return schedule.handler();
+    return schedule.handler(input);
   },
 });
 
@@ -492,6 +505,7 @@ return __codeSdk;
 export const secrets = __codeSdk.secrets;
 export const http = __codeSdk.http;
 export { __codeSdk };
+export const CodeError = __codeSdk.CodeError;
 export const work_shop = __codeSdk.namespaces["work_shop"];
 export const owner = __codeSdk.owner;
 export const app = __codeSdk.app;
@@ -506,13 +520,13 @@ const __codePage = (() => {
   const flat = children => [children].flat(Infinity).filter(value => value !== null && value !== undefined && value !== false);
   // A block's children are blocks made here, never hand-written objects, and never a part outside its block.
   const blocks = children => Object.freeze(flat(children).map(child => {
-    if (!built.has(child)) throw new Error("code_page_blocks");
-    if (child.kind.startsWith("#")) throw new Error("code_page_child");
+    if (!built.has(child)) throw new __codeSdk.CodeError("code_page_blocks");
+    if (child.kind.startsWith("#")) throw new __codeSdk.CodeError("code_page_child");
     return child;
   }));
   const text = children => {
     const values = children === undefined ? [] : [children].flat(Infinity);
-    if (values.some(value => typeof value !== "string" && typeof value !== "number")) throw new Error("code_page_text");
+    if (values.some(value => typeof value !== "string" && typeof value !== "number")) throw new __codeSdk.CodeError("code_page_text");
     return values.join("");
   };
   const block = (kind, build) => {
@@ -523,12 +537,12 @@ const __codePage = (() => {
   // A part belongs to exactly one block, such as a field to its form; elsewhere it is an error.
   const part = (kind, build) => block(kind, props => ({ ...(build ? build(props) : noChildren(props)), kind: "#" + kind }));
   const parts = (children, kind) => Object.freeze(flat(children).map(child => {
-    if (!built.has(child) || child.kind !== "#" + kind) throw new Error("code_page_child");
+    if (!built.has(child) || child.kind !== "#" + kind) throw new __codeSdk.CodeError("code_page_child");
     const { kind: _kind, ...rest } = child;
     return Object.freeze(rest);
   }));
   const noChildren = ({ children, ...props }) => {
-    if (flat(children).length) throw new Error("code_page_child");
+    if (flat(children).length) throw new __codeSdk.CodeError("code_page_child");
     return props;
   };
   const Page = block("Page", ({ children, ...props }) => ({ kind: "Page", version: 1, ...props, children: blocks(children) }));
@@ -549,7 +563,7 @@ const __codePage = (() => {
     }));
   Chart.Empty = block("Chart", props => ({ kind: "Chart", ...noChildren(props) }));
   function jsx(component, props, ...children) {
-    if (!components.has(component)) throw new Error("code_page_component");
+    if (!components.has(component)) throw new __codeSdk.CodeError("code_page_component");
     return component(children.length ? { ...props, children: children.length === 1 ? children[0] : children } : props ?? {});
   }
   return {
@@ -564,11 +578,10 @@ const __codePage = (() => {
     Form: block("Form", ({ children, ...props }) => ({ kind: "Form", ...props, fields: parts(children, "Field") })),
     Link: block("Link"),
     Button: block("Button"),
-    Action: block("Action"),
     Notice: block("Notice"),
   };
 })();
-export const { Page, Section, Text, Heading, Field, Chart, jsx, Stat, Stats, Column, Table, Item, Detail, Option, Form, Link, Button, Action, Notice } = __codePage;
+export const { Page, Section, Text, Heading, Field, Chart, jsx, Stat, Stats, Column, Table, Item, Detail, Option, Form, Link, Button, Notice } = __codePage;
 
 "
 `;
@@ -578,14 +591,11 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
   "appMethods": {
     "all": 1,
     "delete": 1,
-    "fetch": 2,
     "get": 1,
-    "nav": 2,
     "on": 1,
     "post": 1,
     "put": 1,
     "schedule": 1,
-    "webhook": 3,
   },
   "apps": [
     {
@@ -997,7 +1007,6 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
       "kind": "action",
       "localId": "item.inspect",
       "methodPath": [
-        "item",
         "inspect",
       ],
       "refs": {},

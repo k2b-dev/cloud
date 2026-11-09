@@ -60,9 +60,9 @@ const context = (user: User): CodeContext & MailRequestContext => ({
 });
 const source = (body: string) => ({
   "code.ts": `import { app, spaces, mail, http, secrets } from "@sdk";
-app.schedule("0 8 * * 1", async () => {
+app.schedule({ cron: "0 8 * * 1", name: "monday" }, async () => {
 ${body}
-}, { name: "monday" });
+});
 export default app;`,
 });
 const creation = source(

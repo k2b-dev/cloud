@@ -1,13 +1,24 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type CodePageTree, generateCodeSdk, validateCodePage } from "@k2b/cloud/code";
+import { type CodePageTree, type CodeUser, generateCodeSdk, validateCodePage } from "@k2b/cloud/code";
 
 /**
  * Runs a Code page's TSX as Code runs it: through the SDK's blocks and jsx factory, then its GET route, then Core's
  * check. Tests and screenshots use it so a page comes from Code source, never from a hand-written description.
  */
-export async function buildCodePage(source: string, codeId: string): Promise<CodePageTree> {
+export async function buildCodePage(
+  source: string,
+  codeId: string,
+  user: CodeUser = {
+    id: "visitor",
+    username: "visitor",
+    groupIds: [],
+    groupNames: [],
+    kind: "user",
+    name: "Visitor",
+  },
+): Promise<CodePageTree> {
   const directory = mkdtempSync(join(tmpdir(), "core-code-page-source-"));
   writeFileSync(join(directory, "sdk.js"), generateCodeSdk([], { mode: "personal" }).runtime);
   const entry = source.replace('"@sdk"', '"./sdk.js"').replace("import { app,", "import { __codeSdk, app,");
@@ -21,7 +32,7 @@ export async function buildCodePage(source: string, codeId: string): Promise<Cod
     contentType: "text/plain",
     body: "",
     params: {},
-    user: { id: "visitor", groups: [], kind: "user", provider: "local", name: "Visitor" },
+    user,
   });
   return validateCodePage(response.tree, codeId);
 }

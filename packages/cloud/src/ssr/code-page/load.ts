@@ -6,6 +6,7 @@ import { type CloudResourceRef, cloudResourceRefAppId } from "../../contracts/ca
 import { cloudResourcePageHref } from "../../contracts/resource-pages";
 import { sql } from "../../runtime/clients";
 import { getDateConfig, getLocale, isAppSessionActor } from "../../server";
+import { CORE_SETTINGS } from "../../services/settings/core-settings";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
 import { AttentionSchema } from "./attention-schema";
@@ -436,6 +437,7 @@ const loadReady = async (
   const nextRuns = new Map(automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : []);
   const lastRunOf = (entrypoint: string) =>
     runs?.find((run) => run.entrypoint === entrypoint && run.state !== "skipped" && run.state !== "cancelled") ?? null;
+  const defaultTimeZone = c.get("settings")?.app?.timezone ?? CORE_SETTINGS["app.timezone"].default;
   const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
     manifest.entrypoints.map((entry) => ({
       entrypoint: entry.entrypoint,
@@ -443,7 +445,7 @@ const loadReady = async (
       kind: entry.kind,
       ...(entry.route ? { route: entry.route } : {}),
       cron: entry.cron,
-      ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone }),
+      ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone ?? defaultTimeZone }),
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),

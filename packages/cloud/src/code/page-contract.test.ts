@@ -74,7 +74,7 @@ test("versioned pages accept every allowed block and the portable chart descript
     { kind: "Chart", description: { kind: "bar", title: "Items", data: [{ label: "One", value: 2 }] } },
     { kind: "Link", label: "Next", href: "/next" },
     { kind: "Button", label: "Save", action: "/save", values: { item: "one" } },
-    { kind: "Action", label: "Save", action: "/save" },
+    { kind: "Button", label: "Save", action: "/save" },
     { kind: "Notice", tone: "info", title: "Saved", text: "Two items" },
   ];
   expect<unknown>(validateCodePage(page(children), codeId)).toEqual(page(children));
@@ -105,7 +105,7 @@ test("only own paths may be links or POST destinations", () => {
   for (const path of ["https://foreign.test", "//foreign.test", "/../admin", "/code/c_other/save", "/%2fadmin"])
     for (const child of [
       { kind: "Link", label: "Go", href: path },
-      { kind: "Action", label: "Go", action: path },
+      { kind: "Button", label: "Go", action: path },
       { kind: "Form", title: "Go", action: path, fields: [{ type: "text", name: "q", label: "Query" }], submit: "Go" },
     ])
       expect(() => validateCodePage(page([child]), codeId)).toThrow();
@@ -361,7 +361,7 @@ test("routes draw only pages that the SDK's blocks built", async () => {
     contentType: "text/plain",
     body: "",
     params: {},
-    user: { id: "v", groups: [], kind: "user", provider: "local", name: "Visitor" },
+    user: { id: "v", username: "visitor", groupIds: [], groupNames: [], kind: "user", name: "Visitor" },
   });
   expect(await runtime.__codeSdk.run("route:GET:/built", request("/built"))).toEqual({
     kind: "page",

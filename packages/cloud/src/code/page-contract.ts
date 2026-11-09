@@ -160,7 +160,7 @@ const leaf = z.discriminatedUnion("kind", [
   }),
   z.strictObject({ kind: z.literal("Stats"), items: z.array(stat).min(1).max(CODE_PAGE_LIMITS.stats) }),
   z.strictObject({ kind: z.literal("Link"), label, href: ownPath }),
-  z.strictObject({ kind: z.enum(["Button", "Action"]), label, action: ownPath, values: z.record(fieldName, text).optional() }),
+  z.strictObject({ kind: z.literal("Button"), label, action: ownPath, values: z.record(fieldName, text).optional() }),
   z.strictObject({
     kind: z.literal("Notice"),
     tone: z.enum(["info", "success", "warning", "danger"]),
@@ -268,7 +268,7 @@ export function validateCodePage(value: unknown, codeId: string): CodePageTree {
     if (++nodes > CODE_PAGE_LIMITS.nodes || depth > CODE_PAGE_LIMITS.depth) throw new Error("code_page_limit");
     if (node.kind === "Section") node.children.forEach((child) => check(child, depth + 1));
     if (node.kind === "Link") codeOwnPath(codeId, node.href);
-    if (node.kind === "Form" || node.kind === "Button" || node.kind === "Action") codeOwnPath(codeId, node.action);
+    if (node.kind === "Form" || node.kind === "Button") codeOwnPath(codeId, node.action);
     if (node.kind === "Chart" && (node.description ? node.title !== undefined : node.title === undefined || node.empty === undefined))
       throw new Error("code_page_chart");
     if (node.kind === "Form" && new Set(node.fields.map((field) => field.name)).size !== node.fields.length)

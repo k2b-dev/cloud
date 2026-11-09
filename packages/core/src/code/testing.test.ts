@@ -61,7 +61,7 @@ const code = (body: string) => ({
   aiOperations: [],
   entry: "code.ts",
   files: {
-    "code.ts": `import { app, owner, work_shop } from "@sdk"; app.schedule("0 8 * * *", async () => { ${body} }, { name: "weekly" }); export default app;`,
+    "code.ts": `import { app, owner, work_shop } from "@sdk"; app.schedule({ cron: "0 8 * * *", name: "weekly" }, async () => { ${body} }); export default app;`,
   },
 });
 const host = (): CodeTestingHost => ({

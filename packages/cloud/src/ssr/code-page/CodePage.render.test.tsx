@@ -687,7 +687,7 @@ describe("Code page loader", () => {
     state: "failed",
   };
   const core =
-    (permission: "editor" | "reader", run: typeof failedRun, firstCall = policyCall) =>
+    (permission: "editor" | "reader", run: typeof failedRun, firstCall = policyCall, checkedManifest: unknown = manifest) =>
     (capabilityId: string, input: { content?: unknown; cursor?: number }) => {
       if (capabilityId === "code.list")
         return {
@@ -704,7 +704,7 @@ describe("Code page loader", () => {
       if (capabilityId === "code.version.read")
         return {
           version: { id: V4, number: 4, createdBy: null, createdAt: "2026-10-28T09:00:00.000Z" },
-          content: input.content ? { text: JSON.stringify(manifest), nextOffset: null } : null,
+          content: input.content ? { text: JSON.stringify(checkedManifest), nextOffset: null } : null,
         };
       if (capabilityId === "code.run.list") return { items: [run], nextCursor: null };
       if (capabilityId === "code.run.read")
@@ -748,7 +748,14 @@ describe("Code page loader", () => {
       },
     },
   };
-  const load = async (permission: "editor" | "reader", query = "", run = failedRun, firstCall = policyCall) => {
+  const load = async (
+    permission: "editor" | "reader",
+    query = "",
+    run = failedRun,
+    firstCall = policyCall,
+    checkedManifest: unknown = manifest,
+    cloudTimeZone?: string,
+  ) => {
     const appCalls: string[] = [];
     const coreCalls: string[] = [];
     const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
@@ -757,7 +764,12 @@ describe("Code page loader", () => {
         return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Another app was asked", status: 503 } };
       }
       coreCalls.push(invocation.capabilityId);
-      const data = core(permission, run, firstCall)(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
+      const data = core(
+        permission,
+        run,
+        firstCall,
+        checkedManifest,
+      )(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
       return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
@@ -772,8 +784,11 @@ describe("Code page loader", () => {
         { preconnect: globalThis.fetch.preconnect },
       ),
     );
-    const request = new Request(`https://cloud.test/app/mail/Mb4kd2/code${query}`);
+    const request = new Request(`https://cloud.test/app/mail/Mb4kd2/code${query}`, {
+      headers: cloudTimeZone ? { Cookie: "cloud.timezone=Pacific/Auckland" } : {},
+    });
     const variables: Record<string, unknown> = {
+      settings: { app: { timezone: cloudTimeZone } },
       actor: { kind: "user", sessionKind: "web" },
       credentialKind: "session",
       user: { id: "00000000-0000-4000-8000-0000000000a1", roles: ["user"] },
@@ -796,6 +811,26 @@ describe("Code page loader", () => {
       fetched.mockRestore();
     }
   };
+
+  test("an omitted schedule zone displays the Cloud default even with a different visitor zone", async () => {
+    const at = "2026-12-01T09:15:30Z";
+    const { data } = await load(
+      "editor",
+      "",
+      failedRun,
+      policyCall,
+      {
+        ...manifest,
+        entrypoints: [{ kind: "schedule", entrypoint: "lieferungenEintragen", cron: null, at }],
+      },
+      "America/New_York",
+    );
+    if (data.state.kind !== "ready") throw new Error("Expected ready page");
+    expect(data.state.automations?.[0]).toMatchObject({ at, timeZone: "America/New_York" });
+    const markup = renderMarkup(() => createComponent(CodePage, { data }));
+    expect(markup).toContain("(America/New_York)");
+    expect(markup).not.toContain("(undefined)");
+  });
 
   for (const locale of ["de", "en"]) {
     test(`${locale}: an exhausted attempt budget has its own run notice`, async () => {

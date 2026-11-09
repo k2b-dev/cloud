@@ -2,7 +2,7 @@ import { lazySync, sql } from "@k2b/cloud";
 import type { signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RunnerConfigSchema, type RunnerFetchRequest, type RunnerFetchResponse } from "@k2b/cloud/code/runner";
 import { CAPABILITY_MAX_REQUEST_BYTES, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
-import { logger } from "@k2b/cloud/services";
+import { coreSettings, logger } from "@k2b/cloud/services";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { Queue, Scheduler, Worker } from "@k2b/sync";
 import { claimCodeWork } from "./dispatch";
@@ -128,6 +128,7 @@ export const codeScheduleId = (codeId: string, entrypoint: string) =>
 export function createCodeScheduleReconciler(scheduler: Scheduler) {
   return async () => {
     const registered = await scheduler.list();
+    const defaultTimeZone = await coreSettings.get<string>("app.timezone");
     let cursor = "";
     while (true) {
       const codes = await sql<{ id: string }[]>`SELECT id FROM code.codes WHERE id>${cursor} ORDER BY id LIMIT 50`;
@@ -143,13 +144,20 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
             if (current?.state === "active" && manifest.success)
               for (const entry of manifest.data.entrypoints) {
                 if (entry.kind !== "schedule") continue;
-                if (entry.at && entry.timeZone) {
+                if (entry.at) {
                   const slot = new Date(entry.at);
                   const [ready] = await db<{ due: boolean }[]>`SELECT ${slot}<=clock_timestamp()
                     AND ${slot}>clock_timestamp()-${CODE_SCHEDULE_TICK_RETENTION_MS}*interval '1 millisecond'
                     AND NOT EXISTS(SELECT 1 FROM code.run_requests WHERE code_id=${code.id}
                       AND request_key=${codeScheduleRequestKey(entry.entrypoint, slot)}) AS due`;
-                  if (ready?.due) due.push({ codeId: code.id, entrypoint: entry.entrypoint, at: entry.at, timeZone: entry.timeZone, slot });
+                  if (ready?.due)
+                    due.push({
+                      codeId: code.id,
+                      entrypoint: entry.entrypoint,
+                      at: entry.at,
+                      timeZone: entry.timeZone ?? defaultTimeZone,
+                      slot,
+                    });
                   continue;
                 }
                 if (!entry.cron) continue;
@@ -159,7 +167,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
                 await scheduler.create({
                   id,
                   cron,
-                  timezone: entry.timeZone ?? "UTC",
+                  timezone: entry.timeZone ?? defaultTimeZone,
                   misfire: "latest",
                   meta: { family: "code", codeId: code.id },
                   process: async (ctx) => {
@@ -167,7 +175,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
                       codeId: code.id,
                       entrypoint: entry.entrypoint,
                       cron,
-                      timeZone: entry.timeZone ?? "UTC",
+                      timeZone: entry.timeZone ?? defaultTimeZone,
                       slot: ctx.slot,
                     });
                   },

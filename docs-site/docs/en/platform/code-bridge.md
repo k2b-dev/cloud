@@ -167,8 +167,10 @@ unclassified. See [Read runs and calls](/en/docs/platform/code-runs#read-runs-an
 for the permission-aware read contract.
 
 Malformed sandbox calls return `code_invalid_call` in this envelope. Only
-domain data, stable error codes and a validated refused HTTPS origin enter
-the sandbox. The status stays in the stored call result. Provider error messages,
+domain data, stable error codes, refusal HTTP statuses and a validated refused
+HTTPS origin enter the sandbox. The SDK exposes `CodeError` with lowercase
+snake_case `code`, `status`, a safe `message` and `details`. The status also
+stays in the stored call result. Provider error messages,
 exception text and transport credentials do not. Stale generations and lost leases return HTTP 409 so the supervisor
 stops that attempt. Transport/authentication failures use non-2xx responses;
 ordinary capability refusals use the error envelope.

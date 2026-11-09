@@ -60,7 +60,7 @@ export type CodeSdkEvent = {
 /** Excluded entries remain visible to the checker so it can explain a forbidden call instead of suggesting a spelling fix. */
 export type CodeSdkOmission = { capability: string; reason: "stream" | "code_false" | "app_only" };
 
-/** Phase marker consumed by the checker. Later methods exist in types, but check and runtime refuse them in Phase 1. */
+/** Supported app registration methods, consumed by generation and analysis. */
 export const CODE_SDK_APP_PHASES = {
   schedule: 1,
   on: 1,
@@ -69,9 +69,6 @@ export const CODE_SDK_APP_PHASES = {
   put: 1,
   delete: 1,
   all: 1,
-  nav: 2,
-  webhook: 3,
-  fetch: 2,
 } as const;
 
 /** Generation manifest for checker, test kit, CLI and chat hosts. It describes the SDK, not a checked Code version or an authorization grant. */
@@ -89,14 +86,3 @@ export type CodeSdkManifest = {
 
 /** Standalone @sdk module pair plus checker metadata. Write declarations as sdk.d.ts and runtime as sdk.js. */
 export type GeneratedCodeSdk = { declarations: string; runtime: string; manifest: CodeSdkManifest };
-
-/** Visible phase diagnostic; source locations are attached by the checker, which analyzes the user's module. */
-export type CodeSdkPhaseDiagnostic = { code: "code_phase_unavailable"; method: string; phase: 2 | 3; message: string };
-
-/** Returns the Phase 1 diagnostic for a recognized app method, or null for schedule/unknown methods. */
-export function codeSdkPhaseDiagnostic(method: string): CodeSdkPhaseDiagnostic | null {
-  const phase = Object.entries(CODE_SDK_APP_PHASES).find(([name]) => name === method)?.[1];
-  return phase === 2 || phase === 3
-    ? { code: "code_phase_unavailable", method, phase, message: `app.${method} kommt in Phase ${phase}` }
-    : null;
-}

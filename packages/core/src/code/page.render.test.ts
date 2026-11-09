@@ -73,7 +73,7 @@ test("the server draws every block with shared components, including the chart a
   const html = renderToString(() =>
     createComponent(Page, { tree: full, codeId: "c_page", csrf: "session-bound", locale: "en", timeZone: "UTC" }),
   );
-  for (const kind of ["Notice", "Text", "Form", "Heading", "Actions", "Button", "Action", "Link"])
+  for (const kind of ["Notice", "Text", "Form", "Heading", "Actions", "Button", "Link"])
     expect(html).toContain(`data-code-block="${kind}"`);
   // Data blocks are the shared description panels: key figures, sections, chart and table frames, details.
   for (const part of [
@@ -180,7 +180,18 @@ test("Core hosts a complete page document and rejects invalid trees before rende
 });
 
 test("the cld code init page runs through the SDK blocks and Core draws it", async () => {
-  const page = await buildCodePage(CODE_INITIAL_PAGE_SOURCE, "c_init");
+  const source = CODE_INITIAL_PAGE_SOURCE.replace(
+    "const allowedGroupIds: string[] = [];",
+    'const allowedGroupIds: string[] = ["fixture-group"];',
+  );
+  const page = await buildCodePage(source, "c_init", {
+    id: "visitor",
+    username: "visitor",
+    groupIds: ["fixture-group"],
+    groupNames: ["Team"],
+    kind: "user",
+    name: "Visitor",
+  });
   const html = renderToString(() =>
     createComponent(Page, { tree: page, codeId: "c_init", csrf: "session-bound", locale: "en", timeZone: "UTC" }),
   );

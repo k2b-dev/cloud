@@ -15,8 +15,8 @@ const LIMIT = 50;
 const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length}+` : items.length);
 
 app.get("/", async c => {
-  if (!c.user?.groups.includes(TEAM))
-    return c.page(<Page title="Mailbox overview"><Notice tone="warning" title="Only for the mailbox team" /></Page>);
+  if (!c.user?.groupIds.includes(TEAM))
+    return c.json({ error: "Forbidden" }, 403);
   const [{ data: needsAction, page: needsActionPage }, { data: waiting, page: waitingPage }, { data: unassigned, page: unassignedPage }] = [
     await owner.conversation.list({ view: "needs_action", limit: LIMIT }),
     await owner.conversation.list({ view: "waiting", limit: LIMIT }),

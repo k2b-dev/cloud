@@ -62,10 +62,10 @@ Use only fictional values: no real names, addresses, IDs or secrets.
 ```ts
 import { app, chat } from "@sdk";
 
-app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note" }, async () => {
+app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note", title: "Weekend note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
   await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
-}, { name: "weekend-note", title: "Weekend note" });
+});
 export default app;
 ```
 
@@ -200,7 +200,7 @@ and check that the Code fails or recovers as intended.
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote" }, async () => {
+app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote", title: "Weekly quote" }, async ({ runId, scheduledAt }) => {
   const { data: quote } = await core.ai.generate({
     task: "quote",
     prompt: "Write one short encouraging sentence for the start of the week.",
@@ -209,8 +209,8 @@ app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote
   });
   if (typeof quote.output !== "string") return;
   // Fictional chat ID of the owner's chat.
-  await core.ai.chat("Chat23").ai.chat.deliver({ text: quote.output, idempotencyKey: "weekly-quote" });
-}, { name: "weekly-quote", title: "Weekly quote" });
+  await core.ai.chat("Chat23").deliver({ text: quote.output, idempotencyKey: `weekly-quote:${scheduledAt ?? runId}` });
+});
 export default app;
 ```
 
@@ -238,7 +238,7 @@ export default app;
   ],
   "runs": [
     { "entrypoint": "weekly-quote", "expect": { "ok": true, "calls": [{ "operation": "core.ai.generate", "result": { "ok": true, "data": { "data": { "output": "A fresh week, a fresh start.", "model": { "id": "fictional-model" }, "usage": null } } } }, { "operation": "core.ai.chat.deliver", "replayed": false }] } },
-    { "entrypoint": "weekly-quote", "expect": { "ok": false, "error": "code_ai_daily_budget_limit", "calls": [{ "operation": "core.ai.generate", "result": { "ok": false, "error": "code_ai_daily_budget_limit" } }] } }
+    { "entrypoint": "weekly-quote", "scheduledAt": null, "expect": { "ok": false, "error": "code_ai_daily_budget_limit", "calls": [{ "operation": "core.ai.generate", "result": { "ok": false, "error": "code_ai_daily_budget_limit" } }] } }
   ]
 }
 ```
@@ -251,3 +251,12 @@ current access on every call. Write at least one case per branch that leads
 to an Action, and one for a refused call that the Code should survive or
 report. When a reply shape is unclear, read the operation's result type in
 `sdk.d.ts` from `code_sdk`.
+
+## Schedule context in fixtures
+
+Schedule handlers receive `{ runId, scheduledAt, input }` in tests too.
+`scheduledAt` defaults to the run's frozen `now` (or the fixture's `now`).
+Set a run's `scheduledAt` to an ISO instant to simulate a delayed retry, or
+to `null` to simulate a manual start. `input`
+is the run input, and the run ID is a deterministic `test-0`, `test-1`, …
+within each fixture. Use the same business key when testing retry recovery.

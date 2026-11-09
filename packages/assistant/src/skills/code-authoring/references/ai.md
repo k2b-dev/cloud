@@ -164,12 +164,13 @@ decision limits in Fibel `/en/docs/ai/structured-and-background-ai`.
 
 ## Deliver a result to the owner's Gustav chat
 
-`core.ai.chat(chatId).ai.chat.deliver({ text, idempotencyKey })` appends an
+`core.ai.chat(chatId).deliver({ text, idempotencyKey })` appends an
 assistant message (1–10,000 characters) to one of the owner's active chats and
 marks it unread. It starts no AI turn and costs no AI budget. Find the chat ID
 with `core.ai.chats.search` in this conversation, never invent it. The key is
-scoped to the run: a retry returns the first message; the same key with other
-text returns `IDEMPOTENCY_CONFLICT`. Mailbox and app Code, archived chats and
+scoped to the acting user or service account and capability across runs for at least 24 hours: a retry
+returns the first message; the same key with other
+text returns `idempotency_conflict`. Mailbox and app Code, archived chats and
 other people's chats are refused. See the [weekly report](template-weekly-report.md).
 
 When you rebuild an Assistant routine, keep its prompt, timing and IANA time
@@ -186,20 +187,20 @@ When the work needs Gustav to choose and use tools, start a turn:
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ cron: "30 7 * * 1-5", timeZone: "Europe/Berlin", name: "morning-plan" }, async () => {
+app.schedule({ cron: "30 7 * * 1-5", timeZone: "Europe/Berlin", name: "morning-plan", title: "Morning plan" }, async ({ runId, scheduledAt }) => {
   // Fictional chat ID of the owner's own chat.
-  const run = await core.ai.chat("Chat23").ai.chat.run({
+  const run = await core.ai.chat("Chat23").run({
     prompt: "Look at my open tasks and mail that needs action and write a short plan for today.",
-    idempotencyKey: "morning-plan",
+    idempotencyKey: `morning-plan:${scheduledAt ?? runId}`,
   });
   if (run.status === "waiting_for_approval") console.log("The owner decides in the chat.");
-}, { name: "morning-plan", title: "Morning plan" });
+});
 export default app;
 ```
 
 The call returns promptly with `queued`, `running`, `waiting_for_approval`,
 `waiting_for_input`, `completed` or `failed`. Never poll until the person
-answers: finish the run; the chat continues the turn. `ai.chat.run.read({ id })`
+answers: finish the run; the chat continues the turn. `core.ai.chat(chatId).run.read({ id })`
 reads one later snapshot. A busy chat returns `chat_busy`. The turn uses the
 owner's current tools, approval rules and Assistant allowance by actual usage;
 it shows "Started by Code …" in the chat. `prompt` and optional `context` are

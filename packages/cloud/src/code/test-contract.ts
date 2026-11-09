@@ -42,6 +42,7 @@ export const CodeTestRunSchema = z
   .object({
     entrypoint: z.string().min(1),
     input: z.json().default(null),
+    scheduledAt: z.iso.datetime({ offset: true }).nullable().optional(),
     now: z.number().int().min(0).max(8_640_000_000_000_000).optional(),
     expect: z
       .object({

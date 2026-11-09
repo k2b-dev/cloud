@@ -122,7 +122,7 @@ export const codePageFixture = {
     },
     { kind: "Heading", level: 3, text: "Next steps" },
     { kind: "Button", label: "Mark ready", action: "/ready", values: { item: "W-1" } },
-    { kind: "Action", label: "Print label", action: "/print" },
+    { kind: "Button", label: "Print label", action: "/print" },
     { kind: "Link", label: "All items", href: "/items" },
   ],
 };

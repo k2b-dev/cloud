@@ -28,7 +28,8 @@ components. The generated TypeScript configuration uses the SDK’s `jsx` factor
 see [Return a page](/en/docs/platform/code-sdk#return-a-page).
 
 The default owner is the current person. Personal Code starts with a schedule
-in `code.ts`; it can add routes, which only its owner opens unless one is public. `--owner-type` and `--owner-id`
+in `code.ts`; it can add routes open to every signed-in person. Handlers
+restrict access through `c.user`; public routes also admit visitors. `--owner-type` and `--owner-id`
 select a resource; `--app` selects an application owner. Creating resource or
 application Code requires administration of that owner. Editing and checking
 requires Code editor access and a write credential. Pull and diff require read
@@ -90,8 +91,7 @@ check, assertion or runner request exits 1 and leaves an explicit result.
 
 ```sh
 cld code pull c_1234 --out ./fresh-code
-cld code push ./fresh-code/example/box_1234 --json
-# Alternative to push: cld code submit ./fresh-code/example/box_1234 --json
+cld code submit ./fresh-code/example/box_1234 --json
 cld code diff ./fresh-code/example/box_1234 --json
 ```
 
@@ -131,7 +131,7 @@ cld code run monday ./code/example/box_1234 --key monday-manual-1 --json
 
 Activation requires an approved saved version, current owner administration, and a normal person's session or personal OAuth credential.
 Phone sessions, API keys and machine identities are refused by Core. The CLI
-also refuses activation when its host reports CI. CI can check, test and push
+also refuses activation when its host reports CI. CI can check, test and submit
 with its granted credential; keep personal interactive credentials out of CI.
 
 In a terminal, `activate` explains the version and whether it runs as the person
@@ -276,7 +276,7 @@ returns a durable receipt, not completion of background work.
 | sdk pull | `{version:1, files}` |
 | check | `{version:1, result, manifest, permissions}` |
 | test, simulate | C17 `{version:1, mode, ok, error, diagnostics, cases, trace?}` |
-| push, submit | `{version:1, submission, runningVersion?}` (`runningVersion`: the version that keeps running, or null when none runs; absent when it could not be read) |
+| submit | `{version:1, submission, runningVersion?}` (`runningVersion`: the version that keeps running, or null when none runs; absent when it could not be read) |
 | diff | `{version:1, diff}` |
 | activate | `{version:1, activation}` |
 | run | `{version:1, run:{runId, duplicate}}` |

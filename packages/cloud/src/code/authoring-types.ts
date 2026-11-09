@@ -29,11 +29,12 @@ export type CodeQueryResult<Data> = {
 /** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
 export type CodeUser = {
   id: string;
-  groups: string[];
+  /** Cloud login handle, distinct from the immutable user ID. */
+  username: string;
+  groupIds: string[];
+  groupNames: string[];
   /** The signed-in person's Cloud account profile. Workload accounts cannot visit private pages. */
   kind: "user" | "guest";
-  /** Stable identity provider ID, never a credential. */
-  provider: "local" | "ipa";
   name: string;
 };
 /** Request helpers for hosted routes. No middleware system is part of Code. */
@@ -55,12 +56,16 @@ export type CodeContext = {
   page(page: CodePageBlock): Response;
   redirect(location: string, status?: number): Response;
 };
-/** A webhook is anonymous and must verify its request explicitly. */
-export type CodeWebhookContext = Omit<CodeContext, "user"> & { verify(secret: string): Promise<boolean> };
-/** Future navigation is presentation only; handlers must still authorize requests. */
-export type CodeNavigationItem = { title: string; path: string };
-/** A synchronous or asynchronous schedule callback, also used for a manual start. */
-export type CodeScheduleHandler = () => void | Promise<void>;
+/** One schedule occurrence, stable across retries. Manual runs have scheduledAt null. */
+export type CodeScheduleContext = { runId: string; scheduledAt: string | null; input: unknown };
+export type CodeScheduleHandler = (context: CodeScheduleContext) => void | Promise<void>;
+/** A refused SDK call. Codes are lowercase snake_case; status distinguishes forbidden and missing targets. */
+export declare class CodeError extends Error {
+  readonly code: string;
+  readonly status: number;
+  readonly details: unknown;
+  constructor(code: string, status?: number, message?: string, details?: unknown);
+}
 
 /** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
 declare const __codeSecret: unique symbol;

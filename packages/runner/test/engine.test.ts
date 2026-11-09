@@ -288,18 +288,18 @@ test("stable Core refusal codes survive the sandbox bridge without exception det
     await engine.load(
       run,
       `export async function main(input, cloud) {
-      try { await cloud.call('denied', null); } catch (error) { await cloud.call('report', error.message); }
+      try { await cloud.call('denied', null); } catch (error) { await cloud.call('report', { code: error.code, status: error.status }); }
     }`,
       config,
       async (operation, input) => {
-        if (operation === "denied") throw new RunnerCallError("code_access_removed");
+        if (operation === "denied") throw new RunnerCallError("code_access_removed", undefined, 403);
         reported.push(input);
         return null;
       },
       signal,
     );
     expect(await engine.run(run, signal)).toBe("succeeded");
-    expect(reported).toEqual(["code_access_removed"]);
+    expect(reported).toEqual([{ code: "code_access_removed", status: 403 }]);
   } finally {
     await engine.close();
   }

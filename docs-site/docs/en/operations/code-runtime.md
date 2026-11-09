@@ -47,11 +47,24 @@ checked description reaches the browser; no Code source runs there.
 
 ## Schedule and result delivery compatibility
 
-Recurring Code schedules now use their checked `timeZone`, defaulting to UTC
-when omitted. Versions with string cron declarations therefore run in UTC;
-operators who previously relied on `app.timezone` for Code schedules should
-have their authors submit an explicit IANA zone before activating the new
-runtime. Grids workflows retain their own schedules. Old Assistant routines are retired; rebuild them as Code.
+Code schedules use one declaration, `{ cron | at, timeZone?, name?, title? }`.
+When `timeZone` is omitted, Core uses the instance setting `app.timezone`
+(default `Europe/Berlin`). Existing checked schedules without a zone inherit
+that setting too. Changing it changes future ticks of those schedules; use an
+explicit IANA zone when a schedule must keep its own wall-clock time.
+Handlers receive `{ runId, scheduledAt, input }`; retry attempts keep the same
+run ID and original scheduled instant. Action idempotency keys have the same
+principal/capability scope across runs for at least 24 hours, including chat delivery
+and chat turns. Include the intended occurrence in keys for recurring effects.
+Grids workflows retain their own schedules. Old Assistant routines are retired;
+rebuild them as Code.
+
+All non-public Code routes now admit every signed-in person, including routes
+owned by a person. Handlers restrict access through the explicit `c.user`
+identity before reading or changing data. SDK calls retain the Code account's
+grants. Public routes always receive `c.user === null`. Previously checked non-public page bundles fail closed with 503 after this SDK update until they are resubmitted; schedule old page versions for resubmission before upgrading a development stack. Resubmit old sources
+using `c.user.groups` or `provider`: the supported fields are `id`, `username`,
+`groupIds`, `groupNames`, `kind` and `name`.
 
 Core adds `code.chat_deliveries` as an additive migration. Personal Code chat
 results commit their messages and receipts together. The existing Assistant

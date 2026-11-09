@@ -12,7 +12,7 @@ const analyze = (when: string, files: Record<string, string> = {}) =>
     aiOperations: [],
     files: {
       ...files,
-      "code.ts": `import { app } from "@sdk";\napp.schedule(${when}, async () => {}, { name: "reminder", title: "Send summary" });\nexport default app;`,
+      "code.ts": `import { app } from "@sdk";\napp.schedule(${when.replace("{", '{ name: "reminder", title: "Send summary",')}, async () => {});\nexport default app;`,
     },
   });
 const once = { at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" };
@@ -42,9 +42,8 @@ test("checker accepts an imported constant one-time declaration", () => {
     entry: "code.ts",
     aiOperations: [],
     files: {
-      "timing.ts": `export const timing = ${JSON.stringify(once)} as const;`,
-      "code.ts":
-        'import { app } from "@sdk"; import { timing } from "./timing"; app.schedule(timing, async () => {}, { name: "reminder" }); export default app;',
+      "timing.ts": `export const timing = ${JSON.stringify({ ...once, name: "reminder" })} as const;`,
+      "code.ts": 'import { app } from "@sdk"; import { timing } from "./timing"; app.schedule(timing, async () => {}); export default app;',
     },
   });
   expect(result.diagnostics).toEqual([]);
@@ -55,7 +54,6 @@ test.each([
   '{ at: new Date().toISOString(), timeZone: "UTC" }',
   '{ at: "2026-02-30T09:00:00Z", timeZone: "UTC" }',
   '{ at: "2026-12-01T09:00:00" , timeZone: "Europe/Berlin" }',
-  '{ at: "2026-12-01T09:00:00Z" }',
   '{ at: "2026-12-01T09:00:00Z", timeZone: "Mars/Olympus" }',
   '{ at: "2026-12-01T09:00:00Z", timeZone: "UTC", cron: "* * * * *" }',
   '{ at: "2026-12-01T09:00+01:00", timeZone: "Europe/Berlin" }',
@@ -67,7 +65,6 @@ test("manifest refuses ambiguous once/cron timing and incomplete one-time metada
   const entry = { kind: "schedule", entrypoint: "reminder", file: "code.ts", line: 1, cron: null, ...once };
   for (const invalid of [
     { ...entry, cron: "0 9 * * *" },
-    { ...entry, timeZone: undefined },
     { ...entry, at: undefined },
     { ...entry, kind: "manual" },
   ]) {
@@ -78,20 +75,12 @@ test("manifest refuses ambiguous once/cron timing and incomplete one-time metada
 test("runner SDK registers once and cron handlers without starting either during module loading", async () => {
   const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
   let executions = 0;
-  runtime.app.schedule(
-    once,
-    () => {
-      executions++;
-    },
-    { name: "reminder", title: "Send summary" },
-  );
-  runtime.app.schedule(
-    "0 8 * * 1",
-    () => {
-      executions++;
-    },
-    { name: "weekly" },
-  );
+  runtime.app.schedule({ ...once, name: "reminder", title: "Send summary" }, () => {
+    executions++;
+  });
+  runtime.app.schedule({ cron: "0 8 * * 1", name: "weekly" }, () => {
+    executions++;
+  });
   expect(executions).toBe(0);
   expect(runtime.__codeSdk.entries()).toEqual([
     { kind: "schedule", entrypoint: "reminder", title: "Send summary", cron: null, ...once },
@@ -104,9 +93,8 @@ test("runner SDK registers once and cron handlers without starting either during
     { ...once, at: "tomorrow" },
     { ...once, at: "2026-12-01T09:15+01:00" },
     { ...once, at: "2026-02-30T09:00:00Z" },
-    { at: once.at },
     { ...once, cron: "* * * * *" },
   ]) {
-    expect(() => runtime.app.schedule(timing, () => {}, { name: "invalid" })).toThrow("code_sdk_invalid_schedule");
+    expect(() => runtime.app.schedule({ ...timing, name: "invalid" }, () => {})).toThrow("code_sdk_invalid_schedule");
   }
 });
