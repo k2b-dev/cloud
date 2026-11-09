@@ -5,7 +5,7 @@ section: Operations
 order: 945
 description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Outgoing mail operations
@@ -40,19 +40,50 @@ audited like other mailbox settings.
   Drafts that are already shared keep shared editing, sending, Undo, and
   recovery until they are sent or discarded. Mail never converts them, so no
   typing is lost.
-- Mail refuses `shared` with `409 SHARED_DRAFTS_UNSUPPORTED` until the
-  installed Sync topic contract rejects new events when storage is full and
-  keeps updates until a durable snapshot covers them (k2b-dev/sync#4). Do not
-  switch draft modes in the database to bypass this gate.
-- When the document log is full, the editor keeps the text on the device,
-  shows the error, and offers Retry. Sending stays blocked until the text is
-  saved.
+- Mail refuses `shared` with `409 SHARED_DRAFTS_UNSUPPORTED` until startup
+  migration succeeds and the live log matches its declaration. Do not switch
+  draft modes in the database to bypass this gate.
+- When the document log is full, new writes return
+  `409 DRAFT_DOCUMENT_STREAM_FULL` (the socket closes with code 1012).
+  Accepted edits remain in the log. The editor retains unsent input and
+  offers **Retry saving**. A send whose freeze marker cannot fit queues
+  nothing; table actions and recovery restores leave the draft unchanged.
 - Sending always compares the content the sender saw with the stored draft.
   If someone changed the draft in the same moment, Mail sends nothing and asks
   to check the text again.
 
 Deploy the release to every Mail instance before an administrator turns on a
 shared mailbox. Already scheduled messages keep their immutable send snapshots.
+
+Shared drafts require Sync 7.1 or later. The application-wide document log
+reserves 1 GiB, rejects new events when full, and has no age expiry. Mail
+prunes only the prefix covered by committed SQL snapshots. Frozen and
+scheduled drafts still count; sent and discarded drafts do not. An idle
+proof advances coverage without changing the draft cursor or revision.
+
+At startup, Mail changes an older log from discard-old to reject-full and
+removes its age limit **in place**, preserving its name, bytes limit and
+sequences. It never recreates the stream: SQL cursors refer to those sequences.
+Drafts behind an already expired prefix with newer retained events are marked
+for recovery. A durable migration checkpoint makes this marking retryable
+when a process stops between the broker update and the SQL commit. The
+separate dead-letter stream keeps its seven-day age and 16 MiB budget.
+Migration failures are logged and leave shared activation unsupported; Mail's
+other features remain available.
+
+To free a full log, restore SQL snapshot persistence, retry saving pending
+shared drafts, and retry the rejected input after the covering snapshots
+commit. Mail coalesces prune requests after commits and full-log rejections;
+it also prunes on startup to finish work interrupted after a snapshot commit.
+A stalled draft with uncovered events can hold back pruning for every mailbox.
+Inspect `mail:draft-document-log` and `mail:draft-document-log-policy` errors
+and repair that draft's persistence or recovery before retrying. Never purge
+or delete the log manually to free space. Reconnecting editors with older
+cursors receive the covering SQL snapshot before newer events.
+
+Pruning also removes historical operation and structural Undo receipts.
+An unavailable receipt requires recovery or a fresh action; Mail never
+recompiles an old revision request over missing history.
 
 Shared revision saves use their authenticated original document state. A retry
 of the same actor's content against that same base reuses the retained log
