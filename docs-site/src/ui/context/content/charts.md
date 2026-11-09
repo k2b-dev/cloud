@@ -118,6 +118,26 @@ and timeline layouts. `renderBarChartSvg` and `barChartLayout` remain available
 from `@k2b/ui/charts` too. Raw SVG in a browser needs `inspectChart` from
 `@k2b/ui/chart-inspection`; prefer `Chart` inside an island for an interactive UI.
 
+For standalone SVG and PDF output, `chartSvgWithUiPalette(svg)` replaces the
+embedded palette defaults and numeric color-variable fallbacks with the eight
+colors in `base.css`: blue, green, amber, violet, pink, cyan, lime, and orange.
+Use it around `toSvg(scene)` or any raw renderer's result when the export should
+match the UI palette without loading chart CSS. Geometry, labels, inspection
+data, semantic tones, and explicit threshold colors stay intact. Existing
+renderer calls retain their historical bytes, including the old embedded
+palette, until you opt into the conversion.
+
+Notebooks applies this conversion to its PDF figures and separate browser
+print copy. Notes share images also use the UI palette before rasterization.
+Interactive charts and snapshots in hosts that load the chart stylesheet keep
+their existing SVG bytes.
+
+```ts
+import { chartSvgWithUiPalette, toSvg } from "@k2b/ui/charts/core";
+
+const printSvg = chartSvgWithUiPalette(toSvg(scene));
+```
+
 `ChartNumberFormat`, `ChartDateFormat`, and `ChartFormat` describe portable
 presentation. Number formats use `style: "number" | "percent" | "currency"`,
 with optional `currency`, `unit`, `decimals`, and `compact`. Date formats use
