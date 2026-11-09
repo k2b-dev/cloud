@@ -276,7 +276,6 @@ test("the app grid shows pinned entries once, as ordinary first tiles with their
     rail: {
       ...settings,
       shortcuts: [
-        { id: "pinned-notes", kind: "app", appId: "notes" },
         { id: "custom", kind: "link", title: "Custom", href: "/custom", icon: "ti ti-link" },
         { id: "pinned-chat", kind: "app", appId: "chat" },
       ],
@@ -293,12 +292,13 @@ test("the app grid shows pinned entries once, as ordinary first tiles with their
   );
   try {
     await settle();
-    // Managed first, then the personal order; every tile is the same kind of tile and no app repeats.
+    // Managed first, then the personal order, then the apps nobody pinned; every tile is the same kind of tile and
+    // no app repeats.
     const tiles = [...grid.querySelectorAll(".launchpad-apps-grid > a.launchpad-app")];
-    expect(tiles.map((tile) => tile.getAttribute("href"))).toEqual(["/app/mail", "/app/notes", "/custom", "/app/chat"]);
+    expect(tiles.map((tile) => tile.getAttribute("href"))).toEqual(["/app/mail", "/custom", "/app/chat", "/app/notes"]);
     expect(grid.querySelector("section")).toBeNull();
     expect(tiles.every((tile) => tile.querySelector(":scope > .app-icon"))).toBe(true);
-    const chat = tiles[3]!;
+    const chat = tiles[2]!;
     expect(chat.querySelector(".app-icon > .cloud-app-badge")?.textContent).toBe("3");
     expect(chat.textContent).toBe("3Chat, 3 new");
     const mail = tiles[0]!;
