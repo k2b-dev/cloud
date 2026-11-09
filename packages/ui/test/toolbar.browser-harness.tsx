@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Button } from "../src/actions/Button";
+import { Button, IconButton } from "../src/actions/Button";
 import { Dropdown } from "../src/actions/Dropdown";
 import { Toolbar, type ToolbarActionProps, ToolbarDock, type ToolbarProps } from "../src/actions/Toolbar";
 
@@ -181,9 +181,14 @@ const mountAlert = (width = 720) => {
         <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>Text</div>
         <ToolbarDock>
           <Toolbar label="Saving stopped" variant="floating" tone="danger">
-            <Toolbar.Label>
+            <span class="app-toggle">
+              <IconButton label="Navigation" size="xs">
+                <i class="ti ti-layout-sidebar" aria-hidden="true" />
+              </IconButton>
+            </span>
+            <Toolbar.Label detail=". Connection closed">
               <i class="ti ti-alert-triangle" aria-hidden="true" />
-              Changes not saved. Connection closed
+              Changes not saved
             </Toolbar.Label>
             <Toolbar.Spacer />
             <Toolbar.Action label="Copy text" icon="ti ti-copy" text />

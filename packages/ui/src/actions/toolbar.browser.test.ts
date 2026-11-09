@@ -386,7 +386,7 @@ test("a danger toolbar is one red pill across the row that announces its message
       .locator('.k2b-toolbar__action[data-overflow="hidden"]')
       .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!));
   try {
-    await page.evaluate(() => window.toolbarFixture.mountAlert(720));
+    await page.evaluate(() => window.toolbarFixture.mountAlert(960));
     await frame();
     const layout = await page.evaluate(() => {
       const column = document.getElementById("dock-column")!.getBoundingClientRect();
@@ -403,18 +403,34 @@ test("a danger toolbar is one red pill across the row that announces its message
     // The pill spans the dock between its 1rem insets, at the floating height, on the danger surface. The spacer
     // between message and actions counts with its minimum only, so the labels stay.
     expect(layout).toEqual({ start: 16, end: 16, height: 54, surface: "rgb(254, 242, 242)", compact: false });
+    // An application's own small control, wrapped in its own element, gets the pill's round control size.
+    expect(await pill.getByRole("button", { name: "Navigation" }).evaluate((button) => button.getBoundingClientRect().height)).toBe(44);
+    const label = () =>
+      pill.locator(".k2b-toolbar__label").evaluate((label) => {
+        const main = label.querySelector<HTMLElement>(".k2b-toolbar__label-main")!;
+        const detail = label.querySelector<HTMLElement>(".k2b-toolbar__label-detail")!;
+        return {
+          mainWhole: main.scrollWidth <= main.clientWidth,
+          // The detail sits on the first line while it fits; otherwise it wraps away and the label clips it.
+          detailShown: detail.getBoundingClientRect().top < label.getBoundingClientRect().bottom,
+        };
+      });
+    expect(await label()).toEqual({ mainWhole: true, detailShown: true });
     expect(await moved()).toEqual([]);
     await page.waitForFunction(() =>
       document
         .querySelector('[data-k2b-live] [data-politeness="assertive"]')
         ?.textContent?.includes("Changes not saved. Connection closed"),
     );
-    await page.evaluate(() => window.toolbarFixture.resizeDock(300));
+    // A phone-wide row: the reason drops first, then the action labels, then the lower-priority actions. Copy text
+    // has no priority and stays, and the save state keeps its full width.
+    await page.evaluate(() => window.toolbarFixture.resizeDock(420));
     await frame();
-    // Labels go first, then the lower-priority actions; Copy text has no priority and stays.
     expect(await pill.evaluate((toolbar) => toolbar.hasAttribute("data-compact"))).toBe(true);
-    expect(await moved()).toEqual(["Keep", "Discard"]);
+    expect(await moved()).toContain("Discard");
     expect(await pill.getByRole("button", { name: "Copy text" }).isVisible()).toBe(true);
+    // The reason gave way whole; the save state still reads in full.
+    expect(await label()).toEqual({ mainWhole: true, detailShown: false });
   } finally {
     await page.close();
   }

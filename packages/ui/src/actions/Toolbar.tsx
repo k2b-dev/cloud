@@ -48,7 +48,15 @@ export type ToolbarActionProps = {
   pressed?: boolean;
   onClick?: () => void;
 };
-export type ToolbarLabelProps = { children: JSX.Element; class?: string };
+export type ToolbarLabelProps = {
+  children: JSX.Element;
+  /**
+   * Follows the label while it fits, such as the reason after "Not saved". A narrow toolbar hides it whole before
+   * actions give up their labels; screen readers always read it.
+   */
+  detail?: JSX.Element;
+  class?: string;
+};
 
 export type ToolbarGroupProps = { children: JSX.Element; label?: string; class?: string };
 export type ToolbarSeparatorProps = { class?: string };
@@ -185,8 +193,11 @@ const ToolbarLabel = (props: ToolbarLabelProps): JSX.Element => {
     onCleanup(() => observer.disconnect());
   });
   return (
-    <span ref={label} class={`k2b-toolbar__label ${props.class ?? ""}`}>
-      {props.children}
+    <span ref={label} class={`k2b-toolbar__label ${props.class ?? ""}`} data-detail={props.detail ? "" : undefined}>
+      <Show when={props.detail} fallback={props.children}>
+        <span class="k2b-toolbar__label-main">{props.children}</span>
+        <span class="k2b-toolbar__label-detail">{props.detail}</span>
+      </Show>
     </span>
   );
 };
@@ -355,6 +366,16 @@ const measureOverflow = (
       (Number.parseFloat(childStyle.marginLeft) || 0) +
       (Number.parseFloat(childStyle.marginRight) || 0);
     if (!child.classList.contains("k2b-toolbar__label")) return box;
+    // A detail only takes leftover room: the label needs its main text and padding.
+    const main = child.querySelector<HTMLElement>(":scope > .k2b-toolbar__label-main");
+    if (main)
+      return (
+        main.scrollWidth +
+        (Number.parseFloat(childStyle.paddingLeft) || 0) +
+        (Number.parseFloat(childStyle.paddingRight) || 0) +
+        (Number.parseFloat(childStyle.marginLeft) || 0) +
+        (Number.parseFloat(childStyle.marginRight) || 0)
+      );
     const cap = Number.parseFloat(childStyle.maxWidth);
     return Math.max(box, Math.min(child.scrollWidth, Number.isNaN(cap) ? Number.POSITIVE_INFINITY : cap));
   };

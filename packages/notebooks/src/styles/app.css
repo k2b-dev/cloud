@@ -1296,16 +1296,17 @@
   pointer-events: none;
 }
 /* When sync has ended, one red pill (@k2b/ui `Toolbar tone="danger"`) takes the pills' place and spans the row. Its
-   strip sits in the row like a ToolbarDock child. */
+   strip sits in the row like a ToolbarDock child, and its controls are sized so the pill has the 3rem height of the
+   pills it replaces: nothing moves when it appears. */
+.k2b-ui .notebooks-editor-toolbar[data-sync-ended] {
+  --k2b-toolbar-control: 2.375rem;
+}
 .k2b-ui .notebooks-editor-toolbar[data-sync-ended] > .k2b-toolbar-float {
   position: static;
   flex: 1 1 0;
   min-width: 0;
   margin: 0;
   padding: 0;
-}
-.k2b-ui .notebooks-editor-toolbar[data-sync-ended] .k2b-toolbar .k2b-button {
-  border-radius: 999px;
 }
 .k2b-ui .notebooks-editor-pill {
   display: flex;

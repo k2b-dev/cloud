@@ -17574,12 +17574,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A floating toolbar is a pill on layer 3 that stays open: the toolbar shadow,
    softer than a menu's, and a light 1 px edge. It is solid, never glass, so
    text scrolling beneath it never shows through. */
+/* `--k2b-toolbar-control` sizes every control of a floating toolbar and so the
+   pill around it; a host whose own pills are lower sets it once, so its stopped
+   state (tone="danger") has exactly their height. */
 .k2b-ui .k2b-toolbar[data-variant="floating"] {
   position: relative;
   pointer-events: auto;
   max-inline-size: 100%;
   /* 44 px controls with room for their key hints, plus the 1 px edge on each side. */
-  block-size: calc(3.25rem + 2px);
+  block-size: calc(var(--k2b-toolbar-control, 2.75rem) + 0.5rem + 2px);
   padding: 0.25rem;
   gap: 0.125rem;
   border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
@@ -17587,11 +17590,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-toolbar);
 }
-.k2b-ui .k2b-toolbar[data-variant="floating"] > .k2b-button,
-.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__group .k2b-button,
+/* Every control in the pill has the same round size, also one an application
+   wraps (a tooltip anchor, its own toggle), so no small icon sits at the edge.
+   Buttons inside its menus and other popovers keep their own size. */
+.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button:not(:is([popover], [role="menu"], [role="dialog"]) .k2b-button),
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__more .k2b-dropdown__trigger {
-  min-inline-size: 2.75rem;
-  block-size: 2.75rem;
+  min-inline-size: var(--k2b-toolbar-control, 2.75rem);
+  block-size: var(--k2b-toolbar-control, 2.75rem);
   border-radius: 999px;
   flex: none;
 }
@@ -17707,6 +17712,28 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-inline-size: 2.75rem;
   block-size: 2.75rem;
 }
+/* A label with `detail` keeps its main text and shows the detail beside it
+   while it fits. Without room the detail wraps onto a second line that the
+   label clips, so it disappears whole instead of truncating; the main text
+   truncates only after that. Screen readers keep both. */
+.k2b-ui .k2b-toolbar__label[data-detail] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  block-size: 1.25rem;
+  line-height: 1.25rem;
+}
+.k2b-ui .k2b-toolbar__label-main {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.k2b-ui .k2b-toolbar__label-detail {
+  flex: none;
+  white-space: nowrap;
+}
 /* `tone="danger"`: the one red pill of a stopped state takes the place of the
    row's pills and spans it. Shape, height, and the toolbar shadow stay; only
    surface, edge, and ink turn to the danger tokens, so nothing moves when it
@@ -17725,7 +17752,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline: 0.75rem 0.25rem;
   font-size: 0.875rem;
 }
-.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label > i {
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label i {
   margin-inline-end: 0.375rem;
   font-size: 1.125rem;
   vertical-align: -0.15em;

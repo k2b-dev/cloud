@@ -1015,9 +1015,9 @@ const DangerToolbarDemo = () => {
       description="When an editor can no longer save, one red pill takes the place of its toolbars: the message first, then the way out. Narrow the column to see the labels go first and the lower-priority actions move into More."
       code={`<ToolbarDock>
   <Toolbar label="Saving stopped" variant="floating" tone="danger">
-    <Toolbar.Label>
+    <Toolbar.Label detail=". Connection closed">
       <i class="ti ti-alert-triangle" aria-hidden="true" />
-      Changes not saved. Connection closed
+      Changes not saved
     </Toolbar.Label>
     <Toolbar.Spacer />
     <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={copy} />
@@ -1041,9 +1041,9 @@ const DangerToolbarDemo = () => {
         </div>
         <ToolbarDock>
           <Toolbar label="Saving stopped" variant="floating" tone="danger">
-            <Toolbar.Label>
+            <Toolbar.Label detail=". Connection closed">
               <i class="ti ti-alert-triangle" aria-hidden="true" />
-              Changes not saved. Connection closed
+              Changes not saved
             </Toolbar.Label>
             <Toolbar.Spacer />
             <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={() => setLastAction("Copy text")} />

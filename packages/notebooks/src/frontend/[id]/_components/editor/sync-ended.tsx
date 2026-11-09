@@ -184,10 +184,10 @@ export function SyncEndedBar(props: {
     <div ref={row} class="notebooks-editor-toolbar text-base" data-sync-ended={props.ended.code}>
       <Toolbar label={t().syncStopped} variant="floating" tone="danger">
         <NavigationButton />
-        {/* The save state leads, so a narrow phone row truncates the reason, never whether text is lost. */}
-        <Toolbar.Label>
+        {/* The save state leads; a narrow phone row drops the reason, never whether text is lost. */}
+        <Toolbar.Label detail={`. ${title()}`}>
           <i class={iconFor(props.ended.code)} aria-hidden="true" />
-          {props.ended.unsent ? t().changesNotSaved : t().allChangesSaved}. {title()}
+          {props.ended.unsent ? t().changesNotSaved : t().allChangesSaved}
         </Toolbar.Label>
         <Toolbar.Spacer />
         <Toolbar.Action
