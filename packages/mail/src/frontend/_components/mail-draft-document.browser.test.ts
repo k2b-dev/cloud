@@ -354,7 +354,15 @@ for (const width of [1440, 390])
     const { page, context, errors } = await open(width);
     try {
       if (width === 390) await page.evaluate(() => (globalThis.document.documentElement.className = "dark"));
-      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      // WebKit grants no clipboard permissions to Playwright, so both engines record what the copy writes instead.
+      await page.evaluate(() => {
+        const copied: string[] = [];
+        window.copiedTexts = copied;
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText: async (text: string) => void copied.push(text) },
+          configurable: true,
+        });
+      });
       const proposal = "Keep this rejected body proposal";
       expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
       expect(await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).count()).toBe(1);
@@ -366,7 +374,8 @@ for (const width of [1440, 390])
         }),
       ).toBe(true);
       await page.getByRole("button", { name: "Entwurf kopieren", exact: true }).click();
-      expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(proposal);
+      await page.waitForFunction(() => (window.copiedTexts?.length ?? 0) > 0);
+      expect((await page.evaluate(() => window.copiedTexts ?? [])).join("\n")).toContain(proposal);
       await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).click();
       expect(await page.evaluate(() => window.mailSharedFixture.state()?.rejectedEdit)).toBeNull();
       expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);

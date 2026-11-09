@@ -17,6 +17,8 @@ declare global {
       recover: () => Promise<unknown>;
       rejectProposal: (body: string) => boolean;
     };
+    /** Texts the tested copy actions wrote, recorded by the browser test in place of the system clipboard. */
+    copiedTexts?: string[];
   }
 }
 
