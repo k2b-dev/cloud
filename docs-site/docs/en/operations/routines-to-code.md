@@ -5,7 +5,7 @@ description: Export scheduled Assistant routines before upgrading, then rebuild 
 section: Operations
 order: 95
 tags: [routines, code, migration]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Routines became Code
@@ -39,7 +39,8 @@ a replacement automatically.
 A chat turn started by Code follows the owner's current access, model budget and
 normal approvals. Approval requests wait in the chat; the scheduling Code can
 finish without polling. Old routine HTTP or Studio RSQL grants do not transfer.
-Studio database grants are unavailable; no replacement database is provisioned.
+Lasting Code has its own lazy database through `db` from `@sdk`. Studio data
+and database grants are not transferred; export them before upgrading.
 See [Code SDK](/en/docs/platform/code-sdk) and
 [Code runtime operations](/en/docs/operations/code-runtime).
 

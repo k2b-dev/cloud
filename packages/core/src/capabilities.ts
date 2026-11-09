@@ -51,6 +51,7 @@ import { CodeDataError, codePerson } from "./code/access";
 import { codeAttentionContracts, listCodeAttention, readCodeAttention, readCodeSummary } from "./code/attention";
 import { codeAutomationContracts, listCodeAutomations } from "./code/automations";
 import { codeQueryContracts } from "./code/contracts";
+import { readCodeDetails } from "./code/database";
 import { cancelCodeEventCatchup, readCodeEventCatchup, resumeCodeEventCatchup, startCodeEventCatchup } from "./code/event-catchup";
 import { listCodeRunsWithEvents, replayCodeEventDelivery } from "./code/events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
@@ -60,7 +61,7 @@ import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
-import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -717,7 +718,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Read one Code identity, owner and current permission using its stable codeId.",
       ...codeQueryContracts.read,
       openWorld: false,
-      run: (input, context) => runCodeQuery(context, (ctx) => readCode(input.codeId, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeDetails(input.codeId, ctx)),
     },
     "code.version.read": {
       title: "Read a Code version",

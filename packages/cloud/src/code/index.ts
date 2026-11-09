@@ -2,6 +2,9 @@ export { type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "..
 export { codeAiToolCovered, createCodeAiTools } from "./ai-tools";
 export type {
   CodeContext,
+  CodeDatabase,
+  CodeDatabaseStatement,
+  CodeDatabaseValue,
   CodeError,
   CodeHandle,
   CodeHttp,
@@ -33,6 +36,7 @@ export {
   CodePermissionSchema,
   CodeVersionManifestSchema,
 } from "./checker-contract";
+export { CODE_DATABASE_LIMITS, CODE_DATABASE_MESSAGES, type CodeDatabaseRequest, CodeDatabaseRequestSchema } from "./database-contract";
 export * from "./event-tools";
 export { type CodeAiToolBinding, CodeAiToolBindingSchema, CodeFileRefSchema } from "./file-ref";
 export { generateCodeSdk } from "./generator";

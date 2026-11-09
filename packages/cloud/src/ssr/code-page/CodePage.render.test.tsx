@@ -1038,3 +1038,23 @@ test("failed event delivery remains visible and only an active editor can retry 
   expect(page("reader", "active")).not.toContain("Retry delivery");
   expect(page("editor", "paused")).not.toContain("Retry delivery");
 });
+
+test.each(["de", "en"])("Code page shows database use and storage in %s", (locale) => {
+  const data = codePageFixture("overview", locale);
+  if (data.state.kind !== "ready") throw new Error("Missing fixture");
+  data.state.databaseUsed = true;
+  data.state.code.database = { bytes: 1048576, limit: 104857600, state: "ready" };
+  const page = renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    ),
+    " ",
+  );
+  expect(page).toContain(locale === "de" ? "Nutzt Datenbank" : "Uses database");
+  expect(page).toContain(locale === "de" ? "Datenbank: 1,00 MB von 100,00 MB" : "Database: 1.00 MB of 100.00 MB");
+});

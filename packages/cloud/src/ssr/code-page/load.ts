@@ -582,6 +582,7 @@ const loadReady = async (
     code: {
       id: code.id,
       title: code.title,
+      ...(code.database ? { database: code.database } : {}),
       serviceAccountHandle: code.serviceAccountHandle ?? null,
       state: code.state,
       activeVersionId: code.activeVersionId,
@@ -594,6 +595,7 @@ const loadReady = async (
     active: activeVersion,
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
     automations,
+    databaseUsed: activeManifest?.database === true || waitingManifest?.database === true,
     internet: {
       active: activeManifest ? (activeManifest.internet ?? []) : code.activeVersionId ? null : [],
       waiting: waitingManifest ? (waitingManifest.internet ?? []) : waitingReceipt ? null : [],

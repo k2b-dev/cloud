@@ -13,6 +13,7 @@ export type CodeAnalysis = {
   permissions: CodePermission[];
   entrypoints: CodeVersionManifest["entrypoints"];
   ai: boolean;
+  database: boolean;
   internet: string[];
   modules: string[];
 };
@@ -78,7 +79,15 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   include(request.entry);
   let collecting = false;
   const checker = program.getTypeChecker();
-  const result: CodeAnalysis = { diagnostics: [], permissions: [], entrypoints: [], ai: false, internet: [], modules: [...reachable] };
+  const result: CodeAnalysis = {
+    diagnostics: [],
+    permissions: [],
+    entrypoints: [],
+    ai: false,
+    database: false,
+    internet: [],
+    modules: [...reachable],
+  };
   const report = (node: ts.Node, code: string, message: string) => {
     const sf = node.getSourceFile();
     const location = sf.getLineAndCharacterOfPosition(node.getStart(sf));
@@ -496,6 +505,25 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         ) {
           report(node, "code_import_forbidden", "Erlaubt sind nur @sdk und eigene Quelldateien im Code-Projekt.");
         }
+        if (
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(spec) &&
+          spec.text === "@sdk" &&
+          !node.importClause?.isTypeOnly &&
+          node.importClause?.namedBindings &&
+          ts.isNamedImports(node.importClause.namedBindings)
+        ) {
+          for (const binding of node.importClause.namedBindings.elements)
+            if (!binding.isTypeOnly && (binding.propertyName ?? binding.name).text === "db") {
+              if (request.sdk.manifest.mode === "code_run")
+                report(
+                  binding,
+                  "code_db_temporary",
+                  "db gehört zu einem dauerhaften Code. code_run hat keinen Code, der eine Datenbank besitzt.",
+                );
+              else if (collecting) result.database = true;
+            }
+        }
         if (ts.isExportDeclaration(node) && ts.isStringLiteral(spec) && spec.text === "@sdk")
           report(node, "code_reserved_sdk", "Das SDK darf nicht weiter exportiert werden.");
         if (
@@ -587,7 +615,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           httpCall(node, name);
         }
         const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
-        if (http) {
+        const database = declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeDatabase";
+        if (database) {
+          if (collecting) result.database = true;
+        } else if (http) {
           // HTTP origin evidence is collected by httpCall above.
         } else if (app && method) {
           if (method === "use" && collecting) {

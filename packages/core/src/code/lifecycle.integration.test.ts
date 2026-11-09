@@ -12,9 +12,19 @@ import {
 } from "../../../../scripts/fixtures/code-platform";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
+import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateLifecycle } from "../migrate/core/code-lifecycle";
 import type { CodeContext } from "./access";
-import { codeDeletionOutbox, codeOwnerDeletedOutbox, listCodeCleanupJobs, processCodeOwnerDeleted } from "./lifecycle";
+import { codeDatabaseNamespace } from "./database";
+import * as databaseClients from "./database-client";
+import { codeDatabaseSettings } from "./database-settings";
+import {
+  codeDeletionOutbox,
+  codeOwnerDeletedOutbox,
+  listCodeCleanupJobs,
+  processCodeCleanupJob,
+  processCodeOwnerDeleted,
+} from "./lifecycle";
 import { checkCodeOwnerBeforeRun } from "./owner-check";
 import * as transport from "./owner-transport";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -94,6 +104,7 @@ async function fixture(user: User, personal = false) {
     { id: string }[]
   >`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state)
     VALUES(gen_random_uuid(),${id},${version!.id}::uuid,${user.id}::uuid,'de',FALSE,'active') RETURNING id`;
+  await sql`INSERT INTO code.databases(code_id,namespace,server_url,connected) VALUES(${id},${codeDatabaseNamespace(id)},'http://rsql.test',TRUE)`;
   return {
     id,
     principal,
@@ -125,18 +136,44 @@ async function drainDeletion() {
 
 suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces", () => {
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  const removed: string[] = [];
+  let removeFails = false;
+  let dbSettingsSpy: ReturnType<typeof spyOn<typeof codeDatabaseSettings, "read">>;
+  let clientSpy: ReturnType<typeof spyOn<typeof databaseClients, "createCodeDatabaseClient">>;
+  const dbValues = {
+    "core.code.rsql_url": "http://rsql.test",
+    "core.code.rsql_api_token": "fixture-rsql-token",
+    "core.code.rsql_allowed_targets": ["rsql.test"],
+  };
   beforeAll(async () => {
+    dbSettingsSpy = spyOn(codeDatabaseSettings, "read").mockImplementation(async <K extends keyof typeof dbValues>(key: K) => ({
+      value: dbValues[key],
+      stored: "readable" as const,
+    }));
+    clientSpy = spyOn(databaseClients, "createCodeDatabaseClient").mockReturnValue({
+      create: async () => {},
+      configure: async () => {},
+      execute: async () => [],
+      size: async () => 4096,
+      remove: async (namespace) => {
+        if (removeFails) throw new Error("offline");
+        removed.push(namespace);
+      },
+    });
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (key) => {
       const definition = Object.entries(CODE_SETTINGS).find(([name]) => name === key)?.[1];
       if (!definition) throw new Error(`Unexpected setting ${key}`);
       return definition.default;
     });
     setSystemTime(fixed);
+    await migrateCode();
     await migrateLifecycle();
     await migrateLifecycle();
   });
   afterAll(() => {
     settingsSpy?.mockRestore();
+    dbSettingsSpy?.mockRestore();
+    clientSpy?.mockRestore();
     setSystemTime();
   });
 
@@ -156,11 +193,34 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     await processCodeOwnerDeleted(reports[0]!);
     expect((await listCodeCleanupJobs({ codeId: f.id }, context(user))).items).toHaveLength(1);
     await drainDeletion();
-    for (const table of ["codes", "versions", "runs", "activations", "cleanup_jobs"])
+    for (const table of ["codes", "versions", "runs", "activations", "cleanup_jobs", "databases"])
       expect(await sql.unsafe(`SELECT 1 FROM code.${table} WHERE ${table === "codes" ? "id" : "code_id"}=$1`, [f.id])).toHaveLength(0);
     expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${f.principal}::uuid`).toHaveLength(0);
     expect(await sql`SELECT id FROM auth.access WHERE id=${g.grantId}::uuid`).toHaveLength(0);
     expect((await restoreMailbox(context(user), f.mailboxId)).ok).toBe(true);
+    expect(await findCode(f.id)).toBeNull();
+    expect(removed).toContain(codeDatabaseNamespace(f.id));
+  });
+
+  test("direct Code deletion retries remote DB cleanup before dropping its mapping", async () => {
+    const user = await person(),
+      f = await fixture(user);
+    await sql`UPDATE code.codes SET state='deleting' WHERE id=${f.id}`;
+    await sql`INSERT INTO code.cleanup_jobs(code_id,kind) VALUES(${f.id},'code.delete')`;
+    const row = (await codeDeletionOutbox.claim()).find((row) => row.code_id === f.id);
+    expect(row).toBeDefined();
+    if (!row) return;
+    removeFails = true;
+    try {
+      await expect(processCodeCleanupJob(row)).rejects.toThrow("code_cleanup_failed");
+      expect(await sql`SELECT code_id FROM code.databases WHERE code_id=${f.id}`).toHaveLength(1);
+      expect(await findCode(f.id)).not.toBeNull();
+    } finally {
+      removeFails = false;
+    }
+    await processCodeCleanupJob(row);
+    expect(removed).toContain(codeDatabaseNamespace(f.id));
+    expect(await sql`SELECT code_id FROM code.databases WHERE code_id=${f.id}`).toHaveLength(0);
     expect(await findCode(f.id)).toBeNull();
   });
 
@@ -238,6 +298,8 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     await deliver();
     await drainDeletion();
     expect(await findCode(personal.id)).toBeNull();
+    expect(removed).toContain(codeDatabaseNamespace(personal.id));
+    expect(removed).not.toContain(codeDatabaseNamespace(resource.id));
     expect(await findCode(resource.id)).toMatchObject({ state: "active", createdBy: null });
     expect(await sql`SELECT id FROM auth.mandates WHERE id=${resource.mandateId}::uuid AND state='active'`).toHaveLength(1);
     await expect(

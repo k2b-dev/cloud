@@ -490,6 +490,28 @@ function VersionLine(props: { data: CodePageData; state: CodePageReady; text: Pa
           </>
         )}
       </Show>
+      <Show when={props.state.databaseUsed}>
+        <span>
+          <i class="ti ti-database" aria-hidden="true" /> {t().usesDatabase}
+        </span>
+      </Show>
+      <Show when={props.state.code.database}>
+        {(db) => (
+          <span>
+            <i class="ti ti-database" aria-hidden="true" />{" "}
+            {db().bytes === null
+              ? t().databaseUnavailable
+              : t().databaseUsage({
+                  used: new Intl.NumberFormat(props.text.locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+                    (db().bytes ?? 0) / 1048576,
+                  ),
+                  limit: new Intl.NumberFormat(props.text.locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+                    db().limit / 1048576,
+                  ),
+                })}
+          </span>
+        )}
+      </Show>
       <span>
         <i class="ti ti-history" aria-hidden="true" /> {t().versionsCount({ count: props.state.versions.length })}
       </span>

@@ -222,6 +222,7 @@ export function approvalReviewProps(
         }
       : null,
     nextHref: next ? codeAreaHref({ sec: "approvals", id: next.versionId }) : null,
+    database: detail.database,
     internet: detail.internet,
     secrets: detail.secrets,
     codeHref: codeAreaHref({ sec: "code", id: detail.code.id }),

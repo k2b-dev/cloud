@@ -5,7 +5,7 @@ section: Platform services
 order: 964
 description: Report owner deletion transactionally, clean up its account and pause Code whose owner is missing.
 tags: [code, identity, permissions]
-updated: 2026-11-04
+updated: 2026-11-09
 ---
 
 # Code owner lifecycle
@@ -20,8 +20,10 @@ activated keeps running with its own account and mandate. Removing an
 application after explicitly removing its retained listing pauses its Code; it
 never starts automatic deletion. A temporarily missing live registry lease is
 an outage, so a normal application restart does not permanently pause Code.
-Per-Code databases are not provisioned in Phase 1; their lifecycle belongs to
-the later database feature.
+Each lasting Code has a lazy database, created on its first `db` call. New
+versions keep the same database. Code deletion also removes its database;
+Core retains the deletion job and retries if RSQL is temporarily unavailable.
+There is no automatic deletion of an unused database while its Code exists.
 
 ## Report deletion in the owning transaction
 

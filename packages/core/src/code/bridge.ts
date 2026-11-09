@@ -23,6 +23,7 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAiReferenceCost, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
+import { dispatchCodeDatabase } from "./database";
 import { readCodeOwnOrigins } from "./origins";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
@@ -36,6 +37,7 @@ const CallVersionSchema = z.object({
   hashes: CodeCheckedVersionManifestSchema.shape.hashes,
   policyRows: CodeCheckedVersionManifestSchema.shape.policyRows,
   permissions: CodeCheckedVersionManifestSchema.shape.permissions,
+  database: CodeCheckedVersionManifestSchema.shape.database,
 });
 
 function denied(code: string, status: 200 | 403 | 409 | 503 = 200): never {
@@ -73,7 +75,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
   >`
     SELECT bundle_hash,source_hash,created_by,jsonb_build_object(
       'version',manifest->'version','hashes',manifest->'hashes',
-      'policyRows',manifest->'policyRows','permissions',manifest->'permissions') AS manifest,
+      'policyRows',manifest->'policyRows','permissions',manifest->'permissions','database',COALESCE(manifest->'database','false'::jsonb)) AS manifest,
       manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::text::jsonb AS entrypoint_valid
     FROM code.versions WHERE id=${call.claims.versionId}::uuid AND code_id=${code.id}`;
   if (!version || version.bundle_hash !== call.claims.bundleHash) denied("code_bundle_mismatch");
@@ -94,13 +96,17 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
 }
 export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
-  if (call.kind !== "internet") requireCodeCapabilityDeclared(call.call, manifest.permissions);
-  const row = codePolicyRow(
-    call.call.capability.startsWith("core.ai.") && !["core.ai.chat.deliver", "core.ai.chat.run.read"].includes(call.call.capability)
-      ? "ai"
-      : call.kind,
-    call.policy,
-  );
+  if (call.kind !== "internet" && call.kind !== "database") requireCodeCapabilityDeclared(call.call, manifest.permissions);
+  if (call.kind === "database" && manifest.database !== true) denied("code_db_undeclared", 403);
+  const row =
+    call.kind === "database"
+      ? null
+      : codePolicyRow(
+          call.call.capability.startsWith("core.ai.") && !["core.ai.chat.deliver", "core.ai.chat.run.read"].includes(call.call.capability)
+            ? "ai"
+            : call.kind,
+          call.policy,
+        );
   if (row === "ask_sends" || manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
   if (
     manifest.policyRows.some((row) => row.startsWith("ask_")) ||
@@ -110,22 +116,29 @@ export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<
   // S2: the ACTUAL call determines this row. A checker permission/row is never authority.
   const policy = await readCodePolicySnapshot(db);
   const membership = await readCodePolicyGroups(code.owner.kind === "person" ? code.owner.userId : version.created_by, db);
-  const value = effective(row, code.owner, policy.definition, membership).value;
+  const value = row ? effective(row, code.owner, policy.definition, membership).value : "automatic";
   if (value === "never") denied("code_policy_never");
   const manifestValues = manifest.policyRows.map((row) => effective(row, code.owner, policy.definition, membership).value);
   if (manifestValues.includes("never")) denied("code_policy_never");
   const [evidence] = await db<
-    { binding_valid: boolean; approved: boolean | null; decision_valid: boolean | null; decision_binding_valid: boolean | null }[]
+    {
+      binding_valid: boolean;
+      approved: boolean | null;
+      decision_valid: boolean | null;
+      decision_binding_valid: boolean | null;
+      database: boolean | null;
+    }[]
   >`
     SELECT (s.binding->>'codeId'=${code.id} AND s.binding->>'versionId'=${call.claims.versionId}
       AND s.binding->>'sourceHash'=v.source_hash AND s.binding->>'bundleHash'=v.bundle_hash) AS binding_valid,
-      d.approved, d.binding=s.binding AS decision_binding_valid,
+      d.approved, d.binding=s.binding AS decision_binding_valid, (s.evidence->>'database')::boolean AS database,
       (u.auth_epoch=d.auth_epoch AND (d.decided_device_id IS NULL OR EXISTS
         (SELECT 1 FROM auth.app_devices device WHERE device.id=d.decided_device_id AND device.user_id=d.decided_by AND device.revoked_at IS NULL))) AS decision_valid
     FROM code.version_submissions s JOIN code.versions v ON v.id=s.version_id
     LEFT JOIN code.version_decisions d ON d.version_id=s.version_id LEFT JOIN auth.users u ON u.id=d.decided_by
     WHERE s.version_id=${call.claims.versionId}::uuid AND s.code_id=${code.id}`;
   if (!evidence) denied("code_approval_required");
+  if (call.kind === "database" && evidence.database !== true) denied("code_db_undeclared", 403);
   if (!evidence.binding_valid) denied("code_hash_mismatch");
   if (evidence.approved !== null) {
     if (!evidence.approved || !evidence.decision_valid) denied("code_approval_revoked");
@@ -133,7 +146,7 @@ export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<
   }
   if (manifestValues.includes("admin") && !evidence.approved) denied("code_approval_required");
   // A valid version decision must explicitly cover the classification of this actual call.
-  if (value === "admin") {
+  if (row && value === "admin") {
     if (!evidence.approved) denied("code_approval_required");
     const [coverage] = await db`SELECT row FROM code.policy_coverage WHERE version_id=${call.claims.versionId}::uuid AND row=${row}`;
     if (!coverage) denied("code_approval_required");
@@ -179,11 +192,16 @@ export function createCodeBridgeHost(
       if ((used?.count ?? 0) >= (run?.calls_limit ?? 0)) denied("code_call_limit");
       try {
         const ordinal = await appendCodeCall(
-          { runId: call.claims.runId, kind: call.kind === "query" ? "query" : "action", call: call.call },
+          {
+            runId: call.claims.runId,
+            kind: call.kind === "query" || (call.kind === "database" && call.call.capability === "db.query") ? "query" : "action",
+            call: call.call,
+          },
           tx,
         );
-        // Future db/kv/files writes must use an effectful kind too; query is reserved for reads.
-        if (call.kind !== "query") await tx`UPDATE code.runs SET effect_started=TRUE WHERE id=${call.claims.runId}::uuid`;
+        // Database writes mark effects just like application actions.
+        if (call.kind !== "query" && !(call.kind === "database" && call.call.capability === "db.query"))
+          await tx`UPDATE code.runs SET effect_started=TRUE WHERE id=${call.claims.runId}::uuid`;
         const payloadLimit = await codeSettings.get("core.code.payload_bytes");
         const [payload] = await tx<
           { valid: boolean }[]
@@ -203,7 +221,8 @@ export function createCodeBridgeHost(
     let aiFailure: unknown;
     let localFailure: CodeBridgeRefusal | undefined;
     try {
-      if ("capability" in execution && call.kind !== "internet") requireCodeCapabilityDeclared(call.call, manifest.permissions);
+      if ("capability" in execution && call.kind !== "internet" && call.kind !== "database")
+        requireCodeCapabilityDeclared(call.call, manifest.permissions);
       const rate = await (
         options.checkRate ??
         (async (id) => ratelimit({ id: "code-bridge", limit: await codeSettings.get("core.code.calls_per_second") }).check(id))
@@ -213,6 +232,7 @@ export function createCodeBridgeHost(
         await sql.begin((tx) => lockCall(call, tx));
         response = await execution.observation();
       } else {
+        if (call.kind === "database") await sql.begin((tx) => authorizeCodeCall(call, tx));
         if (
           call.call.capability.startsWith("core.ai.") &&
           !["core.ai.chat.deliver", "core.ai.chat.run", "core.ai.chat.run.read"].includes(call.call.capability)
@@ -347,4 +367,10 @@ export function createCodeBridgeHost(
 export { readCodeOwnOrigins } from "./origins";
 /** Mount only in Core; C13 adds the other runner protocol endpoints alongside this route. */
 export const createCodeBridgeRoutes = (overrides: Partial<CodeRunnerDispatchDependencies> = {}) =>
-  createCodeRunnerCallRoutes({ host: createCodeBridgeHost(), ownOrigins: readCodeOwnOrigins, http: dispatchCodeSecretHttp, ...overrides });
+  createCodeRunnerCallRoutes({
+    host: createCodeBridgeHost(),
+    ownOrigins: readCodeOwnOrigins,
+    http: dispatchCodeSecretHttp,
+    database: dispatchCodeDatabase,
+    ...overrides,
+  });

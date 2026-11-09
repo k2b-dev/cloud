@@ -13,6 +13,9 @@ import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "../../../core/src/code/ai-budget";
 import { codeAiFileTool, codeAiRun } from "../../../core/src/code/ai-loop";
 import { createCodeBridgeHost, readCodeOwnOrigins } from "../../../core/src/code/bridge";
+import { codeDatabaseNamespace, deleteCodeDatabase, dispatchCodeDatabase, readCodeDatabaseUsage } from "../../../core/src/code/database";
+import type { CodeDatabaseClient } from "../../../core/src/code/database-client";
+import { codeDatabaseSettings } from "../../../core/src/code/database-settings";
 import { createCodeRunnerRoutes } from "../../../core/src/code/runner-routes";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
 import { codeBundleHash, codeSourceHash } from "../../../core/src/code/store";
@@ -42,6 +45,7 @@ import { streamAnswer } from "../ai/answer-stream.test-fixture";
 import { aiModelFixture, aiSettingsFixture } from "../ai/model-fixture";
 import { migrateAiQuotas } from "../ai/quotas-migrate";
 import { runStructuredTools } from "../ai/structured-tools";
+import { CodeBridgeRefusal } from "../api";
 import {
   type CapabilityDispatchDependencies,
   codeHttpOriginAllowed,
@@ -172,6 +176,40 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let targetAccess: string;
   let fetched = 0;
   let currentEntry = baseEntry;
+  let dbConfigured = true;
+  let dbFailure: string | null = null;
+  let dbResult: unknown = [];
+  let beforeDatabaseCreate: (() => Promise<void>) | undefined;
+  let beforeDatabaseExecute: (() => Promise<void>) | undefined;
+  const dbCreated: string[] = [];
+  const dbCalls: Array<{ namespace: string; request: unknown }> = [];
+  const dbQuotas: number[] = [];
+  const dbClient: CodeDatabaseClient = {
+    create: async (namespace) => {
+      dbCreated.push(namespace);
+      await beforeDatabaseCreate?.();
+    },
+    configure: async (_namespace, bytes, timeout) => {
+      dbQuotas.push(bytes);
+      expect(timeout).toBeGreaterThan(0);
+      expect(timeout).toBeLessThanOrEqual(15000);
+    },
+    execute: async (namespace, request) => {
+      if (dbFailure) throw new CodeBridgeRefusal(dbFailure);
+      dbCalls.push({ namespace, request });
+      await beforeDatabaseExecute?.();
+      return dbResult;
+    },
+    size: async () => 4096,
+    remove: async () => {},
+  };
+  let dbSettingsSpy: ReturnType<typeof spyOn<typeof codeDatabaseSettings, "read">>;
+  const dbValues = {
+    "core.code.rsql_url": "http://rsql.test",
+    "core.code.rsql_api_token": "fixture-rsql-token",
+    "core.code.rsql_allowed_targets": ["rsql.test"],
+  };
+
   let targetFailure: CapabilityError | null = null;
   let providerRequestsConfirmation = false;
   let queryCursor: string | undefined;
@@ -192,6 +230,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   const dependencies = () => ({
     host: realRate ? createCodeBridgeHost() : createCodeBridgeHost({ checkRate: async () => ({ limited: rateLimited }) }),
     ownOrigins: async () => [issuer, "http://app-core:3000"],
+    database: (input: Parameters<typeof dispatchCodeDatabase>[0]) => dispatchCodeDatabase(input, () => dbClient),
     token: { issuer, key, now },
     appProof: {
       ingress: async () => ({ limited: false, remaining: 1000, resetIn: 1000 }),
@@ -374,6 +413,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
             ? aiBudget
             : CODE_SETTINGS[name].default,
     );
+    dbSettingsSpy = spyOn(codeDatabaseSettings, "read").mockImplementation(async <K extends keyof typeof dbValues>(key: K) => ({
+      value: dbConfigured ? dbValues[key] : { ...dbValues, "core.code.rsql_url": "" }[key],
+      stored: "readable" as const,
+    }));
     aiSettingsSpy = spyOn(decision, "readAiSettingsState").mockResolvedValue(
       aiSettingsFixture({
         profiles: [aiModelFixture({ id: "clef", pricing: { inputPerMillion: 1, outputPerMillion: 2 } })],
@@ -395,6 +438,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   async function resetFixture(
     options: {
       personal?: boolean;
+      database?: boolean;
       invalidEntrypoint?: boolean;
       entry?: boolean;
       policyRows?: CodeCheckedVersionManifest["policyRows"];
@@ -412,6 +456,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     realRate = false;
     realAdmission = false;
     beforeIssue = undefined;
+    beforeDatabaseCreate = undefined;
+    beforeDatabaseExecute = undefined;
     await sql`UPDATE code.policy_rules SET value='automatic' WHERE group_id IS NULL`;
     const codeId = `c_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const [account] = await sql<
@@ -470,6 +516,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           line: 1,
         })),
       ],
+      ...(options.database ? { database: true } : {}),
       ai: options.policyRows?.includes("ai") ?? false,
       policyRows: options.policyRows ?? ["silent_shared"],
     };
@@ -488,6 +535,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       comparisonBundleHash: null,
     };
     await sql`INSERT INTO code.version_submissions(code_id,version_id,binding) VALUES(${codeId},${version!.id}::uuid,${JSON.stringify(binding)}::text::jsonb)`;
+    if (options.database)
+      await sql`UPDATE code.version_submissions SET evidence=evidence||'{"database":true}'::jsonb WHERE version_id=${version!.id}::uuid`;
     const [stored] = await sql`SELECT jsonb_typeof(v.source_files) AS source_kind,jsonb_typeof(v.manifest) AS manifest_kind,
       jsonb_typeof(s.binding) AS binding_kind FROM code.versions v JOIN code.version_submissions s ON s.version_id=v.id
       WHERE v.id=${version!.id}::uuid`;
@@ -533,6 +582,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   beforeEach(async () => {
     await sql`TRUNCATE code.ai_daily_budget`;
     targetFailure = null;
+    dbConfigured = true;
+    dbFailure = null;
+    dbResult = [];
+    dbCreated.length = 0;
+    dbCalls.length = 0;
+    dbQuotas.length = 0;
     fileTransport = undefined;
     fileEntries = new Map();
     providerRequestsConfirmation = false;
@@ -540,11 +595,173 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   });
   afterAll(async () => {
     settingsSpy?.mockRestore();
+    dbSettingsSpy?.mockRestore();
     aiSettingsSpy?.mockRestore();
     registrySpy?.mockRestore();
     capabilitySpy?.mockRestore();
     await database?.drop();
     setSystemTime();
+  });
+
+  test.each([false, true])("database is lazy, uses the executing subject and survives versions (personal=%s)", async (personal) => {
+    await resetFixture({ personal, entry: true, database: true, permissions: [], policyRows: [] });
+    if (personal)
+      await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+    expect(await readCodeDatabaseUsage(claims.codeId, () => dbClient)).toEqual({
+      bytes: 0,
+      limit: CODE_SETTINGS["core.code.database_bytes"].default,
+      state: "unused",
+    });
+    expect(dbCreated).toEqual([]);
+    expect(await sql`SELECT code_id FROM code.databases WHERE code_id=${claims.codeId}`).toHaveLength(0);
+    const input = { sql: "SELECT ? AS value", params: ["persisted"] };
+    dbResult = [{ value: "persisted" }];
+    expect(await (await send({ operation: "db.query", input })).json()).toEqual({ ok: true, data: dbResult });
+    expect(await (await send({ operation: "db.query", input })).json()).toEqual({ ok: true, data: dbResult });
+    const [version] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
+      SELECT code_id,2,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by FROM code.versions WHERE id=${claims.versionId}::uuid RETURNING id`;
+    // A new immutable version gets a new bound mandate/run; the database remains keyed only by Code.
+    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding,evidence)
+      SELECT code_id,${version!.id}::uuid,jsonb_set(binding,'{versionId}',to_jsonb(${version!.id}::text)),evidence FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`UPDATE code.codes SET active_version_id=${version!.id}::uuid WHERE id=${claims.codeId}`;
+    const [account] = await sql<{ service_account_id: string }[]>`SELECT service_account_id FROM code.codes WHERE id=${claims.codeId}`;
+    const mandate = await mandates.create({
+      authority: { kind: "admin", userId },
+      subject: personal ? { type: "user", id: userId } : { type: "service_account", id: account!.service_account_id },
+      ownerAppId: "runner",
+      workloadType: "code.version",
+      workloadId: version!.id,
+      policy: null,
+    });
+    if (!mandate.ok) throw new Error(mandate.error.message);
+    const [run] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,input,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit)
+      SELECT code_id,${version!.id}::uuid,trigger,entrypoint,input,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit FROM code.runs WHERE id=${claims.runId}::uuid RETURNING id`;
+    claims = { ...claims, versionId: version!.id, runId: run!.id, mandateId: mandate.data.id, mandateRevision: mandate.data.revision };
+    expect(await (await send({ operation: "db.query", input })).json()).toEqual({ ok: true, data: dbResult });
+    expect(dbCreated).toEqual([codeDatabaseNamespace(claims.codeId)]);
+    expect(dbCalls.map((call) => call.namespace)).toEqual(Array(3).fill(codeDatabaseNamespace(claims.codeId)));
+    expect(dbQuotas).toEqual(Array(3).fill(CODE_SETTINGS["core.code.database_bytes"].default));
+  });
+
+  test("a first database call leaves heartbeats and Code admission available and concurrent provisioning fails without waiting", async () => {
+    await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    beforeDatabaseCreate = async () => {
+      started.resolve();
+      await finish.promise;
+    };
+    const pending = send({ operation: "db.query", input: { sql: "SELECT 1" } });
+    try {
+      await started.promise;
+      // These are the real heartbeat and global policy/revocation fences, checked without a timing-dependent wait.
+      await sql.begin(async (tx) => {
+        expect(await tx`SELECT id FROM code.runs WHERE id=${claims.runId}::uuid FOR UPDATE NOWAIT`).toHaveLength(1);
+        expect(await tx`SELECT singleton FROM code.policy FOR UPDATE NOWAIT`).toHaveLength(1);
+        expect(await tx`SELECT id FROM code.codes WHERE id=${claims.codeId} FOR UPDATE NOWAIT`).toHaveLength(1);
+        expect(await tx`SELECT id FROM auth.mandates WHERE id=${claims.mandateId}::uuid FOR UPDATE NOWAIT`).toHaveLength(1);
+      });
+      await expect(
+        sql.begin(async (tx) => {
+          await tx`SET LOCAL lock_timeout='250ms'`.simple();
+          await tx`SELECT id FROM code.codes WHERE id=${claims.codeId} FOR UPDATE NOWAIT`;
+          await deleteCodeDatabase(claims.codeId, tx, () => dbClient);
+        }),
+      ).rejects.toMatchObject({ code: "code_db_busy" });
+      await error({ operation: "db.query", input: { sql: "SELECT 1" } }, "code_db_busy", 503, 503);
+    } finally {
+      finish.resolve();
+      expect((await (await pending).json()).ok).toBe(true);
+    }
+    expect(dbCreated).toHaveLength(1);
+  });
+
+  test("an in-flight SQL statement holds no heartbeat, policy, Code or database row locks", async () => {
+    await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    beforeDatabaseExecute = async () => {
+      started.resolve();
+      await finish.promise;
+    };
+    const pending = send({ operation: "db.query", input: { sql: "SELECT 1" } });
+    try {
+      await started.promise;
+      await sql.begin(async (tx) => {
+        expect(await tx`SELECT id FROM code.runs WHERE id=${claims.runId}::uuid FOR UPDATE NOWAIT`).toHaveLength(1);
+        expect(await tx`SELECT singleton FROM code.policy FOR UPDATE NOWAIT`).toHaveLength(1);
+        expect(await tx`SELECT id FROM code.codes WHERE id=${claims.codeId} FOR UPDATE NOWAIT`).toHaveLength(1);
+        expect(await tx`SELECT code_id FROM code.databases WHERE code_id=${claims.codeId} FOR UPDATE NOWAIT`).toHaveLength(1);
+        expect(await tx`SELECT id FROM auth.mandates WHERE id=${claims.mandateId}::uuid FOR UPDATE NOWAIT`).toHaveLength(1);
+      });
+    } finally {
+      finish.resolve();
+      expect((await (await pending).json()).ok).toBe(true);
+    }
+  });
+
+  test("database calls require both checker manifest and submission evidence", async () => {
+    await error({ operation: "db.query", input: { sql: "SELECT 1" } }, "code_db_undeclared", 403, 403);
+    await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
+    await sql`UPDATE code.version_submissions SET evidence=evidence-'database' WHERE version_id=${claims.versionId}::uuid`;
+    await error({ operation: "db.query", input: { sql: "SELECT 1" } }, "code_db_undeclared", 403, 403);
+    expect(dbCalls).toEqual([]);
+  });
+
+  test("two Codes cannot choose each other's namespace or reuse a manipulated token", async () => {
+    await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
+    const first = { ...claims };
+    await send({ operation: "db.query", input: { sql: "SELECT 1" } });
+    await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
+    const second = { ...claims };
+    await send({ operation: "db.query", input: { sql: "SELECT 2" } });
+    expect(dbCalls.map((call) => call.namespace)).toEqual([codeDatabaseNamespace(first.codeId), codeDatabaseNamespace(second.codeId)]);
+    await error(
+      { operation: "db.query", input: { sql: "SELECT 1", namespace: codeDatabaseNamespace(first.codeId) } },
+      "code_db_invalid",
+      400,
+    );
+    const signed = await signCodeRunToken(second, { issuer, signer, now, deadlineAt: now.getTime() + 300000 });
+    const [header, payload, signature] = signed.split(".");
+    const forged = Buffer.from(
+      JSON.stringify({ ...JSON.parse(Buffer.from(payload!, "base64url").toString()), codeId: first.codeId }),
+    ).toString("base64url");
+    await error(
+      { operation: "db.query", input: { sql: "SELECT 1" }, token: `${header}.${forged}.${signature}` },
+      "code_invalid_token",
+      403,
+      403,
+    );
+    const before = dbCalls.length;
+    const response = await send({ operation: "db.query", input: { sql: "SELECT 1" }, change: { codeId: first.codeId } });
+    expect((await response.json()).ok).toBe(false);
+    const token = await signCodeRunToken(first, { issuer, signer, now, deadlineAt: now.getTime() + 300000 });
+    await error({ operation: "db.query", input: { sql: "SELECT 1" }, token }, "runner_lease_lost", 409, 409);
+    expect(dbCalls).toHaveLength(before);
+  });
+
+  test("database quota, result bytes and every DB call share the bridge budget", async () => {
+    await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
+    dbFailure = "code_db_full";
+    await error({ operation: "db.exec", input: { sql: "INSERT INTO notes VALUES (?)", params: ["bound"] } }, "code_db_full", 413);
+    dbFailure = null;
+    dbResult = "x".repeat(262145);
+    await error({ operation: "db.query", input: { sql: "SELECT body FROM notes" } }, "code_db_limit", 400);
+    callLimit = 2;
+    await error({ operation: "db.batch", input: { statements: [{ sql: "DELETE FROM notes" }] } }, "code_call_limit", 429);
+    expect(dbQuotas).toHaveLength(2);
+  });
+
+  test("missing RSQL refuses only database calls and never creates a namespace", async () => {
+    await resetFixture({ entry: true, database: true });
+    dbConfigured = false;
+    await error({ operation: "db.query", input: { sql: "SELECT 1" } }, "code_db_unavailable", 503, 503);
+    expect(dbCreated).toEqual([]);
+    expect((await (await send({ operation: "example.read" })).json()).ok).toBe(true);
   });
 
   async function runnerProtocolRequest(path: string, body: object, app: AppKey | null = runner) {

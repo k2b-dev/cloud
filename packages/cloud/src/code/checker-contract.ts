@@ -58,6 +58,7 @@ export const CodeVersionManifestSchema = z
     entrypoints: z.array(CodeVersionEntrypointSchema),
     permissions: z.array(CodePermissionSchema),
     ai: z.boolean(),
+    database: z.boolean().optional(),
     internet: CodeInternetOriginsSchema.optional(),
     hashes: z.object({ source: hash, sdk: hash, bundle: hash }).strict(),
   })
