@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { history, undo } from "@codemirror/commands";
-import { Compartment, EditorState, StateEffect } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
@@ -68,6 +68,16 @@ test("the empty-note offer reads only short notes", () => {
   expect(isBlankNoteText("# New Document\n")).toBe(true);
   expect(isBlankNoteText(`# Title\n${" ".repeat(2000)}`)).toBe(false);
   expect(isBlankNoteText("# Title\n\nBody")).toBe(false);
+});
+
+test("the empty-note offer shows for the title alone and leaves with a second line, also an empty one", () => {
+  expect(isBlankNoteText("")).toBe(true);
+  expect(isBlankNoteText("# Title")).toBe(true);
+  expect(isBlankNoteText(Text.of(["# Title", ""]))).toBe(true);
+  expect(isBlankNoteText("# Title\n\n")).toBe(false);
+  expect(isBlankNoteText("# Title\n ")).toBe(false);
+  expect(isBlankNoteText("# Title\n/")).toBe(false);
+  expect(isBlankNoteText("\n# Title\n")).toBe(false);
 });
 
 test("a note that turns read-only while the template loads stays as it is", async () => {
