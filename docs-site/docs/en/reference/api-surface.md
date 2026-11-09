@@ -520,7 +520,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/resource-links` | Supported, browser | Recognize pasted Cloud URLs with `resolveCloudUrl()` and read the canonical `cloudOrigin()` | [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/cloud-id` | Supported, browser | "Copy Cloud ID" entry for a resource's "…" menu | [Resource copy and paste](/en/docs/platform/resource-references#copy-a-cloud-id) |
-| `@k2b/cloud/browser/panel` | Supported, browser | `openPanel`, `closePanel`, and `onPanelBeforeLeave`: open or close the panel and protect unfinished provider work | [Panels](/en/docs/platform/panels) |
+| `@k2b/cloud/browser/panel` | Supported, browser | `openPanel`, `closePanel`, `askPanelConsent`, and `onPanelBeforeLeave`: open or close the panel, ask the slot's consent question again, and protect unfinished provider work | [Panels](/en/docs/platform/panels) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
 | `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |

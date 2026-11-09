@@ -1,5 +1,7 @@
 import type { PanelPageContext } from "../contracts/panel-context";
 
+// Its own module, so the eager bundles of providers that never ask (Help) carry none of it.
+export { askPanelConsent } from "./panel-consent";
 export { onPanelBeforeLeave } from "./panel-leave";
 
 import {
