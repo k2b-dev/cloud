@@ -150,6 +150,10 @@ any content. So treat the request as a hint, never as a fact. Take only the ID
 from it, ask the service's API for the real state with your secret, and act on
 that answer. First ask, then act.
 
+Code sees the method, the path, the query, the content type and the body of a
+request, but no request headers. A webhook therefore arrives only with a JSON,
+plain text or form body.
+
 A fictional shipping service calls `/hooks/shipments` with a shipment ID.
 When the service confirms the delivery, the Code files one Space task:
 
@@ -197,9 +201,9 @@ Why this stays safe without a signature:
 - If your access check runs for every route, it must let the webhook path
   through. A private prefix such as `/team`, as above, does that.
 
-Public routes accept JSON, plain text or form bodies up to 4 KiB, answer
-within 8 seconds and share a limit of 20 requests per minute per client
-network and per Code. With the default policy, the public route and the
+A public request body has at most 4 KiB. The route answers within 8 seconds,
+and public routes share a limit of 20 requests per minute per client network
+and per Code. With the default policy, the public route and the
 internet origin need an administrator's approval. This release has no
 signature check for incoming requests.
 
