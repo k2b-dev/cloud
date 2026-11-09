@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../ui/test/browser";
 import {
   attach,
   type Device,
@@ -189,6 +189,66 @@ describe("names in the app bar", () => {
       expect(result.placed).toEqual([]);
     } finally {
       await context.close();
+    }
+  });
+
+  test("a pointer only tints an entry; keyboard focus draws Cloud's shared ring inside it and moves nothing", async () => {
+    for (const device of [desktop, laptop]) {
+      setRailNames(true);
+      const { context, page } = await open(device, "/app/mail/inbox?catalog=1");
+      try {
+        const look = (selector: string) =>
+          page
+            .locator(selector)
+            .first()
+            .evaluate((element) => {
+              const style = getComputedStyle(element);
+              const probe = document.createElement("span");
+              probe.style.color = "var(--k2b-focus-ring)";
+              element.append(probe);
+              const ring = getComputedStyle(probe).color;
+              probe.remove();
+              return {
+                box: JSON.stringify(element.getBoundingClientRect()),
+                edges: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+                outline: [style.outlineStyle, style.outlineWidth, style.outlineColor, style.outlineOffset],
+                shadow: style.boxShadow,
+                background: style.backgroundColor,
+                focused: element.matches(":focus-visible"),
+                ring,
+              };
+            });
+        const inactive = ".layout-rail a.rail-item:not(.rail-item-active)";
+        const rest = await look(inactive);
+        await hoverInPlace(page.locator(inactive).first());
+        await settled(page);
+        const hovered = await look(inactive);
+        expect(hovered.edges).toEqual(["0px", "0px", "0px", "0px"]);
+        expect(hovered.outline[0]).toBe("none");
+        expect(hovered.background).not.toBe(rest.background);
+        expect(hovered.box).toBe(rest.box);
+        await page.mouse.move(device.width - 1, device.height - 1);
+        await settled(page);
+        for (const selector of [
+          ".layout-rail-logo > a",
+          inactive,
+          ".layout-rail a.rail-item-active",
+          ".layout-rail [data-cloud-launchpad]",
+          ".layout-rail .layout-profile-preferences__link",
+        ]) {
+          const before = await look(selector);
+          await page.keyboard.press("Shift");
+          await page.locator(selector).first().focus();
+          await settled(page);
+          const focused = await look(selector);
+          expect([selector, focused.focused]).toEqual([selector, true]);
+          expect([selector, ...focused.outline]).toEqual([selector, "solid", "2px", focused.ring, "-2px"]);
+          expect([selector, focused.shadow]).toEqual([selector, "none"]);
+          expect([selector, focused.box]).toEqual([selector, before.box]);
+        }
+      } finally {
+        await context.close();
+      }
     }
   });
 
