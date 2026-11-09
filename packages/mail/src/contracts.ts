@@ -3495,6 +3495,8 @@ export const draftSchema = z.object({
   requestReadReceipt: z.boolean(),
   attachments: z.array(draftAttachmentSchema),
   suggestion: z.boolean(),
+  /** Name of the account that suggested this untouched draft; null once it is no suggestion. */
+  suggestedBy: z.string().min(1).nullable(),
   createdBy: draftActorRefSchema,
   lastEditedBy: draftActorRefSchema,
   lastEditedByDisplayName: z.string().min(1),

@@ -564,7 +564,8 @@ export function mailboxData(url: URL): MailboxPageData {
                       ? { ...row, assigneeUserIds: [teamUsers[1]!.id, teamUsers[0]!.id] }
                       : row,
                 )
-              : // ?drafts=1: a colleague's draft in the first conversation; ?suggestion=1: Gustav's untouched suggestion there.
+              : // ?drafts=1: a colleague's draft in the first conversation; ?suggestion=1: an untouched suggestion there,
+                // from Gustav or the account named by ?suggestionBy=.
                 url.searchParams.has("drafts") || url.searchParams.has("suggestion")
                 ? listRows.map((row, index) =>
                     index === 0
@@ -574,7 +575,11 @@ export function mailboxData(url: URL): MailboxPageData {
                             count: 1,
                             editors: [
                               url.searchParams.has("suggestion")
-                                ? { kind: "service_account" as const, id: "00000000-0000-4000-8000-0000000000e1", displayName: "Gustav" }
+                                ? {
+                                    kind: "service_account" as const,
+                                    id: "00000000-0000-4000-8000-0000000000e1",
+                                    displayName: url.searchParams.get("suggestionBy") ?? "Gustav",
+                                  }
                                 : { kind: "user" as const, id: "00000000-0000-4000-8000-0000000000e2", displayName: "Jonas Example" },
                             ],
                           },

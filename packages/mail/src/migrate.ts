@@ -85,9 +85,12 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       ALTER TABLE mail.drafts ALTER COLUMN adopted_at DROP DEFAULT;
     END IF;
   END $$`.simple();
-  await tx`CREATE UNIQUE INDEX IF NOT EXISTS drafts_untouched_suggestion_idx
-    ON mail.drafts (mailbox_id, conversation_id)
+  // One untouched suggestion per conversation and author. The earlier index allowed one per conversation, so a
+  // second automated author received the first author's suggestion; every row it allowed also fits this one.
+  await tx`CREATE UNIQUE INDEX IF NOT EXISTS drafts_untouched_suggestion_author_idx
+    ON mail.drafts (mailbox_id, conversation_id, author_id)
     WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL`.simple();
+  await tx`DROP INDEX IF EXISTS mail.drafts_untouched_suggestion_idx`.simple();
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_suggestion_requests (
     mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
     service_account_id uuid NOT NULL,

@@ -120,6 +120,48 @@ suite("mail baseline schema", () => {
     }
   });
 
+  test("replaces the one-suggestion-per-conversation index with one per conversation and author", async () => {
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
+      VALUES (${newShortId()}, 'Suggestion index upgrade') RETURNING id`;
+    const mailboxId = mailbox!.id;
+    try {
+      const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
+        (short_id, mailbox_id, label, from_address, automation_policy, status)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Sender', 'index@example.test', 'disabled', 'verified') RETURNING id`;
+      const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
+        (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Question', 'customer@example.test', now()) RETURNING id`;
+      const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+        (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, plain_text)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${crypto.randomUUID()}@example.test>`}, 'Question', now(),
+          1, ${"c5".padEnd(64, "0")}, 'complete', 'Question') RETURNING id`;
+      // The index an earlier release created.
+      await sql`DROP INDEX IF EXISTS mail.drafts_untouched_suggestion_author_idx`.simple();
+      await sql`CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
+        WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL
+          AND conversation_id IS NOT NULL`.simple();
+      await migrate();
+      const indexes = await sql<{ indexname: string }[]>`SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'mail' AND indexname LIKE 'drafts_untouched_suggestion%' ORDER BY indexname`;
+      expect(indexes.map((row) => row.indexname)).toEqual(["drafts_untouched_suggestion_author_idx"]);
+      const suggest = (author: string) => sql`INSERT INTO mail.drafts
+        (short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id, author_kind, author_id,
+          last_editor_kind, last_editor_id)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversation!.id}::uuid, 'reply', ${message!.id}::uuid,
+          ${sender!.id}::uuid, 'service_account', ${author}::uuid, 'service_account', ${author}::uuid)`;
+      const [first, second] = [crypto.randomUUID(), crypto.randomUUID()];
+      await suggest(first);
+      await suggest(second);
+      const duplicate = await suggest(first).then(
+        () => null,
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+      expect(duplicate).toContain("drafts_untouched_suggestion_author_idx");
+    } finally {
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    }
+  });
+
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;

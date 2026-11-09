@@ -31,7 +31,7 @@ export const mailRowHasFourthLine = (
   item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants" | "drafts">,
 ): boolean => item.localTags.length > 0 || item.workStatus === "waiting" || item.drafts.count > 0 || mailRowShowsParticipants(item);
 
-/** A single draft only Gustav has written is his suggestion; it shows in plum until a person takes it over. */
+/** A single draft only an automated account has written is that account's suggestion; plum until a person takes it over. */
 export const mailRowDraftIsSuggestion = (drafts: MailListItem["drafts"]): boolean =>
   drafts.count === 1 && drafts.editors.length > 0 && drafts.editors.every((editor) => editor.kind === "service_account");
 
@@ -482,7 +482,7 @@ export default function MailConversationRow(props: {
                     const names = () => props.item.drafts.editors.map((editor) => editor.displayName).join(", ");
                     const label = () =>
                       suggestion()
-                        ? t().gustavSuggestion
+                        ? t().suggestionFrom({ name: props.item.drafts.editors[0]!.displayName })
                         : props.item.drafts.count === 1
                           ? t().draftOne
                           : t().draftMany({ count: props.item.drafts.count });

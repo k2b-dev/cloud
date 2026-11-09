@@ -1604,7 +1604,8 @@ export default function MailComposer(props: {
           >
             <span class="mail-inline-draft-intent">
               <i class="ti ti-sparkles" aria-hidden="true" />
-              {t().suggestionFromGustav}
+              {/* The account that suggested it; a pod from before `suggestedBy` still names the last (automated) editor. */}
+              {t().suggestionFrom({ name: draft()?.suggestedBy ?? draft()?.lastEditedByDisplayName ?? "" })}
             </span>
           </Show>
           <span class="mail-inline-draft-field-label">{t().to}</span>

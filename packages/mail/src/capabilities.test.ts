@@ -197,6 +197,7 @@ const draftFixture = {
     },
   ],
   suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId },
   lastEditedBy: { kind: "user", userId },
   lastEditedByDisplayName: "Ada",

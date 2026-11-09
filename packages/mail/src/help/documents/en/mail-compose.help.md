@@ -83,7 +83,7 @@ Your default format is in **… → Settings → Writing → Compose format**. C
 
 Drafts belong to the mailbox, not only to the browser that created them. A conversation shows its drafts: the open one in the pill's place, every other one as a row with who wrote it, when it changed, and a preview. Choose a row to open it in place. **Reply**, **Reply all**, or **Forward** opens an existing draft with the same purpose instead of starting a second one. In the list, a conversation with drafts shows **Draft** or the number of drafts with the people who write them.
 
-A suggestion from Gustav is a real draft that is already open in the conversation, in plum, with **Type to take it over, or send it as it is**. It never sends by itself; **Send** sends it as it is. Once someone changes anything, recipients included, it is an ordinary draft, and Gustav never replaces it.
+A suggestion from Gustav or another automated account is a real draft that is already open in the conversation, in plum, with the account's name, for example **Suggestion from Gustav**, and **Type to take it over, or send it as it is**. It never sends by itself; **Send** sends it as it is. Once someone changes anything, recipients included, it is an ordinary draft, and the account never replaces it. Each account has at most one such suggestion in a conversation.
 
 Mail saves the shared draft while you work. It also keeps a recovery journal in the browser for changes that have not reached the server yet. After a reload or a broken connection, Mail can restore these browser changes.
 

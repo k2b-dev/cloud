@@ -147,6 +147,7 @@ type DbDraft = {
   author_kind: DraftActor["kind"];
   author_id: string | null;
   adopted_at: Date | string | null;
+  suggested_by: string | null;
   last_editor_kind: DraftActor["kind"];
   last_editor_id: string | null;
   last_editor_display_name?: string;
@@ -213,6 +214,10 @@ const draftColumns = () => sql`
   d.author_kind,
   d.author_id,
   d.adopted_at,
+  CASE WHEN d.author_kind = 'service_account' AND d.adopted_at IS NULL THEN COALESCE(
+    (SELECT NULLIF(author_account.name, '') FROM auth.service_accounts author_account WHERE author_account.id = d.author_id),
+    'Former service account'
+  ) END AS suggested_by,
   d.last_editor_kind,
   d.last_editor_id,
   d.to_addresses,
@@ -327,6 +332,7 @@ const mapDraft = (row: DbDraft): MailDraft => ({
   requestReadReceipt: row.request_read_receipt,
   attachments: parseArray(row.attachments),
   suggestion: row.author_kind === "service_account" && row.adopted_at === null,
+  suggestedBy: row.suggested_by,
   createdBy: actorFromColumns(row.author_kind, row.author_id),
   lastEditedBy: actorFromColumns(row.last_editor_kind, row.last_editor_id),
   lastEditedByDisplayName:
@@ -787,11 +793,14 @@ const insertComposeDraftInTransaction = async (params: {
     return ok(draft);
   };
   if (params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted && params.prepared.conversationId) {
-    const key = `mail:suggestion:${params.mailboxId}:${params.prepared.conversationId}`;
+    // One untouched suggestion per conversation and author: an account only ever gets its own suggestion back.
+    const author = actorId(params.actor);
+    const key = `mail:suggestion:${params.mailboxId}:${params.prepared.conversationId}:${author}`;
     await params.db`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
     const [existing] = await params.db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d
       WHERE d.mailbox_id = ${params.mailboxId}::uuid AND d.conversation_id = ${params.prepared.conversationId}::uuid
-        AND d.state IN ('draft', 'scheduled', 'sending') AND d.author_kind = 'service_account' AND d.adopted_at IS NULL
+        AND d.state IN ('draft', 'scheduled', 'sending') AND d.author_kind = 'service_account' AND d.author_id = ${author}::uuid
+        AND d.adopted_at IS NULL
       FOR UPDATE`;
     if (existing) {
       const access = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", params.db);

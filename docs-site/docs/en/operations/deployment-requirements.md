@@ -1269,7 +1269,8 @@ shows the signature below the text.
 Update all Mail replicas together before enabling Gustav suggestions. Earlier
 replicas do not record human adoption or enforce `DRAFT_ADOPTED`.
 The next start adds `mail.drafts.adopted_at`, the constraint allowing one
-untouched suggestion per conversation, and creation-key mappings. No setting
+untouched suggestion per conversation and author (it replaces the earlier
+one-per-conversation index), and creation-key mappings. No setting
 is required. Existing drafts are treated as adopted because earlier editor
 attribution cannot establish whether a person ever changed them. Their content
 and authorship stay intact.
