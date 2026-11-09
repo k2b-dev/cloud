@@ -1146,50 +1146,62 @@ const routeTaskCommand = (page: Page) =>
     }),
   );
 
-test("Assistant keeps the field and its open command list while the draft's own save creates the chat", async () => {
-  fixture.assistant.reset();
-  const context = await newContext();
-  const page = await context.newPage();
-  page.setDefaultTimeout(8_000);
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await routeTaskCommand(page);
-  await page.route("**/api/capabilities/v1/commands/**", (route) => route.fulfill({ status: 503, json: { message: "Not opened here" } }));
-  await page.route("**/api/ai/conversations", async (route) => {
-    if (route.request().method() === "POST") await gate;
-    await route.continue();
-  });
-  try {
-    await page.goto(`${fixture.url}app/assistant`);
-    await page.locator('html[data-fixture-ready="true"]').waitFor();
-    const composer = page.locator('textarea:not([aria-hidden="true"])');
-    const created = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/ai/conversations"));
-    await composer.fill("Plan /");
-    await composer.click();
-    const command = page.getByRole("option").filter({ hasText: "Create task" });
-    await command.waitFor();
-    // The person pauses in the list; 2 s after the last edit, the draft's save creates the chat and is held.
-    await created;
-    const field = await composer.evaluate((element: HTMLTextAreaElement) => ({
-      disabled: element.disabled,
-      focused: element === document.activeElement,
-    }));
-    expect(field).toEqual({ disabled: false, focused: true });
-    expect(await command.isVisible()).toBe(true);
-    // Chosen during the create, the command continues in that chat: it saves the draft there and asks for the app.
-    const resolved = page.waitForRequest("**/api/capabilities/v1/commands/**");
-    await command.click();
-    release();
-    await resolved;
-    expect(fixture.assistant.conversations.size).toBe(1);
-    expect(fixture.assistant.submitted()).toBe(0);
-  } finally {
-    await context.close();
-    release();
-  }
-}, 30_000);
+test.each(["command", "send"] as const)(
+  "Assistant keeps the field usable while the draft's own save creates the chat (%s)",
+  async (action) => {
+    fixture.assistant.reset();
+    const context = await newContext();
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await routeTaskCommand(page);
+    await page.route("**/api/capabilities/v1/commands/**", (route) => route.fulfill({ status: 503, json: { message: "Not opened here" } }));
+    await page.route("**/api/ai/conversations", async (route) => {
+      if (route.request().method() === "POST") await gate;
+      await route.continue();
+    });
+    try {
+      await page.goto(`${fixture.url}app/assistant`);
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      const composer = page.locator('textarea:not([aria-hidden="true"])');
+      const created = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/ai/conversations"));
+      await composer.fill(action === "command" ? "Plan /" : "Plan the trip");
+      await composer.click();
+      const command = page.getByRole("option").filter({ hasText: "Create task" });
+      if (action === "command") await command.waitFor();
+      // The person pauses; 2 s after the last edit, the draft's save creates the chat and is held.
+      await created;
+      const field = await composer.evaluate((element: HTMLTextAreaElement) => ({
+        disabled: element.disabled,
+        focused: element === document.activeElement,
+      }));
+      expect(field).toEqual({ disabled: false, focused: true });
+      if (action === "command") {
+        expect(await command.isVisible()).toBe(true);
+        // Chosen during the create, the command continues in that chat: it saves the draft there and asks for the app.
+        const resolved = page.waitForRequest("**/api/capabilities/v1/commands/**");
+        await command.click();
+        release();
+        await resolved;
+      } else {
+        // Sent during the create, the message goes to that chat once it exists.
+        const sent = page.waitForResponse((response) => response.url().endsWith("/turns") && response.ok());
+        await composer.press("Enter");
+        release();
+        await sent;
+      }
+      expect(fixture.assistant.conversations.size).toBe(1);
+      expect(fixture.assistant.submitted()).toBe(action === "send" ? 1 : 0);
+    } finally {
+      await context.close();
+      release();
+    }
+  },
+  30_000,
+);
 
 for (const width of [1440, 390]) {
   for (const pending of ["create", "save"] as const) {
