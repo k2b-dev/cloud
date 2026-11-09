@@ -61,4 +61,12 @@ export const chartFixtures = {
     data: [{ label: "Campaign A", group: "North", x: 20, y: 40, size: 25 }],
   },
   radar: { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Plan A", data: [4, 3, 2] }] },
+  sankey: {
+    kind: "sankey",
+    nodes: [
+      { id: "a", label: "Click" },
+      { id: "b", label: "Read" },
+    ],
+    links: [{ source: "a", target: "b", value: 42 }],
+  },
 } satisfies { [K in ChartProps["kind"]]: Extract<ChartProps, { kind: K }> };

@@ -350,6 +350,22 @@ const examples = {
       ],
     },
   },
+  sankey: {
+    description: "Sankey · Follow converging paths after a newsletter click; losses stay visible.",
+    chart: {
+      kind: "sankey",
+      nodes: [
+        { id: "a", label: "Click" },
+        { id: "b", label: "Read", tone: "green" },
+        { id: "c", label: "Signup", tone: "in" },
+      ],
+      links: [
+        { source: "a", target: "b", value: 120 },
+        { source: "a", target: "c", value: 20 },
+        { source: "b", target: "c", value: 60 },
+      ],
+    },
+  },
 } satisfies { [K in ChartKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
 
 type TooltipField = { label: string; unit?: string; names?: Record<string, string> };
@@ -476,6 +492,15 @@ const tooltipExamples: Record<ChartKind, TooltipExample> = {
     title: "Ranked causes",
     fields: { value: { label: "Current" }, previous: { label: "Previous" }, cumulative: { label: "Cumulative" } },
   },
+  sankey: {
+    title: "Paths after the click",
+    fields: {
+      incoming: { label: "Incoming" },
+      outgoing: { label: "Outgoing" },
+      value: { label: "Readers" },
+      percent: { label: "Share", unit: "%" },
+    },
+  },
 };
 
 const createTooltip =
@@ -575,6 +600,21 @@ const euro = new Intl.NumberFormat("en", { style: "currency", currency: "EUR", m
 
 /** Bar labels in every state: few short labels as columns, rows for long labels, negative values, many categories. */
 const barStates = [
+  {
+    title: "Nested dot matrix: clicks are part of opens",
+    chart: {
+      kind: "bar",
+      layout: "nested",
+      marks: "dots",
+      total: 1000,
+      dots: 100,
+      x: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      series: [
+        { label: "Opened", data: [780, 620, 810, 690, 570] },
+        { label: "Clicked", data: [320, 210, 420, 290, 190] },
+      ],
+    },
+  },
   {
     title: "Few short labels stand below columns with their values",
     chart: {

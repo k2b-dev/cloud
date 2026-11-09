@@ -106,6 +106,16 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
     await card.waitFor();
     const reserved = (await card.boundingBox())!.height;
     expect(reserved).toBe(360);
+    // In the chat the card is an island: it carries the island shadow, like a Paper beside it.
+    expect(
+      await card.evaluate((element) => {
+        const probe = document.body.appendChild(document.createElement("div"));
+        probe.style.boxShadow = "var(--k2b-shadow-raised)";
+        const raised = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        return getComputedStyle(element).boxShadow === raised && raised !== "none";
+      }),
+    ).toBe(true);
     // The chat sidebar jumps to a result through this attribute.
     expect(await card.getAttribute("data-presentation-id")).toBe("00000000-0000-4000-8000-000000000001");
     release();

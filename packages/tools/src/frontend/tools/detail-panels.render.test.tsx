@@ -82,7 +82,7 @@ describe("Tools detail panels", () => {
     expect(kind).toContain("202");
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('data-size="sm"');
     const properties = html.indexOf(">Properties<");
@@ -96,7 +96,7 @@ describe("Tools detail panels", () => {
     expect(html.slice(more)).toContain("Request headers");
     expect(html.slice(more)).toContain("Response headers");
     // Closed header sections name their header keys.
-    expect(html.slice(more)).toContain('class="k2b-detail-panel__section-preview k2b-truncate-fade">content-type</span>');
+    expect(html.slice(more)).toContain('class="k2b-section__summary k2b-truncate-fade">content-type</span>');
     expect(html.slice(html.indexOf('class="k2b-detail-panel__primary-actions"'))).toContain("<span>Copy JSON</span>");
     expect(html).toContain('aria-label="Close request details"');
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
@@ -125,7 +125,7 @@ describe("Tools detail panels", () => {
     expect(html).toContain("<h2>invoice.png</h2>");
     expect(html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"))).toContain("Image");
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain('aria-label="More image actions"');
     expect(html).toContain("1200 × 800 px");
     expect(html).toContain('<img src="data:image/png;base64,aW1hZ2U=" alt="Preview"');

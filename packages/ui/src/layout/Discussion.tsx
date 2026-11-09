@@ -1,9 +1,9 @@
-import { children, createEffect, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
+import { children, createEffect, createSignal, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { useChatMessages } from "../chat/chat-messages";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
 import { useUiMessages } from "../intl/messages";
-import { DetailPanelCount } from "./DetailPanel";
+import { Section } from "../surfaces/Section";
 import { useDetailPanelMessages } from "./detail-panel-messages";
 
 export type DiscussionProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class"> & {
@@ -70,38 +70,24 @@ type DiscussionComponent = ((props: DiscussionProps) => JSX.Element) & {
 
 const classNames = (base: string, extra?: string): string => (extra ? `${base} ${extra}` : base);
 
+/** A discussion is a `Section`: the same frame, heading, count, and one action as every topic beside it. */
 const DiscussionRoot = (props: DiscussionProps): JSX.Element => {
-  const headingId = `k2b-discussion-${createUniqueId()}`;
   const [local, sectionProps] = splitProps(props, ["label", "children", "icon", "count", "actions", "as", "surface", "class"]);
 
   return (
-    <section
+    <Section
       {...sectionProps}
       class={classNames("k2b-discussion", local.class)}
       data-surface={local.surface ?? "default"}
-      data-icon={local.icon ? "true" : undefined}
-      aria-labelledby={headingId}
+      title={local.label}
+      icon={local.icon || undefined}
+      count={local.count}
+      actions={local.actions}
+      level={local.as === "h2" ? 2 : 3}
+      frame={local.surface === "bare" ? "none" : undefined}
     >
-      <header class="k2b-discussion__header">
-        <Show when={local.icon !== false && local.icon}>
-          {(icon) => (
-            <span class="k2b-discussion__icon" aria-hidden="true">
-              <i class={icon()} />
-            </span>
-          )}
-        </Show>
-        <Show when={local.as === "h2"} fallback={<h3 id={headingId}>{local.label}</h3>}>
-          <h2 id={headingId}>{local.label}</h2>
-        </Show>
-        <Show when={local.count !== undefined}>
-          <DetailPanelCount count={local.count ?? 0} />
-        </Show>
-        <Show when={local.actions !== undefined}>
-          <div class="k2b-discussion__actions">{local.actions}</div>
-        </Show>
-      </header>
       <div class="k2b-discussion__body">{local.children}</div>
-    </section>
+    </Section>
   );
 };
 

@@ -1935,8 +1935,8 @@ export default function KanbanBoard(props: Props) {
                             }`}
                             style={
                               active()
-                                ? `border-color:${wormhole.color};box-shadow:var(--ui-focus),inset 0 2px 5px rgb(0 0 0 / 0.08)`
-                                : `border-color:color-mix(in srgb, ${wormhole.color} 30%, var(--ui-border));box-shadow:inset 0 1px 2px rgb(0 0 0 / 0.05)`
+                                ? `border-color:${wormhole.color};box-shadow:var(--ui-focus)`
+                                : `border-color:color-mix(in srgb, ${wormhole.color} 30%, var(--ui-border))`
                             }
                             title={dropLabel}
                           >

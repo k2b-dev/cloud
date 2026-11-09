@@ -769,7 +769,7 @@ describe("Files history in the workspace", () => {
     expect(inspector().textContent).not.toContain("Version 1");
     expect(toggle().getAttribute("aria-controls")).toBe(section().id);
     expect(toggle().textContent?.trim()).toBe("Loading details…");
-    expect(section().querySelector(".k2b-count-chip, .k2b-detail-panel__none")).toBeNull();
+    expect(section().querySelector(".k2b-count-chip, .k2b-section__none")).toBeNull();
     pending("shares").resolve(Response.json({ items: [], next: null }));
     pending("versions").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
     await flush();
@@ -778,7 +778,7 @@ describe("Files history in the workspace", () => {
     expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
     expect(section().textContent).toContain("Versions not loaded.");
     expect(section().textContent).not.toContain("No earlier versions");
-    expect(section().querySelector(".k2b-count-chip, .k2b-detail-panel__none")).toBeNull();
+    expect(section().querySelector(".k2b-count-chip, .k2b-section__none")).toBeNull();
     button(section(), "Try again")!.click();
     await flush();
     pending("versions").resolve(

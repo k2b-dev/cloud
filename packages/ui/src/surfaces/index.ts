@@ -9,6 +9,8 @@ export type { DescriptionListItem, DescriptionListProps } from "./DescriptionLis
 export { DescriptionList } from "./DescriptionList";
 export type { DotStripProps, DotStripTone } from "./DotStrip";
 export { DotStrip } from "./DotStrip";
+export type { FieldRowProps } from "./Field";
+export { Field } from "./Field";
 export type { LinkCardColor, LinkCardProps } from "./LinkCard";
 export { LinkCard } from "./LinkCard";
 export type { NotFoundStateAction, NotFoundStateProps } from "./NotFoundState";
@@ -34,6 +36,8 @@ export { ProgressRing } from "./ProgressRing";
 export { PERSON_COLORS, personColor } from "./person-color";
 export type { ResourceCardColor, ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
+export type { SectionFrame, SectionPartProps, SectionProps, SectionSize, SectionState, SectionTone } from "./Section";
+export { Section } from "./Section";
 export { Skeleton, type SkeletonProps } from "./Skeleton";
 export type { StatCellAccent, StatCellCompare, StatCellDelta, StatCellProps, StatCellSize, StatCellTone } from "./StatCell";
 export { StatCell } from "./StatCell";

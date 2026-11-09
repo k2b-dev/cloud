@@ -1253,10 +1253,82 @@
   outline-offset: 3px;
 }
 
-/* On touch screens the last button's enlarged hit area reaches past the screen edge, which would let the page scroll
-   sideways on a phone. The edge cuts it off; menus and tooltips are popovers and stay visible. */
+/* Two floating pills over the bottom edge of the note (layers and shadows, layer 3): formatting at the start edge,
+   comments, reading, and details at the end edge. The row lets the pointer through to the note between them; the
+   note scrolls beneath them and ends above them (`.notebook-editor-endgap`). Solid, never glass, over text. On touch
+   screens the last button's enlarged hit area reaches past the screen edge, which would let the page scroll sideways
+   on a phone; the row cuts it off, and menus and tooltips are popovers that stay visible. */
+.notebook-editor-frame[data-notebook-pills] {
+  --notebook-pill-room: calc(3.25rem + 1rem + 2rem);
+}
+.notebook-editor-endgap {
+  flex: none;
+  height: var(--notebook-pill-room, 0px);
+}
+/* The row stays in the flow but pulls itself up over the note by its own height, so it takes no room, and the
+   keyboard lift (a bottom margin from @k2b/editor) still shrinks the scroller and keeps the caret line visible. */
 .k2b-ui .notebooks-editor-toolbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 4.5rem;
+  min-width: 0;
+  margin-top: -4.5rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.625rem;
+  padding: 0.5rem 1rem 1rem;
   overflow-x: clip;
+  pointer-events: none;
+}
+/* When sync has ended, the recovery bar takes the pills' place as one pill of the same height. */
+.k2b-ui .notebooks-editor-toolbar[data-sync-ended] {
+  height: 3rem;
+  margin: -4rem 1rem 1rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: 999px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
+  pointer-events: auto;
+}
+.k2b-ui .notebooks-editor-pill {
+  display: flex;
+  min-width: 0;
+  height: 3rem;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: 999px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
+  pointer-events: auto;
+}
+/* Formatting takes the room it needs and scrolls sideways when the row is narrow. */
+.k2b-ui .notebooks-editor-pill--format {
+  flex: 0 1 auto;
+}
+.k2b-ui .notebooks-editor-pill--page {
+  flex: none;
+}
+.k2b-ui .notebooks-editor-pill .k2b-button {
+  border-radius: 999px;
+}
+/* On a phone the formatting pill fades at its end into the surface, so it reads as "scrolls on". */
+@media not all and (min-width: 48rem) {
+  .k2b-ui .notebooks-editor-toolbar {
+    padding-inline: 0.5rem;
+    gap: 0.375rem;
+  }
+  .k2b-ui .notebooks-editor-pill--format .notebooks-editor-toolbar__tools {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent);
+  }
 }
 /* Touch screens have no undo keys, so Undo and Redo lead the toolbar there and stay out of it elsewhere. */
 .k2b-ui .notebooks-editor-toolbar .notebooks-editor-toolbar__history,
@@ -2288,7 +2360,8 @@
   border-radius: 4px;
   background: #fff;
   color: #18181b;
-  box-shadow: 0 6px 24px -10px rgb(0 0 0 / .35), 0 0 0 1px rgb(0 0 0 / .06);
+  /* A printed page in the dialog: an island with a hairline, always light like paper. */
+  box-shadow: 0 0 0 1px rgb(0 0 0 / .06), var(--k2b-shadow-raised);
   font-size: 11.5px;
   line-height: 1.45;
   --k2b-text-muted: #52525b;
@@ -2568,10 +2641,13 @@
   background: var(--k2b-surface-muted);
   color: var(--k2b-text);
 }
+/* The active margin comment lifts as an island beside the text; in rest it stays flat. */
 .notebook-comment[data-active] {
   z-index: 3;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  background: var(--k2b-surface-raised);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--k2b-border) 72%, transparent),
+    var(--k2b-shadow-raised);
   color: var(--k2b-text);
 }
 .notebook-comment[data-resolved] {

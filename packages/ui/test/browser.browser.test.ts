@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, errors } from "playwright";
-import { browserName, killProcessGroup, launchBrowser, pageErrors, recordTestServer, settled, viewTransitionEnded } from "../test/browser";
+import {
+  browserName,
+  hoverInPlace,
+  killProcessGroup,
+  launchBrowser,
+  pageErrors,
+  recordTestServer,
+  settled,
+  viewTransitionEnded,
+} from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
@@ -159,6 +168,47 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       await context.close();
     }
   }, 20_000);
+
+  test("a retried hover() scrolls the page, and hoverInPlace() never does", async () => {
+    const context = await browser.newContext({ viewport: { width: 400, height: 600 } });
+    try {
+      const page = await context.newPage();
+      // The target sits in view but on no edge or center line that hover()'s retry scrolls to. A cover takes the
+      // first attempt's pointer and goes away with the first scroll, as a transient cover does on a busy machine.
+      await page.setContent(`<!doctype html>
+        <style>body { margin: 0; height: 3000px; } #target, #cover { position: absolute; top: 1100px; left: 20px; width: 80px; height: 40px; }</style>
+        <div id="target"></div><div id="cover"></div>
+        <script>
+          // The page's own first scroll arms the removal; the next scroll, by hover()'s retry, removes the cover.
+          const remove = () => document.getElementById("cover")?.remove();
+          addEventListener("scroll", () => addEventListener("scroll", remove, { once: true }), { once: true });
+          scrollTo(0, 900);
+        </script>`);
+      const pageScroll = () => page.evaluate(() => window.scrollY);
+      await settled(page);
+      expect(await pageScroll()).toBe(900);
+
+      const covered = await hoverInPlace(page.locator("#target"), { x: 5, y: 5 }).then(
+        () => "hovered",
+        (error: Error) => error.message,
+      );
+      expect(covered).toBe("hoverInPlace: div#cover is at the point, not the target");
+      expect(await pageScroll()).toBe(900);
+
+      await page.locator("#target").hover({ position: { x: 5, y: 5 } });
+      expect(await pageScroll()).not.toBe(900);
+
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await settled(page);
+      const box = await page.locator("#target").boundingBox();
+      await hoverInPlace(page.locator("#target"), { x: 5, y: 5 });
+      await settled(page);
+      expect(await page.evaluate(() => document.querySelector("#target:hover") !== null)).toBe(true);
+      expect(await page.locator("#target").boundingBox()).toEqual(box);
+    } finally {
+      await context.close();
+    }
+  });
 
   test("settled() returns on a page with a scroll-driven and an infinite animation", async () => {
     const context = await browser.newContext();

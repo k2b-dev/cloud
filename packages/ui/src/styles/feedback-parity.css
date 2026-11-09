@@ -32,6 +32,24 @@
 
 /* ---------------------------------------------------------------- dialog */
 
+/* A dialog is the frame: a `Section` inside it stands flat, as in index.css
+   for sections inside Paper, a panel dialog, or another section. */
+.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  outline-offset: var(--k2b-focus-offset);
+}
+
 .k2b-ui .k2b-dialog {
   position: fixed;
   top: 50%;
@@ -768,18 +786,10 @@
 
 /* --------------------------------------------------------- hover preview */
 
-/* A card beside a list row or navigation item. Depth stays inside the card: a
-   bottom inner shade instead of an outer shadow, and no divider lines. */
-.k2b-ui {
-  --k2b-hover-preview-depth: inset 0 -1.375rem 1.625rem -1.625rem rgb(15 23 19 / 0.14);
-}
-
-.k2b-ui[data-theme="dark"],
-.k2b-ui.k2b-dark,
-.dark .k2b-ui {
-  --k2b-hover-preview-depth: inset 0 1px 0 rgb(255 255 255 / 0.04), inset 0 -1.375rem 1.625rem -1.625rem rgb(0 0 0 / 0.6);
-}
-
+/* A card beside a list row or navigation item, on layer 3: it floats with the
+   float shadow outside and a light edge, and has no divider lines. Content
+   that does not fit fades out with a mask to the surface (`data-scroll-fade`,
+   ScrollArea, or the content's own mask), never with a dark inner shade. */
 .k2b-ui [popover].k2b-hover-preview {
   position: fixed;
   inset: auto;
@@ -789,11 +799,11 @@
   margin: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--k2b-border-strong);
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-hover-preview-depth);
+  box-shadow: var(--k2b-shadow-float);
   font-size: 0.875rem;
   font-weight: 400;
   line-height: 1.5;
