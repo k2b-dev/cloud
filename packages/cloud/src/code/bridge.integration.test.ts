@@ -1842,7 +1842,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const fixture = await fileFixture();
     const first = await fixture.read();
     await aiRead(first.data);
-    await expect(aiRead(first.data)).rejects.toMatchObject({ code: "code_file_spent" });
+    await expect(aiRead(first.data)).rejects.toMatchObject({ code: "code_file_spent", status: 409 });
     expect(await (await fixture.write(first.data)).json()).toMatchObject({ ok: false, error: { code: "code_file_spent" } });
     const next = await fixture.read();
     const concurrent = await Promise.allSettled([aiRead(next.data), aiRead(next.data)]);
@@ -1851,6 +1851,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       status: "rejected",
       reason: { code: "code_file_spent" },
     });
+  }, 30_000);
+  test("AI file reads retain the owning Mail app's 404 after an attachment is deleted", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    await sql`DELETE FROM mail.attachments WHERE short_id='At4g00'`;
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_source_refused", status: 404 });
   }, 30_000);
   test("AI initialization rejects changed signed run coordinates, mandate bindings, account and deadline", async () => {
     const fixture = await fileFixture();
@@ -2064,7 +2070,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_invalid" });
     claims = original;
     fixture.extraByte();
-    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_size_limit" });
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_size_limit", status: 400 });
     const fresh = await fixture.read();
     callLimit = 1;
     await expect(aiRead(fresh.data)).rejects.toMatchObject({ code: "code_call_limit" });

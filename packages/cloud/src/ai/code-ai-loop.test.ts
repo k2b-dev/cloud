@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { aiDecisionInput } from "../../../core/src/ai-decision-capability";
 import { aiGenerationInput, aiGenerationOutputSchema } from "../../../core/src/ai-generation-capability";
+import * as codeAiLoop from "../../../core/src/code/ai-loop";
 
 const file = { id: "sealed-ref-from-this-run", mediaType: "application/pdf", size: 100 };
 const request = { task: "invoice.extract", prompt: "Extract invoice lines.", input: {}, output: { type: "text", maxChars: 100 } };
@@ -104,5 +105,46 @@ test("viewer call IDs satisfy the same normalized-call contract as direct SDK ca
     const capability = codeAiFileToolOperation(name);
     expect(NormalizedCapabilityCallSchema.safeParse({ capability, target: null, refs: {}, input: {} }).success).toBe(true);
     expect(capability.startsWith("core.ai.")).toBe(false);
+  }
+});
+
+test.each([
+  [403, 403],
+  [404, 404],
+  [200, 403],
+  [418, 403],
+  [409, 403],
+  [503, 403],
+] as const)("file refusal status %s becomes %s through generation and decision capabilities", async (status, expected) => {
+  const { geoTestContext } = await import("../services/geo/geo.test-fixture");
+  const { aiGenerationQuery } = await import("../../../core/src/ai-generation-capability");
+  const { aiDecisionQuery } = await import("../../../core/src/ai-decision-capability");
+  const failure = Object.assign(new Error(`The owning app refused the file (${status}).`), { code: "code_file_source_refused", status });
+  const prepare = spyOn(codeAiLoop, "prepareCodeAiLoop").mockRejectedValue(failure);
+  const context = {
+    ...geoTestContext,
+    actor: geoTestContext.actor!,
+    accessSubject: geoTestContext.accessSubject!,
+    user: null,
+    locale: "en",
+    requestId: "file-refusal",
+    origin: "http" as const,
+    signal: new AbortController().signal,
+  };
+  try {
+    const generate = await aiGenerationQuery.run(aiGenerationInput.parse({ ...request, files: [file] }), context);
+    const decide = await aiDecisionQuery.run(
+      aiDecisionInput.parse({
+        task: "classify",
+        state: {},
+        questions: { valid: { type: "noul", instructions: "Invoice?" } },
+        files: [file],
+      }),
+      context,
+    );
+    for (const result of [generate, decide])
+      expect(result).toMatchObject({ ok: false, error: { code: failure.code, status: expected, message: failure.message } });
+  } finally {
+    prepare.mockRestore();
   }
 });

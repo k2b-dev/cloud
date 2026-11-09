@@ -1164,7 +1164,9 @@ A generate loop automatically offers `view_image` and `read_file` once refs
 appear in `files`, `input` or SDK tool results. They accept only those exact
 refs. Set `fileTools: false` to disable viewer tools; initial `files` still
 load. The owning app reads as the run's account and can refuse with a visible
-403. Both initial files and viewers use one reader.
+403 or 404. A refusal while attaching initial files rejects the SDK call as
+`CodeError` with that status. Viewer refusals are shown to the model. Both
+initial files and viewers use one reader.
 
 Models with vision receive image pixels and rendered PDF pages directly.
 Text-only models use a separately charged vision description. Each PDF look

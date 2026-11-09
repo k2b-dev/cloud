@@ -213,7 +213,11 @@ const messages = i18n.define({
   },
 });
 
-const failure = z.object({ code: z.string().optional(), aiError: z.object({ code: z.string() }).optional() });
+const failure = z.object({
+  code: z.string().optional(),
+  status: z.union([z.literal(403), z.literal(404)]).catch(403),
+  aiError: z.object({ code: z.string() }).optional(),
+});
 export const aiGenerationQuery = {
   title: "Generate text or structured data",
   description:
@@ -380,7 +384,7 @@ export const aiGenerationQuery = {
           error: {
             code: original,
             message: cause instanceof Error ? cause.message : original,
-            status: 403 as const,
+            status: parsed.success ? parsed.data.status : 403,
             ...(modelRef && !unknownUsage
               ? { details: { aiUsage: { model: modelRef, usage: { ...usage, byModel: [...byModel.values()] } } } }
               : {}),

@@ -34,17 +34,18 @@ test("viewer accepts only exact refs seen in this invocation, including input an
   expect(a.read).toHaveBeenCalledTimes(1);
 });
 
-test("attachments and viewer share one reader, and an owning app refusal stays visible", async () => {
+test.each([403, 404])("attachments and viewer share one reader, and an owning app status %s stays visible", async (status) => {
   const { files, read } = fixture();
   files.add([ref]);
   expect(await files.attach([ref])).toHaveLength(1);
   await files.read({ ref });
   expect(read).toHaveBeenCalledTimes(1);
-  const refusal = Object.assign(new Error("source app refused (403)"), { code: "code_file_source_refused", status: 403 });
+  const refusal = Object.assign(new Error(`source app refused (${status})`), { code: "code_file_source_refused", status });
   read.mockRejectedValue(refusal);
   const denied = { ...ref, id: "denied" };
   files.add(denied);
   await expect(files.read({ ref: denied })).rejects.toBe(refusal);
+  await expect(files.attach([denied])).rejects.toBe(refusal);
 });
 
 test("native images and PDF pages reach vision models, while text models use one description", async () => {

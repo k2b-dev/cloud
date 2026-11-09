@@ -262,14 +262,16 @@ export const aiDecisionQuery = {
       const direct = z.object({ code: failureCode }).safeParse(cause);
       const policy = z.object({ aiError: z.object({ code: z.literal("model_policy_mismatch") }) }).safeParse(cause);
       if (!direct.success && !policy.success) {
-        const code = z.object({ code: z.string().regex(/^(?:code_|runner_lease_lost)/) }).safeParse(cause);
+        const code = z
+          .object({ code: z.string().regex(/^(?:code_|runner_lease_lost)/), status: z.union([z.literal(403), z.literal(404)]).catch(403) })
+          .safeParse(cause);
         if (code.success)
           return {
             ok: false as const,
             error: {
               code: code.data.code,
               message: cause instanceof Error ? cause.message : code.data.code,
-              status: 403 as const,
+              status: code.data.status,
               ...(details() ? { details: details() } : {}),
             },
           };

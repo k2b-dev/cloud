@@ -4,6 +4,7 @@ import { getCapability } from "../_internal/registry";
 import { CodeBridgeRefusal } from "../code/bridge-contract";
 import { type CodeFileRefSchema, codeFileBinding } from "../code/file-ref";
 import type { CodeRunTokenClaims } from "../code/run-token";
+import { RunnerCallErrorSchema } from "../code/runner-protocol";
 import { capabilityActionPolicy } from "../contracts/capabilities";
 import type { CodeRunnerDispatchDependencies } from "./capabilities";
 import { dispatchCapabilityStream, inspectCodeStream } from "./capability-streams";
@@ -91,8 +92,9 @@ export async function readCodeAiFile(input: {
     },
   );
   if (!bytes) {
-    const outcome = z.object({ error: z.object({ code: z.string() }) }).safeParse(await result.json());
+    const outcome = z.object({ error: RunnerCallErrorSchema }).safeParse(await result.json());
     const code = outcome.success ? outcome.data.error.code : "code_file_source_refused";
+    status = outcome.success ? (outcome.data.error.status ?? status) : status;
     throw Object.assign(new Error(`${code} (${status})`), { code, status });
   }
   return bytes;
