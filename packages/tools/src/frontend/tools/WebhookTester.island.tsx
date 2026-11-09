@@ -15,6 +15,7 @@ import {
   NoticeCard,
   prompts,
   ScrollArea,
+  Section,
   Select,
   StatusBadge,
   type StatusTone,
@@ -747,7 +748,7 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
       />
 
       <DetailPanel.Body scrollPreserveKey={`webhook-request-detail-${props.log.id}`}>
-        <DetailPanel.Section title={t().properties}>
+        <Section title={t().properties}>
           <DescriptionList
             layout="rows"
             size="sm"
@@ -757,7 +758,7 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
               { term: t().queryLabel, description: props.log.query || "-" },
             ]}
           />
-        </DetailPanel.Section>
+        </Section>
 
         <LogBlock title={t().requestBody} value={props.log.requestBody ?? "-"} />
         <LogBlock title={t().responseBody} value={props.log.responseBody ?? props.log.error ?? "-"} />
@@ -826,16 +827,16 @@ const LogBlock = (props: { title: string; value: unknown; collapsible?: boolean 
       return rows.length > 0 ? rows.map(([key]) => key).join(", ") : rawText();
     };
     return (
-      <DetailPanel.Section title={props.title} collapsible summary={summary()}>
+      <Section title={props.title} collapsible summary={summary()}>
         <div class="mb-2 flex justify-end gap-1">{commands()}</div>
         {content()}
-      </DetailPanel.Section>
+      </Section>
     );
   }
 
   return (
-    <DetailPanel.Section title={props.title} actions={commands()}>
+    <Section title={props.title} actions={commands()}>
       {content()}
-    </DetailPanel.Section>
+    </Section>
   );
 };
