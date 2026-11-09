@@ -15,8 +15,14 @@ const reportMargin = 15_000;
  * only outside agent sessions, as in CI. Each test file passes `browserName` itself: the root runner takes a file
  * that imports `packages/ui/test/browser` for a browser test.
  */
-export const defineKanbanPart = async (file: string, part: KanbanPart, title: string, browserName: string) => {
-  if (process.env.SPACES_KANBAN_BROWSER_CHILD === "1") {
+export const defineKanbanPart = async (
+  file: string,
+  part: KanbanPart,
+  title: string,
+  browserName: string,
+  env: Record<string, string | undefined>,
+) => {
+  if (env.SPACES_KANBAN_BROWSER_CHILD === "1") {
     await import("./kanban-board.browser-suite");
     return;
   }
@@ -24,7 +30,7 @@ export const defineKanbanPart = async (file: string, part: KanbanPart, title: st
     `${title} in ${browserName}`,
     async () => {
       const child = Bun.spawn([process.execPath, "test", file], {
-        env: { ...process.env, SPACES_KANBAN_BROWSER_CHILD: "1", SPACES_KANBAN_PART: part },
+        env: { ...env, SPACES_KANBAN_BROWSER_CHILD: "1", SPACES_KANBAN_PART: part },
         stdout: "pipe",
         stderr: "pipe",
       });

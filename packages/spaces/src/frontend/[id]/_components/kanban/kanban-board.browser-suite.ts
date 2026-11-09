@@ -8,6 +8,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
 import { browserName, hoverInPlace, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { kanbanBrowserPart as selectedPart } from "../../../../../test/kanban-browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -602,7 +603,6 @@ const expectHitArea = (control: Awaited<ReturnType<typeof cardControls>>["grip"]
 // (#3026). Run directly, the suite runs every part.
 const parts = ["board", "keyboard", "head", "columns", "cards"] as const;
 export type KanbanPart = (typeof parts)[number];
-const selectedPart = process.env.SPACES_KANBAN_PART;
 if (selectedPart !== undefined && !parts.some((part) => part === selectedPart))
   throw new Error(`Unknown SPACES_KANBAN_PART "${selectedPart}"; expected one of ${parts.join(", ")}`);
 const describePart = (part: KanbanPart, title: string, define: () => void) => {
