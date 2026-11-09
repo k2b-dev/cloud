@@ -317,13 +317,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       headers: { "Content-Type": "application/json", ...(proof ? { Authorization: `Bearer ${proof}` } : {}) },
     });
   }
-  const error = async (options: Parameters<typeof send>[0], code: string, status?: number, capabilityStatus?: number) => {
+  const error = async (options: Parameters<typeof send>[0], code: string, errorStatus: number, httpStatus = 200) => {
     const before = fetched;
     const response = await send(options);
-    expect(response.status).toBe(status ?? 200);
+    expect(response.status).toBe(httpStatus);
     expect(await response.json()).toEqual({
       ok: false,
-      error: { code, ...(capabilityStatus === undefined ? {} : { status: capabilityStatus }) },
+      error: { code, status: errorStatus },
     });
     expect(fetched).toBe(before);
   };
@@ -566,7 +566,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       operation: "core.ai.decide",
       input: { call: { capability: "core.ai.decide", target: null, refs: {}, input: decisionInputFixture }, metadata: {} },
     });
-    expect(await response.json()).toEqual({ ok: false, error: { code: "code_policy_never" } });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_policy_never", status: 403 } });
     await expectPolicyRefusal();
   });
   test.each([false, true])("Code decision query reaches runAiDecision with the workload subject (personal=%s)", async (personal) => {
@@ -808,7 +808,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     aiBudget = 0;
     const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
     try {
-      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit", status: 429 } });
       expect(run).not.toHaveBeenCalled();
       await expectPolicyRefusal();
     } finally {
@@ -821,7 +821,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
     try {
       expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
-      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit", status: 429 } });
       expect(run).toHaveBeenCalledTimes(1);
       const [cost] =
         await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call FROM code.runs WHERE id=${claims.runId}::uuid`;
@@ -850,7 +850,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         }),
       ]);
       const responses = await Promise.all([sendDecision(), sendDecision()]);
-      for (const response of responses) expect(await response.json()).toEqual({ ok: false, error: { code: "code_ai_budget_reserved" } });
+      for (const response of responses)
+        expect(await response.json()).toEqual({ ok: false, error: { code: "code_ai_budget_reserved", status: 409 } });
       expect(run).not.toHaveBeenCalled();
     } finally {
       finish.resolve();
@@ -861,7 +862,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         run.mockRestore();
       }
     }
-    expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+    expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit", status: 429 } });
   });
   test("settlement releases unused reservation and sums later AI calls", async () => {
     await resetFixture({ entry: true, policyRows: ["ai"] });
@@ -870,7 +871,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     try {
       for (let call = 0; call < 2; call++)
         expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
-      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit", status: 429 } });
       expect(run).toHaveBeenCalledTimes(2);
     } finally {
       run.mockRestore();
@@ -905,7 +906,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         FROM code.runs WHERE id=${claims.runId}::uuid`;
       expect(budget).toEqual({ cost: "0", reserved: "0", ai_budget_call: null });
       aiSettingsSpy.mockRejectedValueOnce(new Error("fixture unavailable"));
-      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_bridge_unavailable" } });
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_bridge_unavailable", status: 503 } });
       run.mockResolvedValue(decisionResultFixture);
       expect(await (await sendDecision()).json()).toEqual({ ok: true, data: { data: decisionResultFixture } });
       expect(run).toHaveBeenCalledTimes(2);
@@ -921,7 +922,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       beforeIssue = async () => {
         await sql`UPDATE code.policy_rules SET value='never' WHERE group_id IS NULL AND row='ai'`;
       };
-      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_policy_never" } });
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_policy_never", status: 403 } });
       expect(run).not.toHaveBeenCalled();
       beforeIssue = undefined;
       await sql`UPDATE code.policy_rules SET value='automatic' WHERE group_id IS NULL AND row='ai'`;
@@ -976,7 +977,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const expired = await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id=${runner.keyId}::uuid AND jti='expired-c4'`;
     expect(expired).toHaveLength(0);
   });
-  test("another app's valid signature is refused", async () => error({ app: other }, "code_runner_required", 403));
+  test("another app's valid signature is refused", async () => error({ app: other }, "code_runner_required", 403, 403));
   test("only the runner avoids the shared app-key bucket in production admission", async () => {
     realAdmission = true;
     const limits = spyOn(rateLimits, "ratelimit");
@@ -984,7 +985,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     try {
       expect((await send()).status).toBe(200);
       expect(limits.mock.calls.filter(([config]) => config.id === "app-bootstrap-key")).toHaveLength(0);
-      await error({ app: other }, "code_runner_required", 403);
+      await error({ app: other }, "code_runner_required", 403, 403);
       expect(limits.mock.calls.filter(([config]) => config.id === "app-bootstrap-key")).toHaveLength(1);
     } finally {
       limits.mockRestore();
@@ -1009,17 +1010,17 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     }
   });
   test("run token is required even with an enrolled runner signature", async () =>
-    error({ token: "not-a-token" }, "code_invalid_token", 403));
+    error({ token: "not-a-token" }, "code_invalid_token", 403, 403));
   test("own HTTP origins are refused at bridge ingress", async () => {
-    await error({ operation: "http.fetch", input: { url: `${issuer}/api/auth` } }, "code_http_origin_forbidden");
+    await error({ operation: "http.fetch", input: { url: `${issuer}/api/auth` } }, "code_http_origin_forbidden", 403);
     await expectPolicyRefusal();
   });
   test("HTTP calls still check the current lease and are observed", async () => {
-    await error({ operation: "http.fetch", input: { url: `${issuer}/api` } }, "code_http_origin_forbidden");
+    await error({ operation: "http.fetch", input: { url: `${issuer}/api` } }, "code_http_origin_forbidden", 403);
     const rows = await sql`SELECT state FROM code.calls WHERE run_id=${claims.runId}::uuid`;
     expect(rows).toEqual([expect.objectContaining({ state: "failed" })]);
     await sql`UPDATE code.runs SET generation=2 WHERE id=${claims.runId}::uuid`;
-    await error({ operation: "http.fetch", input: { url: "https://external.example" } }, "runner_lease_lost", 409);
+    await error({ operation: "http.fetch", input: { url: "https://external.example" } }, "runner_lease_lost", 409, 409);
   });
   test("all configured app domains and redirect hosts are own origins", async () => {
     await sql`INSERT INTO settings.app_domains(host,app_id) VALUES('bridge-app.example','example')`;
@@ -1105,56 +1106,58 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     beforeIssue = async () => {
       throw new AppAccessDeniedError({ id: "example" });
     };
-    await error({ operation: "example.read" }, "app_access_denied", 200, 403);
+    await error({ operation: "example.read" }, "app_access_denied", 403);
     const [row] = await sql`SELECT c.refusal_kind,r.first_refused_call_ordinal FROM code.calls c JOIN code.runs r ON r.id=c.run_id
       WHERE c.run_id=${claims.runId}::uuid`;
     expect(row).toMatchObject({ refusal_kind: "app_not_allowed", first_refused_call_ordinal: null });
   });
   test("paused Code refuses a current attempt", async () => {
     await sql`UPDATE code.codes SET state='paused' WHERE id=${claims.codeId}`;
-    await error({}, "code_not_active");
+    await error({}, "code_not_active", 409);
   });
   test("the current wall-clock budget refuses an overlong attempt", async () => {
     await sql`UPDATE code.runs SET started_at=clock_timestamp()-interval '301 seconds' WHERE id=${claims.runId}::uuid`;
-    await error({}, "code_wall_clock_limit");
+    await error({}, "code_wall_clock_limit", 429);
   });
   test("the checked version must still bind its entrypoint", async () => {
     await resetFixture({ invalidEntrypoint: true });
-    await error({}, "code_version_mismatch");
+    await error({}, "code_version_mismatch", 409);
   });
   test("a personal owner cannot use another subject's mandate", async () => {
     await resetFixture({ personal: true });
-    await error({}, "code_mandate_mismatch");
+    await error({}, "code_mandate_mismatch", 409);
   });
   test("a revoked administrator approval refuses calls", async () => {
     await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
       SELECT version_id,binding,true,false,${userId}::uuid,'session',-1 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
-    await error({}, "code_approval_revoked");
+    await error({}, "code_approval_revoked", 403);
     await expectPolicyRefusal("approval");
   });
   test("oversized input gets a stable refusal before invocation", async () => {
     await sql`UPDATE code.runs SET payload_bytes=8 WHERE id=${claims.runId}::uuid`;
-    await error({}, "code_input_limit");
+    await error({}, "code_input_limit", 400);
   });
   test("unstorable JSON input gets a stable refusal before invocation", async () => {
     await error(
       { input: { call: { capability: "example.write", target: item, refs: {}, input: { value: "\u0000" } }, metadata: {} } },
       "code_input_limit",
+      400,
     );
   });
   test("malformed sandbox SDK calls keep their stable refusal", async () => {
-    await error({ input: {} }, "code_invalid_call");
+    await error({ input: {} }, "code_invalid_call", 400);
     await error(
       { operation: "example.other", input: { call: { capability: "example.write", target: item, refs: {}, input: {} }, metadata: {} } },
       "code_invalid_call",
+      400,
     );
   });
   test("a stale generation is fenced with 409", async () => {
     await sql`UPDATE code.runs SET generation=2 WHERE id=${claims.runId}::uuid`;
-    await error({}, "runner_lease_lost", 409);
+    await error({}, "runner_lease_lost", 409, 409);
   });
-  test("the request generation cannot disagree with the signed token", async () => error({ generation: 2 }, "runner_lease_lost", 409));
-  test("the immutable bundle hash is checked", async () => error({ change: { bundleHash: "b".repeat(64) } }, "code_bundle_mismatch", 200));
+  test("the request generation cannot disagree with the signed token", async () => error({ generation: 2 }, "runner_lease_lost", 409, 409));
+  test("the immutable bundle hash is checked", async () => error({ change: { bundleHash: "b".repeat(64) } }, "code_bundle_mismatch", 409));
   test("an expired token is refused", async () => {
     const token = await signCodeRunToken(claims, {
       issuer,
@@ -1162,16 +1165,16 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       now: new Date(now.getTime() - 301_000),
       deadlineAt: now.getTime() - 1000,
     });
-    await error({ token }, "code_invalid_token", 403);
+    await error({ token }, "code_invalid_token", 403, 403);
   });
   test("current policy Never overrides the checked manifest immediately", async () => {
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='silent_shared' AND group_id IS NULL`;
-    await error({}, "code_policy_never", 200);
+    await error({}, "code_policy_never", 403);
     await expectPolicyRefusal();
   });
   test("a new admin policy requires an actual version approval", async () => {
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='silent_shared' AND group_id IS NULL`;
-    await error({}, "code_approval_required", 200);
+    await error({}, "code_approval_required", 403);
     await expectPolicyRefusal("approval");
   });
   test("an existing version approval cannot cover an omitted actual classification", async () => {
@@ -1179,19 +1182,19 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'silent_shared')`;
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
-    await error({ operation: "example.read" }, "code_approval_required", 200);
+    await error({ operation: "example.read" }, "code_approval_required", 403);
     await expectPolicyRefusal("approval");
   });
   test("actual admin policy requires a decision as well as row coverage", async () => {
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read')`;
-    await error({ operation: "example.read" }, "code_approval_required");
+    await error({ operation: "example.read" }, "code_approval_required", 403);
     await expectPolicyRefusal("approval");
   });
   test("a changed decision binding is refused without reading executable payloads", async () => {
     await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
       SELECT version_id,jsonb_set(binding,'{bundleHash}',to_jsonb(${"b".repeat(64)}::text)),true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
-    await error({}, "code_hash_mismatch");
+    await error({}, "code_hash_mismatch", 409);
     await expectPolicyRefusal("approval");
   });
   test("the C11 authority wrapper classifies actual HTTP calls as internet", async () => {
@@ -1225,7 +1228,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       },
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: false, error: { code: "code_policy_never" } });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_policy_never", status: 403 } });
   });
   for (const row of ["ai", "internet"] as const)
     test(`${row}: the bridge requires version approval before admitting the call`, async () => {
@@ -1271,12 +1274,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
             return Response.json({ ok: true, data: null });
           },
         );
-      expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required" } });
+      expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required", status: 403 } });
       expect(executed).toBe(0);
       await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
         SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
       if (row === "internet") {
-        expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required" } });
+        expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required", status: 403 } });
         expect(executed).toBe(0);
       }
       await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,${row})`;
@@ -1300,20 +1303,21 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           input: { call, metadata: scenario.operation === "example.sends" ? { idempotencyKey: "release-refusal" } : {} },
         },
         scenario.code,
+        403,
       );
     });
 
   test("a changed mandate revision is refused", async () => {
     await sql`UPDATE auth.mandates SET revision=revision+1 WHERE id=${claims.mandateId}::uuid`;
-    await error({}, "code_mandate_mismatch", 200);
+    await error({}, "code_mandate_mismatch", 409);
   });
   test("an expired lease is fenced independently of the valid token", async () => {
     await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${claims.runId}::uuid`;
-    await error({}, "runner_lease_lost", 409);
+    await error({}, "runner_lease_lost", 409, 409);
   });
-  test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden", 200, 403));
+  test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden", 403));
   test("the same operation at another target is refused", async () =>
-    error({ target: { ...item, id: "b" } }, "code_capability_undeclared", 403));
+    error({ target: { ...item, id: "b" } }, "code_capability_undeclared", 403, 403));
   test.each(["core.code.file.read", "core.code.file.view"] as const)(
     "%s observations are trusted accounting only, while SDK calls remain constrained",
     async (operation) => {
@@ -1341,7 +1345,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         },
       );
       expect(external.status).toBe(403);
-      expect(await external.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+      expect(await external.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
       expect(executed).toBe(1);
       expect(await sql<{ state: string }[]>`SELECT state FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`).toEqual([
         { state: "succeeded" },
@@ -1394,7 +1398,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         },
       );
       expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+      expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
       expect(executed).toBe(false);
     }
   });
@@ -1415,19 +1419,20 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   });
   test("policy-free entries refuse operations and targets absent from version evidence and log the refusal", async () => {
     await resetFixture({ entry: true, permissions: [{ operation: "example.write", target: item, file: "code.ts", line: 1 }] });
-    await error({ operation: "example.other" }, "code_capability_undeclared", 403);
-    await error({ target: { ...item, id: "b" } }, "code_capability_undeclared", 403);
+    await error({ operation: "example.other" }, "code_capability_undeclared", 403, 403);
+    await error({ target: { ...item, id: "b" } }, "code_capability_undeclared", 403, 403);
     await error(
       { input: { call: { capability: "example.write", target: item, refs: { hidden: { ...item, id: "b" } }, input: {} }, metadata: {} } },
       "code_capability_undeclared",
+      403,
       403,
     );
     await expectPolicyRefusal();
     const rows = await sql`SELECT state,result FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`;
     expect(rows).toEqual([
-      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared" } } },
-      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared" } } },
-      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared" } } },
+      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared", status: 403 } } },
+      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared", status: 403 } } },
+      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared", status: 403 } } },
     ]);
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
   });
@@ -1461,7 +1466,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         input: { call: { capability: "core.ai.generate", target: null, refs: {}, input: {} }, metadata: {} },
       });
       expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+      expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
       expect(fetched).toBe(before);
       await expectPolicyRefusal();
       const [run] = await sql`SELECT ai_reserved_cost::text AS reserved FROM code.runs WHERE id=${claims.runId}::uuid`;
@@ -1475,28 +1480,28 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     targetAccess = access!.id;
     expect(await (await send({ operation: "example.other" })).json()).toEqual({ ok: true, data: { value: "a" } });
     await sql`UPDATE auth.mandates SET state='paused' WHERE id=${claims.mandateId}::uuid`;
-    await error({}, "code_mandate_mismatch");
+    await error({}, "code_mandate_mismatch", 409);
   });
   test("an all-admin policy requires version approval and coverage for each actual call", async () => {
     await resetFixture({ entry: true });
     await sql`UPDATE code.policy_rules SET value='admin' WHERE group_id IS NULL`;
-    await error({ operation: "example.read" }, "code_approval_required");
-    await error({}, "code_approval_required");
+    await error({ operation: "example.read" }, "code_approval_required", 403);
+    await error({}, "code_approval_required", 403);
     await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
       SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'silent_shared')`;
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
-    await error({ operation: "example.read" }, "code_approval_required");
+    await error({ operation: "example.read" }, "code_approval_required", 403);
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read'),(${claims.versionId}::uuid,'ask_app_asks')`;
     expect(await (await send({ operation: "example.read" })).json()).toEqual({ ok: true, data: { data: { value: "a" } } });
-    await error({ operation: "example.asks" }, "code_unattended_forbidden");
+    await error({ operation: "example.asks" }, "code_unattended_forbidden", 403);
   });
 
   test("new entries still obey actual-call admin policy, current grants and unattended refusals", async () => {
     await resetFixture({ entry: true });
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
-    await error({ operation: "example.read" }, "code_approval_required");
-    await error({ operation: "example.asks" }, "code_unattended_forbidden");
+    await error({ operation: "example.read" }, "code_approval_required", 403);
+    await error({ operation: "example.asks" }, "code_unattended_forbidden", 403);
     await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
     expect(await (await send()).json()).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
   });
@@ -1507,9 +1512,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
       }
       await sql`UPDATE auth.mandates SET confirmed_at=NULL,confirmation_deadline=created_at+interval '15 minutes' WHERE id=${claims.mandateId}::uuid`;
-      await error({}, "code_mandate_mismatch");
+      await error({}, "code_mandate_mismatch", 409);
       await sql`UPDATE auth.mandates SET confirmed_at=created_at,confirmation_deadline=NULL,state='paused' WHERE id=${claims.mandateId}::uuid`;
-      await error({}, "code_mandate_mismatch");
+      await error({}, "code_mandate_mismatch", 409);
     }
   });
   test("a revoked current Code target grant is refused at the provider", async () => {
@@ -1520,7 +1525,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   test("call limit is durable and current admin tightening applies", async () => {
     callLimit = 1;
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
-    await error({}, "code_call_limit", 200);
+    await error({}, "code_call_limit", 429);
   });
   async function fileFixture(
     sourceAction = false,
@@ -2129,14 +2134,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     // Even forged tool-side evidence cannot expand the actual saved version's set.
     await resetFixture({ entry: true, permissions: [{ operation: "example.write", target: item, file: "code.ts", line: 1 }] });
     const before = fetched;
-    expect(await invoke("example.read")).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+    expect(await invoke("example.read")).toEqual({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
     expect(fetched).toBe(before);
     const [refused] = await sql<{ state: string; refusal_kind: string; result: unknown }[]>`SELECT state,refusal_kind,result
       FROM code.calls WHERE run_id=${claims.runId}::uuid`;
     expect(refused).toEqual({
       state: "failed",
       refusal_kind: "policy",
-      result: { ok: false, error: { code: "code_capability_undeclared" } },
+      result: { ok: false, error: { code: "code_capability_undeclared", status: 403 } },
     });
   });
   test("Mail event work changes use the stored trigger across the real signed bridge and provider", async () => {
@@ -2273,7 +2278,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(fixture.received()).toEqual(new Uint8Array(fixture.payload));
     expect(fixture.sourceBytes()).toBe(fixture.payload.length);
     expect(fixture.targetBytes()).toBe(fixture.payload.length);
-    expect(await (await fixture.write(file)).json()).toEqual({ ok: false, error: { code: "code_file_spent" } });
+    expect(await (await fixture.write(file)).json()).toEqual({ ok: false, error: { code: "code_file_spent", status: 409 } });
     const rows = await sql`SELECT digest FROM code.file_redemptions WHERE run_id=${claims.runId}::uuid`;
     expect(rows).toHaveLength(1);
     expect(rows[0]!.digest).not.toBe(file.id);
@@ -2294,7 +2299,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       ],
     });
     expect(await fixture.read()).toMatchObject({ ok: false, error: { code: "forbidden" } });
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
     expect(fixture.received()).toBeUndefined();
   }, 30_000);
   test.each(["read", "write"] as const)(
@@ -2309,12 +2314,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         },
       ]);
       const opened = await fixture.read();
-      if (direction === "read") expect(opened).toMatchObject({ ok: false, error: { code: "code_capability_undeclared" } });
+      if (direction === "read") expect(opened).toMatchObject({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
       else {
         expect(opened.ok).toBe(true);
         const response = await fixture.write(opened.data);
         expect(response.status).toBe(403);
-        expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+        expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
       }
       expect(fixture.sourceBytes()).toBe(0);
       expect(fixture.received()).toBeUndefined();
@@ -2329,7 +2334,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: true, data: { imported: true } });
     const fresh = await fixture.read();
     fileEntries.get("mail")!.manifest.policies!["attachment.content.read"] = { ask: "app_asks" };
-    expect(await (await fixture.write(fresh.data)).json()).toMatchObject({ ok: false, error: { code: "code_file_source_refused" } });
+    expect(await (await fixture.write(fresh.data)).json()).toMatchObject({
+      ok: false,
+      error: { code: "code_file_source_refused", status: 403 },
+    });
     expect(fixture.writes()).toBe(1);
   }, 30_000);
   test("4g references reject tampered metadata and another run or generation", async () => {
@@ -2340,7 +2348,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       { ...opened.data, name: "forged.xml" },
       { ...opened.data, mediaType: "text/xml" },
     ])
-      expect(await (await fixture.write(file)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+      expect(await (await fixture.write(file)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
     // A valid new run of the same executable cannot redeem the old run's reference.
     const original = { ...claims };
     const [run] = await sql<
@@ -2348,11 +2356,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit)
       VALUES(${claims.codeId},${claims.versionId}::uuid,'manual','weekly','running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
     claims = { ...claims, runId: run!.id };
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
     claims = original;
     await sql`UPDATE code.runs SET generation=2 WHERE id=${claims.runId}::uuid`;
     claims = { ...claims, generation: 2 };
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
   }, 30_000);
   test("4g a file expires before the run token and cannot be redeemed", async () => {
     const fixture = await fileFixture();
@@ -2360,7 +2368,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const opened = await fixture.read();
     try {
       setSystemTime(new Date(now.getTime() + 31_000));
-      expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+      expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
       expect(fixture.received()).toBeUndefined();
     } finally {
       setSystemTime(now);
@@ -2382,7 +2390,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await fixture.write(file)).json()).toEqual({ ok: true, data: { imported: true } });
     for (const id of [file.id.toUpperCase(), `${file.id.startsWith("01") ? "02" : "01"}${file.id.slice(2)}`]) {
       expect(id).not.toBe(file.id);
-      expect(await (await fixture.write({ ...file, id })).json()).toEqual({ ok: false, error: { code: "code_file_spent" } });
+      expect(await (await fixture.write({ ...file, id })).json()).toEqual({ ok: false, error: { code: "code_file_spent", status: 409 } });
     }
     expect(fixture.writes()).toBe(1);
   }, 30_000);
@@ -2415,7 +2423,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit)
       VALUES(${claims.codeId},${claims.versionId}::uuid,'manual','weekly','running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
     claims = { ...claims, runId: run!.id };
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
     const fresh = await fixture.read();
     expect(await (await fixture.write(fresh.data, undefined, "invoice-business-key")).json()).toEqual({
       ok: true,
@@ -2428,7 +2436,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const opened = await fixture.read();
     await sql`UPDATE auth.mandates SET revision=revision+1 WHERE id=${claims.mandateId}::uuid`;
     claims = { ...claims, mandateRevision: claims.mandateRevision + 1 };
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
     const fresh = await fixture.read();
     const previousVersion = claims.versionId;
     const [version] = await sql<
@@ -2450,7 +2458,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     if (!mandate.ok) throw new Error(mandate.error.message);
     await sql`UPDATE code.runs SET version_id=${version!.id}::uuid WHERE id=${claims.runId}::uuid`;
     claims = { ...claims, versionId: version!.id, mandateId: mandate.data.id, mandateRevision: mandate.data.revision };
-    expect(await (await fixture.write(fresh.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
+    expect(await (await fixture.write(fresh.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid", status: 400 } });
     // The replacement version is admitted and can obtain its own reference.
     expect(await fixture.read()).toMatchObject({ ok: true });
     expect(fixture.received()).toBeUndefined();
@@ -2459,7 +2467,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const fixture = await fileFixture();
     const opened = await fixture.read();
     fileEntries.get("mail")!.manifest.queries[0]!.stream!.maxBytes = fixture.payload.length - 1;
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_source_refused" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({
+      ok: false,
+      error: { code: "code_file_source_refused", status: 403 },
+    });
     expect(fixture.sourceBytes()).toBe(0);
     expect(fixture.received()).toBeUndefined();
   }, 30_000);
@@ -2470,46 +2481,49 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await fixture.write(opened.data)).json()).toMatchObject({ ok: false });
     expect(fixture.received()).toBeUndefined();
     expect(fixture.sourceBytes()).toBe(0);
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_spent" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_spent", status: 409 } });
   }, 30_000);
   test("4g source grant revoked after issuance refuses the actual read", async () => {
     const fixture = await fileFixture();
     const opened = await fixture.read();
     await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_source_refused" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({
+      ok: false,
+      error: { code: "code_file_source_refused", status: 403 },
+    });
     expect(fixture.received()).toBeUndefined();
   }, 30_000);
   test("4g target limits and exact reservation sizes are enforced before source bytes are pulled", async () => {
     const fixture = await fileFixture();
     const opened = await fixture.read();
     fileEntries.get("imports")!.manifest.actions[0]!.stream!.maxBytes = fixture.payload.length - 1;
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_size_limit" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_size_limit", status: 400 } });
     fileEntries.get("imports")!.manifest.actions[0]!.stream!.maxBytes = 100 * 1024 * 1024;
     fixture.offerSize(fixture.payload.length - 1);
-    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_mismatch" } });
+    expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_mismatch", status: 409 } });
     expect(fixture.sourceBytes()).toBe(0);
     expect(fixture.received()).toBeUndefined();
   }, 30_000);
   test("write streams without a file metadata input remain unavailable to Code", async () => {
     const entry = structuredClone(baseEntry);
     entry.manifest.actions.find((action) => action.localId === "write")!.stream = { direction: "write", maxBytes: 1024 };
-    await error({ entry }, "code_stream_forbidden");
+    await error({ entry }, "code_stream_forbidden", 403);
     await expectPolicyRefusal();
   });
   test("code:false is refused", async () => {
-    await error({ operation: "example.person" }, "code_disabled");
+    await error({ operation: "example.person" }, "code_disabled", 403);
     await expectPolicyRefusal();
   });
   test("code.access.* is refused even when present in a catalog", async () => {
     await resetFixture({ permissions: [{ operation: "example.code.access.set", target: item, file: "code.ts", line: 1 }] });
     const entry = structuredClone(baseEntry);
     entry.manifest.actions[0]!.localId = "code.access.set";
-    await error({ operation: "example.code.access.set", entry }, "code_access_forbidden");
+    await error({ operation: "example.code.access.set", entry }, "code_access_forbidden", 403);
     await expectPolicyRefusal();
   });
   test("Valkey admission refusal is visible and recorded", async () => {
     rateLimited = true;
-    await error({}, "code_rate_limited", 200);
+    await error({}, "code_rate_limited", 429);
     const rows = await sql`SELECT state,result FROM code.calls WHERE run_id=${claims.runId}::uuid`;
     expect(rows).toHaveLength(1);
     expect(rows[0]!.state).toBe("failed");
@@ -2517,9 +2531,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   test("two Core hosts share the actual Valkey rate bucket", async () => {
     realRate = true;
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
-    await error({}, "code_rate_limited", 200);
+    await error({}, "code_rate_limited", 429);
   });
-  test("asking Actions remain forbidden unattended", async () => error({ operation: "example.asks" }, "code_unattended_forbidden", 200));
+  test("asking Actions remain forbidden unattended", async () => error({ operation: "example.asks" }, "code_unattended_forbidden", 403));
   for (const operation of ["removes", "sends", "interactive"]) {
     test(`${operation} remains forbidden under an approved Code version`, async () => {
       await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
@@ -2529,24 +2543,25 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       await error(
         { operation: capability, input: { call, metadata: { idempotencyKey: `forbidden-${operation}` } } },
         operation === "sends" ? "code_sends_not_yet" : "code_unattended_forbidden",
+        403,
       );
     });
   }
   test("every actual call is classified even if the checked manifest omits it", async () => {
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='read' AND group_id IS NULL`;
-    await error({ operation: "example.read" }, "code_policy_never", 200);
+    await error({ operation: "example.read" }, "code_policy_never", 403);
   });
   test("lease loss between admission and signing never reaches the provider", async () => {
     beforeIssue = async () => {
       await sql`UPDATE code.runs SET generation=2 WHERE id=${claims.runId}::uuid`;
     };
-    await error({}, "runner_lease_lost", 409);
+    await error({}, "runner_lease_lost", 409, 409);
   });
   test("policy tightening between admission and signing never reaches the provider", async () => {
     beforeIssue = async () => {
       await sql`UPDATE code.policy_rules SET value='never' WHERE row='silent_shared' AND group_id IS NULL`;
     };
-    await error({}, "code_policy_never", 200);
+    await error({}, "code_policy_never", 403);
   });
   test("generic mandate dispatch cannot bypass the verified bridge", async () => {
     const response = await dispatchCapability({
@@ -2594,7 +2609,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         },
       });
       const result = await response.json();
-      if (page === 2) expect(result).toEqual({ ok: false, error: { code: "code_call_limit" } });
+      if (page === 2) expect(result).toEqual({ ok: false, error: { code: "code_call_limit", status: 429 } });
       else {
         expect(result).toEqual({ ok: true, data: { data: { value: "a" }, page: { hasMore: true, nextCursor: queryCursor } } });
         cursor = result.data.page.nextCursor;

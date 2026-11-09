@@ -155,7 +155,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
   );
   test("concurrent pushes share C8's atomic base guard and complete conflict diff", async () => {
     const initialized = await codeAuthoringServices.init({ title: "Weekly report" }, context);
-    expect(initialized.files["code.ts"]).toContain('{ name: "monday" }');
+    expect(initialized.files["code.ts"]).toContain('app.schedule({ cron: "0 8 * * 1", name: "monday" },');
     const common = { codeId: initialized.config.codeId, entry: "code.ts", baseVersionId: null };
     const outcomes = await Promise.allSettled([
       codeAuthoringServices.push({ ...common, files: { "code.ts": "first" } }, context),

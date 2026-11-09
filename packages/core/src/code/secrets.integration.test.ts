@@ -357,7 +357,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
       await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
       return { status: 307, headers: {}, body: new Uint8Array(), redirectLocation: "/next" };
     });
-    expect(await response.json()).toEqual({ ok: false, error: { code: "code_not_active" } });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_not_active", status: 409 } });
     expect(sent).toBe(1);
   });
   test("a declared redirect still resolves and refuses private DNS answers on its next hop", async () => {
