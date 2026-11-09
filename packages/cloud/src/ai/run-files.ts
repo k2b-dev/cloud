@@ -120,11 +120,8 @@ export function createAiRunFiles(options: {
     if (mediaBytes + size > AI_TURN_IMAGE_MAX_TOTAL_BYTES) fail("code_file_byte_limit");
     let description: string | undefined;
     if (options.model.profile.capabilities.includes("vision")) {
-      {
-        if (estimateTokens([{ role: "user", content: [...media, ...parts] }]) > options.maxInputTokens) fail("code_file_page_limit");
-        media.push(...parts);
-        mediaBytes += size;
-      }
+      if (estimateTokens([{ role: "user", content: [...media, ...parts] }]) > options.maxInputTokens) fail("code_file_page_limit");
+      media.push(...parts);
     } else
       description = await options.describe([
         {

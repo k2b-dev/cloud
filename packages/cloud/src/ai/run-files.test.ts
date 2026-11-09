@@ -97,13 +97,13 @@ test("byte and file count budgets reject before reading; declared byte mismatch 
   await expect(b.files.read({ ref: { ...ref, size: 4 } })).rejects.toThrow("code_file_size_mismatch");
 });
 
-test("text-only vision fallback shares the aggregate visual byte budget across looks", async () => {
-  const f = fixture(false);
+test.each([false, true])("native and fallback looks share the same aggregate visual byte budget (vision=%s)", async (vision) => {
+  const f = fixture(vision);
   const image = { ...ref, mediaType: "image/png", size: 9 * 1024 * 1024 };
   f.read.mockResolvedValue(new Uint8Array(image.size));
   f.files.add(image);
   for (let i = 0; i < 4; i++) await f.files.view({ ref: image, prompt: `Look ${i}` });
   await expect(f.files.view({ ref: image, prompt: "Another look" })).rejects.toThrow("code_file_byte_limit");
-  expect(f.describe).toHaveBeenCalledTimes(4);
+  expect(f.describe).toHaveBeenCalledTimes(vision ? 0 : 4);
   expect(f.read).toHaveBeenCalledTimes(1);
 });

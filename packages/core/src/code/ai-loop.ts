@@ -37,10 +37,12 @@ export async function codeAiRun(context: CapabilityExecutionContext) {
       calls_limit: number;
     }[]
   >`
-    SELECT r.code_id,r.version_id,r.entrypoint,r.bundle_hash,r.deadline_at,v.manifest,r.ai_reserved_cost::text AS reserved,r.calls_limit
+    SELECT r.code_id,r.version_id,r.entrypoint,v.bundle_hash,r.deadline_at,v.manifest,r.ai_reserved_cost::text AS reserved,r.calls_limit
     FROM code.runs r JOIN code.versions v ON v.id=r.version_id JOIN code.codes c ON c.id=r.code_id
+      JOIN auth.mandates m ON m.id=${proof.mandateId}::uuid AND m.workload_type='code.version' AND m.workload_id=r.version_id::text
+        AND m.owner_app_id IN ('core','runner') AND m.revision=${proof.mandateRevision}
     WHERE r.id=${proof.workloadRun}::uuid AND r.version_id=${proof.workloadId}::uuid AND r.generation=${proof.workloadGeneration}
-      AND r.mandate_id=${proof.mandateId}::uuid AND r.mandate_revision=${proof.mandateRevision}
+      AND r.deadline_at IS NOT NULL
       AND CASE WHEN c.owner_kind='person' THEN c.owner_user_id::text=${context.accessSubject.type === "user" ? context.accessSubject.userId : ""}
         ELSE c.service_account_id::text=${context.accessSubject.type === "service_account" ? context.accessSubject.serviceAccountId : ""} END`;
   if (!run) throw new CodeBridgeRefusal("runner_lease_lost", 409);

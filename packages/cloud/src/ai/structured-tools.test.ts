@@ -3,6 +3,8 @@ import { defineTool, type Provider } from "@k2b/nessi";
 import type { GenerateRequest } from "@k2b/nessi/ai";
 import { z } from "zod";
 import { streamAnswer } from "./answer-stream.test-fixture";
+import { aiModelFixture } from "./model-fixture";
+import { type AiRunFileRef, AiRunReadInput, createAiRunFiles } from "./run-files";
 import { runStructuredTools } from "./structured-tools";
 
 function fixture(turns: Array<Array<{ name: string; args: Record<string, unknown> }>>) {
@@ -38,7 +40,7 @@ function fixture(turns: Array<Array<{ name: string; args: Record<string, unknown
       output: z.object({ answer: z.string().max(10) }).strict(),
       additionalInput: () => [{ type: "file", mediaType: "image/png", data: "YQ==" }],
     });
-  return { requests, execute, run };
+  return { requests, execute, run, provider };
 }
 
 test("structured loop executes typed tools and injects acquired images into the next model turn", async () => {
@@ -67,4 +69,38 @@ test("invalid output and a model that never submits exhaust the bounded turns", 
   const f = fixture(Array.from({ length: 3 }, () => [{ name: "submit_result", args: { answer: "too long an answer" } }]));
   await expect(f.run()).rejects.toThrow("run limit");
   expect(f.requests).toHaveLength(3);
+});
+
+test("the model sees foreign-ref and owning-app refusals, while only the admitted ref reaches the reader", async () => {
+  const known = { id: "sealed-known", mediaType: "text/plain", size: 5 };
+  const foreign = { ...known, id: "sealed-other-run" };
+  const f = fixture([
+    [{ name: "read_file", args: { ref: foreign } }],
+    [{ name: "read_file", args: { ref: known } }],
+    [{ name: "submit_result", args: { answer: "denied" } }],
+  ]);
+  const read = mock(async (_ref: AiRunFileRef) => {
+    throw Object.assign(new Error("code_file_source_refused (403)"), { code: "code_file_source_refused", status: 403 });
+  });
+  const files = createAiRunFiles({
+    read,
+    describe: async () => "",
+    model: { profile: aiModelFixture() },
+    maxInputTokens: 10_000,
+    signal: new AbortController().signal,
+  });
+  files.add({ input: known });
+  const result = await runStructuredTools({
+    task: "file-refusals",
+    provider: f.provider,
+    tools: [defineTool({ name: "read_file", description: "Read an admitted ref", inputSchema: AiRunReadInput }).server(files.read)],
+    maxTurns: 3,
+    input: JSON.stringify({ file: known }),
+    output: z.object({ answer: z.string().max(10) }).strict(),
+  });
+  expect(result.output.answer).toBe("denied");
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(read.mock.calls[0]![0]).toEqual(known);
+  expect(JSON.stringify(f.requests[1]!.messages)).toContain("code_file_not_in_run");
+  expect(JSON.stringify(f.requests[2]!.messages)).toContain("code_file_source_refused (403)");
 });

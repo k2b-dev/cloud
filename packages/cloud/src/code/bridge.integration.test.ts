@@ -604,6 +604,65 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     }
   });
 
+  test.each([false, true])(
+    "signed Core AI initializes a file loop from the real run, version and mandate schema (personal=%s)",
+    async (personal) => {
+      await resetFixture({ personal, entry: true, policyRows: ["ai"] });
+      if (personal)
+        await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+      await sql`UPDATE code.runs SET deadline_at=clock_timestamp()+interval '5 minutes' WHERE id=${claims.runId}::uuid`;
+      const selected = spyOn(decision, "selectAssistantAiModel").mockResolvedValue({ id: "clef" });
+      const resolved = spyOn(decision, "resolveAiModel").mockResolvedValue({
+        model: decisionResultFixture.model,
+        profile: aiModelFixture({ id: "clef", contextWindow: 32_768 }),
+        provider: {
+          name: "fixture",
+          family: "openai-compatible",
+          model: "fixture",
+          capabilities: { streaming: true, tools: true, images: true, thinking: false, usage: true },
+          async *stream() {},
+        },
+      });
+      const run = spyOn(decision, "runAiStructured").mockResolvedValue({
+        output: { text: "Summary" },
+        model: decisionResultFixture.model,
+        usage: decisionResultFixture.usage,
+        structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+      });
+      try {
+        const response = await send({
+          entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+          operation: "core.ai.generate",
+          input: {
+            call: {
+              capability: "core.ai.generate",
+              target: null,
+              refs: {},
+              input: {
+                task: "mail.summary",
+                prompt: "Summarize.",
+                // A ref in input starts the loop but does not read bytes until a viewer asks.
+                input: { file: { id: "not-yet-opened", mediaType: "text/plain", size: 12 } },
+                fileTools: false,
+                output: { type: "text", maxChars: 500 },
+              },
+            },
+            metadata: {},
+          },
+        });
+        expect(await response.json()).toMatchObject({ ok: true, data: { data: { output: "Summary" } } });
+        expect(run).toHaveBeenCalledTimes(1);
+        expect(run.mock.calls[0]![0].signal).toBeInstanceOf(AbortSignal);
+        expect(run.mock.calls[0]![0].tools).toBeUndefined();
+        expect(resolved).toHaveBeenCalledTimes(1);
+      } finally {
+        selected.mockRestore();
+        resolved.mockRestore();
+        run.mockRestore();
+      }
+    },
+  );
+
   test.each([false, true])("generation failures settle known usage before payload-free runner projection (unknown=%s)", async (unknown) => {
     await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
     await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
