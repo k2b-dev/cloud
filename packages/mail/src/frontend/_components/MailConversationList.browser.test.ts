@@ -54,6 +54,7 @@ const buildCss = async (entry: string): Promise<string> => {
 const NOW = Date.UTC(2026, 9, 1, 10, 30);
 const at = (minutesAgo: number) => new Date(Date.UTC(2026, 9, 1, 10, 0) - minutesAgo * 60_000).toISOString();
 const item = (index: number, overrides: Partial<MailListItem> = {}): MailListItem => ({
+  drafts: { count: 0, editors: [] },
   id: `Cv${String(index).padStart(4, "0")}`,
   conversationId: `Cv${String(index).padStart(4, "0")}`,
   selectionKind: "conversation",
