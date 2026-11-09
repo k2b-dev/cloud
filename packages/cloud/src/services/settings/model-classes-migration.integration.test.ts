@@ -7,8 +7,22 @@ import {
   AiProviderSchema as LegacyProviderSchema,
   AiVariantSchema as LegacyVariantSchema,
 } from "../../ai/catalog-v0.70.test-fixture";
+import { catalogV070Schema } from "../../ai/catalog-v0.70-schema.test-fixture";
 import { migrateAiModelClassesInTransaction } from "../../ai/migrate";
 import { aiModelCatalog } from "../../ai/model-catalog";
+
+const catalogSchema = async (db: SQL, schema: string) => {
+  const columns = await db<{ table_name: string; column_name: string; data_type: string; is_nullable: string }[]>`
+    SELECT table_name,column_name,data_type,is_nullable FROM information_schema.columns
+    WHERE table_schema=${schema} AND table_name IN ('providers','models','model_variants','model_assignments')
+    ORDER BY table_name,column_name`;
+  const checks = await db<{ table_name: string; definition: string }[]>`
+    SELECT t.relname AS table_name,pg_get_constraintdef(c.oid) AS definition
+    FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+    WHERE n.nspname=${schema} AND c.contype='c' AND t.relname IN ('providers','models','model_variants','model_assignments')
+    ORDER BY table_name,definition`;
+  return { columns, checks };
+};
 
 // This cross-schema upgrade discards settings. Give it a private database so
 // neither its legacy settings fixture nor its DDL can affect another suite.
@@ -31,6 +45,9 @@ databaseSuite()("model class settings migration", () => {
         CREATE TABLE ai.model_credentials (profile_id TEXT PRIMARY KEY, secret TEXT);
         CREATE TABLE ai.model_request_headers (profile_id TEXT PRIMARY KEY, secret TEXT);
       `.simple();
+      await db.unsafe(catalogV070Schema).simple();
+      const legacySchema = await catalogSchema(db, "catalog_v070");
+      expect(legacySchema.columns.length).toBeGreaterThan(0);
       await db`INSERT INTO settings.entries(key,value) VALUES('ai.model_profiles_json','[]'),('ai.default_model_id','old')`;
       await db`INSERT INTO ai.cost_config VALUES(true,'[{"scope":"*"},{"scope":"old"}]'::jsonb,1)`;
       await db`INSERT INTO ai.messages VALUES('00000000-0000-4000-8000-000000000001')`;
@@ -41,6 +58,7 @@ databaseSuite()("model class settings migration", () => {
       await db`INSERT INTO ai.projects VALUES('project','old')`;
       await db`INSERT INTO ai.user_prefs VALUES('00000000-0000-4000-8000-000000000003','old')`;
       await db.begin(migrateAiModelClassesInTransaction);
+      expect(await catalogSchema(db, "ai")).toEqual(legacySchema);
       expect(await aiModelCatalog.models(db)).toEqual([]);
       expect((await aiModelCatalog.assignments(db)).every((row) => row.variantId === null)).toBe(true);
       const [legacy] = await db<
@@ -68,6 +86,7 @@ databaseSuite()("model class settings migration", () => {
       await db`UPDATE ai.models SET output_token_limit=65536 WHERE id='limited'`;
       await db`INSERT INTO settings.entries(key,value) VALUES('ai.global_instructions','keep')`;
       await db.begin(migrateAiModelClassesInTransaction);
+      expect(await catalogSchema(db, "ai")).toEqual(legacySchema);
       expect(
         await db`SELECT column_name FROM information_schema.columns
         WHERE table_schema='ai' AND table_name='models' AND column_name='output_token_limit'`,
@@ -99,6 +118,7 @@ databaseSuite()("model class settings migration", () => {
         }
       }
       await db.begin(migrateAiModelClassesInTransaction);
+      expect(await catalogSchema(db, "ai")).toEqual(legacySchema);
       expect(await db<{ model_id: string; output_token_limit: number }[]>`SELECT * FROM ai.model_output_limits`).toEqual([
         { model_id: "limited", output_token_limit: 65_536 },
       ]);
@@ -106,6 +126,22 @@ databaseSuite()("model class settings migration", () => {
       expect(await db<{ value: string }[]>`SELECT value FROM settings.entries WHERE key='ai.global_instructions'`).toEqual([
         { value: "keep" },
       ]);
+      // Repair also works when the side table already exists and contains an older value.
+      await db`ALTER TABLE ai.models ADD COLUMN output_token_limit INTEGER CHECK(output_token_limit > 0)`;
+      await db`UPDATE ai.models SET output_token_limit=32768 WHERE id='limited'`;
+      await db.begin(migrateAiModelClassesInTransaction);
+      expect(await catalogSchema(db, "ai")).toEqual(legacySchema);
+      expect(await aiModelCatalog.model("limited", db)).toMatchObject({ outputTokenLimit: 32_768 });
+      await db.begin(migrateAiModelClassesInTransaction);
+      expect(await catalogSchema(db, "ai")).toEqual(legacySchema);
+      expect(await db<{ model_id: string; output_token_limit: number }[]>`SELECT * FROM ai.model_output_limits`).toEqual([
+        { model_id: "limited", output_token_limit: 32_768 },
+      ]);
+      // An entirely NULL legacy column must also disappear without clearing saved limits.
+      await db`ALTER TABLE ai.models ADD COLUMN output_token_limit INTEGER CHECK(output_token_limit > 0)`;
+      await db.begin(migrateAiModelClassesInTransaction);
+      expect(await catalogSchema(db, "ai")).toEqual(legacySchema);
+      expect(await aiModelCatalog.model("limited", db)).toMatchObject({ outputTokenLimit: 32_768 });
       await db`DELETE FROM ai.providers WHERE id='new'`;
       expect(await db<{ model_id: string; output_token_limit: number }[]>`SELECT * FROM ai.model_output_limits`).toEqual([]);
     } finally {

@@ -14,7 +14,11 @@ import {
   AiVariantPatchSchema,
   AiVariantSchema,
 } from "../shared/ai-models";
-import { AiModelSchema as LegacyAiModelSchema } from "./catalog-v0.70.test-fixture";
+import {
+  AiModelSchema as LegacyAiModelSchema,
+  AiAssignmentSchema as LegacyAssignmentSchema,
+  AiProviderSchema as LegacyProviderSchema,
+} from "./catalog-v0.70.test-fixture";
 import * as credentials from "./credentials";
 import { aiModelCatalog, flattenAiModelVariant, readAiModelProfiles, validateAiSlot } from "./model-catalog";
 import { validateAiReplacement } from "./model-delete";
@@ -69,6 +73,19 @@ test("the frozen 0.70 reader accepts base model rows and rejects the unreleased 
   const { outputTokenLimit, ...stored } = model;
   expect(LegacyAiModelSchema.parse(stored)).toEqual(stored);
   expect(LegacyAiModelSchema.safeParse({ ...stored, outputTokenLimit }).success).toBe(false);
+});
+test("catalog enum values match the frozen 0.70 readers", () => {
+  expect(AiProviderSchema.shape.type.options).toEqual(LegacyProviderSchema.shape.type.options);
+  expect(AiProviderSchema.shape.dataBoundary.options).toEqual(LegacyProviderSchema.shape.dataBoundary.options);
+  expect(AiProviderSchema.shape.status.options).toEqual(LegacyProviderSchema.shape.status.options);
+  expect(AiModelSchema.shape.kind.unwrap().options).toEqual(LegacyAiModelSchema.shape.kind.unwrap().options);
+  expect(AiModelSchema.shape.capabilities.unwrap().element.options).toEqual(
+    LegacyAiModelSchema.shape.capabilities.unwrap().element.options,
+  );
+  expect(AiModelSchema.shape.icon.unwrap().options.map((option) => option.shape.kind.value)).toEqual(
+    LegacyAiModelSchema.shape.icon.unwrap().options.map((option) => option.shape.kind.value),
+  );
+  expect(AiAssignmentSchema.shape.slot.options).toEqual(LegacyAssignmentSchema.shape.slot.options);
 });
 test("model readers join limits explicitly, strip future columns, and lock only the model row", async () => {
   const query = spyOn(sql, "unsafe").mockResolvedValue([{ data: { ...model, future_column: "added later" } }]);
