@@ -102,6 +102,8 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(detail).toContain("von dieser Version deklariert");
   expect(detail).not.toContain("dürfen jede öffentliche HTTPS-Adresse");
   expect(detail).not.toContain("am Tag");
+  expect(detail).toContain("Nutzt Datenbank");
+  expect(render(review, "normal", "en")).toContain("Uses database");
   expect(detail).toContain("Was passiert");
   expect(detail).toContain("KI-Erklärung, nur ein Hinweis");
   expect(detail).toContain("Bittet jemand in info@ um Rückruf");

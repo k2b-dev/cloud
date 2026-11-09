@@ -13,6 +13,7 @@ import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 const CodeSchema = z.object({
   id: z.string(),
   title: z.string(),
+  database: z.object({ bytes: z.number().nullable(), limit: z.number(), state: z.enum(["unused", "ready", "unavailable"]) }).optional(),
   /** A2: the credentialless account handle; A3b uses this in the refusal notice. */
   serviceAccountHandle: z.string().nullable().optional(),
   state: z.enum(["draft", "active", "paused", "deleting"]),
@@ -57,6 +58,7 @@ export const ManifestSchema = z.object({
   /** Reviewed secret bindings: which secret and destination this version may use, for the secrets tab. */
   secrets: z.array(z.object({ name: z.string(), binding_revision: z.string(), origin: z.string() })).optional(),
   internet: CodeInternetOriginsSchema.optional(),
+  database: z.boolean().optional(),
   entrypoints: z.array(
     z.object({
       kind: z.enum(["schedule", "manual", "event", "route"]),
@@ -336,6 +338,7 @@ export type CodePageReady = {
   attentionReasons: string[] | null;
   /** Full declared lists for the running and waiting versions; null means the manifest could not be read. */
   internet: { active: string[] | null; waiting: string[] | null };
+  databaseUsed?: boolean;
   /** What the running and the waiting version call; null when a manifest could not be read. */
   targets: CodePageTargetRow[] | null;
   /** The refusal of the newest finished run, when that run failed with one. */

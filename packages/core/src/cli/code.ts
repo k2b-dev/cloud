@@ -67,7 +67,7 @@ export function printCodeCheck(ctx: CloudCliContext, data: CodeAuthoringData<"ch
   ctx.print(`${t("AI", "KI").padEnd(13)}${data.result.manifest.ai ? t("yes", "ja") : t("no", "nein")}`);
   ctx.print(`${t("Pages", "Seiten").padEnd(13)}—`);
   ctx.print("Webhook      —");
-  ctx.print(`${t("Database", "Datenbank").padEnd(13)}—`);
+  ctx.print(`${t("Database", "Datenbank").padEnd(13)}${data.result.manifest.database ? t("uses database", "nutzt Datenbank") : "—"}`);
 }
 export function buildCodeCli(locale?: string) {
   const t = (en: string, de: string) => localizeCloudCliText(locale, { en, de });

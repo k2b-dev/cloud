@@ -9,6 +9,7 @@ import { z } from "zod";
 export const CodeVersionEvidenceSchema = z
   .object({
     version: z.literal(1),
+    database: z.boolean().optional(),
     tests: z
       .object({
         state: z.enum(["passed", "failed", "none", "unavailable"]),

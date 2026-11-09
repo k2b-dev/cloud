@@ -6,6 +6,7 @@ import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { SQL } from "bun";
 import type { z } from "zod";
 import type { CodeContext } from "./access";
+import { deleteCodeDatabase } from "./database";
 import { type CodeCleanupJob, codeLifecycleContracts } from "./lifecycle-contracts";
 import { requireCodePolicyAdmin } from "./policy";
 
@@ -112,7 +113,7 @@ async function runCodeCleanupJob(row: CleanupRow): Promise<void> {
       )
         throw new Error("code_owner_reports_pending");
       // Version/run/share cascades and the Code-owned account trigger are the C6 authority.
-      // Per-Code databases are introduced in Phase 2; no database can be provisioned in Phase 1.
+      await deleteCodeDatabase(row.code_id, tx);
       await tx`DELETE FROM code.codes WHERE id=${row.code_id}`;
       await audit.record(
         { action: "core.code.deleted", outcome: "allowed", actor: null, target: { type: "code", id: row.code_id }, requestId: row.id },

@@ -5,7 +5,7 @@ section: Platform services
 order: 568
 description: Understand Code ownership, immutable versions, Query access and run retention.
 tags: [code, capabilities, data, permissions]
-updated: 2026-11-01
+updated: 2026-11-09
 ---
 
 # Code data model
@@ -15,7 +15,9 @@ state so people can identify a policy pause.
 
 A Code has one owner and a fixed `codeId`, such as `c_8hw2`. Saving a new
 version preserves that identity. Core stores Code, its versions and its runs
-in the Postgres schema `code`.
+in the Postgres schema `code`. Its optional RSQL namespace is keyed by that
+Code identity, so all versions share one lazy database. The first `db` call
+creates it; reading Code details does not. See [Database](/en/docs/platform/code-sdk#database).
 
 ## Owners and access
 
@@ -90,7 +92,7 @@ check current permissions in Core's Code service.
 | Query | Input | Result |
 | --- | --- | --- |
 | `core.code.list` | Optional `owner`, `cursor`, `limit` (1–20) | Visible Code items with `permission` and `nextCursor` |
-| `core.code.read` | `codeId` | `code` and `permission` |
+| `core.code.read` | `codeId` | `code` (including database bytes, limit and availability) and `permission` |
 | `core.code.version.read` | `codeId`, `versionId`, optional `content`, `offset`, `length` | Version metadata and optional text chunk |
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |

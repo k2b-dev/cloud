@@ -24,6 +24,13 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS codes_resource_owner ON code.codes(owner_type,owner_id) WHERE owner_kind = 'resource'`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS codes_app_owner ON code.codes(owner_app_id) WHERE owner_kind = 'app'`.simple();
     await tx`CREATE INDEX IF NOT EXISTS codes_person_owner ON code.codes(owner_user_id,id) WHERE owner_kind = 'person'`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS code.databases (
+      code_id TEXT PRIMARY KEY REFERENCES code.codes(id) ON DELETE CASCADE,
+      namespace TEXT NOT NULL UNIQUE CHECK(namespace = 'code_' || code_id),
+      connected BOOLEAN NOT NULL DEFAULT FALSE,
+      server_url TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    )`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.shares (
       code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
       access_id UUID NOT NULL UNIQUE REFERENCES auth.access(id) ON DELETE CASCADE,

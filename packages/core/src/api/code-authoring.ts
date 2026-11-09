@@ -126,6 +126,7 @@ export function createCodeAuthoringRoutes() {
     );
   }
   register("init", codeAuthoringContracts.init, codeAuthoringServices.init, true);
+  register("show", codeAuthoringContracts.show, codeAuthoringServices.show);
   register("pull", codeAuthoringContracts.pull, codeAuthoringServices.pull);
   register("sdk", codeAuthoringContracts.sdk, codeAuthoringServices.sdk, true);
   register("check", codeAuthoringContracts.check, codeAuthoringServices.check, true);
