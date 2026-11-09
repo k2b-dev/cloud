@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import { compileCapabilities } from "../_internal/capabilities";
 import { codeHttpOriginAllowed } from "../api/capabilities";
+import { bridgeSkillReadQuery } from "./bridge.test-fixture";
 import { codeBridgeDispatchRefusalKind, codeBridgeLocalRefusalKind } from "./bridge-contract";
 
 test("Code HTTP refuses every own origin, credentials and non-HTTPS URLs", () => {
@@ -74,4 +76,9 @@ test("A3a distinguishes approval refusals from policy and target refusals", () =
 
 test("an in-flight AI budget reservation is distinguishable from an exhausted policy budget", () => {
   expect(codeBridgeLocalRefusalKind("code_ai_budget_reserved")).toBe("bridge");
+});
+
+test("the signed bridge Skill read fixture compiles without integration infrastructure", () => {
+  const compiled = compileCapabilities("core", { protocolVersion: 2, queries: { "ai.skill.read": bridgeSkillReadQuery } });
+  expect(compiled.queries.has("ai.skill.read")).toBe(true);
 });

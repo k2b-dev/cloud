@@ -207,6 +207,10 @@ it shows "Started by Code …" in the chat. `prompt` and optional `context` are
 at most 10,000 characters each; `context` is data, not instructions. For a
 bounded summary, prefer `core.ai.generate` plus `deliver`.
 
+For inline Mail text, use `mail.message.content.read` (`data.text`) or
+`mail.attachment.text.read` (`data.markdown`). Use `mail.attachment.content.read`
+when the model needs the original file through `files`.
+
 ## A model loop with SDK tools and files
 
 Use `tools` on `core.ai.generate` for a loop in any Code account, including a

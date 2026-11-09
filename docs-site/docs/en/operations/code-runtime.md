@@ -51,6 +51,15 @@ per form. Page inputs, trees and visitor identities are transient; the retained
 run records the outcome and timings. Rendering uses Core's assets and only the
 checked description reaches the browser; no Code source runs there.
 
+## Mail capability compatibility
+
+Deploy Mail and its capability consumers from the same release. R1 names the
+text readers `mail.message.content.read` and `mail.attachment.text.read`;
+`mail.attachment.content.read` opens the original file as a stream. Refresh
+generated SDKs and resubmit preview Code after upgrading. There are no aliases
+for the previous text-reader names; update external capability clients as
+described in [Deprecations](/en/docs/reference/deprecations-and-migrations#code-sdk-declarations-are-simpler).
+
 ## Schedule and result delivery compatibility
 
 Code schedules use one declaration, `{ cron | at, timeZone?, name?, title? }`.

@@ -33,6 +33,7 @@ import { migrate as migrateSettings } from "../../../core/src/migrate/core/setti
 import { migrate as migrateWorkflows } from "../../../core/src/migrate/core/workflows";
 import { mailCapabilities } from "../../../mail/src/capabilities";
 import { migrate as migrateMail } from "../../../mail/src/migrate";
+import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "../../../mail/src/service/attachment-extraction-contract";
 import { storeReadableBlob } from "../../../mail/src/service/message-blobs";
 import * as mailMessages from "../../../mail/src/service/messages";
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
@@ -80,6 +81,7 @@ import { mandates } from "../services/mandates";
 import { loadCodeRunCalls } from "../ssr/code-page/calls";
 import type { CodePageInvoke } from "../ssr/code-page/data";
 import { createCodeAiTools } from "./ai-tools";
+import { bridgeSkillReadQuery } from "./bridge.test-fixture";
 import { CodeFileRefSchema } from "./file-ref";
 import { CodeRunTokenClaimsSchema, type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest, type RunnerJsonValue } from "./runner-protocol";
@@ -148,7 +150,12 @@ const confirmationCompiled = compileCapabilities("example", {
 });
 const decisionCompiled = compileCapabilities("core", {
   protocolVersion: 2,
-  queries: { "ai.decide": aiDecisionQuery, "ai.generate": aiGenerationQuery, "ai.skills.list": op },
+  queries: {
+    "ai.decide": aiDecisionQuery,
+    "ai.generate": aiGenerationQuery,
+    "ai.skills.list": op,
+    "ai.skill.read": bridgeSkillReadQuery,
+  },
 });
 const baseEntry: CapabilityRegistryEntry = {
   appId: "example",
@@ -877,7 +884,67 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       run.mockRestore();
     }
   });
-  test("a successful non-model AI query releases its reservation without spending the budget", async () => {
+  test.each(["zero", "reserved"] as const)("Skill reads work with %s inference allowance", async (budgetState) => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = budgetState === "zero" ? 0 : 0.000046;
+    if (budgetState === "reserved")
+      expect(await sql.begin((db) => reserveCodeAiBudget(claims, 99, aiBudget, db, { code: 1, owner: 1, timeZone: "UTC" }))).toEqual({
+        ok: true,
+        reserved: "0.000046000000",
+      });
+    try {
+      const before = await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+        FROM code.runs WHERE id=${claims.runId}::uuid`;
+      for (const operation of ["core.ai.skills.list", "core.ai.skill.read"]) {
+        const response = await send({
+          entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+          operation,
+          input: {
+            call: { capability: operation, target: null, refs: {}, input: operation === "core.ai.skill.read" ? { id: "Sk1234" } : {} },
+            metadata: {},
+          },
+        });
+        expect(await response.json()).toEqual({ ok: true, data: { data: { value: "done" } } });
+        expect(
+          await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+          FROM code.runs WHERE id=${claims.runId}::uuid`,
+        ).toEqual(before);
+        const [observation] =
+          await sql`SELECT state,refusal_kind FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
+        expect(observation).toEqual({ state: "succeeded", refusal_kind: null });
+      }
+    } finally {
+      if (budgetState === "reserved") await sql.begin((db) => settleCodeAiBudget(claims, 99, "0", db));
+    }
+  });
+  test("zero Code AI budget refuses generate before model dispatch and records a policy refusal", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0;
+    const before = fetched;
+    const run = spyOn(decision, "runAiStructured").mockRejectedValue(new Error("Model must not run"));
+    try {
+      const response = await send({
+        entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+        operation: "core.ai.generate",
+        input: {
+          call: {
+            capability: "core.ai.generate",
+            target: null,
+            refs: {},
+            input: { task: "mail.summary", prompt: "Summarize.", input: { body: "Message" }, output: { type: "text", maxChars: 500 } },
+          },
+          metadata: {},
+        },
+      });
+      expect(await response.json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit", status: 429 } });
+      expect(run).not.toHaveBeenCalled();
+      expect(fetched).toBe(before);
+      await expectPolicyRefusal();
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("a non-model AI query leaves the inference allowance available", async () => {
     await resetFixture({ entry: true, policyRows: ["ai"] });
     aiBudget = 0.000046;
     const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
@@ -1861,6 +1928,35 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       maxBytes: maximum,
       dependencies: dependencies(),
     });
+  test("Mail content readers keep inline text separate from the original attachment FileRef through Core", async () => {
+    const fixture = await fileFixture();
+    await sql`UPDATE mail.message_contents SET plain_text='Message body' WHERE id=${fixture.messageId}::uuid`;
+    await sql`
+      INSERT INTO mail.attachment_extractions(blob_id,extractor_version,status,format,markdown,input_bytes,output_bytes,truncated,completed_at)
+      SELECT blob_id,${MAIL_ATTACHMENT_EXTRACTOR_VERSION},'complete','markdown','# Attachment',${fixture.payload.length},12,false,${now}
+      FROM mail.attachments WHERE short_id='At4g00'
+      ON CONFLICT (blob_id,extractor_version) DO UPDATE SET
+        status='complete',format='markdown',markdown='# Attachment',output_bytes=12,truncated=false,completed_at=${now}
+    `;
+    const message = await (await fixture.call("message.content.read", { id: "Ms4g00" })).json();
+    expect(message).toMatchObject({ ok: true, data: { data: { text: "Message body", trust: "untrusted", nextOffset: null } } });
+    expect(message.data).not.toHaveProperty("stream");
+    const attachment = await (await fixture.call("attachment.text.read", { id: "At4g00" })).json();
+    expect(attachment).toMatchObject({
+      ok: true,
+      data: { data: { markdown: "# Attachment", trust: "untrusted", nextOffset: null, extraction: { available: true } } },
+    });
+    expect(attachment.data).not.toHaveProperty("stream");
+    expect(await fixture.read()).toMatchObject({ ok: true, data: { mediaType: "application/pdf", size: fixture.payload.length } });
+    const rows = await sql<{ capability: string }[]>`
+      SELECT call->>'capability' AS capability FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal
+    `;
+    expect(rows.map((row) => row.capability)).toEqual([
+      "mail.message.content.read",
+      "mail.attachment.text.read",
+      "mail.attachment.content.read",
+    ]);
+  }, 30_000);
   test("AI file reader reuses the owning Mail authorization and logs its read, including a visible 403", async () => {
     const fixture = await fileFixture();
     const opened = await fixture.read();
