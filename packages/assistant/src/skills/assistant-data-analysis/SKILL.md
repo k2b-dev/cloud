@@ -78,6 +78,7 @@ found by a script instead of Markdown links. Choose the chart by the question:
 | Compare a few values against capacity | BarGauge; at most 8 items, short labels, meaningful min/max and thresholds. |
 | Show one headline number with change | Stat; compute `delta` in the value's units and set `better` only when improvement has a defined direction. |
 | Show shares of one whole | Pie/donut for two to four shares; many status counts read better as sorted bars. |
+| Follow quantities through merging or branching stages | Sankey; unique node IDs, positive links and no cycles. Imbalances stay visible. Use bars for unrelated categories. |
 
 Use `references` for targets or averages. For a last-period comparison, align
 periods to comparable x values and put the comparison in a line/scatter series

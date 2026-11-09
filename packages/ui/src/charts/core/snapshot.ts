@@ -1,6 +1,7 @@
 import { calendarLayout } from "./calendar";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
+import { sankeyWidth } from "./sankey-size";
 import { escapeXml } from "./svg-renderers";
 import type { ChartDatum, ChartKind } from "./types";
 
@@ -39,7 +40,7 @@ export function prepareChartSnapshot(
   sizing: Parameters<typeof chartRenderHeight>[1] = {},
 ): ChartSnapshot {
   const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
-  const width = calendar?.width ?? 480;
+  const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : (calendar?.width ?? 480);
   const height = chartRenderHeight(options, sizing);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];

@@ -657,7 +657,6 @@ for (const width of [1200, 390])
 const addedSpecs = [
   { kind: "treemap", groups: ["North"], data: [{ label: "A", group: "North", value: 42 }] },
   { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "A", value: 42, prev: 32 }] },
-
   {
     kind: "bubble",
     groups: ["North"],
@@ -667,7 +666,20 @@ const addedSpecs = [
     data: [{ label: "A", group: "North", x: 42, y: 32, size: 12 }],
   },
   { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Now", data: [3, 4, 2] }] },
+  {
+    kind: "sankey",
+    nodes: [
+      { id: "a", label: "Source" },
+      { id: "b", label: "Read" },
+    ],
+    links: [{ source: "a", target: "b", value: 42 }],
+  },
 ];
+addedSpecs.push({
+  kind: "sankey",
+  nodes: [...Array.from({ length: 100 }, (_, i) => ({ id: `source${i}`, label: `Source ${i}` })), { id: "sink", label: "Read" }],
+  links: Array.from({ length: 100 }, (_, i) => ({ source: `source${i}`, target: "sink", value: 1 })),
+});
 for (const width of [1200, 390])
   test(`added rare charts reserve their real frame boxes, ${width}px`, async () => {
     const script = `document.querySelector("#draw").addEventListener("click",()=>{
@@ -682,7 +694,7 @@ for (const width of [1200, 390])
       await settled(page);
       const loading = await boxes(page);
       await release(page);
-      for (const spec of addedSpecs) await app(page).locator(`[data-chart-kind="${spec.kind}"] svg`).waitFor();
+      for (const spec of addedSpecs) await app(page).locator(`[data-chart-kind="${spec.kind}"] svg`).first().waitFor();
       await settled(page);
       expect(await boxes(page)).toEqual(loading);
       expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);

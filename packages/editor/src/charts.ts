@@ -36,8 +36,11 @@ import {
   renderHeatmapSvg,
   renderParetoSvg,
   renderRadarSvg,
+  renderSankeySvg,
   renderTreemapSvg,
   renderWaterfallSvg,
+  type SankeyOptions,
+  sankeyGraph,
   scatter,
   sparkline,
   stat,
@@ -66,13 +69,15 @@ type RenderOptions = {
                 ? BubbleOptions
                 : K extends "radar"
                   ? RadarOptions
-                  : K extends "heatmap"
-                    ? HeatmapChartOptions
-                    : K extends "bar"
-                      ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
-                      : K extends keyof typeof charts
-                        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-                        : never);
+                  : K extends "sankey"
+                    ? SankeyOptions
+                    : K extends "heatmap"
+                      ? HeatmapChartOptions
+                      : K extends "bar"
+                        ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                        : K extends keyof typeof charts
+                          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                          : never);
 }[ChartInput["kind"]];
 
 /**
@@ -87,6 +92,7 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
+      flow: "Flow",
       size: "Size",
       axis: "Axis",
       series: "Series",
@@ -94,6 +100,8 @@ const labels = /* @__PURE__ */ i18n.define({
       previous: "Previous",
       change: "Change",
       cumulative: "Cumulative",
+      incoming: "Incoming",
+      outgoing: "Outgoing",
       balance: "Balance",
       before: "Balance before",
       inflow: "In",
@@ -122,6 +130,7 @@ const labels = /* @__PURE__ */ i18n.define({
     },
     de: {
       category: "Kategorie",
+      flow: "Fluss",
       size: "Größe",
       axis: "Achse",
       series: "Datenreihe",
@@ -129,6 +138,8 @@ const labels = /* @__PURE__ */ i18n.define({
       previous: "Vorher",
       change: "Änderung",
       cumulative: "Kumuliert",
+      incoming: "Eingang",
+      outgoing: "Ausgang",
       balance: "Stand",
       before: "Stand davor",
       inflow: "Rein",
@@ -336,6 +347,8 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "sankey":
+      return input.links.map((link) => link.value);
     case "bubble":
       return input.data.flatMap((p) => (p.size === undefined ? [] : [p.size]));
     case "radar":
@@ -478,6 +491,16 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "sankey":
+      return {
+        kind: "sankey",
+        nodes: input.nodes,
+        links: input.links,
+        legend: input.legend,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
     case "treemap":
       return {
         kind: "treemap",
@@ -757,6 +780,8 @@ export const drawChart = (options: RenderOptions): string => {
       return renderTreemapSvg({ ...options, ...common });
     case "pareto":
       return renderParetoSvg({ ...options, ...common });
+    case "sankey":
+      return renderSankeySvg({ ...options, ...common });
     case "bubble":
       return renderBubbleSvg({ ...options, ...common });
     case "radar":
@@ -912,9 +937,11 @@ export function chartRows(
           "label",
           input.kind === "heatmap" && input.layout === "calendar"
             ? calendarWords(locale).day
-            : input.kind === "radar"
-              ? t.axis
-              : t.category,
+            : input.kind === "sankey"
+              ? t.flow
+              : input.kind === "radar"
+                ? t.axis
+                : t.category,
           label,
           label,
         );
@@ -1054,6 +1081,7 @@ export function chartRows(
             ? (field.formatted ?? valueFormat(value))
             : `${valueFormat(value)}${unit}`,
         );
+      else if (field.key === "incoming" || field.key === "outgoing") cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "forecastLow" || field.key === "forecastHigh") cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")
@@ -1140,6 +1168,16 @@ export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
     case "pareto":
       return input.data.length * 3;
+    case "sankey": {
+      const graph = sankeyGraph(input);
+      return (
+        input.nodes.length +
+        input.links.reduce(
+          (sum, link) => sum + graph.nodes[graph.ids.get(link.target)!]!.stage - graph.nodes[graph.ids.get(link.source)!]!.stage,
+          0,
+        )
+      );
+    }
     case "radar":
       return input.axes.length * input.series.length;
     case "waterfall":

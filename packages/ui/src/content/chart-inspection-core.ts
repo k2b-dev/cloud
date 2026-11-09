@@ -23,6 +23,7 @@ import {
 /** Host policy for inspecting an overflowing drawing. */
 export type ChartInspectionNavigation = {
   last?: boolean;
+  order?: (entries: { datum: ChartDatum }[]) => void;
   pointer?: boolean;
   reveal?: (element: SVGGraphicsElement) => void;
   keepScroll?: boolean;
@@ -82,7 +83,7 @@ export function createChartInspector(options: {
       entries = [];
       byElement.clear();
       sortedPoints = [];
-      for (const element of Array.from(options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? [])) {
+      for (const element of options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? []) {
         try {
           const value: unknown = JSON.parse(element.getAttribute("data-chart-datum") ?? "null");
           if (isChartDatum(value)) {
@@ -94,6 +95,7 @@ export function createChartInspector(options: {
           /* Only valid renderer metadata participates in inspection. */
         }
       }
+      options.nav?.()?.order?.(entries);
       sortedPoints = entries.filter((entry) => entry.datum.role === "point").sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
     }
     return entries;

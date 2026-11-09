@@ -55,12 +55,12 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // New line part: 12,744 B on top of main's 68,456 B measured total.
+  // Main includes the line, calendar and distribution parts; Sankey adds one part.
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  // Pareto +299 B, treemap +34 B, heatmap +87 B and the line part +12,744 B; retain exactly main's host headroom.
-  expect(total).toBeLessThan(81_264);
+  // New Sankey part: exactly +8,112 B; keep main's existing host headroom.
+  expect(total).toBeLessThan(89_376);
   const markers = {
     line: "k2b-line-forecast-band",
     area: "k2b-area-layer",
@@ -77,6 +77,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
     barGauge: "stdlib-chart-bar-gauge-track",
     boxplot: "stdlib-chart-box-whisker",
     scatter: "stdlib-chart-trendline",
+    sankey: "k2b-chart-sankey-link",
   } satisfies Record<RareChart["kind"], string>;
   expect(Object.keys(parts.kinds).sort()).toEqual(Object.keys(markers).sort());
   for (const [kind, marker] of Object.entries(markers)) {

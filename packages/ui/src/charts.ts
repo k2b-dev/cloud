@@ -8,3 +8,5 @@ export type { ChartKindProps, ChartLabels, ChartProps, ChartRenderOptions } from
 export { type BarChartLayout, type BarChartOptions, barChartLayout, renderBarChartSvg } from "./content/chart-bar";
 
 export { calendarInspectionNavigation, mountCalendarScroll } from "./content/chart-calendar";
+
+export { sankeyInspectionNavigation } from "./content/chart-sankey";

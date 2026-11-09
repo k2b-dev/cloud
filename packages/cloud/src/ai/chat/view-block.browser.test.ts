@@ -77,9 +77,13 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
       if ((path.endsWith("/charts/core/registry.js") || path.endsWith("/charts/core/chart-map-data.js")) && input.bytesInOutput > 0)
         throw new Error("The initial Chat module must not contain the chart renderer registry or map data");
       if (
-        ["/charts/core/bubble.js", "/charts/core/radar.js", "/charts/core/pareto.js", "/charts/core/treemap.js"].some((kind) =>
-          path.endsWith(kind),
-        ) &&
+        [
+          "/charts/core/bubble.js",
+          "/charts/core/radar.js",
+          "/charts/core/pareto.js",
+          "/charts/core/treemap.js",
+          "/charts/core/sankey.js",
+        ].some((kind) => path.endsWith(kind)) &&
         input.bytesInOutput > 0
       )
         throw new Error("Catalog drawing belongs to the lazy Chat module");
