@@ -67,13 +67,6 @@ export const codePerson = (context: CodeContext, write = false) => {
   return user;
 };
 
-const refreshOwnerTitle = async (owner: CodeOwner, title: string, db: SQL = sql) => {
-  const name =
-    owner.kind === "app" ? `code:app:${owner.appId}` : owner.kind === "resource" ? `code:${owner.ref.type}:${owner.ref.id}` : null;
-  if (name)
-    await db`UPDATE auth.service_accounts SET title=${title} WHERE kind='code' AND name=${name} AND title IS DISTINCT FROM ${title}`;
-};
-
 /** Resolve the resource's current title and permission through its canonical reader under this exact authority. */
 export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
   if (owner.kind === "person") {
@@ -142,7 +135,6 @@ export const codePermission = async (
   if (code.owner.kind !== "person" && ownerCheck !== "skip") {
     try {
       const owner = await readCodeOwner(code.owner, context);
-      if (owner) await refreshOwnerTitle(code.owner, owner.title, db);
       if (owner?.admin) return "editor";
     } catch (error) {
       if (!(error instanceof CodeOwnerUnavailableError) || ownerCheck === "edit" || (permission !== "read" && !cloudAdmin)) throw error;

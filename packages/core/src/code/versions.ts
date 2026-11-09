@@ -176,7 +176,12 @@ async function validateOperationRows(
       const localId = permission.operation.slice(appId.length + 1);
       const query = catalog.data.manifest.queries.find((operation) => operation.localId === localId);
       const action = catalog.data.manifest.actions.find((operation) => operation.localId === localId);
-      if ((!query && !action) || query?.stream || action?.stream || (action?.code === false && ownerKind !== "person"))
+      const operation = query ?? action;
+      const properties = operation?.inputSchema.properties;
+      // Match the SDK's FileRef contract: read streams and generic file writes are supported.
+      const unsupportedStream =
+        operation?.stream?.direction === "write" && !(properties && typeof properties === "object" && Object.hasOwn(properties, "file"));
+      if (!operation || unsupportedStream || (action?.code === false && ownerKind !== "person"))
         throw new CodeVersionError("code_manifest_invalid", "Manifest operation is unavailable to Code.");
       const row = codePolicyRow(query ? "query" : "action", capabilityActionPolicy(catalog.data.manifest, localId));
       if (row === "ask_sends") throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
@@ -623,7 +628,9 @@ export async function reviewCodeExecutionChange(
   paused: boolean,
   context: CodeContext,
 ): Promise<CapabilityActionCallReview> {
-  await readCode(codeId, context);
+  codePerson(context, true);
+  if (isAppSessionActor(context.authority.actor))
+    throw new CodeDataError("FORBIDDEN", "Phone sessions cannot change Code execution authority.");
   return sql.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
     const code = await findCode(codeId, tx);
