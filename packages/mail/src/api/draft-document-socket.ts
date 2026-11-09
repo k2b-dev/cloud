@@ -326,6 +326,17 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   const runDocumentStream = async (requestedAfter: string | null): Promise<void> => {
     const topic = mailDraftDocumentLog.topic();
     let after = requestedAfter;
+    // Every replayed event passes the same access check as a live one.
+    const emitAllowed = async (db: typeof sql, event: TopicEvent<SharedTextSyncEvent>): Promise<boolean> => {
+      const allowed = await requireDraftAccess(context, mailboxId, draftId, "write", db);
+      if (closed || signal.aborted) return false;
+      if (!allowed.ok) {
+        close("ACCESS_DENIED", t.access);
+        return false;
+      }
+      emitEvent(event);
+      return !closed;
+    };
     while (!closed) {
       try {
         let cursor = topic.cursorAt(0);
@@ -349,7 +360,8 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           if (compareStreamCursor(after, globalHead) > 0) throw new CursorMismatchError("Draft replay cursor is beyond the log head");
           if (head && compareStreamCursor(after, head) < 0) {
             try {
-              for await (const event of topic.replay({ tenantId: draftId, after, until: head, signal })) emitEvent(event);
+              for await (const event of topic.replay({ tenantId: draftId, after, until: head, signal }))
+                if (!(await emitAllowed(db, event))) return;
             } catch (error) {
               if (!(error instanceof RetentionGapError)) throw error;
               sendSnapshot(state.durable);
@@ -361,18 +373,20 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
                 until: head,
                 signal,
               }))
-                emitEvent(event);
+                if (!(await emitAllowed(db, event))) return;
             }
           }
-          // A tenant can be completely pruned. Its old durable cursor is
-          // still valid coverage, but only the captured global head is a safe
-          // starting point for the shared live tail.
+          // A tenant can be completely pruned, so the live tail starts at the
+          // captured global head. The locked row keeps this draft's writers
+          // out until then. The client's base stays this draft's own cursor:
+          // admission compares it with the draft's coverage, not the log head.
           cursor = globalHead;
+          const base = head && compareStreamCursor(head, after) > 0 ? head : after;
           if (!generation || closed) return;
           joined = true;
-          deliveredCursor = cursor;
+          deliveredCursor = base;
           flushCommittedSnapshot();
-          send({ type: "replayReady", payload: { docId, generation, cursor, peerId } });
+          send({ type: "replayReady", payload: { docId, generation, cursor: base, peerId } });
         });
         if (closed) return;
         for await (const event of topic

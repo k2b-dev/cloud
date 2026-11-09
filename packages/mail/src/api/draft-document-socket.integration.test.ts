@@ -274,6 +274,11 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       const current = await read();
       if (!current.durable.cursor) throw new Error("Missing committed snapshot cursor");
       expect((await pruneDraftDocumentLog())?.purged).toBeGreaterThan(0);
+      // Another draft moves the shared log past this draft's own cursor.
+      const unrelated = await draftDocumentService.mailDraftDocumentLog.topic().publish({
+        tenantId: crypto.randomUUID(),
+        data: { kind: "freeze", payload: "", restoreRevision: "1", originNodeId: "fixture", originPeerId: null },
+      });
       await stopMailDraftConnections();
       await server.stop(true);
       startServer();
@@ -282,7 +287,24 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         type: "replayRequest",
         payload: { docId: currentDraft.short_id, generation: base.generation, fromCursor: base.durable.cursor },
       });
-      await client.wait((packet) => packet.type === "replayReady");
+      const ready = await client.wait((packet) => packet.type === "replayReady");
+      // The base is this draft's coverage, which admission accepts, not the log head.
+      if (ready.type !== "replayReady") throw new Error("Missing replay readiness");
+      expect(ready.payload.cursor).toBe(current.durable.cursor);
+      expect(ready.payload.cursor).not.toBe(unrelated.cursor);
+      local.getText("codemirror").insert(0, "Later ");
+      expect(
+        value(
+          await acceptDraftDocumentUpdate({
+            context,
+            mailboxId,
+            draftId: currentDraft.id,
+            generation: base.generation,
+            baseCursor: ready.payload.cursor,
+            update: Y.encodeStateAsUpdate(local),
+          }),
+        ).status,
+      ).toBe("accepted");
       const snapshot = client.messages.find((packet) => packet.type === "syncPush" && packet.payload.snapshot);
       expect(snapshot).toMatchObject({ type: "syncPush", payload: { snapshot: true } });
       if (snapshot?.type !== "syncPush") throw new Error("Missing durable snapshot");

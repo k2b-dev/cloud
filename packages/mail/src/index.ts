@@ -21,7 +21,7 @@ import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
-import { migrateDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
+import { startDraftDocumentLogPolicy, stopDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
 
 const mailNotifications = createMailNotificationService(app.notifications);
@@ -29,6 +29,7 @@ const mailNotifications = createMailNotificationService(app.notifications);
 const stopMailRuntimes = (): Promise<void> =>
   stopRuntimeResources([
     stopMailDraftConnections,
+    stopDraftDocumentLogPolicy,
     stopDraftDocumentPruning,
     stopConversationViewCountCache,
     () => stopConversationSummaryRuntime(),
@@ -47,7 +48,6 @@ const result = await app.start({
   lifecycle: {
     setup: async () => {
       await migrate();
-      await migrateDraftDocumentLogPolicy();
       // Startup waits for none of these builds. A busy predecessor defers the rest until
       // the next start: concurrent expression builds can wait on each other's snapshots.
       void (async () => {
@@ -79,6 +79,9 @@ const result = await app.start({
     stop: stopMailRuntimes,
   },
 });
+// After startup: the platform has provisioned every resource declared so far,
+// so a draft log it cannot prepare leaves only shared drafts unsupported.
+startDraftDocumentLogPolicy();
 export default { ...result, websocket };
 
 export type { ApiType } from "./api";

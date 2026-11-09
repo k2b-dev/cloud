@@ -64,16 +64,18 @@ proof advances coverage without changing the draft cursor or revision.
 An older log discards its oldest events and expires them after seven days. On
 its first use after the upgrade, Cloud changes it to reject-full without an
 age limit **in place**, keeping its name, byte limit and sequences. It never
-recreates the stream: SQL cursors refer to those sequences. Mail then runs one
-explicit startup step before it prunes anything: drafts whose snapshot is
-older than the retained window and that have newer events may have lost
-expired events, so Mail marks them for recovery. A checkpoint in
-`mail.draft_document_log_policy` records that this step finished; a process
-that stops earlier repeats it on the next start. The separate dead-letter
+recreates the stream: SQL cursors refer to those sequences. Right after Mail
+has started, it runs one explicit step before it prunes anything: a draft
+whose snapshot is older than the retained window may have lost expired
+events, even when none of its events is left, so Mail marks it for recovery.
+A checkpoint in `mail.draft_document_log_policy` records that this step
+finished; a process that stops earlier repeats it on the next start. Until
+then, shared mode stays unsupported in that process. The separate dead-letter
 stream keeps its seven-day age and 16 MiB budget. If the log cannot be
 prepared, Mail logs the reason and refuses shared mode; its other features
 remain available. Mail instances of an older release report drift for this
-log once it is changed; deploy the release to every Mail instance first.
+log once it is changed; deploy the release to every Mail instance first. See
+[Topics that keep events until the application prunes them](/en/docs/operations/nats-operations#topics-that-keep-events-until-the-application-prunes-them).
 
 To free a full log, restore SQL snapshot persistence, retry saving pending
 shared drafts, and retry the rejected input after the covering snapshots

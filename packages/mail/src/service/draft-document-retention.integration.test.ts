@@ -139,6 +139,8 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     await sql`DELETE FROM mail.draft_document_log_policy`;
     const lost = await draft();
     const idle = await draft();
+    const recent = await draft();
+    const unopened = await draft();
     await marker(lost.draftId);
     await marker(lost.draftId);
     const kept = await marker(lost.draftId);
@@ -150,23 +152,32 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
         stream = info.config.name;
     // What the old seven-day age did: every event before the last one is gone.
     await manager.streams.purge(stream, { seq: mailDraftDocumentLog.topic().cursorSequence(kept.cursor) });
-    // An old snapshot of a draft without later events lost nothing.
-    await sql`UPDATE mail.drafts SET doc_state='\\x00'::bytea, doc_seq=1 WHERE id=${idle.draftId}::uuid`;
     const before = await manager.streams.info(stream);
     expect(before.state.first_seq).toBeGreaterThan(2);
+    // A snapshot older than the window may have lost events even when none of
+    // them is retained any more; a snapshot inside the window lost nothing.
+    await sql`UPDATE mail.drafts SET doc_state='\\x00'::bytea, doc_seq=1 WHERE id=${idle.draftId}::uuid`;
+    await sql`UPDATE mail.drafts SET doc_state='\\x00'::bytea, doc_seq=${before.state.last_seq} WHERE id=${recent.draftId}::uuid`;
+    const incomplete = async () =>
+      (
+        await sql<{ id: string }[]>`SELECT id FROM mail.drafts WHERE id IN
+          (${lost.draftId}::uuid, ${idle.draftId}::uuid, ${recent.draftId}::uuid, ${unopened.draftId}::uuid) AND NOT doc_history_complete`
+      )
+        .map((row) => row.id)
+        .sort();
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
     await drainDraftDocumentPruning();
     expect(await sharedDraftsSupported()).toBe(true);
-    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${lost.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(1);
-    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${idle.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(0);
+    // The unopened draft has neither a snapshot nor retained events: nothing was acknowledged.
+    expect(await incomplete()).toEqual([lost.draftId, idle.draftId].sort());
     expect((await readDraftDocument(lost)).ok).toBe(false);
     // The checkpoint makes a second start a no-op: no new flags, no prune of uncovered events.
-    await sql`UPDATE mail.drafts SET doc_history_complete=true WHERE id=${lost.draftId}::uuid`;
+    await sql`UPDATE mail.drafts SET doc_history_complete=true WHERE id IN (${lost.draftId}::uuid, ${idle.draftId}::uuid)`;
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
     await drainDraftDocumentPruning();
-    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${lost.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(0);
+    expect(await incomplete()).toEqual([]);
     expect((await manager.streams.info(stream)).state.first_seq).toBe(before.state.first_seq);
-    await retire(lost, idle);
+    await retire(lost, idle, recent, unopened);
   });
 
   test("repeats recovery marking after the stream changed but the checkpoint never committed", async () => {
