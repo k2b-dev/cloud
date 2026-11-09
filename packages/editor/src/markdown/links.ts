@@ -9,7 +9,7 @@ import {
   markdownReferenceType,
   markdownReferenceTypeLabel,
 } from "@k2b/ui";
-import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { type CursorZoneState, cursorZoneStateField, revealedSelection, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 import { makeOpener } from "./_lib/link-opener";
 import { parseNoteLink } from "./lib/heading-anchors";
 import { extractAttachmentId, isSafeMarkdownUrl, type MarkdownUrlOptions } from "./urls";
@@ -122,7 +122,7 @@ const parseLinkSyntax = (text: string, options: MarkdownUrlOptions): LinkData | 
 const findLinks = (state: EditorState, options: MarkdownUrlOptions): CursorZoneState => {
   const decorations: Range<Decoration>[] = [];
   const ranges: { from: number; to: number }[] = [];
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
 
   syntaxTree(state).iterate({
     enter: ({ type, from, to }) => {

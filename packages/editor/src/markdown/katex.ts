@@ -7,6 +7,8 @@ import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
+  placeMarkdownCaret,
+  revealedSelection,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 import { blockMathPattern, inlineMathPattern } from "./_lib/math-syntax";
@@ -112,7 +114,7 @@ class BlockMathWidget extends WidgetType {
     container.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true });
+      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     container.ondblclick = (event) => {
@@ -178,7 +180,7 @@ const intersectsAnyRange = (ranges: { from: number; to: number }[], from: number
 const buildKatexDecorations = (state: EditorState): CursorZoneState => {
   const decorations: Range<Decoration>[] = [];
   const atomicDecorations: Range<Decoration>[] = [];
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
   const doc = state.doc.toString();
   let hasSyntax = false;
   const ranges: { from: number; to: number }[] = [];

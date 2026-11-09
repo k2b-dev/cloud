@@ -40,7 +40,7 @@
  * the standard shape.
  */
 import { forceParsing, syntaxTree } from "@codemirror/language";
-import type { EditorState, Extension, SelectionRange, Transaction } from "@codemirror/state";
+import type { EditorSelection, EditorState, Extension, SelectionRange, Transaction } from "@codemirror/state";
 import { Prec, StateEffect, StateField } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView, keymap, ViewPlugin } from "@codemirror/view";
@@ -74,7 +74,9 @@ export type IncrementalOptions = {
   changesMightAffectSyntax: (tr: Transaction) => boolean;
 };
 
-export const selectionIntersectsRange = (selection: SelectionRange, from: number, to: number): boolean => {
+/** No selection (an editor without focus) intersects nothing. */
+export const selectionIntersectsRange = (selection: SelectionRange | undefined, from: number, to: number): boolean => {
+  if (!selection) return false;
   if (selection.empty) return selection.from >= from && selection.to <= to;
   return selection.from < to && selection.to > from;
 };
@@ -93,6 +95,64 @@ export const refreshMarkdownDecorationsEffect = StateEffect.define<void>();
 
 export const pointerSelectionHoldEffect = StateEffect.define<boolean>();
 
+/** Marks the selection of its transaction as placed by a person, for a control that shows a block's source in an editor
+ *  that cannot take focus, such as a read-only note. */
+export const placeMarkdownCaret = StateEffect.define<void>();
+
+const markdownFocusEffect = StateEffect.define<boolean>();
+
+const pressHeld = (tr: Transaction) => tr.state.field(pointerSelectionHeld, false) === true;
+
+/** Focus that came with a press still held: it counts from the refresh after the release, like the press's selection. */
+const focusAwaitingRelease = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(markdownFocusEffect)) value = effect.value && pressHeld(tr);
+      else if (effect.is(refreshMarkdownDecorationsEffect)) value = false;
+    }
+    return value;
+  },
+});
+
+/** Decorations added to an editor that already has focus, such as when a note switches to its rich view, see no focus
+ *  change; this reads the focus once they are in place. */
+const focusOnMount = ViewPlugin.define((view) => {
+  if (view.hasFocus && view.state.field(markdownEditorFocused, false) === false)
+    queueMicrotask(() => {
+      if (view.hasFocus && view.state.field(markdownEditorFocused, false) === false)
+        view.dispatch({ effects: markdownFocusEffect.of(true) });
+    });
+  return {};
+});
+
+/** Whether the editor has focus, or a control placed the caret in an editor that cannot take focus. Without it nothing
+ *  is being edited and every block shows formatted: a note opens without a `#` before its title even though
+ *  CodeMirror's default selection sits there, the same as the server render, and the block last edited renders again
+ *  once focus leaves. Each decoration that reveals Markdown source brings this field along. */
+export const markdownEditorFocused: StateField<boolean> = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(markdownFocusEffect)) value = effect.value && !pressHeld(tr);
+      else if (effect.is(placeMarkdownCaret)) value = true;
+      else if (effect.is(refreshMarkdownDecorationsEffect) && tr.startState.field(focusAwaitingRelease, false) === true) value = true;
+    }
+    return value;
+  },
+  provide: (field) => [
+    focusAwaitingRelease,
+    focusOnMount,
+    EditorView.focusChangeEffect.of((state, focusing) =>
+      state.field(field) === focusing && !state.field(focusAwaitingRelease) ? null : markdownFocusEffect.of(focusing),
+    ),
+  ],
+});
+
+/** The selection Markdown reveals its source around, or `null` while the editor has no focus. */
+export const revealedSelection = (state: EditorState): EditorSelection | null =>
+  state.field(markdownEditorFocused, false) === false ? null : state.selection;
+
 /** True while a mouse or pen button is down in the editor. Revealing Markdown then would move the text under the
  *  pointer mid-drag, so selection-driven decorations wait for the refresh after release. */
 export const pointerSelectionHeld = StateField.define<boolean>({
@@ -110,6 +170,15 @@ export const holdsDecorations = (tr: Transaction): boolean =>
   tr.startState.field(pointerSelectionHeld, false) === true &&
   tr.state.field(pointerSelectionHeld, false) === true &&
   isPointerSelectionTransaction(tr);
+
+/** True when decorations that follow the selection must rebuild although it did not move: an explicit refresh, or a
+ *  change of focus. Focus that comes with a press waits for the refresh after the release, like its selection. */
+export const refreshesMarkdownDecorations = (tr: Transaction): boolean =>
+  tr.effects.some(
+    (effect) =>
+      effect.is(refreshMarkdownDecorationsEffect) ||
+      ((effect.is(markdownFocusEffect) || effect.is(placeMarkdownCaret)) && tr.state.field(pointerSelectionHeld, false) !== true),
+  );
 
 export const initialMarkdownDecorationRefreshExtension = (): Extension =>
   ViewPlugin.fromClass(
@@ -243,8 +312,8 @@ export const blockWidgetLineNavigationExtension = <T>(
  *  `null` if it sits outside all ranges. A cursor-only transaction
  *  needs a rebuild only when this answer changes. */
 const cursorKey = (state: EditorState, ranges: CursorZoneRange[]): string | null => {
-  if (ranges.length === 0) return null;
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
+  if (ranges.length === 0 || !cursor) return null;
   const hits: number[] = [];
   for (const r of ranges) {
     if (selectionIntersectsRange(cursor, r.from, r.to)) hits.push(r.from);
@@ -293,7 +362,7 @@ export const cursorZoneStateField = (
   return StateField.define<CursorZoneState>({
     create: build,
     update(value, tr) {
-      if (tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) {
+      if (refreshesMarkdownDecorations(tr)) {
         return build(tr.state);
       }
       if (tr.docChanged) {
@@ -332,6 +401,7 @@ export const cursorZoneStateField = (
       return [
         EditorView.decorations.from(field, (v) => v.decorations),
         EditorView.atomicRanges.of((view) => view.state.field(field).atomicDecorations ?? Decoration.none),
+        markdownEditorFocused,
       ];
     },
   });

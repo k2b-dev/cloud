@@ -80,4 +80,29 @@ describe("@k2b/editor/collab", () => {
     const head = page.Y.createAbsolutePositionFromRelativePosition(page.Y.createRelativePositionFromJSON(cursor.head), page.doc);
     expect(head?.index).toBe(4);
   });
+
+  test("focus in another field withdraws the cursor, and returning publishes the current selection", async () => {
+    using page = await mount();
+    const head = () => {
+      const cursor: unknown = page.awareness.getLocalState()?.cursor;
+      if (!cursor || typeof cursor !== "object" || !("head" in cursor)) return null;
+      return page.Y.createAbsolutePositionFromRelativePosition(page.Y.createRelativePositionFromJSON(cursor.head), page.doc)?.index;
+    };
+    page.view.focus();
+    page.view.dispatch({ selection: { anchor: 2, head: 4 } });
+    expect(head()).toBe(4);
+
+    const field = document.createElement("input");
+    document.body.append(field);
+    field.focus();
+    // CodeMirror reports a focus change after 10 ms.
+    await Bun.sleep(30);
+    expect(page.view.hasFocus).toBe(false);
+    expect(page.awareness.getLocalState()?.cursor).toBeNull();
+
+    page.view.dispatch({ selection: { anchor: 5 } });
+    page.view.focus();
+    await Bun.sleep(30);
+    expect(head()).toBe(5);
+  });
 });

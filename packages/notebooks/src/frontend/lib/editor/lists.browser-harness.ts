@@ -6,6 +6,7 @@ import {
   fadeScrollPadding,
   listCommandsExtension,
   listStateField,
+  placeMarkdownCaret,
   pressMissedEditor,
 } from "@k2b/editor/markdown";
 import { ScrollArea } from "@k2b/ui";
@@ -140,7 +141,7 @@ const loadDocument = (markdown: string) => {
 };
 
 const placeCaretOnLine = (number: number) => {
-  view.dispatch({ selection: { anchor: view.state.doc.line(number).to } });
+  view.dispatch({ selection: { anchor: view.state.doc.line(number).to }, effects: placeMarkdownCaret.of() });
 };
 
 const measureLists = () => ({

@@ -11,7 +11,7 @@ import { tableOptions } from "./table-options.fixture";
 // DOM before importing it, as in the existing Notebook table behavior harness.
 const bootstrap = createDomTestHarness();
 const { tableGrid, tableHost } = await import("@k2b/ui/text-editor");
-const { namedBlocksExtension } = await import("@k2b/editor/markdown");
+const { markdownEditorFocused, namedBlocksExtension } = await import("@k2b/editor/markdown");
 const { createNotebookTablePresentation, notebookSourceFormulasExtension } = await import("./shared-tables");
 const { formulaPreviewWidget } = await import("./tables");
 bootstrap.cleanup();
@@ -36,7 +36,11 @@ const mount = (doc: string, mode: "grid" | "source" = "grid", locale = "de") => 
     parent: dom.root,
     state: EditorState.create({
       doc,
-      extensions: mode === "grid" ? [tableHost.of(host), tableGrid(), adapter.extension, namedBlocksExtension()] : [source],
+      extensions:
+        mode === "grid"
+          ? // The person puts the caret where a test sets the selection.
+            [tableHost.of(host), tableGrid(), adapter.extension, markdownEditorFocused.init(() => true), namedBlocksExtension()]
+          : [source],
     }),
   });
   return {

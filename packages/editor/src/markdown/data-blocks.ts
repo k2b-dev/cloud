@@ -1,6 +1,13 @@
 import { type EditorState, type Extension, Prec, type Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
-import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import {
+  holdsDecorations,
+  markdownEditorFocused,
+  placeMarkdownCaret,
+  refreshesMarkdownDecorations,
+  revealedSelection,
+  selectionIntersectsRange,
+} from "./_lib/cursor-zone-field";
 import { type DataBlock, extractDataBlocks, namedBlockBody, renderDataBlockHtml } from "./lib/named-blocks";
 import { blockAnchorsDrawnElsewhere } from "./named-blocks";
 
@@ -33,7 +40,7 @@ class DataBlockWidget extends WidgetType {
     el.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      view.dispatch({ selection: { anchor: this.block.blockStart }, scrollIntoView: true });
+      view.dispatch({ selection: { anchor: this.block.blockStart }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     el.ondblclick = (event) => {
@@ -68,7 +75,7 @@ export const dataBlocksExtension = (): Extension => {
   const stateField = StateField.define<DataBlocksState>({
     create: scanDataBlocks,
     update(value, tr) {
-      if (tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) return scanDataBlocks(tr.state);
+      if (refreshesMarkdownDecorations(tr)) return scanDataBlocks(tr.state);
       if (tr.docChanged) return scanDataBlocks(tr.state);
       if (holdsDecorations(tr)) return value;
       if (!tr.selection) return value;
@@ -97,6 +104,7 @@ export const dataBlocksExtension = (): Extension => {
   );
 
   return [
+    markdownEditorFocused,
     stateField,
     navKeymap,
     EditorView.theme({
@@ -116,7 +124,7 @@ const scanDataBlocks = (state: EditorState): DataBlocksState => {
   const decorations: Range<Decoration>[] = [];
   const blockWidgetDecorations: Range<Decoration>[] = [];
   const ranges: DataBlockRange[] = [];
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
   const text = state.doc.toString();
 
   for (const block of extractDataBlocks(text)) {
@@ -146,7 +154,7 @@ const scanDataBlocks = (state: EditorState): DataBlocksState => {
 };
 
 const cursorDataBlockKey = (state: EditorState, ranges: DataBlockRange[]): string | null => {
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
   const hits: number[] = [];
   for (const range of ranges) {
     if (selectionIntersectsRange(cursor, range.from, range.to)) hits.push(range.widgetFrom);

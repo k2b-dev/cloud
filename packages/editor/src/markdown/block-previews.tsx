@@ -8,7 +8,10 @@ import { render } from "solid-js/web";
 import {
   blockWidgetLineNavigationExtension,
   holdsDecorations,
-  refreshMarkdownDecorationsEffect,
+  markdownEditorFocused,
+  placeMarkdownCaret,
+  refreshesMarkdownDecorations,
+  revealedSelection,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 import {
@@ -105,7 +108,7 @@ class SourceToggleWidget extends WidgetType {
           label={this.label}
           pressed
           onClick={() => {
-            view.dispatch({ selection: { anchor: this.exit } });
+            view.dispatch({ selection: { anchor: this.exit }, effects: placeMarkdownCaret.of() });
             view.focus();
           }}
         />
@@ -227,7 +230,8 @@ class QueryBlockWidget extends WidgetType {
       });
     }
     const reveal = () => {
-      view.dispatch({ selection: { anchor: this.block.from }, scrollIntoView: true });
+      // A read-only note cannot take focus; the press itself places the caret.
+      view.dispatch({ selection: { anchor: this.block.from }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     this.dispose = render(
@@ -401,7 +405,7 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
     };
     const sourceToggles: Range<Decoration>[] = [];
     for (const block of blocks) {
-      if (selectionIntersectsRange(state.selection.main, block.from, block.to)) {
+      if (selectionIntersectsRange(revealedSelection(state)?.main, block.from, block.to)) {
         const exit = blockExit(block, blocks, state.doc.length);
         if (exit !== undefined) {
           const line = state.doc.lineAt(block.from);
@@ -453,20 +457,21 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
     update(value, tr) {
       const effect = tr.effects.find((effect) => effect.is(previewEffect));
       if (effect?.is(previewEffect)) return build(tr.state, effect.value);
-      if (tr.docChanged || tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) return build(tr.state, value.snapshot);
+      if (tr.docChanged || refreshesMarkdownDecorations(tr)) return build(tr.state, value.snapshot);
       if (holdsDecorations(tr)) return value;
       if (
         tr.selection &&
         value.ranges.some(
           (range) =>
-            selectionIntersectsRange(tr.startState.selection.main, range.from, range.to) !==
-            selectionIntersectsRange(tr.state.selection.main, range.from, range.to),
+            selectionIntersectsRange(revealedSelection(tr.startState)?.main, range.from, range.to) !==
+            selectionIntersectsRange(revealedSelection(tr.state)?.main, range.from, range.to),
         )
       )
         return build(tr.state, value.snapshot);
       return value;
     },
     provide: (field) => [
+      markdownEditorFocused,
       EditorView.decorations.from(field, (value) => value.decorations),
       EditorView.decorations.from(field, (value) => value.sourceToggles),
       EditorView.atomicRanges.of((view) => view.state.field(field).decorations),

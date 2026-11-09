@@ -1,7 +1,7 @@
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import { StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
-import { treeOrDocChanged } from "./_lib/cursor-zone-field";
+import { markdownEditorFocused, revealedSelection, treeOrDocChanged } from "./_lib/cursor-zone-field";
 import {
   type ExcludedSpan,
   excludedSpans,
@@ -81,7 +81,9 @@ const decorated = (state: EditorState, item: ListItem): boolean =>
     : /[ \t]/.test(state.sliceDoc(item.markerTo, item.markerTo + 1));
 
 const selectionParent = (state: EditorState, structure: ListStructure): number => {
-  const index = listItemAtLine(structure, state.doc.lineAt(state.selection.main.head).number);
+  const cursor = revealedSelection(state)?.main;
+  if (!cursor) return -1;
+  const index = listItemAtLine(structure, state.doc.lineAt(cursor.head).number);
   return structure.items[index]?.parent ?? -1;
 };
 
@@ -194,6 +196,7 @@ export const listStateField = StateField.define<ListState>({
   },
   provide(field) {
     return [
+      markdownEditorFocused,
       EditorView.decorations.from(field, (value) => value.decorations),
       EditorView.decorations.from(field, (value) => value.active),
       EditorView.atomicRanges.of((view) => view.state.field(field).atomicRanges),

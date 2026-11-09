@@ -4,6 +4,8 @@ import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
+  placeMarkdownCaret,
+  revealedSelection,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 import { extractNamedBlocks } from "./lib/named-blocks";
@@ -32,7 +34,7 @@ class NamedBlockHandleWidget extends WidgetType {
     el.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true });
+      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     return el;
@@ -52,7 +54,7 @@ export const namedBlocksExtension = (): Extension => {
     const decorations: Range<Decoration>[] = [];
     const atomicDecorations: Range<Decoration>[] = [];
     const ranges: { from: number; to: number }[] = [];
-    const cursor = state.selection.main;
+    const cursor = revealedSelection(state)?.main;
     const text = state.doc.toString();
 
     for (const block of extractNamedBlocks(text)) {

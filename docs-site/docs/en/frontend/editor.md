@@ -99,7 +99,9 @@ as two floating pills at the edges of its column (as Notebooks does; see
 
 `<BubbleMenu>` opens at a selection once it settles, not while a pointer still
 drags it. It stays open while focus moves between the text and the menu. Escape,
-a collapsed selection, or leaving both closes it. On
+a collapsed selection, or leaving both closes it. After Escape it stays closed
+for that selection, also while collaborators edit around it; a new selection
+opens it again. On
 touch screens it sits below the selection, where the system's own menu does not
 cover it. Children after the actions hold extra controls, such as **Comment**.
 
@@ -175,8 +177,9 @@ const undoManager = new Y.UndoManager(text);
 draws the other writers' cursors. Every action run through `editor.run` stays
 one undo step. The editor writes its own cursor into the awareness state as
 `cursor: { anchor, head }`, relative positions from
-`Y.relativePositionToJSON`, and reads `user.name` and `user.color` of the
-others. An application that checks presence on its server keeps exactly these
+`Y.relativePositionToJSON`, sets it to `null` while focus is elsewhere, and
+writes the current selection again when focus returns. It reads `user.name`
+and `user.color` of the others. An application that checks presence on its server keeps exactly these
 fields.
 
 The transport stays in the application: the WebSocket or another provider,
@@ -221,8 +224,14 @@ The subpath includes lists and list commands, display ligatures, marks,
 subscript and superscript, notices, named data blocks, images, links, math,
 Mermaid, completions, themes, and scroll helpers. The Markdown parsers are also
 available to render the same source outside an editor. Extensions preserve the
-source text; editing a rendered block reveals its Markdown. The math extension
-expects the host to load KaTeX’s stylesheet and fonts.
+source text; editing a rendered block reveals its Markdown, and only while the
+editor has focus. Without focus every block renders: the default selection at
+the start of the document reveals nothing, so a note opens without a `#` before
+its title, like its server render, and the block last edited renders again when
+focus moves elsewhere. A control that moves the selection into a block's source
+for the person, also in a read-only editor that cannot take focus, adds
+`placeMarkdownCaret.of()` to its transaction. The math extension expects the
+host to load KaTeX’s stylesheet and fonts.
 
 | Extension | Application options |
 | --- | --- |

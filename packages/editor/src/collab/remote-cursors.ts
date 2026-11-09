@@ -269,7 +269,8 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
             ) {
               awareness.setLocalStateField("cursor", { anchor, head });
             }
-          } else if (cursor != null && hasFocus) {
+          } else if (cursor != null) {
+            // Focus left the editor: the others no longer see a caret here until it returns.
             awareness.setLocalStateField("cursor", null);
           }
         }

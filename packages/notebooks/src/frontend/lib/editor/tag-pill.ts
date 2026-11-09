@@ -13,7 +13,14 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { type CursorZoneState, cursorZoneStateField, makeOpener, selectionIntersectsRange, TAG_REGEX } from "@k2b/editor/markdown";
+import {
+  type CursorZoneState,
+  cursorZoneStateField,
+  makeOpener,
+  revealedSelection,
+  selectionIntersectsRange,
+  TAG_REGEX,
+} from "@k2b/editor/markdown";
 import { notebookWorkspaceMessages } from "../../[id]/messages";
 
 class TagWidget extends WidgetType {
@@ -73,7 +80,7 @@ const isInsideExcluded = (excluded: { from: number; to: number }[], from: number
 const findTags = (state: EditorState, notebookId: string): CursorZoneState => {
   const decorations: Range<Decoration>[] = [];
   const ranges: { from: number; to: number }[] = [];
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
   const excluded = collectExcludedRanges(state);
   const text = state.doc.toString();
   let hasSyntax = false;

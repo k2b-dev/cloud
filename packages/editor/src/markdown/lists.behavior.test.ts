@@ -4,6 +4,7 @@ import { EditorState, type Transaction } from "@codemirror/state";
 import { type DecorationSet, EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { markdownEditorFocused } from "./_lib/cursor-zone-field";
 import { markdownExtension } from "./markdown";
 import { pressMissedEditor } from "./surface-press";
 
@@ -29,6 +30,8 @@ describe("editor checklist boxes", () => {
         selection: { anchor: caret },
         extensions: [
           EditorState.readOnly.of(readOnly),
+          // The person put the caret at `caret`.
+          markdownEditorFocused.init(() => true),
           markdownExtension(),
           listsExtension(directiveOptions),
           EditorView.updateListener.of((update) => transactions.push(...update.transactions)),

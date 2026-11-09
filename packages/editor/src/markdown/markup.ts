@@ -1,7 +1,8 @@
 /**
  * Markup-hiding extension for CodeMirror.
  *
- * Hides markdown syntax markers when the cursor is not on the same line/range:
+ * Hides markdown syntax markers when the cursor is not on the same line/range,
+ * and everywhere while the editor has no focus:
  * - Heading markers (# ## ### etc.) — hidden when cursor is on a different line
  * - Bold markers (**) — hidden when cursor is outside the bold range
  * - Italic markers (* or _) — hidden when cursor is outside the italic range
@@ -14,7 +15,14 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet, StateField } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { holdsDecorations, refreshMarkdownDecorationsEffect, treeOrDocChanged } from "./_lib/cursor-zone-field";
+import {
+  holdsDecorations,
+  markdownEditorFocused,
+  placeMarkdownCaret,
+  refreshesMarkdownDecorations,
+  revealedSelection,
+  treeOrDocChanged,
+} from "./_lib/cursor-zone-field";
 
 // =============================================================================
 // Widgets
@@ -32,7 +40,7 @@ class HorizontalRuleWidget extends WidgetType {
     hr.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true });
+      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     return hr;
@@ -52,10 +60,10 @@ class HorizontalRuleWidget extends WidgetType {
 // =============================================================================
 
 /**
- * Check if the cursor is on a given line.
+ * Check if the cursor is on a given line. An editor without focus has no cursor.
  */
 const cursorOnLine = (state: EditorState, lineFrom: number, lineTo: number): boolean => {
-  for (const range of state.selection.ranges) {
+  for (const range of revealedSelection(state)?.ranges ?? []) {
     const rLineFrom = state.doc.lineAt(range.from).number;
     const rLineTo = state.doc.lineAt(range.to).number;
     const targetLineFrom = state.doc.lineAt(lineFrom).number;
@@ -69,7 +77,7 @@ const cursorOnLine = (state: EditorState, lineFrom: number, lineTo: number): boo
  * Check if the cursor is inside a range (inclusive).
  */
 const cursorInRange = (state: EditorState, from: number, to: number): boolean => {
-  for (const range of state.selection.ranges) {
+  for (const range of revealedSelection(state)?.ranges ?? []) {
     if (range.from <= to && range.to >= from) return true;
   }
   return false;
@@ -288,13 +296,18 @@ type MarkupState = {
   cursorRangeKey: string;
 };
 
-const cursorLineNumber = (state: EditorState): number => state.doc.lineAt(state.selection.main.head).number;
+/** The line of the cursor, or 0 while the editor has no focus. */
+const cursorLineNumber = (state: EditorState): number => {
+  const cursor = revealedSelection(state)?.main;
+  return cursor ? state.doc.lineAt(cursor.head).number : 0;
+};
 
 /** Compact "set of ranges the cursor is inside" identifier. We use
  *  a sorted comma-separated index string so equality is a cheap
  *  string compare. */
 const computeCursorRangeKey = (state: EditorState, ranges: Array<{ from: number; to: number }>): string => {
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
+  if (!cursor) return "";
   const hits: number[] = [];
   for (let i = 0; i < ranges.length; i++) {
     const r = ranges[i]!;
@@ -317,7 +330,7 @@ export const markupExtension = (): Extension => {
       };
     },
     update(value, tr) {
-      if (treeOrDocChanged(tr) || tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) {
+      if (treeOrDocChanged(tr) || refreshesMarkdownDecorations(tr)) {
         // Keep cached cursor signatures consistent with the rebuilt decorations.
         const tracked = collectMarkupTrackedRanges(tr.state);
         return {
@@ -381,5 +394,5 @@ export const markupExtension = (): Extension => {
     },
   });
 
-  return [stateField, theme];
+  return [markdownEditorFocused, stateField, theme];
 };
