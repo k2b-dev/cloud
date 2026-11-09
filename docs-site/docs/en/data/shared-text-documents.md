@@ -645,7 +645,11 @@ publish its returned bytes when non-null.
 
 The browser publishes only its local awareness state, including on reconnect.
 It sends a changed cursor at once and then at most one frame with the latest
-state per 100 ms, so a selection drag cannot flood the server.
+state per 100 ms, so a selection drag cannot flood the server. On the server,
+keep at most one unprocessed awareness message per connection: a later one
+replaces it, it does not count against the connection's message limit, and any
+other message ends the replacement, so a cursor never overtakes an edit sent
+before it. Check access for every awareness message you process.
 Return the connection's peer ID in the replay-ready response and include it
 as the origin of cursor updates, so the browser can skip its own rewritten
 echo. Remote timeout removals stay local. A new connection receives a fresh
