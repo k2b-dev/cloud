@@ -534,6 +534,8 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         const current = await context(call, budget, { endpoint: "activity", ...input });
         if (input.baseId?.startsWith("freeipa:") || (!input.baseId && !current.historyAvailable))
           throw new FilesError("history_unavailable", 409);
+        // "me" is the request identity, never a value from the client; a caller without a user matches nothing.
+        const filters = input.actor === "me" ? { ...input, actor: current.scope.userId ?? "00000000-0000-0000-0000-000000000000" } : input;
         const rows =
           matches >= ACTIVITY_SEARCH_LIMIT && input.q
             ? []
@@ -560,7 +562,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           consumed++;
           position = positionOf(row);
           const projected = await current.project(row);
-          if (!projected || !filter(projected, input)) continue;
+          if (!projected || !filter(projected, filters)) continue;
           current.select(projected);
           items.push(projected.entry);
           matches++;

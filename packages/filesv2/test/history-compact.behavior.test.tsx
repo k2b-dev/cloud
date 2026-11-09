@@ -3,6 +3,8 @@ import type { JSX } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { ActivityEntry } from "../src/activity-contracts";
+import type { MarkedEntry } from "../src/contracts";
+import type { ActivityFilters } from "../src/frontend/history-requests";
 import { chain, entry, env, gone, hidden, live, page, snapshot } from "./history-fixtures";
 
 const flush = async () => {
@@ -47,21 +49,31 @@ describe("compact activity rows", () => {
     dom = createDomTestHarness();
     cleanup = () => dom.cleanup();
   });
-  const view = async (items: ActivityEntry[]) => {
+  const view = async (
+    items: ActivityEntry[],
+    options: {
+      filters?: ActivityFilters;
+      opened?: MarkedEntry[];
+      onFiltersChange?: (filters: ActivityFilters) => void;
+      people?: { id: string; label: string }[];
+    } = {},
+  ) => {
     const { LocaleProvider } = await import("@k2b/ui");
     const { default: ActivityView } = await import("../src/frontend/ActivityView");
+    const filters = options.filters ?? {};
     const element = (): JSX.Element => (
       <LocaleProvider locale="de">
         <ActivityView
           env={env}
-          filters={{}}
-          onFiltersChange={() => {}}
+          filters={filters}
+          onFiltersChange={options.onFiltersChange ?? (() => {})}
           bases={[{ id: "cloud:groups:vertrieb", label: "Team Vertrieb" }]}
-          people={[]}
-          initial={{ filters: {}, page: page(items) }}
+          people={options.people ?? []}
+          initial={{ filters, page: page(items) }}
           load={async () => page(items)}
           loadChain={async () => chain({})}
           retentionDays={365}
+          opened={options.opened ? { initial: options.opened, load: async () => options.opened! } : undefined}
         />
       </LocaleProvider>
     );
@@ -99,7 +111,10 @@ describe("compact activity rows", () => {
       ["Team Vertrieb", "/app/filesv2?base=cloud%3Agroups%3Avertrieb"],
       ["Buchhaltung", "/app/filesv2?base=cloud%3Agroups%3Avertrieb&path=Buchhaltung"],
     ]);
-    expect(rows[1]!.textContent).toContain("Lukas Pohl hat Alt.pdf (nicht mehr verfügbar) hochgeladen");
+    expect(rows[1]!.querySelector(".filesv2-history-row__actor")?.textContent).toBe("Lukas Pohl");
+    expect(rows[1]!.querySelector(".filesv2-history-row__sentence")?.textContent).toBe(
+      "Alt.pdf (nicht mehr verfügbar) hochgeladen in Team Vertrieb › Inbox",
+    );
     expect(rows[1]!.querySelector("a")).toBeNull();
     // Time and channel sit at the end of the line, the channel as a small tag.
     expect(rows[0]!.querySelector(".filesv2-history-row__facts time")?.textContent).toBe("14:12");
@@ -118,7 +133,8 @@ describe("compact activity rows", () => {
       "Lukas Pohl hat Bericht.pdf (nicht mehr verfügbar) verschoben, an einen Ort, den du nicht sehen kannst",
     );
     expect(rows[0]!.querySelector("a")).toBeNull();
-    expect(rows[1]!.textContent).toContain("von einem Ort, den du nicht sehen kannst");
+    // A hidden source is simply not named in the note.
+    expect(rows[1]!.querySelector(".filesv2-history-row__sentence")?.textContent).toBe("Kopie.pdf kopiert nach Team Vertrieb › Archiv");
     expect(rows[2]!.querySelector("a")).toBeNull();
     expect(links().map((link) => link.textContent)).toEqual(["Kopie.pdf", "Team Vertrieb", "Archiv"]);
     expect(links().every((link) => !link.getAttribute("href")!.includes("Kunden") && !link.getAttribute("href")!.includes("Privat"))).toBe(
@@ -129,7 +145,11 @@ describe("compact activity rows", () => {
   test("a bulk rename and move reads as one expandable line; opening keeps focus, survives coming back, and leaves the line in place", async () => {
     const page = await view(bulk(12));
     const toggle = dom.root.querySelector<HTMLButtonElement>("button.filesv2-history-run__toggle")!;
-    expect(toggle.textContent).toContain("Valentin Kolb hat 12 Dateien umbenannt und verschoben");
+    expect(toggle.querySelector(".filesv2-history-row__actor")?.textContent).toBe("Valentin Kolb");
+    expect(toggle.querySelector(".filesv2-history-row__sentence")?.textContent).toBe(
+      "12 Dateien umbenannt und verschoben nach Team Vertrieb › Buchhaltung › ebay",
+    );
+    expect(toggle.querySelector(".filesv2-history-run__count")?.textContent).toBe("12");
     expect(toggle.querySelector(".k2b-tag")?.textContent).toBe("API");
     expect(toggle.querySelector("time")?.textContent).toBe("12:54");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -146,11 +166,11 @@ describe("compact activity rows", () => {
     // The line itself does not change: only its state attribute and the rows below it.
     expect(toggle.outerHTML.replace(/ aria-expanded="true"/, "")).toBe(before);
     const first = rows.querySelector("article")!;
-    // The run names the actor; its lines name only the change.
-    expect(first.textContent).toContain("scan-1.pdf → Rechnung-1.pdf, nach Team Vertrieb › Buchhaltung › ebay verschoben");
-    expect(first.textContent).not.toContain("Valentin Kolb");
-    // Rows inside a run leave the repeated avatar out.
+    // The run names the actor and the destination; its lines name only the new and the old name.
+    expect(first.querySelector(".filesv2-history-row__sentence")?.textContent).toBe("Rechnung-1.pdf, vorher scan-1.pdf");
+    // Rows inside a run leave the repeated avatar out and keep the actor for screen readers only.
     expect(first.querySelector(".filesv2-history-row__who[data-repeat]")).not.toBeNull();
+    expect(first.querySelector(".filesv2-history-row__actor[data-repeat]")?.textContent).toBe("Valentin Kolb");
     expect(first.querySelector("a.filesv2-history-target--name")?.getAttribute("href")).toContain(
       "file=Buchhaltung%2Febay%2FRechnung-1.pdf",
     );
@@ -173,5 +193,64 @@ describe("compact activity rows", () => {
       true,
       true,
     ]);
+  });
+
+  const openedFile = (path: string, markedAt: string): MarkedEntry => ({
+    base: { id: "cloud:groups:vertrieb", name: "vertrieb", kind: "groups", area: "cloud" },
+    entry: { name: path.split("/").at(-1)!, path, directory: false, size: 1, modified: markedAt },
+    markedAt,
+  });
+
+  test('"Me" drops the actor columns and lists opened files in time order, each leading to the file', async () => {
+    const mine = { kind: "user" as const, userId: "valentin", name: "Valentin Kolb" };
+    await view(
+      [
+        entry({ action: "file.upload", time: at(40), actor: mine, after: live("vertrieb/Kampagnen/Angebot.pdf", { directory: false }) }),
+        entry({ action: "file.edit", time: at(10), actor: mine, after: live("vertrieb/Planung/Budget.xlsx", { directory: false }) }),
+      ],
+      { filters: { actor: "me" }, opened: [openedFile("Grafik/Logo.svg", at(20))] },
+    );
+    const rows = [...dom.root.querySelectorAll<HTMLElement>("article.filesv2-history-row")];
+    expect(rows.map((row) => row.getAttribute("data-mode"))).toEqual(["me", "me", "me"]);
+    expect(dom.root.querySelector(".filesv2-history-row__actor, .filesv2-history-row__who")).toBeNull();
+    expect(rows.map((row) => row.querySelector(".filesv2-history-row__sentence")?.textContent)).toEqual([
+      "Angebot.pdf hochgeladen in Team Vertrieb › Kampagnen",
+      "Logo.svg geöffnet in Team Vertrieb › Grafik",
+      "Budget.xlsx bearbeitet in Team Vertrieb › Planung",
+    ]);
+    expect(rows[1]!.querySelector("a.filesv2-history-target--name")?.getAttribute("href")).toBe(
+      "/app/filesv2?base=cloud%3Agroups%3Avertrieb&path=Grafik&file=Grafik%2FLogo.svg",
+    );
+  });
+
+  test('"All" never shows opened files, and the "Who" chip switches between "Me", "All" and a person', async () => {
+    const changes: ActivityFilters[] = [];
+    await view([entry({ action: "file.upload", after: live("vertrieb/A.pdf", { directory: false }) })], {
+      opened: [openedFile("Grafik/Logo.svg", at(20))],
+      onFiltersChange: (filters) => changes.push(filters),
+      people: [{ id: "10000000-0000-4000-8000-000000000009", label: "Mia Weber" }],
+    });
+    expect(dom.root.textContent).not.toContain("Logo.svg");
+    const who = [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-history-head__filters button")].find((button) =>
+      button.textContent?.startsWith("Wer"),
+    )!;
+    expect(who.textContent).toContain("Alle");
+    who.click();
+    await flush();
+    const option = (label: string) =>
+      [...document.querySelectorAll<HTMLElement>("[role=menuitemradio], [role=menuitemcheckbox], [role=option], button")].find(
+        (item) => item.textContent?.trim() === label,
+      )!;
+    option("Ich").click();
+    await flush();
+    expect(changes.at(-1)).toEqual({ actor: "me" });
+  });
+
+  test('an empty "Me" leads to everyone\'s changes in one click', async () => {
+    const changes: ActivityFilters[] = [];
+    await view([], { filters: { actor: "me" }, opened: [], onFiltersChange: (filters) => changes.push(filters) });
+    expect(dom.root.textContent).toContain("Noch keine Aktivität von dir");
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Alle anzeigen"))!.click();
+    expect(changes).toEqual([{}]);
   });
 });

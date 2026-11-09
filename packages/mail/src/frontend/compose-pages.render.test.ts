@@ -105,7 +105,15 @@ beforeEach(() => {
   spies.push(spyOn(cloudAi, "getLiveDictationStatus").mockResolvedValue({ available: false, reason: "not_configured" }));
   spies.push(spyOn(services.coreSettings, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
-  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
+  spies.push(
+    spyOn(rail, "readRailSnapshot").mockResolvedValue({
+      revision: 0,
+      visibility: {},
+      shortcuts: [],
+      showNames: true,
+      managedShortcuts: [],
+    }),
+  );
   spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
   spies.push(
     spyOn(publicResources, "publicIds").mockImplementation(

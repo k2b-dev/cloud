@@ -1,9 +1,10 @@
 import { openCommand } from "@k2b/cloud/browser/commands";
+import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
-import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder, StatusBadge, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, createNavigation, Dropdown, InlineGuidance, MovedHint, Placeholder, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
@@ -17,14 +18,17 @@ import { browseOptions, browseQuery, parsePreferences, type ViewPreference, view
 import { directoryContext, directoryPageCount, directoryPages } from "./directory-pages";
 import Editor from "./Editor";
 import { historyExecutionHref } from "./execution-url";
+import FavoritesPage from "./FavoritesPage";
 import { IssueMessage } from "./feedback";
 import { createFilesUploads } from "./files-uploads";
+import { RECENT_MOVED_HINT } from "./hints";
 import { type HistoryActions, type HistoryEnvironment, type HistoryTarget, isCurrent } from "./history-actions";
 import {
   entryHref,
   loadActivity,
   loadBatchContext,
   loadChain,
+  loadRecent,
   loadRecovery,
   moveActivityBack,
   recheckActivity,
@@ -34,7 +38,6 @@ import {
 import { useHistoryMessages } from "./history-messages";
 import { type ActivityFilters, movedEntry, placeDescriber } from "./history-requests";
 import MarkdownDocument from "./MarkdownDocument";
-import { MarksMenu, MarksSidebarItem, openMarksDialog } from "./MarksMenu";
 import { MovedNotice } from "./MissingItemView";
 import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
@@ -272,7 +275,8 @@ export default function Workspace(props: {
   const peopleOptions = () => {
     const known = Object.entries(people()).map(([id, label]) => ({ id, label }));
     const chosen = activityFilters().actor;
-    return chosen && !people()[chosen] ? [...known, { id: chosen, label: h().selectedPerson }] : known;
+    // "me" is the row choice "Me", not a person of the list.
+    return chosen && chosen !== "me" && !people()[chosen] ? [...known, { id: chosen, label: h().selectedPerson }] : known;
   };
   const historyEnv = createMemo<HistoryEnvironment>(() => ({
     now: snapshot().now ?? props.initial.now ?? new Date().toISOString(),
@@ -372,14 +376,13 @@ export default function Workspace(props: {
       !!searchState(new URL(target, "https://files.invalid").searchParams)
     );
   };
-  const [marksRevision, setMarksRevision] = createSignal(0);
+  // Once, at the sidebar's Activity: Recent now lives there. The server decides; dismissing or using it ends it.
+  const [recentMovedHint, setRecentMovedHint] = createSignal(!!props.initial.hints?.recentMoved);
   const dialogLifetime = new AbortController();
   onCleanup(() => dialogLifetime.abort());
-  // From a storage, Activity opens filtered to it, as approved; inside Activity the entry keeps the current filters.
-  const activityHref = () =>
-    currentView() === "activity"
-      ? activityUrl(activityFilters())
-      : activityUrl(snapshot().selectedId && !currentView() ? { baseId: snapshot().selectedId! } : {});
+  // The sidebar's Activity replaces Recent: it always opens "Me" across all storage (approved 08.11.); inside Activity
+  // the entry keeps the current filters. A storage's own history is "Activity of this storage" in its menu.
+  const activityHref = () => (currentView() === "activity" ? activityUrl(activityFilters()) : activityUrl({ actor: "me" }));
   const navigation = createNavigation({
     items: () => [
       ...(hasOverview()
@@ -395,15 +398,6 @@ export default function Workspace(props: {
             },
           ]
         : []),
-      { id: "recent", label: b().recent, icon: "ti ti-clock", action: "recent" },
-      { id: "favorites", label: b().favorites, icon: "ti ti-star", action: "favorites" },
-      {
-        id: "shares",
-        label: b().shares,
-        icon: "ti ti-world-share",
-        href: viewUrl(snapshot().selectedId, "shares"),
-        navigation: "enhanced" as const,
-      },
       {
         id: "activity",
         label: b().activity,
@@ -412,6 +406,22 @@ export default function Workspace(props: {
         active: currentView() === "activity",
         navigation: "enhanced" as const,
         scroll: "manual" as const,
+      },
+      {
+        id: "favorites",
+        label: b().favorites,
+        icon: "ti ti-star",
+        href: viewUrl(null, "favorites"),
+        active: currentView() === "favorites",
+        navigation: "enhanced" as const,
+      },
+      {
+        id: "shares",
+        label: b().shares,
+        icon: "ti ti-world-share",
+        href: viewUrl(snapshot().selectedId, "shares"),
+        active: currentView() === "shares",
+        navigation: "enhanced" as const,
       },
       ...snapshot().bases.items.map((base) => ({
         id: base.id,
@@ -423,15 +433,6 @@ export default function Workspace(props: {
         scroll: "manual" as const,
       })),
     ],
-    onAction: (kind) => {
-      if (kind === "recent" || kind === "favorites")
-        void openMarksDialog({
-          kind,
-          title: kind === "recent" ? b().recent : b().favorites,
-          onOpen: openMarked,
-          signal: dialogLifetime.signal,
-        });
-    },
     onNavigate,
   });
   onMount(() =>
@@ -837,8 +838,39 @@ export default function Workspace(props: {
                       <AppWorkspace.SidebarItemLabel>{b().allStorage}</AppWorkspace.SidebarItemLabel>
                     </AppWorkspace.SidebarItem>
                   </Show>
-                  <MarksSidebarItem kind="recent" onOpen={openMarked} revision={marksRevision()} />
-                  <MarksSidebarItem kind="favorites" onOpen={openMarked} revision={marksRevision()} />
+                  {/* Activity takes Recent's place: "Me" is what Recent listed, and the files you changed. */}
+                  <AppWorkspace.SidebarItem
+                    class="filesv2-sidebar-activity"
+                    href={activityHref()}
+                    navigation="enhanced"
+                    scroll="manual"
+                    onNavigate={onNavigate}
+                    active={currentView() === "activity"}
+                  >
+                    <AppWorkspace.SidebarItemIcon icon="ti ti-history" />
+                    <AppWorkspace.SidebarItemLabel>{b().activity}</AppWorkspace.SidebarItemLabel>
+                  </AppWorkspace.SidebarItem>
+                  <MovedHint
+                    open={recentMovedHint()}
+                    target={() => document.querySelector<HTMLElement>(".filesv2-sidebar-activity") ?? undefined}
+                    placement="right"
+                    onDismiss={() => {
+                      setRecentMovedHint(false);
+                      markHintSeen(RECENT_MOVED_HINT);
+                    }}
+                    action={{ label: b().openActivity, href: activityUrl({ actor: "me" }) }}
+                  >
+                    <strong>{b().recentMovedTitle}</strong> {b().recentMovedText}
+                  </MovedHint>
+                  <AppWorkspace.SidebarItem
+                    href={viewUrl(null, "favorites")}
+                    navigation="enhanced"
+                    onNavigate={onNavigate}
+                    active={currentView() === "favorites"}
+                  >
+                    <AppWorkspace.SidebarItemIcon icon="ti ti-star" />
+                    <AppWorkspace.SidebarItemLabel>{b().favorites}</AppWorkspace.SidebarItemLabel>
+                  </AppWorkspace.SidebarItem>
                   <AppWorkspace.SidebarItem
                     href={viewUrl(snapshot().selectedId, "shares")}
                     navigation="enhanced"
@@ -854,21 +886,6 @@ export default function Workspace(props: {
                           {page.next ? "+" : ""}
                         </AppWorkspace.SidebarItemMeta>
                       )}
-                    </Show>
-                  </AppWorkspace.SidebarItem>
-                  <AppWorkspace.SidebarItem
-                    href={activityHref()}
-                    navigation="enhanced"
-                    scroll="manual"
-                    onNavigate={onNavigate}
-                    active={currentView() === "activity"}
-                  >
-                    <AppWorkspace.SidebarItemIcon icon="ti ti-history" />
-                    <AppWorkspace.SidebarItemLabel>{b().activity}</AppWorkspace.SidebarItemLabel>
-                    <Show when={currentView() !== "activity"}>
-                      <AppWorkspace.SidebarItemMeta>
-                        <StatusBadge tone="info" label={h().newFeature} />
-                      </AppWorkspace.SidebarItemMeta>
                     </Show>
                   </AppWorkspace.SidebarItem>
                 </AppWorkspace.SidebarSection>
@@ -898,6 +915,30 @@ export default function Workspace(props: {
                           meta={base.kind === "users" ? <span class="text-xs text-dimmed">{base.name}</span> : undefined}
                           title={`${base.kind === "users" ? `${baseLabel(base, b(), locale())} · ${base.name}` : baseLabel(base, b(), locale())} (${t()[base.area]})`}
                           onNavigate={(event) => withSpinner(treeId(base.id, ""), () => onNavigate(event))}
+                          actions={
+                            // A storage's own history: everyone's changes there. Activity in the sidebar is "Me".
+                            <Show when={base.area === "cloud"}>
+                              <Dropdown.Root
+                                items={[
+                                  {
+                                    label: b().activityOfStorage,
+                                    icon: "ti ti-history",
+                                    action: () => void go(activityUrl({ baseId: base.id })),
+                                  },
+                                ]}
+                                align="end"
+                              >
+                                <Dropdown.Trigger
+                                  iconOnly
+                                  size="xs"
+                                  variant="ghost"
+                                  label={`${b().moreActions}: ${baseLabel(base, b(), locale())}`}
+                                >
+                                  <i class="ti ti-dots" aria-hidden="true" />
+                                </Dropdown.Trigger>
+                              </Dropdown.Root>
+                            </Show>
+                          }
                         >
                           <Show when={base.status === "existing"}>
                             <For each={folders()[treeId(base.id, "")] ?? []}>{(entry) => <Folder baseId={base.id} entry={entry} />}</For>
@@ -943,22 +984,21 @@ export default function Workspace(props: {
                     loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
                     loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
                     retentionDays={props.retentionDays ?? 365}
+                    opened={{ initial: snapshot().marks ?? null, load: (signal) => loadRecent(signal, b().loadFailed) }}
                   />
                 </AppWorkspace.Main>
               }
             >
               <Show
-                when={currentView() !== "recent" && currentView() !== "favorites"}
+                when={currentView() !== "favorites"}
                 fallback={
-                  <AppWorkspace.Main class="p-3">
-                    <MarksMenu
-                      kind={currentView() === "recent" ? "recent" : "favorites"}
-                      open
-                      close={() => {}}
-                      onOpen={openMarked}
-                      revision={marksRevision()}
-                    />
-                  </AppWorkspace.Main>
+                  <FavoritesPage
+                    initial={snapshot().marks ?? null}
+                    bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
+                    timeZone={props.timeZone ?? "UTC"}
+                    now={snapshot().now ?? new Date().toISOString()}
+                    onOpen={openMarked}
+                  />
                 }
               >
                 <Show
@@ -987,7 +1027,8 @@ export default function Workspace(props: {
                         <StorageOverview
                           bases={snapshot().bases.items}
                           issues={snapshot().bases.issues}
-                          onOpenRecent={openMarked}
+                          favorites={snapshot().favoritesPreview}
+                          env={historyEnv()}
                           onNavigate={onNavigate}
                         />
                       }
@@ -1095,7 +1136,6 @@ export default function Workspace(props: {
                             preferences={props.preferences}
                             issues={snapshot().bases.issues}
                             onSelectionSource={workspace.rememberSource}
-                            onMarksChanged={() => setMarksRevision((value) => value + 1)}
                             onBranchRefreshReady={(refresh) => {
                               refreshBrowserBranches = refresh;
                             }}
@@ -1128,7 +1168,6 @@ export default function Workspace(props: {
                               void go(filesUrl(directory().base.id, directory().path, null, null, null, options))
                             }
                             onChanged={(selectPath) => {
-                              setMarksRevision((value) => value + 1);
                               // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
                               ensureLoaded(Object.keys(folders()), true);
                               return go(

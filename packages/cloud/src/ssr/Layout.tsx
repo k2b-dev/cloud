@@ -394,7 +394,7 @@ export default function Layout(props: LayoutProps) {
           banners={user && (swap || announcements?.banners.length) ? true : undefined}
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
-          {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} />}
+          {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} name={appName} />}
           {showRail && <div class="cloud-shell-reveal" data-cloud-shell-reveal="" aria-hidden="true" />}
           {(() => {
             // The page renders before the shell's element, so its attributes can say what the page holds. The parts
