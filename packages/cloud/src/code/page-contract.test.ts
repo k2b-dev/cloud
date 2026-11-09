@@ -18,7 +18,7 @@ test("Code pages accept the Sankey builder and reject a cyclic flow", async () =
   const description = { kind: "sankey", ...props };
   const block = ui.Chart.Sankey(props);
   expect(block).toEqual({ kind: "Chart", description });
-  expect(validateCodePage(page([block]), codeId)).toEqual(page([block]));
+  expect<unknown>(validateCodePage(page([block]), codeId)).toEqual(page([block]));
   expect(() =>
     validateCodePage(
       page([
