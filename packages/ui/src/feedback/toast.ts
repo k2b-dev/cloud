@@ -119,9 +119,10 @@ const defaultDuration = (variant: ToastVariant, text: string, hasAction: boolean
 const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
 const safeHref = (href: string): string | null => {
   try {
-    // Resolved like the browser resolves it, so a relative link keeps working and a disguised scheme shows.
+    // Resolved like the browser resolves it, so a disguised scheme shows; the link keeps the caller's own, often
+    // relative, address.
     const url = new URL(href, document.baseURI);
-    return SAFE_PROTOCOLS.has(url.protocol) ? url.href : null;
+    return SAFE_PROTOCOLS.has(url.protocol) ? href : null;
   } catch {
     return null;
   }
