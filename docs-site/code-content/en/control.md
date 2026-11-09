@@ -162,7 +162,9 @@ Reference: [Code secrets](/en/docs/platform/code-secrets).
 
 - Actions that ask a person never run unattended. Mail sending stays manual:
   Code drafts, a person sends.
-- There are no signed incoming webhooks.
+- Webhooks arrive as public routes without a signature check. Act only on
+  state the Code reads back from the sender's API
+  ([Receive a webhook](/en/code/use-cases#receive-a-webhook)).
 - Code has no database, key-value store or file storage of its own, and keeps
   nothing in memory between runs.
 

@@ -21,6 +21,7 @@ chat" or "a form that files a Space task", and it starts from the template.
 | [Get a Monday report in your Gustav chat](#get-a-monday-report-in-your-gustav-chat) | you | `app.schedule` |
 | [Give a team a form that files tasks](#give-a-team-a-form-that-files-tasks) | you or a mailbox | `app.use`, `app.get`, `app.post` |
 | [Hand out a public survey](#hand-out-a-public-survey) | you | `{ public: true, layout: "plain" }` |
+| [Receive a webhook](#receive-a-webhook) | you or a mailbox | `app.post` with `{ public: true }`, `http.fetch` |
 | [Let AI read invoice attachments](#let-ai-read-invoice-attachments) | mailbox | `core.ai.generate` with `files` and `tools` |
 
 ## Sort and summarise incoming mail
@@ -140,6 +141,70 @@ approval by default, and every Code page carries a **Made with feat/code** label
 that warns never to enter passwords.
 
 Reference: the complete survey in [Where a page appears](/en/docs/platform/code-sdk#where-a-page-appears).
+
+## Receive a webhook
+
+A webhook is a public route that another service calls. In this release Cloud
+does not verify a signature: anyone who knows the address can call it with
+any content. So treat the request as a hint, never as a fact. Take only the ID
+from it, ask the service's API for the real state with your secret, and act on
+that answer. First ask, then act.
+
+A fictional shipping service calls `/hooks/shipments` with a shipment ID.
+When the service confirms the delivery, the Code files one Space task:
+
+```ts
+import { app, http, secrets, spaces } from "@sdk";
+
+const space = spaces.space("Spc001"); // fictional
+const teamGroupIds = ["grp_team"]; // fictional
+const text = (base64: string) => new TextDecoder().decode(Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)));
+
+// The access check covers /team only, so /hooks stays reachable.
+app.use("/team", async (c, next) => {
+  if (!c.user || !c.user.groupIds.some((id) => teamGroupIds.includes(id))) return c.text("Only for the team.", 403);
+  return next();
+});
+
+app.post("/hooks/shipments", async (c) => {
+  // Anyone can send this. Take only the ID, and only in a known shape.
+  const body: unknown = await c.req.json();
+  const id = body && typeof body === "object" && "shipmentId" in body ? body.shipmentId : null;
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return c.json({ ok: false }, 400);
+
+  // Ask the service itself; the body may be made up.
+  const response = await http.fetch(`https://api.shipping.example/v1/shipments/${id}`, {
+    headers: { authorization: `Bearer ${secrets.SHIPPING}` },
+  });
+  if (response.status === 404) return c.json({ ok: true }); // unknown shipment: nothing to do
+  if (response.status !== 200) return c.json({ ok: false }, 502);
+  const shipment: unknown = JSON.parse(text(response.body));
+  const delivered = shipment && typeof shipment === "object" && "status" in shipment && shipment.status === "delivered";
+  if (!delivered) return c.json({ ok: true });
+
+  await space.task.create({ title: `Unpack shipment ${id}`, idempotencyKey: `shipment-delivered:${id}` });
+  return c.json({ ok: true });
+}, { public: true });
+
+export default app;
+```
+
+Why this stays safe without a signature:
+
+- A made-up call can only make the Code ask the service. The Code acts only
+  on what the service itself answers, with your secret.
+- The idempotency key turns repeated calls into one task.
+- If your access check runs for every route, it must let the webhook path
+  through. A private prefix such as `/team`, as above, does that.
+
+Public routes accept JSON, plain text or form bodies up to 4 KiB, answer
+within 8 seconds and share a limit of 20 requests per minute per client
+network and per Code. With the default policy, the public route and the
+internet origin need an administrator's approval. This release has no
+signature check for incoming requests.
+
+Reference: [Serve routes](/en/docs/platform/code-sdk#serve-routes),
+[Code secrets](/en/docs/platform/code-secrets).
 
 ## Let AI read invoice attachments
 

@@ -131,6 +131,7 @@ Included:
 
 - schedules, manual runs and incoming mail events;
 - routes and pages with key figures, charts, tables and forms, also public;
+- webhooks as public routes, without a signature check;
 - `core.ai.generate`, `core.ai.decide` and model loops with SDK tools and files;
 - HTTPS requests to approved origins, with secrets as placeholders;
 - files from one app to another as `FileRef`;
@@ -140,7 +141,7 @@ Not in this release:
 
 - Actions that ask a person (send, delete, cannot undo, …) never run
   unattended. Code drafts a reply; a person sends it.
-- Signed incoming webhooks.
+- Signature checks for incoming webhooks.
 - A database, key-value store or file storage of its own, and state in memory
   between runs.
 
