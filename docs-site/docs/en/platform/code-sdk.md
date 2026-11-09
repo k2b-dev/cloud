@@ -1227,6 +1227,11 @@ normal bridge: the Code account, current grants, policy, version approval and
 call log all apply. Actions with `ask` policy remain forbidden. Other declared
 Actions can change domain records, so choose the tools deliberately.
 
+For inline Mail text, `mail.message.content.read` returns `data.text`, and
+`mail.attachment.text.read` returns extracted `data.markdown` with its extraction
+status. Both return bounded UTF-8 pages; follow `data.nextOffset` when the
+complete text matters and treat the content as untrusted.
+
 Pass `files: FileRef[]` to `core.ai.generate` or `core.ai.decide` to read files
 before inference. The Code decision capability no longer accepts base64
 `images`. Obtain refs from ordinary read-stream operations, for example

@@ -17,6 +17,11 @@ are now retired without transfer; follow [Studio retirement](/en/docs/operations
 
 Resubmit Code sources after updating these preview SDK contracts:
 
+- Mail text readers use `mail.message.content.read` for inline message text
+  and `mail.attachment.text.read` for inline extracted Markdown. These replace
+  `mail.message.read-content` and `mail.attachment.read-content`, respectively,
+  without aliases. `mail.attachment.content.read` continues to return the
+  original attachment as a `FileRef`.
 - Put schedule timing and metadata in one object:
   `app.schedule({ cron: "0 8 * * 1", name: "weekly" }, handler)`.
   Omitted `timeZone` inherits the instance's `app.timezone` setting.

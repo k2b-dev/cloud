@@ -5,7 +5,7 @@ load-tools:
   - mail.conversation.focus
   - mail.search
   - mail.conversation.read
-  - mail.message.read-content
+  - mail.message.content.read
   - mail.draft.create
 ---
 
@@ -21,7 +21,7 @@ Mailbox-scoped tools take `mailbox`: reuse its public ID. All resources and batc
 - Across mailboxes, use `mail.search`. Within a mailbox use `mail.conversation.list` or the structured filters of `mail.conversation.search`. `mail.conversation.list` without `view` or `workStatus` lists open work only; pass `includeDone` to include done or snoozed conversations.
 - To choose a mailbox, use `mail.mailbox.browse`. Unread and needs-action counts count conversations, not individual messages. Report a returned problem when interpreting freshness. Use `mail.mailbox.read` for configuration or connection diagnosis, not before every mail task.
 - Use `mail.conversation.read` for collaboration context and the latest message window. Shared summary text may lag behind the messages. Paginate `mail.message.list` only when the whole thread is needed.
-- For plain message content use `mail.message.read-content`; follow nextOffset until null when full content matters. Use `mail.message.read` for the exact reply envelope and attachment metadata. Attachment text is available through `mail.attachment.read-content`, including status and continuation; a separate metadata read is unnecessary when text is already the goal.
+- For plain message content use `mail.message.content.read`; follow nextOffset until null when full content matters. Use `mail.message.read` for the exact reply envelope and attachment metadata. Attachment text is available through `mail.attachment.text.read`, including status and continuation; a separate metadata read is unnecessary when text is already the goal.
 - Reuse current revisions and target IDs from a list for a specific requested status or assignment change. Read again when context is insufficient or a revision conflicts. Provider mark/move operations need the actual source folder; never guess it from a folder name.
 - Discover tag, member, reminder, comment, activity, delivery or unsubscribe capabilities only when the task needs them. An unsubscribe request or queued send is not confirmed delivery.
 

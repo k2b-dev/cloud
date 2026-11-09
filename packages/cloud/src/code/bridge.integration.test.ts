@@ -33,6 +33,7 @@ import { migrate as migrateSettings } from "../../../core/src/migrate/core/setti
 import { migrate as migrateWorkflows } from "../../../core/src/migrate/core/workflows";
 import { mailCapabilities } from "../../../mail/src/capabilities";
 import { migrate as migrateMail } from "../../../mail/src/migrate";
+import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "../../../mail/src/service/attachment-extraction-contract";
 import { storeReadableBlob } from "../../../mail/src/service/message-blobs";
 import * as mailMessages from "../../../mail/src/service/messages";
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
@@ -1861,6 +1862,35 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       maxBytes: maximum,
       dependencies: dependencies(),
     });
+  test("Mail content readers keep inline text separate from the original attachment FileRef through Core", async () => {
+    const fixture = await fileFixture();
+    await sql`UPDATE mail.message_contents SET plain_text='Message body' WHERE id=${fixture.messageId}::uuid`;
+    await sql`
+      INSERT INTO mail.attachment_extractions(blob_id,extractor_version,status,format,markdown,input_bytes,output_bytes,truncated,completed_at)
+      SELECT blob_id,${MAIL_ATTACHMENT_EXTRACTOR_VERSION},'complete','markdown','# Attachment',${fixture.payload.length},12,false,${now}
+      FROM mail.attachments WHERE short_id='At4g00'
+      ON CONFLICT (blob_id,extractor_version) DO UPDATE SET
+        status='complete',format='markdown',markdown='# Attachment',output_bytes=12,truncated=false,completed_at=${now}
+    `;
+    const message = await (await fixture.call("message.content.read", { id: "Ms4g00" })).json();
+    expect(message).toMatchObject({ ok: true, data: { data: { text: "Message body", trust: "untrusted", nextOffset: null } } });
+    expect(message.data).not.toHaveProperty("stream");
+    const attachment = await (await fixture.call("attachment.text.read", { id: "At4g00" })).json();
+    expect(attachment).toMatchObject({
+      ok: true,
+      data: { data: { markdown: "# Attachment", trust: "untrusted", nextOffset: null, extraction: { available: true } } },
+    });
+    expect(attachment.data).not.toHaveProperty("stream");
+    expect(await fixture.read()).toMatchObject({ ok: true, data: { mediaType: "application/pdf", size: fixture.payload.length } });
+    const rows = await sql<{ capability: string }[]>`
+      SELECT call->>'capability' AS capability FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal
+    `;
+    expect(rows.map((row) => row.capability)).toEqual([
+      "mail.message.content.read",
+      "mail.attachment.text.read",
+      "mail.attachment.content.read",
+    ]);
+  }, 30_000);
   test("AI file reader reuses the owning Mail authorization and logs its read, including a visible 403", async () => {
     const fixture = await fileFixture();
     const opened = await fixture.read();
