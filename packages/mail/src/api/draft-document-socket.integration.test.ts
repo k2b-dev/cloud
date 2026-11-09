@@ -594,10 +594,21 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
   const expectTransactionEnded = async (holder: typeof sql, pid: number) => {
     // Inspect from the holder, so the pool cannot reuse the cancelled backend
     // for this observation and make our own SELECT look like unfinished work.
-    const [backend] = await holder<{ state: string; xact_start: Date | null; blocked: boolean }[]>`
-      SELECT state, xact_start, cardinality(pg_blocking_pids(pid)) > 0 AS blocked
-      FROM pg_stat_activity WHERE pid = ${pid}
-    `;
+    const inspect = async () =>
+      (
+        await holder<{ state: string; xact_start: Date | null; blocked: boolean }[]>`
+          SELECT state, xact_start, cardinality(pg_blocking_pids(pid)) > 0 AS blocked
+          FROM pg_stat_activity WHERE pid = ${pid}
+        `
+      )[0];
+    // A closed reservation ends its backend asynchronously: until the server
+    // processes the disconnect it still shows the aborted transaction.
+    let backend = await inspect();
+    const deadline = Date.now() + 1000;
+    while (backend?.state === "idle in transaction (aborted)" && Date.now() < deadline) {
+      await Bun.sleep(10);
+      backend = await inspect();
+    }
     // The pool may have closed the connection or returned it idle after ROLLBACK.
     if (backend) {
       expect(backend.blocked).toBe(false);
