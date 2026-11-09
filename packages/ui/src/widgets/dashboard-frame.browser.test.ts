@@ -10,6 +10,7 @@ const css = readFileSync(resolve(ui, "dist/base.css"), "utf8") + readFileSync(re
 const entry = resolve(import.meta.dir, "dashboard-frame.fixture.ts");
 // Three frames as cells of a section (a third, two thirds, full): a short compact block, a table that reserves its full height, and a bare surface
 // around content with its own head. `window.frameState(state)` switches all of them; `window.retries` counts Try again.
+// `window.tableHeight`, set before the script, gives the table frame a height as well as its reserve.
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
@@ -22,7 +23,7 @@ const box = (height, text) => { const element = document.createElement("div"); e
 const rows = (count) => { const table = document.createElement("table"); for (let i = 0; i < count; i++) { const row = table.insertRow(); row.insertCell().textContent = "Row " + i; row.style.height = "36px"; } return table; };
 render(() => createComponent(DashboardGrid, { get children() { return createComponent(DashboardSection, { title: "Effect", icon: "ti ti-chart-dots", get children() { return [
   createComponent(DashboardFrame, { width: "third", title: "Balance", subtitle: "October", height: "56px", compact: true, asOf: "09:12", onRetry: retry, empty: "No bookings.", get state() { return state(); }, get children() { return box(40, "amounts"); } }),
-  createComponent(DashboardFrame, { width: "twoThirds", title: "Campaigns", subtitle: "Latest 6", asOf: "09:12", onRetry: retry, empty: "No campaign.", emptyIcon: "ti ti-table-off",
+  createComponent(DashboardFrame, { width: "twoThirds", title: "Campaigns", subtitle: "Latest 6", asOf: "09:12", onRetry: retry, empty: "No campaign.", emptyIcon: "ti ti-table-off", height: window.tableHeight,
     get tools() { return createComponent(TextInput, { type: "search", "aria-label": "Search campaigns", placeholder: "Search" }); },
     get reserve() { return rows(6); }, get state() { return state(); }, get children() { return rows(state() === "ready" || state() === "stale" ? 6 : 0); } }),
   createComponent(DashboardFrame, { width: "full", get children() { return box(200, "explorer"); } }),
@@ -40,10 +41,11 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const mount = async (page: Page, hostWidth: number) => {
+const mount = async (page: Page, hostWidth: number, tableHeight?: string) => {
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" data-theme="light" style="margin:0"><div id="host" style="width:${hostWidth}px"></div></body></html>`,
   );
+  if (tableHeight) await page.evaluate((height) => Object.assign(window, { tableHeight: height }), tableHeight);
   await page.addScriptTag({ content: script });
   await settled(page);
 };
@@ -91,6 +93,29 @@ for (const width of [1200, 390])
       await page.close();
     }
   }, 30_000);
+
+test("a height with a reserve wins: the body keeps it in every state and the table scrolls inside", async () => {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 1400 }, reducedMotion: "reduce" });
+  const errors = pageErrors(page);
+  try {
+    await mount(page, 1200, "120px");
+    const ready = await geometry(page);
+    // Six 36 px rows need more than 120 px: the body stays 120 px high and its content scrolls.
+    expect(ready[1]!.body![3]).toBe(120);
+    const scrolls = () =>
+      page
+        .locator(".k2b-dashboard-frame__stack .k2b-dashboard-frame__content")
+        .evaluate((content) => ({ scrolls: content.scrollHeight > content.clientHeight, height: Math.round(content.clientHeight) }));
+    expect(await scrolls()).toEqual({ scrolls: true, height: 120 });
+    for (const state of ["loading", "empty", "error", "stale", "ready"]) {
+      await setState(page, state);
+      expect({ state, geometry: await geometry(page) }).toEqual({ state, geometry: ready });
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
 
 test("Try again is reachable by keyboard in a failure and in a stale note, and calls the host once per press", async () => {
   const page = await browser.newPage({ viewport: { width: 1200, height: 1000 } });

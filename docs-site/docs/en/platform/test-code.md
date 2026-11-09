@@ -113,7 +113,7 @@ completion events; the call list is present with or without trace.
 
 Simulation uses one invocation with fixture data and the same fake bridge.
 It creates no durable Code version, production run, or effect. Source check
-failures, including dynamic resource targets, stop before sandbox execution.
+failures stop before sandbox execution. Resource targets may be dynamic; production checks their current access on each call.
 No network or process environment is available to the Code. Passing tests
 grants no access; production still checks the version mandate and current
 resource rights on every call.

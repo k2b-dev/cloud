@@ -114,6 +114,8 @@ export const mandateMetrics = {
 };
 
 export type MandateIssueAuthority = {
+  /** Core's admitted Code bridge supplies this projection, never mandate input. */
+  trigger?: import("../identity/invocation-token").InvocationAuthority["workload_trigger"];
   mandateId: string;
   mandateRevision: number;
   subject: MandateSubject;

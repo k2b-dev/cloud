@@ -1,11 +1,16 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { lazySync, sql } from "@k2b/cloud";
-import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
+import {
+  getCapabilityCatalogApp,
+  invokeCapabilityWithDataSchema,
+  ResourceReaderRateLimited,
+  readResourcePrincipals,
+} from "@k2b/cloud/capabilities/server";
 import { type CodeEventCatchupInput, CodeEventCatchupInputSchema, CodeEventCatchupStatusSchema } from "@k2b/cloud/code";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { AppEventEnvelopeSchema } from "@k2b/cloud/contracts/app-events";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { authorizeResourceEvent, type ResourceEventBinding } from "@k2b/cloud/services/app-events";
+import type { ResourceEventBinding } from "@k2b/cloud/services/app-events";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import type { PumpConfig, PumpState } from "@k2b/sync";
 import { z } from "zod";
@@ -45,19 +50,58 @@ export const codeEventCatchupPumpConfig: PumpConfig<Input, number, Item> = {
     while (true) {
       const operation = await pump().get({ key: key(input.codeId, input.operationId) });
       if (operation?.status === "canceled") return;
+      if (
+        !operation ||
+        operation.status !== "running" ||
+        approvalArgsDigest(operation.input) !== approvalArgsDigest(input) ||
+        !operation.input.events.some(
+          (event) =>
+            codeEventTargetKey(input.versionId, event) === item.key && approvalArgsDigest(event) === approvalArgsDigest(item.event),
+        )
+      )
+        throw new CodeDataError("CONFLICT", "Catch-up occurrence is not in the saved operation.");
       const [subscription] = await sql<{ resource_binding: ResourceEventBinding }[]>`SELECT resource_binding FROM events.app_subscriptions
       WHERE state='active' AND event_type=${item.event.type} AND version=${item.event.version}
         AND resource_binding->>'consumer'=${CODE_EVENT_CONSUMER} AND resource_binding->>'key'=${input.codeId}`;
-      if (!subscription || !(await authorizeResourceEvent("core", subscription.resource_binding, item.event, signal)))
-        throw new CodeDataError("CONFLICT", "The handler's resource access or execution mandate is unavailable.");
-      const admitted = await sql.begin(async (db) => {
-        await db`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
-        await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
-        const code = await findCode(input.codeId, db);
-        if (!code || code.state !== "active" || code.activeVersionId !== input.versionId)
+      if (!subscription) throw new CodeDataError("CONFLICT", "The handler's resource access or execution mandate is unavailable.");
+      let admitted: boolean;
+      try {
+        // A committed receipt needs no new admission, even after a grant changes.
+        const [receipt] = await sql`SELECT run_id FROM code.run_requests
+          WHERE code_id=${input.codeId} AND request_key=${item.key}`;
+        if (receipt) return;
+        const current = await findCode(input.codeId);
+        if (!current?.serviceAccountId)
           throw new CodeDataError("CONFLICT", "Catch-up version is no longer active. Start a new operation for the new version.");
-        await requireCodeVersionApproval(code, input.versionId, db);
-        const [execution] = await db`SELECT account.id FROM auth.service_accounts account
+        // Mail grants are external to the Core transaction. Keep network waits
+        // outside policy and Code locks, then fence the account again below.
+        // Historical occurrences have no claimed live delivery. Ask the existing
+        // app-only reader for this account's current grant; it returns no content.
+        const readers = await readResourcePrincipals({
+          ref: subscription.resource_binding.place,
+          principals: [{ type: "service_account", serviceAccountId: current.serviceAccountId }],
+          signal,
+        });
+        if (
+          readers.state !== "checked" ||
+          !readers.readable.some(
+            (principal) => principal.type === "service_account" && principal.serviceAccountId === current.serviceAccountId,
+          )
+        )
+          throw new CodeDataError("CONFLICT", "The handler's resource access is unavailable.");
+        admitted = await sql.begin(async (db) => {
+          await db`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
+          await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
+          const code = await findCode(input.codeId, db);
+          if (
+            !code ||
+            code.serviceAccountId !== current.serviceAccountId ||
+            code.state !== "active" ||
+            code.activeVersionId !== input.versionId
+          )
+            throw new CodeDataError("CONFLICT", "Catch-up version is no longer active. Start a new operation for the new version.");
+          await requireCodeVersionApproval(code, input.versionId, db);
+          const [execution] = await db`SELECT account.id FROM auth.service_accounts account
         JOIN auth.mandates mandate ON mandate.subject_service_account_id=account.id
         JOIN events.app_subscriptions subscription ON subscription.resource_binding->>'mandateId'=mandate.id::text
         WHERE account.id=${code.serviceAccountId}::uuid AND account.kind='code' AND account.status='active'
@@ -68,39 +112,47 @@ export const codeEventCatchupPumpConfig: PumpConfig<Input, number, Item> = {
           AND subscription.state='active' AND subscription.resource_binding=${JSON.stringify(subscription.resource_binding)}::text::jsonb
           AND subscription.event_type=${item.event.type} AND subscription.version=${item.event.version}
         FOR SHARE OF account,mandate,subscription`;
-        if (!execution) throw new CodeDataError("CONFLICT", "The handler's active execution binding changed.");
-        const [existing] = await db`SELECT run_id FROM code.run_requests WHERE code_id=${code.id} AND request_key=${item.key}`;
-        if (existing) return true;
-        const [waiting] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs
+          if (!execution) throw new CodeDataError("CONFLICT", "The handler's active execution binding changed.");
+          const [existing] = await db`SELECT run_id FROM code.run_requests WHERE code_id=${code.id} AND request_key=${item.key}`;
+          if (existing) return true;
+          const [waiting] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs
         WHERE code_id=${code.id} AND trigger='event' AND state IN ('queued','running')`;
-        if ((waiting?.count ?? 0) >= Math.floor(backlog / 2)) return false;
-        const [version] = await db<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${input.versionId}::uuid`;
-        const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
-        const entry = manifest.entrypoints.find(
-          (e) => e.kind === "event" && e.event?.type === item.event.type && e.event.version === item.event.version,
-        );
-        if (
-          !entry?.event ||
-          manifest.ai ||
-          code.owner.kind !== "resource" ||
-          entry.event.place.type !== code.owner.ref.type ||
-          entry.event.place.id !== code.owner.ref.id ||
-          item.event.place?.type !== code.owner.ref.type ||
-          item.event.place.id !== code.owner.ref.id
-        )
-          throw new CodeDataError("BAD_INPUT", "Catch-up requires a non-AI handler for this Code owner.");
-        signal.throwIfAborted();
-        const runId = await insertCodeRun(
-          { codeId: code.id, versionId: input.versionId, trigger: "event", entrypoint: entry.entrypoint, input: item.event },
-          db,
-        );
-        await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${item.key},${runId}::uuid),
+          if ((waiting?.count ?? 0) >= Math.floor(backlog / 2)) return false;
+          const [version] = await db<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${input.versionId}::uuid`;
+          const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
+          const entry = manifest.entrypoints.find(
+            (e) => e.kind === "event" && e.event?.type === item.event.type && e.event.version === item.event.version,
+          );
+          if (
+            !entry?.event ||
+            manifest.ai ||
+            code.owner.kind !== "resource" ||
+            entry.event.place.type !== code.owner.ref.type ||
+            entry.event.place.id !== code.owner.ref.id ||
+            item.event.place?.type !== code.owner.ref.type ||
+            item.event.place.id !== code.owner.ref.id
+          )
+            throw new CodeDataError("BAD_INPUT", "Catch-up requires a non-AI handler for this Code owner.");
+          signal.throwIfAborted();
+          const runId = await insertCodeRun(
+            { codeId: code.id, versionId: input.versionId, trigger: "event", entrypoint: entry.entrypoint, input: item.event },
+            db,
+          );
+          await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${item.key},${runId}::uuid),
         (${code.id},${`historical:${item.key}`},${runId}::uuid)`;
-        await db`UPDATE code.runs SET event_subject_key=${`${item.event.type}@${item.event.version}:${code.owner.ref.type}:${code.owner.ref.id}`},
+          await db`UPDATE code.runs SET event_subject_key=${`${item.event.type}@${item.event.version}:${code.owner.ref.type}:${code.owner.ref.id}`},
         event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
-        signal.throwIfAborted();
-        return true;
-      });
+          signal.throwIfAborted();
+          return true;
+        });
+      } catch (error) {
+        if (!(error instanceof ResourceReaderRateLimited)) throw error;
+        const waitMs = error.retryAfterMs;
+        if (!Number.isFinite(waitMs) || waitMs <= 0 || Date.now() + waitMs >= input.capacityDeadline)
+          throw new CodeDataError("CONFLICT", "Catch-up exhausted its reader-check waiting budget; resume the saved snapshot.");
+        await delay(waitMs, undefined, { signal });
+        continue;
+      }
       if (admitted) return;
       if (Date.now() >= input.capacityDeadline)
         throw new Error("Catch-up waited for its capacity budget; resume the saved snapshot when runs finish.");

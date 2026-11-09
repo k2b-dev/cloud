@@ -788,9 +788,9 @@ suite("mail sent message projection", () => {
     return { ...inbound, messageId };
   };
 
-  const replyDraft = async (mailbox: Connected, inbound: { id: string; conversation_id: string }) => {
+  const replyDraft = async (mailbox: Connected, inbound: { id: string; conversation_id: string }, as = context) => {
     const draft = await createDraft({
-      context,
+      context: as,
       mailboxId: mailbox.mailboxId,
       input: {
         senderIdentityId: mailbox.identityId,
@@ -808,6 +808,95 @@ suite("mail sent message projection", () => {
     if (!draft.ok) throw new Error(JSON.stringify(draft.error));
     return draft.data;
   };
+
+  test("reply eligibility is checked before any durable send or provider effect", async () => {
+    const provider = createProvider("imap");
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+      VALUES('Reply workload fixture','code') RETURNING id`;
+    if (!account) throw new Error("Missing workload fixture account");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "reply-eligibility");
+      const grant = await grantMailboxAccess({
+        context,
+        mailboxId: mailbox.mailboxId,
+        principal: { type: "service_account", serviceAccountId: account.id },
+        permission: "write",
+      });
+      if (!grant.ok) throw new Error(grant.error.message);
+      const [source] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.message_contents WHERE id=${inbound.id}::uuid`;
+      const [box] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id=${mailbox.mailboxId}::uuid`;
+      const request: MailRequestContext = {
+        accessSubject: { type: "service_account", serviceAccountId: account.id },
+        actor: {
+          kind: "service_account",
+          delegatedUser: null,
+          scopes: ["read", "write"],
+          credentialExpiresAt: "2099-01-01T00:00:00Z",
+          serviceAccount: {
+            id: account.id,
+            name: "Reply workload fixture",
+            kind: "code",
+            status: "active",
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: "2026-11-01T00:00:00Z",
+          },
+          delegation: {
+            kind: "invocation",
+            callingAppId: "core",
+            credentialKind: "mandate",
+            invocationId: "reply-fixture",
+            mandateId: "reply-fixture",
+            mandateRevision: 1,
+            workloadType: "code.version",
+            workloadId: "reply-fixture",
+            workloadRun: "reply-fixture",
+            workloadTrigger: {
+              type: "mail.message.received",
+              subject: { type: "mail.message", id: source!.short_id },
+              place: { type: "mail.mailbox", id: box!.short_id },
+            },
+          },
+        },
+      };
+      const draft = await replyDraft(mailbox, inbound, request);
+      await sql`UPDATE mail.conversation_messages SET added_by='list' WHERE message_id=${inbound.id}::uuid`;
+      const hash = await reviewedDraftContentHash(request, mailbox.mailboxId, draft.id, draft.revision);
+      const result = await createActorCommand({
+        context: request,
+        mailboxId: mailbox.mailboxId,
+        enqueue: false,
+        input: {
+          kind: "send",
+          draftId: draft.id,
+          expectedDraftRevision: draft.revision,
+          expectedContentHash: hash,
+          senderIdentityId: mailbox.identityId,
+          undoSeconds: 0,
+          idempotencyKey: `reply-eligibility-${suffix}`,
+        },
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+      expect(await sql`SELECT id FROM mail.outbox_submissions WHERE draft_id=${draft.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM mail.commands WHERE idempotency_key=${`reply-eligibility-${suffix}`}`).toHaveLength(0);
+      expect(provider.submissions()).toBe(0);
+      const [state] = await sql<
+        { work_status: string }[]
+      >`SELECT work_status FROM mail.conversations WHERE id=${inbound.conversation_id}::uuid`;
+      expect(state?.work_status).toBe("needs_action");
+      // A direct link retains the ordinary reply path through the real worker.
+      await sql`UPDATE mail.conversation_messages SET added_by='headers' WHERE message_id=${inbound.id}::uuid`;
+      await send(mailbox, draft.id, draft.revision, "reply-eligible", "sent", { as: request });
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
+    }
+  });
 
   test("a reply sent through Gmail shows in Sent at once and stays one message after the sync", async () => {
     const provider = createProvider("gmail");

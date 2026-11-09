@@ -91,8 +91,17 @@ export function uploadRequestFailure(error: unknown, fallback: string, signal: A
   return error;
 }
 
-// Cloud no longer holds a usable session for these answers, so there is nothing to abort.
-const CLOSED_CODES = ["upload_closed", "receipt_unknown", "upload_changed"];
+/** Missing or changed receipts do not prove whether publication happened. Never release their reservation. */
+export function isUnresolvedUploadFailure(error: unknown): boolean {
+  return (
+    error instanceof UploadTransferError &&
+    error.origin === "cloud" &&
+    ["receipt_unknown", "upload_changed", "upload_uncertain"].includes(error.code ?? "")
+  );
+}
+
+// Only an explicitly closed session proves that this transfer is over.
+const CLOSED_CODES = ["upload_closed"];
 // Filegate refused publication, so the sent commit is not ambiguous and the session is still open.
 const PUBLICATION_CONFLICTS = ["write_conflict", "path_conflict"];
 
@@ -105,6 +114,7 @@ export function uploadFailureAction(
   error: unknown,
   state: { session?: Pick<UploadSession, "state">; committing: boolean; cancelled: boolean },
 ): "keep" | "drop" | "abort" {
+  if (isUnresolvedUploadFailure(error)) return "keep";
   const open = state.session?.state === "open";
   if (state.cancelled) return open && !state.committing ? "abort" : "keep";
   if (isTransientUploadFailure(error)) return "keep";

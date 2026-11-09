@@ -52,6 +52,11 @@ describe("Code version entry admission", () => {
     workload_type: "code.version",
     workload_id: "approved-version",
     workload_run: "run-1",
+    workload_trigger: {
+      type: "mail.message.received",
+      subject: { type: "mail.message", id: "Msg123" },
+      place: { type: "mail.mailbox", id: "Box123" },
+    },
   });
   for (const principal of ["user", "service_account"] as const) {
     test(`${principal}: missing, pending, paused, revoked or expired entry cannot admit the invocation`, async () => {
@@ -124,6 +129,11 @@ test("the exact access subject is retained for users and Code accounts", async (
     workload_type: "code.version",
     workload_id: "approved-version",
     workload_run: "run-1",
+    workload_trigger: {
+      type: "mail.message.received",
+      subject: { type: "mail.message", id: "Msg123" },
+      place: { type: "mail.mailbox", id: "Box123" },
+    },
   };
   for (const access_subject_id of [base.sub, other]) {
     let queries = 0;
@@ -133,6 +143,7 @@ test("the exact access subject is retained for users and Code accounts", async (
     else {
       expect(result?.accessSubject).toEqual({ type: "service_account", serviceAccountId: base.sub });
       expect(result?.scopes).toEqual([]);
+      expect(result?.actor.delegation?.workloadTrigger).toEqual(base.workload_trigger);
       expect(result?.actor.kind === "service_account" && result.actor.scopes).toEqual(["read", "write"]);
     }
     expect(queries).toBe(2);

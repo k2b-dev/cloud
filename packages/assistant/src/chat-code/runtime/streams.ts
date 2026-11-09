@@ -12,12 +12,15 @@ export async function runStream(
   send: (path: string, init: RequestInit) => Promise<Response> = fetch,
   base = "/api/assistant/chat-code/runtime",
 ) {
+  signal.throwIfAborted();
+  const remaining = Date.parse(ref.expiresAt) - Date.now();
+  if (remaining <= 0) throw new Error("Stream expired");
   if (ref.size > LIMITS.inputFileBytes) throw new Error("Stream exceeds the 50 MiB code-run file budget");
   if (verb === "write" && (!body || body.size !== ref.size)) throw new Error("Upload size differs from the authorized stream");
   const response = await send(`${base}/capabilities/${encodeURIComponent(ref.callId)}/stream/${verb}`, {
     method: "POST",
     body: verb === "write" ? body : undefined,
-    signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(Math.min(remaining, 300_000))]),
     credentials: "same-origin",
     redirect: "error",
     headers: { "content-type": "application/octet-stream" },

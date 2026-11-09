@@ -70,6 +70,8 @@ In a floating toolbar, `priority` lets an action move into More when the column 
 
 `keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon (not in `SelectionToolbar`), the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
 
+`pressed` makes an action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. Leave it out for a plain command.
+
 To hide an action, stop rendering it, for example with `<Show>`. A `Toolbar.Group` hidden through its `class` also takes its actions out of More, because the toolbar measures again. A style that an outer element's class applies inside the toolbar is noticed only at the next resize. In a floating toolbar, empty groups and leading, trailing, or repeated separators are hidden. Keep fixed content compact. Actions move before a `Toolbar.Label` truncates; only when the fixed items alone are too wide does the label shrink.
 
 ## Toolbar.Label
@@ -84,7 +86,7 @@ The roving group has one Tab stop: the last focused item, or the first item init
 
 Roving items are buttons, links with `href`, checkboxes and other button-like inputs, and controls with `tabindex`. Text fields, textareas, selects, sliders, radio buttons, and editable regions stay their own Tab stops. They keep their arrow, Home, and End keys.
 
-Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
+Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. While a toolbar is entirely hidden, its first enabled control keeps the stop, so Tab right after it shows, as with a `SelectionToolbar`, reaches it. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
 
 More is the last roving control. Enter opens its menu; menu arrows navigate its rows. Escape closes the menu and returns focus to More. If a focused action moves into More after a resize, focus follows it to the More trigger.
 

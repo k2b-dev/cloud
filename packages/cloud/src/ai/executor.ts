@@ -48,6 +48,7 @@ import { aiModelAccess } from "./model-access";
 import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
 import { withPlaceAssistantContext } from "./place-prompt";
 import { loadPlaceAssistantRound } from "./place-round";
+import { rejectUnavailablePlaceCalls, resolveAiPlaceTools } from "./place-tools";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -1132,6 +1133,7 @@ export class AiTurnExecutor {
     pipeline.setApprovalPolicies(prepared.approvalPolicies);
     const toolPresentations = new Map<string, AiToolPresentation>();
     const rejectedToolCallIds = new Set<string>();
+    const unavailablePlaceToolNames = new Set<string>();
     const approvedToolCallIds = new Set<string>();
     pipeline.setPresentations(toolPresentations);
     pipeline.setApprovalReviews(capabilityActionReviews, rememberableCapabilityApprovals);
@@ -1233,6 +1235,21 @@ export class AiTurnExecutor {
               }
             : {}),
           onReview: onCapabilityReview,
+          place: capabilityAuthority
+            ? () =>
+                resolveAiPlaceTools({
+                  conversationId,
+                  actor: toolAuthority?.actor ?? toolActor,
+                  locale: promptLocale,
+                  signal: abortController.signal,
+                })
+            : undefined,
+          onRejected: (callId) => rejectedToolCallIds.add(callId),
+          onUnavailablePlaceTools: (snapshot) => {
+            unavailablePlaceToolNames.clear();
+            for (const name of snapshot.unavailable) unavailablePlaceToolNames.add(name);
+            rejectUnavailablePlaceCalls(loopMessages, snapshot, rejectedToolCallIds);
+          },
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
@@ -1602,6 +1619,8 @@ export class AiTurnExecutor {
       noteToolRound: turnPolicy.noteToolRound,
       noteToolCall: turnPolicy.noteToolCall,
       failureReason,
+      rejectedToolCallIds,
+      unavailablePlaceToolNames,
     });
     signal.removeEventListener("abort", onSignal);
 
@@ -1649,6 +1668,8 @@ export class AiTurnExecutor {
     loop: NessiLoop;
     pipeline: StreamPipeline;
     initialRoundFailed: boolean;
+    rejectedToolCallIds: Set<string>;
+    unavailablePlaceToolNames?: ReadonlySet<string>;
     conversationId: string;
     turnId: string;
     abortController: AbortController;
@@ -1696,6 +1717,8 @@ export class AiTurnExecutor {
 
     try {
       for await (const event of loop) {
+        if (event.type === "tool_execution_start" && input.unavailablePlaceToolNames?.has(event.name))
+          input.rejectedToolCallIds.add(event.callId);
         await pipeline.timing.event(event);
         if (event.type === "tool_action_request") {
           const suspended = await this.handleActionRequest({
@@ -1749,7 +1772,12 @@ export class AiTurnExecutor {
               );
         } else if (event.type === "tool_execution_end") {
           await aiToolAudit
-            .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
+            .noteToolCompleted({
+              turnId,
+              callId: event.callId,
+              isError: event.isError,
+              rejected: input.rejectedToolCallIds.has(event.callId),
+            })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
           if (toolBlock?.kind === "tool" && isFailedTool(toolBlock)) roundFailed = true;
@@ -2483,6 +2511,6 @@ function capabilityApprovalArgs(entry: AiCapabilityCatalogEntry | undefined, arg
   // Fresh app-wide approvals keep the existing runtime contract.
   const migrated = storedArgs !== undefined && NormalizedCapabilityCallSchema.safeParse(storedArgs).success;
   return entry && (entry.operation.target !== undefined || entry.operation.refs !== undefined || migrated)
-    ? capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args))
+    ? capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args), entry.place)
     : args;
 }

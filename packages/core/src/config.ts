@@ -23,6 +23,7 @@ export const app = defineApp({
       "/_internal/code/runner/heartbeat",
       "/_internal/code/runner/complete",
       "/_internal/code/runner/job-input",
+      "/_internal/code/runner/job-call",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",
@@ -112,7 +113,7 @@ export const app = defineApp({
       "/api/openapi.json",
     ],
   }),
-  platformPermissions: ["mail:send"],
+  platformPermissions: ["mail:send", "resources:readers"],
   cli: {
     code: { module: "src/cli/code.ts", references: "src/cli-references/code" },
     account: { module: "src/cli/account.ts", references: "src/cli-references/account" },

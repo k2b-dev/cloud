@@ -24,6 +24,7 @@ import {
 import { activityFeedCondition } from "./activity-feed";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
+import { requireCodeWorkStateEligibility } from "./code-work-state";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
@@ -715,7 +716,11 @@ export const updateConversationCollaborationInTransaction = async (params: {
   if (access.data.scope === "assigned" && params.input.assigneeUserIds !== undefined)
     return fail(err.forbidden("Assignments require mailbox-wide write access"));
   const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", params.db, params.conversationId);
-  return allowed.ok ? applyConversationCollaborationInTransaction(params) : allowed;
+  if (!allowed.ok) return allowed;
+  // Match the lock order used by the batch paths before checking the event link.
+  await params.db`SELECT id FROM mail.conversations WHERE id=${params.conversationId}::uuid FOR UPDATE`;
+  const eligible = await requireCodeWorkStateEligibility({ ...params, conversationIds: [params.conversationId] });
+  return eligible.ok ? applyConversationCollaborationInTransaction(params) : eligible;
 };
 
 /**
@@ -843,6 +848,8 @@ export const applyConversationAssignments = async (params: {
         WHERE mailbox_id = ${params.mailboxId}::uuid AND short_id IN (SELECT value FROM jsonb_array_elements_text(${requestedIds}::jsonb))
         ORDER BY id FOR UPDATE
       `;
+      const eligible = await requireCodeWorkStateEligibility({ ...params, conversationIds: rows.map((row) => row.id), db: tx });
+      if (!eligible.ok) return eligible;
       const next = new Map<string, string[]>();
       const addedIds = new Set<string>();
       for (const row of rows) {
@@ -979,6 +986,8 @@ export const applyConversationCompletions = async (params: {
               ).map((row) => row.id),
             );
       const rows = visibleIds ? locked.filter((row) => visibleIds.has(row.id)) : locked;
+      const eligible = await requireCodeWorkStateEligibility({ ...params, conversationIds: rows.map((row) => row.id), db: tx });
+      if (!eligible.ok) return eligible;
       // Check every requested fence before any write, so a conflict leaves the batch unchanged.
       if (params.expectedRevisions && rows.some((row) => params.expectedRevisions?.[row.short_id] !== Number(row.revision)))
         return fail(err.conflict("Conversation was changed by another collaborator"));
