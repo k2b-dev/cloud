@@ -3,6 +3,7 @@
 import { readFile } from "node:fs/promises";
 import ts from "@typescript/typescript6";
 import { analyzeCode, resolveLocal, runtimeModuleSpecifiers } from "../src/code/checker-analysis";
+import { codeCheckHostSource } from "../src/code/checker-bundle-source";
 import type { CodeCheckRequest, CodeVersionManifest } from "../src/code/checker-contract";
 
 if (Bun.argv.includes("--help")) {
@@ -12,30 +13,7 @@ if (Bun.argv.includes("--help")) {
   if (Bun.argv[2] === "analyze") {
     console.log(JSON.stringify(analyzeCode(request)));
   } else if (Bun.argv[2] === "bundle") {
-    const expected = JSON.stringify(
-      [...request.entrypoints]
-        .sort((a, b) => a.entrypoint.localeCompare(b.entrypoint))
-        .filter((e) => e.kind !== "manual")
-        .map(({ kind, entrypoint, cron, at, timeZone, title, route, event }) => ({
-          kind,
-          entrypoint,
-          ...(route ? { route } : {}),
-          cron,
-          ...(at === undefined ? {} : { at }),
-          ...(timeZone === undefined ? {} : { timeZone }),
-          ...(event === undefined ? {} : { event }),
-          ...(title === undefined ? {} : { title }),
-        })),
-    );
-    const exports = request.entrypoints
-      .map((entry, i) => {
-        const body =
-          request.sdk.manifest.mode === "code_run"
-            ? `return user.default(input);`
-            : `return __codeSdk.run(${JSON.stringify(entry.entrypoint)}, input);`;
-        return `async function run${i}(input, cloud) { __codeSdk.bind(cloud); const user = await import("code:entry"); if (JSON.stringify(__codeSdk.entries().sort((a,b) => a.entrypoint.localeCompare(b.entrypoint))) !== ${JSON.stringify(expected)}) throw new Error("code_entrypoints_changed"); ${body} }\nexport { run${i} as ${JSON.stringify(entry.entrypoint)} };`;
-      })
-      .join("\n");
+    const hostSource = codeCheckHostSource(request.entrypoints, request.sdk.manifest.mode === "code_run");
     const modules = new Set<string>();
     const build = await Bun.build({
       entrypoints: ["code:host"],
@@ -56,7 +34,7 @@ if (Bun.argv.includes("--help")) {
             });
             builder.onLoad({ filter: /.*/, namespace: "code" }, (args) => {
               const name = args.path === "code:entry" ? request.entry : args.path;
-              if (name === "code:host") return { contents: `import { __codeSdk } from "@sdk";\n${exports}`, loader: "js" };
+              if (name === "code:host") return { contents: hostSource, loader: "js" };
               if (name === "@sdk") return { contents: request.sdk.runtime, loader: "js" };
               modules.add(name);
               const contents = request.files[name];

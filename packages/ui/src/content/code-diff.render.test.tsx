@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { renderedText } from "../../../../scripts/fixtures/rendered-markup";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-code-diff-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -49,7 +50,7 @@ const html = (props: Props, locale = "en") =>
       },
     }),
   );
-const text = (markup: string) => markup.replace(/<[^>]+>/g, "").replace(/&#39;/g, "'");
+const text = (markup: string) => renderedText(markup).replace(/&#39;/g, "'");
 const rowNumbers = (markup: string) => [...markup.matchAll(/data-row="(\d+)"/g)].map((match) => Number(match[1]));
 
 describe("CodeDiff server rendering", () => {
