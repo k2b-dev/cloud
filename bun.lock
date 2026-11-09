@@ -268,6 +268,7 @@
         "@fontsource/ibm-plex-sans-condensed": "5.3.0",
         "@k2b/cloud": "workspace:*",
         "@k2b/editor": "workspace:*",
+        "@k2b/rsql": "1.1.0",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/sync": "catalog:",
@@ -1334,6 +1335,8 @@
     "@k2b/notes-site": ["@k2b/notes-site@workspace:pwas/notes"],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
+
+    "@k2b/rsql": ["@k2b/rsql@1.1.0", "", {}, "sha512-FSbkeNee2bwfXZkNWIr9C5VOp+WLeCFuwuI1wBYXr3gNOkGkePFVR6jO2d9y3kHhw+WUkiZbyMJAJLJQgUquGA=="],
 
     "@k2b/speedtest": ["@k2b/speedtest@workspace:packages/speedtest"],
 

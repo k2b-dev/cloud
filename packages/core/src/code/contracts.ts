@@ -68,6 +68,7 @@ export const CODE_TABLES = {
   secrets: "code.secrets",
   secretBindings: "code.secret_bindings",
   codes: "code.codes",
+  databases: "code.databases",
   shares: "code.shares",
   versions: "code.versions",
   runs: "code.runs",
@@ -90,6 +91,14 @@ export const CodeSchema = z
     id: CodeIdSchema,
     owner: CodeOwnerSchema,
     title: z.string(),
+    database: z
+      .object({
+        bytes: z.number().nonnegative().nullable(),
+        limit: z.number().positive(),
+        state: z.enum(["unused", "ready", "unavailable"]),
+      })
+      .strict()
+      .optional(),
     serviceAccountId: z.uuid().nullable(),
     /** Copyable account handle, also before the first run; null for personal Code. */
     serviceAccountHandle: z.string().nullable(),

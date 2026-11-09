@@ -140,8 +140,20 @@ databaseSuite()("Studio retirement preserves chat authority and read-only eviden
         removed.length = 0;
         cleanupStatus = 204;
       }
+      for (const [key, value] of [
+        ["core.code.rsql_url", "https://code-db.example"],
+        ["core.code.rsql_api_token", "new-code-token"],
+        ["core.code.rsql_allowed_targets", ["rsql"]],
+      ] as const)
+        await sql`INSERT INTO settings.entries(key,value) VALUES(${key},${await encryptValue(value)})`;
+      const coreRsqlBefore = [...(await sql`SELECT key,value FROM settings.entries WHERE key LIKE 'core.code.rsql_%' ORDER BY key`)];
       await migrateAssistant();
       await migrateAssistant();
+      expect(await sql`SELECT key FROM settings.entries WHERE key LIKE 'assistant.rsql_%'`).toHaveLength(0);
+      expect([...(await sql`SELECT key,value FROM settings.entries WHERE key LIKE 'core.code.rsql_%' ORDER BY key`)]).toEqual(
+        coreRsqlBefore,
+      );
+      expect(coreRsqlBefore).toHaveLength(3);
       expect(removed).toEqual(kind !== "fresh" ? ["/v1/namespaces/studio-live", "/v1/namespaces/studio-cleanup"] : []);
       expect([...(await sql`SELECT * FROM ai.files`)]).toEqual([...beforeFiles]);
       expect([...(await sql`SELECT * FROM approvals.requests WHERE requester_kind='assistant_turn'`)]).toEqual([
@@ -178,7 +190,9 @@ databaseSuite()("Studio retirement preserves chat authority and read-only eviden
         expect([...(await sql`SELECT * FROM ai.project_resource_refs`)]).toEqual([
           { resource_type: "notebooks.note", resource_id: "Note23" },
         ]);
-        expect([...(await sql`SELECT * FROM settings.entries`)]).toEqual([{ key: "ai.keep", value: "kept" }]);
+        expect([...(await sql`SELECT * FROM settings.entries WHERE key NOT LIKE 'core.code.rsql_%'`)]).toEqual([
+          { key: "ai.keep", value: "kept" },
+        ]);
         expect(retiredApproval.requester_title).toBe("Retired title");
         for (const table of histories) {
           expect([...(await sql.unsafe(`SELECT to_jsonb(t) AS row FROM assistant.${table} t`))]).toEqual(before.get(table) as unknown[]);

@@ -66,6 +66,14 @@ stays with a person. Open-ended routines schedule `core.ai.chat(chatId).run` in 
 owner's original Gustav chat; deterministic routines keep explicit operations.
 Automatic replies remain reference evidence and are not rebuilt as sending Code.
 
+## Code-owned database
+
+Every lasting Code has its own lazy SQLite database through `db` from `@sdk`.
+It survives versions and is deleted with the Code or owner. Always bind SQL
+parameters; use atomic `db.batch` for related writes. The checker records DB
+use. `code_run` has no lasting owner and cannot use `db`. Read [Data](references/data.md)
+and start with the [database template](references/template-database.md).
+
 ## Choose the building block
 
 | Need | Use | Read |
@@ -85,7 +93,7 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | A page with key figures, charts and tables | `app.get` with `c.page(<Page>…)`: `Stats`/`Stat`, `Chart.*`, `Table`/`Column` | [Pages](references/pages.md), [dashboard](references/template-dashboard-page.md) |
 | A form that changes something | `Form` with `Field.*`, handled by `app.post` | [Pages](references/pages.md), [form app](references/template-form-app.md) |
 | Show one record | `Detail` with `Item` | [Pages](references/pages.md) |
-| Keep data between runs | State in the owning app, read again each run | [Data](references/data.md) |
+| Keep Code-owned data between runs | `db.query`, `db.exec`, atomic `db.batch` | [Data](references/data.md) |
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |

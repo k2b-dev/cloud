@@ -1,5 +1,10 @@
 import { sql } from "@k2b/cloud";
-import { authenticateSignedAppRequest, CodeBridgeRefusal, type CodeRunnerDispatchDependencies } from "@k2b/cloud/api";
+import {
+  authenticateSignedAppRequest,
+  CodeBridgeRefusal,
+  type CodeRunnerDispatchDependencies,
+  createCodeRunnerCallRoutes,
+} from "@k2b/cloud/api";
 import { CODE_CHECK_LIMITS } from "@k2b/cloud/code";
 import { verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import {
@@ -17,11 +22,14 @@ import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, ratelimit, setRequestTimeout } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { Hono } from "hono";
-import { requireCodeRunFence } from "./bridge";
+import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { callChatJob } from "./chat-runner";
+import { dispatchCodeDatabase } from "./database";
+import { readCodeOwnOrigins } from "./origins";
 import { completeCodeJob, heartbeatCodeJob, readCodeJobInput } from "./runner-jobs";
 import { completeCodeRun, heartbeatCodeRun } from "./scheduling";
 import { fetchCodeRuns, readCodeRunnerConfig } from "./scheduling-runtime";
+import { dispatchCodeSecretHttp } from "./secret-http";
 
 /** Private, signed runner-only routes. Every Core replica uses the same durable lease fence and signing key ring. */
 export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependencies, "appProof" | "token"> = {}) {
@@ -146,3 +154,13 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
   }
   return router;
 }
+
+/** Mount only in Core; C13 adds the other runner protocol endpoints alongside this route. */
+export const createCodeBridgeRoutes = (overrides: Partial<CodeRunnerDispatchDependencies> = {}) =>
+  createCodeRunnerCallRoutes({
+    host: createCodeBridgeHost(),
+    ownOrigins: readCodeOwnOrigins,
+    http: dispatchCodeSecretHttp,
+    database: dispatchCodeDatabase,
+    ...overrides,
+  });

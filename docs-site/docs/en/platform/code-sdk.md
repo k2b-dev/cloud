@@ -1084,6 +1084,63 @@ The [Code checker](/en/docs/platform/code-checker) consumes this generation
 manifest to produce the immutable `CodeVersionManifest`, source locations,
 permission changes, and the runner's ESM bundle.
 
+## Database
+
+Every lasting Code, personal or resource-owned, has its own SQLite database.
+Import `db` from `@sdk`. Cloud creates the database on its first call; checking,
+submitting and opening the Code page do not create it. Data survives new Code
+versions. Deleting the Code, or deleting its owner, also deletes its database.
+Code pages and `cld code show <code>` show storage used and the current limit.
+
+```ts
+import { app, db } from "@sdk";
+
+app.schedule({ cron: "0 8 * * *", name: "daily-count" }, async () => {
+  await db.exec("CREATE TABLE IF NOT EXISTS counts (day TEXT PRIMARY KEY, total INTEGER NOT NULL)");
+  await db.batch([
+    { sql: "INSERT INTO counts(day, total) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET total = total + excluded.total", params: [new Date().toISOString().slice(0, 10), 1] },
+  ]);
+  const rows = await db.query<{ day: string; total: number }>(
+    "SELECT day, total FROM counts ORDER BY day DESC LIMIT ?", [7],
+  );
+  console.log(rows);
+});
+export default app;
+```
+
+| Method | Result |
+| --- | --- |
+| `db.query<Row>(sql, params?)` | Rows directly as `Row[]`; the generic describes the expected rows and does not validate them |
+| `db.exec(sql, params?)` | `{ changes: number }` for one write or schema statement |
+| `db.batch([{ sql, params }])` | `{ changes: number }[]` in statement order; all statements commit together or roll back |
+
+Use `?` placeholders and bound parameters for values. Parameters accept strings,
+finite numbers, booleans and `null`; they cannot substitute table or column names.
+Never concatenate outside input into SQL. `query` accepts read statements only.
+Keep database schema changes compatible with any overlapping older runs.
+
+Each call, including one batch, spends one run bridge call. The existing call
+input budget bounds SQL and parameters; each statement has a maximum of 15 seconds,
+within the remaining run deadline. Results are limited to 256 KiB, so select only
+the columns and rows you need. RSQL also enforces statement and storage limits.
+`core.code.database_bytes` sets the database quota. A write over the quota raises
+`CodeError` with `code_db_full`; a result over the response budget raises
+`code_db_limit`, and a statement timeout raises `code_db_timeout`. A timeout or
+lost connection can leave a write outcome unknown: check an application-owned
+idempotency key before retrying. Concurrent namespace initialization or deletion
+can return `code_db_busy` (503); retry shortly afterward.
+
+An administrator must configure the RSQL URL, secret token and allowed targets
+under **Administration → Code → Limits**. Without a working configuration, `db`
+raises `code_db_unavailable` (503) with a message to contact an administrator.
+Code that does not call `db` continues to run. DB use appears in the checked
+manifest and submission evidence. It has no per-call capability approval.
+
+One-off chat `code_run` cannot import `db`: it has no lasting Code to own a
+database. The checker explains this with `code_db_temporary`. Studio databases
+and their grants are removed during upgrade; no data transfers to Code. Export
+Studio data before upgrading, as described in [Upgrade to Code](/en/docs/operations/upgrade-to-code).
+
 ## One-off chat runs
 
 Gustav's one-off `code_run` compiler supplies the same `generateCodeSdk` output
@@ -1124,7 +1181,7 @@ runner `code_run`. Chat accepts inline `code` and optional `inputPaths` only;
 saved script `id`, published `version`, and Studio `resourceId` contexts are
 rejected. App KV/files storage is also unavailable; use chat or Project files.
 Use an application's permission-aware capabilities for application data.
-There is no automatic replacement database or grant migration.
+Lasting Code has its own lazy database; Studio data and grants never transfer.
 
 See [Gustav Code tools](/en/docs/platform/gustav-code-tools) for a one-call CSV
 example and the lasting-Code workflow.

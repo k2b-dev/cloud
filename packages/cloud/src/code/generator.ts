@@ -9,6 +9,7 @@ import {
   CloudResourceRefSchema,
 } from "../contracts/capabilities";
 import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
+import { CODE_DATABASE_MESSAGES } from "./database-contract";
 import { hasFileInput } from "./file-ref";
 import * as pageTypes from "./page-authoring-types.ts" with { type: "text" };
 import { CODE_PAGE_LIMITS, CodeChartDescriptionSchema, CodePageTreeSchema } from "./page-contract";
@@ -393,6 +394,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     pageTypes.default.replace(/^import[^\n]*\n/gm, ""),
   );
   declarations.push("export declare const secrets: Readonly<Record<string, CodeSecret>>;", "export declare const http: CodeHttp;");
+  if (options.mode !== "code_run") declarations.push("export declare const db: CodeDatabase;");
   const runtimeExports = [
     "export const secrets = __codeSdk.secrets;",
     "export const http = __codeSdk.http;",
@@ -400,7 +402,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     "export const CodeError = __codeSdk.CodeError;",
     ...manifest.apps.map((app) => `export const ${app.exportName} = __codeSdk.namespaces[${quote(app.exportName)}];`),
     ...(options.owner ? ["export const owner = __codeSdk.owner;"] : []),
-    ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;"]),
+    ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;", "export const db = __codeSdk.db;"]),
   ];
   const runtimeManifest = {
     apps: manifest.apps.map(({ exportName }) => ({ exportName })),
@@ -418,6 +420,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     appMethods: manifest.appMethods,
     events: manifest.events.map(({ type, version, place }) => ({ type, version, place })),
     pageLimits: CODE_PAGE_LIMITS,
+    databaseMessages: CODE_DATABASE_MESSAGES,
   };
   return {
     declarations: `${declarations.join("\n\n")}\n`,

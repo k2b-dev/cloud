@@ -45,6 +45,7 @@ export type CodeApprovalReviewProps = {
   rights: CodeApprovalRight[];
   automations?: Array<{ entrypoint: string; title?: string; route?: { public: boolean } }>;
   internet: string[];
+  database?: boolean;
   secrets: CodeSecretVersionBinding[];
   diffHeader: string;
   files: CodeVersionDiffFile[] | null;
@@ -330,6 +331,11 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           </Show>
         </section>
 
+        <Show when={props.database}>
+          <p class="text-sm">
+            <i class="ti ti-database" aria-hidden="true" /> {t().usesDatabase}
+          </p>
+        </Show>
         <section class="grid gap-2" aria-labelledby="code-review-internet">
           <div class="flex items-baseline justify-between gap-3">
             <h3 id="code-review-internet" class="text-base font-semibold">

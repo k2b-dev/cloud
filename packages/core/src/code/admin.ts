@@ -88,6 +88,7 @@ export type CodeAdminApprovalDetail = {
   permissions: CodeAdminPermissionChange[];
   why: CodeAdminWhyRow[];
   ai: boolean;
+  database?: boolean;
   /** Reviewed automation names; identifiers remain the keys. */
   automations?: Array<{ entrypoint: string; title?: string; route?: { public: boolean } }>;
   newer: { versionId: string; number: number; author: string | null; submittedAt: string } | null;
@@ -503,6 +504,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
           decidedByName,
         }
       : null,
+    database: manifest?.database === true,
     internet: codeAdminInternet(manifest),
     secrets: manifest?.secrets ?? [],
     evidence,

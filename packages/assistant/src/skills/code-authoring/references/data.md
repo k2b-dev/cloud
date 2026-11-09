@@ -1,9 +1,38 @@
 # Data and storage
 
-Code has no database, key-value store or file storage of its own in this
-release, and nothing survives between runs: module variables start fresh in
-every run, every request and every event. Keep durable state in the app that
-owns it and read it again when you need it.
+Import `db` from `@sdk` for Code-owned durable state. Every lasting Code has
+one lazy SQLite database: the first call creates it, new versions retain it,
+and deleting the Code or its owner deletes it. Module variables still start
+fresh on every run, request and event. Application data stays in its owning
+app and is changed through that app's capabilities.
+
+## Use the Code database
+
+- `db.query<Row>(sql, params?)` returns rows directly. `Row` describes the
+  expected shape; it does not validate returned values.
+- `db.exec(sql, params?)` returns `{ changes }` for one write or schema statement.
+- `db.batch([{ sql, params }])` returns `{ changes }[]`; all statements commit
+  together or roll back together.
+
+Bind values with `?` and a parameter array. Never interpolate input into SQL.
+Parameters are strings, finite numbers, booleans or `null`. Create tables with
+`IF NOT EXISTS` and keep schema changes compatible with overlapping old runs.
+See the [database template](../references/template-database.md).
+
+Each call spends one bridge call; a batch is one call. Inputs keep the ordinary
+32 KiB default budget. A statement has at most 15 seconds and results at most
+256 KiB. Use `LIMIT` and select only needed columns. The administrator's
+`core.code.database_bytes` quota raises `code_db_full` when exceeded.
+`code_db_unavailable` means the administrator must configure or restore RSQL;
+`code_db_limit` means select less data; `code_db_timeout` means bound the work.
+A timed-out write may already have committed: check an application-owned
+idempotency key before retrying. `code_db_busy` means namespace initialization
+or deletion is in progress; retry shortly afterward.
+The Code page and `cld code show <code>` show database usage and the limit.
+
+DB use is recorded by the checker and submission evidence. It needs no per-call
+approval. `code_run` has no `db` because no lasting Code owns its database.
+Studio databases and grants never transfer; export them before upgrading.
 
 | You want to keep | Keep it in |
 | --- | --- |

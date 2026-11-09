@@ -1,4 +1,6 @@
 /** Fictional data for render tests, browser tests and screenshots of Administration › Code. */
+
+import { CORE_SETTINGS } from "../../../_settings";
 import type {
   CodeAdminApproval,
   CodeAdminApprovalDetail,
@@ -13,7 +15,6 @@ import type {
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
 import { codePolicyPreset } from "../../../code/policy-contracts";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
-import { CODE_SETTINGS } from "../../../code/settings";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { CODE_LIMIT_KEYS } from "./area";
 import type { CodeAreaData } from "./view";
@@ -235,6 +236,7 @@ export const fixtureApprovalDetail = (
         ],
     why: [{ row: "silent_shared", source: "default", groups: [] }],
     ai: true,
+    database: !first,
     newer:
       variant === "newer" ? { versionId: V.rueckruf4, number: 4, author: "Lea Muster", submittedAt: "2026-11-01T11:40:00.000Z" } : null,
     canApprove: variant !== "own",
@@ -676,13 +678,13 @@ export type CodeFixtureState = (typeof CODE_FIXTURE_STATES)[number];
 
 const limitEntries = (locale: string): SettingFieldDef[] =>
   [...CODE_LIMIT_KEYS].map((key) => {
-    const definition = CODE_SETTINGS[key];
+    const definition = CORE_SETTINGS[key];
     const de = definition.presentation.translations.de;
     return {
       key,
       label: locale === "de" ? de.label : definition.label,
       description: locale === "de" ? de.description : definition.description,
-      kind: "number",
+      kind: definition.kind,
       value: definition.default,
       default: definition.default,
       resetValue: definition.default,
@@ -691,8 +693,8 @@ const limitEntries = (locale: string): SettingFieldDef[] =>
       isCustom: false,
       unreadable: false,
       group: "core",
-      min: definition.min,
-      max: definition.max,
+      min: "min" in definition ? definition.min : undefined,
+      max: "max" in definition ? definition.max : undefined,
     };
   });
 
