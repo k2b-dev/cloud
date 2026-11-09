@@ -49,10 +49,7 @@ test.each([403, 404, 429])("host preserves a structured refusal with status %s",
 test.each([null, true, [], {}, { ok: false }, { ok: false, error: null }].map((envelope) => ({ envelope })))(
   "host rejects a malformed JSON envelope (%j) with the stable transport error",
   async ({ envelope }) => {
-    const host = new Cloud(
-      { props: { runId: "run" } },
-      { BRIDGE: { fetch: async () => Response.json(envelope) } },
-    );
+    const host = new Cloud({ props: { runId: "run" } }, { BRIDGE: { fetch: async () => Response.json(envelope) } });
     await expect(host.call("example.read", null)).rejects.toMatchObject({
       code: "runner_bridge_unavailable",
       status: 503,
