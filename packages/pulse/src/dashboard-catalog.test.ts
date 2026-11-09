@@ -23,6 +23,7 @@ for (const fixture of sqlCatalogFixtures) {
     const svg = drawChart(dashboardChartRenderOptions(panel, data, clock));
     expect(svg).toContain("<svg");
     expect(svg).toContain("data-chart-datum=");
+    expect(dashboardProducedMarks(chartKinds().parse(description), svg)).toBeGreaterThan(0);
     expect([...svg.matchAll(/data-chart-datum=/g)].length).toBeLessThanOrEqual(DASHBOARD_MAX_MARKS);
   });
 }
@@ -36,7 +37,7 @@ test("aligned bars retain category order, series identities and explicit or abse
   const panel = DashboardPanelSchema.parse({
     id: "aligned",
     title: "Aligned",
-    kind: "bar",
+    kind: "barGrouped",
     columns: ["category", "group", "value"],
     x: "category",
     series: "group",
@@ -61,6 +62,8 @@ test("aligned bars retain category order, series identities and explicit or abse
     ],
   });
   expect(() => projectDashboardPanel(panel, sqlResult({ ...data, rows: [...data.rows, ["B", "North", 4]] }))).toThrow("duplicate");
+  const full = Array.from({ length: 480 }, (_, index) => [`C${index}`, "North", 1]);
+  expect(() => projectDashboardPanel(panel, sqlResult({ ...data, rows: [...full, full[0]!] }))).toThrow("duplicate");
 });
 test("new SQL entry fields are strict and invalid result semantics fail visibly", () => {
   for (const fixture of sqlCatalogFixtures) {
@@ -137,6 +140,9 @@ test("forecast SQL retains null gaps and rejects ambiguous flags and invalid bou
     ]),
   ).toThrow("suffix");
   expect(() => projectRows("lineForecast", [["2026-10-01T10:00:00Z", 12, 1, 14, 10]])).toThrow();
+  for (const value of [9, 15])
+    expect(() => projectRows("lineForecast", [["2026-10-01T10:00:00Z", value, 1, 10, 14]])).toThrow("contain the forecast value");
+  for (const value of [10, 14, null]) expect(() => projectRows("lineForecast", [["2026-10-01T10:00:00Z", value, 1, 10, 14]])).not.toThrow();
   expect(DashboardPanelSchema.safeParse({ ...panel, columns: panel.columns.filter((name) => name !== "high") }).success).toBe(false);
 });
 test("produced dots include the remainder; comparisons, series, points and missing inputs keep host budgets", () => {

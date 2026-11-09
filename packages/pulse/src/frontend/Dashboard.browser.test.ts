@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { sqlCatalogData, sqlCatalogFixtures, sqlCatalogPanel } from "../dashboard-catalog.test-fixture";
-import type { Dashboard } from "../dashboard-contracts";
+import { type Dashboard, DashboardPanelSchema } from "../dashboard-contracts";
 import type { DashboardPanelData } from "../dashboard-result";
+import { savedChartFixtures } from "../dashboard-saved.test-fixture";
 import {
   baseOverviewFixture,
   buildWorkspaceHarness,
@@ -293,6 +294,57 @@ test("SQL catalog additions keep exact frames and Pareto names across desktop, p
     expect(errors).toEqual([]);
   } finally {
     await view.tab.close();
+  }
+}, 30_000);
+
+test("saved bars keep flattened series, multiple values and duplicate rows in the actual panel view", async () => {
+  const fixtures = savedChartFixtures.filter((fixture) => fixture.kind === "bar" && fixture.id);
+  const panels = fixtures.map((fixture) =>
+    DashboardPanelSchema.parse({
+      id: fixture.id,
+      title: fixture.id,
+      kind: fixture.kind,
+      columns: fixture.columns,
+      x: fixture.x,
+      series: fixture.series,
+      sql: "SELECT 1",
+    }),
+  );
+  const panelData = Object.fromEntries(
+    fixtures.map((fixture) => [
+      fixture.id!,
+      {
+        columns: fixture.columns.map((name) => ({ name, type: "Float64" })),
+        rows: fixture.rows,
+      },
+    ]),
+  );
+  const { tab } = await open({ dashboard: { ...dashboardTestKinds, definition: { panels } }, panelData });
+  const errors = pageErrors(tab);
+  try {
+    await ready(tab);
+    for (const width of [1440, 390]) {
+      await tab.setViewportSize({ width, height: 1000 });
+      for (const fixture of fixtures) {
+        const panel = tab.locator(`[data-panel="${fixture.id}"]`);
+        const chart = panel.locator(".k2b-chart");
+        expect(await chart.count()).toBe(1);
+        expect(await chart.locator("[data-chart-datum]").count()).toBe(fixture.id === "bar-series" ? 2 : 3);
+        expect(await chart.locator(".stdlib-chart-legend").count()).toBe(0);
+        expect(await panel.getByRole("alert").count()).toBe(0);
+        await chart.scrollIntoViewIfNeeded();
+        await tab.clock.runFor(32);
+        await chart.focus();
+        await chart.press("Home");
+        const tooltip = panel.locator('[role="tooltip"]:popover-open');
+        await tooltip.waitFor();
+        expect(await tooltip.textContent()).toContain("Visit · first");
+        await chart.press("Escape");
+      }
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await tab.close();
   }
 }, 30_000);
 

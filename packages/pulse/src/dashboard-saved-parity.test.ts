@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { drawChart } from "@k2b/editor/charts";
+import { chartKinds, drawChart } from "@k2b/editor/charts";
 import { DashboardPanelSchema } from "./dashboard-contracts";
-import { dashboardChartRenderOptions } from "./dashboard-description";
+import { dashboardChartDescription, dashboardChartRenderOptions, dashboardProducedMarks } from "./dashboard-description";
 import { savedChartFixtures } from "./dashboard-saved.test-fixture";
 
 // Captured from origin/main d83535a03f with these same SQL fixtures, locale and renderer.
@@ -9,6 +9,9 @@ import { savedChartFixtures } from "./dashboard-saved.test-fixture";
 const savedSvg = {
   line: "20f77bf3b7c35a26542f59d685c17bbd986ccaedfd9a7db1df1eb8062a132bc5",
   bar: "1e8855228b94f82db7114fe2a4561d6bb36f80dbab0da448a7a338801fae9830",
+  "bar-series": "0a151fe74b1c890b86ca79011bb3e78ed2a40acb3ac199f6ebd90f17db53c177",
+  "bar-values": "d6ddf85f118f50b7e161d07b8cb65dfa8416d0ccefdd72f933be3f215ee1f6a5",
+  "bar-duplicate-pairs": "21aee4aa4372b2f5b049a4b53f615f819bf8eb608a44a6bfc600f29bc757c186",
   funnel: "a00dd98f9ecd9f51d9ac5d9b00cb36686dbb1675ba199f8d06bc2820507b94bf",
   pie: "f1e571e93042d0a7e02667dd1b36ae4d83a6a77f4e5f78e3fee8a2b370cb8a1a",
   donut: "1af81a98fec90798e52906c959416075171aa6aa3e0434331450fcab582a638c",
@@ -24,7 +27,7 @@ const savedSvg = {
 };
 const savedDigests = new Map(Object.entries(savedSvg));
 for (const fixture of savedChartFixtures) {
-  test(`saved ${fixture.kind} SQL renders byte-identically to main`, () => {
+  test(`saved ${fixture.id ?? fixture.kind} SQL renders byte-identically to main`, () => {
     const panel = DashboardPanelSchema.parse({
       id: "saved",
       title: "Saved observations",
@@ -39,7 +42,9 @@ for (const fixture of savedChartFixtures) {
       rows: fixture.rows,
     };
     const svg = drawChart(dashboardChartRenderOptions(panel, data, { locale: "en", timeZone: "UTC" }));
-    const expected = savedDigests.get(fixture.kind);
+    const input = chartKinds().parse(dashboardChartDescription(panel, data, { locale: "en", timeZone: "UTC" }));
+    expect(dashboardProducedMarks(input, svg)).toBeGreaterThan(0);
+    const expected = savedDigests.get(fixture.id ?? fixture.kind);
     if (!expected) throw new Error(`Missing saved SVG for ${fixture.kind}`);
     expect(new Bun.CryptoHasher("sha256").update(svg).digest("hex")).toBe(expected);
   });

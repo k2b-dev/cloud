@@ -231,7 +231,9 @@ pareto. For a flow use `source`, `target`, `value` with kind sankey; for a
 forecast use time `x`, `value`, `forecast` (0 then 1) and optional paired
 `low`/`high`. Select `twoThirds` for four of the six desktop columns. Existing
 funnel panels keep their bar-gauge appearance; funnelStages uses the catalog
-funnel. New stored kinds require a Pulse version that recognizes them.
+funnel. Saved bar panels keep flattened source labels and duplicate rows;
+choose barGrouped, barStacked or barPercent to align categories and series.
+New stored kinds require a Pulse version that recognizes them.
 
 
 ## Create a base or send agent-owned telemetry

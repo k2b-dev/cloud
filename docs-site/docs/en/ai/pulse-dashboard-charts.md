@@ -19,7 +19,7 @@ projection never reach the dashboard or its published link.
 | --- | --- |
 | `number` | One numeric value. Optional DateTime `x` adds a trend; String `unit`, `detail`, `detailTone` add presentation. |
 | `line` | Date, DateTime or DateTime64 `x`, optional `series` group, remaining columns numeric values. |
-| `bar` | Category `x`, optional `series` group, remaining columns numeric values. Multiple series align by category; single-value bars retain source labels and order. |
+| `bar` | Category `x`, optional `series` group, remaining columns numeric values. Retains flattened source labels and row order, including repeated category/series pairs. |
 | `area`, `areaPercent` | Category `x`, optional `series` group, remaining columns nonnegative numeric values. Aligned stacked amounts or 100% shares. |
 | `budget` | Category `x`, numeric `used` and `limit`, optional numeric `expected`; `unit` is an uppercase ISO 4217 currency such as `EUR`. |
 | `balance` | One row with numeric `start`, `in`, `out`; no `x` or `series`. `unit` is the currency. |
@@ -54,10 +54,12 @@ local DateTime text. Viewers keep that timezone while formatting labels in
 their own locale.
 
 Use `funnelStages` for the catalog funnel; saved `funnel` panels retain their
-bar-gauge appearance. Bar series share the category order first encountered
-in SQL, with absent or null observations left as gaps. Aggregate duplicate
-category/series pairs before displaying them. `barRows` accepts negative
-amounts; `barList` ranks nonnegative shares by value. Comparison and Pareto
+bar-gauge appearance. Saved `bar` panels keep one bar per row and value
+column, with labels such as “Visit · first”. Choose `barGrouped`, `barStacked`
+or `barPercent` to align series in the category order first encountered in
+SQL, with absent or null observations left as gaps. These aligned kinds
+require unique category/series pairs; aggregate duplicates in SQL. `barRows`
+accepts negative amounts; `barList` ranks nonnegative shares by value. Comparison and Pareto
 measure names come from the two selected
 value-column names. Pareto ranks categories by the current amount, and its
 accessible chart name is the panel title.

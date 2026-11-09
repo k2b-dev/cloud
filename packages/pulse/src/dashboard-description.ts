@@ -112,8 +112,8 @@ export function dashboardAlignedCategories(
         label: group < 0 ? value.name : `${text(row[group], locale)}${values.length > 1 ? ` · ${value.name}` : ""}`,
         cells: new Map<string, number | null>(),
       };
-      budget(0, series.size + (series.has(key) ? 0 : 1), entry.cells.size + 1);
       if (entry.cells.has(category)) throw new Error("Aggregate duplicate category/series pairs in SQL");
+      budget(0, series.size + (series.has(key) ? 0 : 1), entry.cells.size + 1);
       entry.cells.set(category, numeric(row[value.index]));
       series.set(key, entry);
     }
@@ -128,7 +128,7 @@ export function dashboardAlignedCategories(
   };
 }
 
-/** Additive SQL kinds. Legacy single-value bars and funnels keep their saved drawing path. */
+/** Additive SQL kinds. Legacy bars and funnels keep their saved drawing path. */
 function dashboardCatalogDescription(panel: ChartPanel, data: DashboardPanelData, clock: DashboardClock): ChartDescription {
   const common = { title: panel.title };
   const x = columnIndex(data, panel.x);
@@ -163,10 +163,12 @@ function dashboardCatalogDescription(panel: ChartPanel, data: DashboardPanelData
     const band: [number, number][] | undefined =
       low < 0
         ? undefined
-        : points.slice(start).map(({ row }) => {
+        : points.slice(start).map(({ row, y }) => {
             const lo = numeric(row[low]),
               hi = numeric(row[high]);
             if (lo === null || hi === null) throw new Error("Forecast bounds must be numbers");
+            if (lo > hi || (y !== null && (y < lo || y > hi)))
+              throw new Error("Forecast bounds must be ordered and contain the forecast value");
             return [lo, hi];
           });
     budget(0, 1, points.length);
@@ -362,9 +364,7 @@ export function dashboardChartDescription(panel: ChartPanel, data: DashboardPane
     "area",
     "areaPercent",
   ];
-  const barValues = data.columns.filter((column) => column.name !== panel.x && column.name !== panel.series);
-  if (!legacy.includes(panel.kind) || (panel.kind === "bar" && (panel.series || barValues.length > 1)))
-    return dashboardCatalogDescription(panel, data, clock);
+  if (!legacy.includes(panel.kind)) return dashboardCatalogDescription(panel, data, clock);
   const common = { title: panel.title };
   if (panel.kind === "area" || panel.kind === "areaPercent")
     return {

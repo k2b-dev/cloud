@@ -71,9 +71,6 @@ export default function DashboardPanelView(props: {
     </IconButton>
   );
   const data = () => props.result?.lastGood?.data;
-  const alignedBar = () =>
-    props.panel.kind === "bar" &&
-    (!!props.panel.series || props.panel.columns.filter((name) => name !== props.panel.x && name !== props.panel.series).length > 1);
   const lineResult = createMemo(() => {
     if (!data() || props.panel.kind !== "line") return { value: null, error: false };
     try {
@@ -92,7 +89,7 @@ export default function DashboardPanelView(props: {
   });
   const line = () => lineResult().value;
   const categoryResult = createMemo(() => {
-    if (!data() || !["bar", "funnel"].includes(props.panel.kind) || alignedBar()) return { data: [], error: false };
+    if (!data() || !["bar", "funnel"].includes(props.panel.kind)) return { data: [], error: false };
     try {
       return { data: dashboardCategories(props.panel, data()!, locale()), error: false };
     } catch {
@@ -100,11 +97,7 @@ export default function DashboardPanelView(props: {
     }
   });
   const catalog = createMemo(() => {
-    if (
-      !data()?.rows.length ||
-      ["number", "line", "funnel", "table", "map", "budget", "balance"].includes(props.panel.kind) ||
-      (props.panel.kind === "bar" && !alignedBar())
-    )
+    if (!data()?.rows.length || ["number", "line", "bar", "funnel", "table", "map", "budget", "balance"].includes(props.panel.kind))
       return { options: null, error: false };
     try {
       return { options: dashboardChartRenderOptions(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }), error: false };
@@ -382,7 +375,7 @@ export default function DashboardPanelView(props: {
               </div>
             )}
           </Show>
-          <Show when={props.panel.kind === "bar" && !alignedBar()}>
+          <Show when={props.panel.kind === "bar"}>
             <div class="pulse-dashboard__plot">
               <Chart
                 kind="bar"

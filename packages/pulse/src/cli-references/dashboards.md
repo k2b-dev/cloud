@@ -90,17 +90,19 @@ Additional chart kinds use these selected SQL columns:
 | `radar` | Axis category `x`, repeated positive `max`, remaining measurements; optional `series`. Every series needs a value on every axis, between zero and max. |
 | `lineForecast` | Date/DateTime `x`, `value`, `forecast` (0 history, 1 forecast), optional paired `low`/`high`; no `series`. Forecast rows form a contiguous suffix ordered by time. |
 
-Multi-series `bar` panels also align categories and series; missing pairs stay
-null and duplicate pairs are errors. Single-value bars retain repeated source
-labels. Existing `funnel` panels retain their bar-gauge drawing; choose
-`funnelStages` for the catalog funnel. Ranked lists sort by descending value.
+Saved `bar` panels keep flattened source labels and row order, including
+repeated category/series pairs. Choose `barGrouped`, `barStacked` or
+`barPercent` to align categories and series; missing pairs stay null and
+duplicate pairs are errors. Existing `funnel` panels retain their bar-gauge
+drawing; choose `funnelStages` for the catalog funnel. Ranked lists sort by descending value.
 `barRows` accepts signed values; share
 lists and funnels do not.
 
 Calendar nulls leave empty days. Treemap and bubble rows with missing values
 produce no mark; they still count toward the input limits. Radar, Pareto,
 Sankey and waterfall require the values described above rather than inventing
-zeroes. Forecast bounds are required for each forecast row when selected;
+zeroes. Forecast bounds must be ordered and contain each non-null forecast
+value, and are required for each forecast row when selected;
 historical bound cells may be null. A null forecast value leaves a line gap.
 
 Choose `width: "twoThirds"` for four of the six desktop columns; panels stack
