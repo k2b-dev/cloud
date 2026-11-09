@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { connections, getProcessSync, sql } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
 import { captureTableAction } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
-import { createSync, RetentionGapError } from "@k2b/sync";
+import { ResourceDriftError, RetentionGapError } from "@k2b/sync";
 import { findTables } from "@k2b/ui/text-editor/model";
 import { DiscardPolicy, type JetStreamManager, jetstreamManager } from "@nats-io/jetstream";
 import * as Y from "yjs";
@@ -132,53 +132,55 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     for (const target of targets) await sql`UPDATE mail.drafts SET state='discarded' WHERE id=${target.draftId}::uuid`;
   };
 
-  test("migrates old discard/age in place, flags an expired prefix, and retries idempotently", async () => {
+  // The broker side (an old discard/age stream changed in place, sequences kept)
+  // is covered in packages/cloud/src/_internal/sync-budget.integration.test.ts.
+  test("flags only drafts that may have lost events to an expired prefix, once", async () => {
     expect(await sharedDraftsSupported()).toBe(false);
-    const target = await draft();
-    const legacy = createSync({ connection, namespace: connections().nats.namespace, application: "mail", defaults: { replicas: 1 } });
-    const topic = legacy.topic({
-      ...mailDraftDocumentLog.topicConfig,
-      whenFull: "discard_oldest",
-      retention: { maxBytes: 1024 ** 3, maxAgeMs: 7 * 24 * 60 * 60 * 1000 },
-    });
-    const event = { kind: "freeze" as const, payload: "", restoreRevision: "1", originNodeId: "fixture", originPeerId: null };
-    for (let index = 0; index < 3; index++) await topic.publish({ tenantId: target.draftId, data: event });
+    await sql`DELETE FROM mail.draft_document_log_policy`;
+    const lost = await draft();
+    const idle = await draft();
+    await marker(lost.draftId);
+    await marker(lost.draftId);
+    const kept = await marker(lost.draftId);
     for await (const info of manager.streams.list())
       if (
         info.config.metadata?.["sync.id"] === mailDraftDocumentLog.id &&
         info.config.subjects.some((subject) => subject.endsWith(".t.*.event"))
       )
         stream = info.config.name;
-    const head = await topic.head();
-    await manager.streams.purge(stream, { seq: 3 });
+    // What the old seven-day age did: every event before the last one is gone.
+    await manager.streams.purge(stream, { seq: mailDraftDocumentLog.topic().cursorSequence(kept.cursor) });
+    // An old snapshot of a draft without later events lost nothing.
+    await sql`UPDATE mail.drafts SET doc_state='\\x00'::bytea, doc_seq=1 WHERE id=${idle.draftId}::uuid`;
     const before = await manager.streams.info(stream);
-    expect(before.config.discard).toBe(DiscardPolicy.Old);
+    expect(before.state.first_seq).toBeGreaterThan(2);
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
     await drainDraftDocumentPruning();
     expect(await sharedDraftsSupported()).toBe(true);
-    const after = await manager.streams.info(stream);
-    expect(after.config).toMatchObject({ name: stream, discard: DiscardPolicy.New, max_age: 0, max_bytes: before.config.max_bytes });
-    expect(after.state.first_seq).toBe(before.state.first_seq);
-    expect(await mailDraftDocumentLog.topic().head()).toBe(head);
-    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${target.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(1);
-    expect((await readDraftDocument(target)).ok).toBe(false);
+    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${lost.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(1);
+    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${idle.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(0);
+    expect((await readDraftDocument(lost)).ok).toBe(false);
+    // The checkpoint makes a second start a no-op: no new flags, no prune of uncovered events.
+    await sql`UPDATE mail.drafts SET doc_history_complete=true WHERE id=${lost.draftId}::uuid`;
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
     await drainDraftDocumentPruning();
-    expect((await manager.streams.info(stream)).state).toMatchObject({ first_seq: after.state.first_seq, last_seq: after.state.last_seq });
-    await retire(target);
+    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${lost.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(0);
+    expect((await manager.streams.info(stream)).state.first_seq).toBe(before.state.first_seq);
+    await retire(lost, idle);
   });
 
-  test("resumes recovery marking after a broker cutover whose SQL transaction rolled back", async () => {
+  test("repeats recovery marking after the stream changed but the checkpoint never committed", async () => {
     const target = await draft();
     await marker(crypto.randomUUID());
     const receipt = await marker(target.draftId);
     await manager.streams.purge(stream, { seq: mailDraftDocumentLog.topic().cursorSequence(receipt.cursor) });
-    await sql`INSERT INTO mail.draft_document_log_policy (stream,recovery_pending) VALUES (${stream},true)
-      ON CONFLICT (stream) DO UPDATE SET recovery_pending=true`;
+    // The stream already keeps every event; only the SQL checkpoint is missing.
+    await sql`DELETE FROM mail.draft_document_log_policy`;
+    expect((await manager.streams.info(stream)).config.discard).toBe(DiscardPolicy.New);
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
     await drainDraftDocumentPruning();
     expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${target.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(1);
-    expect(await sql`SELECT 1 FROM mail.draft_document_log_policy WHERE stream=${stream} AND recovery_pending`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM mail.draft_document_log_policy WHERE log_id=${mailDraftDocumentLog.id}`).toHaveLength(1);
     await retire(target);
   });
 
@@ -518,24 +520,22 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     expect(outbox?.draft_snapshot.body).toBe("Exact after restart");
     await retire(target, idle);
   });
-  test("unrelated stream drift leaves shared unsupported without poisoning Mail process readiness", async () => {
+  test("a log the platform cannot prepare leaves shared drafts unsupported", async () => {
     await drainDraftDocumentPruning();
-    await manager.streams.update(stream, {
-      discard: DiscardPolicy.Old,
-      max_age: 7 * 24 * 60 * 60 * 1_000_000_000,
-      max_msgs: 2_000_000_000,
-    });
-    const declared = getProcessSync().controls().length;
+    const original = mailDraftDocumentLog.topic;
+    // A fresh process sees drift the platform does not change (sync-budget tests cover the broker side).
+    const drifted = spyOn(mailDraftDocumentLog, "topic").mockImplementation(() => ({
+      ...original(),
+      ready: () => Promise.reject(new ResourceDriftError(stream, [{ field: "max_msgs", declared: -1, actual: 2_000_000_000 }])),
+    }));
     try {
       expect(await migrateDraftDocumentLogPolicy()).toBe(false);
       expect(await sharedDraftsSupported()).toBe(false);
-      expect((await manager.streams.info(stream)).config.discard).toBe(DiscardPolicy.Old);
-      expect(getProcessSync().controls()).toHaveLength(declared);
-      await getProcessSync().ready();
     } finally {
-      await manager.streams.update(stream, { discard: DiscardPolicy.New, max_age: 0, max_msgs: -1 });
+      drifted.mockRestore();
       expect(await migrateDraftDocumentLogPolicy()).toBe(true);
       await drainDraftDocumentPruning();
+      expect(await sharedDraftsSupported()).toBe(true);
     }
   });
 });

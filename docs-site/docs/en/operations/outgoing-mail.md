@@ -61,15 +61,19 @@ prunes only the prefix covered by committed SQL snapshots. Frozen and
 scheduled drafts still count; sent and discarded drafts do not. An idle
 proof advances coverage without changing the draft cursor or revision.
 
-At startup, Mail changes an older log from discard-old to reject-full and
-removes its age limit **in place**, preserving its name, bytes limit and
-sequences. It never recreates the stream: SQL cursors refer to those sequences.
-Drafts behind an already expired prefix with newer retained events are marked
-for recovery. A durable migration checkpoint makes this marking retryable
-when a process stops between the broker update and the SQL commit. The
-separate dead-letter stream keeps its seven-day age and 16 MiB budget.
-Migration failures are logged and leave shared activation unsupported; Mail's
-other features remain available.
+An older log discards its oldest events and expires them after seven days. On
+its first use after the upgrade, Cloud changes it to reject-full without an
+age limit **in place**, keeping its name, byte limit and sequences. It never
+recreates the stream: SQL cursors refer to those sequences. Mail then runs one
+explicit startup step before it prunes anything: drafts whose snapshot is
+older than the retained window and that have newer events may have lost
+expired events, so Mail marks them for recovery. A checkpoint in
+`mail.draft_document_log_policy` records that this step finished; a process
+that stops earlier repeats it on the next start. The separate dead-letter
+stream keeps its seven-day age and 16 MiB budget. If the log cannot be
+prepared, Mail logs the reason and refuses shared mode; its other features
+remain available. Mail instances of an older release report drift for this
+log once it is changed; deploy the release to every Mail instance first.
 
 To free a full log, restore SQL snapshot persistence, retry saving pending
 shared drafts, and retry the rejected input after the covering snapshots

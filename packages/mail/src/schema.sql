@@ -1103,8 +1103,8 @@ CREATE INDEX draft_recovery_copies_unresolved_idx ON mail.draft_recovery_copies 
 -- mail.drafts -------------------------------------------------------------
 
 CREATE TABLE mail.draft_document_log_policy (
-    stream text PRIMARY KEY,
-    recovery_pending boolean NOT NULL
+    log_id text PRIMARY KEY,
+    recovered_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE mail.drafts (

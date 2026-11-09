@@ -116,7 +116,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     (GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id)
     WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')`.simple();
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_log_policy (
-    stream text PRIMARY KEY, recovery_pending boolean NOT NULL
+    log_id text PRIMARY KEY, recovered_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`.simple();

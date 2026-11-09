@@ -144,7 +144,9 @@ export async function* replayDraftDocument(input: {
 }): AsyncGenerator<TopicEvent<SharedTextSyncEvent>> {
   const topic = mailDraftDocumentLog.topic();
   let after = input.after ?? topic.cursorAt(0);
-  const safe = input.historyComplete && topic.cursorSequence(after) >= Number(input.docSeq ?? 0);
+  // Only this process's own pruning keeps the coverage invariant; before the
+  // policy step flagged drafts behind an age-expired prefix, a gap stays a gap.
+  const safe = enabled && input.historyComplete && topic.cursorSequence(after) >= Number(input.docSeq ?? 0);
   while (topic.cursorSequence(after) < topic.cursorSequence(input.until)) {
     try {
       for await (const event of topic.replay({ tenantId: input.draftId, after, until: input.until, signal: input.signal })) {

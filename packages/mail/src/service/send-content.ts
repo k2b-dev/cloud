@@ -74,8 +74,6 @@ export const loadSendContent = async (params: {
   actor: ActorRef;
   lock?: boolean;
 }): Promise<Result<{ snapshot: OutboundDraftSnapshot; contentHash: string; source: SendSource }>> => {
-  if (params.db === sql) return sql.begin((db) => loadSendContent({ ...params, db }));
-  await lockDraftDocumentCoverage(params.db);
   const actorUserId =
     params.actor.kind === "user" ? params.actor.userId : params.actor.kind === "service_account" ? params.actor.delegatedUserId : null;
   const accountId = params.actor.kind === "service_account" ? params.actor.serviceAccountId : null;
@@ -154,6 +152,15 @@ export const loadSendContent = async (params: {
   if (!draft) return fail(err.badInput("Draft or sender identity is no longer available"));
   if (draft.edit_mode === "shared") {
     if (!draft.doc_history_complete) return fail(sendContentChanged());
+    // Pruning may not pass the SQL coverage this replay starts from. Lock-mode
+    // sends never replay and never wait for a prune.
+    if (params.db === sql) return sql.begin((db) => loadSendContent({ ...params, db }));
+    await lockDraftDocumentCoverage(params.db);
+    const [current] = await params.db<{ doc_seq: string | null; revision: string }[]>`
+      SELECT doc_seq, revision FROM mail.drafts WHERE id = ${params.draftId}::uuid
+    `;
+    if (!current || String(current.doc_seq) !== String(draft.doc_seq) || Number(current.revision) !== params.expectedRevision)
+      return fail(sendContentChanged());
     try {
       const topic = mailDraftDocumentLog.topic();
       const head = await topic.latestCursor({ tenantId: params.draftId });
