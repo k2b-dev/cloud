@@ -1552,7 +1552,8 @@ function EditorInstance(
         <Show when={deviceReady() && device().recovery && (props.readOnly || provider?.recoveryInput().text !== currentText())}>
           <TextInput multiline readOnly label={t().deviceCopyLabel} value={deviceReady() ? (provider?.recoveryInput().text ?? "") : ""} />
         </Show>
-        <Show when={tabOnly() || device().failed || device().recovery}>
+        {/* Once sync ended, the red pill holds the device copy's actions; only a failing device store keeps this row. */}
+        <Show when={device().failed || (!syncEnded.ended() && (tabOnly() || device().recovery))}>
           <div class="flex flex-wrap items-center gap-2 px-2 py-2" data-notebook-device-state>
             <InlineGuidance
               role={device().failed ? "alert" : "status"}
@@ -1593,7 +1594,7 @@ function EditorInstance(
                 {t().deviceEditInTab}
               </Button>
             </Show>
-            <Show when={tabOnly() || (deviceReady() && (device().pending || device().failed))}>
+            <Show when={!syncEnded.ended() && (tabOnly() || (deviceReady() && (device().pending || device().failed)))}>
               <Button
                 size="xs"
                 variant="ghost"
@@ -1652,6 +1653,19 @@ function EditorInstance(
               sync={syncEnded}
               markdown={() => (collabActive() ? provider?.recoveryInput().text : undefined) ?? currentText()}
               noteHref={() => window.location.pathname + window.location.search}
+              recovery={
+                device().recovery
+                  ? {
+                      kept: deviceKept(),
+                      canKeep: device().saved,
+                      keep: () =>
+                        void documentClient?.flush().then((saved) => {
+                          if (saved) setDeviceKept(true);
+                        }),
+                      discard: () => void discardDeviceInput(),
+                    }
+                  : undefined
+              }
             />
           )}
         </Show>
