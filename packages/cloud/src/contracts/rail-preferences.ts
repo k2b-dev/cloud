@@ -41,7 +41,9 @@ export const RailPreferencesSchema = z
     showNames: z.boolean().default(true),
   })
   .strict()
-  .superRefine((value, ctx) => {
+  .superRefine(({ showNames: _fixedSize, ...value }, ctx) => {
+    // The budget measures what grows with the person's choices. The fixed-size names flag stays outside it, so settings
+    // saved at the budget before the flag existed still load.
     if (new TextEncoder().encode(JSON.stringify({ ...value, revision: 2_147_483_647 })).byteLength > RAIL_PREFERENCES_MAX_BYTES) {
       ctx.addIssue({ code: "custom", message: "App bar settings exceed the 16 KiB page budget" });
     }

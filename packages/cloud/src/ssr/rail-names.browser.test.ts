@@ -127,7 +127,9 @@ describe("names in the app bar", () => {
     }
   });
 
-  test("the hint names an entry only while its name is hidden or cut off", async () => {
+  // `RailItemHint` disables its tooltip with exactly this measure; the server markup here has no islands, so the test
+  // checks the measure on the real layout, not the tooltip itself.
+  test("an entry's name counts as hidden or cut off exactly where its hint should show", async () => {
     for (const device of [desktop, laptop]) {
       setRailNames(true);
       const { context, page } = await open(device, `/app/mail/inbox?catalog=1&name=${encodeURIComponent(longName)}`);
