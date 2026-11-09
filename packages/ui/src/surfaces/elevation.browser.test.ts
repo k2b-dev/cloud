@@ -188,4 +188,75 @@ describe("@k2b/ui layers and shadows", () => {
       await page.close();
     }
   });
+
+  for (const theme of ["light", "dark"] as const)
+    test(`${theme}: a quiet area (settings, administration) is flat; only charts, dashboard frames, and key figures lift`, async () => {
+      const quiet = renderToString(() => [
+        paper("quiet-paper"),
+        stat("quiet-stat"),
+        createComponent(DashboardFrame, {
+          title: "Requests",
+          get children() {
+            return "Chart";
+          },
+        }),
+        paper("quiet-paper-with-stat", () => stat("stat-in-paper")),
+      ]);
+      const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0;padding:1rem">` +
+            `<div class="k2b-app-workspace" data-k2b-layer="quiet">${quiet}` +
+            `<div class="k2b-section" data-frame="line" id="quiet-section">Form</div>` +
+            `<div class="k2b-chart-explorer" id="quiet-chart"><div class="k2b-paper" id="chart-table">Table view</div></div>` +
+            `<section data-k2b-layer="flat">${renderToString(() => stat("flat-stat"))}</section></div>` +
+            `</body></html>`,
+        );
+        await settled(page);
+        const r = await page.evaluate(() => {
+          const value = (element: Element, name: string) => getComputedStyle(element).getPropertyValue(name).trim();
+          const look = (element: Element) => ({
+            shadow: getComputedStyle(element).boxShadow,
+            background: getComputedStyle(element).backgroundColor,
+          });
+          const byLabel = (label: string) =>
+            [...document.querySelectorAll(".k2b-stat-cell")].find((cell) => cell.textContent?.includes(label))!;
+          const probe = document.querySelector(".k2b-app-workspace")!.appendChild(document.createElement("i"));
+          probe.style.boxShadow = "var(--k2b-shadow-raised)";
+          probe.style.backgroundColor = "var(--k2b-surface-raised)";
+          const raised = { shadow: getComputedStyle(probe).boxShadow, background: getComputedStyle(probe).backgroundColor };
+          probe.style.backgroundColor = "var(--k2b-surface)";
+          const surface = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const chart = document.querySelector("#quiet-chart")!;
+          return {
+            raised,
+            surface,
+            paper: look(document.querySelector("#quiet-paper")!),
+            section: look(document.querySelector("#quiet-section")!),
+            stat: look(byLabel("quiet-stat")),
+            frame: look(document.querySelector(".k2b-dashboard-frame")!),
+            chartHook: value(chart, "--k2b-island-shadow") === value(chart, "--k2b-shadow-raised"),
+            chartTable: look(document.querySelector("#chart-table")!),
+            statInPaper: look(byLabel("stat-in-paper")),
+            flatStat: look(byLabel("flat-stat")),
+          };
+        });
+        const flat = { shadow: noShadow, background: r.surface };
+        // Forms, lists, and sections keep their frame without a shadow.
+        expect(r.paper).toEqual(flat);
+        expect(r.section).toEqual(flat);
+        // Data surfaces lift as in the main content: a key figure and a dashboard frame.
+        expect(r.stat).toEqual(r.raised);
+        expect(r.frame).toEqual(r.raised);
+        // A chart carries the island hook, and what it holds stays flat.
+        expect(r.chartHook).toBe(true);
+        expect(r.chartTable.shadow).toBe(noShadow);
+        // A key figure inside another frame or in a flat layer stays flat.
+        expect(r.statInPaper.shadow).toBe(noShadow);
+        expect(r.flatStat).toEqual(flat);
+      } finally {
+        await page.close();
+      }
+    });
 });

@@ -459,6 +459,45 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-island-surface: var(--k2b-surface);
 }
 
+/* A quiet area, such as settings and administration, is flat: forms, lists,
+   tables, and framed sections keep their frame without a shadow. Only data
+   surfaces lift there, because their depth carries meaning: a chart, a
+   dashboard frame or panel, and a key figure. They stay flat in a flat layer
+   and inside another island. */
+:is(.k2b-ui, .k2b-ui *)[data-k2b-layer="quiet"],
+[data-k2b-layer="quiet"] .k2b-ui {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-island-surface: var(--k2b-surface);
+}
+
+.k2b-ui [data-k2b-layer="quiet"]
+  :is(.k2b-dashboard-frame, .k2b-dashboard-panel, .k2b-stat-cell, .k2b-chart-explorer):not(
+    :is(
+        [data-k2b-layer="flat"],
+        dialog,
+        [popover],
+        .k2b-app-workspace__sidebar,
+        .k2b-app-workspace__detail,
+        .k2b-detail-panel,
+        .k2b-bottom-sheet,
+        .k2b-floating-window,
+        .k2b-paper,
+        .k2b-resource-card,
+        .k2b-section[data-frame="line"],
+        .k2b-dashboard-panel,
+        .k2b-stat-cell
+      )
+      *
+  ) {
+  --k2b-island-shadow: var(--k2b-shadow-raised);
+  --k2b-island-surface: var(--k2b-surface-raised);
+}
+
+/* What a chart holds, such as its table view, stays flat. */
+.k2b-ui [data-k2b-layer="quiet"] .k2b-chart-explorer > * {
+  --k2b-island-shadow: 0 0 #0000;
+}
+
 .k2b-ui::selection,
 .k2b-ui ::selection {
   background-color: var(--k2b-selection);
