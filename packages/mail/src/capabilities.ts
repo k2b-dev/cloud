@@ -600,6 +600,7 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
     sourceMessageId: draft.sourceMessageId ? requirePublicId(ids.messages, draft.sourceMessageId) : null,
     senderIdentityId: requirePublicId(ids.senderIdentities, draft.senderIdentityId),
     signatureTemplateId: draft.signatureTemplateId ? requirePublicId(ids.composeTemplates, draft.signatureTemplateId) : null,
+    quoteSource: draft.quoteSource,
     to: draft.to.slice(0, 50).map(mapAddress),
     cc: draft.cc.slice(0, 50).map(mapAddress),
     bcc: draft.bcc.slice(0, 50).map(mapAddress),
@@ -658,6 +659,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
 
 const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
   signatureTemplateId: draft.signatureTemplateId ? requirePublicId(ids.composeTemplates, draft.signatureTemplateId) : null,
+  quoteSource: draft.quoteSource,
   id: requirePublicId(ids.drafts, draft.id),
   conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
   attachments: draft.attachments.slice(0, 50).map((attachment) => ({
@@ -2976,6 +2978,7 @@ const actionDefinitions = {
         input: {
           senderIdentityId: patch.senderIdentityId ?? draft.senderIdentityId,
           signatureTemplateId: patch.signatureTemplateId,
+          quoteSource: patch.quoteSource === undefined ? draft.quoteSource : patch.quoteSource,
           to: patch.to ?? draft.to,
           cc: patch.cc ?? draft.cc,
           bcc: patch.bcc ?? draft.bcc,
@@ -3052,6 +3055,7 @@ const actionDefinitions = {
             conversationId: conversation.data?.conversationId ?? null,
             sourceMessageId: sourceMessage.data,
             signatureTemplateId: signature.data,
+            quoteSource: input.quoteSource,
           },
         },
       });
@@ -3105,6 +3109,7 @@ const actionDefinitions = {
       const draftContent = {
         senderIdentityId: senderIdentity.data,
         signatureTemplateId: signature.data,
+        quoteSource: input.quoteSource,
         to: input.to,
         cc: input.cc,
         bcc: input.bcc,

@@ -640,6 +640,7 @@ export const DraftDataSchema = z
   .object({
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     mailboxId: ResourceShortIdSchema,
     conversationId: ResourceShortIdSchema.nullable(),
     intent: z.enum(["new", "reply", "reply_all", "forward"]),
@@ -690,6 +691,7 @@ export const DraftMutationDataSchema = z
   .object({
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     conversationId: ResourceShortIdSchema.nullable(),
     attachments: z
       .array(
@@ -734,6 +736,7 @@ export const DraftCreateInputSchema = z
   .object({
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
     signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -769,6 +772,10 @@ export const DraftPatchInputSchema = z
       .object({
         senderIdentityId: ResourceShortIdSchema.optional().describe("Replacement verified sender identity."),
         signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
+        quoteSource: draftEditableContentInputSchema.shape.quoteSource
+          .removeDefault()
+          .optional()
+          .describe("Append or remove the source quote; omitted preserves the current choice."),
         to: z.array(mailAddressSchema).max(200).optional().describe("Replace all primary recipients; [] clears them."),
         cc: z.array(mailAddressSchema).max(200).optional().describe("Replace all carbon-copy recipients."),
         bcc: z.array(mailAddressSchema).max(200).optional().describe("Replace all blind-copy recipients."),

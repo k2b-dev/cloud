@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Deployment requirements
@@ -677,6 +677,13 @@ or capability transfer, including base64 overhead. See
 [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for exact
 limits. View files remain ordinary chat files under `/views` and count toward
 the per-chat file budget.
+
+Notebooks PDF charts and browser print copies now use the eight-color UI
+palette, including violet for the fourth series. Notes share-image charts
+use the same palette. Previously exported PDFs and preview images may have
+different series colors; values, geometry and explicit semantic colors are
+unchanged. No configuration or data migration is required. Hosts that load
+the chart stylesheet retain their existing drawing markup.
 
 Assistant packages the runner prelude, worker and lazy CSV, sheet, finance and
 PDF-reader chunks. Preserve these outputs when packaging a custom image.

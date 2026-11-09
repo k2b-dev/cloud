@@ -475,6 +475,7 @@ const createSendOutbox = async (params: {
     expectedRevision: prepared.expectedDraftRevision!,
     actor: params.actor,
     lock: true,
+    context: params.context,
   });
   if (!send.ok) throw Object.assign(new Error(send.error.message), send.error);
   if (send.data.contentHash !== prepared.expectedContentHash) {

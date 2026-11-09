@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailDetailsHarnessState } from "./MailDetailsPanel.browser-harness";
 
 // The details outline, its file rows, and row actions are a question of layout and paint, so the real panel runs in
@@ -217,7 +217,7 @@ describe("Mail conversation details in the shared outline", () => {
       const actions = row.locator(".k2b-file-grid__actions");
       const before = await row.boundingBox();
       expect(await actions.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
-      await row.hover();
+      await hoverInPlace(row);
       await settled(page);
       expect(await actions.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
       expect(await row.boundingBox()).toEqual(before);

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../test/browser";
 import "../../test/solid-ssr-preload";
 import { renderMarkdownLink } from "./markdown-links";
 
@@ -67,7 +67,7 @@ describe(`Markdown links in ${browserName}`, () => {
       const restPaint = await page
         .locator(selector)
         .evaluate((a) => [getComputedStyle(a).backgroundColor, getComputedStyle(a).textDecorationColor]);
-      await page.locator(selector).hover();
+      await hoverInPlace(page.locator(selector));
       const hovered = await page
         .locator(selector)
         .evaluate((a) => [getComputedStyle(a).backgroundColor, getComputedStyle(a).textDecorationColor]);

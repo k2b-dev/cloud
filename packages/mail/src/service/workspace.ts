@@ -4,6 +4,7 @@ import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import {
   type ConversationDraftSummary,
+  type ConversationListDrafts,
   type ConversationView,
   conversationViewSchema,
   type DraftFolderPage,
@@ -34,6 +35,7 @@ import type {
   MailAssignableUser,
 } from "./collaboration";
 import * as collaboration from "./collaboration";
+import { listConversationDraftSummaries } from "./conversation-draft-summaries";
 import type { ConversationKeep } from "./conversation-keeps";
 import * as conversationKeeps from "./conversation-keeps";
 import type { MailConversationParticipant, MailConversationParticipants } from "./conversation-participants";
@@ -64,6 +66,7 @@ import * as senderIdentities from "./sender-identities";
 const log = logger("mail:workspace");
 
 export type MailListItem = {
+  drafts: ConversationListDrafts;
   kept: boolean;
   id: string;
   conversationId: string | null;
@@ -317,6 +320,7 @@ const EMPTY_SELECTION_DETAIL: MailSelectionDetail = {
 };
 
 const conversationToListItem = (conversation: ConversationSummary): MailListItem => ({
+  drafts: { count: 0, editors: [] },
   kept: conversation.kept,
   id: conversation.id,
   conversationId: conversation.id,
@@ -375,6 +379,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     latestMessageAt: item.latestMessageAt,
     preview: item.snippet,
     attachmentMatch: item.attachmentMatch,
+    drafts: { count: 0, editors: [] },
     unread: item.unread,
     activeFolderIds: item.activeFolderIds,
     flagged: item.flagged,
@@ -403,7 +408,7 @@ const attachRowDetails = async (
   rule: Pick<MailListPage, "openOnly" | "expression">,
 ): Promise<MailListPage> => {
   const conversationIds = items.flatMap((item) => (item.conversationId ? [item.conversationId] : []));
-  const [tags, participants, images] = await Promise.all([
+  const [tags, participants, images, draftSummaries] = await Promise.all([
     localTags.listConversationLocalTags({ context, mailboxId, conversationIds }),
     conversationParticipants.listConversationParticipants({
       context,
@@ -411,8 +416,9 @@ const attachRowDetails = async (
       conversationIds: items.flatMap((item) => (item.selectionKind === "conversation" && item.conversationId ? [item.conversationId] : [])),
     }),
     loadRowImages(context, mailboxId, items),
+    listConversationDraftSummaries({ context, mailboxId, conversationIds }),
   ]);
-  if (!tags.ok || !participants.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
+  if (!tags.ok || !participants.ok || !draftSummaries.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
   return {
     error: null,
     nextCursor,
@@ -428,6 +434,7 @@ const attachRowDetails = async (
               ...(shown.imageAttachmentCount > shown.imageAttachments.length ? { imageAttachmentCount: shown.imageAttachmentCount } : {}),
             }
           : {}),
+        drafts: (item.conversationId && draftSummaries.data.get(item.conversationId)) || { count: 0, editors: [] },
         localTags: item.conversationId ? (tags.data.get(item.conversationId) ?? []) : [],
         ...(written && !namesOnlyItsSender(item, written)
           ? {

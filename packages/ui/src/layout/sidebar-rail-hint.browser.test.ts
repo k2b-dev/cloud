@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The collapsed rail shows only icons, so each entry names itself in the same
 // hint the Cloud app rail uses: right beside it, at once, on hover and on
@@ -160,7 +160,7 @@ describe("collapsed sidebar rail hints", () => {
       for (const { control, focus, hint } of entries(page)) {
         expect(await control.count()).toBe(1);
         const before = await box(control);
-        await control.hover();
+        await hoverInPlace(control);
         const shown = await openHints(page);
         expect(shown.map((open) => open.text)).toEqual([hint]);
         // The native title gave way, so the name never shows twice.
@@ -243,7 +243,7 @@ describe("collapsed sidebar rail hints", () => {
       // A title that only repeats the whole label gives way without a hint.
       for (const { control, hint } of [entries(page)[0]!, entries(page)[3]!]) {
         expect(await page.locator(`#navigation [title="${hint}"]`).count()).toBe(1);
-        await control.hover();
+        await hoverInPlace(control);
         await pastDelay(page);
         expect(await openHints(page)).toEqual([]);
         expect(await page.locator(`#navigation [title="${hint}"]`).count()).toBe(0);
@@ -268,7 +268,7 @@ describe("collapsed sidebar rail hints", () => {
       // A new title updates the hint and never brings the native title back.
       await page.mouse.move(1200, 600);
       await page.evaluate(() => (window as unknown as { setOpenTitle: (title: string) => void }).setOpenTitle("Open invoices: 4 due"));
-      await open.hover();
+      await hoverInPlace(open);
       await pastDelay(page);
       expect((await openHints(page)).map((hint) => hint.text)).toEqual(["Open invoices: 4 due"]);
       expect(await open.getAttribute("title")).toBeNull();

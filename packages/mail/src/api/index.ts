@@ -42,6 +42,8 @@ import {
   composePreviewInputSchema,
   composeSafetyConfigSchema,
   composeSafetyReviewInputSchema,
+  composeSignatureInputSchema,
+  composeSignatureSchema,
   composeSuggestionsInputSchema,
   configurableFolderRoleSchema,
   conversationPresenceHeartbeatSchema,
@@ -2970,6 +2972,31 @@ const mailOperationsApi = new Hono<MailApiContext>()
         input: await internalInput(c, c.req.valid("json")),
       }),
     ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/compose-signature",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Render the selected signature for the editor",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(composeSignatureSchema, "Sanitized signature fragment without outgoing styles or images"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid signature or compose render failure"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
+      },
+    }),
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", composeSignatureInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.previewComposeSignature({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
   .post(
     "/mailboxes/:mailboxId/compose-preview",

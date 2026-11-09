@@ -70,6 +70,46 @@ const date = (value: number) => new Date(value).toISOString().slice(0, 10);
 /** Every approved parity item has a concrete SVG spec and a named test or existing live demo. */
 export const chartParity: readonly ChartParityRow[] = [
   {
+    id: "standalone-ui-palette",
+    feature: "Standalone UI palette: opt-in conversion preserves styled renderer bytes",
+    proof: {
+      file: "packages/ui/src/charts/core/palette.test.ts",
+      test: "all fourteen raw renderer kinds carry the UI defaults on explicit conversion",
+    },
+    spec: pie,
+    legacyId: "kind-pie",
+  },
+  {
+    id: "notebooks-pdf-palette",
+    feature: "Notebooks PDF and map-print figures and legends use the UI palette",
+    proof: {
+      file: "packages/notebooks/src/service/note-pdf.test.ts",
+      test: "note PDF includes the chart, data fallback and Cloud light palette",
+    },
+    spec: pie,
+    legacyId: "kind-pie",
+  },
+  {
+    id: "notebooks-browser-print-palette",
+    feature: "Notebooks browser print copy uses UI violet for the fourth series",
+    proof: {
+      file: "packages/notebooks/src/frontend/[id]/_components/note-print-copy.browser.test.ts",
+      test: "the Book copy prints the whole note; changes at print time replace the stale copy",
+    },
+    spec: pie,
+    legacyId: "kind-pie",
+  },
+  {
+    id: "notes-preview-palette",
+    feature: "Notes share previews rasterize line and bar charts with the UI palette",
+    proof: {
+      file: "pwas/notes/server/preview.test.ts",
+      test: "%s standalone Notes preview rasterizes the UI blue instead of its old private palette",
+    },
+    spec: pie,
+    legacyId: "kind-pie",
+  },
+  {
     id: "line-forecast",
     feature: "Line: forecast and first-series band",
     proof: {

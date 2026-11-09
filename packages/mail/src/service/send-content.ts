@@ -2,10 +2,14 @@ import { compareStreamCursor } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { sql } from "bun";
 import { z } from "zod";
+import type { DraftQuoteSource } from "../contracts";
 import { type ActorRef, draftEditableContentInputSchema } from "../contracts";
+import { getMailboxAccess } from "./access";
+import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
 import { mailDraftDocumentLog } from "./draft-documents";
+import { loadDraftSourceQuote } from "./draft-source-quote";
 import { mailboxLogoContentId } from "./mailbox-logos";
 import { type OutboundDraftSnapshot, outboundDraftSnapshotSchema } from "./outbound-mime";
 
@@ -34,6 +38,8 @@ type SendSource = {
   display_name: string;
   sender_identity_id: string;
   signature_template_id: string | null;
+  quote_source: DraftQuoteSource | null;
+  source_message_id: string | null;
   from_address: string;
   reply_to: string | null;
   envelope_sender: string | null;
@@ -71,6 +77,7 @@ export const loadSendContent = async (params: {
   expectedRevision: number;
   senderIdentityId?: string;
   actor: ActorRef;
+  context?: MailRequestContext;
   lock?: boolean;
 }): Promise<Result<{ snapshot: OutboundDraftSnapshot; contentHash: string; source: SendSource }>> => {
   const actorUserId =
@@ -91,7 +98,7 @@ export const loadSendContent = async (params: {
       d.subject,
       d.body_markdown,
       d.body_format,
-      d.signature_template_id,
+      d.signature_template_id, CASE WHEN d.quote_source THEN jsonb_build_object('locale', d.quote_locale, 'timeZone', d.quote_time_zone) ELSE NULL END AS quote_source, d.source_message_id,
       d.priority,
       d.request_delivery_receipt,
       d.request_read_receipt,
@@ -173,6 +180,7 @@ export const loadSendContent = async (params: {
   const content = internalDraftEditableContentInputSchema.safeParse({
     senderIdentityId: draft.sender_identity_id,
     signatureTemplateId: draft.signature_template_id,
+    quoteSource: draft.quote_source,
     to: draft.to_addresses,
     cc: draft.cc_addresses,
     bcc: draft.bcc_addresses,
@@ -190,10 +198,22 @@ export const loadSendContent = async (params: {
   if (!content.data.to.length && !content.data.cc.length && !content.data.bcc.length)
     return fail(err.badInput("At least one recipient is required before sending"));
   const contentId = draft.logo_id ? mailboxLogoContentId(draft.logo_id, draft.from_address) : "";
+  const quote = draft.quote_source
+    ? await loadDraftSourceQuote({
+        quoteSource: draft.quote_source,
+        db: params.db,
+        mailboxId: params.mailboxId,
+        sourceMessageId: draft.source_message_id,
+        access: params.context ? await getMailboxAccess(params.context, params.mailboxId, params.db) : null,
+      })
+    : ok(null);
+  if (!quote.ok) return quote;
   const rendered = renderComposeContent({
     body: draft.signature ? withoutSignatureSegments(content.data.body, draft.signature) : content.data.body,
     format: content.data.format,
     signature: draft.signature,
+    quoteSource: draft.quote_source,
+    sourceQuote: quote.data,
     customCss: draft.custom_css,
     renderLiquid: draft.origin === "user",
     context: {
@@ -231,6 +251,7 @@ export const loadSendContent = async (params: {
     (value, index, values) => value && values.indexOf(value) === index,
   );
   const snapshot = outboundDraftSnapshotSchema.safeParse({
+    ...(draft.quote_source ? { quoteSource: draft.quote_source } : {}),
     revision: Number(draft.revision),
     from: { name: draft.display_name, address: draft.from_address },
     replyTo: draft.reply_to,
