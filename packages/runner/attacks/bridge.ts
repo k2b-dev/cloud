@@ -595,7 +595,21 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       } catch (error) { if (error.code !== expected) throw error; }
     }
   }`;
-  const refusal = (code: string) => ({ ok: false, error: { code } });
+  const refusalStatuses: Record<string, number> = {
+    code_access_forbidden: 403,
+    code_stream_forbidden: 403,
+    code_disabled: 403,
+    code_capability_undeclared: 403,
+    code_rate_limited: 429,
+    code_call_limit: 429,
+    runner_lease_lost: 409,
+    code_invalid_token: 403,
+  };
+  const refusal = (code: string) => {
+    const status = refusalStatuses[code];
+    if (status === undefined) throw new Error(`Missing fixture status for ${code}`);
+    return { ok: false, error: { code, status } };
+  };
 
   test("Code access, streams and code:false are refused to hostile bundles", async () => {
     const result = await execute(

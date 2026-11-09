@@ -100,7 +100,7 @@ test("response limits count chunked bytes and caller cancellation closes a stall
 
 test("a declared-set 403 reaches the supervisor as a structured call refusal", async () => {
   jest.setSystemTime(NOW);
-  let result: unknown = { ok: false, error: { code: "code_capability_undeclared" } };
+  let result: unknown = { ok: false, error: { code: "code_capability_undeclared", status: 403 } };
   const send: typeof fetch = Object.assign(
     async (url: Parameters<typeof fetch>[0]) =>
       new URL(String(url)).pathname === RUNNER_PATHS.config ? Response.json(config) : Response.json(result, { status: 403 }),
@@ -111,7 +111,7 @@ test("a declared-set 403 reaches the supervisor as a structured call refusal", a
     const signal = new AbortController().signal;
     await bridge.configure(signal);
     const request = { runId: INSTALLATION_ID, generation: 1, token: "fixture", operation: "core.ai.generate", input: {} };
-    expect(await bridge.call(request, signal)).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+    expect(await bridge.call(request, signal)).toEqual({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
     for (const invalid of [{ ok: true, data: null }, { ok: false, error: { code: "unknown" } }, null]) {
       result = invalid;
       await expect(bridge.call(request, signal)).rejects.toThrow("runner_core_http_403");

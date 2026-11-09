@@ -296,10 +296,10 @@ export function createCodeBridgeHost(
     const result = RunnerCallResponseSchema.parse(
       "observation" in execution
         ? localFailure
-          ? { ok: false, error: { code: localFailure.code } }
+          ? { ok: false, error: { code: localFailure.code, status: localFailure.errorStatus } }
           : response.ok
             ? { ok: true, data: null }
-            : { ok: false, error: { code: "code_file_observation_failed" } }
+            : { ok: false, error: { code: "code_file_observation_failed", status: response.status >= 400 ? response.status : 503 } }
         : await response.clone().json(),
     );
     if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);

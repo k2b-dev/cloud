@@ -1362,6 +1362,29 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       expect(executed).toBe(1);
     },
   );
+  test.each([
+    { rateLimited: true, code: "code_rate_limited", status: 429, httpStatus: 200, executed: 0 },
+    { rateLimited: false, code: "code_file_observation_failed", status: 503, httpStatus: 503, executed: 1 },
+    { rateLimited: false, code: "code_file_observation_failed", status: 503, httpStatus: 307, executed: 1 },
+  ])("trusted file observation failures retain structured status ($code)", async (failure) => {
+    await resetFixture({ entry: true, permissions: [] });
+    const token = await signCodeRunToken(claims, { issuer, signer, now, deadlineAt: now.getTime() + 300_000 });
+    const verified = await verifyCodeRunToken(token, { issuer, key, now });
+    if (!verified) throw new Error("Fixture token invalid");
+    let executed = 0;
+    const response = await createCodeBridgeHost({ checkRate: async () => ({ limited: failure.rateLimited }) }).withFileObservation(
+      { claims: verified, operation: "core.code.file.read", input: { name: "image.png" } },
+      async () => {
+        executed++;
+        return new Response("private file bytes", { status: failure.httpStatus });
+      },
+    );
+    expect(response.status).toBe(failure.httpStatus);
+    expect(executed).toBe(failure.executed);
+    const rows = await sql`SELECT state,result FROM code.calls WHERE run_id=${claims.runId}::uuid`;
+    expect(rows).toEqual([{ state: "failed", result: { ok: false, error: { code: failure.code, status: failure.status } } }]);
+    expect(JSON.stringify(rows)).not.toContain("private file bytes");
+  });
   test("issuance cannot reuse an admitted call for another operation or coordinate", async () => {
     await resetFixture({ entry: true });
     const token = await signCodeRunToken(claims, { issuer, signer, now, deadlineAt: now.getTime() + 300_000 });

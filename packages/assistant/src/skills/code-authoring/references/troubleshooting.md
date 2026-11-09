@@ -49,6 +49,7 @@ text. `status === 403` means forbidden, while `status === 404` means missing.
 | Code | Meaning | What to do |
 | --- | --- | --- |
 | 403 or 404 from the target app | The account lacks access, or the object does not exist | Ask the resource's manager to share it with the service account; check the ID |
+| `code_capability_undeclared` (403) | The call's operation, target or ref is outside the version's checked permissions | Keep the SDK call visible to the checker; check and submit the updated source before activating it |
 | `code_approval_required`, `code_approval_revoked` | The version is not approved (any more) | A Cloud administrator approves it |
 | `code_admission_refused` | A schedule tick was refused by policy or approval | As above |
 | `code_not_active` | A newer version became active before the run started | Nothing; the new version handles later work |
