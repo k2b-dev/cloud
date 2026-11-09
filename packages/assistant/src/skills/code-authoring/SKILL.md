@@ -91,9 +91,12 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 
 ## Zugriff prüfen
 
-Check `c.user.id`, `username`, `groupIds` or `groupNames` explicitly before
-reading data or performing an effect, in every handler. Never compare an
-identifier against a mixed list. [Access checks](references/access.md#zugriff-pr%C3%BCfen)
+Start with `app.use("/private", async (c, next) => { … })` before protected
+routes. Compare `c.user.id`, `username`, `groupIds` or `groupNames` explicitly;
+return a 403 Response to deny or `return next()` to continue. Add route-specific
+checks in handlers. Middleware covers every later matching HTTP route; a global
+access check must let intended public routes through, for example by using a
+private path prefix. Never compare an identifier against a mixed list. [Access checks](references/access.md#zugriff-pr%C3%BCfen)
 shows fixed user IDs, handles, groups and a Grids allowlist; each denied
 request returns 403. Public routes have `c.user === null`.
 

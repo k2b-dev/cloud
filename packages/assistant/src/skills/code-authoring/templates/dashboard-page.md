@@ -14,9 +14,13 @@ const TEAM = "00000000-0000-4000-8000-0000000000aa";
 const LIMIT = 50;
 const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length}+` : items.length);
 
-app.get("/", async c => {
+app.use(async (c, next) => {
   if (!c.user?.groupIds.includes(TEAM))
     return c.json({ error: "Forbidden" }, 403);
+  return next();
+});
+
+app.get("/", async c => {
   const [{ data: needsAction, page: needsActionPage }, { data: waiting, page: waitingPage }, { data: unassigned, page: unassignedPage }] = [
     await owner.conversation.list({ view: "needs_action", limit: LIMIT }),
     await owner.conversation.list({ view: "waiting", limit: LIMIT }),

@@ -5,7 +5,7 @@ section: Operations
 order: 920
 description: Size and diagnose Code route requests in the shared runner pool.
 tags: [code, runner, limits]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Operate Code requests
@@ -118,3 +118,13 @@ the intended import's business idempotency key. Expired references and reference
 from another attempt cannot be resumed. Providers remain responsible for
 reclaiming abandoned upload reservations. Cancellation does not undo a
 publication already committed by the receiving application.
+
+## Middleware in checked Code
+
+The generated SDK supports `app.use()` for HTTP routes registered after it.
+Keep Core, checker and runner images on the same release, and pull the current
+SDK before checking sources that use middleware. Existing checked versions
+continue using their bundled SDK. Middleware adds no policy classification;
+its SDK calls use the version's ordinary declared capabilities and the Code
+account's current grants. Request variables remain transient, per request.
+See [Middleware and request variables](/en/docs/platform/code-sdk#middleware-and-request-variables).

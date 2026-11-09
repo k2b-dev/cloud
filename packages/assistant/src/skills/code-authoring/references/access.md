@@ -55,12 +55,15 @@ import { app, jsx, owner, Page, Notice, Stats, Stat } from "@sdk";
 // Fictional group ID of the team that may see this page.
 const TEAM = "00000000-0000-4000-8000-0000000000aa";
 
-app.get("/", async c => {
+app.use(async (c, next) => {
   if (c.user?.kind !== "user" || !c.user.groupIds.includes(TEAM))
     return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.get("/", async c => {
   const { data: open, page } = await owner.conversation.list({ view: "needs_action", limit: 50 });
   return c.page(
-    <Page title="Team inbox" subtitle={`Signed in as ${c.user.name}`}>
+    <Page title="Team inbox" subtitle={`Signed in as ${c.user?.name ?? "visitor"}`}>
       <Stats>
         <Stat label="Needs action" value={page?.hasMore ? `${open.length}+` : open.length} />
       </Stats>
@@ -72,11 +75,38 @@ export default app;
 
 ## Zugriff prüfen
 
-Every non-public route admits every signed-in person. Check access in **every**
-handler before reading data or performing effects. SDK calls use the Code
-account's grants, including shares given to resource Code's service account;
-the visitor's permissions do not limit those calls. Public routes have no
-visitor (`c.user === null`).
+Every non-public route admits every signed-in person. Put shared access checks
+in `app.use()` before the routes they protect; add handler checks for rules
+specific to one route. SDK calls use the Code account's grants, including
+shares given to resource Code's service account. The visitor's permissions
+do not limit those calls. Public routes have `c.user === null`.
+
+Start with middleware for a private path prefix. Returning a Response stops
+before the handler; `return next()` continues. This check also covers later
+POST, PUT, DELETE and ALL routes under the prefix:
+
+<!-- check: personal -->
+```ts
+import { app } from "@sdk";
+const allowedUserIds = ["u_example"];
+app.use("/private", async (c, next) => {
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.get("/private/account", c => c.json({ allowed: true }));
+app.get("/public/status", c => c.text("Ready"), { public: true });
+export default app;
+```
+
+Without a prefix, middleware runs on **every** later HTTP route, including
+public routes. A global access check must explicitly let intended public
+routes through; a private prefix, as above, keeps the rule local. Public
+routes still run through matching middleware with `c.user === null`, even
+when the visitor is signed in. Registration order matters: earlier routes,
+schedules and event handlers are unaffected. Middleware changes neither the
+execution owner nor approval requirements; its own SDK calls are checked
+and must belong to the version's declared capability set.
 
 Use one explicit field per identifier. `id` is the immutable Cloud user ID;
 `username` is the short login handle. `groupIds` and `groupNames` contain the

@@ -1488,3 +1488,81 @@ test("resource aliases and SDK refs keep their complete evidence", async () => {
     { operation: "work-shop.item.move", target: { type: "work-shop.workshop", id: "one" } },
   ]);
 }, 30_000);
+
+test("typed middleware variables reject unknown keys and wrong values in the real compiler", async () => {
+  const source = (body: string) => `import { app } from "@sdk";
+const routes = app.use<{ kunde: { id: string } }>(async (c, next) => {
+  c.set("kunde", { id: "one" }); return next();
+});
+routes.get("/", c => { ${body} return c.text(c.get("kunde").id); });`;
+  expect(await check(source('const id: string = c.get("kunde").id;'))).toMatchObject({ ok: true });
+  for (const body of [
+    'c.set("kunde", 42);',
+    'c.set("other", { id: "one" });',
+    'c.get("other");',
+    'const id: number = c.get("kunde").id;',
+  ]) {
+    const result = await check(source(body));
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ code: expect.stringMatching(/^TS\d+$/) })]));
+  }
+  expect(await check('import { app } from "@sdk"; app.get("/", c => c.json(c.get("undeclared")));')).toMatchObject({ ok: false });
+}, 30_000);
+
+test("checked middleware bundles preserve request variables, public identity and capability evidence", async () => {
+  const checked = await check(`import { app, work_shop } from "@sdk";
+app.get("/before", c => c.text("before"));
+const routes = app.use<{ order: string[] }>(async (c, next) => {
+  c.set("order", ["outer"]); const response = await next(); return response;
+});
+routes.use("/private", async (c, next) => {
+  c.get("order").push("inner");
+  await work_shop.catalog.list({});
+  return next();
+});
+routes.get("/private/:id", c => c.json({ order: c.get("order"), id: c.req.param("id") }));
+routes.get("/public", c => c.json({ user: c.user, order: c.get("order") }), { public: true });`);
+  expect(checked.ok).toBe(true);
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.manifest.permissions).toMatchObject([{ operation: "work-shop.catalog.list", entrypoints: ["route:GET:/private/:id"] }]);
+  let sequence = 0;
+  const run = async (entrypoint: string, input: unknown) => {
+    // The runner loads a fresh bundle and binds the bridge once for each request.
+    const path = join(directory, `checked-middleware-${sequence++}.mjs`);
+    await writeFile(path, checked.bundle);
+    const module = await import(path);
+    return module[entrypoint](input, bridge);
+  };
+  const calls: string[] = [];
+  const bridge = {
+    call: async (operation: string) => {
+      calls.push(operation);
+      return { data: [] };
+    },
+  };
+  const request = {
+    method: "GET",
+    path: "/private/one",
+    query: "",
+    params: { id: "one" },
+    contentType: "text/plain",
+    body: "",
+    user: { id: "u_one", username: "one", groupIds: [], groupNames: [], kind: "user", name: "One" },
+  };
+  expect(await run("route:GET:/before", { ...request, path: "/before" })).toEqual({ kind: "text", status: 200, body: "before" });
+  expect(calls).toEqual([]);
+  for (let i = 0; i < 2; i++) {
+    expect(await run("route:GET:/private/:id", request)).toEqual({
+      kind: "json",
+      status: 200,
+      body: JSON.stringify({ order: ["outer", "inner"], id: "one" }),
+    });
+  }
+  expect(calls).toEqual(["work-shop.catalog.list", "work-shop.catalog.list"]);
+  expect(await run("route:GET:/public", { ...request, path: "/public" })).toEqual({
+    kind: "json",
+    status: 200,
+    body: JSON.stringify({ user: null, order: ["outer"] }),
+  });
+}, 30_000);

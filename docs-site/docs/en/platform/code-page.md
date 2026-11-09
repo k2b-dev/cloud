@@ -5,7 +5,7 @@ section: Platform services
 order: 967
 description: Mount the shared Code page at a resource so its administrators see automations, targets, refused calls, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
-updated: 2026-11-03
+updated: 2026-11-09
 ---
 
 # Show a resource's Code page
@@ -230,7 +230,10 @@ The mark never wraps and keeps its size in every state. The name stays
 
 ## Zugriff prüfen
 
-Every signed-in person can reach a private Code route. Check `c.user` before
-reading or changing data through the Code account. Resource page templates deny
+Every signed-in person can reach a private Code route. Start with `app.use()`
+before protected routes to check `c.user` once for their shared access rule.
+Return 403 to deny or `return next()` to continue. Use a private path prefix
+when the app also serves public routes: matching middleware runs there too,
+with `c.user === null`. Resource page templates deny
 access until you fill their allowed group IDs. Public routes always receive
 `c.user === null`. See [explicit UID, handle, group and Grids checks](code-sdk.md#zugriff-prüfen).

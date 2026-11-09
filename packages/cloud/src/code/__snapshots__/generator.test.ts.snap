@@ -36,7 +36,7 @@ export type CodeUser = {
   kind: "user" | "guest";
   name: string;
 };
-/** Request helpers for hosted routes. No middleware system is part of Code. */
+/** Request helpers for hosted routes. */
 export type CodeRequest = {
   raw: Request;
   param(name: string): string;
@@ -46,7 +46,10 @@ export type CodeRequest = {
   formData(): Promise<FormData>;
 };
 /** Authenticated route context. */
-export type CodeContext = {
+export type CodeContext<Variables extends object = {}> = {
+  /** Request-local variables, declared once on app.use<Variables>(). */
+  set<Key extends keyof Variables & string>(key: Key, value: Variables[Key]): void;
+  get<Key extends keyof Variables & string>(key: Key): Variables[Key];
   req: CodeRequest;
   user: CodeUser | null;
   json(value: unknown, status?: number): Response;
@@ -55,6 +58,13 @@ export type CodeContext = {
   page(page: CodePageBlock): Response;
   redirect(location: string, status?: number): Response;
 };
+/** Call once to run the next matching middleware or route handler. */
+export type CodeNext = () => Promise<Response>;
+/** Return a response to stop, or call next(); awaiting next() may also return void. */
+export type CodeMiddleware<Variables extends object = {}> = (
+  c: CodeContext<Variables>,
+  next: CodeNext,
+) => Response | void | Promise<Response | void>;
 /** One schedule occurrence, stable across retries. Manual runs have scheduledAt null. */
 export type CodeScheduleContext = { runId: string; scheduledAt: string | null; input: unknown };
 export type CodeScheduleHandler = (context: CodeScheduleContext) => void | Promise<void>;
@@ -133,16 +143,19 @@ export type CodeEvents = { "work-shop.changed": CodeEvent<"work-shop.changed", (
 /** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
 export type CodeRouteOptions = { public?: boolean; layout?: "plain" };
 
-export type CodeApp = {
-  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp;
+export type CodeApp<Variables extends object = {}> = {
+  /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
+  use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  use<Added extends object = {}>(path: string, middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
   /** The checked event is scoped to this resource Code owner. */
-  on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
+  get(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  post(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  put(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  delete(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
+  all(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
 };
 
 export declare const app: CodeApp;
@@ -266,6 +279,7 @@ const handles = new WeakMap();
 let bridge;
 const schedules = [];
 const routes = [];
+const middleware = [];
 const routeResponses = new WeakMap();
 const diagnostics = [];
 const node = () => Object.create(null);
@@ -336,6 +350,14 @@ if (manifest.owner) {
     : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
 }
 const app = node();
+app.use = (...args) => {
+  const [path, handler] = args.length === 1 ? ["/", args[0]] : args;
+  if (args.length < 1 || args.length > 2 || typeof path !== "string" ||
+      !/^\\/(?:[A-Za-z0-9_-]+(?:\\/[A-Za-z0-9_-]+)*\\/?)?$/.test(path) || path.length > 200 || typeof handler !== "function")
+    throw new CodeError("code_sdk_invalid_middleware");
+  middleware.push({ path: path === "/" ? "/" : path.replace(/\\/$/, ""), handler });
+  return app;
+};
 app.schedule = (...args) => {
   const [when, fn] = args;
   const object = when && typeof when === "object" && !Array.isArray(when);
@@ -387,7 +409,7 @@ for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (pat
   const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
   const entrypoint = "route:" + route.method + ":" + path;
   if (routes.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_route");
-  routes.push({ entrypoint, route, handler });
+  routes.push({ entrypoint, route, handler, middleware: [...middleware] });
   return app;
 };
 Object.freeze(app);
@@ -427,7 +449,10 @@ const __codeSdk = Object.freeze({
       });
       const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
       const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new CodeError("code_invalid_response"); return value; };
+      const variables = new Map();
       const c = {
+        set: (key, value) => { variables.set(key, value); },
+        get: key => variables.get(key),
         user: registered.route.public || !input.user ? null : {
           id: input.user.id, username: input.user.username, groupIds: [...input.user.groupIds], groupNames: [...input.user.groupNames], kind: input.user.kind,
           name: input.user.name,
@@ -465,7 +490,33 @@ const __codeSdk = Object.freeze({
         },
         redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
       };
-      const response = await registered.handler(c);
+      const path = input.path.split("/").map(segment => decodeURIComponent(segment)).join("/");
+      const chain = registered.middleware.filter(value => value.path === "/" || path === value.path || path.startsWith(value.path + "/"));
+      let last = -1;
+      const dispatch = async index => {
+        if (index <= last) throw new CodeError("code_middleware_next_called_twice");
+        last = index;
+        if (index === chain.length) return registered.handler(c);
+        let following;
+        let settled;
+        let finished = false;
+        const next = () => {
+          if (finished || following) return Promise.reject(new CodeError("code_middleware_next_called_twice"));
+          following = dispatch(index + 1);
+          // Observe rejection immediately; the middleware may catch it or finish other work first.
+          settled = following.catch(() => {});
+          return following;
+        };
+        try {
+          const response = await chain[index].handler(c, next);
+          return response === undefined && following ? await following : response;
+        } finally {
+          finished = true;
+          // Drain work already started by next(), preserving a middleware's own response or error.
+          if (settled) await settled;
+        }
+      };
+      const response = await dispatch(0);
       const result = routeResponses.get(response);
       if (!result) throw new CodeError("code_invalid_response");
       return result;

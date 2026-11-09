@@ -772,7 +772,7 @@ Non-public routes open for every signed-in person, for personal, resource
 and app Code alike. They run with the Code account's authority; personal Code
 uses its owner's mandate. Check `c.user` before reading private data or
 performing effects. For an owner-only page, compare `c.user.id` to the
-intended person's ID in every handler.
+intended person's ID in shared middleware or in every protected handler.
 
 Routes require a signed-in person's session by default, including guests.
 Check `c.user` in the handler when access depends on the visitor:
@@ -824,13 +824,85 @@ Eligible event payloads come from event schemas; events with
 `automation: false` are absent. `nav`, `webhook` and `fetch` are not app
 methods; the typechecker rejects them.
 
+## Middleware and request variables
+
+`app.use(async (c, next) => …)` runs before all HTTP routes registered after
+it. `app.use("/private", …)` applies to `/private` and its child paths, but not
+`/privately`. Write the optional prefix as a string literal of path segments;
+path variables and casts are rejected. Use `/` or omit it for all paths. Several middleware functions run in
+registration order. Code after `await next()` runs in reverse order as the
+handler returns. Return a context Response to stop, or call `next()` once.
+Use `return next()` when no work follows it. Catch errors around `await next()`
+to return your own failure response. Check access before calling `next()`:
+work already started downstream is allowed to finish. Without a Response or
+a call to `next()`, the request fails with `code_invalid_response`.
+
+Declare request variables once with the generic on `use`, and capture its
+returned app for the later registrations:
+
+```ts
+import { app } from "@sdk";
+type Variables = { kunde: { id: string }; requestLabel: string };
+const routes = app.use<Variables>(async (c, next) => {
+  c.set("kunde", { id: c.req.query("kunde") ?? "default" });
+  c.set("requestLabel", "Account");
+  return next();
+});
+routes.get("/account", c => c.json({
+  customerId: c.get("kunde").id,
+  label: c.get("requestLabel"),
+}));
+export default routes;
+```
+
+`c.set` accepts only declared keys and their value types; `c.get` returns
+the declared value type. Values live for one request, including while it
+awaits SDK calls. They are never copied to the next request. Initialize a
+variable before reading it; if it may be missing, include `undefined` in
+its declared type. A prefix-scoped initializer must cover every route that
+reads its variables. `app` and the returned `routes` register on the same
+app; the return carries the variable types for subsequent handlers.
+
+Middleware runs on matching public routes too; `c.user` remains `null`.
+[Access checks](#zugriff-prüfen) shows how to keep public paths reachable.
+SDK calls in middleware use the same Code account, approval and declared-set
+checks as calls in handlers. Register `use` at module scope, as a statement
+or as the initializer of a `const` binding. Schedules and events do not run
+HTTP middleware.
+
 ## Zugriff prüfen
 
-Every non-public route admits every signed-in person. Check access in **every**
-handler before reading data or performing effects. SDK calls use the Code
-account's grants, including shares given to resource Code's service account;
-the visitor's permissions do not limit those calls. Public routes have no
-visitor (`c.user === null`).
+Every non-public route admits every signed-in person. Put shared access checks
+in `app.use()` before the routes they protect; add handler checks for rules
+specific to one route. SDK calls use the Code account's grants, including
+shares given to resource Code's service account. The visitor's permissions
+do not limit those calls. Public routes have `c.user === null`.
+
+Start with middleware for a private path prefix. Returning a Response stops
+before the handler; `return next()` continues. This check also covers later
+POST, PUT, DELETE and ALL routes under the prefix:
+
+```ts
+import { app } from "@sdk";
+const allowedUserIds = ["u_example"];
+app.use("/private", async (c, next) => {
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.get("/private/account", c => c.json({ allowed: true }));
+app.get("/public/status", c => c.text("Ready"), { public: true });
+export default app;
+```
+
+Without a prefix, middleware runs on **every** later HTTP route, including
+public routes. A global access check must explicitly let intended public
+routes through; a private prefix, as above, keeps the rule local. Public
+routes still run through matching middleware with `c.user === null`, even
+when the visitor is signed in. Registration order matters: earlier routes,
+schedules and event handlers are unaffected. Middleware changes neither the
+execution owner nor approval requirements; its own SDK calls are checked
+and must belong to the version's declared capability set.
 
 Use one explicit field per identifier. `id` is the immutable Cloud user ID;
 `username` is the short login handle. `groupIds` and `groupNames` contain the
