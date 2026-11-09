@@ -1,6 +1,6 @@
-import { type SharedTextStore, sharedTextNodeId } from "@k2b/cloud/shared-text";
+import { applySharedTextEvent, type SharedTextStore, sharedTextNodeId } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { ConflictError, StoreFullError } from "@k2b/sync";
+import { ConflictError } from "@k2b/sync";
 import { inspectTableStructure } from "@k2b/ui/text-editor/model";
 import type { sql } from "bun";
 import * as Y from "yjs";
@@ -12,28 +12,27 @@ import {
   normalizeDraftDocumentContent,
   readDraftDocument as projectDocument,
 } from "../lib/draft-document";
-import { mailDraftDocumentMessages } from "../lib/draft-document-protocol";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
-import { MAX_LOG_ENVELOPE_BYTES, mailDraftDocumentLog } from "./draft-document-log";
-
-export { mailDraftDocumentLog } from "./draft-document-log";
-
+import {
+  draftDocumentSnapshotWritten,
+  draftDocumentStreamFull,
+  isDraftDocumentStreamFull,
+  lockDraftDocumentCoverage,
+  MAX_LOG_ENVELOPE_BYTES,
+  mailDraftDocumentLog,
+  replayDraftDocument,
+} from "./draft-document-log";
+import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
 import { DRAFT_REVISION_OPERATION_ORIGIN, draftRevisionOperationContent, findDraftRevisionOperation } from "./draft-document-operation";
 import { awaitDraftDocumentQuery, withDraftDocumentTransaction } from "./draft-document-socket-sql";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { resolveDraftSignature, validateIdentity } from "./draft-validation";
 
-/** Enable only after checking the installed retention contract AND the actual stream configuration. */
-export const sharedDraftsSupported = async (): Promise<boolean> => {
-  // k2b-dev/sync#4: reject-full, no expiry before snapshot coverage, and watermark pruning are all required.
-  return false;
-};
-
-/** TODO k2b-dev/sync#4: confirm the topic rejection type when the retention contract ships. */
-export const isDraftDocumentStreamFull = (error: unknown): boolean => error instanceof StoreFullError;
+export { isDraftDocumentStreamFull, mailDraftDocumentLog } from "./draft-document-log";
+export { sharedDraftsSupported } from "./draft-document-log-policy";
 
 type Db = typeof sql;
 type DraftRow = {
@@ -73,6 +72,7 @@ export type DraftDocumentRead = {
   generation: string;
   revision: number;
   lifecycle: string;
+  docSeq: string | number | null;
   historyComplete: boolean;
   fresh: DraftDocumentSnapshot;
   /** Only bytes stored in this SQL transaction; replay alone is not durable. */
@@ -181,6 +181,7 @@ export const lockDraftDocumentInTransaction = async (
   params.signal?.throwIfAborted();
   const entry = await requireDraftAccess(context, mailboxId, draftId, params.permission ?? "write", db);
   if (!entry.ok) return entry;
+  await lockDraftDocumentCoverage(db);
   const initial = await loadRow();
   // An authorized request may have waited behind send or an assignment change.
   const allowed = await requireDraftAccess(context, mailboxId, draftId, params.permission ?? "write", db);
@@ -188,6 +189,7 @@ export const lockDraftDocumentInTransaction = async (
   if (!initial) return fail(err.notFound("Draft"));
   let row: DraftRow = initial;
   if (row.edit_mode !== "shared") return conflict("Draft uses lock editing; shared document APIs are unavailable");
+  if (!(await draftDocumentHistoryChecked(db))) return conflict("Shared drafts are starting; try again in a moment");
   if ((params.permission ?? "write") === "write") {
     const ready = editable(row);
     if (!ready.ok) return ready;
@@ -314,6 +316,7 @@ export const lockDraftDocumentInTransaction = async (
       INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
       VALUES (${draftId}::uuid, ${generation}::bigint, ${Number(row.revision)}, ${Buffer.from(state)}, ${cursor})
     `;
+    draftDocumentSnapshotWritten(db);
     row = {
       ...row,
       doc_state: state,
@@ -334,7 +337,34 @@ export const lockDraftDocumentInTransaction = async (
       row = current;
       if (String(row.doc_generation) !== generation) throw new Error("Draft document generation changed");
       if (!row.doc_state) throw new Error("Draft document snapshot is missing");
-      return { state: row.doc_state, cursor: row.doc_cursor, restoreRevision: String(row.doc_generation), text: row.body_markdown };
+      // Return a replayed load to the public shared-text binding. The SQL row
+      // remains the only durable snapshot; replay never acknowledges local input.
+      const topic = mailDraftDocumentLog.topic();
+      const head = await topic.latestCursor({ tenantId: draftId });
+      if (!head || (row.doc_cursor && topic.cursorSequence(head) <= Number(row.doc_seq)))
+        return { state: row.doc_state, cursor: row.doc_cursor, restoreRevision: generation, text: row.body_markdown };
+      const doc = new Y.Doc();
+      try {
+        Y.applyUpdate(doc, row.doc_state);
+        for await (const event of replayDraftDocument({
+          draftId,
+          after: row.doc_cursor,
+          docSeq: row.doc_seq,
+          historyComplete: row.doc_history_complete,
+          until: head,
+          signal: options.signal,
+        }))
+          applySharedTextEvent(doc, event, draftId, generation);
+        if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("Draft document has unresolved dependencies");
+        return {
+          state: Y.encodeStateAsUpdate(doc),
+          cursor: head,
+          restoreRevision: generation,
+          text: decode(Y.encodeStateAsUpdate(doc)).body,
+        };
+      } finally {
+        doc.destroy();
+      }
     },
     async save(docId, input) {
       if (docId !== draftId) throw new Error("Transaction-bound draft store cannot access another draft");
@@ -381,6 +411,7 @@ export const lockDraftDocumentInTransaction = async (
         VALUES (${draftId}::uuid, ${input.restoreRevision}::bigint, ${Number(updated.revision)}, ${Buffer.from(input.state)}, ${input.cursor})
       `;
       await queueDraftProjectionInTransaction({ db, draftId });
+      draftDocumentSnapshotWritten(db);
       row = {
         ...row,
         doc_state: input.state,
@@ -457,8 +488,7 @@ export const lockDraftDocumentInTransaction = async (
         if (isDraftDocumentStreamFull(error)) return null;
         throw error;
       });
-    if (!admitted)
-      return fail({ code: "DRAFT_DOCUMENT_STREAM_FULL", status: 409, message: mailDraftDocumentMessages.resolve([]).t.streamFull });
+    if (!admitted) return draftDocumentStreamFull(db);
     if (admitted.status !== "accepted") return recovery(invalid ?? "Draft update requires recovery; retain the submitted content");
     publishedCursor = admitted.cursor;
     try {
@@ -499,6 +529,7 @@ export const lockDraftDocumentInTransaction = async (
         generation,
         revision: Number(row.revision),
         lifecycle: row.state,
+        docSeq: row.doc_seq,
         historyComplete: row.doc_history_complete,
         fresh: { state: fresh.state, cursor: fresh.cursor, content: decode(fresh.state) },
         durable: snapshot(row),
@@ -588,7 +619,14 @@ export const lockDraftDocumentInTransaction = async (
           actor: documentActor,
           generation: input.generation,
           expectedRevision: input.expectedRevision,
-          events: topic.replay({ tenantId: draftId, after: base.cursor ?? topic.cursorAt(0), until, signal: requestSignal }),
+          events: replayDraftDocument({
+            draftId,
+            after: base.cursor,
+            docSeq: row.doc_seq,
+            historyComplete: row.doc_history_complete,
+            until,
+            signal: requestSignal,
+          }),
           deadline: input.deadline,
           signal: requestSignal,
         });
@@ -624,20 +662,26 @@ export const lockDraftDocumentInTransaction = async (
       const ready = await assertWritable(input.generation);
       if (!ready.ok) return ready;
       if (input.generation !== generation) return conflict("Draft generation changed before freeze");
-      const frozen = await bound.freeze(draftId, {
-        actor: documentActor,
-        restoreRevision: input.generation,
-        signal: input.signal ?? params.signal,
-        validate: async (state) => {
-          const content = decode(state);
-          if (content.format === "markdown") {
-            const table = inspectTableStructure(content.body);
-            if (table.extraCells || table.missingSeparator) throw new Error("Draft tables require review before freezing");
-          }
-          const valid = await validateContent(content, row);
-          if (!valid.ok) throw new Error(valid.error.message);
-        },
-      });
+      const frozen = await bound
+        .freeze(draftId, {
+          actor: documentActor,
+          restoreRevision: input.generation,
+          signal: input.signal ?? params.signal,
+          validate: async (state) => {
+            const content = decode(state);
+            if (content.format === "markdown") {
+              const table = inspectTableStructure(content.body);
+              if (table.extraCells || table.missingSeparator) throw new Error("Draft tables require review before freezing");
+            }
+            const valid = await validateContent(content, row);
+            if (!valid.ok) throw new Error(valid.error.message);
+          },
+        })
+        .catch((error: unknown) => {
+          if (isDraftDocumentStreamFull(error)) return undefined;
+          throw error;
+        });
+      if (frozen === undefined) return draftDocumentStreamFull(db);
       if (!frozen) return fail(err.notFound("Draft document"));
       publishedCursor = frozen.cursor;
       // Throws after a marker if persistence fails. The send caller MUST roll

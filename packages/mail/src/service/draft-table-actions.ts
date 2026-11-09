@@ -1,4 +1,3 @@
-import { sql } from "@k2b/cloud";
 import { encodeTableFocus, type TextTableIntent } from "@k2b/cloud/browser/shared-text";
 import {
   planTableAction,
@@ -14,6 +13,7 @@ import { ConflictError } from "@k2b/sync";
 import * as Y from "yjs";
 import { type MailRequestContext, personalPrincipal } from "./auth";
 import { requireDraftContentWrite } from "./draft-adoption";
+import { draftDocumentStreamFull, isDraftDocumentStreamFull, withDraftDocumentCommit } from "./draft-document-log";
 import { type DraftDocumentSave, lockDraftDocumentInTransaction, mailDraftDocumentLog } from "./draft-documents";
 
 export type DraftTableActionResponse = {
@@ -40,7 +40,7 @@ export const applyDraftTableAction = async (params: {
   const actor = personalPrincipal(params.context);
   const outcome: { receipt: DraftTableActionResponse | null } = { receipt: null };
   try {
-    return await sql.begin(async (db) => {
+    return await withDraftDocumentCommit(async (db) => {
       const locked = await lockDraftDocumentInTransaction({ ...params, db });
       if (!locked.ok) return locked;
       const writable = await requireDraftContentWrite({ db, context: params.context, draftId: params.draftId, signal: params.signal });
@@ -108,6 +108,7 @@ export const applyDraftTableAction = async (params: {
     });
   } catch (error) {
     if (outcome.receipt) return ok({ ...outcome.receipt, persisted: false });
+    if (isDraftDocumentStreamFull(error)) return draftDocumentStreamFull();
     if (error instanceof TableActionRejectedError || error instanceof ConflictError)
       return fail(err.conflict("Table changed; inspect the current table before another action"));
     // A lost broker acknowledgement is not proof of rejection. Reconcile first;

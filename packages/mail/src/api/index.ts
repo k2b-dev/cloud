@@ -3164,7 +3164,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
       return respond(
         c,
         ok({
-          ...value,
+          generation: value.generation,
+          revision: value.revision,
+          lifecycle: value.lifecycle,
+          historyComplete: value.historyComplete,
           fresh: { ...value.fresh, state: toBase64(value.fresh.state) },
           durable: { ...value.durable, state: toBase64(value.durable.state) },
           frozen: value.frozen ? { ...value.frozen, state: toBase64(value.frozen.state) } : null,
