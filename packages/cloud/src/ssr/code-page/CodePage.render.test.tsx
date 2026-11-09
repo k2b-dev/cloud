@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { renderedText, withoutComments } from "../../../../../scripts/fixtures/rendered-markup";
 import { currentLibrary } from "../../../test/future-capability-manifest";
 import * as capabilityProvider from "../../capabilities/server";
 import { capabilityResultSchema } from "../../contracts/capabilities";
@@ -27,19 +28,20 @@ const { loadCodeAttention } = await import("./attention");
 const { codePageNeedsAttention } = await import("./CodePage");
 const { LocaleProvider } = await import("@k2b/ui");
 
+const renderMarkup = (render: Parameters<typeof renderToString>[0]) => withoutComments(renderToString(render));
+
 type State = Parameters<typeof codePageFixture>[0];
 const html = (state: State, locale = "de") =>
-  renderToString(() =>
+  renderMarkup(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
         return createComponent(CodePage, { data: codePageFixture(state, locale) });
       },
     }),
-  ).replaceAll(/<!--[^>]*-->/g, "");
+  );
 const text = (state: State, locale = "de") =>
-  html(state, locale)
-    .replaceAll(/<[^>]+>/g, " ")
+  renderedText(html(state, locale), " ")
     .replaceAll(/\s+/g, " ")
     // A sentence may end right after a linked ID.
     .replaceAll(/ \./g, ".");
@@ -54,23 +56,23 @@ const refusalMarkup = (state: State) => {
 };
 
 const personal = (state: State, locale = "de") =>
-  renderToString(() =>
-    createComponent(LocaleProvider, {
-      locale,
-      get children() {
-        return createComponent(CodePage, {
-          data: {
-            ...codePageFixture(state, locale),
-            owner: { kind: "person", ref: null, title: state === "error" ? "" : "Wochenbericht Vertrieb", typeTitle: null },
-            href: "/app/assistant/code/c_woche1",
-          },
-        });
-      },
-    }),
-  )
-    .replaceAll(/<!--[^>]*-->/g, "")
-    .replaceAll(/<[^>]+>/g, " ")
-    .replaceAll(/\s+/g, " ");
+  renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(CodePage, {
+            data: {
+              ...codePageFixture(state, locale),
+              owner: { kind: "person", ref: null, title: state === "error" ? "" : "Wochenbericht Vertrieb", typeTitle: null },
+              href: "/app/assistant/code/c_woche1",
+            },
+          });
+        },
+      }),
+    ),
+    " ",
+  ).replaceAll(/\s+/g, " ");
 
 describe("personal Code", () => {
   test("leads with its own title, runs as its person and never lists target access", () => {
@@ -82,23 +84,23 @@ describe("personal Code", () => {
     expect(page).not.toContain("an info@moebel-beispiel.de selbst");
   });
   test("someone else's shared personal Code names whose rights it runs with", () => {
-    const shared = renderToString(() =>
-      createComponent(LocaleProvider, {
-        locale: "de",
-        get children() {
-          return createComponent(CodePage, {
-            data: {
-              ...codePageFixture("overview", "de"),
-              owner: { kind: "person", ref: null, title: "Wochenbericht Vertrieb", typeTitle: null, runsAs: { name: "Lea Muster" } },
-              href: "/app/assistant/code/c_woche1",
-            },
-          });
-        },
-      }),
-    )
-      .replaceAll(/<!--[^>]*-->/g, "")
-      .replaceAll(/<[^>]+>/g, " ")
-      .replaceAll(/\s+/g, " ");
+    const shared = renderedText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, {
+              data: {
+                ...codePageFixture("overview", "de"),
+                owner: { kind: "person", ref: null, title: "Wochenbericht Vertrieb", typeTitle: null, runsAs: { name: "Lea Muster" } },
+                href: "/app/assistant/code/c_woche1",
+              },
+            });
+          },
+        }),
+      ),
+      " ",
+    ).replaceAll(/\s+/g, " ");
     expect(shared).toContain("Code von Lea Muster · läuft als Lea Muster");
     expect(shared).toContain("Er nutzt die Rechte der Person, der er gehört");
     expect(shared).not.toContain("Dein Code");
@@ -245,16 +247,17 @@ describe("Code page states", () => {
     if (first.state.kind !== "ready") throw new Error("Expected ready fixture");
     first.state.runs = { items: [], nextCursor: null };
     const render = (data: ReturnType<typeof codePageFixture>) =>
-      renderToString(() =>
-        createComponent(LocaleProvider, {
-          locale: "de",
-          get children() {
-            return createComponent(CodePage, { data });
-          },
-        }),
-      )
-        .replaceAll(/<[^>]+>/g, " ")
-        .replaceAll(/\s+/g, " ");
+      renderedText(
+        renderMarkup(() =>
+          createComponent(LocaleProvider, {
+            locale: "de",
+            get children() {
+              return createComponent(CodePage, { data });
+            },
+          }),
+        ),
+        " ",
+      ).replaceAll(/\s+/g, " ");
     expect(render(first)).toContain("Kennung code-7k2q9m4xwt Kopieren");
     const unknown = codePageFixture("refused");
     if (unknown.state.kind !== "ready") throw new Error("Expected ready fixture");
@@ -284,16 +287,17 @@ describe("Code page states", () => {
     if (failed.state.kind !== "ready") throw new Error("Expected ready fixture");
     failed.state.run!.refusal = null;
     failed.state.run!.calls![1]!.refusal = "bridge";
-    const page = renderToString(() =>
-      createComponent(LocaleProvider, {
-        locale: "de",
-        get children() {
-          return createComponent(CodePage, { data: failed });
-        },
-      }),
-    )
-      .replaceAll(/<[^>]+>/g, " ")
-      .replaceAll(/\s+/g, " ");
+    const page = renderedText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data: failed });
+          },
+        }),
+      ),
+      " ",
+    ).replaceAll(/\s+/g, " ");
     expect(page).toContain("Fehlgeschlagen nach dem ersten Aufruf.");
     expect(page).toContain("Erneut ausführen");
   });
@@ -594,14 +598,14 @@ test("one-time automation rows display the same explicit instant and zone in Ger
     automation.cron = null;
     automation.at = "2026-12-01T09:15:30+01:00";
     automation.timeZone = "Europe/Berlin";
-    const rendered = renderToString(() =>
+    const rendered = renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale,
         get children() {
           return createComponent(CodePage, { data });
         },
       }),
-    ).replaceAll(/<!--[^>]*-->/g, "");
+    );
     const expected = new Intl.DateTimeFormat(locale, { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" }).format(
       new Date(automation.at),
     );
@@ -615,7 +619,7 @@ test("automation rows and the last run use reviewed titles with identifier fallb
     const data = codePageFixture(state, "de");
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
     for (const automation of data.state.automations ?? []) automation.title = "Lieferungen eintragen";
-    const rendered = renderToString(() =>
+    const rendered = renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale: "de",
         get children() {
@@ -623,7 +627,7 @@ test("automation rows and the last run use reviewed titles with identifier fallb
         },
       }),
     );
-    const text = rendered.replaceAll(/<[^>]+>/g, " ");
+    const text = renderedText(rendered, " ");
     expect(text).toContain("Lieferungen eintragen");
     expect(text).not.toContain("anfragenSortieren");
     if (state === "refused") expect(text).toContain("Letzter Lauf");
@@ -636,14 +640,14 @@ test("run lists and details use the run's title with identifier fallback", () =>
   if (data.state.kind !== "ready" || !data.state.run || !data.state.runs) throw new Error("Expected run fixture");
   data.state.run.run.title = "Lieferungen eintragen";
   data.state.runs.items[0]!.title = "Lieferungen eintragen";
-  const rendered = renderToString(() =>
+  const rendered = renderMarkup(() =>
     createComponent(LocaleProvider, {
       locale: "de",
       get children() {
         return createComponent(CodePage, { data });
       },
     }),
-  ).replaceAll(/<!--[^>]*-->/g, "");
+  );
   expect(rendered.match(/Lieferungen eintragen/g)?.length).toBeGreaterThanOrEqual(2);
   expect(rendered).toContain("anfragenSortieren");
 });
@@ -803,7 +807,7 @@ describe("Code page loader", () => {
       );
       if (data.state.kind !== "ready") throw new Error("Expected ready page");
       expect(data.state.run?.refusal).toMatchObject({ code: "code_ai_budget_limit" });
-      const markup = renderToString(() =>
+      const markup = renderMarkup(() =>
         createComponent(LocaleProvider, {
           locale,
           get children() {
@@ -883,7 +887,7 @@ test("the handle is present before the first run and in the server's first rende
   const data = codePageFixture("overview", "de");
   if (data.state.kind !== "ready") throw new Error("Expected draft Code fixture");
   data.state.runs = { items: [], nextCursor: null };
-  const markup = renderToString(() =>
+  const markup = renderMarkup(() =>
     createComponent(LocaleProvider, {
       locale: "de",
       get children() {
@@ -949,7 +953,7 @@ test("a legacy version entry shows the reconfirmation hint", () => {
   const fixture = codePageFixture("overview");
   if (fixture.state.kind !== "ready") throw new Error("Expected ready fixture");
   fixture.state.code.needsReconfirmation = true;
-  const rendered = renderToString(() =>
+  const rendered = renderMarkup(() =>
     createComponent(LocaleProvider, {
       locale: "de",
       get children() {
@@ -982,7 +986,7 @@ test("failed event delivery remains visible and only an active editor can retry 
         },
       ],
     };
-    return renderToString(() =>
+    return renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale: "en",
         get children() {

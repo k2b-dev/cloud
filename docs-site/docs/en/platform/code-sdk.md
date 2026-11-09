@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Code SDK
@@ -14,6 +14,13 @@ Code imports its installation's generated SDK as `@sdk`. Handles select the
 resource an operation acts on. The available factories, methods, inputs and
 results come from [application capability manifests](/en/docs/platform/capabilities).
 Third-party applications use the same path as built-in applications.
+
+SDK generation rejects invalid app IDs, capability paths, target types and event
+names with a validation error. App IDs use the capability app-ID grammar; local
+names use `CapabilityLocalIdSchema`. Named `refs` fields must be identifiers
+(`A–Z`, `a–z`, `_` or `$` first, then letters, digits, `_` or `$`). Fix the
+application declaration and refresh its manifest before pulling the SDK again.
+Valid manifests retain the same declarations, runtime and manifest hashes.
 
 `secrets.NAME` supplies a secret marker and `http.fetch` dispatches a bounded public HTTPS request.
 The checker collects exact origins into `manifest.internet`; declare dynamic destinations

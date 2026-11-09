@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { renderedText } from "../../../../../../scripts/fixtures/rendered-markup";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-area-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -294,9 +295,7 @@ test("reviewed automation titles appear in approvals and old declarations keep t
 });
 
 test("Code of an app has its Code page here: its service account and a refused call like any Code page", () => {
-  const detail = render({ sec: "code", id: "c_portal" })
-    .replaceAll(/<!--[^>]*-->/g, "")
-    .replaceAll(/<[^>]+>/g, " ")
+  const detail = renderedText(render({ sec: "code", id: "c_portal" }), " ")
     .replaceAll(/\s+/g, " ")
     .replaceAll(/ \./g, ".");
   // The head as on every Code page: title, service account, the word "Kennung", the handle and a short "Kopieren".

@@ -80,6 +80,37 @@ describe("Code SDK generation", () => {
     expect(sdk.runtime).not.toContain("inputSchema");
     expect(sdk.runtime).not.toContain("dataSchema");
   });
+  test("rejects invalid manifest names before SDK generation", () => {
+    for (const value of ["bad*/name", "bad\nname", "bad\n", "bad\r\n", 'bad"; process.exit()', "bad`name", "bad${name}"]) {
+      expect(() => generateCodeSdk([{ ...fixture, appId: value }], { mode: "personal" })).toThrow();
+      for (const kind of ["types", "queries", "actions"] as const) {
+        const invalid = { ...fixture, [kind]: fixture[kind].map((entry, i) => (i === 0 ? { ...entry, localId: value } : entry)) };
+        expect(() => generateCodeSdk([invalid], { mode: "personal" })).toThrow();
+      }
+      const refField = {
+        ...fixture,
+        queries: fixture.queries.map((entry, i) => (i === 0 ? { ...entry, refs: { [value]: "workshop" } } : entry)),
+      };
+      expect(() => generateCodeSdk([refField], { mode: "personal" })).toThrow();
+      for (const field of ["localId", "subject", "place"] as const) {
+        const invalid = { ...fixture, events: fixture.events?.map((entry, i) => (i === 0 ? { ...entry, [field]: value } : entry)) };
+        expect(() => generateCodeSdk([invalid], { mode: "personal" })).toThrow();
+      }
+      for (const field of ["target", "refs"] as const) {
+        const invalid = {
+          ...fixture,
+          queries: fixture.queries.map((entry, i) =>
+            i === 0 ? { ...entry, [field]: field === "target" ? value : { source: value } } : entry,
+          ),
+        };
+        expect(() => generateCodeSdk([invalid], { mode: "personal" })).toThrow();
+      }
+    }
+  });
+  test("derives export names from app IDs rather than additional manifest fields", () => {
+    const manifest = { ...fixture, exportName: 'bad*/\n"; process.exit()' };
+    expect(generateCodeSdk([manifest], options)).toEqual(generated());
+  });
   test("supports callable namespaces and overloaded app factories", async () => {
     const sdk = generateCodeSdk([callableFixture()], { mode: "personal" });
     const dir = await temporaryDirectory("cloud-code-c15-callable-");
@@ -348,7 +379,26 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
   const resource = generated();
   const personal = generateCodeSdk([fixture], { mode: "personal" });
   const once = generateCodeSdk([fixture], { mode: "code_run" });
+  const literal = '*/\n"; process.exit(); ` ${value}';
+  const literalSdk = generateCodeSdk(
+    [
+      {
+        ...fixture,
+        queries: fixture.queries.map((op) => ({
+          ...op,
+          dataSchema: {
+            type: "object",
+            properties: { [literal]: { const: literal } },
+            required: [literal],
+            additionalProperties: false,
+          },
+        })),
+      },
+    ],
+    options,
+  );
   await Promise.all([
+    writeFile(join(dir, "literals.d.ts"), literalSdk.declarations),
     writeFile(join(dir, "resource.d.ts"), resource.declarations),
     writeFile(join(dir, "personal.d.ts"), personal.declarations),
     writeFile(join(dir, "once.d.ts"), once.declarations),
@@ -366,6 +416,8 @@ import { work_shop as once } from "./once";
 import { workshop } from "./ids";
 import { work_shop as callable } from "./callable";
 import { _eval, _arguments, manifest } from "./reserved";
+import { work_shop as literals } from "./literals";
+literals.app().catalog.list({});
 _eval.app(); _arguments.app(); manifest.app();
 callable.app("resource");
 callable.app().branch({ title: "x", idempotencyKey: "key" });

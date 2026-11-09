@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { stableJsonValue } from "../_internal/capability-schemas";
 import {
+  CapabilityAppIdSchema,
+  CapabilityLocalIdSchema,
   type CapabilityManifest,
   CapabilityManifestSchema,
   CLOUD_RESOURCE_ID_MAX_LENGTH,
@@ -14,6 +16,31 @@ import { CODE_PAGE_BUILDERS } from "./page-source";
 import { CODE_SDK_RUNTIME } from "./runtime-source";
 import { schemaTypes } from "./schema-types";
 import { CODE_SDK_APP_PHASES, type CodeSdkManifest, type CodeSdkOperation, type CodeSdkOptions, type GeneratedCodeSdk } from "./types";
+
+// Check source names before the compatibility reader can omit unreadable entries.
+// The shared local-ID grammar also covers quoted property paths (including hyphens).
+const sdkLocalId = CapabilityLocalIdSchema.refine((value) => !/\s/.test(value), "Use an SDK path without whitespace");
+const sdkLocalName = z.object({ localId: sdkLocalId });
+const sdkOperationNames = sdkLocalName.extend({
+  target: sdkLocalId.optional(),
+  refs: z
+    .record(
+      z
+        .string()
+        .max(100)
+        .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$(?![\s\S])/, "Use an SDK field identifier"),
+      sdkLocalId,
+    )
+    .optional(),
+});
+const sdkManifestNames = z.object({
+  appId: CapabilityAppIdSchema.refine((value) => !/\s/.test(value), "Use an SDK app ID without whitespace"),
+  types: z.array(sdkLocalName),
+  queries: z.array(sdkOperationNames),
+  actions: z.array(sdkOperationNames),
+  commands: z.array(sdkLocalName),
+  events: z.array(sdkLocalName.extend({ subject: sdkLocalId, place: sdkLocalId.optional() })).optional(),
+});
 
 type Tree = { values: string[]; children: Map<string, Tree> };
 const tree = (): Tree => ({ values: [], children: new Map() });
@@ -101,6 +128,7 @@ const reservedExports = new Set([
 ]);
 const exportName = (appId: string): string => {
   const name = appId.replaceAll("-", "_");
+  if (!/^[a-z][a-z0-9_]*$(?![\s\S])/.test(name)) throw new Error("Use a valid SDK app identifier");
   return reservedExports.has(name) ? `_${name}` : name;
 };
 const insert = (root: Tree, segments: string[], value: string, label: string): void => {
@@ -142,7 +170,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   )
     throw new Error("Invalid SDK options");
   if (options.owner && options.owner.kind !== "resource" && options.owner.kind !== "app") throw new Error("Invalid SDK owner");
-  const apps = manifests.map((value) => CapabilityManifestSchema.parse(value)).sort((a, b) => a.appId.localeCompare(b.appId));
+  const apps = manifests
+    .map((value) => {
+      sdkManifestNames.parse(value);
+      return CapabilityManifestSchema.parse(value);
+    })
+    .sort((a, b) => a.appId.localeCompare(b.appId));
   if (new Set(apps.map((app) => app.appId)).size !== apps.length) throw new Error("Duplicate SDK app ID");
   const manifest: CodeSdkManifest = {
     version: 1,
@@ -282,7 +315,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       insert(
         factories,
         handle.factoryPath,
-        handle.type === null ? `() => ${type}<${quote(app.appId)}>` : `<const Id extends string>(id: Id) => ${type}<Id>`,
+        handle.type === null ? ["() => ", type, "<", quote(app.appId), ">"].join("") : `<const Id extends string>(id: Id) => ${type}<Id>`,
         app.appId,
       );
     }

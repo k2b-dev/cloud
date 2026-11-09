@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { renderedText, withoutComments } from "../../../../scripts/fixtures/rendered-markup";
 import type { FeatCodeMarkProps } from "./FeatCodeMark";
 
 // Solid's server transform, as the app server compiles the component.
@@ -14,7 +15,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { FEAT_CODE_NAME, FeatCodeMark } = await import("./FeatCodeMark");
 
-const html = (props: FeatCodeMarkProps = {}) => renderToString(() => createComponent(FeatCodeMark, props)).replaceAll(/<!--[^>]*-->/g, "");
+const html = (props: FeatCodeMarkProps = {}) => withoutComments(renderToString(() => createComponent(FeatCodeMark, props)));
 const attribute = (markup: string, name: string) => markup.match(new RegExp(`${name}="([^"]*)"`))?.[1];
 
 describe("FeatCodeMark", () => {
@@ -26,7 +27,7 @@ describe("FeatCodeMark", () => {
     expect(attribute(markup, "data-variant")).toBe("wordmark");
     expect(attribute(markup, "data-tone")).toBe("brand");
     // The sign stands in for the slash: the word is "feat", the sign, then "code".
-    expect(markup.replace(/<[^>]+>/g, "")).toBe("featcode");
+    expect(renderedText(markup)).toBe("featcode");
   });
 
   test("decorative marks stay out of the accessibility tree", () => {
@@ -58,6 +59,6 @@ describe("FeatCodeMark", () => {
     expect(attribute(glyph, "data-variant")).toBe("glyph");
     expect(attribute(glyph, "data-tone")).toBe("current");
     expect(attribute(glyph, "viewBox")).toBe("0.5 1 31 31");
-    expect(glyph.replace(/<[^>]+>/g, "")).toBe("");
+    expect(renderedText(glyph)).toBe("");
   });
 });

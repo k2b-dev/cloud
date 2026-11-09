@@ -75,7 +75,7 @@ test("fields that share a grid align their controls through a subgrid", () => {
   expect(plain).toMatch(/^<div class="k2b-field "[^>]*><label [^>]*class="k2b-field__label"/);
   expect(plain).not.toContain("k2b-field__description");
   const paired = '.k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"])';
-  const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \{([^}]*)\}`))?.[1] ?? "";
+  const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} {([^}]*)}`))?.[1] ?? "";
   expect(fieldRule).toContain("grid-template-rows: subgrid");
   expect(fieldRule).toContain("grid-row: span 4");
   expect(indexCss).toContain(`${paired} > :is(.k2b-field__label, .k2b-field__label-row) {\n    grid-row: 1;`);
