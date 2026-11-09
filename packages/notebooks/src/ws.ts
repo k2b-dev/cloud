@@ -1432,11 +1432,23 @@ const dispatchClientMessage = async (ctx: WsContext, message: ClientMessage) => 
   await handlers[WS_TYPE.awarenessPublish](ctx, message.payload);
 };
 
-const handleClientMessage = async (ctx: WsContext, raw: string): Promise<void> => {
-  let parsed: unknown;
+const UNPARSABLE = Symbol("unparsable");
+type ParsedClientMessage = unknown | typeof UNPARSABLE;
+
+/** Parsed once on arrival, so the socket can recognise cursor messages before they wait in its queue. */
+const parseClientMessage = (raw: string): ParsedClientMessage => {
   try {
-    parsed = JSON.parse(raw);
+    return JSON.parse(raw);
   } catch {
+    return UNPARSABLE;
+  }
+};
+
+const isAwarenessPublish = (parsed: ParsedClientMessage): boolean =>
+  typeof parsed === "object" && parsed !== null && (parsed as { type?: unknown }).type === WS_TYPE.awarenessPublish;
+
+const handleClientMessage = async (ctx: WsContext, parsed: ParsedClientMessage): Promise<void> => {
+  if (parsed === UNPARSABLE) {
     warn(ctx.socket, ERROR_CODE.invalidJson, ctx.messages.invalidJson);
     return;
   }
@@ -1486,6 +1498,13 @@ const app = new Hono<AuthContext>().get(
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
+    /**
+     * The newest cursor state of a queued cursor message that has not started and is still the queue's last entry.
+     * Awareness is last-state-wins: a later cursor message replaces this one's state instead of queueing, so a
+     * selection drag waits as one message. Any other message closes the slot, so a cursor never overtakes the edit
+     * sent before it. Each processed cursor message still checks access.
+     */
+    let awarenessSlot: { parsed: ParsedClientMessage } | null = null;
     let closing: Promise<void> | null = null;
     const close = (): Promise<void> => {
       closing ??= (async () => {
@@ -1533,18 +1552,35 @@ const app = new Hono<AuthContext>().get(
           return;
         }
 
-        if (pendingMessages >= MAX_PENDING_MESSAGES) {
-          // The browser reconnects after 1013 and resends its unsent edits; the log shows how often sockets are shed.
-          log.warn("Websocket shed: too many queued messages", { noteId: ctx.noteId, pendingMessages });
-          await fatal(ctx, ERROR_CODE.backpressure, ctx.messages.tooManyMessages, ctx.noteShortId ?? undefined);
-          return;
-        }
-
-        pendingMessages++;
-        const raw = event.data;
+        const parsed = parseClientMessage(event.data);
         const currentCtx = ctx;
+        let handle: () => Promise<void>;
+        // Cursor messages never count against the limit: at most one waits between two other messages.
+        const counted = !isAwarenessPublish(parsed);
+        if (!counted) {
+          if (awarenessSlot) {
+            awarenessSlot.parsed = parsed;
+            return;
+          }
+          const slot = { parsed };
+          awarenessSlot = slot;
+          handle = () => {
+            if (awarenessSlot === slot) awarenessSlot = null;
+            return handleClientMessage(currentCtx, slot.parsed);
+          };
+        } else {
+          awarenessSlot = null;
+          if (pendingMessages >= MAX_PENDING_MESSAGES) {
+            // The browser reconnects after 1013 and resends its unsent edits; the log shows how often sockets are shed.
+            log.warn("Websocket shed: too many queued messages", { noteId: ctx.noteId, pendingMessages });
+            await fatal(ctx, ERROR_CODE.backpressure, ctx.messages.tooManyMessages, ctx.noteShortId ?? undefined);
+            return;
+          }
+          pendingMessages++;
+          handle = () => handleClientMessage(currentCtx, parsed);
+        }
         processing = processing
-          .then(() => handleClientMessage(currentCtx, raw))
+          .then(handle)
           .catch(async (error) => {
             log.error("Websocket message handling failed", {
               noteId: currentCtx.noteId,
@@ -1575,7 +1611,7 @@ const app = new Hono<AuthContext>().get(
             await fatal(currentCtx, ERROR_CODE.internalError, currentCtx.messages.handlingFailed, currentCtx.noteShortId ?? undefined);
           })
           .finally(() => {
-            pendingMessages = Math.max(0, pendingMessages - 1);
+            if (counted) pendingMessages = Math.max(0, pendingMessages - 1);
           });
       },
 
