@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { renderParetoSvg } from "./core/pareto";
 import { renderTreemapSvg } from "./core/treemap";
 
@@ -143,7 +143,7 @@ for (const spec of cases)
             spec.kind === "pareto" ? "Rest" : "Other",
           );
           await page.keyboard.press("Escape");
-          await mark.hover();
+          await hoverInPlace(mark);
           await settled(page);
           expect(await chart.locator("[data-inspected]").count()).toBe(1);
           expect(

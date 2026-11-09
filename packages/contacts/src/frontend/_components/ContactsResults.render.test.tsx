@@ -7,7 +7,7 @@ import { resultsMessages } from "./results-messages";
 
 const { LocaleProvider } = await import("@k2b/ui");
 
-const { default: ContactsResults } = await import("./ContactsResults.island.tsx");
+const { default: ContactsResults } = await import("./ContactsResults");
 
 const now = "2026-08-10T10:00:00.000Z";
 const contact: Contact = {

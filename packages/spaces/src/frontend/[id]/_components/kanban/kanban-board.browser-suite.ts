@@ -7,7 +7,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
-import { browserName, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -465,7 +465,7 @@ const center = async (locator: ReturnType<Page["locator"]>) => {
 };
 const cardHandle = async (page: Page, title: string) => {
   const card = page.locator("article").filter({ hasText: title });
-  await card.hover();
+  await hoverInPlace(card);
   return (await card.locator("[data-dnd-card-handle]").boundingBox())!;
 };
 const columnTitles = (page: Page) =>
@@ -687,7 +687,7 @@ describePart("board", "Spaces Kanban board in a browser", () => {
       const released = await cardControls(page, "Collect insurance quotes");
       expect(released.claim.opacity).toBe(1);
       expect(await page.locator('[data-spaces-claim-action="release"]').count()).toBe(1);
-      await card.hover();
+      await hoverInPlace(card);
       await settled(page);
       const hovered = await cardControls(page, "Ask the bakery about a stand");
       expect([hovered.grip.opacity, hovered.claim.opacity]).toEqual([1, 1]);
@@ -1072,9 +1072,9 @@ describePart("board", "Spaces Kanban board in a browser", () => {
     const page = await open(desktop, { locale: "en" });
     try {
       const at = await layout(page);
-      await page.locator("article").first().hover();
+      await hoverInPlace(page.locator("article").first());
       expect(await layout(page)).toEqual(at);
-      await page.locator('[data-spaces-kanban-fold="column:Col002"]').hover();
+      await hoverInPlace(page.locator('[data-spaces-kanban-fold="column:Col002"]'));
       expect(await layout(page)).toEqual(at);
     } finally {
       await page.context().close();
@@ -1691,9 +1691,9 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
 
       // Hovering a column header or its menu moves nothing.
       const at = await layout(page);
-      await page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-column-handle]').hover();
+      await hoverInPlace(page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-column-handle]'));
       expect(await layout(page)).toEqual(at);
-      await page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]').hover();
+      await hoverInPlace(page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]'));
       expect(await layout(page)).toEqual(at);
 
       // Arrow keys walk through an automatic column like any other.
@@ -2228,7 +2228,7 @@ describePart("cards", "Spaces Kanban board in a browser", () => {
         expect(stack.sizes[0]).toBe(stack.sizes[1]);
         expect(stack.gap).toBe(0);
         const before = await layout(page);
-        await card.hover();
+        await hoverInPlace(card);
         expect(await layout(page)).toEqual(before);
       } finally {
         await page.context().close();
@@ -2384,7 +2384,7 @@ const watchReactionNavigation = (page: Page) =>
   });
 const pickedReaction = async (page: Page, id: string) => {
   const card = reactionCard(page, id);
-  await card.hover();
+  await hoverInPlace(card);
   await card.getByRole("button", { name: "Add reaction", exact: true }).click();
   const emoji = page.locator(".k2b-emoji-picker__option").filter({ hasText: /^👍$/ }).first();
   await emoji.click();
@@ -2595,7 +2595,7 @@ describePart("cards", "Spaces Kanban reactions", () => {
       await settled(page);
       expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
       const before = await boxes();
-      await card.hover();
+      await hoverInPlace(card);
       await settled(page);
       expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
       expect(await boxes()).toEqual(before);
