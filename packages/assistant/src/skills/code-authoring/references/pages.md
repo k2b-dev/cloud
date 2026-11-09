@@ -8,9 +8,8 @@ script, event handler or foreign link. `c.html()` does not exist.
 
 Core hosts the active version at `/code/<code-id>/…`. Routes need a signed-in
 person unless they declare `{ public: true }` ([Access](access.md)).
-The handler gets `c.user` with `id`, effective `groups`, account `kind`
-(`"user"` or `"guest"`), stable `provider` (`"local"` or `"ipa"`) and display
-`name`. Check these fields before reading or returning restricted data. Public
+The handler gets `c.user` with `id`, `username`, effective `groupIds` and `groupNames`, account `kind`
+(`"user"` or `"guest"`) and display `name`. Check these fields before reading or returning restricted data. Public
 routes always get `null`, including for signed-in visitors.
 
 ## Where a page appears
@@ -127,7 +126,7 @@ Chart budgets: eight series, 200 values per series and 1,600 marks.
 ## Build a page from live data
 
 Read data inside the handler, on each request. Shape it in plain TypeScript,
-then pass it as props. Pages of resource Code open for **every signed-in
+then pass it as props. Pages of every Code open for **every signed-in
 person**, and their data comes from the Code's account, so check `c.user`
 before showing resource data ([Access](access.md)). This mailbox page counts
 open conversations for one team:
@@ -141,7 +140,7 @@ const TEAM = "00000000-0000-4000-8000-0000000000aa";
 const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length}+` : items.length);
 
 app.get("/", async c => {
-  if (!c.user?.groups.includes(TEAM)) return c.page(<Page title="Inbox"><Notice tone="warning" title="Only for the mailbox team" /></Page>);
+  if (!c.user?.groupIds.includes(TEAM)) return c.json({ error: "Forbidden" }, 403);
   const { data: open, page: openPage } = await owner.conversation.list({ view: "needs_action", limit: 50 });
   const { data: waiting, page: waitingPage } = await owner.conversation.list({ view: "waiting", limit: 50 });
   const rows = open.map(item => ({ title: item.title, from: item.participants, messages: item.messageCount }));

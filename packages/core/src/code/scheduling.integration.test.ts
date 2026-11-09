@@ -320,7 +320,7 @@ suiteFor(
             contentType: "text/plain",
             body: "",
             params: {},
-            user: { id: other, groups: [], kind: "user", provider: "local", name: "Visitor" },
+            user: { id: other, username: "visitor", groupIds: [], groupNames: [], kind: "user", name: "Visitor" },
           },
         });
         if (reply === "invalid") await expect(response).rejects.toMatchObject({ code: "code_request_failed" });
@@ -567,6 +567,17 @@ suiteFor(
     ).toBeNull();
     expect(signed).toBe(false);
     expect(await sql`SELECT id FROM code.codes WHERE id=${code.codeId}`).toHaveLength(0);
+  });
+
+  test("schedule leases carry the original slot and manual input in one handler context", async () => {
+    const code = await fixture();
+    const tick = await processCurrentCodeScheduleTick({ ...code, slot, cron: distantCron });
+    expect(tick).not.toBeNull();
+    const scheduled = await take();
+    expect(scheduled.input).toEqual({ runId: tick!.runId, scheduledAt: slot.toISOString(), input: null });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${scheduled.runId}::uuid`;
+    const manual = await startCodeRun({ ...code, idempotencyKey: "context", input: { invoice: "one" } }, context());
+    expect((await take()).input).toEqual({ runId: manual.runId, scheduledAt: null, input: { invoice: "one" } });
   });
 
   test("same permanent key starts one run across Core replicas, while a new key explicitly reruns", async () => {
@@ -1337,7 +1348,7 @@ suiteFor(
       const scheduler = sync.scheduler({ id: "code" });
       await createCodeScheduleReconciler(scheduler)();
       const id = codeScheduleId(code.codeId, code.entrypoint);
-      expect((await scheduler.get({ id: codeScheduleId(legacy.codeId, legacy.entrypoint) }))?.timezone).toBe("UTC");
+      expect((await scheduler.get({ id: codeScheduleId(legacy.codeId, legacy.entrypoint) }))?.timezone).toBe("America/New_York");
       setSystemTime(new Date("2026-03-28T01:30:00Z"));
       expect(await scheduler.get({ id })).toMatchObject({ timezone: "Europe/Berlin", nextRunAt: new Date("2026-03-30T00:30:00Z") });
       setSystemTime(new Date("2026-10-25T00:30:00Z"));

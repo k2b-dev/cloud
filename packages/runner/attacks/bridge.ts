@@ -580,7 +580,7 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       try {
         await cloud.call(operation, {call: {capability: operation, target: null, refs: {}, input: {}}, metadata: {}});
         throw new Error('ESCAPE');
-      } catch (error) { if (error.message !== expected) throw error; }
+      } catch (error) { if (error.code !== expected) throw error; }
     }
   }`;
   const refusal = (code: string) => ({ ok: false, error: { code } });
@@ -607,7 +607,7 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     });
     const denied = async (operation, input, expected) => {
       try { await call(operation, input); throw new Error('ESCAPE'); }
-      catch (error) { if (error.message !== expected) throw error; }
+      catch (error) { if (error.code !== expected) throw error; }
     };
     ${body}
   }`;
@@ -685,7 +685,7 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
           try {
             await cloud.call('example.person', {call: {capability: 'example.person', target: null, refs: {}, input: {}}, metadata: {}});
             return 'ESCAPE';
-          } catch (error) { return error.message; }
+          } catch (error) { return error.code; }
         }));
         if (!errors.includes('code_rate_limited') || errors.some(error => !['code_disabled', 'code_rate_limited'].includes(error)))
           throw new Error('unexpected rate flood result');

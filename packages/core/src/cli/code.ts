@@ -237,52 +237,47 @@ export function buildCodeCli(locale?: string) {
           return data.ok ? 0 : 1;
         },
       }),
-      ...(["push", "submit"] as const).map((name) =>
-        command(name, {
-          summary:
-            name === "push"
-              ? t("Save and submit checked source against its base", "Geprüften Code gegen seinen Basisstand speichern und einreichen")
-              : t("Check and submit a version for required approval", "Version prüfen und zur nötigen Freigabe einreichen"),
-          args: projectArg,
-          flags: {
-            baseVersionId: flag.string({
-              description: t("Explicit base UUID, or null for first push", "Basis-UUID oder null für den ersten Push"),
-            }),
-          },
-          async run({ ctx, args, flags }) {
-            const project = await loadCodeProject(args.project);
-            const baseVersionId =
-              flags.baseVersionId === undefined
-                ? project.config.baseVersionId
-                : flags.baseVersionId === "null"
-                  ? null
-                  : z.uuid().parse(flags.baseVersionId);
-            const data = await request(ctx, name, {
-              codeId: project.config.codeId,
-              entry: project.config.entry,
-              files: await readCodeFiles(project.directory),
-              tests: await readCodeFiles(project.directory, true),
-              baseVersionId,
+      command("submit", {
+        summary: t("Check and submit a version for required approval", "Version prüfen und zur nötigen Freigabe einreichen"),
+        args: projectArg,
+        flags: {
+          baseVersionId: flag.string({
+            description: t("Explicit base UUID, or null for first submission", "Basis-UUID oder null für den erste Einreichung"),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const project = await loadCodeProject(args.project);
+          const baseVersionId =
+            flags.baseVersionId === undefined
+              ? project.config.baseVersionId
+              : flags.baseVersionId === "null"
+                ? null
+                : z.uuid().parse(flags.baseVersionId);
+          const data = await request(ctx, "submit", {
+            codeId: project.config.codeId,
+            entry: project.config.entry,
+            files: await readCodeFiles(project.directory),
+            tests: await readCodeFiles(project.directory, true),
+            baseVersionId,
+          });
+          try {
+            await saveCodeProject(project.directory, { ...project.config, baseVersionId: data.submission.version.id });
+          } catch {
+            throw new RemoteCodeError({
+              version: 1,
+              error: {
+                code: "code_cli_local_update_failed",
+                message: t(
+                  "Version saved, but local code.json could not be updated. Pull into a fresh directory before retrying.",
+                  "Version gespeichert, aber code.json konnte lokal nicht aktualisiert werden. Hole den Stand vor einem neuen Versuch in ein neues Verzeichnis.",
+                ),
+                details: z.json().parse({ submission: data.submission }),
+              },
             });
-            try {
-              await saveCodeProject(project.directory, { ...project.config, baseVersionId: data.submission.version.id });
-            } catch {
-              throw new RemoteCodeError({
-                version: 1,
-                error: {
-                  code: "code_cli_local_update_failed",
-                  message: t(
-                    "Version saved, but local code.json could not be updated. Pull into a fresh directory before retrying.",
-                    "Version gespeichert, aber code.json konnte lokal nicht aktualisiert werden. Hole den Stand vor einem neuen Versuch in ein neues Verzeichnis.",
-                  ),
-                  details: z.json().parse({ submission: data.submission }),
-                },
-              });
-            }
-            if (!printStructured(ctx, data)) printCodeSubmission(ctx, data);
-          },
-        }),
-      ),
+          }
+          if (!printStructured(ctx, data)) printCodeSubmission(ctx, data);
+        },
+      }),
       command("diff", {
         summary: t("Show a saved version's complete comparison", "Vollständigen Unterschied einer gespeicherten Version zeigen"),
         args: projectArg,
@@ -294,7 +289,7 @@ export function buildCodeCli(locale?: string) {
         async run({ ctx, args, flags }) {
           const project = await loadCodeProject(args.project);
           const versionId = flags.version ?? project.config.baseVersionId;
-          if (!versionId) throw new Error(t("No saved version. Push first.", "Keine gespeicherte Version. Führe zuerst push aus."));
+          if (!versionId) throw new Error(t("No saved version. Submit first.", "Keine gespeicherte Version. Führe zuerst submit aus."));
           const data = await request(ctx, "diff", { codeId: project.config.codeId, versionId });
           if (!printStructured(ctx, data)) printDiff(ctx, data.diff.files);
         },
@@ -320,7 +315,7 @@ export function buildCodeCli(locale?: string) {
         async run({ ctx, args, flags }) {
           const project = await loadCodeProject(args.project);
           const versionId = flags.version ?? project.config.baseVersionId;
-          if (!versionId) throw new Error(t("No saved version. Push first.", "Keine gespeicherte Version. Führe zuerst push aus."));
+          if (!versionId) throw new Error(t("No saved version. Submit first.", "Keine gespeicherte Version. Führe zuerst submit aus."));
           return runCodeActivation(ctx, {
             codeId: project.config.codeId,
             versionId,

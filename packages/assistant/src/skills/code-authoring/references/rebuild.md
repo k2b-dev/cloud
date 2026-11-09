@@ -94,12 +94,11 @@ provider/action refusal, revision conflicts,
 human edits and repeated delivery. For agent routines, also cover exact
 prompt/chat, owner mismatch, budget refusal, approval waits and DST boundaries.
 
-Keys recover the same turn within one Code run; changed input conflicts. If
-the handler retries, exercise that within one entrypoint invocation; do not add
-duplicate starts merely for a test. Separate production runs need separate
-fixtures: the fake bridge shares receipts between runs of one fixture. A new
-Code run can start another turn with the same key. Never use fixture-level
-replay as proof of deduplication across Code runs, or rerun a schedule as a
+Keys recover the same result across runs for the Code principal and capability
+for 24 hours; changed input conflicts. Give each intended occurrence its own
+key using the schedule context's `scheduledAt` or `runId`. Fixtures share fake
+receipts within one fixture, so simulate retry recovery with the same key and
+independent occurrences with different keys. Never rerun a schedule as a
 substitute for receipt recovery.
 
 Explain equivalence, changes, required resources, budgets and remaining gaps.

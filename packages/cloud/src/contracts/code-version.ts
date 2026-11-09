@@ -12,7 +12,7 @@ export const CodeAutomationTitleSchema = z
   .max(200)
   .regex(/^[^<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
 
-/** An absolute one-time instant with its display/authoring time zone. Never infer the machine's local zone. */
+/** An absolute one-time instant; omitted display zone inherits the Cloud instance setting. */
 export const CodeOnceScheduleSchema = z.strictObject({
   at: z.iso.datetime({ offset: true }).describe("One-time absolute date-time with Z or a numeric UTC offset."),
   timeZone: z
@@ -26,7 +26,8 @@ export const CodeOnceScheduleSchema = z.strictObject({
         return false;
       }
     }, "Use a valid IANA time zone")
-    .describe("IANA time zone for displaying the scheduled instant."),
+    .optional()
+    .describe("IANA time zone for displaying the scheduled instant; defaults to the Cloud instance time zone."),
 });
 /** Exact checked resource event registration. It carries no resource grants. */
 export const CodeEventTriggerSchema = z
@@ -48,7 +49,7 @@ export const CodeVersionEntrypointSchema = z
     at: CodeOnceScheduleSchema.shape.at.optional().describe("One-time absolute date-time with Z or a numeric UTC offset."),
     timeZone: CodeOnceScheduleSchema.shape.timeZone
       .optional()
-      .describe("IANA schedule time zone; required with at, defaults to UTC for cron."),
+      .describe("IANA schedule time zone; defaults to the Cloud instance time zone."),
     file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
     line: z.number().int().positive().describe("One-based source line."),
   })
@@ -64,8 +65,8 @@ export const CodeVersionEntrypointSchema = z
     if (entry.timeZone !== undefined && entry.kind !== "schedule")
       context.addIssue({ code: "custom", message: "Only schedules may carry a timeZone" });
     const once = entry.at !== undefined || (entry.timeZone !== undefined && !entry.cron);
-    if (once && (entry.kind !== "schedule" || entry.cron !== null || !entry.at || !entry.timeZone))
-      context.addIssue({ code: "custom", message: "A one-time schedule needs at and timeZone, with cron null" });
+    if (once && (entry.kind !== "schedule" || entry.cron !== null || !entry.at))
+      context.addIssue({ code: "custom", message: "A one-time schedule needs at, with cron null" });
   });
 
 const hash = z

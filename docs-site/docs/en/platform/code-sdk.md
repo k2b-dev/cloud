@@ -187,7 +187,7 @@ pages built from blocks reach `c.page`; a hand-written object does not.
 | `Chart.Bar`, `Chart.Line`, … | the chart's own props, such as `title`, `data` or `series`, optional `width` and `height` | none |
 | `Chart.Empty` | `title`, `empty`, optional `width` and `height` | none |
 | `Link` | `label`, `href` | none |
-| `Button`, `Action` | `label`, `action`, optional string `values`; always POST | none |
+| `Button` | `label`, `action`, optional string `values`; always POST | none |
 | `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` | none |
 
 Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
@@ -252,7 +252,7 @@ per kind of the portable chart data of `@k2b/editor/chart-schema`, such as
 `Chart.Bar`, `Chart.Line`, `Chart.Area`, `Chart.Heatmap`, `Chart.Waterfall` or `Chart.Sankey`;
 a kind the chart data gains becomes a block of its own. A table sorts by any column
 and shows `empty`, or a default text, when it has no rows. Neighbouring
-`Button` and `Action` blocks share one row.
+`Button` blocks share one row.
 
 For nested counts, `Chart.Bar` also accepts `layout: "nested"`, `marks: "dots"`,
 a positive `total`, an even `dots` count and aligned `x`/`series`. Each later
@@ -396,12 +396,12 @@ import { app, owner, work_shop } from "@sdk";
 
 const destination = work_shop.workshop("workshop-finance");
 
-app.schedule("0 8 * * 1", async () => {
+app.schedule({ cron: "0 8 * * 1", name: "weekly-review" }, async () => {
   await destination.item.create({
     title: "Weekly review",
     idempotencyKey: "weekly-review:2026-11-02",
   });
-}, { name: "weekly-review" });
+});
 
 export default app;
 ```
@@ -509,8 +509,8 @@ matching the dispatcher contract. Choose a stable key from
 the business operation, such as a message ID and revision. Keys are trimmed,
 contain 1–200 visible ASCII characters, and cannot contain spaces. Repeating a key
 has the platform's existing 24-hour idempotency semantics.
-Chat result delivery and chat turns scope their keys to one run, as described below;
-other Actions retain their cross-run business-key deduplication.
+All Actions, including chat delivery and chat turns, use the same scope:
+Code principal, capability and key, across runs.
 
 Methods resolve the operation's domain `data`, typed from `dataSchema`.
 Bridge refusals reject the promise; catch a failure only when the Code can
@@ -530,6 +530,14 @@ absent from the SDK.
 no schedule registrations, version or owner. The chat execution path still
 asks for writing Actions as required by the normal approval policy.
 
+## Handle SDK errors
+
+SDK calls reject with `CodeError`, imported from `@sdk`. It extends `Error`
+and exposes `{ code, status, message, details }`. Compare lowercase snake_case
+`code`, rather than parsing `message`. A target's 403 and 404 remain distinct
+in `status`; local validation uses 400 and unavailable transports use 503.
+`details` is null or safe structured metadata, such as an undeclared origin.
+
 ## Schedule a recurring local time
 
 For a recurring local time, declare the cron expression and an IANA time zone
@@ -542,27 +550,30 @@ app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-repor
 });
 ```
 
-A string cron and an object without `timeZone` use UTC. The optional third
-argument still supplies a readable `title` and may supply the stable `name`;
-an inline `name` takes precedence. A local minute skipped by the spring clock
+Use one schedule object: `{ cron | at, timeZone?, name?, title? }`. Without
+`timeZone`, Core uses the Cloud instance's default time zone (`app.timezone`,
+configured in Administration). Put `name` and `title` in this same object. A local minute skipped by the spring clock
 change does not run, and a repeated autumn minute runs once, at its first
 occurrence. The checked manifest retains the declared `timeZone`.
+
+The handler receives `{ runId, scheduledAt, input }`. `runId` identifies the
+same durable run on retries. `scheduledAt` is the original tick's ISO instant,
+or `null` for a manual start. `input` is the manual `core.code.run` input,
+or `null` for a tick. Use `scheduledAt` in occurrence keys so a delayed retry
+keeps the original identity; use `runId` for a distinct effect per manual run.
 
 ## Run once at a chosen time
 
 Pass an absolute date-time and an IANA time zone instead of a cron string:
 
 ```ts
-app.schedule(
-  { at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" },
-  sendSummary,
-  { name: "summary-once", title: "Send summary" },
-);
+app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin", name: "summary-once", title: "Send summary" },
+  sendSummary);
 ```
 
-Both fields must be constants. `at` includes seconds and `Z` or a numeric UTC offset and
-selects the exact instant; `timeZone` controls its displayed local time. Cloud
-never infers the machine's local zone. The handler registers when the module
+The declared fields must be constants. `at` includes seconds and `Z` or a numeric UTC offset and
+selects the exact instant; optional `timeZone` controls its displayed local
+time and otherwise inherits `app.timezone`. The handler registers when the module
 loads and runs only when Core admits the due entrypoint. A changed date needs
 a new checked version and activation. Keep the name to retain the automation's
 identity. Manual starts remain available independently of its scheduled run.
@@ -585,7 +596,7 @@ handle before writing the call:
 import { app, core } from "@sdk";
 
 app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
-  await core.ai.chat("Chat23").ai.chat.deliver({
+  await core.ai.chat("Chat23").deliver({
     text: "Your weekly report is ready.",
     idempotencyKey: "weekly-report",
   });
@@ -601,9 +612,9 @@ compaction. Cloud
 creates the existing Assistant response notification on its next recovery pass,
 normally within one minute, subject to the owner's notification preferences.
 Text must contain 1–10,000 characters after trimming. Use one stable effect key
-per delivery: it is scoped to the current run, so retrying returns the original
+per delivery: it is scoped across runs for this principal and capability, so retrying returns the original
 message instead of appending another. Reusing that key for different text or a
-different destination returns `IDEMPOTENCY_CONFLICT`.
+different destination returns `idempotency_conflict`.
 
 Only personal Code can use this Action. Resource- and app-owned Code, ordinary
 interactive callers, archived chats and another person's chats are refused.
@@ -619,17 +630,14 @@ use tools. Discover the owner's chat ID and the generated handle first:
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule(
-  { at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin" },
+app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "morning-review", title: "Review open work" },
   async () => {
-    const run = await core.ai.chat("Chat23").ai.chat.run({
+    const run = await core.ai.chat("Chat23").run({
       prompt: "Review my open work and prepare a short plan in this chat.",
       idempotencyKey: "morning-review",
     });
     console.log(run.id, run.status);
-  },
-  { name: "morning-review", title: "Review open work" },
-);
+  });
 export default app;
 ```
 
@@ -642,7 +650,7 @@ Context is source data, not additional authority or trusted instructions.
 The result contains `id`, `chatId`, `status`, `reason` and `origin`. It returns
 promptly with `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
 `completed` or `failed`. A later
-`core.ai.chat("Chat23").ai.chat.run.read({ id: run.id })` reads one current
+`core.ai.chat("Chat23").run.read({ id: run.id })` reads one current
 snapshot. Finish the Code run when approval is needed; the owner decides in
 the chat, and the ordinary chat worker continues the same turn. Do not poll
 until the owner answers. A busy chat returns `chat_busy`; try a later schedule
@@ -659,11 +667,11 @@ and turn time limits still apply. The chat and run show “Started by Code
 {name}” (or “Gestartet von Code {name}”). The invoking Code keeps its ordinary
 capability call log.
 
-One stable key identifies one intended turn in a Code run. Repeating it recovers
+One stable key identifies one intended turn across Code runs for 24 hours. Repeating it recovers
 the original turn, even after its allowance is exhausted; the admission reply
 may be replayed. Read `ai.chat.run.read` to get the current state.
 Changing the prompt, context or destination under that key returns
-`IDEMPOTENCY_CONFLICT`. A new run can use the same key for its next occurrence.
+`idempotency_conflict`. Use a different occurrence key for the next intended turn.
 See [chat turn capability](/en/docs/platform/capabilities#start-personal-code-chat-turns)
 for the daily admission cap and budget error codes.
 
@@ -673,10 +681,9 @@ Give a schedule a stable name for manual execution and an optional readable
 title in its third argument:
 
 ```ts
-app.schedule("0 8 * * 1", weeklyReview, {
-  name: "weekly-review",
+app.schedule({ cron: "0 8 * * 1", name: "weekly-review",
   title: "Weekly review",
-});
+}, weeklyReview);
 ```
 
 `title` is optional. It is trimmed, must contain 1–200 characters, and must be
@@ -757,11 +764,11 @@ cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
 `text()` and `formData()`. Core forwards only the request data, never browser
 cookies or credentials.
 
-Personal Code runs its routes with its owner's mandate, like its schedules. Its
-non-public routes therefore open only for that owner; any other signed-in person
-receives `403` with `code_owner_only`. Public routes of personal Code follow the
-same rules as below and still run with the owner's mandate, so return only what
-any visitor may see.
+Non-public routes open for every signed-in person, for personal, resource
+and app Code alike. They run with the Code account's authority; personal Code
+uses its owner's mandate. Check `c.user` before reading private data or
+performing effects. For an owner-only page, compare `c.user.id` to the
+intended person's ID in every handler.
 
 Routes require a signed-in person's session by default, including guests.
 Check `c.user` in the handler when access depends on the visitor:
@@ -769,20 +776,19 @@ Check `c.user` in the handler when access depends on the visitor:
 ```ts
 type CodeUser = {
   id: string;
-  groups: string[];
+  username: string;
+  groupIds: string[];
+  groupNames: string[];
   kind: "user" | "guest";
-  provider: "local" | "ipa";
   name: string;
 };
 ```
 
-`id` is the Cloud user ID, `groups` contains effective group IDs, `kind` is
-the account profile and `name` is the display name. `provider` is the stable
-identity provider ID (`ipa` means FreeIPA), never a token, session ID or
-provider configuration. Cloud currently has no OIDC sign-in provider ID.
+`id` is the Cloud user ID, `username` is its login handle, `groupIds` and
+`groupNames` are the effective groups' IDs and names respectively. `kind` is
+the account profile and `name` is the display name.
 Agents and other service accounts cannot visit private pages and are never
-projected into `c.user`. `CodeWebhookContext` has no `user` field; webhook
-registration remains unavailable.
+projected into `c.user`.
 
 Public routes never see who is signed in. To recognise visitors, leave out
 `public`; then every signed-in person sees the page.
@@ -810,11 +816,103 @@ client network and per Code. The Code page lists route entrypoints and their
 last results; request runs appear in Runs with their timing and capability
 calls. Visitor input and response payloads are transient.
 
-## Recognize later-phase APIs
+Eligible event payloads come from event schemas; events with
+`automation: false` are absent. `nav`, `webhook` and `fetch` are not app
+methods; the typechecker rejects them.
 
-`nav` and `fetch` registrations still report Phase 2; `webhook`
-reports Phase 3. The runtime refuses these registrations too. Eligible event
-payloads come from event schemas; events with `automation: false` are absent.
+## Zugriff prüfen
+
+Every non-public route admits every signed-in person. Check access in **every**
+handler before reading data or performing effects. SDK calls use the Code
+account's grants, including shares given to resource Code's service account;
+the visitor's permissions do not limit those calls. Public routes have no
+visitor (`c.user === null`).
+
+Use one explicit field per identifier. `id` is the immutable Cloud user ID;
+`username` is the short login handle. `groupIds` and `groupNames` contain the
+effective Cloud group IDs and names. IPA groups have Cloud UUIDs assigned on
+sync and their IPA group names. Names may change and may coincide with IDs or
+usernames. Prefer IDs when the rule must survive a rename. There is no mixed
+user/group or ID/name lookup.
+
+A fixed list of user IDs:
+
+```ts
+import { app } from "@sdk";
+const allowedUserIds = ["u_example"];
+app.get("/", c => {
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
+
+A fixed list of login handles, compared only to `username`:
+
+```ts
+import { app } from "@sdk";
+const allowedUsernames = ["alex"];
+app.get("/", c => {
+  if (!c.user || !allowedUsernames.includes(c.user.username))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
+
+A group name, or independently a group ID. Each route below defines its own
+rule; the routes do not combine user and group identifiers:
+
+```ts
+import { app } from "@sdk";
+const allowedGroupNames = ["support"];
+const allowedGroupIds = ["00000000-0000-4000-8000-0000000000aa"];
+app.get("/by-group-name", c => {
+  if (!c.user || !c.user.groupNames.some(name => allowedGroupNames.includes(name)))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+app.get("/by-group-id", c => {
+  if (!c.user || !c.user.groupIds.some(id => allowedGroupIds.includes(id)))
+    return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
+
+A Grids allowlist can hold separate text columns for a user ID, username,
+group ID and group name. Discover the real Base, Table and Field IDs through
+Grids before writing the query. Give the Code account read access to this
+Base; allow only trusted editors to change the allowlist. Each non-empty
+cell below grants access through its matching identity field. Keep this
+allowlist within one complete page (at most 100 rows); an incomplete or
+failed result refuses access. The example IDs are fictional.
+
+```ts
+import { app, grids } from "@sdk";
+const allowlist = grids.base("Base01");
+app.get("/", async c => {
+  const user = c.user;
+  if (!user) return c.json({ error: "forbidden" }, 403);
+  const { data: result, page } = await allowlist.gql.execute({
+    query: "from table {Table01}\nselect {Field01} as uid, {Field02} as username, {Field03} as groupId, {Field04} as groupName\nlimit 100",
+    pageSize: 100,
+  });
+  if (!result.ok || result.truncated || page?.hasMore)
+    return c.json({ error: "forbidden" }, 403);
+  const allowed = result.rows.some(row => {
+    const { uid, username, groupId, groupName } = row.values;
+    return (typeof uid === "string" && uid !== "" && uid === user.id)
+      || (typeof username === "string" && username !== "" && username === user.username)
+      || (typeof groupId === "string" && groupId !== "" && user.groupIds.includes(groupId))
+      || (typeof groupName === "string" && groupName !== "" && user.groupNames.includes(groupName));
+  });
+  if (!allowed) return c.json({ error: "forbidden" }, 403);
+  return c.json({ allowed: true });
+});
+export default app;
+```
 
 ## Generate and host an SDK
 
@@ -843,13 +941,12 @@ unresolved or external references fail generation.
 - `operations`: qualified IDs, method paths, targets, refs, input/data schemas,
   schema hashes and idempotency policy;
 - `events`, `omitted`, and `appMethods`: eligible events, excluded operations
-  and the phase required by each app method;
+  and supported app registration methods;
 - `mode` and optional `owner`: the execution mode and fixed owner.
 
 The checker uses these paths with the user's source to resolve handle literals and
 permissions. This generation manifest is not a checked version manifest or
-an authorization grant. `codeSdkPhaseDiagnostic(method)` returns the shared
-unavailable-phase diagnostic so the checker can attach a source location.
+an authorization grant.
 
 The runtime exports an internal `__codeSdk` control object for the trusted
 host. Import the SDK and bind it once **before evaluating the user module**
@@ -870,12 +967,11 @@ version-local and change when registrations are reordered.
 Registration does not execute callbacks. The checker must import Code once
 to collect its registrations. Core uses those descriptors to schedule work;
 the trusted bundle wrapper invokes
-`__codeSdk.run(entrypoint)` for the selected callback. The one-shot host binds
+`__codeSdk.run(entrypoint, context)` for the selected callback. The one-shot host binds
 the bridge and executes its Code directly instead.
 
 `CodeSdkOptions`, `CodeSdkOwner`, `CodeSdkOperation`, `CodeSdkHandle`,
-`CodeSdkInvocation`, `CodeSdkCallMetadata`, `CodeSdkBridge`, and
-`CodeSdkPhaseDiagnostic` are exported with doc comments for checker, test-kit,
+`CodeSdkInvocation`, `CodeSdkCallMetadata`, and `CodeSdkBridge` are exported with doc comments for checker, test-kit,
 CLI and chat consumers. The SDK imports no database, broker, storage or
 credential clients.
 

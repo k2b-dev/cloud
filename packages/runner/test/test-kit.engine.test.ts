@@ -74,7 +74,7 @@ const fixture = (): CodeTestCase => ({
   })),
 });
 const schedule = (body: string) => `import { app, owner } from "@sdk";
-app.schedule("0 8 * * *", async () => { ${body} }, { name: "weekly" }); export default app;`;
+app.schedule({ cron: "0 8 * * *", name: "weekly" }, async () => { ${body} }); export default app;`;
 
 test("acceptance: schedule creates a Space task, then replays the old result with the same key", async () => {
   const request = await execution(ACCEPTANCE_SOURCE, [fixture()]);

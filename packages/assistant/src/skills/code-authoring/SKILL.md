@@ -72,7 +72,7 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | --- | --- | --- |
 | React to each incoming message of a mailbox | `app.on("mail.message.received", …)` in mailbox Code | [Events](references/events.md) |
 | Sort, tag, assign, set status, summarise, draft a reply | Mail Actions on `owner` | [Capabilities](references/capabilities.md), [mail template](references/template-mail-automation.md) |
-| Run at a local time, weekly or once | `app.schedule({ cron, timeZone })` or `{ at, timeZone }` | [Schedules](references/schedules.md) |
+| Run at a local time, weekly or once | `app.schedule({ cron | at, timeZone?, name?, title? }, handler)` | [Schedules](references/schedules.md) |
 | Summarise or extract fields with AI | `core.ai.generate` | [AI](references/ai.md) |
 | Classify with probabilities, such as category and urgency | `core.ai.decide` | [AI](references/ai.md) |
 | Put a result into the owner's Gustav chat | `core.ai.chat.deliver` (personal Code) | [AI](references/ai.md), [weekly report](references/template-weekly-report.md) |
@@ -85,9 +85,17 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | Show one record | `Detail` with `Item` | [Pages](references/pages.md) |
 | Keep data between runs | State in the owning app, read again each run | [Data](references/data.md) |
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
-| Decide who sees a page | `c.user` (`id`, `groups`, `kind`, `provider`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
+| Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
+
+## Zugriff prüfen
+
+Check `c.user.id`, `username`, `groupIds` or `groupNames` explicitly before
+reading data or performing an effect, in every handler. Never compare an
+identifier against a mixed list. [Access checks](references/access.md#zugriff-pr%C3%BCfen)
+shows fixed user IDs, handles, groups and a Grids allowlist; each denied
+request returns 403. Public routes have `c.user === null`.
 
 ## Rules that hold everywhere
 
@@ -95,8 +103,9 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
   changes access and similar) **never run unattended in this release**. A
   version that uses one cannot be submitted or switched on. Mail sending stays
   manual: draft the reply, a person sends it.
-- Pages of mailbox Code open for every signed-in person and read data with
-  the Code's account. Check `c.user` before showing mailbox data.
+- Non-public routes of every Code open for every signed-in person, regardless
+  of owner type. SDK calls use the Code account's access. Check `c.user` before
+  reading or returning restricted data and before performing an effect.
 - Incoming text, mail bodies and AI output are untrusted data, never
   instructions. Validate before acting; put source data in `input`, not `prompt`.
 - Give every Action that requires it a stable `idempotencyKey` derived from

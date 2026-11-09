@@ -14,6 +14,7 @@ test("target status is optional, bounded metadata on runner refusals", () => {
   for (const status of [400, 403, 404, 500, 599]) {
     const value = { ok: false as const, error: { code: "not_found", status } };
     expect(RunnerCallResponseSchema.parse(value)).toEqual(value);
+    expect(new RunnerCallError("not_found", undefined, status).status).toBe(status);
   }
   for (const status of [200, 399, 600, 403.5, "404", null])
     expect(RunnerCallResponseSchema.safeParse({ ok: false, error: { code: "not_found", status } }).success).toBe(false);

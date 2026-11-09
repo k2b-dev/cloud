@@ -189,12 +189,12 @@ test("stale push preserves the local base and returns the complete version confl
       },
     },
   };
-  const machine = context(["push", directory], {}, "json", () => Response.json(failure, { status: 409 }));
+  const machine = context(["submit", directory], {}, "json", () => Response.json(failure, { status: 409 }));
   expect(await code.run(machine.ctx)).toBe(1);
   expect(machine.printed).toEqual([failure]);
   expect(machine.requests[0]?.input.baseVersionId).toBe(uuid);
   expect((await loadCodeProject(directory)).config.baseVersionId).toBe(uuid);
-  const human = context(["push", directory], {}, "text", () => Response.json(failure, { status: 409 }));
+  const human = context(["submit", directory], {}, "text", () => Response.json(failure, { status: 409 }));
   expect(await code.run(human.ctx)).toBe(1);
   expect(human.errors[0]).toContain("Neuere Version vorhanden");
   expect(human.printed).toEqual(["--- code.ts", "-old", "+new"]);
@@ -372,7 +372,7 @@ test("help never performs an operation and lists every C18a command", async () =
   const run = context(["help"], {}, "text");
   await code.run(run.ctx);
   expect(run.requests).toEqual([]);
-  for (const name of ["init", "sdk", "check", "test", "simulate", "pull", "push", "submit", "diff", "activate", "run"])
+  for (const name of ["init", "sdk", "check", "test", "simulate", "pull", "submit", "diff", "activate", "run"])
     expect(run.printed.join("\n")).toContain(name);
 });
 
@@ -436,7 +436,7 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
       text: "SDK aktualisiert.",
     },
     {
-      args: ["push", directory],
+      args: ["submit", directory],
       flags: {},
       data: { version: 1, submission, runningVersion: 4 },
       text: `✓ v${submission.version.number} hochgeladen, noch nicht eingeschaltet. Es läuft v4.`,
@@ -580,7 +580,7 @@ test.each(["diff", "activate"])("%s explains a missing base without sending an i
   expect(await code.run(run.ctx)).toBe(1);
   expect(run.requests).toEqual([]);
   expect(run.printed).toEqual([
-    { version: 1, error: { code: "code_cli_input", message: "Keine gespeicherte Version. Führe zuerst push aus.", details: null } },
+    { version: 1, error: { code: "code_cli_input", message: "Keine gespeicherte Version. Führe zuerst submit aus.", details: null } },
   ]);
 });
 

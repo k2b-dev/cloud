@@ -51,8 +51,7 @@ export declare const Field: {
 /** Sends its fields to an own route with POST; its children are `Field` blocks. */
 export declare const Form: CodePageComponent<Omit<CodeNodeProps<"Form">, "fields"> & Parts>;
 export declare const Link: CodePageComponent<CodeNodeProps<"Link"> & NoChildren>;
-export declare const Button: CodePageComponent<Omit<Extract<CodePageNode, { kind: "Button" | "Action" }>, "kind"> & NoChildren>;
-export declare const Action: typeof Button;
+export declare const Button: CodePageComponent<Omit<Extract<CodePageNode, { kind: "Button" }>, "kind"> & NoChildren>;
 export declare const Notice: CodePageComponent<CodeNodeProps<"Notice"> & NoChildren>;
 
 type CodeChartProps<K> = CodeChartDescription extends infer D

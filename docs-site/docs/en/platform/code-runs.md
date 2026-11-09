@@ -112,7 +112,8 @@ The lease routes return HTTP 409 with `runner_lease_lost`.
 ## Understand schedule ticks
 
 Core registers checked cron `app.schedule` entrypoints with the Sync scheduler,
-using each entrypoint's `timeZone` (UTC when omitted). A spring-forward gap
+using each entrypoint's `timeZone`, or the Cloud instance's default
+`app.timezone` when omitted. A spring-forward gap
 skips the missing local minute; a repeated autumn minute runs once at its
 first occurrence. One-time `{ at, timeZone }` schedules
 use the existing Core recovery pass: a due instant is admitted once, normally

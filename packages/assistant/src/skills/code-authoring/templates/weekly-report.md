@@ -12,8 +12,7 @@ import { app, core, spaces } from "@sdk";
 const SPACE_ID = "Spc001";
 const CHAT_ID = "Chat23";
 
-app.schedule(
-  { cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" },
+app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "weekly-report", title: "Weekly report" },
   async () => {
     const { data: open, page: openPage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", sort: "deadline", limit: 50 });
     const { data: overdue, page: overduePage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", deadlineFilter: "overdue", limit: 50 });
@@ -44,10 +43,8 @@ app.schedule(
     }
 
     const week = new Date().toISOString().slice(0, 10);
-    await core.ai.chat(CHAT_ID).ai.chat.deliver({ text, idempotencyKey: `weekly-report:${week}` });
-  },
-  { name: "weekly-report", title: "Weekly report" },
-);
+    await core.ai.chat(CHAT_ID).deliver({ text, idempotencyKey: `weekly-report:${week}` });
+  });
 
 export default app;
 ```

@@ -26,6 +26,7 @@ export async function migrate(db: SQL = sql): Promise<void> {
       PRIMARY KEY(code_id,request_key)
     )`;
     await tx`ALTER TABLE code.run_requests ADD COLUMN IF NOT EXISTS request_digest TEXT, ADD COLUMN IF NOT EXISTS tick_at TIMESTAMPTZ`;
+    await tx`CREATE INDEX IF NOT EXISTS run_requests_tick_run ON code.run_requests(run_id) WHERE tick_at IS NOT NULL`;
     await tx`CREATE INDEX IF NOT EXISTS run_requests_tick_retention ON code.run_requests(tick_at) WHERE tick_at IS NOT NULL`;
     await tx`CREATE INDEX IF NOT EXISTS runs_wake ON code.runs(wake_at,id) WHERE state='queued'`;
     await tx`CREATE INDEX IF NOT EXISTS codes_dispatch_owner ON code.codes(owner_kind,owner_user_id,owner_type,owner_id,owner_app_id)`;

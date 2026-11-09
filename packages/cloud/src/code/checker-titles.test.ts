@@ -13,7 +13,7 @@ const analyze = (options: string, files: Record<string, string> = {}) =>
     files: {
       ...files,
       "code.ts": `import { app } from "@sdk"; import { options } from "./options";
-app.schedule("0 8 * * 1", async () => {}, ${options});`,
+app.schedule(${options === "options" ? options : options.replace("{", '{ cron: "0 8 * * 1",')}, async () => {});`,
       "options.ts": files["options.ts"] ?? "export const options = {};",
     },
   });
@@ -26,7 +26,7 @@ test("schedule titles are optional reviewed metadata; the runner key and source 
     ["options", "Lieferungen eintragen"],
   ] as const) {
     const result = analyze(options, {
-      "options.ts": 'export const options = { name: "deliver", title: "Lieferungen eintragen" } as const;',
+      "options.ts": 'export const options = { cron: "0 8 * * 1", name: "deliver", title: "Lieferungen eintragen" } as const;',
     });
     expect(result.diagnostics).toEqual([]);
     expect(result.entrypoints).toEqual([
@@ -49,7 +49,9 @@ test("dynamic, blank, oversized, markup and multiline titles are checker errors"
     );
   }
   expect(
-    analyze("options", { "options.ts": 'export const options = { name: "deliver" as const, title: String(Date.now()) };' }).diagnostics,
+    analyze("options", {
+      "options.ts": 'export const options = { cron: "0 8 * * 1", name: "deliver" as const, title: String(Date.now()) };',
+    }).diagnostics,
   ).toContainEqual(expect.objectContaining({ code: "code_static_title" }));
 });
 
@@ -60,8 +62,8 @@ test("titles are display metadata and distinct identifiers may share a title", (
     aiOperations: [],
     files: {
       "code.ts": `import { app } from "@sdk";
-app.schedule("0 8 * * 1", async () => {}, { name: "first", title: "Weekly review" });
-app.schedule("0 9 * * 1", async () => {}, { name: "second", title: "Weekly review" });`,
+app.schedule({ cron: "0 8 * * 1", name: "first", title: "Weekly review" }, async () => {});
+app.schedule({ cron: "0 9 * * 1", name: "second", title: "Weekly review" }, async () => {});`,
     },
   });
   expect(result.diagnostics).toEqual([]);

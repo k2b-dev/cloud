@@ -72,7 +72,7 @@ type Message = Awaited<ReturnType<typeof mail.message.read>>["data"];
 
 async function tagInvoices(message: Message) {
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
-  const { data: tags } = await owner.mailbox.tag.list({ limit: 50 });
+  const { data: tags } = await owner.tag.list({ limit: 50 });
   const tag = tags.find(candidate => candidate.name === "Invoice");
   if (!tag) return;
   const { data: conversation } = await mail.conversation.read({ id: message.conversationId });

@@ -2544,7 +2544,7 @@ test("target HTTP statuses survive runner dispatch and Code page data without pa
 });
 
 test.each(["ai.chat.deliver", "ai.chat.run"])(
-  "%s receipt keys are scoped per run; business-key Actions keep cross-run dedupe",
+  "%s and business-key Actions share one cross-run idempotency scope",
   async (chatCapability) => {
     const scopes: Parameters<typeof claimIdempotency>[0][] = [];
     claimIdempotency = async (scope) => {
@@ -2584,8 +2584,8 @@ test.each(["ai.chat.deliver", "ai.chat.run"])(
       await call("run-2", false);
       expect(scopes).toHaveLength(6);
       expect(scopes[0]).toEqual(scopes[1]);
-      expect(scopes[0]?.principal).not.toBe(scopes[2]?.principal);
-      expect(scopes[0]?.principal).not.toBe(scopes[3]?.principal);
+      expect(scopes[0]).toEqual(scopes[2]);
+      expect(scopes[0]).toEqual(scopes[3]);
       expect(scopes[4]).toEqual(scopes[5]);
       expect(scopes.every((scope) => scope.keyHash === scopes[0]?.keyHash)).toBeTrue();
     } finally {

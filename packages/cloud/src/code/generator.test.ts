@@ -8,7 +8,7 @@ import { fileImportManifest } from "./file-ref.test-fixture";
 import { generateCodeSdk } from "./generator";
 import { schemaTypes } from "./schema-types";
 import { sdkFixture } from "./sdk.test-fixture";
-import { type CodeSdkBridge, type CodeSdkInvocation, type CodeSdkOptions, codeSdkPhaseDiagnostic } from "./types";
+import type { CodeSdkBridge, CodeSdkInvocation, CodeSdkOptions } from "./types";
 
 const temporaryDirectories: string[] = [];
 async function temporaryDirectory(prefix: string): Promise<string> {
@@ -38,7 +38,7 @@ type TestModule = {
   work_shop: { workshop(id: string): TestHandle; item(id: string): object; catalog: { list(input: object): Promise<unknown> } };
   owner: TestHandle;
   app: {
-    schedule(cron: string, fn: () => void | Promise<void>, options?: { name: string; title?: string }): unknown;
+    schedule(when: { cron: string; name?: string; title?: string }, fn: () => void | Promise<void>): unknown;
     on(event: string, fn: (input: unknown) => void | Promise<void>): unknown;
     get(path: string, fn: () => Response): unknown;
   };
@@ -192,7 +192,7 @@ describe("Code SDK generation", () => {
     await expect(source.item.move({ itemId: "item", destination: loaded._undefined.workshop("destination") })).resolves.toEqual({
       moved: true,
     });
-    loaded.app.schedule("0 8 * * 1", () => {});
+    loaded.app.schedule({ cron: "0 8 * * 1" }, () => {});
     expect(loaded.__codeSdk.entries()).toHaveLength(1);
   });
   test("is deterministic across catalog and contract map ordering", () => {
@@ -368,17 +368,17 @@ describe("generated runtime through the canonical call seam", () => {
     expect(() => sdk.work_shop.workshop("")).toThrow("invalid_id");
     expect(() => sdk.__codeSdk.bind({ async call() {} })).toThrow("invalid_bridge");
   });
-  test("registers schedules without executing them and refuses Phase 2/3 APIs", async () => {
+  test("registers schedules without executing them", async () => {
     const sdk = await runtime();
     let calls = 0;
-    sdk.app.schedule("0 8 * * 1", async () => {
+    sdk.app.schedule({ cron: "0 8 * * 1" }, async () => {
       calls += 1;
     });
     expect(calls).toBe(0);
     expect(sdk.__codeSdk.entries()).toEqual([{ kind: "schedule", entrypoint: "schedule:0", cron: "0 8 * * 1" }]);
     await sdk.__codeSdk.run("schedule:0");
     expect(calls).toBe(1);
-    sdk.app.schedule("0 9 * * 1", () => {}, { name: "weekly-review", title: "  Weekly review  " });
+    sdk.app.schedule({ cron: "0 9 * * 1", name: "weekly-review", title: "  Weekly review  " }, () => {});
     expect(sdk.__codeSdk.entries()[1]).toEqual({
       kind: "schedule",
       entrypoint: "weekly-review",
@@ -386,15 +386,14 @@ describe("generated runtime through the canonical call seam", () => {
       title: "Weekly review",
     });
     await sdk.__codeSdk.run("weekly-review");
-    expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "weekly-review" })).toThrow("duplicate_schedule_name");
-    expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "bad name" })).toThrow("invalid_schedule_name");
-    expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "invalid-title", title: "<b>Bad</b>" })).toThrow("invalid_schedule_title");
+    expect(() => sdk.app.schedule({ cron: "0 9 * * 1", name: "weekly-review" }, () => {})).toThrow("duplicate_schedule_name");
+    expect(() => sdk.app.schedule({ cron: "0 9 * * 1", name: "bad name" }, () => {})).toThrow("invalid_schedule_name");
+    expect(() => sdk.app.schedule({ cron: "0 9 * * 1", name: "invalid-title", title: "<b>Bad</b>" }, () => {})).toThrow(
+      "invalid_schedule_title",
+    );
     await expect(sdk.__codeSdk.run("missing")).rejects.toThrow("missing_entrypoint");
     sdk.app.get("/", () => new Response("ok"));
     expect(sdk.__codeSdk.diagnostics()).toEqual([]);
-    expect(codeSdkPhaseDiagnostic("on")).toBeNull();
-    expect(codeSdkPhaseDiagnostic("schedule")).toBeNull();
-    expect(codeSdkPhaseDiagnostic("typo")).toBeNull();
   });
   test("code_run has no app or owner and accepts arbitrary runtime IDs", async () => {
     const sdk = await runtime({ mode: "code_run" });
@@ -470,6 +469,8 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
     writeFile(
       join(dir, "valid.ts"),
       `import { app, work_shop, owner, Chart, type CodeChartDescription, type CodePageTree } from "@sdk";
+// @ts-expect-error Button is the only button component
+import { Action } from "@sdk";
 import { work_shop as personal } from "./personal";
 import { work_shop as once } from "./once";
 import { workshop } from "./ids";
@@ -514,9 +515,9 @@ work_shop.workshop(workshop);
 work_shop.workshop(ids[Math.floor(0)]!);
 target.item.create({ title: "Hi", idempotencyKey: "fixed", details: { kind: "count", count: 2 } });
 target.item.move({ itemId: "i", destination: owner });
-work_shop.item("item").item.inspect({});
+work_shop.item("item").inspect({});
 // @ts-expect-error idempotency:none forbids a key
-work_shop.item("item").item.inspect({ idempotencyKey: "forbidden" });
+work_shop.item("item").inspect({ idempotencyKey: "forbidden" });
 const literal: "owner-shop" = owner.id;
 async function typedResult() {
   const result = await target.stock.list({});
@@ -535,28 +536,33 @@ async function typedResult() {
 declare const dynamic: string;
 personal.workshop(dynamic);
 once.workshop(dynamic);
-app.schedule("0 8 * * 1", async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
+app.schedule({ cron: "0 8 * * 1" }, async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
 app.on("work-shop.changed", async event => { const title: string = event.data.title; });
 app.get("/", c => {
   if (c.user) {
     const kind: "user" | "guest" = c.user.kind;
-    const provider: "local" | "ipa" = c.user.provider;
+    // @ts-expect-error identity provider internals are not exposed
+    c.user.provider;
+    // @ts-expect-error ambiguous groups was removed
+    c.user.groups;
+    const username: string = c.user.username;
+    const groupIds: string[] = c.user.groupIds;
+    const groupNames: string[] = c.user.groupNames;
     const name: string = c.user.name;
     // @ts-expect-error no credentials in visitor identity
     c.user.token;
   }
-  return c.json({ groups: c.user?.groups });
+  return c.json({ groupIds: c.user?.groupIds });
 });
 app.post("/", c => c.text(c.req.param("id")));
 app.put("/", c => c.text("ok"));
 app.delete("/", c => c.redirect("/"));
 app.all("/", c => c.text("ok"));
-app.nav(user => [{ title: user.id, path: "/" }]);
-app.webhook("/hook", async c => {
-  // @ts-expect-error webhooks never have a visitor
-  c.user;
-  return c.json({ verified: await c.verify("secret") });
-});
+// @ts-expect-error removed app member
+app.nav(() => []);
+// @ts-expect-error removed app member
+app.webhook("/hook", () => new Response());
+// @ts-expect-error removed app member
 app.fetch(new Request("https://example.invalid"));
 // @ts-expect-error required idempotency key
 owner.item.create({ title: "missing key" });

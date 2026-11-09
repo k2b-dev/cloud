@@ -31,7 +31,7 @@ service schemas keep it.
 Submission may carry `tests`, the declarative `test/**/*.json` fixtures. Core
 runs them once against fake data and stores the counts, plus the calls per
 operation, with the submission for reviewers. Failing tests do not refuse the
-version. `cld code push`, `cld code submit` and `code_submit` send them.
+version. `cld code submit`, `cld code submit` and `code_submit` send them.
 
 `core.code.version.submit` accepts `sourceFiles`, `bundle`,
 `manifest` and `baseVersionId`. Use the latest saved version's UUID as the base,

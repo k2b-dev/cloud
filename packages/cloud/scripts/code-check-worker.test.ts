@@ -48,7 +48,7 @@ test("worker preserves quoted schedule metadata and the registration guard", asy
   ];
   const source = [
     'import { app } from "@sdk";',
-    'app.schedule("0 8 * * 1", () => "finished", { name: "weekly", title: \'A "quote" ` ${price} */\' });',
+    'app.schedule({ cron: "0 8 * * 1", name: "weekly", title: \'A "quote" ` ${price} */\' }, () => "finished");',
   ].join("\n");
   const module = await bundle(source, entries);
   expect(await module.weekly(undefined, { call() {} })).toBe("finished");

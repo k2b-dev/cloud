@@ -62,10 +62,10 @@ Use only fictional values: no real names, addresses, IDs or secrets.
 ```ts
 import { app, chat } from "@sdk";
 
-app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note" }, async () => {
+app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note", title: "Weekend note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
   await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
-}, { name: "weekend-note", title: "Weekend note" });
+});
 export default app;
 ```
 
@@ -200,7 +200,7 @@ and check that the Code fails or recovers as intended.
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote" }, async () => {
+app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote", title: "Weekly quote" }, async () => {
   const { data: quote } = await core.ai.generate({
     task: "quote",
     prompt: "Write one short encouraging sentence for the start of the week.",
@@ -209,8 +209,8 @@ app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote
   });
   if (typeof quote.output !== "string") return;
   // Fictional chat ID of the owner's chat.
-  await core.ai.chat("Chat23").ai.chat.deliver({ text: quote.output, idempotencyKey: "weekly-quote" });
-}, { name: "weekly-quote", title: "Weekly quote" });
+  await core.ai.chat("Chat23").deliver({ text: quote.output, idempotencyKey: "weekly-quote" });
+});
 export default app;
 ```
 

@@ -24,7 +24,7 @@ import { app, owner } from "@sdk";
 
 const MAX_PAGES = 3;
 
-app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "count-inbox" }, async () => {
+app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "count-inbox", title: "Count inbox" }, async () => {
   let cursor: string | undefined;
   let conversations = 0;
   let complete = false;
@@ -35,7 +35,7 @@ app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "count-inbox"
     cursor = page.nextCursor;
   }
   console.log(`Needs action: ${complete ? conversations : `${conversations} or more`}`);
-}, { name: "count-inbox", title: "Count inbox" });
+});
 export default app;
 ```
 
@@ -119,8 +119,8 @@ app.on("mail.message.received", async event => {
   }
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
   // Fictional user name; the search also matches names and groups, so compare the exact uid.
-  const lead = (await owner.mailbox.member.list({ query: "accounting.lead", limit: 20 })).data.find(member => member.uid === "accounting.lead");
-  const { data: [identity] } = await owner.mailbox.identity.list({ limit: 1 });
+  const lead = (await owner.member.list({ query: "accounting.lead", limit: 20 })).data.find(member => member.uid === "accounting.lead");
+  const { data: [identity] } = await owner.identity.list({ limit: 1 });
   const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
   if (lead) {
     await owner.conversation.assign({
@@ -210,11 +210,11 @@ account must be a member of that conversation. See the
 ```ts
 import { app, chat } from "@sdk";
 
-app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note" }, async () => {
+app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note", title: "Weekend note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
   // Fictional conversation ID; take the real one from the conversation's address in Chat or ask the person.
   await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
-}, { name: "weekend-note", title: "Weekend note" });
+});
 export default app;
 ```
 
@@ -287,7 +287,7 @@ import { app, contacts, filesv2, jsx, notebooks, Page, Table, Column } from "@sd
 
 app.get("/", async c => {
   const [base] = (await filesv2.bases.list({})).data.items;
-  const files = base ? (await filesv2.entry(base.ref.id).entry.list({ sort: "modified", order: "desc" })).data.items.slice(0, 10) : [];
+  const files = base ? (await filesv2.entry(base.ref.id).list({ sort: "modified", order: "desc" })).data.items.slice(0, 10) : [];
   const { data: people } = await contacts.contact.search({ query: "supplier", tags: [], limit: 10 });
   const { data: notes } = await notebooks.note.search({ query: "supplier", tags: [], limit: 10 });
   return c.page(
@@ -331,7 +331,7 @@ work in personal Code alone ([AI](ai.md)). Skills are managed by people, not by 
 
 ## When a call is refused
 
-A refused call rejects its promise with an error whose message is a stable
-code, such as `code_policy_never` or `code_approval_required`. The run shows
+A refused call rejects its promise with `CodeError { code, status, message, details }`.
+Compare its lowercase snake_case `code`, such as `code_policy_never` or `code_approval_required`. The run shows
 the first call the target refused (403 or 404); a 404 can mean missing access
 or a missing object. See [Troubleshooting](troubleshooting.md).

@@ -101,7 +101,14 @@ test("signed-in pages receive only the visitor projection; unsigned requests nev
   const response = await signed.router.request(`/code/${codeId}/`);
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ returned: true });
-  expect(signed.calls[0]?.request.user).toEqual({ id, groups: ["group"], kind: "user", provider: "local", name: "Test Person" });
+  expect(signed.calls[0]?.request.user).toEqual({
+    id,
+    username: "visitor",
+    groupIds: ["group"],
+    groupNames: ["Group"],
+    kind: "user",
+    name: "Test Person",
+  });
   expect(JSON.stringify(signed.calls)).not.toContain("fixture-session");
   expect(response.headers.get("cache-control")).toContain("no-store");
 });
@@ -144,7 +151,14 @@ test("each account profile and provider reaches the handler as a stable, minimal
       const page = hosting(false, true, undefined, null, visitor);
       for (let attempt = 0; attempt < 2; attempt++) {
         expect((await page.router.request(`/code/${codeId}/`, { headers: { "X-Provider-Token": "provider-secret" } })).status).toBe(200);
-        expect(page.calls[attempt]?.request.user).toEqual({ id, groups: ["group"], kind: profile, provider, name: "Visitor Name" });
+        expect(page.calls[attempt]?.request.user).toEqual({
+          id,
+          username: "visitor",
+          groupIds: ["group"],
+          groupNames: ["Group"],
+          kind: profile,
+          name: "Visitor Name",
+        });
       }
       const payload = JSON.stringify(page.calls);
       for (const secret of ["fixture-session", "provider-secret", "private@example.test", "private-directory-value"])
@@ -299,17 +313,23 @@ test("a cancelled request stops waiting on a dependency before dispatch", async 
   expect(dispatched).toBe(false);
 });
 
-test("personal Code pages open only for their owner unless the route is public", async () => {
+test("personal Code pages open for every signed-in person; public pages have no visitor identity", async () => {
   const other = "22222222-2222-4222-8222-222222222222";
   const foreign = hosting(false, true, undefined, other);
   const refused = await foreign.router.request(`/code/${codeId}/`);
-  expect(refused.status).toBe(403);
-  expect(await refused.json()).toEqual({ code: "code_owner_only" });
-  expect(foreign.calls).toHaveLength(0);
+  expect(refused.status).toBe(200);
+  expect(foreign.calls[0]?.request.user?.id).toBe(id);
   expect((await hosting(false, false, undefined, id).router.request(`/code/${codeId}/`)).status).toBe(401);
   const owner = hosting(false, true, undefined, id);
   expect((await owner.router.request(`/code/${codeId}/`)).status).toBe(200);
-  expect(owner.calls[0]?.request.user).toEqual({ id, groups: ["group"], kind: "user", provider: "local", name: "Test Person" });
+  expect(owner.calls[0]?.request.user).toEqual({
+    id,
+    username: "visitor",
+    groupIds: ["group"],
+    groupNames: ["Group"],
+    kind: "user",
+    name: "Test Person",
+  });
   const open = hosting(true, true, undefined, other);
   expect((await open.router.request(`/code/${codeId}/`)).status).toBe(200);
   expect(open.calls[0]?.request.user).toBeNull();

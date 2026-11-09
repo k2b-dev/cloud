@@ -22,7 +22,7 @@ export class CodeRequestError extends Error {
   }
 }
 /** Admission snapshots the active checked manifest. No visitor credentials or grants enter data dispatch.
- * Personal Code runs with its owner's mandate, so only that owner may open its non-public routes. */
+ * Every signed-in person may reach non-public routes; handlers restrict access using c.user. */
 export async function codeRequestVersion(codeId: string) {
   const [row] = await sql<{ manifest: unknown; active_version_id: string; owner_user_id: string | null }[]>`SELECT v.manifest,
     c.active_version_id,CASE WHEN c.owner_kind='person' THEN c.owner_user_id::text END AS owner_user_id FROM code.codes c

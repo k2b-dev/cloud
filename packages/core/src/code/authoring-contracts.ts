@@ -11,7 +11,7 @@ import { CodeVersionDiffFileSchema, codeVersionContracts } from "./version-contr
 
 /** Schedule returned by init for personal CLI and chat checkouts. */
 export const CODE_INITIAL_SOURCE =
-  'import { app } from "@sdk";\n\napp.schedule("0 8 * * 1", async () => {\n}, { name: "monday" });\nexport default app;\n';
+  'import { app } from "@sdk";\n\napp.schedule({ cron: "0 8 * * 1", name: "monday" }, async () => {\n});\nexport default app;\n';
 /** Resource- and app-owned Code starts with a signed-in page. */
 export const CODE_INITIAL_PAGE_SOURCE = `import { app, jsx, Page, Stats, Stat, Section, Chart, Table, Column, Form, Field } from "@sdk";
 
@@ -25,15 +25,15 @@ const orders = [
   { order: "A-1040", customer: "Studio Weiss", status: "shipped", placed: "2026-11-04", total: 860 },
   { order: "A-1039", customer: "Lindner GmbH", status: "late", placed: "2026-10-30", total: 2140 },
 ];
-// Group IDs that may open the page; empty lets every signed-in person in.
-const allowedGroups: string[] = [];
+// Add the Cloud group IDs allowed to see and change these orders. Empty denies access.
+const allowedGroupIds: string[] = [];
 
-// Default: the Cloud layout. Every signed-in person may open this page, and it reads with this Code's rights,
+// Default: the Cloud layout. Every signed-in person can reach this handler, and it reads with this Code's rights,
 // not the visitor's: check the visitor here when only some people may see the data. c.user names the visitor only
 // on routes without public: true; a public route always gets null.
 app.get("/", c => {
-  if (allowedGroups.length && !c.user?.groups.some(group => allowedGroups.includes(group)))
-    return c.text("Only some teams see these orders.", 403);
+  if (!c.user?.groupIds.some(id => allowedGroupIds.includes(id)))
+    return c.json({ error: "forbidden" }, 403);
   return c.page(
     <Page eyebrow="Example data" title="Orders" asOf={new Date().toISOString()} icon="ti ti-shopping-cart">
       <Stats>
@@ -73,6 +73,8 @@ app.get("/", c => {
   );
 });
 app.post("/orders", c => {
+  if (!c.user?.groupIds.some(id => allowedGroupIds.includes(id)))
+    return c.json({ error: "forbidden" }, 403);
   // Save the order with an SDK call here, then show the page again.
   return c.redirect("/");
 });

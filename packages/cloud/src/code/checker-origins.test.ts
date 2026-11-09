@@ -10,7 +10,7 @@ function analyze(body: string, mode: CodeSdkMode = "personal", other: Record<str
   return analyzeCode({
     files: {
       ...other,
-      "code.ts": `import { app, http } from "@sdk";\n${body}\napp.schedule("0 8 * * 1", async () => {}); export default app;`,
+      "code.ts": `import { app, http } from "@sdk";\n${body}\napp.schedule({ cron: "0 8 * * 1", name: "weekly" }, async () => {}); export default app;`,
     },
     entry: "code.ts",
     sdk,

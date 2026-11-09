@@ -28,6 +28,7 @@ const APPS = [
   ["chat", "chat/src/capabilities.ts", "chatCapabilities"],
   ["notebooks", "notebooks/src/capabilities.ts", "notebooksCapabilities"],
   ["contacts", "contacts/src/capabilities.ts", "contactsCapabilities"],
+  ["grids", "grids/src/capabilities.ts", "gridsCapabilities"],
 ] as const;
 const packages = resolve(import.meta.dir, "../../../..");
 const compile = Bun.spawnSync(
@@ -186,7 +187,12 @@ test("every fixture runs against the example above it with the fake bridge and m
       const module = await load(example.result.bundle);
       let outcome: { ok: boolean; error: string | null; value: unknown };
       try {
-        const value = await module[run.entrypoint]!(run.input, bridge);
+        const entry = example.result.manifest.entrypoints.find((entry) => entry.entrypoint === run.entrypoint);
+        const input =
+          entry?.kind === "schedule"
+            ? { runId: `test-${index}`, scheduledAt: new Date(run.now ?? fixture.now).toISOString(), input: run.input }
+            : run.input;
+        const value = await module[run.entrypoint]!(input, bridge);
         outcome = { ok: true, error: null, value: value ?? null };
       } catch (error) {
         outcome = { ok: false, error: error instanceof Error ? error.message : String(error), value: null };
@@ -239,7 +245,7 @@ test("pages that need no data render a valid page tree", async () => {
         params: {},
         contentType: "text/plain",
         body: "",
-        user: { id: "u1", groups: [], kind: "user", provider: "local", name: "Visitor" },
+        user: { id: "u1", username: "visitor", groupIds: [], groupNames: [], kind: "user", name: "Visitor" },
       };
       try {
         const response = (await module[entry.entrypoint]!(request, bridge)) as { kind: string; tree?: unknown };
@@ -287,7 +293,7 @@ test("the capability tables state when each Action runs and list every Action of
   for (const manifest of manifests)
     for (const action of manifest.actions) {
       const capability = `${manifest.appId}.${action.localId}`;
-      const documented = manifest.appId === "core" ? capability.startsWith("core.ai.") : manifest.appId !== "imports";
+      const documented = manifest.appId === "core" ? capability.startsWith("core.ai.") : !["imports", "grids"].includes(manifest.appId);
       if (documented && !listed.has(capability)) wrong.push(`${capability}: Action missing from the capability tables`);
     }
   expect(wrong).toEqual([]);

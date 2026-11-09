@@ -76,8 +76,6 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
             return c.redirect(createLoginRedirectUrl(c.req.url));
           return c.json({ code: "code_sign_in_required" }, 401);
         }
-        if (!isPublic && version.personalOwner && actor?.kind === "user" && actor.user.id !== version.personalOwner)
-          return c.json({ code: "code_owner_only" }, 403);
         if (isPublic) {
           const limiter = ratelimit({ id: "code-public-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
           if (
@@ -114,13 +112,16 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           setCookie(c, anonymousCookie, binding, { httpOnly: true, secure: true, sameSite: "Strict", path: "/" });
         }
         c.header("X-Code-CSRF", codeCsrf(binding, codeId));
+        const effectiveGroups =
+          !isPublic && subject?.type === "user" ? await waitCodeRequest(getEffectiveGroups({ userId: subject.userId }), signal) : [];
         const user =
           !isPublic && actor?.kind === "user" && subject?.type === "user"
             ? {
                 id: actor.user.id,
-                groups: (await waitCodeRequest(getEffectiveGroups({ userId: subject.userId }), signal)).map((group) => group.id),
+                username: actor.user.uid,
+                groupIds: effectiveGroups.map((group) => group.id),
+                groupNames: effectiveGroups.map((group) => group.name),
                 kind: actor.user.profile,
-                provider: actor.user.provider,
                 name: actor.user.displayName,
               }
             : null;

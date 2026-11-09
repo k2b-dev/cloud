@@ -91,12 +91,23 @@ test("SDK runtime routes return description responses without cookies, HTML or a
     contentType: "text/plain",
     body: "",
     params: { id: "a" },
-    user: { id: "visitor", groups: [], kind: "guest", provider: "local", name: "Visitor", token: "must-not-reach-handler" },
+    user: {
+      id: "visitor",
+      username: "visitor",
+      groupIds: [],
+      groupNames: [],
+      kind: "guest",
+      name: "Visitor",
+      token: "must-not-reach-handler",
+    },
   });
   expect(result).toEqual({
     kind: "json",
     status: 200,
-    body: JSON.stringify({ user: { id: "visitor", groups: [], kind: "guest", provider: "local", name: "Visitor" }, id: "a" }),
+    body: JSON.stringify({
+      user: { id: "visitor", username: "visitor", groupIds: [], groupNames: [], kind: "guest", name: "Visitor" },
+      id: "a",
+    }),
   });
   runtime.app.get("/public", (c: { user: unknown; json(value: unknown): Response }) => c.json(c.user), { public: true });
   expect(
@@ -121,7 +132,7 @@ test("route requests accept only Cloud visitor profiles and providers, with no a
     contentType: "text/plain",
     body: "",
     params: {},
-    user: { id: "visitor", groups: [], kind: "user", provider: "local", name: "Visitor" },
+    user: { id: "visitor", username: "visitor", groupIds: [], groupNames: [], kind: "user", name: "Visitor" },
   } satisfies CodeRouteRequest;
   expect(CodeRouteRequestSchema.parse(request).user).toEqual(request.user);
   expect(CodeRouteRequestSchema.parse({ ...request, user: null }).user).toBeNull();

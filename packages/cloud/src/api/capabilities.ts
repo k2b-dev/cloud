@@ -819,19 +819,12 @@ const runCapabilityDispatch = async (
       ? {
           appId: params.appId,
           capability: `${params.appId}.${params.capabilityId}`,
-          // Chat delivery and turn receipt keys are per Code run; business-key Actions keep cross-run dedupe.
-          principal:
-            (params.appCaller
-              ? `app:${params.appCaller.appId}`
-              : claimPrincipal
-                ? `${claimPrincipal.type}:${claimPrincipal.id}`
-                : "anonymous") +
-            (params.codeRun &&
-            params.workloadRun &&
-            params.appId === "core" &&
-            ["ai.chat.deliver", "ai.chat.run"].includes(params.capabilityId)
-              ? `:code-run:${params.workloadRun}`
-              : ""),
+          // Every Action uses the same principal/capability/key scope across runs.
+          principal: params.appCaller
+            ? `app:${params.appCaller.appId}`
+            : claimPrincipal
+              ? `${claimPrincipal.type}:${claimPrincipal.id}`
+              : "anonymous",
           keyHash: capabilityIdempotencyKeyHash(idempotencyKey.data),
         }
       : null;

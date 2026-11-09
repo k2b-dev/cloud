@@ -60,7 +60,7 @@ import { app, spaces } from "@sdk";
 
 const MAX_PAGES = 5;
 
-app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks" }, async () => {
+app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks", title: "Count tasks" }, async () => {
   let cursor: string | undefined;
   let tasks = 0;
   let complete = false;
@@ -71,7 +71,7 @@ app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks"
     cursor = page.nextCursor;
   }
   console.log(`Open tasks: ${complete ? tasks : `${tasks} or more`}`);
-}, { name: "count-tasks", title: "Count tasks" });
+});
 export default app;
 ```
 
@@ -85,7 +85,7 @@ import { app, filesv2 } from "@sdk";
 
 const MAX_PAGES = 5;
 
-app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files" }, async () => {
+app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files", title: "Count files" }, async () => {
   const [base] = (await filesv2.bases.list({})).data.items;
   if (!base) return;
   const folder = filesv2.entry(base.ref.id);
@@ -93,13 +93,13 @@ app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files"
   let files = 0;
   let complete = false;
   for (let page = 0; page < MAX_PAGES; page++) {
-    const { data: result } = await folder.entry.list({ type: "files", ...(after ? { after } : {}) });
+    const { data: result } = await folder.list({ type: "files", ...(after ? { after } : {}) });
     files += result.items.length;
     if (!result.next) { complete = true; break; }
     after = result.next;
   }
   console.log(`Files in the first folder: ${complete ? files : `${files} or more`}`);
-}, { name: "count-files", title: "Count files" });
+});
 export default app;
 ```
 

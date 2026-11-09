@@ -72,9 +72,11 @@ async function enqueue(
   }
   if (entry.kind === "event" && !input.tick && !input.rerunOf)
     throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
-  if (input.tick?.cron !== undefined && (input.tick.cron !== entry.cron || (input.tick.timeZone ?? "UTC") !== (entry.timeZone ?? "UTC")))
+  const defaultTimeZone = await coreSettings.get<string>("app.timezone");
+  const timeZone = entry.timeZone ?? defaultTimeZone;
+  if (input.tick?.cron !== undefined && (input.tick.cron !== entry.cron || (input.tick.timeZone ?? defaultTimeZone) !== timeZone))
     return null;
-  if (input.tick?.at !== undefined && (input.tick.at !== entry.at || input.tick.timeZone !== entry.timeZone)) return null;
+  if (input.tick?.at !== undefined && (input.tick.at !== entry.at || (input.tick.timeZone ?? defaultTimeZone) !== timeZone)) return null;
   if (input.tick && entry.at) {
     if (input.tick.slot.toISOString() !== new Date(entry.at).toISOString()) return null;
     const [ready] = await db<{ due: boolean }[]>`SELECT ${input.tick.slot}<=clock_timestamp() AS due`;
@@ -222,6 +224,7 @@ type ClaimedRun = {
   lease_expires_at: Date;
   input: RunnerLease["input"];
   trigger: string;
+  tick_at: Date | null;
   bundle_hash: string;
   mandate_id: string;
   mandate_revision: number;
@@ -293,7 +296,7 @@ export async function claimCodeRuns(
           lease_expires_at=LEAST(COALESCE(deadline_at,clock_timestamp()+${limits.wallMs}*interval '1 millisecond'),
             clock_timestamp()+${CODE_RUN_LEASE_MS}*interval '1 millisecond')
         WHERE r.id=(SELECT id FROM next) RETURNING r.*
-      ) SELECT leased.*,v.bundle_hash,${mandate.id}::text AS mandate_id,${mandate.revision}::int AS mandate_revision
+      ) SELECT leased.*,(SELECT tick_at FROM code.run_requests WHERE run_id=leased.id AND tick_at IS NOT NULL LIMIT 1) AS tick_at,v.bundle_hash,${mandate.id}::text AS mandate_id,${mandate.revision}::int AS mandate_revision
         FROM leased JOIN code.versions v ON v.id=leased.version_id`;
       if (run) {
         await db`UPDATE code.codes SET last_dispatched_at=clock_timestamp() WHERE id=${code.id}`;
@@ -366,7 +369,10 @@ export async function codeRunnerLease(
     deadlineAt,
     leaseExpiresAt: renewed.lease_expires_at.getTime(),
     heartbeatMs: CODE_RUN_HEARTBEAT_MS,
-    input: run.input,
+    input:
+      run.trigger === "path" || run.trigger === "event"
+        ? run.input
+        : { runId: run.id, scheduledAt: run.tick_at?.toISOString() ?? null, input: run.input },
   };
 }
 /** Heartbeats fence under the same row lock as the bridge and never refill a wall-clock budget. */

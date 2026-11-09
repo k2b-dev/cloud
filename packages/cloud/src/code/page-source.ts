@@ -18,13 +18,13 @@ const __codePage = (() => {
   const flat = children => [children].flat(Infinity).filter(value => value !== null && value !== undefined && value !== false);
   // A block's children are blocks made here, never hand-written objects, and never a part outside its block.
   const blocks = children => Object.freeze(flat(children).map(child => {
-    if (!built.has(child)) throw new Error("code_page_blocks");
-    if (child.kind.startsWith("#")) throw new Error("code_page_child");
+    if (!built.has(child)) throw new __codeSdk.CodeError("code_page_blocks");
+    if (child.kind.startsWith("#")) throw new __codeSdk.CodeError("code_page_child");
     return child;
   }));
   const text = children => {
     const values = children === undefined ? [] : [children].flat(Infinity);
-    if (values.some(value => typeof value !== "string" && typeof value !== "number")) throw new Error("code_page_text");
+    if (values.some(value => typeof value !== "string" && typeof value !== "number")) throw new __codeSdk.CodeError("code_page_text");
     return values.join("");
   };
   const block = (kind, build) => {
@@ -35,12 +35,12 @@ const __codePage = (() => {
   // A part belongs to exactly one block, such as a field to its form; elsewhere it is an error.
   const part = (kind, build) => block(kind, props => ({ ...(build ? build(props) : noChildren(props)), kind: "#" + kind }));
   const parts = (children, kind) => Object.freeze(flat(children).map(child => {
-    if (!built.has(child) || child.kind !== "#" + kind) throw new Error("code_page_child");
+    if (!built.has(child) || child.kind !== "#" + kind) throw new __codeSdk.CodeError("code_page_child");
     const { kind: _kind, ...rest } = child;
     return Object.freeze(rest);
   }));
   const noChildren = ({ children, ...props }) => {
-    if (flat(children).length) throw new Error("code_page_child");
+    if (flat(children).length) throw new __codeSdk.CodeError("code_page_child");
     return props;
   };
   const Page = block("Page", ({ children, ...props }) => ({ kind: "Page", version: 1, ...props, children: blocks(children) }));
@@ -61,7 +61,7 @@ const __codePage = (() => {
     }));
   Chart.Empty = block("Chart", props => ({ kind: "Chart", ...noChildren(props) }));
   function jsx(component, props, ...children) {
-    if (!components.has(component)) throw new Error("code_page_component");
+    if (!components.has(component)) throw new __codeSdk.CodeError("code_page_component");
     return component(children.length ? { ...props, children: children.length === 1 ? children[0] : children } : props ?? {});
   }
   return {
@@ -76,9 +76,8 @@ const __codePage = (() => {
     Form: block("Form", ({ children, ...props }) => ({ kind: "Form", ...props, fields: parts(children, "Field") })),
     Link: block("Link"),
     Button: block("Button"),
-    Action: block("Action"),
     Notice: block("Notice"),
   };
 })();
-export const { Page, Section, Text, Heading, Field, Chart, jsx, Stat, Stats, Column, Table, Item, Detail, Option, Form, Link, Button, Action, Notice } = __codePage;
+export const { Page, Section, Text, Heading, Field, Chart, jsx, Stat, Stats, Column, Table, Item, Detail, Option, Form, Link, Button, Notice } = __codePage;
 `;

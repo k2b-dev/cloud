@@ -59,7 +59,8 @@ escape the project. No package configuration, plugins, or author-provided
 `tsconfig.json` are loaded.
 
 Actions omitted for `code: false` and streaming operations have explicit errors.
-Every later-phase `app` method reports `kommt in Phase 2` or `kommt in Phase 3`.
+Removed app members (`nav`, `webhook`, `fetch`) and `c.user.provider` are type
+errors; analysis also reports `code_removed_api`.
 A second `app.on` for the same event and place also reports
 `code_duplicate_on`, including an explicit owner handle after an implicit owner
 subscription.
