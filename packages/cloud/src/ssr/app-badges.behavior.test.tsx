@@ -266,14 +266,21 @@ test("after the rail unmounts, nothing reads badges any more", async () => {
   expect(requested()).toEqual([]);
 });
 
-test("the app grid shows the same count on the icon and on a pinned app, and tells screen readers", async () => {
+test("the app grid shows pinned entries once, as ordinary first tiles with their counts, and tells screen readers", async () => {
   const disposeRail = await mountRail();
   const railData = dom.window.document.createElement("script");
   railData.id = "cloud-shell-data";
   railData.type = "application/json";
   railData.textContent = JSON.stringify({
     apps,
-    rail: { ...settings, shortcuts: [{ id: "pinned-chat", kind: "app", appId: "chat" }] },
+    rail: {
+      ...settings,
+      shortcuts: [
+        { id: "custom", kind: "link", title: "Custom", href: "/custom", icon: "ti ti-link" },
+        { id: "pinned-chat", kind: "app", appId: "chat" },
+      ],
+      managedShortcuts: [{ id: "managed-mail", kind: "app", appId: "mail" }],
+    },
   });
   dom.window.document.body.append(railData);
   const { AppLaunchpadPanel } = await import("./AppLaunchpadPanel");
@@ -285,13 +292,16 @@ test("the app grid shows the same count on the icon and on a pinned app, and tel
   );
   try {
     await settle();
-    const chat = grid.querySelector('.launchpad-apps-grid a[href="/app/chat"]')!;
+    // Managed first, then the personal order, then the apps nobody pinned; every tile is the same kind of tile and
+    // no app repeats.
+    const tiles = [...grid.querySelectorAll(".launchpad-apps-grid > a.launchpad-app")];
+    expect(tiles.map((tile) => tile.getAttribute("href"))).toEqual(["/app/mail", "/custom", "/app/chat", "/app/notes"]);
+    expect(grid.querySelector("section")).toBeNull();
+    expect(tiles.every((tile) => tile.querySelector(":scope > .app-icon"))).toBe(true);
+    const chat = tiles[2]!;
     expect(chat.querySelector(".app-icon > .cloud-app-badge")?.textContent).toBe("3");
     expect(chat.textContent).toBe("3Chat, 3 new");
-    const pinned = grid.querySelector('section a[href="/app/chat"]')!;
-    expect(pinned.querySelector(".cloud-app-badge")?.textContent).toBe("3");
-    expect(pinned.textContent).toBe("3Chat, 3 new");
-    const mail = grid.querySelector('.launchpad-apps-grid a[href="/app/mail"]')!;
+    const mail = tiles[0]!;
     expect(mail.querySelector(".cloud-app-badge")).toBeNull();
     expect(mail.textContent).toBe("Mail");
   } finally {
