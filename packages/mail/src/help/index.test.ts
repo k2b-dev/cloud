@@ -186,6 +186,7 @@ describe("mailHelp", () => {
       if (!example) throw new Error("Draft JSON example is missing from compose help");
       const parsed = draftEditableContentInputSchema.parse(JSON.parse(example));
       expect(parsed).toMatchObject({
+        quoteSource: null,
         senderIdentityId: "Ident1",
         to: [{ name: null, address: "recipient@example.com" }],
         cc: [],

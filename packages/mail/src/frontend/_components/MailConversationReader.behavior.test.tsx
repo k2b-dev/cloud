@@ -792,6 +792,7 @@ test.skipIf(isServer)(
       derivedFromMessageId: null,
       derivationKind: null,
       content: {
+        quoteSource: null,
         senderIdentityId: "Send01",
         to: [],
         cc: [],
@@ -806,7 +807,7 @@ test.skipIf(isServer)(
       attachments: [],
       origin: {
         kind: "compose",
-        input: { senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" },
+        input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" },
       },
       createdAt: now,
     };

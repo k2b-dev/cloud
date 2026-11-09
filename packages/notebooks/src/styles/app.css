@@ -564,6 +564,18 @@
   .notebook-note-print {
     display: block;
   }
+  /* Printed Book copies, including the map print dialog, use the UI export palette.
+     This overrides Cloud's app palette only in the document sent to the printer. */
+  :root .notebook-book-content[data-print-region] :is(.stdlib-chart, .k2b-chart-legend) {
+    --stdlib-chart-c1: #3b82f6;
+    --stdlib-chart-c2: #10b981;
+    --stdlib-chart-c3: #f59e0b;
+    --stdlib-chart-c4: #8b5cf6;
+    --stdlib-chart-c5: #ec4899;
+    --stdlib-chart-c6: #06b6d4;
+    --stdlib-chart-c7: #84cc16;
+    --stdlib-chart-c8: #f97316;
+  }
   /* Paper sets the margins; the reading column fills the page. */
   .notebook-book-content[data-print-region] {
     max-width: none;

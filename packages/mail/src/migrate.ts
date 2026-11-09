@@ -100,8 +100,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
     WHERE job_id IS NOT NULL AND published_at IS NULL
   `.simple();
-  // Release N understands both modes; existing and newly created drafts stay
-  // in lock mode until the subsequent activation release. No body is rewritten.
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'lock'
+    CHECK (draft_edit_mode IN ('lock', 'shared'))`.simple();
+  // Existing drafts retain their mode. Defaults stay lock until verified
+  // per-mailbox activation; no body or document history is rewritten.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
     CHECK (edit_mode IN ('lock', 'shared'))`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
@@ -233,6 +235,12 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
   await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
   await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`.simple();
+  // List pages ask for the open drafts of a few conversations; this keeps that lookup independent of all other drafts.
+  await tx`CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
+    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`

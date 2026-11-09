@@ -2,6 +2,7 @@ import type { MailFolderView } from "../../service/messages";
 import type { MailListItem } from "../../service/workspace";
 
 export const mailTestRow = (id: string, overrides: Partial<MailListItem> = {}): MailListItem => ({
+  drafts: { count: 0, editors: [] },
   id,
   conversationId: id,
   selectionKind: "conversation",

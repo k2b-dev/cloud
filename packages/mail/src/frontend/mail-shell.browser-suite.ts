@@ -533,9 +533,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               heights[state] = box.height;
               const ai = (await card.getAttribute("data-mail-summary-ai")) !== null;
               expect(ai, `${state}: AI surface only for AI`).toBe(state !== "person");
-              const background = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
-              if (state === "person") expect(background).not.toBe("rgb(252, 243, 248)");
-              else expect(background).toBe("rgb(252, 243, 248)");
+              // A topic of the reader: a Section island with the AI tone (plum frame, title, ✦) only for AI, never a plum fill.
+              expect(await card.getAttribute("data-tone"), `${state}: AI tone only for AI`).toBe(state === "person" ? null : "ai");
+              const look = await card.evaluate((element) => {
+                const probe = element.parentElement!.appendChild(document.createElement("i"));
+                probe.style.borderTop = "1px solid color-mix(in srgb, var(--k2b-ai-accent) 45%, var(--k2b-surface))";
+                const plum = getComputedStyle(probe).borderTopColor;
+                probe.remove();
+                const style = getComputedStyle(element);
+                return { fill: style.backgroundColor, plumFrame: style.borderTopColor === plum };
+              });
+              expect(look.fill).not.toBe("rgb(252, 243, 248)");
+              expect(look.plumFrame, `${state}: plum frame only for AI`).toBe(state !== "person");
               if (state === "writing") expect(await card.getAttribute("aria-busy")).toBe("true");
               if (state === "stale") await page.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
               if (state === "failed") await card.getByRole("button", { name: "Erneut versuchen" }).waitFor();
