@@ -131,6 +131,7 @@ function fixture(
     authorization,
     approve,
     httpRequests,
+    sdk,
     close: async () => {
       await host.close();
       sdk.mockRestore();
@@ -173,6 +174,24 @@ test("code_run uses the runner fixture, generated SDK, same result card and capt
       version: 1,
     });
     expect(await f.execute("code_stop", { runId: "fixture-run" }, "stop")).toEqual({ runId: "fixture-run", stopped: true });
+  } finally {
+    await f.close();
+  }
+}, 20_000);
+
+test("raw code_run retries a failed catalog load without admitting an unchecked call", async () => {
+  const f = fixture();
+  f.sdk.mockRejectedValueOnce(new Error("Catalog temporarily unavailable"));
+  try {
+    const result = await f.execute("code_run", {
+      code: `export default async () => {
+        try { await cloud.capabilities.run("demo.list", {folder:"Folder001"}); } catch {}
+        return await cloud.capabilities.run("demo.list", {folder:"Folder001"});
+      }`,
+    });
+    expect(result).toMatchObject({ status: "ready" });
+    expect(f.sdk).toHaveBeenCalledTimes(2);
+    expect(f.calls).toHaveLength(1);
   } finally {
     await f.close();
   }
@@ -501,6 +520,57 @@ const mailFileManifest = compileCapabilityManifest("mail", {
     },
   },
 });
+
+test("chat code_run refuses a sandbox capability outside its admitted catalog before preparation", async () => {
+  const f = fixture();
+  try {
+    const result = await f.execute("code_run", {
+      code: 'export default () => cloud.capabilities.run("core.ai.generate", {});',
+    });
+    expect(result).toMatchObject({ status: "error", error: expect.stringContaining("code_capability_undeclared") });
+    expect(f.calls).toEqual([]);
+    expect(f.capability).not.toHaveBeenCalled();
+    expect(f.approve).not.toHaveBeenCalled();
+  } finally {
+    await f.close();
+  }
+}, 20_000);
+
+test("chat code_run admits declared raw calls with canonical targets and preserves turn approvals", async () => {
+  const f = fixture();
+  try {
+    const result = await f.execute("code_run", {
+      code: 'export default () => cloud.capabilities.run("demo.list", {folder:"Folder001"});',
+    });
+    expect(result).toMatchObject({ status: "ready" });
+    expect(f.calls).toEqual([
+      expect.objectContaining({ name: "demo.list", input: {}, target: { type: "demo.folder", id: "Folder001" }, refs: {} }),
+    ]);
+    expect(f.authorization).toHaveBeenCalled();
+  } finally {
+    await f.close();
+  }
+}, 20_000);
+
+test.each([
+  { target: { type: "other.folder", id: "Folder001" }, refs: {} },
+  { target: { type: "demo.folder", id: "Folder001" }, refs: { hidden: { type: "other.folder", id: "Folder002" } } },
+])(
+  "chat code_run rejects coordinates outside its admitted target/ref shape (%j)",
+  async (coordinates) => {
+    const f = fixture();
+    try {
+      const result = await f.execute("code_run", {
+        code: `export default () => cloud.capabilities.run("demo.list", {}, ${JSON.stringify(coordinates)});`,
+      });
+      expect(result).toMatchObject({ status: "error" });
+      expect(f.capability).not.toHaveBeenCalled();
+    } finally {
+      await f.close();
+    }
+  },
+  20_000,
+);
 
 test.each([
   { approved: true, maxBytes: 100 * 1024 * 1024 },

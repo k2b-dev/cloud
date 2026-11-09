@@ -46,6 +46,7 @@ test("A3a classifies target status without guessing from provider codes or broke
 test("A3a policy refusals never become target refusals", () => {
   for (const code of [
     "code_policy_never",
+    "code_capability_undeclared",
     "code_ai_budget_limit",
     "code_ai_daily_budget_limit",
     "code_ai_owner_daily_budget_limit",

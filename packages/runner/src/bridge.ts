@@ -77,12 +77,24 @@ export class CoreBridge implements RunnerBridge {
       redirect: "error",
       signal: bounded,
     });
-    if (!response.ok) {
+    const capabilityRefusal = path === RUNNER_PATHS.call && response.status === 403;
+    if (!response.ok && !capabilityRefusal) {
       void response.body?.cancel().catch(() => undefined);
       if (response.status === 409) throw new RunnerLeaseLostError();
       throw new Error(`runner_core_http_${response.status}`);
     }
-    return new TextDecoder("utf-8", { fatal: true }).decode(await readBytes(response, max, bounded));
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(await readBytes(response, max, bounded));
+    if (capabilityRefusal) {
+      let refusal: ReturnType<typeof RunnerCallResponseSchema.safeParse>;
+      try {
+        refusal = RunnerCallResponseSchema.safeParse(JSON.parse(text));
+      } catch {
+        throw new Error("runner_core_http_403");
+      }
+      if (!refusal.success || refusal.data.ok || refusal.data.error.code !== "code_capability_undeclared")
+        throw new Error("runner_core_http_403");
+    }
+    return text;
   }
   async configure(signal: AbortSignal) {
     this.#config = RunnerConfigSchema.parse(JSON.parse(await this.#post(RUNNER_PATHS.config, {}, signal)));

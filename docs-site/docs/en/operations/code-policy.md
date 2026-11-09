@@ -136,6 +136,13 @@ versions. Pending versions leave the current version running.
 checker manifest, hash-bound decisions, sole-admin confirmation and the
 pause/resume checks. Sending without a person remains blocked in Phase 1.
 
+Core also bounds each lasting version's capability calls to its saved checker
+permissions. `code_capability_undeclared` (403) appears as a failed policy call
+in the run; inspect the version's declared operation, target and refs before
+checking and submitting a corrected version. Current grants or a broader
+automatic policy do not expand that declared set. Source reads during file
+transfers pass through the same check. No database migration or new setting
+is required.
 
 ## Model loops and file inspection
 
