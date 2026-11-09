@@ -19,6 +19,8 @@ const { Toolbar } = await import("../actions/Toolbar");
 const { Paper } = await import("./Paper");
 const { ResourceCard } = await import("./ResourceCard");
 const { DashboardFrame } = await import("../widgets/DashboardFrame");
+const { DashboardPanel } = await import("../widgets/Dashboard");
+const { StatCell } = await import("./StatCell");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 
@@ -41,10 +43,20 @@ const paper = (id: string, children?: () => JSX.Element) =>
 const resource = (name: string) =>
   createComponent(ResourceCard, { class: name, state: "ok", title: "Spedition Nord", context: "Task in Team Logistik", href: "#" });
 
+// StatCell takes no id or class, so its label names it.
+const stat = (label: string) => createComponent(StatCell, { label, value: 42 });
+
 const markup = () =>
   renderToString(() => [
     paper("main-paper", () => paper("nested-paper")),
     resource("main-resource"),
+    stat("main-stat"),
+    createComponent(DashboardPanel, {
+      id: "main-panel",
+      get children() {
+        return stat("panel-stat");
+      },
+    }),
     createComponent(DashboardFrame, {
       title: "Revenue",
       get children() {
@@ -55,7 +67,7 @@ const markup = () =>
       get children() {
         return createComponent(DetailPanel.Body, {
           get children() {
-            return [paper("panel-paper"), resource("panel-resource")];
+            return [paper("panel-paper"), resource("panel-resource"), stat("detail-stat")];
           },
         });
       },
@@ -93,10 +105,13 @@ const read = () => {
     probe.remove();
     return value;
   };
-  const look = (selector: string) => {
-    const style = getComputedStyle(document.querySelector(selector)!);
+  const lookAt = (element: Element) => {
+    const style = getComputedStyle(element);
     return { shadow: style.boxShadow, background: style.backgroundColor };
   };
+  const look = (selector: string) => lookAt(document.querySelector(selector)!);
+  const stat = (label: string) =>
+    lookAt([...document.querySelectorAll(".k2b-stat-cell")].find((cell) => cell.textContent?.includes(label))!);
   return {
     raised: token("--k2b-shadow-raised", "boxShadow"),
     toolbarToken: token("--k2b-shadow-toolbar", "boxShadow"),
@@ -105,6 +120,10 @@ const read = () => {
     mainPaper: look("#main-paper"),
     nestedPaper: look("#nested-paper"),
     mainResource: look(".main-resource"),
+    mainStat: stat("main-stat"),
+    mainPanel: look("#main-panel"),
+    panelStat: stat("panel-stat"),
+    detailStat: stat("detail-stat"),
     frame: look(".k2b-paper:has(> * #frame-paper), .k2b-paper:has(#frame-paper)"),
     framePaper: look("#frame-paper"),
     panelPaper: look("#panel-paper"),
@@ -127,9 +146,11 @@ describe("@k2b/ui layers and shadows", () => {
     try {
       const r = await page.evaluate(read);
       expect(r.raised).not.toBe(noShadow);
-      for (const island of [r.mainPaper, r.mainResource, r.frame]) expect(island.shadow).toBe(r.raised);
+      for (const island of [r.mainPaper, r.mainResource, r.frame, r.mainStat, r.mainPanel]) expect(island.shadow).toBe(r.raised);
       for (const flat of [
         r.nestedPaper,
+        r.panelStat,
+        r.detailStat,
         r.framePaper,
         r.panelPaper,
         r.panelResource,
@@ -154,9 +175,10 @@ describe("@k2b/ui layers and shadows", () => {
       const r = await page.evaluate(read);
       expect(r.raised).toBe(noShadow);
       expect(r.raisedSurface).not.toBe(r.surface);
-      for (const island of [r.mainPaper, r.mainResource]) expect(island).toEqual({ shadow: noShadow, background: r.raisedSurface });
+      for (const island of [r.mainPaper, r.mainResource, r.mainStat, r.mainPanel])
+        expect(island).toEqual({ shadow: noShadow, background: r.raisedSurface });
       expect(r.scopedDialogPaper.shadow).toBe(noShadow);
-      for (const flat of [r.panelPaper, r.sidebarPaper, r.gridPaper, r.dialogPaper])
+      for (const flat of [r.panelPaper, r.detailStat, r.sidebarPaper, r.gridPaper, r.dialogPaper])
         expect(flat).toEqual({ shadow: noShadow, background: r.surface });
       // An island inside an island takes the same surface, so it reads as one plane.
       expect(r.nestedPaper.background).toBe(r.raisedSurface);

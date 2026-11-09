@@ -15,7 +15,7 @@ shadow; everything else is flat.
 | Layer | What lies there | Shadow |
 | --- | --- | --- |
 | 0 Workspace | The app card and its columns: sidebar, main content, docked detail panel | The app card: `--k2b-shadow-frame`. Columns: the quiet column shadow. Inside: flat. |
-| 1 Islands | Content cards in the main content: `Paper`, a framed `Section`, `LinkCard`, `ResourceCard`, `DashboardFrame`, a Kanban card | `--k2b-shadow-raised` with a light 1 px edge. Dark mode: a lighter surface instead. |
+| 1 Islands | Content cards in the main content: `Paper`, a framed `Section`, `LinkCard`, `ResourceCard`, `DashboardFrame`, `DashboardPanel`, a `StatCell` tile, a Kanban card | `--k2b-shadow-raised` with a light 1 px edge. Dark mode: a lighter surface instead. |
 | 2 Overlaying | Surfaces that cover content: a drawer, a sheet, a `PanelDialog`, the detail panel as a sheet on a phone | `--k2b-shadow-side`, `--k2b-shadow-sheet`. Inside: flat. |
 | 3 Floating | Menus, popovers, dialogs, tooltips, hover previews, toasts, drag previews; floating pills and toolbars | `--k2b-shadow-float`, `--k2b-shadow-toast`; pills and toolbars `--k2b-shadow-toolbar`. Inside: flat. |
 
@@ -120,7 +120,7 @@ inner shadow as a fade is never used. `HoverPreview` floats on layer 3 with
 ## How an app gets it for free
 
 - **Use the components.** `Paper`, `Section`, `LinkCard`, `ResourceCard`,
-  `DashboardFrame`, `DataTable.Panel`, and the widgets are islands in the main
+  `DashboardFrame`, `DashboardPanel`, `StatCell`, `DataTable.Panel`, and the widgets are islands in the main
   content and flat everywhere else. `DetailPanel`, `AppWorkspace` columns,
   sheets, dialogs, popovers, menus, and toolbars make their inside flat.
 - **Mark a dense collection.** Put `data-k2b-layer="flat"` on the element that
