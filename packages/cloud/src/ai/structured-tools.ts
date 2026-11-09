@@ -86,7 +86,7 @@ export async function runStructuredTools<T extends z.ZodType>(
                 execute: async (value, context) => {
                   if (submitted) throw new Error("The result is already submitted; no further tool may run.");
                   input.signal?.throwIfAborted();
-                  return { untrusted_tool_result: await tool.execute(value, context) };
+                  return tool.execute(value, context);
                 },
               }),
             ),

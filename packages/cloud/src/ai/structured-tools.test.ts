@@ -29,7 +29,12 @@ function fixture(turns: Array<Array<{ name: string; args: Record<string, unknown
     },
   };
   const execute = mock(async () => ({ evidence: "untrusted content" }));
-  const tool = defineTool({ name: "bound", description: "Read the bound target", inputSchema: z.object({}).strict() }).server(execute);
+  const tool = defineTool({
+    name: "bound",
+    description: "Read the bound target",
+    inputSchema: z.object({}).strict(),
+    outputSchema: z.object({ evidence: z.string() }).strict(),
+  }).server(execute);
   const run = () =>
     runStructuredTools({
       task: "fixture",
@@ -51,7 +56,6 @@ test("structured loop executes typed tools and injects acquired images into the 
   expect(f.execute).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(f.requests[1]!.messages)).toContain('"mediaType":"image/png"');
   expect(JSON.stringify(f.requests[1]!.messages)).toContain("untrusted content");
-  expect(JSON.stringify(f.requests[1]!.messages)).toContain("untrusted_tool_result");
 });
 
 test("submission is terminal even when the model sends more tools in the same response", async () => {

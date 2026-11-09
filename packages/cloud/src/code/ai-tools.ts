@@ -64,7 +64,7 @@ export async function createCodeAiTools(options: {
           metadata,
         });
         options.registerFiles(result);
-        return result;
+        return { untrusted_tool_result: result };
       });
     }),
   );

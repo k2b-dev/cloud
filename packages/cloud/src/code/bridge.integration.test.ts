@@ -2087,7 +2087,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
             })
           ).json(),
       });
-      return tools[0]!.execute(
+      const result = await tools[0]!.execute(
         {},
         {
           signal: new AbortController().signal,
@@ -2099,6 +2099,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           },
         },
       );
+      return z.object({ untrusted_tool_result: z.unknown() }).parse(result).untrusted_tool_result;
     };
     await resetFixture({ entry: true });
     expect(await invoke("example.write")).toEqual(await (await send()).json());

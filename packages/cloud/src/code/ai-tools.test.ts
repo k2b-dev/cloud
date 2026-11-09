@@ -30,7 +30,7 @@ const analyze = (code: string) =>
     entry: "code.ts",
     aiOperations: ["core.ai.generate"],
     files: {
-      "code.ts": `import { app, core, work_shop, http } from "@sdk"; app.schedule("0 0 * * *", async () => { ${code} }); export default app;`,
+      "code.ts": `import { app, core, work_shop, http } from "@sdk"; app.schedule({ cron: "0 0 * * *" }, async () => { ${code} }); export default app;`,
     },
   });
 
@@ -115,7 +115,7 @@ test("tool admission narrows to checked targets, exposes only domain input and k
   };
   const [tool] = await createCodeAiTools(options);
   expect(z.toJSONSchema(tool!.def.inputSchema).properties).not.toHaveProperty("target");
-  await tool!.execute(
+  const result = await tool!.execute(
     { cursor: "next" },
     {
       signal: new AbortController().signal,
@@ -129,6 +129,7 @@ test("tool admission narrows to checked targets, exposes only domain input and k
     call: { capability: "work-shop.stock.list", target, refs: {}, input: { cursor: "next" } },
     metadata: {},
   });
+  expect(result).toEqual({ untrusted_tool_result: { data: { rows: [] } } });
   await expect(
     createCodeAiTools({ ...options, bindings: [{ capability: "work-shop.stock.list", target: { ...target, id: "foreign" } }] }),
   ).rejects.toThrow("code_ai_tool_not_checked");
