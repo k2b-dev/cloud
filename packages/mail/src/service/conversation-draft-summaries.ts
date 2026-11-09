@@ -19,11 +19,12 @@ export const listConversationDraftSummaries = async (params: {
       conversation_id: string;
       count: number;
       editors: ConversationListDrafts["editors"];
+      suggested_by: string | null;
     }[]
   >`
     WITH visible_drafts AS MATERIALIZED (
       SELECT d.conversation_id, d.author_kind, d.author_id, d.created_at,
-        d.last_editor_kind, d.last_editor_id, d.updated_at
+        d.last_editor_kind, d.last_editor_id, d.updated_at, d.adopted_at
       FROM mail.drafts d
       WHERE d.mailbox_id = ${params.mailboxId}::uuid AND d.origin = 'user' AND d.state = 'draft'
         AND d.conversation_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
@@ -50,9 +51,21 @@ export const listConversationDraftSummaries = async (params: {
       SELECT conversation_id,
         jsonb_agg(jsonb_build_object('kind', kind, 'id', id, 'displayName', display_name) ORDER BY position) AS editors
       FROM ranked WHERE position <= 3 GROUP BY conversation_id
+    ), suggestions AS (
+      -- The account that created an untouched suggestion, never whoever edited it last.
+      SELECT draft.conversation_id, min(COALESCE(NULLIF(account.name, ''), 'Former service account')) AS suggested_by
+      FROM visible_drafts draft
+      LEFT JOIN auth.service_accounts account ON account.id = draft.author_id
+      WHERE draft.author_kind = 'service_account' AND draft.adopted_at IS NULL
+      GROUP BY draft.conversation_id
     )
-    SELECT counts.conversation_id, counts.count, COALESCE(editors.editors, '[]'::jsonb) AS editors
-    FROM counts LEFT JOIN editors USING (conversation_id)
+    SELECT counts.conversation_id, counts.count, COALESCE(editors.editors, '[]'::jsonb) AS editors,
+      CASE WHEN counts.count = 1 THEN suggestions.suggested_by END AS suggested_by
+    FROM counts LEFT JOIN editors USING (conversation_id) LEFT JOIN suggestions USING (conversation_id)
   `;
-  return ok(new Map(rows.map(({ conversation_id, count, editors }) => [conversation_id, { count, editors }])));
+  return ok(
+    new Map(
+      rows.map(({ conversation_id, count, editors, suggested_by }) => [conversation_id, { count, editors, suggestedBy: suggested_by }]),
+    ),
+  );
 };

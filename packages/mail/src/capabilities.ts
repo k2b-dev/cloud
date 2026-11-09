@@ -2742,7 +2742,7 @@ const actionDefinitions = {
   "draft.create": {
     title: "Create draft",
     description:
-      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation. After a person edits it, Gustav can change it only at a person’s request. A conversation has at most one untouched suggestion; another create returns it. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
+      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation, labelled with the account's name. After a person edits it, the account can change it only at a person’s request. A conversation has at most one untouched suggestion per account; another create by the same account returns that account's suggestion, never another account's. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
     input: c.DraftCreateInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
