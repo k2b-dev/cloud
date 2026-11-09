@@ -407,12 +407,12 @@ describe("Mail review contract", () => {
       "conversation.related",
       "conversation.read",
       "message.list",
-      "message.read-content",
+      "message.content.read",
       "message.read",
     ] as const)
       expect(mailCapabilities.queries[id].openWorld).toBeTrue();
     // A permission-scoped local lookup is closed-world; its content remains untrusted.
-    for (const id of ["attachment.read-content", "draft.read", "draft.list"] as const)
+    for (const id of ["attachment.text.read", "draft.read", "draft.list"] as const)
       expect(mailCapabilities.queries[id].openWorld).toBeFalse();
   });
 });

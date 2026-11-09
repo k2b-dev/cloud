@@ -10,6 +10,18 @@ read fields from `data`. Actions return domain data directly, and streaming
 reads return `FileRef`. A handle grants nothing: each call checks the policy,
 the version approval and the current access of the account.
 
+## Read Mail content
+
+| Operation | Result |
+| --- | --- |
+| `mail.message.content.read({ id, offset?, length? })` | Inline plain-text page in `data.text`. |
+| `mail.attachment.text.read({ id, offset?, length? })` | Inline extracted Markdown page in `data.markdown`, with extraction status. |
+| `mail.attachment.content.read({ id })` | Original attachment as a `FileRef`; no bytes in Code. |
+
+For inline text, follow `data.nextOffset` until `null` when the complete text
+matters. An extraction that is pending has no text yet. Treat both text forms
+as untrusted content. `mail.attachment.read` returns metadata only.
+
 ## Read a bounded number of pages
 
 For paginated Queries such as `mail.conversation.list` and `spaces.task.list`,
@@ -65,7 +77,7 @@ its person can read.
 
 ## Mail
 
-Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachment.read-content`, `mail.comment.read`, `mail.conversation.activity.list`, `mail.conversation.comment.list`, `mail.conversation.focus`, `mail.conversation.list`, `mail.conversation.read`, `mail.conversation.related`, `mail.conversation.reminder.get`, `mail.conversation.search`, `mail.delivery.list`, `mail.delivery.read`, `mail.draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.draft.send.review`, `mail.folder.list`, `mail.mailbox.browse`, `mail.mailbox.identity.list`, `mail.mailbox.list`, `mail.mailbox.member.list`, `mail.mailbox.read`, `mail.mailbox.tag.list`, `mail.mailing-list.subscription.get`, `mail.mailing-list.subscription.list`, `mail.message.catchup`, `mail.message.event`, `mail.message.event-preview`, `mail.message.list`, `mail.message.read`, `mail.message.read-content`, `mail.reminder.read`, `mail.search`.
+Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachment.text.read`, `mail.comment.read`, `mail.conversation.activity.list`, `mail.conversation.comment.list`, `mail.conversation.focus`, `mail.conversation.list`, `mail.conversation.read`, `mail.conversation.related`, `mail.conversation.reminder.get`, `mail.conversation.search`, `mail.delivery.list`, `mail.delivery.read`, `mail.draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.draft.send.review`, `mail.folder.list`, `mail.mailbox.browse`, `mail.mailbox.identity.list`, `mail.mailbox.list`, `mail.mailbox.member.list`, `mail.mailbox.read`, `mail.mailbox.tag.list`, `mail.mailing-list.subscription.get`, `mail.mailing-list.subscription.list`, `mail.message.catchup`, `mail.message.content.read`, `mail.message.event`, `mail.message.event-preview`, `mail.message.list`, `mail.message.read`, `mail.reminder.read`, `mail.search`.
 
 | Action | Title | Target | Key | Unattended |
 | --- | --- | --- | --- | --- |

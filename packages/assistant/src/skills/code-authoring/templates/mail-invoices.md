@@ -2,7 +2,8 @@
 
 For each received message with an invoice attachment (PDF or XML), pass the
 file to an import app as a FileRef and tag the conversation once the import
-is done. The bytes never enter Code. The same example appears in Fibel
+is done. `mail.attachment.content.read` returns the original file as a FileRef;
+`mail.attachment.text.read` returns extracted text for inline reading. The bytes never enter Code. The same example appears in Fibel
 (`/en/docs/platform/code-sdk#mail-invoices-to-an-app`); CI keeps both copies identical.
 
 Owner: the Code of a mailbox. Replace the fictional `imports` namespace and its

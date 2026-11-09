@@ -501,6 +501,22 @@ const fileImportManifest = (maxBytes: number) =>
 const mailFileManifest = compileCapabilityManifest("mail", {
   protocolVersion: 2,
   queries: {
+    "message.content.read": {
+      title: "Read message text",
+      description: "Read inline message text.",
+      input: z.object({ id: z.string().describe("Message ID.") }).strict(),
+      data: z.object({ text: z.string() }).strict(),
+      openWorld: true,
+      run: () => ({ ok: true, data: { data: { text: "Message" } } }),
+    },
+    "attachment.text.read": {
+      title: "Read attachment text",
+      description: "Read inline extracted Markdown.",
+      input: z.object({ id: z.string().describe("Attachment ID.") }).strict(),
+      data: z.object({ markdown: z.string() }).strict(),
+      openWorld: false,
+      run: () => ({ ok: true, data: { data: { markdown: "# Attachment" } } }),
+    },
     "attachment.content.read": {
       title: "Read attachment file",
       description: "Read the original attachment file.",
@@ -520,6 +536,41 @@ const mailFileManifest = compileCapabilityManifest("mail", {
     },
   },
 });
+
+test("compiled runner SDK dispatches the distinct inline Mail content names without a file stream", async () => {
+  const f = fixture({ manifests: [mailFileManifest] });
+  f.capability.mockImplementation(async (input) => {
+    const request = RuntimeCapabilityRequest.parse(input);
+    f.calls.push(request);
+    return {
+      status: "completed",
+      result: {
+        ok: true,
+        data: { data: request.name === "mail.message.content.read" ? { text: "Message" } : { markdown: "# Attachment" } },
+      },
+    };
+  });
+  try {
+    expect(
+      await f.execute("code_run", {
+        code: `import {mail} from "@sdk";
+export default async () => {
+  const message = await mail.message.content.read({id:"Msg001"});
+  const attachment = await mail.attachment.text.read({id:"Att001"});
+  return {text:message.data.text, markdown:attachment.data.markdown};
+}`,
+      }),
+    ).toMatchObject({ status: "ready", output: JSON.stringify({ text: "Message", markdown: "# Attachment" }) });
+    expect(f.calls).toMatchObject([
+      { name: "mail.message.content.read", input: { id: "Msg001" } },
+      { name: "mail.attachment.text.read", input: { id: "Att001" } },
+    ]);
+    expect(f.calls).toHaveLength(2);
+    expect(f.approve).not.toHaveBeenCalled();
+  } finally {
+    await f.close();
+  }
+}, 20_000);
 
 test("chat code_run refuses a sandbox capability outside its admitted catalog before preparation", async () => {
   const f = fixture();
