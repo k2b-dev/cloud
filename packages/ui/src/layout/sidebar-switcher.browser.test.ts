@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -174,7 +174,7 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
           expect(background).not.toEqual(platformHover);
           expect(await head.boundingBox()).toEqual(rest);
         };
-        await head.hover();
+        await hoverInPlace(head);
         await neutral();
         await head.click();
         await loaded(page);
@@ -410,7 +410,7 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
             const before = await geometry(page);
             heads.push(before);
             if (width > 600) {
-              await page.locator(trigger).hover();
+              await hoverInPlace(page.locator(trigger));
               expect(await geometry(page)).toEqual(before);
               // A name cut off shows in full in the Cloud hint after the usual delay; a whole name needs none.
               await page.waitForTimeout(400);

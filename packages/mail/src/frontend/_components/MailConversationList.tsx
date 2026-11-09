@@ -206,7 +206,9 @@ export default function MailConversationList(props: {
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has("search") || props.activeSavedViewId);
   // Day headings follow the person's calendar; a search may sort by relevance, so it shows none.
   /** An empty list after a day with completed work: "All done." takes the placeholder's place. */
-  const allDone = () => props.items.length === 0 && !searchActive() && (props.doneToday?.done ?? 0) > 0;
+  /** A new message is a row of its own: an empty list with one open still shows the list, not the empty state. */
+  const empty = () => props.items.length === 0 && !props.newMessage;
+  const allDone = () => empty() && !searchActive() && (props.doneToday?.done ?? 0) > 0;
   /** Where each of Assigned to me's groups starts; the service lists every row that needs action first. */
   const assignedStarts = createMemo(() => {
     const starts = new Map<number, keyof MailAssignedGroups>();
@@ -440,7 +442,7 @@ export default function MailConversationList(props: {
                 <i class="ti ti-history" aria-hidden="true" /> {messages().allDoneLog}
               </ButtonLink>
             </div>
-          ) : props.items.length === 0 ? (
+          ) : empty() ? (
             <Placeholder
               icon={searchActive() ? "ti ti-search" : props.assignedGroups ? "ti ti-mood-smile" : "ti ti-mail-off"}
               variant="panel"

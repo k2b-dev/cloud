@@ -1472,12 +1472,7 @@ html {
    start where the header's title does. */
 .k2b-ui
   :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  :is(
-    .k2b-detail-panel__summary,
-    .k2b-detail-panel__group,
-    .k2b-detail-panel__body > .k2b-detail-panel__section,
-    .k2b-detail-panel .k2b-discussion[data-surface="default"]
-  ) {
+  :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -1489,12 +1484,8 @@ html {
   gap: 1.5rem;
 }
 
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
-.k2b-ui
-  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  .k2b-detail-panel__group
-  > :is(.k2b-detail-panel__section, .k2b-discussion)
-  + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section,
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section + .k2b-section {
   padding: 0;
 }
 

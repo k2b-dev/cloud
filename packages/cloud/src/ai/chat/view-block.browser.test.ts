@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { z } from "zod";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import { renderMarkdownSync } from "../../shared/markdown";
 import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
 import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
@@ -77,9 +78,13 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
       if ((path.endsWith("/charts/core/registry.js") || path.endsWith("/charts/core/chart-map-data.js")) && input.bytesInOutput > 0)
         throw new Error("The initial Chat module must not contain the chart renderer registry or map data");
       if (
-        ["/charts/core/bubble.js", "/charts/core/radar.js", "/charts/core/pareto.js", "/charts/core/treemap.js"].some((kind) =>
-          path.endsWith(kind),
-        ) &&
+        [
+          "/charts/core/bubble.js",
+          "/charts/core/radar.js",
+          "/charts/core/pareto.js",
+          "/charts/core/treemap.js",
+          "/charts/core/sankey.js",
+        ].some((kind) => path.endsWith(kind)) &&
         input.bytesInOutput > 0
       )
         throw new Error("Catalog drawing belongs to the lazy Chat module");
@@ -818,6 +823,90 @@ for (const view of [
         "Delivered2, 2 rows",
       ]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+const stock = {
+  view: "table",
+  title: "Stock",
+  columns: [
+    { id: "room", label: "Room", type: "text" },
+    { id: "items", label: "Items", type: "number" },
+  ],
+  rows: [
+    { room: "Hall", items: 42 },
+    { room: "Store", items: 7 },
+  ],
+};
+files["/views/stock-2b3c4d5e.view.json"] = stock;
+
+for (const theme of ["light", "dark"] as const)
+  test(`a Markdown table in a chat answer shares the view table's frame, header band and cell padding (${theme})`, async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=${theme}`);
+      await page.evaluate(
+        (value) => window.show(value),
+        [present("/views/stock-2b3c4d5e.view.json", { view: "table", title: stock.title, rows: 2, columns: 2, footer: false })],
+      );
+      await page.waitForSelector("[data-view-path] table");
+      await page.evaluate(
+        (html) => {
+          const answer = document.createElement("div");
+          answer.className = "assistant-markdown-block";
+          answer.innerHTML = html;
+          document.querySelector("main")!.append(answer);
+        },
+        renderMarkdownSync(["| Room | Items |", "| --- | --: |", "| Hall | 42 |", "| Store | 7 |"].join("\n")),
+      );
+      await settled(page);
+      const look = (kind: "view" | "markdown") =>
+        page.evaluate((kind) => {
+          const host = kind === "view" ? "[data-view-path]" : ".assistant-markdown-block";
+          const frame = document.querySelector(`${host} ${kind === "view" ? ".k2b-table-shell" : ".md-table-wrap"}`)!;
+          const box = frame.getBoundingClientRect();
+          const head = frame.querySelector("thead th")!;
+          const cells = Array.from(frame.querySelectorAll("tbody tr:first-child td"));
+          // DataTable pads its cells; a Markdown cell pads the span inside it.
+          const padded = (cell: Element) => (kind === "view" ? cell : cell.querySelector(":scope > .md-table-cell")!);
+          const style = (element: Element) => getComputedStyle(element);
+          const frameStyle = style(frame);
+          return {
+            frame: {
+              border: `${frameStyle.borderTopWidth} ${frameStyle.borderTopStyle} ${frameStyle.borderTopColor}`,
+              radius: frameStyle.borderTopLeftRadius,
+              fill: frameStyle.backgroundColor,
+              shadow: frameStyle.boxShadow,
+            },
+            band: {
+              fill: style(head).backgroundColor,
+              line: style(head).boxShadow,
+              height: Math.round(head.getBoundingClientRect().height),
+              size: style(head).fontSize,
+              weight: style(head).fontWeight,
+              color: style(head).color,
+            },
+            cells: cells.map((cell) => {
+              const pad = style(padded(cell));
+              return {
+                padding: [pad.paddingTop, pad.paddingRight, pad.paddingBottom, pad.paddingLeft],
+                height: Math.round(cell.getBoundingClientRect().height),
+                line: style(cell).boxShadow,
+                digits: style(cell).fontVariantNumeric,
+                // DataTable writes `left`, a Markdown cell keeps `start`; both read the same.
+                align: ["right", "end"].includes(style(padded(cell)).textAlign) ? "end" : "start",
+              };
+            }),
+            inset: Math.round(cells[0]!.getBoundingClientRect().left - box.left),
+          };
+        }, kind);
+      const view = await look("view");
+      expect(view.frame.shadow).not.toBe("none");
+      expect(view.band.fill).not.toBe("rgba(0, 0, 0, 0)");
+      expect(await look("markdown")).toEqual(view);
     } finally {
       await context.close();
     }

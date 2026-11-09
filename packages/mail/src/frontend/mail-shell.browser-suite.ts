@@ -533,9 +533,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               heights[state] = box.height;
               const ai = (await card.getAttribute("data-mail-summary-ai")) !== null;
               expect(ai, `${state}: AI surface only for AI`).toBe(state !== "person");
-              const background = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
-              if (state === "person") expect(background).not.toBe("rgb(252, 243, 248)");
-              else expect(background).toBe("rgb(252, 243, 248)");
+              // A topic of the reader: a Section island with the AI tone (plum frame, title, ✦) only for AI, never a plum fill.
+              expect(await card.getAttribute("data-tone"), `${state}: AI tone only for AI`).toBe(state === "person" ? null : "ai");
+              const look = await card.evaluate((element) => {
+                const probe = element.parentElement!.appendChild(document.createElement("i"));
+                probe.style.borderTop = "1px solid color-mix(in srgb, var(--k2b-ai-accent) 45%, var(--k2b-surface))";
+                const plum = getComputedStyle(probe).borderTopColor;
+                probe.remove();
+                const style = getComputedStyle(element);
+                return { fill: style.backgroundColor, plumFrame: style.borderTopColor === plum };
+              });
+              expect(look.fill).not.toBe("rgb(252, 243, 248)");
+              expect(look.plumFrame, `${state}: plum frame only for AI`).toBe(state !== "person");
               if (state === "writing") expect(await card.getAttribute("aria-busy")).toBe("true");
               if (state === "stale") await page.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
               if (state === "failed") await card.getByRole("button", { name: "Erneut versuchen" }).waitFor();
@@ -3555,7 +3564,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("phone: the reply pill above the newest message offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
+        test("phone: the reply pill at the bottom, in thumb reach, offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
             const bar = page.locator("[data-mail-reply-pill] .k2b-toolbar");
@@ -3585,12 +3594,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const reachable = new Set([...names.filter((name) => name !== "More actions"), ...inMore]);
             for (const name of ["Reply", "Reply all", "Forward", "Mark as done"]) expect(reachable.has(name), name).toBe(true);
             expect([...reachable].every((name) => ["Reply", "Reply all", "Forward", "Mark as done", "Assign"].includes(name))).toBe(true);
-            // The pill sits inside the reader, above the newest message, and never below the screen.
+            // F1: on a phone the pill waits at the bottom of the reader, below the newest message, never below the screen.
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
             const strip = (await bar.boundingBox())!;
             const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").first().boundingBox())!;
-            expect(strip.y).toBeGreaterThanOrEqual(scroller.y - 0.5);
-            expect(strip.y + strip.height).toBeLessThanOrEqual(newest.y + 0.5);
+            expect(strip.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
+            expect(strip.y + strip.height).toBeLessThanOrEqual(scroller.y + scroller.height + 0.5);
+            expect(strip.y + strip.height).toBeGreaterThan(scroller.y + scroller.height * 0.8);
             // A floating pill on layer 3 carries the toolbar shadow.
             expect(await bar.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
             // The top row keeps the way back, … and the details; the actions live below.
@@ -3933,21 +3943,24 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
 
         test("Reply from a row's menu opens the conversation and starts the reply there", async () => {
-          const page = await open(boxPath);
+          const page = await open(`${boxPath}?identity=1`);
           try {
             const row = page.locator('.mail-workspace [data-conversation-id="Conv01"]');
-            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            // The reply starts as a draft in the conversation: Mail creates it before anyone types.
+            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
             await row.locator("a.mail-list-row").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
             await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-            await drafts;
+            expect((await seed).postDataJSON()).toMatchObject({
+              origin: { kind: "compose", input: { intent: "reply", conversationId: "Conv01" } },
+            });
           } finally {
             await close(page);
           }
         });
 
         test("only the pill shows Reply; a message's right-click and … still reply to that message", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01`);
+          const page = await open(`${boxPath}?conversation=Conv01&identity=1`);
           try {
             await page.waitForFunction(
               () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
@@ -3965,11 +3978,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             for (const name of ["Reply", "Forward"])
               expect(await page.locator(dropdown).getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBe(1);
             await dismiss(page, dropdown);
-            // Right-click on the message: Reply starts the reply flow from this message's own menu.
-            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            // Right-click on the message: Reply starts the draft in the conversation from this message's own menu.
+            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
             await message.locator("[data-mail-message-header]").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
-            await drafts;
+            expect((await seed).postDataJSON()).toMatchObject({
+              origin: { kind: "compose", input: { intent: "reply", sourceMessageId: "Msg001" } },
+            });
           } finally {
             await close(page);
           }

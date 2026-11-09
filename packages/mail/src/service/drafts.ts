@@ -53,6 +53,7 @@ import { applyConversationReferenceToReplySubjectInTransaction } from "./convers
 import { humanDraftEditor, refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
+import { newDraftEditMode } from "./draft-edit-mode";
 import { legacySignature, publicDraftContent, resolveDraftSignature, validateIdentity } from "./draft-validation";
 
 export { resolveDraftSignature, validateIdentity } from "./draft-validation";
@@ -769,6 +770,7 @@ const insertComposeDraftInTransaction = async (params: {
   materializationKey?: string;
   materializationRequestHash?: string;
 }): Promise<Result<MailDraft>> => {
+  const editMode = await newDraftEditMode(params.db, params.mailboxId);
   const identity = await validateIdentity({
     mailboxId: params.mailboxId,
     senderIdentityId: params.content.senderIdentityId,
@@ -803,13 +805,13 @@ const insertComposeDraftInTransaction = async (params: {
     "draft",
     (db, shortId) => db<DbDraft[]>`
     INSERT INTO mail.drafts AS d (
-      short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id,
+      edit_mode, short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id,
       author_kind, author_id, adopted_at, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt,
       materialization_key, materialization_request_hash, signature_template_id, quote_source, quote_locale, quote_time_zone
     ) VALUES (
-      ${shortId},
+      ${editMode}, ${shortId},
       ${params.mailboxId}::uuid,
       ${params.prepared.conversationId}::uuid,
       ${params.prepared.intent},
@@ -1011,6 +1013,7 @@ const insertDerivedDraftInTransaction = async (params: {
   idempotencyKey: string;
   requestHash: string;
 }): Promise<Result<MailDraft>> => {
+  const editMode = await newDraftEditMode(params.db, params.mailboxId);
   const identity = await validateIdentity({
     mailboxId: params.mailboxId,
     senderIdentityId: params.content.senderIdentityId,
@@ -1022,14 +1025,14 @@ const insertDerivedDraftInTransaction = async (params: {
     "draft",
     (db, shortId) => db<DbDraft[]>`
     INSERT INTO mail.drafts AS d (
-      short_id, mailbox_id, conversation_id, intent, source_message_id,
+      edit_mode, short_id, mailbox_id, conversation_id, intent, source_message_id,
       derived_from_message_id, derivation_kind, derivation_key, derivation_request_hash,
       sender_identity_id, signature_template_id, quote_source, quote_locale, quote_time_zone,
       author_kind, author_id, adopted_at, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt
     ) VALUES (
-      ${shortId},
+      ${editMode}, ${shortId},
       ${params.mailboxId}::uuid, NULL, 'new', NULL,
       ${params.prepared.messageId}::uuid, ${params.prepared.kind}, ${params.idempotencyKey}, ${params.requestHash},
       ${params.content.senderIdentityId}::uuid, ${params.content.signatureTemplateId ?? null}::uuid, ${params.content.quoteSource !== null}, ${params.content.quoteSource?.locale ?? "en"}, ${params.content.quoteSource?.timeZone ?? "UTC"},

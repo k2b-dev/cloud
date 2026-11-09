@@ -1174,6 +1174,8 @@ CREATE INDEX drafts_mailbox_state_idx ON mail.drafts USING btree (mailbox_id, st
 
 CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING btree (mailbox_id, author_kind, author_id, materialization_key) WHERE (materialization_key IS NOT NULL);
 
+CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
+
 CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
 WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL;
 
@@ -1428,9 +1430,11 @@ CREATE TABLE mail.mailboxes (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     automatic_reply_management_permission text DEFAULT 'admin'::text NOT NULL,
     compose_safety jsonb DEFAULT '{"internalDomains": [], "largeRecipientThreshold": 20}'::jsonb NOT NULL,
+    draft_edit_mode text DEFAULT 'lock'::text NOT NULL,
     calendar_space_id uuid,
     CONSTRAINT mailboxes_automatic_reply_management_permission_check CHECK ((automatic_reply_management_permission = ANY (ARRAY['write'::text, 'admin'::text]))),
     CONSTRAINT mailboxes_compose_safety_check CHECK ((jsonb_typeof(compose_safety) = 'object'::text)),
+    CONSTRAINT mailboxes_draft_edit_mode_check CHECK (draft_edit_mode IN ('lock', 'shared')),
     CONSTRAINT mailboxes_description_check CHECK (((description IS NULL) OR (char_length(description) <= 2000))),
     CONSTRAINT mailboxes_health_check CHECK ((health = ANY (ARRAY['disconnected'::text, 'verifying'::text, 'bootstrapping'::text, 'active'::text, 'auth_required'::text, 'degraded'::text, 'reconnecting'::text, 'connection_required'::text, 'paused'::text]))),
     CONSTRAINT mailboxes_health_reason_check CHECK (((health_reason IS NULL) OR (char_length(health_reason) <= 1000))),

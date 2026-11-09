@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { DetailPanelHarness } from "./detail-panel.browser-harness";
 
 // Each fixture types its browser window locally; other harnesses use the same property.
@@ -162,12 +162,12 @@ const closeTo = (actual: number, expected: number, tolerance = 1) => expect(Math
 const sameBox = (actual: Awaited<ReturnType<typeof box>>, expected: Awaited<ReturnType<typeof box>>) => {
   for (const key of ["x", "y", "width", "height"] as const) closeTo(actual[key], expected[key], 0.5);
 };
-const header = ".k2b-discussion__header";
+const header = ".k2b-discussion > .k2b-section__header";
 /** A panel section by its title, open or closed. */
-const titled = (title: string) => `section.k2b-detail-panel__section:has(h3:text-is("${title}"))`;
+const titled = (title: string) => `section.k2b-section:has(.k2b-section__title:text-is("${title}"))`;
 const access = titled("Zugriff");
-const presence = "section.k2b-detail-panel__section:has(.k2b-detail-presence)";
-const contents = '.k2b-detail-panel__section:has(h3:text-is("Inhalt"))';
+const presence = "section.k2b-section:has(.k2b-detail-presence)";
+const contents = 'section.k2b-section:has(.k2b-section__title:text-is("Inhalt"))';
 
 for (const width of [1440, 390]) {
   test(`${width}: every section's content starts on its title's text edge`, async () => {
@@ -184,9 +184,7 @@ for (const width of [1440, 390]) {
       await settle(page);
       const edges = await page.evaluate(() => {
         const visible = (element: Element) => element.getBoundingClientRect().width > 0 && element.getClientRects().length > 0;
-        const titles = [
-          ...document.querySelectorAll(".k2b-detail-panel__body :is(.k2b-detail-panel__section-header h3, .k2b-discussion__header h3)"),
-        ]
+        const titles = [...document.querySelectorAll(".k2b-detail-panel__body .k2b-section__title")]
           .filter(visible)
           .map((element) => ({ label: element.textContent, x: element.getBoundingClientRect().left }));
         // Ink is what a person sees: text, icons and their filled tiles, avatars, images, bars. Hover fills and
@@ -208,17 +206,17 @@ for (const width of [1440, 390]) {
           }
           return left;
         };
-        const bodies = [...document.querySelectorAll(".k2b-detail-panel__body :is(.k2b-detail-panel__section-body, .k2b-discussion__body)")]
+        const bodies = [...document.querySelectorAll(".k2b-detail-panel__body .k2b-section__body")]
           .filter((body) => visible(body) && !body.closest("[hidden]"))
           .map((body) => ({
-            label: body.closest("section")?.querySelector("h3")?.textContent ?? "",
+            label: body.closest("section")?.querySelector(".k2b-section__title")?.textContent ?? "",
             x: inkLeft(body),
           }))
           .filter((body) => Number.isFinite(body.x));
         // Each row on its own, so one row stepping in or back is not hidden by another on the edge.
         const rows = [
           ...document.querySelectorAll(
-            ".k2b-detail-panel__body :is(.k2b-detail-panel__section-body, .k2b-discussion__body) :is(.k2b-detail-panel__action:not(.notebook-outline-row:not([data-depth='0'])), .k2b-detail-panel__row, .k2b-discussion__item, .k2b-file-grid__item, .k2b-detail-section-label, .k2b-detail-tags > li:first-child, .k2b-detail-properties dt, .k2b-detail-presence__strip, .k2b-detail-presence__where)",
+            ".k2b-detail-panel__body .k2b-section__body :is(.k2b-detail-panel__action:not(.notebook-outline-row:not([data-depth='0'])), .k2b-detail-panel__row, .k2b-discussion__item, .k2b-file-grid__item, .k2b-detail-section-label, .k2b-detail-tags > li:first-child, .k2b-detail-properties dt, .k2b-detail-presence__strip, .k2b-detail-presence__where)",
           ),
         ]
           .filter((row) => visible(row) && !row.closest("[hidden]"))
@@ -226,7 +224,7 @@ for (const width of [1440, 390]) {
           .filter((row) => Number.isFinite(row.x));
         const right = [
           ...document.querySelectorAll(
-            ".k2b-discussion__timestamp, .notebook-activity .notebook-time time, .k2b-detail-panel__section-actions .k2b-button, .k2b-discussion__actions .k2b-button",
+            ".k2b-discussion__timestamp, .notebook-activity .notebook-time time, .k2b-section__actions .k2b-button",
           ),
         ]
           .filter(visible)
@@ -301,7 +299,7 @@ for (const width of [1440, 390]) {
   test(`${width}: people coming, going, and the connection failing never move the panel`, async () => {
     const { page } = await open(width);
     try {
-      const tracked = [presence, ".k2b-discussion__header", `${contents} .k2b-detail-panel__section-header`];
+      const tracked = [presence, header, `${contents} > .k2b-section__header`];
       const outlineTitle = `${contents} .notebook-outline-row .k2b-detail-panel__action-title`;
       const loading = await Promise.all([...tracked, outlineTitle].map((selector) => box(page, selector)));
       const steps: [string, () => void][] = [
@@ -340,7 +338,7 @@ for (const width of [1440, 390]) {
     try {
       // Closed, the section names the first entries once the list has loaded after the first paint.
       await page
-        .locator(`${access} .k2b-detail-panel__section-preview`, { hasText: "Lager-Team, Jana Berger und 5 weitere" })
+        .locator(`${access} .k2b-section__summary`, { hasText: "Lager-Team, Jana Berger und 5 weitere" })
         .waitFor({ state: "attached" });
       await page
         .getByRole("button", { name: /^Zugriff/, expanded: false })
@@ -368,7 +366,7 @@ for (const width of [1440, 390]) {
     const { page, release } = await open(width, true);
     try {
       expect(await page.locator(".notebook-activity-skeleton").count()).toBe(4);
-      const tracked = [header, `${contents} .k2b-detail-panel__section-header`, ".k2b-discussion__item"];
+      const tracked = [header, `${contents} > .k2b-section__header`, ".k2b-discussion__item"];
       const before = await Promise.all(tracked.map((selector) => box(page, selector)));
       release();
       await page.locator(".notebook-activity-skeleton").first().waitFor({ state: "detached" });
@@ -493,7 +491,7 @@ for (const width of [320, 390, 768, 1440]) {
           expect(control.x + control.width).toBeLessThanOrEqual(width);
         }
         for (const control of [ai, view]) {
-          await control.hover();
+          await hoverInPlace(control);
           await settled(page);
           expect(await metrics()).toEqual(before);
         }

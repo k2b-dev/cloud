@@ -12,6 +12,7 @@ import {
   IconButton,
   isStructuredDataValue,
   prompts,
+  Section,
   StructuredDataPreview,
   Tooltip,
   toast,
@@ -170,7 +171,7 @@ export default function RecordDocumentsSection(props: {
               subtitle={t().snapshotFrom({ date: formatRecordRelativeTime(snapshot.createdAt) })}
               more={
                 <>
-                  <DetailPanel.Section title={t().metadata} icon="ti ti-info-square" collapsible summary={t().snapshotSummary}>
+                  <Section title={t().metadata} icon="ti ti-info-square" collapsible summary={t().snapshotSummary}>
                     <DescriptionList
                       layout="rows"
                       size="sm"
@@ -181,13 +182,8 @@ export default function RecordDocumentsSection(props: {
                         { term: t().createdBy, description: snapshot.createdBy ?? t().system },
                       ]}
                     />
-                  </DetailPanel.Section>
-                  <DetailPanel.Section
-                    title={t().rawSnapshotData}
-                    icon="ti ti-braces"
-                    collapsible
-                    summary={`${t().rootRecord}, ${t().recordGraph}`}
-                  >
+                  </Section>
+                  <Section title={t().rawSnapshotData} icon="ti ti-braces" collapsible summary={`${t().rootRecord}, ${t().recordGraph}`}>
                     <div class="flex flex-col gap-3">
                       <StructuredDataPreview
                         title={t().rootRecord}
@@ -200,7 +196,7 @@ export default function RecordDocumentsSection(props: {
                         defaultMode="raw"
                       />
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
                 </>
               }
             />
@@ -259,7 +255,7 @@ export default function RecordDocumentsSection(props: {
 
   const documentsSection = (
     <Show when={generatedDocuments().length > 0 || (props.live && props.canWrite && availableTemplates().length > 0)}>
-      <DetailPanel.Section
+      <Section
         title={t().documents}
         icon="ti ti-file-text"
         count={hasMoreDocuments() || generatedDocuments().length === 0 ? undefined : generatedDocuments().length}
@@ -323,13 +319,13 @@ export default function RecordDocumentsSection(props: {
             {t().loadMore}
           </Button>
         </Show>
-      </DetailPanel.Section>
+      </Section>
     </Show>
   );
 
   const snapshotsSection = (
     <Show when={props.live || manualSnapshots().length > 0}>
-      <DetailPanel.Section
+      <Section
         title={t().snapshots}
         icon="ti ti-camera"
         count={manualSnapshots().length || undefined}
@@ -368,7 +364,7 @@ export default function RecordDocumentsSection(props: {
             aria-busy={createSnapshotMut.loading()}
           />
         </Show>
-      </DetailPanel.Section>
+      </Section>
     </Show>
   );
 

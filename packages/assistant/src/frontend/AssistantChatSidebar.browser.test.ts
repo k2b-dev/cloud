@@ -279,7 +279,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     const page = await clientPage(1280);
     try {
       const sidebar = page.locator("#assistant-chat-context");
-      const heading = page.locator(".assistant-sidebar-results .k2b-detail-panel__section-header");
+      const heading = page.locator(".assistant-sidebar-results .k2b-section__header");
       const box = (await sidebar.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + 300);
       const before = await layout(page);
@@ -622,9 +622,7 @@ for (const theme of ["light", "dark"] as const)
         const panel = page.locator(width === 390 ? ".assistant-context-sheet" : ".assistant-context-sidebar__panel");
         await panel.waitFor();
         const paint = await panel.evaluate((element) => {
-          const sections = Array.from(
-            element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-detail-panel__section"),
-          );
+          const sections = Array.from(element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-section"));
           const aside = element.closest(".assistant-context-sidebar");
           const surface = document.createElement("span");
           surface.style.background = "var(--k2b-surface)";

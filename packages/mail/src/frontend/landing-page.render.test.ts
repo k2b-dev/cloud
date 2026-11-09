@@ -61,6 +61,7 @@ const listed = (shortIds: string[], permission: "read" | "none" = "read") =>
     searchBackend: "auto" as const,
     automaticReplyManagementPermission: "admin" as const,
     accessScope: "mailbox" as const,
+    draftEditMode: "lock" as const,
     composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
     createdAt: "2026-10-14T10:00:00Z",
     updatedAt: "2026-10-14T10:00:00Z",

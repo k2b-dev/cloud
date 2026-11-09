@@ -95,7 +95,7 @@ describe("Capabilities workspace detail panel", () => {
     expect(html.slice(more)).toContain("Input schema · Data schema");
     expect(html).toContain('aria-label="Close capability details"');
     // No section icons in the outline.
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).not.toContain("Action policy");
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
   });

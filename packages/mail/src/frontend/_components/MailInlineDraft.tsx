@@ -4,13 +4,18 @@ import { createResource, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailDraft, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
-import MailComposer, { type MailComposerHost } from "./MailComposer";
+import type { MailComposerHost } from "./MailComposer";
 import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { createDefaultMailComposerPanesLayout } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 
-type InlineDraftData = { draft: MailDraft; uploads: UnfinishedDraftUpload[]; signatures: MailComposerSignatures };
+type InlineDraftData = {
+  draft: MailDraft;
+  uploads: UnfinishedDraftUpload[];
+  signatures: MailComposerSignatures;
+  Composer: typeof import("./MailComposer").default;
+};
 
 /**
  * A draft inside its conversation. It loads what the compose page loads on the server (the draft, its unfinished
@@ -37,7 +42,9 @@ export default function MailInlineDraft(props: {
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const load = async (draftId: string): Promise<InlineDraftData> => {
     const param = { mailboxId: props.mailboxId };
-    const [draftResponse, uploadsResponse, templatesResponse, defaultsResponse] = await Promise.all([
+    // The composer and its contracts load with the draft, not with the mailbox: most visits never write.
+    const [composer, draftResponse, uploadsResponse, templatesResponse, defaultsResponse] = await Promise.all([
+      import("./MailComposer"),
       props.initialDraft?.id === draftId
         ? null
         : apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$get({ param: { ...param, draftId } }),
@@ -52,6 +59,7 @@ export default function MailInlineDraft(props: {
     const templates = templatesResponse.ok ? await templatesResponse.json() : [];
     const defaults = defaultsResponse.ok ? await defaultsResponse.json() : [];
     return {
+      Composer: composer.default,
       draft,
       uploads: uploads.map(({ id, filename, byteLength, receivedBytes }) => ({ id, filename, byteLength, receivedBytes })),
       signatures: {
@@ -87,7 +95,7 @@ export default function MailInlineDraft(props: {
       }
     >
       {(loaded) => (
-        <MailComposer
+        <loaded.Composer
           host={props.host}
           mailboxId={props.mailboxId}
           mailboxRecipientSuggestions={props.mailboxRecipientSuggestions}

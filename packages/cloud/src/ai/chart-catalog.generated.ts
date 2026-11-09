@@ -69,7 +69,7 @@ export const chartCatalog = [
   },
   {
     name: 'bar (layout "rows")',
-    useFor: "Category values with readable row labels",
+    useFor: "Signed or positive category values",
     avoidFor: "A continuous time axis",
     example: {
       kind: "bar",
@@ -79,6 +79,24 @@ export const chartCatalog = [
         { label: "Furniture", value: 84 },
         { label: "Lighting", value: 62 },
         { label: "Pictures", value: 39 },
+      ],
+    },
+  },
+  {
+    name: 'bar (layout "nested")',
+    useFor: "Counts nested inside a known capacity",
+    avoidFor: "Independent series or exact small differences",
+    example: {
+      kind: "bar",
+      title: "Campaign engagement",
+      layout: "nested",
+      marks: "dots",
+      total: 1000,
+      dots: 100,
+      x: ["Mon", "Tue", "Wed"],
+      series: [
+        { label: "Opened", data: [780, 620, 810] },
+        { label: "Clicked", data: [320, 210, 420] },
       ],
     },
   },
@@ -128,7 +146,8 @@ export const chartCatalog = [
   },
   {
     name: "line",
-    useFor: "A value that changes continuously, such as visitors, revenue or response time.",
+    useFor:
+      "A value that changes continuously, such as visitors, revenue or response time. Forecasts add forecast, threshold, marker, zero, step and legendValues.",
     avoidFor: "Categories without an order, such as products or countries; use a bar chart.",
     example: {
       kind: "line",
@@ -392,6 +411,26 @@ export const chartCatalog = [
       series: [
         { label: "Plan A", data: [4, 3, 2] },
         { label: "Plan B", data: [2, 4, 4] },
+      ],
+    },
+  },
+  {
+    name: "sankey",
+    useFor: "Converging and diverging flows with a common unit.",
+    avoidFor: "Cycles or unrelated measures; use bars for unrelated categories.",
+    example: {
+      kind: "sankey",
+      title: "Paths after the click",
+      nodes: [
+        { id: "click", label: "Clicked", tone: "blue" },
+        { id: "article", label: "Article", tone: "green" },
+        { id: "offer", label: "Offer", tone: "violet" },
+        { id: "signup", label: "Signed up", tone: "in" },
+      ],
+      links: [
+        { source: "click", target: "article", value: 520 },
+        { source: "click", target: "offer", value: 280 },
+        { source: "article", target: "signup", value: 140 },
       ],
     },
   },

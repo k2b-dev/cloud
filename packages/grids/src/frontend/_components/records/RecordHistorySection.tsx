@@ -1,6 +1,6 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 import type { DateContext } from "@k2b/stdlib";
-import { DetailPanel, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
+import { IconButton, Placeholder, Section, Tooltip, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { PublicRecordHistoryEntry as RecordHistoryEntry } from "../../../api/public-audit";
 import type { PublicField as Field } from "../../../api/public-dto";
@@ -221,7 +221,7 @@ export default function RecordHistorySection(props: HistoryProps) {
   const t = () => recordMessages.resolve([locale()]).t;
   const latest = () => props.entries[0];
   return (
-    <DetailPanel.Section
+    <Section
       title={t().history}
       icon="ti ti-history"
       count={props.entries.length || undefined}
@@ -233,6 +233,6 @@ export default function RecordHistorySection(props: HistoryProps) {
       }
     >
       <RecordHistoryList {...props} />
-    </DetailPanel.Section>
+    </Section>
   );
 }

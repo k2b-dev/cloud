@@ -529,7 +529,7 @@ for (const touch of [false, true])
     const { context, tab, errors } = await open(1200, "light", "", "en", true, true, touch);
     try {
       const host = tab.locator("#root");
-      const preview = tab.locator(".k2b-detail-panel__section").filter({ has: tab.getByRole("heading", { name: "Preview", exact: true }) });
+      const preview = tab.locator(".k2b-section").filter({ has: tab.getByRole("heading", { name: "Preview", exact: true }) });
       const modified = tab.locator(".filesv2-inspector-info .k2b-description-list__item").filter({ hasText: "Modified" });
       const versions = tab.locator(".filesv2-inspector-versions");
       const count = tab

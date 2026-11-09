@@ -7,6 +7,7 @@ import {
   DetailPanel,
   DetailProperties,
   type DropdownItem,
+  Section,
   StatusBadge,
   useLocale,
 } from "@k2b/ui";
@@ -218,7 +219,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
         {props.notices}
 
         <Show when={detailsFields().length > 0 || bodyFields().length === 0}>
-          <DetailPanel.Section title={t().fields} icon="ti ti-list-details">
+          <Section title={t().fields} icon="ti ti-list-details">
             <Show when={detailsFields().length > 0} fallback={<p class="grids-details-none">{t().noValues}</p>}>
               <DescriptionList
                 layout="rows"
@@ -229,7 +230,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
                 }))}
               />
             </Show>
-          </DetailPanel.Section>
+          </Section>
         </Show>
 
         {/* Order of use (UI-27): fields, then the discussion, then the record's own content and what belongs to it. */}
@@ -237,13 +238,9 @@ export default function RecordReadView(props: RecordReadViewProps) {
 
         <For each={contentFields()}>
           {(field) => (
-            <DetailPanel.Section
-              title={field.name}
-              icon={fieldTypeIcon(field.type, field.icon)}
-              description={field.description ?? undefined}
-            >
+            <Section title={field.name} icon={fieldTypeIcon(field.type, field.icon)} description={field.description ?? undefined}>
               <div class="break-words text-sm leading-relaxed text-secondary">{renderField(field, props.record)}</div>
-            </DetailPanel.Section>
+            </Section>
           )}
         </For>
 
@@ -252,7 +249,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
           when={mode() !== "snapshot"}
           fallback={
             <Show when={relationFields().length > 0}>
-              <DetailPanel.Section title={t().linked} icon="ti ti-arrows-exchange">
+              <Section title={t().linked} icon="ti ti-arrows-exchange">
                 <DescriptionList
                   layout="rows"
                   size="sm"
@@ -264,7 +261,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
                         .join(", ") || "—",
                   }))}
                 />
-              </DetailPanel.Section>
+              </Section>
             </Show>
           }
         >
@@ -281,7 +278,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
         </Show>
 
         <Show when={fileFields().length > 0}>
-          <DetailPanel.Section title={t().files} icon="ti ti-paperclip">
+          <Section title={t().files} icon="ti ti-paperclip">
             <div class="flex flex-col gap-3">
               <For each={fileFields()}>
                 {(field) => (
@@ -296,7 +293,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
                 )}
               </For>
             </div>
-          </DetailPanel.Section>
+          </Section>
         </Show>
         {props.attachmentsAfter}
 

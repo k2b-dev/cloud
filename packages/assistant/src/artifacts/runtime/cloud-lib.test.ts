@@ -8,10 +8,34 @@ import {
 } from "@k2b/cloud/ai/browser";
 import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
+import { parseRows069, positiveRows069Json, signedRows069Json } from "../../../../ui/test/chart-rows-069-fixture";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight, resolveChartHtml } from "./lib";
+import { boundMoney, chart, chartOptions, chartRendererKind, chartSvg, html, pendingChartHeight, resolveChartHtml } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
+
+test("saved 0.69 signed rows render synchronously in app frames and remain printable", async () => {
+  const signedRows069 = parseRows069(signedRows069Json);
+  const markup = String(chart(signedRows069, "en-US"));
+  expect(markup).toContain('data-bar-layout="rows"');
+  expect(markup).not.toMatch(/data-chart-pending|k2b-chart-ranked|NaN|Infinity/);
+  expect(markup).toContain(">-12</text>");
+  expect(markup).toContain(">-4</text>");
+  expect(cloudAiChartTable(cloudAiAppChartSchema().parse(signedRows069), "en-US").rows.map((row) => row.values.value)).toEqual([
+    -12, 30, -4, 0,
+  ]);
+  expect(await resolveChartHtml(markup, "en-US")).toBe(markup);
+});
+
+test("frozen positive 0.69 rows keep their original drawing in app frames", async () => {
+  for (const json of Object.values(positiveRows069Json)) {
+    const markup = String(chart(parseRows069(json), "en-US"));
+    expect(markup).toContain('data-bar-layout="rows"');
+    expect(markup).not.toMatch(/data-chart-pending|k2b-chart-ranked|NaN|Infinity/);
+    expect(markup.indexOf(">Young</text>")).toBeLessThan(markup.indexOf(">Adult</text>"));
+    expect(await resolveChartHtml(markup, "en-US")).toBe(markup);
+  }
+});
 
 test("PDF preparation only resolves actual chart placeholders", async () => {
   const content = '<div data-chart-pending="author-id">Report</div>';
@@ -853,4 +877,60 @@ test("cloud.chart renders funnels with start and previous shares in app frames",
   expect(markup).toContain("Anteil am vorigen Schritt");
   expect(markup).not.toContain("<style>");
   expect(markup).not.toMatch(/NaN|Infinity/);
+});
+
+test("cloud.chart preserves nested dot counts and grey capacity in app frames", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "bar",
+        title: "Campaign",
+        marks: "dots",
+        layout: "nested",
+        total: 100,
+        dots: 20,
+        x: ["A"],
+        series: [
+          { label: "Opened", data: [80] },
+          { label: "Clicked", data: [30] },
+        ],
+      },
+      "de-DE",
+    ),
+  );
+  expect(markup.match(/class="k2b-chart-dot"/g)).toHaveLength(20);
+  expect(markup).toContain('data-dot-series="remainder"');
+  expect(markup).toContain("Gesamt");
+  expect(markup).not.toContain("<style>");
+});
+
+test("only dot matrices load the dots part while ordinary bars retain the immediate renderer", () => {
+  expect(chartRendererKind({ kind: "bar", title: "Counts", marks: "dots", layout: "nested", data: [] })).toBe("dots");
+  expect(chartRendererKind({ kind: "bar", title: "Counts", data: [] })).toBe("bar");
+  expect(chartRendererKind({ kind: "histogram", title: "Counts", data: [1, 2] })).toBe("histogram");
+});
+
+test("app-frame share legends keep the latest month instead of summing percentages", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "bar",
+        title: "Newsletter",
+        marks: "dots",
+        layout: "nested",
+        total: 1,
+        dots: 20,
+        x: ["Jan", "Feb", "Mar"],
+        format: { style: "percent" },
+        series: [
+          { label: "Opened", data: [0.5, 0.6, 0.7] },
+          { label: "Clicked", data: [0.2, 0.3, 0.4] },
+        ],
+      },
+      "en",
+    ),
+  );
+  expect(markup).toContain('data-default="70%"');
+  expect(markup).toContain('data-default="40%"');
+  expect(markup).not.toContain('data-default="180%"');
 });

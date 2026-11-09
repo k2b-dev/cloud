@@ -563,6 +563,54 @@ export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: (
 };
 
 /**
+ * Moves the pointer onto `position` inside `target` without scrolling, after checking that the target is the
+ * element there, as `hover()` does. Use it where a test compares boxes in viewport coordinates around a hover:
+ * `Locator.hover()` retries a failed actionability check with its own `scrollIntoView` (`block: "end"`, then
+ * `"center"` and `"start"`), so one transient retry moves the page and the test measures Playwright, not the
+ * page (#3013). Here only the first attempt's scroll happens: a target not fully in view scrolls in once. A view
+ * transition, during which `<html>` takes all pointer input, is waited out in the target's frame; any other cover
+ * fails at once instead of a retry. A target that a render replaces meanwhile is looked up again, as `hover()`
+ * does, without another kind of scroll. Without `position`, the pointer goes to the center of the target's first
+ * line box, as with `hover()`. The `hover-in-place` check asks for it wherever a test reads geometry before and
+ * after a hover.
+ */
+export const hoverInPlace = async (target: Locator, position?: { x: number; y: number }): Promise<void> => {
+  const replaced = (error: unknown) => error instanceof Error && error.message.includes("Element is not attached to the DOM");
+  // Each round looks the target up again; only a target that a render replaced starts another one.
+  for (;;) {
+    // As hover()'s first attempt: a target that is not fully in view scrolls in once; one in view stays put.
+    const scrolled = await target.scrollIntoViewIfNeeded().then(
+      () => true,
+      (error: unknown) => {
+        if (replaced(error)) return false;
+        throw error;
+      },
+    );
+    if (!scrolled) continue;
+    const hit = await target.evaluate(async (element, offset) => {
+      const document = element.ownerDocument as Document & { activeViewTransition?: unknown };
+      while (document.activeViewTransition) await new Promise((resolve) => requestAnimationFrame(resolve));
+      if (!element.isConnected) return undefined;
+      const box = element.getBoundingClientRect();
+      // Without a position, as hover(): the center of the first line box, so a wrapped link is hit on its text.
+      const first = [...element.getClientRects()].find((rect) => rect.width > 0 && rect.height > 0) ?? box;
+      const x = offset ? offset.x : first.x - box.x + first.width / 2;
+      const y = offset ? offset.y : first.y - box.y + first.height / 2;
+      const top = document.elementFromPoint(box.x + x, box.y + y);
+      const name = (node: Element | null) => (node ? `${node.tagName.toLowerCase()}${node.id ? `#${node.id}` : ""}` : "nothing");
+      return { x, y, inside: top !== null && (top === element || element.contains(top)), top: name(top) };
+    }, position);
+    if (!hit) continue;
+    if (!hit.inside) throw new Error(`hoverInPlace: ${hit.top} is at the point, not the target`);
+    // The hit test ran in the target's frame; the mouse moves in the page's coordinates, also for a target in a frame.
+    const box = await target.boundingBox();
+    if (!box) continue;
+    await target.page().mouse.move(box.x + hit.x, box.y + hit.y);
+    return;
+  }
+};
+
+/**
  * Guards against state sampled before it settled (#1476, #1499).
  * Waits for fonts, running finite document-timeline animations, then two frames.
  * Infinite, scroll-driven, and paused animations are not waited for. A page that

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-02
+updated: 2026-11-09
 ---
 
 # Deployment requirements
@@ -661,6 +661,13 @@ receive `operation_busy`. Size memory for the existing 50 MiB per-file and
 the memory occupied by files loaded for analysis. View files are ordinary chat
 files under `/views` and count toward the per-chat file budget; they need no
 configuration or migration.
+
+Notebooks PDF charts and browser print copies now use the eight-color UI
+palette, including violet for the fourth series. Notes share-image charts
+use the same palette. Previously exported PDFs and preview images may have
+different series colors; values, geometry and explicit semantic colors are
+unchanged. No configuration or data migration is required. Hosts that load
+the chart stylesheet retain their existing drawing markup.
 
 Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
 through the same options mapping as chat charts. Existing charts keep drawing:
