@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, Skeleton } from "@k2b/ui";
+import { Button, Section, Skeleton } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readResponseError } from "../../../lib/response";
@@ -71,7 +71,7 @@ export default function ItemHistorySection(props: Props) {
   };
 
   return (
-    <DetailPanel.Section title={t.history} icon="ti ti-history">
+    <Section title={t.history} icon="ti ti-history">
       <Show
         when={history.pages().length || !history.loading()}
         fallback={
@@ -121,6 +121,6 @@ export default function ItemHistorySection(props: Props) {
           </Button>
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
