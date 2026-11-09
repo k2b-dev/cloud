@@ -582,6 +582,7 @@ export function mailboxData(url: URL): MailboxPageData {
                                   }
                                 : { kind: "user" as const, id: "00000000-0000-4000-8000-0000000000e2", displayName: "Jonas Example" },
                             ],
+                            suggestedBy: url.searchParams.has("suggestion") ? (url.searchParams.get("suggestionBy") ?? "Gustav") : null,
                           },
                         }
                       : row,

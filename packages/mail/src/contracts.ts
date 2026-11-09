@@ -3495,8 +3495,8 @@ export const draftSchema = z.object({
   requestReadReceipt: z.boolean(),
   attachments: z.array(draftAttachmentSchema),
   suggestion: z.boolean(),
-  /** Name of the account that suggested this untouched draft; null once it is no suggestion. */
-  suggestedBy: z.string().min(1).nullable(),
+  /** Name of the account that suggested this untouched draft; null once it is no suggestion. Absent from older pods. */
+  suggestedBy: z.string().min(1).nullable().optional(),
   createdBy: draftActorRefSchema,
   lastEditedBy: draftActorRefSchema,
   lastEditedByDisplayName: z.string().min(1),
@@ -3534,6 +3534,8 @@ export const conversationListDraftsSchema = z
           .strict(),
       )
       .max(3),
+    /** Account behind the conversation's only draft while it is an untouched suggestion. Absent from older pods. */
+    suggestedBy: z.string().min(1).nullable().optional(),
   })
   .strict();
 export type ConversationListDrafts = z.infer<typeof conversationListDraftsSchema>;

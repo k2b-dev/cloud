@@ -34,7 +34,7 @@ const previousMailStartup = (previousLiveFunction: string) =>
  * to lose when the baseline is regenerated.
  */
 suite("mail baseline schema", () => {
-  test("records the baseline and principal-assignee marker once and preserves their timestamps on rerun", async () => {
+  test("records the baseline and compatibility markers once and preserves their timestamps on rerun", async () => {
     await migrate();
     const first = await sql<{ version: number; name: string; applied_at: Date }[]>`
       SELECT version, name, applied_at FROM mail.schema_migrations ORDER BY version
@@ -42,6 +42,7 @@ suite("mail baseline schema", () => {
     expect(first.map(({ version, name }) => ({ version, name }))).toEqual([
       { version: 1, name: "baseline" },
       { version: 2, name: "principal_assignees" },
+      { version: 3, name: "suggestions_per_author" },
     ]);
     await migrate();
     expect(
@@ -144,6 +145,8 @@ suite("mail baseline schema", () => {
       const indexes = await sql<{ indexname: string }[]>`SELECT indexname FROM pg_indexes
         WHERE schemaname = 'mail' AND indexname LIKE 'drafts_untouched_suggestion%' ORDER BY indexname`;
       expect(indexes.map((row) => row.indexname)).toEqual(["drafts_untouched_suggestion_author_idx"]);
+      // The marker that makes older images, which would recreate the old index, refuse to start.
+      expect(await sql`SELECT 1 FROM mail.schema_migrations WHERE version = 3 AND name = 'suggestions_per_author'`).toHaveLength(1);
       const suggest = (author: string) => sql`INSERT INTO mail.drafts
         (short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id, author_kind, author_id,
           last_editor_kind, last_editor_id)
@@ -165,7 +168,7 @@ suite("mail baseline schema", () => {
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;
-    expect(rows).toEqual([{ version: 1 }, { version: 2 }]);
+    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
     // pg_locks spans the whole server; other databases on it may hold advisory locks of their own.
     const [locks] = await sql<{ held: number }[]>`
       SELECT count(*)::int AS held
@@ -192,7 +195,7 @@ suite("mail baseline schema", () => {
     const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
       VALUES (${newShortId()}, 'Newer schema data') RETURNING id`;
     if (!mailbox) throw new Error("Newer schema fixture missing");
-    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (3, 'future_schema')`;
+    await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (4, 'future_schema')`;
     try {
       const before = await sql`SELECT * FROM mail.schema_migrations ORDER BY version`;
       const live = await liveFunctionDefinition();
@@ -201,7 +204,7 @@ suite("mail baseline schema", () => {
         (error: unknown) => error,
       );
       expect(failure).toBeInstanceOf(Error);
-      expect(String(failure)).toContain("3 (future_schema)");
+      expect(String(failure)).toContain("4 (future_schema)");
       expect(String(failure)).toContain("Use an image compatible with this schema");
       expect(String(failure)).not.toContain("DROP SCHEMA");
       expect(await liveFunctionDefinition()).toBe(live);
@@ -210,7 +213,7 @@ suite("mail baseline schema", () => {
         { name: "Newer schema data" },
       ]);
     } finally {
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 3`;
+      await sql`DELETE FROM mail.schema_migrations WHERE version = 4`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
     }
     await migrate();
@@ -278,7 +281,7 @@ suite("mail baseline schema", () => {
       receipt_pending: "false",
       signature_template_id: true,
       signature_template_fk: true,
-      versions: 2,
+      versions: 3,
     });
   });
 
@@ -329,7 +332,8 @@ suite("mail baseline schema", () => {
       await sql`ALTER TABLE mail.conversation_assignees DROP COLUMN service_account_id`;
       await sql`ALTER TABLE mail.conversation_assignees ALTER COLUMN user_id SET NOT NULL`;
       await sql`ALTER TABLE mail.conversation_assignees ADD PRIMARY KEY (conversation_id, user_id)`;
-      await sql`DELETE FROM mail.schema_migrations WHERE version = 2`;
+      // The schema before both compatibility markers.
+      await sql`DELETE FROM mail.schema_migrations WHERE version IN (2, 3)`;
       // This is the preceding function body: only people receive assignment updates.
       const previousLive = (await liveFunctionDefinition()).replaceAll("assignee.principal_id", "assignee.user_id");
       expect(previousLive).toContain("assignee.user_id");
@@ -345,6 +349,7 @@ suite("mail baseline schema", () => {
       expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`).toEqual([
         { version: 1, name: "baseline" },
         { version: 2, name: "principal_assignees" },
+        { version: 3, name: "suggestions_per_author" },
       ]);
       // The marker excludes the predecessor even before the first account assignment.
       await expect(previousMailStartup(previousLive)).rejects.toThrow("Previous Mail refuses non-baseline schema history");
@@ -724,7 +729,7 @@ suite("mail baseline schema", () => {
       expect((await displays())[older]).toBe("everywhere");
 
       const [shape] = await sql<{ versions: number }[]>`SELECT count(*)::int AS versions FROM mail.schema_migrations`;
-      expect(shape).toEqual({ versions: 2 });
+      expect(shape).toEqual({ versions: 3 });
       const invalid = await sql`UPDATE mail.folders SET display = 'sidebar' WHERE id = ${shown}::uuid`.then(
         () => null,
         (error: unknown) => error,

@@ -1270,15 +1270,23 @@ Update all Mail replicas together before enabling Gustav suggestions. Earlier
 replicas do not record human adoption or enforce `DRAFT_ADOPTED`.
 The next start adds `mail.drafts.adopted_at`, the constraint allowing one
 untouched suggestion per conversation and author (it replaces the earlier
-one-per-conversation index), and creation-key mappings. No setting
+one-per-conversation index), and creation-key mappings. Creation keys that an
+earlier release mapped to another account's draft are removed, so retrying
+such a key creates the caller's own suggestion. The change records the schema
+marker `3 (suggestions_per_author)`: Mail images from before it refuse to start
+on the upgraded database, because they would restore the old index. Stop all
+older Mail processes before the first new one starts; a rollback needs a
+pre-upgrade backup. No setting
 is required. Existing drafts are treated as adopted because earlier editor
 attribution cannot establish whether a person ever changed them. Their content
 and authorship stay intact.
 
 After the upgrade, create a service-account draft, edit it as a person, and
-check that an autonomous update returns `DRAFT_ADOPTED` (409). Rolling back
-retains the data but removes this protection; stop autonomous draft editing
-before a rollback.
+check that an autonomous update returns `DRAFT_ADOPTED` (409). Then let two
+service accounts create a draft in the same conversation and check that each
+gets its own suggestion. Images from before the marker refuse to start, so a
+rollback means restoring the pre-upgrade backup; stop autonomous draft editing
+before you do.
 
 ### Mail mailbox logos
 

@@ -27,6 +27,9 @@ const BASELINE_NAME = "baseline";
 // Schema compatibility marker, independent of Cloud release/package versions.
 const PRINCIPAL_ASSIGNEES_VERSION = 2;
 const PRINCIPAL_ASSIGNEES_NAME = "principal_assignees";
+// Older images would recreate the one-suggestion-per-conversation index and fail on per-author suggestions.
+const SUGGESTIONS_PER_AUTHOR_VERSION = 3;
+const SUGGESTIONS_PER_AUTHOR_NAME = "suggestions_per_author";
 
 const MIGRATION_LOCK_KEY = "cloud.mail.migrations";
 const log = logger("mail:migrate");
@@ -38,7 +41,8 @@ const assertSupportedSchema = (applied: readonly { version: number; name: string
   const foreign = applied.filter(
     (row) =>
       !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
-      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME),
+      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME) &&
+      !(row.version === SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME),
   );
   if (baseline && foreign.length === 0) return;
   const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
@@ -91,6 +95,9 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     ON mail.drafts (mailbox_id, conversation_id, author_id)
     WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL`.simple();
   await tx`DROP INDEX IF EXISTS mail.drafts_untouched_suggestion_idx`.simple();
+  // Older images refuse this marker, so none of them recreates the old index. Stop older processes first.
+  await tx`INSERT INTO mail.schema_migrations (version, name)
+    VALUES (${SUGGESTIONS_PER_AUTHOR_VERSION}, ${SUGGESTIONS_PER_AUTHOR_NAME}) ON CONFLICT (version) DO NOTHING`;
   await tx`CREATE TABLE IF NOT EXISTS mail.draft_suggestion_requests (
     mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
     service_account_id uuid NOT NULL,
@@ -99,6 +106,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
     PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
   )`.simple();
+  // Before suggestions were per author, a second account's creation key could map to another account's draft.
+  // Such a key now creates the caller's own suggestion; its stale mapping would block that.
+  await tx`DELETE FROM mail.draft_suggestion_requests request USING mail.drafts d
+    WHERE d.id = request.draft_id AND (d.author_kind <> 'service_account' OR d.author_id <> request.service_account_id)`.simple();
   // Scheduling state and the latest timing sample stay bounded to one row per mailbox.
   await tx`
     CREATE TABLE IF NOT EXISTS mail.hydration_work (

@@ -785,10 +785,14 @@ const insertComposeDraftInTransaction = async (params: {
   if (!identity.ok) return identity;
   const rememberRequest = async (draft: MailDraft): Promise<Result<MailDraft>> => {
     if (params.actor.kind === "service_account" && params.materializationKey && params.materializationRequestHash) {
+      // The key lookup only accepts this account's own drafts, so a row it did not return maps the key to another
+      // account's draft (written before suggestions were per author) and is replaced.
       await params.db`INSERT INTO mail.draft_suggestion_requests
         (mailbox_id, service_account_id, idempotency_key, request_hash, draft_id)
         VALUES (${params.mailboxId}::uuid, ${actorId(params.actor)}::uuid, ${params.materializationKey}::uuid,
-          ${params.materializationRequestHash}, ${draft.id}::uuid)`;
+          ${params.materializationRequestHash}, ${draft.id}::uuid)
+        ON CONFLICT (mailbox_id, service_account_id, idempotency_key)
+        DO UPDATE SET request_hash = EXCLUDED.request_hash, draft_id = EXCLUDED.draft_id`;
     }
     return ok(draft);
   };
@@ -1234,8 +1238,8 @@ export const materializeDraftSeed = async (params: {
                   AND request.idempotency_key = ${parsed.data.idempotencyKey}::uuid
                   AND ${actor.kind} = 'service_account'
                 WHERE d.mailbox_id = ${params.mailboxId}::uuid
-                  AND ((d.author_kind = ${actor.kind} AND d.author_id = ${actorId(actor)}::uuid
-                    AND d.materialization_key = ${parsed.data.idempotencyKey}) OR request.draft_id IS NOT NULL)
+                  AND d.author_kind = ${actor.kind} AND d.author_id = ${actorId(actor)}::uuid
+                  AND (d.materialization_key = ${parsed.data.idempotencyKey} OR request.draft_id IS NOT NULL)
               `
             )[0];
       if (existing) {

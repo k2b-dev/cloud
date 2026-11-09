@@ -625,6 +625,22 @@ suite("Mail service-account suggestions", () => {
     await expect(sql`UPDATE mail.drafts SET adopted_at = NULL WHERE id = ${first.id}::uuid`.execute()).rejects.toThrow();
   });
 
+  test("a creation key that an earlier release mapped to another account's draft creates the caller's own suggestion", async () => {
+    const thread = await conversation();
+    const fromGustav = unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread, "From Gustav") }));
+    const origin = { kind: "compose" as const, input: input(thread, "From invoices") };
+    const key = crypto.randomUUID();
+    const request = { idempotencyKey: key, origin, draft: editableInput(origin.input) };
+    // Before suggestions were per author, this key of the invoices account returned Gustav's draft and was remembered.
+    await sql`INSERT INTO mail.draft_suggestion_requests (mailbox_id, service_account_id, idempotency_key, request_hash, draft_id)
+      VALUES (${mailboxId}::uuid, ${invoicesAccountId}::uuid, ${key}::uuid, ${"0".repeat(64)}, ${fromGustav.id}::uuid)`;
+    const own = unwrap(await drafts.materializeDraftSeed({ context: invoices, mailboxId, input: request }));
+    expect(own.id).not.toBe(fromGustav.id);
+    expect([own.body, own.suggestedBy]).toEqual(["From invoices", "Rechnungseingang"]);
+    // The retry keeps returning the caller's own draft.
+    expect(unwrap(await drafts.materializeDraftSeed({ context: invoices, mailboxId, input: request })).id).toBe(own.id);
+  });
+
   test("a pending send keeps its suggestion slot so undo can restore the draft", async () => {
     const thread = await conversation();
     const request = { context: gustav, mailboxId, input: input(thread) };

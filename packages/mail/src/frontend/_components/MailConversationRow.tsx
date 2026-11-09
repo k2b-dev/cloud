@@ -31,9 +31,17 @@ export const mailRowHasFourthLine = (
   item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants" | "drafts">,
 ): boolean => item.localTags.length > 0 || item.workStatus === "waiting" || item.drafts.count > 0 || mailRowShowsParticipants(item);
 
-/** A single draft only an automated account has written is that account's suggestion; plum until a person takes it over. */
-export const mailRowDraftIsSuggestion = (drafts: MailListItem["drafts"]): boolean =>
-  drafts.count === 1 && drafts.editors.length > 0 && drafts.editors.every((editor) => editor.kind === "service_account");
+/**
+ * The account behind the conversation's single untouched suggestion, which shows in plum until a person takes it
+ * over; null for every other draft. A pod from before `suggestedBy` only lists editors, so its rows fall back to them.
+ */
+export const mailRowSuggestedBy = (drafts: MailListItem["drafts"]): string | null => {
+  if (drafts.count !== 1) return null;
+  if (drafts.suggestedBy !== undefined) return drafts.suggestedBy;
+  return drafts.editors.length > 0 && drafts.editors.every((editor) => editor.kind === "service_account")
+    ? drafts.editors[0]!.displayName
+    : null;
+};
 
 const initials = (name: string) =>
   name
@@ -478,11 +486,12 @@ export default function MailConversationRow(props: {
                 </Show>
                 <Show when={props.item.drafts.count > 0}>
                   {(() => {
-                    const suggestion = () => mailRowDraftIsSuggestion(props.item.drafts);
+                    const suggestedBy = () => mailRowSuggestedBy(props.item.drafts);
+                    const suggestion = () => suggestedBy() !== null;
                     const names = () => props.item.drafts.editors.map((editor) => editor.displayName).join(", ");
                     const label = () =>
                       suggestion()
-                        ? t().suggestionFrom({ name: props.item.drafts.editors[0]!.displayName })
+                        ? t().suggestionFrom({ name: suggestedBy()! })
                         : props.item.drafts.count === 1
                           ? t().draftOne
                           : t().draftMany({ count: props.item.drafts.count });
