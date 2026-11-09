@@ -56,12 +56,26 @@ async function mount() {
     const region = panel()?.querySelector('[role="status"]');
     if (region && !region.hasAttribute("data-observed")) {
       region.setAttribute("data-observed", "");
+      // On a slow machine the first message can arrive before the observer does; it still counts.
+      const already = region.textContent?.trim();
+      if (already) live.push(already);
       new dom.window.MutationObserver(() => {
         const said = region.textContent?.trim();
         if (said) live.push(said);
       }).observe(region as unknown as Node, { childList: true, characterData: true, subtree: true });
     }
   };
+  /** Resolves once the condition holds, checked on every change to the document; the test's timeout bounds it. */
+  const until = (condition: () => boolean) =>
+    new Promise<void>((resolve) => {
+      if (condition()) return resolve();
+      const observer = new dom.window.MutationObserver(() => {
+        if (!condition()) return;
+        observer.disconnect();
+        resolve();
+      });
+      observer.observe(dom.document.body as unknown as Node, { childList: true, subtree: true, characterData: true, attributes: true });
+    });
   const current = () => transfers.at(-1)!;
   const finish = async (outcome: UploadOutcome = { status: "uploaded", path: current().name }) => {
     current().resolve(outcome);
@@ -72,7 +86,7 @@ async function mount() {
     [...(panel()?.closest("[data-k2b-toast]")?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
       (entry) => entry.getAttribute("aria-label") === label || entry.textContent?.trim() === label,
     );
-  return { dom, panel, text, rows, add, current, finish, button, live, queue: () => queue };
+  return { dom, panel, text, rows, add, current, finish, button, live, until, queue: () => queue };
 }
 
 describe("upload panel", () => {
@@ -330,15 +344,22 @@ describe("upload panel", () => {
   test("the live region says changes of state, failures and the summary, never progress", async () => {
     const ui = await mount();
     await ui.add(file("big.bin", 100), file("small.bin", 100));
+    // The region's own text is the signal; the recorder above notes each message in the same round of changes.
+    const says = (message: string) =>
+      ui.live.includes(message) || ui.panel()?.querySelector('[role="status"]')?.textContent?.trim() === message;
+    const started = "Upload started: 2 files.";
+    await ui.until(() => says(started));
+    // Every step of the first file reaches its row, which the panel updates once per frame, and none is announced.
+    const sent = () => ui.panel()?.querySelector('[data-status="working"] .filesv2-upload-row__progress')?.textContent;
     for (let bytes = 1; bytes <= 100; bytes++) {
       ui.current().progress(bytes);
-      await wait(5);
+      await ui.until(() => sent() === `${bytes} B of 100 B`);
     }
-    await wait(100);
     await ui.finish();
     ui.current().reject(new Error("Connection lost"));
-    await wait(100);
-    expect(ui.live).toEqual(["Upload started: 2 files.", "Upload finished. 1 of 2 files uploaded, 1 failed."]);
+    const summary = "Upload finished. 1 of 2 files uploaded, 1 failed.";
+    await ui.until(() => says(summary));
+    expect(ui.live).toEqual([started, summary]);
   });
 
   test("names show their folder only when two files in the batch share them; screen readers always get the path", async () => {
