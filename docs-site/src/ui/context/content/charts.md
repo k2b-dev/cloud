@@ -1183,6 +1183,24 @@ inspector. Hover outlines one treemap cell or adds a quiet Pareto row band.
 Keep the host's fixed content height across loading, empty, error/retry and
 stale-subtitle states. The live chart catalog demonstrates both kinds.
 
+## Sankey flows
+
+`Chart.Sankey` and `kind="sankey"` accept `nodes: {id,label,tone?}[]` and
+`links: {source,target,value}[]`. IDs are unique, endpoints exist, values are
+positive and the graph has no cycles. Invalid JSON is rejected before drawing.
+Stages follow the longest path from a source. A node's value is the larger of
+incoming and outgoing totals; unused capacity remains visible. Each band uses
+its source node's color; a muted source uses the target color. An explicit
+`legend: {tone,label}[]` names color meanings and wraps. Optional `format`, `locale` and
+`displayWidth` control presentation. Explicit locale takes precedence.
+
+The plot keeps at least 620 px, starts at the sources and scrolls horizontally on narrow screens.
+Small flows stay visible; colliding node labels are available in the tooltip. Long node names wrap at word boundaries to two lines when the node has enough height. Names that still do not fit end in an ellipsis; the tooltip and accessible SVG title retain the complete name.
+Hover strengthens one band without dimming others. Arrows inspect nodes and
+links, Home/End jump, Enter pins and Escape dismisses; tap shares this behavior.
+Use the host's fixed-height loading, empty, error/retry and stale-subtitle states.
+Plain SVG hosts pass `nav: sankeyInspectionNavigation` (from `@k2b/ui/charts`) to `inspectChart` for node-first keyboard traversal and scroll reveal. The newsletter showcase includes converging and diverging flows.
+
 ## Named scatter points and bubbles
 
 Use `Chart.Bubble` (`kind: "bubble"`) to compare two numeric measures for named observations. Set `groups`,
@@ -1276,6 +1294,8 @@ inspected column. A missing column (or a zero-sum normalized column) has no insp
 legend uses a dash when its final column is a gap.
 
 Pareto axis endpoints align inward so full formatted values remain visible in small cards. Treemap text uses one name/value block with fixed line spacing; cells without room for both lines leave the text to inspection.
+
+Small Sankey cards start at their source nodes. Labels stay within the scrollable drawing; scroll horizontally to follow later stages.
 
 Waterfall labels and printed amounts follow the drawn container width. Amounts appear when bars are at least 46 CSS pixels wide and the text fits its slot; shrinking to a phone hides them without a hydration redraw.
 

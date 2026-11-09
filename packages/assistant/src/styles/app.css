@@ -459,6 +459,22 @@
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }
 
+/* A Studio app in the chat: one surface with a quiet header and the app below it, at a fixed height so nothing moves. */
+/* svh, not dvh: the height must not follow the phone's address bar while the chat scrolls. */
+/* The card is an island (layers and shadows): lifted in the chat, flat in a side panel, and flat inside. */
+.assistant-chat-presentation { display: flex; flex-direction: column; height: min(600px, 45vh); height: min(600px, 45svh); min-width: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent); border-radius: var(--k2b-radius-surface); background: var(--k2b-island-surface); box-shadow: var(--k2b-island-shadow); }
+.assistant-chat-presentation > * { --k2b-island-shadow: 0 0 #0000; --k2b-surface-beneath: var(--k2b-island-surface); }
+.assistant-chat-presentation__header { display: flex; flex: none; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .25rem .5rem 0 1.5rem; }
+.assistant-chat-presentation__header > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 600; }
+.assistant-chat-presentation__header > small { flex: none; color: var(--k2b-text-muted); font-size: .6875rem; }
+.assistant-chat-presentation__icon { flex: none; color: var(--k2b-ai-accent); }
+.assistant-chat-presentation__actions { display: flex; flex: none; align-items: center; gap: .25rem; margin-inline-start: auto; }
+.assistant-chat-presentation__body { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.assistant-chat-presentation__body > .k2b-placeholder { flex: 1; }
+.assistant-chat-presentation__notice { position: absolute; inset-inline: .75rem; inset-block-end: .75rem; }
+@media (max-width: 640px) { .assistant-chat-presentation__header { padding-inline-start: 1rem; } }
+@media (max-width: 480px) { .assistant-chat-presentation__header > small { display: none; } }
+
 /* Task rows fill the shared Button label; the chevron owns the trailing edge. */
 .k2b-ui .assistant-task-row { width: 100%; justify-content: flex-start; text-align: left; }
 .k2b-ui .assistant-task-row > .k2b-button__label { width: 100%; flex: 1; }

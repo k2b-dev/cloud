@@ -92,7 +92,10 @@ place, such as a keymap.
 and `end` hold controls before and after the actions, such as navigation or a
 sync status. Pressing a control keeps focus and selection in the editor. With
 `liftAboveKeyboard`, the toolbar rises to the top edge of a phone keyboard while
-the editor has focus.
+the editor has focus. With `mainClass`, `start`, the actions, and dictation share
+one wrapper with that class and `end` stands beside it, so a host can draw them
+as two floating pills at the edges of its column (as Notebooks does; see
+[Layers and shadows](/en/ui/surfaces/elevation)).
 
 `<BubbleMenu>` opens at a selection once it settles, not while a pointer still
 drags it. It stays open while focus moves between the text and the menu. Escape,

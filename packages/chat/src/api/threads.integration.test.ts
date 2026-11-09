@@ -282,7 +282,7 @@ suite("chat threads API", () => {
     expect((await detail(reader, chat.shortId)).lastMessage).toMatchObject({
       id: reply.id,
       thread: { id: a.id, name: "A" },
-      preview: "Hello **thread**",
+      preview: "Hello thread",
     });
     const foreign = await send(owner, other.shortId);
     for (const [extra, status] of [

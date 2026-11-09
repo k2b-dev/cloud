@@ -242,7 +242,7 @@ chart catalog draw, with the same loading, empty and stale states: when a live
 reload fails, every panel keeps its data and says when it was read, with
 **Try again**. A chart can switch to its data table. There is one chart block
 per kind of the portable chart data of `@k2b/editor/chart-schema`, such as
-`Chart.Bar`, `Chart.Line`, `Chart.Area`, `Chart.Heatmap` or `Chart.Waterfall`;
+`Chart.Bar`, `Chart.Line`, `Chart.Area`, `Chart.Heatmap`, `Chart.Waterfall` or `Chart.Sankey`;
 a kind the chart data gains becomes a block of its own. A table sorts by any column
 and shows `empty`, or a default text, when it has no rows. Neighbouring
 `Button` and `Action` blocks share one row.

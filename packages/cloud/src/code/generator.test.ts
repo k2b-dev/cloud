@@ -376,6 +376,10 @@ const grouped: CodeChartDescription = { kind: "bar", title: "Orders", x: ["A"], 
 Chart.Bar({ title: "Compared orders", x: ["A"], series: [{ label: "Shop", data: [10] }], compare: { label: "Before", data: [8] } });
 Chart.Line({ title: "Forecast", series: [{ data: [{ x: 1, y: 10 }, { x: 2, y: null }] }], forecast: { from: 2 }, marker: { at: 2, label: "Today" } });
 const forecastPage: CodePageTree = { kind: "Page", version: 1, title: "Forecast", children: [{ kind: "Chart", description: { kind: "line", title: "Gaps", series: [{ data: [{ x: 1, y: null }, { x: 2, y: 10 }] }], zero: true } }] };
+const flow: CodeChartDescription = { kind: "sankey", title: "Flow", nodes: [{ id: "in", label: "In", tone: "in" }, { id: "out", label: "Out" }], links: [{ source: "in", target: "out", value: 42 }] };
+Chart.Sankey({ title: "Flow", nodes: flow.nodes, links: flow.links, legend: [{ tone: "in", label: "Incoming" }] });
+// @ts-expect-error Sankey node tones stay within the portable chart contract
+Chart.Sankey({ title: "Flow", nodes: [{ id: "in", label: "In", tone: "purple" }], links: [] });
 // @ts-expect-error chart builders expose chart props, not the transport description prop
 Chart.Bar({ title: "Orders", data: [{ label: "A", value: 1 }], description: { kind: "bar" } });
 // @ts-expect-error omitting kind from builder props must preserve the named series type

@@ -390,3 +390,36 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+for (const width of [390, 1440]) {
+  test(`small Sankey card keeps its source label inside the initial viewport at ${width}px`, async () => {
+    const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
+    const errors = pageErrors(page);
+    try {
+      const card = page.locator(".ui-charts-card").filter({ has: page.getByRole("heading", { name: "Sankey", exact: true }) });
+      const scroller = card.locator(".ui-charts-card__chart");
+      expect(await scroller.evaluate((e) => e.scrollLeft)).toBe(0);
+      const source = card
+        .locator("[data-chart-datum]")
+        .filter({ has: page.locator("rect") })
+        .first()
+        .locator("text");
+      expect(await source.textContent()).toContain("Clicked");
+      const viewport = await scroller.boundingBox(),
+        label = await source.boundingBox();
+      expect(label!.x).toBeGreaterThanOrEqual(viewport!.x);
+      expect(label!.x + label!.width).toBeLessThanOrEqual(viewport!.x + viewport!.width);
+      const inside = await card.locator("[data-chart-datum] text").evaluateAll((nodes) =>
+        nodes.every((e) => {
+          const b = (e as SVGGraphicsElement).getBBox(),
+            svg = e.closest("svg") as SVGSVGElement;
+          return b.x >= 0 && b.x + b.width <= svg.viewBox.baseVal.width;
+        }),
+      );
+      expect(inside).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+}

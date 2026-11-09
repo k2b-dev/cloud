@@ -257,6 +257,7 @@
     "@k2b/ui src/charts/distribution.browser.test.ts": 6.1,
     "@k2b/ui src/charts/namespace.browser.test.ts": 2.1,
     "@k2b/ui src/charts/parity.browser.test.ts": 18.3,
+    "@k2b/ui src/charts/sankey.browser.test.ts": 3.5,
     "@k2b/ui src/chat/chat-activity-hydration.browser.test.ts": 4.5,
     "@k2b/ui src/chat/chat-activity-motion.browser.test.ts": 6,
     "@k2b/ui src/chat/chat-activity-steps.browser.test.ts": 17.7,

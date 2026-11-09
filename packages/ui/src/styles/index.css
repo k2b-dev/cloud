@@ -570,6 +570,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: var(--k2b-focus-offset);
 }
 
+/* A landing point is not a control. After a page swap or when a panel closes,
+   code moves focus to the page's main region, its root, or its first heading
+   with tabindex -1, so screen readers start there. It is outside the tab
+   order, so it draws no ring. The browser's default ring would otherwise draw
+   a dark edge around the whole page card. Roving items with tabindex -1 are
+   controls and keep their ring. */
+.k2b-ui :is(main, [data-scroll-page], h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .k2b-ui .k2b-sr-only {
   position: absolute;
   width: 1px;
@@ -18690,6 +18700,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }
 
+/* Flow geometry keeps readable stage labels on a narrow host; sources are visible first. */
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] { overflow-x: auto; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] > .k2b-chart__svg { min-width: 620px; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-inspected] > .k2b-chart-sankey-link,
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-selected] > .k2b-chart-sankey-link { fill-opacity: 0.6; stroke: none !important; }
 /* New distribution marks keep the selected state stronger than calm hover. */
 .k2b-ui .k2b-chart:is([data-chart-kind="bubble"],[data-chart-kind="radar"]) [data-selected] > circle { stroke-width: 3px !important; }
 .k2b-ui .k2b-chart[data-chart-kind="radar"] [data-inspected] > .k2b-chart-radar-axis { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px !important; }

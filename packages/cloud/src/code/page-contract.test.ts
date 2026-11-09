@@ -4,6 +4,33 @@ import { CODE_PAGE_LIMITS, validateCodePage } from "./page-contract";
 
 const page = (children: unknown[] = []) => ({ version: 1, kind: "Page", title: "Workshop", children });
 const codeId = "c_page";
+test("Code pages accept the Sankey builder and reject a cyclic flow", async () => {
+  const sdk = generateCodeSdk([], { mode: "personal" });
+  const ui = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  const props = {
+    title: "Flow",
+    nodes: [
+      { id: "in", label: "Incoming", tone: "in" },
+      { id: "out", label: "Outgoing" },
+    ],
+    links: [{ source: "in", target: "out", value: 42 }],
+  };
+  const description = { kind: "sankey", ...props };
+  const block = ui.Chart.Sankey(props);
+  expect(block).toEqual({ kind: "Chart", description });
+  expect(validateCodePage(page([block]), codeId)).toEqual(page([block]));
+  expect(() =>
+    validateCodePage(
+      page([
+        {
+          kind: "Chart",
+          description: { ...description, links: [...description.links, { source: "out", target: "in", value: 1 }] },
+        },
+      ]),
+      codeId,
+    ),
+  ).toThrow();
+});
 test("versioned pages accept every allowed block and the portable chart description", () => {
   const children = [
     { kind: "Section", title: "Overview", children: [{ kind: "Text", text: "Hello" }] },

@@ -7,6 +7,7 @@ import { calendarLayout } from "../charts/core/calendar";
 import { lineDetailsEnabled, lineLegendX } from "../charts/core/line-options";
 import type { ChartDrawingOptions } from "../charts/core/render";
 import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
+import { sankeyWidth } from "../charts/core/sankey-size";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -22,6 +23,7 @@ import {
 } from "./chart-inspection-core";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { resolveChartMessages, useChartMessages } from "./chart-messages";
+import { sankeyInspectionNavigation } from "./chart-sankey";
 import {
   panStateTimelineViewport,
   type StateTimelineDomain,
@@ -127,6 +129,7 @@ export type ChartProps = {
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "treemap" || props.kind === "pareto") return !props.data.length;
+  if (props.kind === "sankey") return !props.nodes.length || !props.links.length;
   if (props.kind === "bubble") return !props.data.length;
   if (props.kind === "radar") return !props.series.length;
   if (props.kind === "area")
@@ -469,12 +472,18 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
     kind: () => props.kind,
-    nav: () => (props.kind === "heatmap" && props.layout === "calendar" ? calendarInspectionNavigation : undefined),
+    nav: () =>
+      props.kind === "sankey"
+        ? sankeyInspectionNavigation
+        : props.kind === "heatmap" && props.layout === "calendar"
+          ? calendarInspectionNavigation
+          : undefined,
     enabled: () => !isEmpty(props),
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields =
+        props.kind === "sankey" ||
         props.kind === "bubble" ||
         props.kind === "radar" ||
         props.kind === "treemap" ||
@@ -540,7 +549,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      props.kind === "bubble" ||
+      props.kind === "sankey" ||
+        props.kind === "bubble" ||
         props.kind === "radar" ||
         props.kind === "treemap" ||
         props.kind === "pareto" ||
@@ -578,7 +588,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
         tooltip: () => chartTooltipRef,
         scroll: inspection.scroll,
         close: closeChartTooltip,
-        keepScroll: () => props.kind === "heatmap" && props.layout === "calendar",
+        keepScroll: () => props.kind === "sankey" || (props.kind === "heatmap" && props.layout === "calendar"),
       }),
     );
   });
@@ -683,7 +693,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           style={{
             "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
             "max-width": calendar() ? `${calendar()!.maxWidth}px` : undefined,
-            "--k2b-chart-width": `${size().width}px`,
+            "--k2b-chart-width": `${props.kind === "sankey" ? sankeyWidth(props, props.displayWidth ?? size().width) : size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
           }}
