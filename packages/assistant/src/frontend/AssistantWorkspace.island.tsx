@@ -832,6 +832,8 @@ export default function AssistantWorkspace(props: Props) {
       }
       setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== composerKey)));
       const conversation = await chat.createConversation(request, { activate: !background });
+      // A reconciliation for another view retains its original request until it succeeds.
+      if (!conversation && background) return null;
       if (!conversation && place && chat.creationErrorStatus() === 409) {
         creationRequests.delete(key);
         setCreationVersion((version) => version + 1);
@@ -854,7 +856,12 @@ export default function AssistantWorkspace(props: Props) {
             }
             if (await openAndFocusConversation(target)) {
               const loaded = chat.conversation();
-              if (loaded?.id === target) migrateNewComposer(loaded);
+              if (loaded?.id === target) {
+                const own = sessions.get("__new__");
+                // An empty remote draft is safe to build on; a populated one still requires conflict review.
+                if (own && loaded.draft.content.length === 0) own.baseRevision = loaded.draft.revision;
+                migrateNewComposer(loaded);
+              }
               commitConversationUrl(target);
             }
           }
@@ -936,6 +943,7 @@ export default function AssistantWorkspace(props: Props) {
         exit &&
         exit.creations.get(key) === request.requestId &&
         exit.generations.get(key) === session(composerKey).editGeneration &&
+        !request.draft?.content.length &&
         !composerDraft(composerKey) &&
         !composerAttachmentsFor(composerKey).length &&
         !mentionsFor(composerKey).length,
@@ -1097,7 +1105,7 @@ export default function AssistantWorkspace(props: Props) {
     if (!chat.activeConversationId() && !text && !files.length) return;
     // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then,
     // also while the panel still learns whether the page is a place.
-    if (!chat.activeConversationId() && (emptyPlace() || placeResolving())) return;
+    if (!chat.activeConversationId() && (emptyAt() || placeResolving())) return;
     const target = chat.activeConversationId();
     const timer = window.setTimeout(async () => {
       if (composerSessionKey() !== key || session(key).conflict) return;
@@ -2173,6 +2181,13 @@ export default function AssistantWorkspace(props: Props) {
           <NoticeCard tone="warning" title={hasUnknownSends() ? t().panelUnknownSend : t().panelUnknownCreate}>
             <Show when={hasUnknownCreations()}>
               <p>{t().panelUnknownCreateHint}</p>
+              <For each={(creationVersion(), [...creationRequests.values()])}>
+                {(request) => (
+                  <For each={request.draft?.content ?? []}>
+                    {(part) => (part.type === "text" ? <p class="whitespace-pre-wrap">{part.text}</p> : null)}
+                  </For>
+                )}
+              </For>
               <Button
                 size="sm"
                 variant="secondary"
@@ -2826,7 +2841,7 @@ export default function AssistantWorkspace(props: Props) {
     onCleanup(
       onContextChange((next) => {
         // A switch still opening the previous page's chat ends here; the new page decides again.
-        if (switchingPlace()) {
+        if (switchingPlace() && !samePlace(next?.scope, pagePlace.context()?.scope)) {
           placeSwitch++;
           navigationRequest++;
           setSwitchingPlace(false);

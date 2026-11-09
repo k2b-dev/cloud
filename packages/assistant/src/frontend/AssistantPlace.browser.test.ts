@@ -437,6 +437,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
     });
   return {
     page,
+    scenario,
     errors,
     placeCalls,
     created,
@@ -509,6 +510,30 @@ describe("Gustav at a place", () => {
     }
   }, 60_000);
 
+  test("a same-place context refresh keeps the pending chat switch", async () => {
+    const h = await open(panel, {
+      place: "u_marta",
+      initial: true,
+      conversationId: "Pmarta",
+      answers: { u_marta: available("u_marta", "Pmarta"), u_jonas: available("u_jonas", "Pjonas") },
+    });
+    try {
+      await h.page.getByText("Erledigt. Die Antwort hat jetzt 2 Sätze").waitFor();
+      h.holdChats.add("Pjonas");
+      await h.navigateHost(2, "u_jonas");
+      await poll(() => h.heldChats.has("Pjonas"), true);
+      await h.navigateHost(3, "u_jonas");
+      h.holdChats.delete("Pjonas");
+      h.heldChats.get("Pjonas")!();
+      await h.page.getByText("Ja, Freitag ab 14 Uhr passt laut Kalender.").waitFor();
+      await settled(h.page);
+      expect(new URL(h.page.url()).searchParams.get("conversation")).toBe("Pjonas");
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
   for (const plain of [false, true]) {
     test(`an unknown ${plain ? "plain" : "place"} creation cannot retarget the next place's first message`, async () => {
       const h = await open(panel, {
@@ -543,6 +568,41 @@ describe("Gustav at a place", () => {
     }, 60_000);
   }
 
+  test("background creation recovery keeps its original request and the visible chat", async () => {
+    const h = await open(panel, {
+      place: "u_marta",
+      initial: true,
+      creationErrors: [503],
+      answers: { u_marta: available("u_marta", null), u_jonas: available("u_jonas", null) },
+    });
+    try {
+      const composer = h.page.getByRole("textbox").last();
+      await composer.click();
+      await h.page.keyboard.type("Original message for Marta");
+      await h.page.keyboard.press("Enter");
+      await poll(() => h.created.length, 1);
+      await h.navigateHost(2, "u_jonas");
+      await bar(h.page).getByRole("button", { name: "Zu Jonas Probe wechseln" }).click();
+      await h.page.getByRole("heading", { name: "Frag Gustav zu Jonas Probe" }).waitFor();
+      await composer.click();
+      await h.page.keyboard.press("ControlOrMeta+A");
+      await h.page.keyboard.type("Message for Jonas");
+      await h.page.keyboard.press("Enter");
+      await poll(() => h.turns.length, 1);
+      h.scenario.creationErrors = [403, 409];
+      for (const expected of [3, 4]) {
+        await h.page.getByRole("button", { name: "Erstellen erneut versuchen", exact: true }).click();
+        await poll(() => h.created.length, expected);
+        await h.page.getByText("Original message for Marta", { exact: true }).waitFor();
+        expect(h.created[expected - 1]).toEqual(h.created[0]);
+        expect(new URL(h.page.url()).searchParams.get("conversation")).toBe("Pnew01");
+      }
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
   test("a concurrent first-message conflict opens the existing place chat and retains the local text", async () => {
     const h = await open(panel, {
       place: "u_marta",
@@ -563,6 +623,8 @@ describe("Gustav at a place", () => {
       expect(await composer.inputValue().catch(() => composer.textContent())).toContain("Keep my text from the other tab");
       expect(h.created).toHaveLength(1);
       expect(h.turns).toEqual([]);
+      await poll(() => h.drafts.length, 1);
+      expect(h.drafts[0]).toEqual({ id: "Pmarta", expectedRevision: 1 });
       expect(h.errors).toEqual([]);
     } finally {
       await h.close();
@@ -573,10 +635,16 @@ describe("Gustav at a place", () => {
     const h = await open(panel, { place: "u_marta", initial: true, answers: { u_marta: available("u_marta", null) } });
     try {
       await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).waitFor();
+      const composer = h.page.getByRole("textbox").last();
+      await composer.click();
+      await h.page.keyboard.type("Keep this at Marta while sharing is paused");
       await h.withdrawContext();
       await settled(h.page);
       await bar(h.page).getByRole("button", { name: "Kontext teilen …" }).waitFor();
       expect(await h.page.getByRole("group", { name: "Vorschläge von Kundenkontakt" }).count()).toBe(0);
+      // Observe beyond the 2s draft debounce: withdrawal must keep this unsaved place draft local.
+      await h.page.waitForTimeout(2_300);
+      expect(await composer.inputValue().catch(() => composer.textContent())).toContain("Keep this at Marta while sharing is paused");
       expect(h.created).toEqual([]);
       expect(h.placeCalls).toEqual([]);
       expect(h.errors).toEqual([]);

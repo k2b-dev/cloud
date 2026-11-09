@@ -171,7 +171,8 @@ the Action.
 If another tab creates your chat at a place first, Gustav opens that chat and
 keeps your message in the composer for review. It does not send the message
 automatically. Retrying a creation whose outcome is unknown keeps the original
-place; a message at a different place uses a separate request.
+place; a message at a different place uses a separate request. The recovery
+notice keeps the original place message visible while you retry.
 
 When you stop sharing page context, the empty panel hides the place's suggestions
 and offers **Share context …** to ask for consent again.
