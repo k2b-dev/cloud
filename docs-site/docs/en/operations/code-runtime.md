@@ -34,7 +34,13 @@ capability's idempotency contract when repeating an intended effect.
 Core declares `/code` in the gateway registry and checks each path against the
 active version's manifest. Sign-in is required unless that exact matched route
 was reviewed as public. Public responses contain only the data that Code
-returns. Keep the shared runner, NATS, Postgres and Valkey healthy; request
+returns. Public routes never use visitor session authority, CSRF tokens or
+an anonymous binding cookie; public forms omit the token. Non-public mutations
+still require a session-bound CSRF token. Incoming request headers and cookies
+are not forwarded to Code. R1 webhooks use ordinary public POST routes without
+signature verification; handlers take an ID, read its state back with bound
+secret HTTP, then act ([example](/en/docs/platform/code-sdk#webhooks-r1-ohne-secret)).
+Keep the shared runner, NATS, Postgres and Valkey healthy; request
 capacity competes with scheduled runs and authoring checks.
 
 Page responses use wire format version 1 and the same runner response budget.

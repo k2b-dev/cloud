@@ -1,15 +1,12 @@
-import { randomBytes } from "node:crypto";
 import { CODE_REQUEST_LIMITS, CodeRouteRequestSchema, codeOwnPath, matchCodeRoute, validateCodePage } from "@k2b/cloud/code";
 import { auth, clientIp, clientIpBucket, getEffectiveGroups, middleware, ratelimit } from "@k2b/cloud/server";
 import { createLoginRedirectUrl } from "@k2b/cloud/shared";
 import { Hono } from "hono";
-import { getCookie, setCookie } from "hono/cookie";
 import { type CodePageHostingContext, codePageHandlers } from "./render-page";
 import { waitCodeRequest } from "./request-deadline";
 import { CodeRequestError, codeRequestVersion, requestCodeRoute } from "./requests";
 import { checkCodeCsrf, codeCsrf } from "./route-security";
 
-const anonymousCookie = "__Host-code-page-csrf";
 /** Stream into the budget, including chunked bodies; Content-Length alone is never sufficient. */
 export async function readCodeRequestBody(request: Request, maxBytes: number, signal: AbortSignal): Promise<string> {
   if (!request.body) return "";
@@ -101,8 +98,8 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           isPublic ? CODE_REQUEST_LIMITS.publicBodyBytes : CODE_REQUEST_LIMITS.bodyBytes,
           signal,
         );
-        const sessionBinding = c.get("credentialKind") === "session" ? c.get("sessionToken") : undefined;
-        let binding = sessionBinding ?? getCookie(c, anonymousCookie);
+        // Public Code has no visitor authority: never bind it to a browser session or an anonymous cookie.
+        const binding = !isPublic && c.get("credentialKind") === "session" ? c.get("sessionToken") : undefined;
         const mutating = !["GET", "HEAD", "OPTIONS"].includes(c.req.method);
         let received = c.req.header("X-Code-CSRF");
         if (contentType === "application/x-www-form-urlencoded") {
@@ -113,12 +110,9 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
         }
         if (Buffer.byteLength(body) > (isPublic ? CODE_REQUEST_LIMITS.publicBodyBytes : CODE_REQUEST_LIMITS.bodyBytes))
           return c.json({ code: "code_request_size_limit" }, 413);
-        if (mutating && !checkCodeCsrf(binding, codeId, received)) return c.json({ code: "code_csrf_required" }, 403);
-        if (!binding) {
-          binding = randomBytes(32).toString("hex");
-          setCookie(c, anonymousCookie, binding, { httpOnly: true, secure: true, sameSite: "Strict", path: "/" });
-        }
-        c.header("X-Code-CSRF", codeCsrf(binding, codeId));
+        if (!isPublic && mutating && !checkCodeCsrf(binding, codeId, received)) return c.json({ code: "code_csrf_required" }, 403);
+        const csrf = binding ? codeCsrf(binding, codeId) : null;
+        if (csrf !== null) c.header("X-Code-CSRF", csrf);
         const effectiveGroups =
           !isPublic && subject?.type === "user" ? await waitCodeRequest(getEffectiveGroups({ userId: subject.userId }), signal) : [];
         const user =
@@ -152,7 +146,7 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           signal,
         );
         if (response.kind === "page") {
-          const page = { tree: validateCodePage(response.tree, codeId), codeId, csrf: codeCsrf(binding, codeId) };
+          const page = { tree: validateCodePage(response.tree, codeId), codeId, csrf };
           // The page's own island asks for the checked tree alone after a submit or a followed event.
           // Code responses cannot set headers, so this marker tells the island the tree passed validation.
           if (c.req.header("X-Code-Page") === "tree") return c.json({ tree: page.tree, csrf: page.csrf }, 200, { "X-Code-Page": "tree" });

@@ -65,7 +65,7 @@ const hasForm = (nodes: readonly CodePageNode[]): boolean =>
  * A Code page as Core hosts it in every layout: the tree, in its own stacking context, and the feat/code label after
  * it. Only the tree is an island; the label stays server markup.
  */
-export default function CodePageHost(props: { tree: CodePageTree; codeId: string; csrf: string; locale: string; timeZone: string }) {
+export default function CodePageHost(props: { tree: CodePageTree; codeId: string; csrf: string | null; locale: string; timeZone: string }) {
   return (
     // The host is the print region, so a printed or saved page keeps its label.
     <div class="code-page-host" data-code-page-host="" data-print-region="">

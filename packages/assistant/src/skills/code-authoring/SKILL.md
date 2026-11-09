@@ -100,6 +100,15 @@ private path prefix. Never compare an identifier against a mixed list. [Access c
 shows fixed user IDs, handles, groups and a Grids allowlist; each denied
 request returns 403. Public routes have `c.user === null`.
 
+## Webhooks (R1: ohne Secret)
+
+Use a public POST route; R1 has no signature verification and forwards no
+incoming headers or cookies to Code. **ID nehmen → beim Dienst nachlesen → handeln**:
+read only the notification's ID, fetch the real state through `http.fetch`
+with a secret placeholder and approved origin, then act. Never put a secret
+in the source or a token in the URL. See the [checked webhook example and
+secret binding](references/access.md#webhooks-r1-ohne-secret).
+
 ## Rules that hold everywhere
 
 - Actions that ask a person (send, delete, cannot undo, involves people,

@@ -190,9 +190,11 @@ pages built from blocks reach `c.page`; a hand-written object does not.
 | `Button` | `label`, `action`, optional string `values`; always POST | none |
 | `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` | none |
 
-Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
-forms and actions and removes it before invoking the handler. Links and POST
-destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+Field names are unique; `_csrf` is reserved. On non-public pages, Cloud inserts
+the session-bound CSRF token into forms and actions and removes it before
+invoking the handler. Public forms and actions omit the token and must target
+public POST routes; open a non-public page before using its private actions.
+Links and POST destinations resolve inside `/code/<id>/`; they cannot leave that Code.
 
 Core checks every page before drawing it, whatever produced it. Text is
 escaped. HTML, SVG, event handlers, functions, accessors, foreign links and
@@ -765,8 +767,8 @@ Handlers return `c.json(value, status?)`, `c.text(text, status?)` or
 `c.redirect(path, status?)`. Redirects stay inside this Code's namespace;
 `/next` resolves to `/code/<code-id>/next`. Code cannot return arbitrary headers,
 cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
-`text()` and `formData()`. Core forwards only the request data, never browser
-cookies or credentials.
+`text()` and `formData()`. Core forwards only the request data and normalized content type, never
+incoming request headers, browser cookies or credentials.
 
 Non-public routes open for every signed-in person, for personal, resource
 and app Code alike. They run with the Code account's authority; personal Code
@@ -805,11 +807,12 @@ There is no platform audience or implicit access to underlying resources.
 SDK calls retain the Code's execution principal and its existing grants;
 the visitor's grants never become data authority.
 
-POST, PUT and DELETE need a session-bound CSRF token. Read `X-Code-CSRF` from
-a preceding GET response and send it as the same header, retaining the cookie.
-URL-encoded forms may submit it as `_csrf`; Core removes that field before
-dispatch. Public forms use a separate HttpOnly cookie when no session exists.
-A token from another session or another Code is refused.
+Non-public POST, PUT, PATCH and DELETE routes need a session-bound CSRF token.
+Read `X-Code-CSRF` from a preceding GET response and send it as the same header,
+retaining the session cookie. URL-encoded forms may submit it as `_csrf`; Core
+removes that field before dispatch. A token from another session or another
+Code is refused. Public routes never use a session, CSRF token or binding
+cookie; public forms work without a token.
 
 Requests share runner slots and Code concurrency limits. Their eight-second
 budget includes queueing; busy admission returns 503 and a deadline returns
@@ -1207,3 +1210,82 @@ for schemas, size limits, model selection and stable errors.
 
 Signed-in page requests share a limit of 20 requests per minute per visitor,
 across Code pages. Public routes retain their per-IP and per-Code limits.
+
+## Webhooks (R1: ohne Secret)
+
+A webhook in R1 is an ordinary public POST route, for example
+`app.post("/hooks/events", handler, { public: true })`. R1 does not verify a
+webhook signature; signed webhooks follow later. Code receives no incoming
+request headers or cookies, and `c.user` is always `null`. Use `c.req.json()`
+or `c.req.text()` to read the body. Public requests need no CSRF token or
+binding cookie. The public body and rate limits still apply.
+
+Public pages must submit to public actions. To use a non-public action, open
+its non-public page first to obtain the session-bound token. A public page
+response removes any earlier token; private form actions then fail with 403
+until the private page is opened again. A failed mutation is never retried
+automatically.
+
+**ID nehmen → beim Dienst nachlesen → handeln.** Take only the event or object
+ID from the untrusted body. Read its real state from the service with
+`http.fetch` and an opaque secret marker; only then act. Never put a credential
+in Code source or treat a token in the URL as protection. Anyone can trigger
+the public route: validate the returned state, constrain the effect and use
+its stable ID for idempotency. This pattern confirms service state, not who
+sent the notification.
+
+Before submitting, an editor configures `EVENTS_API` privately in the Code's
+**Secrets** tab with this binding. Submission selects its current binding
+revision for the version; the example declares the same origin. The credential
+belongs to the outgoing service request, never to the incoming webhook:
+
+```json
+{
+  "origin": "https://events.example.com",
+  "pathPrefix": "/v1/events",
+  "headers": ["authorization"]
+}
+```
+
+Give the Code account access to the destination Space and obtain the public-route
+and internet approvals. Keep the `/hooks/` exception before the global
+access check, or scope access middleware to a private prefix.
+
+```ts
+import { app, http, secrets, spaces } from "@sdk";
+
+http.allow(["https://events.example.com"]);
+const team = spaces.space("Spc001");
+
+app.use(async (c, next) => {
+  if (new URL(c.req.raw.url).pathname.startsWith("/hooks/")) return next();
+  if (!c.user) return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.post("/hooks/events", async c => {
+  // Only the ID comes from the untrusted notification.
+  const notification: unknown = await c.req.json();
+  if (!notification || typeof notification !== "object" || !("id" in notification)
+      || typeof notification.id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(notification.id))
+    return c.json({ error: "invalid_id" }, 400);
+  const response = await http.fetch(`https://events.example.com/v1/events/${notification.id}`, {
+    headers: { authorization: `Bearer ${secrets.EVENTS_API}` },
+  });
+  if (response.status !== 200) return c.json({ error: "service_unavailable" }, 502);
+  let event: unknown;
+  try {
+    const bytes = Uint8Array.from(atob(response.body), character => character.charCodeAt(0));
+    event = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return c.json({ error: "invalid_service_response" }, 502);
+  }
+  if (!event || typeof event !== "object" || !("id" in event) || event.id !== notification.id
+      || !("status" in event) || event.status !== "ready"
+      || !("title" in event) || typeof event.title !== "string")
+    return c.json({ error: "event_not_ready" }, 409);
+  // Only the service's confirmed state determines the effect.
+  await team.task.create({ title: event.title, idempotencyKey: `service-event:${event.id}` });
+  return c.json({ accepted: true });
+}, { public: true });
+export default app;
+```

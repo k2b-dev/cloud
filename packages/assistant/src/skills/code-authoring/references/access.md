@@ -223,8 +223,9 @@ app.get("/opening-hours", c => c.page(
 export default app;
 ```
 
-Forms on pages handle the CSRF token for you. Other POST, PUT and DELETE
-requests send the `X-Code-CSRF` header from a preceding GET.
+Public forms and other public requests need no CSRF token. On non-public
+routes, forms handle the session-bound token for you; other POST, PUT, PATCH
+and DELETE requests send `X-Code-CSRF` from a preceding GET.
 
 ## Internet requests and secrets
 
@@ -276,5 +277,85 @@ app.schedule({ cron: "0 8 * * *", timeZone: "Europe/Berlin", name: "dynamic" }, 
   // The origin is computed: declare it with http.allow(["https://api.example.com"]).
   await http.fetch(`https://${host}/items`);
 });
+export default app;
+```
+
+## Webhooks (R1: ohne Secret)
+
+A webhook in R1 is an ordinary public POST route, for example
+`app.post("/hooks/events", handler, { public: true })`. R1 does not verify a
+webhook signature; signed webhooks follow later. Code receives no incoming
+request headers or cookies, and `c.user` is always `null`. Use `c.req.json()`
+or `c.req.text()` to read the body. Public requests need no CSRF token or
+binding cookie. The public body and rate limits still apply.
+
+Public pages must submit to public actions. To use a non-public action, open
+its non-public page first to obtain the session-bound token. A public page
+response removes any earlier token; private form actions then fail with 403
+until the private page is opened again. A failed mutation is never retried
+automatically.
+
+**ID nehmen → beim Dienst nachlesen → handeln.** Take only the event or object
+ID from the untrusted body. Read its real state from the service with
+`http.fetch` and a secret placeholder; only then act. Never put a credential
+in Code source or treat a token in the URL as protection. Anyone can trigger
+the public route: validate the returned state, constrain the effect and use
+its stable ID for idempotency. This pattern confirms service state, not who
+sent the notification.
+
+Before submitting, an editor configures `EVENTS_API` privately in the Code's
+**Secrets** tab with this binding. Submission selects its current binding
+revision for the version; the example declares the same origin. The credential
+belongs to the outgoing service request, never to the incoming webhook:
+
+```json
+{
+  "origin": "https://events.example.com",
+  "pathPrefix": "/v1/events",
+  "headers": ["authorization"]
+}
+```
+
+Give the Code account access to the destination Space and obtain the public-route
+and internet approvals. Keep the `/hooks/` exception before the global
+access check, or scope access middleware to a private prefix.
+
+<!-- check: personal -->
+```ts
+import { app, http, secrets, spaces } from "@sdk";
+
+http.allow(["https://events.example.com"]);
+const team = spaces.space("Spc001");
+
+app.use(async (c, next) => {
+  if (new URL(c.req.raw.url).pathname.startsWith("/hooks/")) return next();
+  if (!c.user) return c.json({ error: "forbidden" }, 403);
+  return next();
+});
+app.post("/hooks/events", async c => {
+  // Only the ID comes from the untrusted notification.
+  const notification: unknown = await c.req.json();
+  if (!notification || typeof notification !== "object" || !("id" in notification)
+      || typeof notification.id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(notification.id))
+    return c.json({ error: "invalid_id" }, 400);
+  const response = await http.fetch(`https://events.example.com/v1/events/${notification.id}`, {
+    headers: { authorization: `Bearer ${secrets.EVENTS_API}` },
+  });
+  if (response.status !== 200) return c.json({ error: "service_unavailable" }, 502);
+  let event: unknown;
+  try {
+    const bytes = Uint8Array.from(atob(response.body), character => character.charCodeAt(0));
+    event = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return c.json({ error: "invalid_service_response" }, 502);
+  }
+  if (!event || typeof event !== "object" || !("id" in event) || event.id !== notification.id
+      || !("status" in event) || event.status !== "ready"
+      || !("title" in event) || typeof event.title !== "string")
+    return c.json({ error: "event_not_ready" }, 409);
+  // Only the service's confirmed state determines the effect.
+  await team.task.create({ title: event.title, idempotencyKey: `service-event:${event.id}` });
+  return c.json({ accepted: true });
+}, { public: true });
 export default app;
 ```

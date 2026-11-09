@@ -177,8 +177,10 @@ visible again.
 
 ## Forms
 
-A `Form` POSTs its fields to an own route. Cloud adds and removes the CSRF
-token; `_csrf` is a reserved field name. The handler answers with:
+A `Form` POSTs its fields to an own route. On non-public pages, Cloud adds
+and removes the session-bound CSRF token; public forms omit it. `_csrf` is a
+reserved field name. Public forms must target public POST routes; for a private
+action, open its non-public page first to obtain a token. The handler answers with:
 
 - `c.page(...)`: replaces the page in place. To report invalid input, return
   the form again with the submitted values and an `error` on each wrong field.

@@ -7,7 +7,7 @@ export type CodePageEventSource = {
 
 export type CodePageAnswer =
   /** Hosting checked the tree; `url` is set when a redirect led to another page. */
-  | { kind: "tree"; tree: CodePageTree; csrf: string; url: string | null }
+  | { kind: "tree"; tree: CodePageTree; csrf: string | null; url: string | null }
   /** The Code answered with data rather than a page. */
   | { kind: "done" }
   /** A redirect led to something other than a page; the browser opens it. */
@@ -36,7 +36,7 @@ export async function requestCodePage(url: string, body?: URLSearchParams): Prom
   }
   if (response.ok && response.headers.get("X-Code-Page") === "tree") {
     try {
-      const page: { tree: CodePageTree; csrf: string } = await response.json();
+      const page: { tree: CodePageTree; csrf: string | null } = await response.json();
       return { kind: "tree", tree: page.tree, csrf: page.csrf, url: response.redirected ? response.url : null };
     } catch {
       return lost;
