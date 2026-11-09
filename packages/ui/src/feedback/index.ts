@@ -26,5 +26,5 @@ export { createFormState, DialogHeader, prompts } from "./prompts";
 export type { TooltipAnchorProps, TooltipPlacement, TooltipProps, TooltipTriggerProps } from "./Tooltip";
 export { Tooltip } from "./Tooltip";
 export { syncThemeColor } from "./theme-color";
-export type { ToastAction, ToastFn, ToastHandle, ToastLink, ToastOptions, ToastSlot, ToastVariant } from "./toast";
+export type { ToastAction, ToastFn, ToastHandle, ToastLink, ToastOptions, ToastSlot, ToastSlotOptions, ToastVariant } from "./toast";
 export { isPointInsideToast, toast } from "./toast";

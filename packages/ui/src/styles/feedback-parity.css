@@ -1271,6 +1271,54 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   background: var(--k2b-success-500);
 }
 
+/* Building blocks for a custom slot, such as the Files upload: the slot uses
+   the toast's icon tile, title, description, and actions, and this bar. Its
+   fills move by transform only: `--k2b-toast-bar-start` and
+   `--k2b-toast-bar-value` are fractions from 0 to 1, and a second fill after
+   the first, such as failed bytes, starts where the first ends. */
+.k2b-ui .k2b-toast__bar {
+  position: relative;
+  display: block;
+  height: 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--k2b-border);
+}
+
+.k2b-ui .k2b-toast__bar-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--k2b-action-solid);
+  transform: translateX(calc(var(--k2b-toast-bar-start, 0) * 100%)) scaleX(var(--k2b-toast-bar-value, 0));
+  transform-origin: 0 50%;
+  transition: transform var(--k2b-motion-base) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-toast__bar-fill[data-tone="success"] {
+  background: var(--k2b-success-500);
+}
+
+.k2b-ui .k2b-toast__bar-fill[data-tone="danger"] {
+  background: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-toast__bar-fill[data-tone="muted"] {
+  background: var(--k2b-text-muted);
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-toast__bar {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+
+  .k2b-ui .k2b-toast__bar-fill {
+    background: Highlight;
+  }
+}
+
 /* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
    action and the close button on coarse pointers, without changing the toast.
    The close button's area reaches only into the rail's edge and the corner of
