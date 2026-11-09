@@ -246,6 +246,9 @@ export type AppWorkspaceProps = {
   /** Removes the workspace's own border, radius, and shadow for an overview that is the page itself.
    * A host may frame the outermost workspace as its app card, as Cloud does from 1024 px on signed-in pages. */
   flat?: boolean;
+  /** `quiet` for settings and administration: islands stand flat, only charts, dashboard frames and panels, and key
+   * figures keep their shadow (layers and shadows). */
+  layer?: "quiet";
   resizable?: boolean;
   /**
    * Restores a persisted layout when the workspace mounts. Persistence itself
@@ -2594,6 +2597,7 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
           data-k2b-app-workspace
           data-mobile-surface={props.mobileSurface}
           data-flat={props.flat ? "true" : undefined}
+          data-k2b-layer={props.layer}
           data-sidebar-collapsed={
             initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
           }

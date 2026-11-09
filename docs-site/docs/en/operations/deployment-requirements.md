@@ -1264,6 +1264,21 @@ has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
 
+### Mail draft suggestions
+
+Update all Mail replicas together before enabling Gustav suggestions. Earlier
+replicas do not record human adoption or enforce `DRAFT_ADOPTED`.
+The next start adds `mail.drafts.adopted_at`, the constraint allowing one
+untouched suggestion per conversation, and creation-key mappings. No setting
+is required. Existing drafts are treated as adopted because earlier editor
+attribution cannot establish whether a person ever changed them. Their content
+and authorship stay intact.
+
+After the upgrade, create a service-account draft, edit it as a person, and
+check that an autonomous update returns `DRAFT_ADOPTED` (409). Rolling back
+retains the data but removes this protection; stop autonomous draft editing
+before a rollback.
+
 ### Mail mailbox logos
 
 On its next start, Mail adds `mail.mailbox_logo_versions`,

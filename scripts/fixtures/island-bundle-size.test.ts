@@ -8,8 +8,7 @@ import { buildIslandClosure } from "./island-closure";
 // code: a change there is dead code for this closure, the case that moved the measured size by tens of bytes (#2875).
 const mount = resolve(import.meta.dir, "../../packages/ssr/src/mount.ts");
 const source = await Bun.file(mount).text();
-// Two different unused additions: whether one of them renames anything depends on the code around it (a probe like
-// code already in mount.ts changes nothing), so the test needs only one of them to change the unmeasured build.
+// Two different unused additions, the shapes that moved the size in #2875; the measured size stays the same for both.
 const deadChanges = [
   `${source}
 export const unusedProbe = (element: HTMLElement) => {
@@ -27,6 +26,20 @@ ${Array.from({ length: 30 }, (_, index) => `  const child${index} = element.chil
 };
 `,
 ];
+// Whether one of them renames anything depends on the code around it and on the dependency versions, so the test does
+// not rely on them: one more unused function uses the module's imports twice as often each round until the unmeasured
+// build differs. The minifier names by use count, so enough uses always shift its choices; the function's single name
+// stays the same in every round.
+const deadRun = (count: number) => `${source}
+export const unusedRun = (element: HTMLElement) => [
+${Array.from(
+  { length: count },
+  (_, index) =>
+    `  render(() => createComponent(ErrorBoundary, { fallback: () => fromJSON(${index}), children: getOwner() }), element.children[${index}]!),`,
+).join("\n")}
+];
+`;
+const RUN_LIMIT = 256;
 const eagerText = async (files?: Record<string, string>) => {
   const build = await buildIslandClosure(panelIslandEntries, files);
   const outputs = await Promise.all(build.outputs.map(async (output) => `${basename(output.path)}\n${await output.text()}`));
@@ -34,13 +47,17 @@ const eagerText = async (files?: Record<string, string>) => {
 };
 
 test("unused code that only renames the minifier's choices or the chunk hashes does not change the measured size", async () => {
-  // The unmeasured build really differs for at least one of them: other names in the shared chunks, other chunk
-  // hashes, or both.
+  // The unmeasured build really differs for the change the run finds: other names in the shared chunks, other chunk
+  // hashes, or both. The search ends at a fixed size, so a build that no unused code can move fails here, loudly.
   const plain = await eagerText();
-  const differs = await Promise.all(deadChanges.map(async (code) => (await eagerText({ [mount]: code })) !== plain));
-  expect(differs).toContain(true);
+  let renaming: string | undefined;
+  for (let count = 1; count <= RUN_LIMIT && renaming === undefined; count *= 2) {
+    const code = deadRun(count);
+    if ((await eagerText({ [mount]: code })) !== plain) renaming = code;
+  }
+  expect(renaming).toBeDefined();
   const base = await islandBundleSize(panelIslandEntries);
-  for (const code of deadChanges) {
+  for (const code of [...deadChanges, renaming!]) {
     const changed = await islandBundleSize(panelIslandEntries, { [mount]: code });
     expect(changed.eagerBrotliBytes).toBe(base.eagerBrotliBytes);
     expect(changed.eagerInputs).toEqual(base.eagerInputs);

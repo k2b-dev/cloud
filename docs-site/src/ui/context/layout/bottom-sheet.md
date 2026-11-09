@@ -41,19 +41,60 @@ Pass `context.requestDismiss` to dismissal controls. `close(result)` completes
 an operation; it deliberately bypasses cancellation guards. Register unsaved
 state or pending-operation rules with `context.setDismissHandler`.
 
-In sheet mode, the handle is a keyboard-accessible button. A downward drag of
-more than 60 px requests dismissal once. Dragging the body scrolls its content.
-There are no snap points or second modal lifecycle. `dismissDisabled` disables the handle;
-use the shared dismiss guard to protect Escape, backdrop, and header dismissal
-as well. Set `handle={false}` to omit the handle, or `dismissLabel` to override
-its inherited locale label. `tone` gives the sheet a
-[dialog tone](/en/ui/layout/panel-dialog#tone); on a phone the edge runs along
-all four sides of the sheet.
+In sheet mode, the sheet follows the finger. The handle is a keyboard-accessible
+button: a press closes the sheet, sliding it out first, and a drag on the
+handle or the header follows the pointer. A finger moves the sheet from
+anywhere in it, except where a list can still scroll: in a scrolled list the
+finger scrolls first, and only at the list's top does a downward pull move the
+sheet. On release the sheet returns to its rest or closes, by distance and
+speed: below its rest, a release more than a quarter down or faster than
+0.4 px/ms closes it, and a flick faster than 2 px/ms closes it from anywhere.
+The click that ends a drag presses nothing. `dismissDisabled` disables the
+handle's close and keeps the sheet from being dragged below its rest; use the
+shared dismiss guard to protect Escape, backdrop, and header dismissal as
+well. When a guard keeps the sheet after a drag or a press, it slides back.
+Set `handle={false}` to omit the handle, which also leaves the sheet in place,
+or `dismissLabel` to override its inherited locale label. `tone` gives the
+sheet a [dialog tone](/en/ui/layout/panel-dialog#tone); on a phone the edge
+runs along all four sides of the sheet.
 
 `Header`, `Body`, `Footer`, `Section`, and `Tabs` use the same props as
-`PanelDialog`. The sheet keeps one body scrollport, a bounded viewport height,
-and a short entrance animation that respects reduced motion. It is also usable
-on desktop; the host decides when to open it.
+`PanelDialog`. The sheet keeps one body scrollport and a bounded viewport
+height. It is also usable on desktop; the host decides when to open it.
+
+## Motion
+
+A sheet moves only by transform and opacity. Its layout height is fixed when
+it opens, the content's height or, with detents, the full height, and it never
+animates. It slides up from below the edge and lands directly on its rest,
+without overshoot or settle: 280 ms with `--k2b-ease-out`, 220 ms to close,
+instant with reduced motion. The frame clips with `overflow: clip`, never
+`hidden`, because a hidden box still scrolls and focus scrolling it would
+cancel the slide. Behind a sheet the page only dims, without blur, and the dim
+follows the sheet below its rest; a centred dialog keeps its blur.
+
+## Detents
+
+Pass `detents` for a long list or a form that benefits from a preview, such as
+a folder picker. The sheet then opens at half the screen's height and rests at
+half or full height (92% of the screen); menus and date sheets keep their
+content's height.
+
+```tsx
+<BottomSheet detents onDismiss={context.requestDismiss}>
+```
+
+- At half height the end of the list lies below the edge. A drag up, the mouse
+  wheel, or Tab into the list brings the sheet to full height first.
+- The handle names the way it goes ("Expand to full height", "Shrink to half
+  height"); a press switches, and ArrowUp and ArrowDown move it.
+- A release faster than 0.4 px/ms goes one detent in its direction; a slower
+  one goes to the nearest detent after a short projection.
+- The footer stays on the screen's edge between half and full height and rides
+  along below half height.
+
+From 48rem an adaptive sheet with detents is the usual centred dialog with its
+content's height.
 
 The sheet sits on the bottom edge and respects the bottom safe area. When a
 `Footer` is the last part of the sheet, the footer carries that inset: its

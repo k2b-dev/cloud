@@ -194,6 +194,12 @@ describe("Mail workspace route ownership", () => {
     expect(buildMailSelectionHref(url, item)).toBe(`/app/mail/${mailboxId}?view=mine&conversation=Conv01`);
   });
 
+  test("an open draft stays with its conversation: list and selection links leave it out", () => {
+    const url = mailRouteUrl(`/app/mail/${mailboxId}?view=mine&conversation=Conv02&draft=Drf001`);
+    expect(buildMailListHref(url)).toBe(`/app/mail/${mailboxId}?view=mine`);
+    expect(buildMailSelectionHref(url, item)).toBe(`/app/mail/${mailboxId}?view=mine&conversation=Conv01`);
+  });
+
   test("leaves server-rendered Mail pages and other origins to document navigation", () => {
     for (const href of [
       "/app/mail",

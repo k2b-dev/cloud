@@ -1045,6 +1045,7 @@ suite("mail PostgreSQL foundation", () => {
         intent: "reply",
         subject: "Re: Ordered newest inbound",
         bodyPreview: "Edited reply content",
+        suggestion: false,
         createdByDisplayName: "Mail Integration Test",
         updatedAt: editedReplyDraft.data.updatedAt,
       });

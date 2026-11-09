@@ -61,6 +61,8 @@ type MailMessageCardActions = {
   refresh: () => Promise<void>;
   reassign: (messageId: string) => void | Promise<void>;
   split: (messageId: string) => void | Promise<void>;
+  /** Undo send and cancel return the message as a draft; the conversation opens it in its place. */
+  openDraft?: (draftId: string) => void;
 };
 
 export default function MailMessageCard(props: {
@@ -449,6 +451,7 @@ export default function MailMessageCard(props: {
               canWrite={props.context.canWrite}
               dateConfig={props.context.dateConfig}
               onReconcile={props.actions.reconcile}
+              onOpenDraft={props.actions.openDraft}
             />
           )}
         </Show>

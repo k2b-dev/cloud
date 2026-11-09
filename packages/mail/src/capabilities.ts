@@ -572,6 +572,7 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
       contentType: truncateText(attachment.contentType, 255).text,
     })),
     attachmentsTruncated: draft.attachments.length > 50,
+    suggestion: draft.suggestion,
     revision: draft.revision,
     state: draft.state,
     createdAt: draft.createdAt,
@@ -595,6 +596,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
     recipients: recipients.text,
     recipientsTruncated: recipients.truncated,
     attachmentCount: draft.attachments.length,
+    suggestion: draft.suggestion,
     revision: draft.revision,
     state: draft.state,
     updatedAt: draft.updatedAt,
@@ -613,6 +615,7 @@ const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
     byteLength: attachment.byteLength,
   })),
   attachmentsTruncated: draft.attachments.length > 50,
+  suggestion: draft.suggestion,
   revision: draft.revision,
   state: draft.state,
   ...(draft.formattingWarnings ? { formattingWarnings: draft.formattingWarnings } : {}),
@@ -2739,7 +2742,7 @@ const actionDefinitions = {
   "draft.create": {
     title: "Create draft",
     description:
-      "Create an idempotent editable mail draft with an optional small inline attachment. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
+      "Create an idempotent editable mail draft with an optional small inline attachment. For Gustav and other service accounts, this is a suggestion people see in the conversation. After a person edits it, Gustav can change it only at a person’s request. A conversation has at most one untouched suggestion; another create returns it. The body must not contain a signature: Mail adds the sender's default signature after it. Omit signatureTemplateId to keep that default, or pass null for no signature.",
     input: c.DraftCreateInputSchema,
     data: c.DraftMutationDataSchema,
     destructive: false,
@@ -2865,7 +2868,17 @@ const actionDefinitions = {
       if (!result.ok) return result;
       // Attachment uploads return the draft again, without the warnings about its body.
       const { formattingWarnings } = result.data;
-      for (const attachment of input.attachments) {
+      const original =
+        context.actor.kind === "service_account"
+          ? await drafts.isOriginalDraftMaterialization({
+              context: requestContext(context),
+              mailboxId: scope.data.id,
+              draftId: result.data.id,
+              idempotencyKey: stableUuid(key.data),
+            })
+          : ok(true);
+      if (!original.ok) return original;
+      for (const attachment of original.data ? input.attachments : []) {
         const bytes = Buffer.from(attachment.base64, "base64");
         const hash = createHash("sha256").update(bytes).digest("hex");
         if (result.data.attachments.some((existing) => existing.filename === attachment.filename && existing.contentHash === hash))
