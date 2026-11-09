@@ -12,7 +12,7 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 ## Zwischen Chats wechseln {icon="layout-list"}
 
 :::reference
-- **Chatzeilen:** Jede Zeile zeigt den Titel des Chats. Ein Symbol am Zeilenende zeigt, dass ein Chat läuft, auf dich wartet, fehlgeschlagen ist, eine neue Antwort hat oder einen aktiven Zeitplan; der Tooltip nennt den Zustand. Wartet ein Chat auf dich, etwa mit einer offenen Frage, ist dieses Zeichen ein Punkt.
+- **Chatzeilen:** Jede Zeile zeigt den Titel des Chats. Ein Zeichen am Zeilenende zeigt den Zustand des Chats, auch in der Zeile des geöffneten Chats; der Tooltip nennt den Zustand. Ein drehender pflaumenfarbener Ring heißt, dass der Chat läuft. Ein pflaumenfarbener Punkt heißt, dass er auf dich wartet, etwa mit einer offenen Frage. Ein rotes Warnsymbol heißt, dass er fehlgeschlagen ist. Ein blauer Punkt und ein fetter Titel heißen, dass er eine neue Antwort hat. Solange ein Chat läuft, zeigt seine Zeile dieses Zeichen statt der Aktion **Chat als fertig markieren**.
 - **Projekte:** Erstelle über die Plus-Schaltfläche im Fenster **Projekte** ein Projekt mit einem Namen und optionalen Anweisungen.
 - **Neuer Chat:** Öffnet einen leeren Chat. Ist der geöffnete Chat noch leer, bleibt Gustav in diesem Chat, statt einen weiteren anzulegen. Das gilt nicht, wenn er zu einem Projekt gehört, von einer anderen App geöffnet wurde, einen von dir vergebenen Namen oder eine Beschreibung hat oder angeheftet, fertig oder archiviert ist.
 - **Leerer Chat:** Wähle unter dem mittig angeordneten Eingabefeld optional ein Projekt aus, bevor du die erste Nachricht sendest. Vorschlagskarten füllen eine bearbeitbare Anfrage aus, senden sie aber nicht automatisch.

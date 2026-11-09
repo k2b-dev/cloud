@@ -11,9 +11,14 @@ export const conversationStatusPresentation = (
   active = false,
 ): { label: string; icon: string; tone: ConversationStatusTone } | null => {
   const t = assistantMessages.resolve([locale]).t;
-  const spinner = "ti ti-loader-2 animate-spin motion-reduce:animate-none";
+  // Work in progress carries the AI's plum, in every list and in the phone navigation, whose tones have no AI color.
+  const spinner = "ti ti-loader-2 animate-spin motion-reduce:animate-none assistant-chat-progress";
   if (conversation.runStatus === "waiting_for_browser") {
-    return { label: active ? t.running : t.waitingForBrowser, icon: active ? spinner : "ti ti-browser", tone: "progress" };
+    return {
+      label: active ? t.running : t.waitingForBrowser,
+      icon: active ? spinner : "ti ti-browser assistant-chat-progress",
+      tone: "progress",
+    };
   }
   // A chat that waits for an answer, such as an open question, carries the dot of "Waiting for you" above the composer.
   // It is drawn by CSS: the icon font has no filled glyphs.
@@ -21,10 +26,15 @@ export const conversationStatusPresentation = (
   if (conversation.runStatus === "running" || conversation.runStatus === "queued") {
     return { label: conversation.runStatus === "queued" ? t.queued : t.running, icon: spinner, tone: "progress" };
   }
-  if (conversation.runStatus === "failed") return { label: t.failed, icon: "ti ti-alert-circle", tone: "danger" };
-  if (conversation.unreadCompletion) return { label: t.newResponse, icon: "ti ti-point-filled", tone: "accent" };
+  if (conversation.runStatus === "failed") return { label: t.failed, icon: "ti ti-alert-circle assistant-chat-failed", tone: "danger" };
+  // A CSS dot as well, in the action color of unread marks.
+  if (conversation.unreadCompletion) return { label: t.newResponse, icon: "assistant-chat-unread", tone: "accent" };
   return null;
 };
+
+/** Whether a chat's run still goes on: it cannot be marked done until it ends or is stopped. */
+export const isConversationBusy = (conversation: AiConversation): boolean =>
+  ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
 
 /**
  * Whether "New chat" may hand this chat back while it is still empty: a plain Assistant chat that is open and nobody

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
 import type { Browser, Page } from "playwright";
@@ -17,12 +18,19 @@ import AssistantSidebar from ${JSON.stringify(resolve(import.meta.dir, "Assistan
 import { createAssistantLiveHub } from ${JSON.stringify(resolve(import.meta.dir, "assistant-live.tsx"))};
 
 const [conversations, setConversations] = createSignal(window.harness.conversations);
-window.sidebar = { setConversations };
+const [activeConversationId, setActiveConversationId] = createSignal(window.harness.activeConversationId ?? null);
+window.sidebar = { setConversations, setActiveConversationId };
 render(
   () => (
     <LocaleProvider locale="de">
       <AppWorkspace class="harness-workspace">
-        <AssistantSidebar timeZone="Europe/Berlin" renderedAt={new Date().toISOString()} conversations={conversations} live={createAssistantLiveHub()} />
+        <AssistantSidebar
+          timeZone="Europe/Berlin"
+          renderedAt={new Date().toISOString()}
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          live={createAssistantLiveHub()}
+        />
         <AppWorkspace.Content>
           <AppWorkspace.Main>main</AppWorkspace.Main>
         </AppWorkspace.Content>
@@ -142,13 +150,19 @@ beforeAll(async () => {
       return output.outputs[0]!.text();
     }),
   );
-  css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  // Icons and the typeface load from @k2b/ui's build, so a status glyph shows and measures as it does in Cloud.
+  const fonts = ["plex.css", "tabler.css"]
+    .map((file) => readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, "url($1/ui/"))
+    .join("\n");
+  css = [fonts, "@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
   // Large bundles travel over HTTP, not as an inline Playwright protocol argument.
   assets = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
-      if (new URL(request.url).pathname === "/bundle.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
+      const path = new URL(request.url).pathname;
+      if (path === "/bundle.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
+      if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))));
       return new Response("Not found", { status: 404 });
     },
   });
@@ -159,15 +173,22 @@ afterAll(async () => {
   assets?.stop(true);
 });
 
-const open = async (conversations: AiConversation[], width = 1280): Promise<Page> => {
-  const page = await browser.newPage({ viewport: { width, height: 800 } });
+const open = async (
+  conversations: AiConversation[],
+  width = 1280,
+  options: { activeConversationId?: string; reducedMotion?: boolean } = {},
+): Promise<Page> => {
+  const page = await browser.newPage({
+    viewport: { width, height: 800 },
+    reducedMotion: options.reducedMotion ? "reduce" : "no-preference",
+  });
   // The phone menu sits below the workspace at the width of the bottom sheet's body on a 390 px phone.
   const html =
     `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style></head>` +
     `<body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;height:100vh"></div>` +
     `<div id="menu" style="width:358px;padding:0 16px"></div>` +
     `<div id="filters" style="width:${width > 1024 ? 718 : 332}px"></div>` +
-    `<script>window.harness = ${JSON.stringify({ conversations })};</script></body></html>`;
+    `<script>window.harness = ${JSON.stringify({ conversations, activeConversationId: options.activeConversationId })};</script></body></html>`;
   await page.clock.setFixedTime(now);
   await page.route(assets.url.href, (route) => route.fulfill({ body: html, contentType: "text/html" }));
   await page.goto(assets.url.href);
@@ -177,6 +198,7 @@ const open = async (conversations: AiConversation[], width = 1280): Promise<Page
     .locator(width > 1024 ? ".assistant-chat-sidebar-item" : "#menu .k2b-navigation__row")
     .first()
     .waitFor();
+  await page.evaluate(() => document.fonts.ready);
   return page;
 };
 
@@ -284,11 +306,151 @@ describe(`Assistant chat list in ${browserName}`, () => {
         ["Reise nach Lyon", "danger"],
         ["Urlaubsplanung 2027", "info"],
       ]);
+      // The running mark carries the AI's plum and the unread answer a real dot, in the menu's neutral tones too.
+      const marks = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("#menu .k2b-navigation__status > i"), (glyph) => {
+          const style = getComputedStyle(glyph);
+          const rect = glyph.getBoundingClientRect();
+          return {
+            title: glyph.closest(".k2b-navigation__row")?.querySelector(".k2b-navigation__copy")?.textContent,
+            ink:
+              style.backgroundColor !== "rgba(0, 0, 0, 0)"
+                ? rect.width
+                : getComputedStyle(glyph, "::before").content !== "none"
+                  ? rect.width
+                  : 0,
+            color: style.backgroundColor !== "rgba(0, 0, 0, 0)" ? style.backgroundColor : style.color,
+          };
+        }),
+      );
+      const plum = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-ai-accent)";
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      });
+      expect(marks.every((mark) => mark.ink >= 8)).toBe(true);
+      expect(marks.find((mark) => mark.title === "Rechnungen Oktober")?.color).toBe(plum);
+      expect(marks.find((mark) => mark.title === "Urlaubsplanung 2027")?.color).not.toBe(plum);
+      // Waiting and unread are both dots: only the unread answer's title is bold, so they differ beyond color.
+      const bold = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("#menu .k2b-navigation__row:not([data-active])"), (row) => {
+          const title = row.querySelector(".k2b-navigation__copy > span")!;
+          return [title.textContent, Number(getComputedStyle(title).fontWeight) >= 600];
+        }).filter(([, strong]) => strong),
+      );
+      expect(bold).toEqual([["Urlaubsplanung 2027", true]]);
       expect(after.headings).toEqual(before.headings);
       const boxes = (rows: typeof after.rows) => rows.map(({ status: _status, ...row }) => row);
       expect(boxes(after.rows)).toEqual(boxes(before.rows));
     } finally {
       await page.close();
+    }
+  });
+
+  test("every state shows at icon size in its own color, the open row included, and a run starting or ending moves nothing", async () => {
+    const page = await open(quiet, 1280, { activeConversationId: "invoices" });
+    try {
+      const set = (conversations: AiConversation[]) =>
+        page.evaluate(
+          (json) =>
+            (window as unknown as { sidebar: { setConversations: (value: unknown) => void } }).sidebar.setConversations(JSON.parse(json)),
+          JSON.stringify(conversations),
+        );
+      /** Each row's marker as the person sees it: its glyph's size and color, and whether anything covers it. */
+      const markers = () =>
+        page.evaluate(() => {
+          const probe = document.createElement("span");
+          document.body.append(probe);
+          const token = (name: string) => {
+            probe.style.color = `var(${name})`;
+            return getComputedStyle(probe).color;
+          };
+          const tokens = { plum: token("--k2b-ai-accent"), action: token("--k2b-action"), danger: token("--k2b-danger-text") };
+          probe.remove();
+          const named = (color: string) => Object.entries(tokens).find(([, value]) => value === color)?.[0] ?? color;
+          const list = document.querySelector('.k2b-app-workspace__sidebar-body[data-sidebar-mode="expanded"]')!;
+          return Array.from(
+            list.querySelectorAll(".k2b-app-workspace__sidebar-section:not([data-collapsible]) .assistant-chat-sidebar-item"),
+            (row) => {
+              const glyph = row.querySelector<HTMLElement>(".assistant-chat-marker > i");
+              if (!glyph) return null;
+              const rect = glyph.getBoundingClientRect();
+              const style = getComputedStyle(glyph);
+              const dot = style.backgroundColor !== "rgba(0, 0, 0, 0)";
+              // A glyph's ink is its pseudo-element's; a dot's is its own box.
+              const size = dot ? rect.width : Number.parseFloat(getComputedStyle(glyph, "::before").fontSize);
+              const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+              return {
+                kind: dot ? "dot" : "glyph",
+                color: named(dot ? style.backgroundColor : style.color),
+                visible:
+                  size >= 8 && (dot || getComputedStyle(glyph, "::before").content !== "none") && Boolean(hit && glyph.contains(hit)),
+                bold: Number(getComputedStyle(row.querySelector(".k2b-app-workspace__sidebar-item-label-text")!).fontWeight) >= 600,
+              };
+            },
+          );
+        });
+      const boxes = async () => {
+        const current = await rows(page);
+        return {
+          headings: current.headings,
+          // The title keeps its whole box, its width too: the mark's slot is there before any status.
+          rows: current.rows.map(({ marker: _marker, ...row }) => row),
+        };
+      };
+
+      const before = await boxes();
+      await set(busy);
+      await frames(page);
+      // "Rechnungen Oktober" is the open chat and runs: its status keeps the row's end, no disabled Done check covers it.
+      expect(await markers()).toEqual([
+        null,
+        { kind: "dot", color: "plum", visible: true, bold: false },
+        { kind: "glyph", color: "plum", visible: true, bold: false },
+        { kind: "glyph", color: "danger", visible: true, bold: false },
+        { kind: "dot", color: "action", visible: true, bold: true },
+      ]);
+      expect(
+        await page
+          .locator(".assistant-chat-sidebar-item", { hasText: "Rechnungen Oktober" })
+          .getByRole("button", { name: /fertig/ })
+          .count(),
+      ).toBe(0);
+      expect(await boxes()).toEqual(before);
+
+      // The run ends: the open row gets its Done action back, over the same end.
+      await set(quiet);
+      await frames(page);
+      expect(
+        await page
+          .locator(".assistant-chat-sidebar-item", { hasText: "Rechnungen Oktober" })
+          .getByRole("button", { name: "Chat als fertig markieren" })
+          .isVisible(),
+      ).toBe(true);
+      expect(await boxes()).toEqual(before);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the running mark turns calmly, and stands still with reduced motion", async () => {
+    for (const reducedMotion of [false, true]) {
+      const page = await open(busy, 1280, { reducedMotion });
+      try {
+        const spin = await page
+          .locator(".assistant-chat-sidebar-item", { hasText: "Rechnungen Oktober" })
+          .locator(".assistant-chat-marker > i")
+          .evaluate((glyph) => {
+            const style = getComputedStyle(glyph);
+            return { name: style.animationName, duration: style.animationDuration };
+          });
+        expect(spin).toEqual(reducedMotion ? { name: "none", duration: expect.any(String) } : { name: "spin", duration: "1.6s" });
+      } finally {
+        await page.close();
+      }
     }
   });
 
@@ -331,6 +493,21 @@ describe(`Assistant chat list in ${browserName}`, () => {
       expect(after.rows.map((row) => ({ x: row.x, y: row.y, height: row.height, labelX: row.label.x, labelY: row.label.y }))).toEqual(
         before.rows.map((row) => ({ x: row.x, y: row.y, height: row.height, labelX: row.label.x, labelY: row.label.y })),
       );
+    } finally {
+      await page.close();
+    }
+  });
+
+  // Evidence for reviews: `ASSISTANT_SIDEBAR_SCREENSHOTS=<folder>` writes the list in every state, light mode.
+  test.skipIf(!process.env.ASSISTANT_SIDEBAR_SCREENSHOTS).each([1440, 390])("screenshots of every chat state at %i px", async (width) => {
+    const folder = process.env.ASSISTANT_SIDEBAR_SCREENSHOTS!;
+    // The open chat runs, and a second one runs in the background.
+    const shown = [...busy, conversation("import", "Kundenliste importieren", 0.03, { runStatus: "running" })];
+    const page = await open(shown, width, { activeConversationId: "invoices" });
+    try {
+      await frames(page);
+      const target = width > 1024 ? page.locator(".k2b-app-workspace__sidebar").first() : page.locator("#menu");
+      await target.screenshot({ path: resolve(folder, `sidebar-${width}.png`), animations: "disabled" });
     } finally {
       await page.close();
     }

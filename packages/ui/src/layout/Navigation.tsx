@@ -77,6 +77,7 @@ export default function Navigation(props: NavigationProps) {
                   <div
                     class="k2b-navigation__row"
                     data-active={item().active || undefined}
+                    data-unread={item().unread || undefined}
                     data-context={item().context === undefined ? undefined : String(item().context)}
                   >
                     <Show
