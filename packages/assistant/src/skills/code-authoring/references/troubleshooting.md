@@ -25,7 +25,7 @@ errors (`code_type_suppression`).
 | `code_http_origin_dynamic`, `code_http_origin_invalid`, `code_http_allow_literal` | A computed or invalid HTTPS origin | Use literal URLs or a literal `http.allow([...])` |
 | `code_http_grant_limit` | More than 50 origins and operations together | Reduce the destinations |
 | `code_import_elided` | Imports changed between analysis and bundling | Check the imports and check again |
-| `code_phase_unavailable` | `app.nav`, `app.fetch` or `app.webhook` | Not available yet; say so |
+| `code_removed_api` | Removed app members or `c.user.provider` | Remove the call; use the supported SDK |
 | `code_check_time_limit`, `code_job_busy` | The checker was busy or slow | Check again later |
 
 ## Submit and switch-on errors
@@ -41,11 +41,15 @@ errors (`code_type_suppression`).
 ## Run errors
 
 A run lists its calls in order with their results. A refused call rejects
-with an error whose message is the stable code.
+with `CodeError { code, status, message, details }` (import `CodeError` from
+`@sdk`). Compare lowercase snake_case `error.code`; `message` is explanatory
+text. `status === 403` means forbidden, while `status === 404` means missing.
+`details` is `null` or safe structured metadata, such as a refused origin.
 
 | Code | Meaning | What to do |
 | --- | --- | --- |
 | 403 or 404 from the target app | The account lacks access, or the object does not exist | Ask the resource's manager to share it with the service account; check the ID |
+| `code_capability_undeclared` (403) | The call's operation, target or ref is outside the version's checked permissions | Keep the SDK call visible to the checker; check and submit the updated source before activating it |
 | `code_approval_required`, `code_approval_revoked` | The version is not approved (any more) | A Cloud administrator approves it |
 | `code_admission_refused` | A schedule tick was refused by policy or approval | As above |
 | `code_not_active` | A newer version became active before the run started | Nothing; the new version handles later work |
@@ -55,7 +59,7 @@ with an error whose message is the stable code.
 | `code_page_data_only`, `code_page_limit` | A page holds a function, an accessor or a hole in a list, or is too large | Pass plain data; stay within the page limits ([Pages](pages.md)) |
 | `code_file_invalid`, `code_file_size_limit`, `code_file_spent` | A FileRef from another run, expired, changed, too large or already used | Read a fresh reference in this run right before the import ([FileRef](file-ref.md)) |
 | `code_result_unknown` | A call's outcome is unknown after a lost attempt | Inspect the target before running again |
-| `IDEMPOTENCY_CONFLICT` | The same key with different input | Derive the key from all of the effect's input |
+| `idempotency_conflict` | The same key with different input | Derive the key from all of the effect's input |
 | `chat_busy` | The Gustav chat is in another turn | Try at a later schedule |
 | **Skipped, previous run is still running** | A tick overlapped the previous run | Make the run shorter or the schedule rarer |
 | `previous_schedule_running` | Same as above, as a stable outcome | As above |

@@ -82,12 +82,12 @@ import { app, filesv2, imports } from "@sdk";
 // Fictional file ID; read real IDs with filesv2.entry.list.
 const PRICE_LIST = "Fil001";
 
-app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "import-price-list" }, async () => {
+app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "import-price-list", title: "Import price list" }, async () => {
   const file = await filesv2.content.read({ id: PRICE_LIST });
   if (file.mediaType !== "text/csv" || file.size > 5 * 1024 * 1024) throw new Error("Unexpected price list file");
   const day = new Date().toISOString().slice(0, 10);
   await imports.import({ file, idempotencyKey: `price-list:${day}` });
-}, { name: "import-price-list", title: "Import price list" });
+});
 export default app;
 ```
 

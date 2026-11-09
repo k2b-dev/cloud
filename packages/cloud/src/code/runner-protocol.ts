@@ -164,8 +164,9 @@ export class RunnerCallError extends Error {
   constructor(
     readonly code: string,
     readonly origin?: string,
+    readonly status?: number,
   ) {
-    const error = RunnerCallErrorSchema.parse({ code, origin });
+    const error = RunnerCallErrorSchema.parse({ code, origin, status });
     super(error.origin ? `${error.code}: ${error.origin}` : error.code);
   }
 }

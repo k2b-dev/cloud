@@ -41,7 +41,8 @@ const CallVersionSchema = z.object({
 function denied(code: string, status: 200 | 403 | 409 | 503 = 200): never {
   throw new CodeBridgeRefusal(code, status);
 }
-const refusalResponse = (error: CodeBridgeRefusal) => Response.json({ ok: false, error: { code: error.code } }, { status: error.status });
+const refusalResponse = (error: CodeBridgeRefusal) =>
+  Response.json({ ok: false, error: { code: error.code, status: error.errorStatus } }, { status: error.status });
 /** C13 also uses this fence for bundle/heartbeat/completion. No process-local lease or token registry. Lock policy, Code, then run. */
 export async function requireCodeRunFence(claims: CodeRunTokenClaims, db: SQL): Promise<void> {
   const [run] = await db<{ code_id: string; version_id: string; entrypoint: string; generation: number; valid: boolean }[]>`
@@ -295,10 +296,10 @@ export function createCodeBridgeHost(
     const result = RunnerCallResponseSchema.parse(
       "observation" in execution
         ? localFailure
-          ? { ok: false, error: { code: localFailure.code } }
+          ? { ok: false, error: { code: localFailure.code, status: localFailure.errorStatus } }
           : response.ok
             ? { ok: true, data: null }
-            : { ok: false, error: { code: "code_file_observation_failed" } }
+            : { ok: false, error: { code: "code_file_observation_failed", status: response.status >= 400 ? response.status : 503 } }
         : await response.clone().json(),
     );
     if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);

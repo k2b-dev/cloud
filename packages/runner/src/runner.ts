@@ -253,7 +253,7 @@ export class Runner {
               outcome = "lease_lost";
               controller.abort();
             }
-            throw new RunnerCallError(result.error.code, result.error.origin);
+            throw new RunnerCallError(result.error.code, result.error.origin, result.error.status);
           }
           return result.data;
         },

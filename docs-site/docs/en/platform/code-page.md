@@ -227,3 +227,10 @@ wherever people meet Code, with `FeatCodeMark` from `@k2b/cloud/code/ui`:
 
 The mark never wraps and keeps its size in every state. The name stays
 "feat/code" in every language.
+
+## Zugriff prüfen
+
+Every signed-in person can reach a private Code route. Check `c.user` before
+reading or changing data through the Code account. Resource page templates deny
+access until you fill their allowed group IDs. Public routes always receive
+`c.user === null`. See [explicit UID, handle, group and Grids checks](code-sdk.md#zugriff-prüfen).

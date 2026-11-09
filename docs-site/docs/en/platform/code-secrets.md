@@ -86,7 +86,7 @@ services take `CodeContext` and enforce the same authority on every surface.
 
 ## Bind the destination to a version
 
-`cld code push`, `cld code submit`, Gustav's submit tool and the Code page's
+`cld code submit`, `cld code submit`, Gustav's submit tool and the Code page's
 **Secrets** tab select the current binding of every secret that has a value and add
 the `internet` policy row. A deleted value stays out of new versions. On the
 page, `POST /api/code/authoring/resubmit` with `{ codeId, baseVersionId }`
@@ -131,7 +131,7 @@ calls from older approved versions.
 ```ts
 import { app, http, secrets } from "@sdk";
 
-app.schedule("0 8 * * 1", async () => {
+app.schedule({ cron: "0 8 * * 1" }, async () => {
   const response = await http.fetch(
     "https://api.example.com:8443/v1/items",
     { headers: { authorization: `Bearer ${secrets.API}` } },

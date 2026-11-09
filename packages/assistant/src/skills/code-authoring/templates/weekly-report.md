@@ -12,9 +12,8 @@ import { app, core, spaces } from "@sdk";
 const SPACE_ID = "Spc001";
 const CHAT_ID = "Chat23";
 
-app.schedule(
-  { cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" },
-  async () => {
+app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "weekly-report", title: "Weekly report" },
+  async ({ runId, scheduledAt }) => {
     const { data: open, page: openPage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", sort: "deadline", limit: 50 });
     const { data: overdue, page: overduePage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", deadlineFilter: "overdue", limit: 50 });
     const { data: unassigned, page: unassignedPage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", assignedTo: "unassigned", limit: 50 });
@@ -43,11 +42,9 @@ app.schedule(
       if (typeof report.output === "string" && report.output.trim()) text = report.output.trim();
     }
 
-    const week = new Date().toISOString().slice(0, 10);
-    await core.ai.chat(CHAT_ID).ai.chat.deliver({ text, idempotencyKey: `weekly-report:${week}` });
-  },
-  { name: "weekly-report", title: "Weekly report" },
-);
+    const occurrence = scheduledAt ?? runId;
+    await core.ai.chat(CHAT_ID).deliver({ text, idempotencyKey: `weekly-report:${occurrence}` });
+  });
 
 export default app;
 ```

@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { CodeAutomationTitleSchema, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { coreSettings } from "@k2b/cloud/services";
 import { z } from "zod";
 import type { CodeContext } from "./access";
 import { CodeIdSchema, codeQueryContracts } from "./contracts";
@@ -126,6 +127,7 @@ export async function listCodeAutomations(
         }),
       );
   }
+  const defaultTimeZone = await coreSettings.get<string>("app.timezone");
   const items = manifest.data.entrypoints.map((entry): CodeAutomation => {
     const run = lastRun.get(entry.entrypoint);
     return {
@@ -134,7 +136,7 @@ export async function listCodeAutomations(
       kind: entry.kind,
       cron: entry.cron,
       ...(entry.at === undefined ? {} : { at: entry.at }),
-      ...(entry.timeZone === undefined ? {} : { timeZone: entry.timeZone }),
+      ...(entry.kind === "schedule" ? { timeZone: entry.timeZone ?? defaultTimeZone } : {}),
       nextRunAt: nextRuns.get(entry.entrypoint) ?? null,
       lastRun: run ? { state: run.state, createdAt: run.created_at.toISOString(), endedAt: run.ended_at?.toISOString() ?? null } : null,
       missingTargets: run && targetForRun.has(run.id) ? [targetForRun.get(run.id)!] : [],

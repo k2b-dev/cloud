@@ -155,7 +155,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
   );
   test("concurrent pushes share C8's atomic base guard and complete conflict diff", async () => {
     const initialized = await codeAuthoringServices.init({ title: "Weekly report" }, context);
-    expect(initialized.files["code.ts"]).toContain('{ name: "monday" }');
+    expect(initialized.files["code.ts"]).toContain('app.schedule({ cron: "0 8 * * 1", name: "monday" },');
     const common = { codeId: initialized.config.codeId, entry: "code.ts", baseVersionId: null };
     const outcomes = await Promise.allSettled([
       codeAuthoringServices.push({ ...common, files: { "code.ts": "first" } }, context),
@@ -325,7 +325,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       },
     }));
     const source =
-      'import {app, spaces} from "@sdk";\napp.schedule("0 8 * * 1", async () => {\n  await spaces.space("sp_fixture").task.create({title: "Weekly review", idempotencyKey: "review:2030-01-07"});\n}, {name: "monday"});\nexport default app;\n';
+      'import {app, spaces} from "@sdk";\napp.schedule({ cron: "0 8 * * 1", name: "monday" }, async () => {\n  await spaces.space("sp_fixture").task.create({title: "Weekly review", idempotencyKey: "review:2030-01-07"});\n});\nexport default app;\n';
     const fixture = {
       version: 1,
       name: "weekly task",

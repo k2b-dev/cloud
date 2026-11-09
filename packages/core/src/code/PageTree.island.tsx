@@ -473,7 +473,7 @@ function CodePageContent(props: PageProps) {
 
   const csrfField = () => <input type="hidden" name="_csrf" value={page().csrf} />;
 
-  const action = (item: Extract<CodePageNode, { kind: "Button" | "Action" }>) => (
+  const action = (item: Extract<CodePageNode, { kind: "Button" }>) => (
     <form action={href(item.action)} method="post" data-code-block={item.kind} onSubmit={(event) => void send(event, item, "action")}>
       {csrfField()}
       <For each={Object.entries(item.values ?? {})}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
@@ -571,7 +571,6 @@ function CodePageContent(props: PageProps) {
           </a>
         );
       case "Button":
-      case "Action":
         return action(item);
       case "Notice":
         return (
@@ -585,10 +584,10 @@ function CodePageContent(props: PageProps) {
   /** Neighbouring buttons share one row that wraps, rather than stacking as separate forms. */
   const cells = (items: readonly CodePageNode[], level: HeadingLevel) => {
     const groups = createMemo(() => {
-      const result: (CodePageNode | Extract<CodePageNode, { kind: "Button" | "Action" }>[])[] = [];
+      const result: (CodePageNode | Extract<CodePageNode, { kind: "Button" }>[])[] = [];
       for (const item of items) {
         const last = result.at(-1);
-        if (item.kind === "Button" || item.kind === "Action") Array.isArray(last) ? last.push(item) : result.push([item]);
+        if (item.kind === "Button") Array.isArray(last) ? last.push(item) : result.push([item]);
         else result.push(item);
       }
       return result;

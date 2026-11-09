@@ -1,15 +1,15 @@
 export { type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "../contracts/code-routes";
 export type {
   CodeContext,
+  CodeError,
   CodeHandle,
   CodeHttp,
   CodeHttpResult,
-  CodeNavigationItem,
   CodeRequest,
+  CodeScheduleContext,
   CodeScheduleHandler,
   CodeSecret,
   CodeUser,
-  CodeWebhookContext,
 } from "./authoring-types";
 export { requireCodeCapabilityDeclared } from "./capability-set";
 export type { CodeCheckHost } from "./checker";
@@ -88,7 +88,6 @@ export type {
   CodeSdkOperation,
   CodeSdkOptions,
   CodeSdkOwner,
-  CodeSdkPhaseDiagnostic,
   GeneratedCodeSdk,
 } from "./types";
-export { CODE_SDK_APP_PHASES, codeSdkPhaseDiagnostic } from "./types";
+export { CODE_SDK_APP_PHASES } from "./types";

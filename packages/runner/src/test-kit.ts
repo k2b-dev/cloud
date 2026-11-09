@@ -61,7 +61,7 @@ export async function ${entrypoint}(input, cloud) {
     const value = await ${entrypoint}_module[input.entrypoint](input.value, cloud);
     await cloud.call(${JSON.stringify(COMPLETE)}, { ok: true, value: value === undefined ? null : value });
   } catch (error) {
-    const code = typeof error?.message === "string" && /^[a-z][a-z0-9_]{0,127}$/.test(error.message) ? error.message : "code_test_execution_failed";
+    const code = typeof error?.code === "string" && /^[a-z][a-z0-9_]{0,127}$/.test(error.code) ? error.code : typeof error?.message === "string" && /^[a-z][a-z0-9_]{0,127}$/.test(error.message) ? error.message : "code_test_execution_failed";
     await cloud.call(${JSON.stringify(COMPLETE)}, { ok: false, error: code });
   }
 }`;
@@ -112,8 +112,8 @@ export function createCodeTestExecutor(config: RunnerConfig, suppliedLimits: Cod
         result.cases.push(caseResult);
         for (const [index, run] of fixture.runs.entries()) {
           controller.signal.throwIfAborted();
-          if (!manifest.data.entrypoints.some((entry) => entry.entrypoint === run.entrypoint))
-            throw new Error("code_test_missing_entrypoint");
+          const registered = manifest.data.entrypoints.find((entry) => entry.entrypoint === run.entrypoint);
+          if (!registered) throw new Error("code_test_missing_entrypoint");
           result.trace?.push({ case: fixture.name, file, run: index + 1, entrypoint: run.entrypoint, event: "start", error: null });
           bridge.begin();
           let completion: z.infer<typeof CompletionSchema> | undefined;
@@ -137,7 +137,17 @@ export function createCodeTestExecutor(config: RunnerConfig, suppliedLimits: Cod
             deadlineAt: Date.now() + limits.wallClockMs,
             leaseExpiresAt: Date.now() + limits.wallClockMs,
             heartbeatMs: 1000,
-            input: { entrypoint: run.entrypoint, value: run.input },
+            input: {
+              entrypoint: run.entrypoint,
+              value:
+                registered.kind === "schedule"
+                  ? {
+                      runId: `test-${index}`,
+                      scheduledAt: run.scheduledAt === undefined ? new Date(run.now ?? fixture.now).toISOString() : run.scheduledAt,
+                      input: run.input,
+                    }
+                  : run.input,
+            },
           };
           let outcome: string;
           try {

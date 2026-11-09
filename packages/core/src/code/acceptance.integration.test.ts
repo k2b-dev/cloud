@@ -66,9 +66,9 @@ const context = (user: User): CodeContext & MailRequestContext => ({
 });
 const source = (body: string) => ({
   "code.ts": `import { app, spaces, mail, http, secrets } from "@sdk";
-app.schedule("0 8 * * 1", async () => {
+app.schedule({ cron: "0 8 * * 1", name: "monday" }, async () => {
 ${body}
-}, { name: "monday" });
+});
 export default app;`,
 });
 const creation = source(
@@ -504,7 +504,7 @@ suiteFor(
     expect(undeclaredResult.calls[0]).toMatchObject({
       state: "failed",
       refusalKind: "policy",
-      result: { ok: false, error: { code: "code_capability_undeclared" } },
+      result: { ok: false, error: { code: "code_capability_undeclared", status: 403 } },
     });
     expect(await sql`SELECT id FROM spaces.items WHERE space_id=${foreignSpaceId}::uuid`).toHaveLength(0);
 

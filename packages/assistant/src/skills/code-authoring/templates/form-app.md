@@ -1,6 +1,6 @@
 # Template: form app
 
-Form app in personal Code: a request form that creates a task in one Space, validates on the server, confirms on a page and lists the latest requests. Personal routes open only for the owner. Creating a task is a silent Action visible to others: by default a Cloud administrator approves the version.
+Form app in personal Code: a request form that creates a task in one Space, validates on the server, confirms on a page and lists the latest requests. Every signed-in person can reach the routes; this template checks the allowed person before reading or writing. Creating a task is a silent Action visible to others: by default a Cloud administrator approves the version.
 
 Owner: personal Code. Copy it into `code.tsx`, replace the fictional IDs and names, then check, test and submit as usual.
 
@@ -10,6 +10,8 @@ import { app, Column, Field, Form, jsx, Link, Notice, Option, Page, spaces, Tabl
 
 // Fictional Space ID; read the real one with spaces.space.list and keep it as a constant.
 const SPACE_ID = "Spc001";
+// Fictional Cloud user ID. Replace it with the person allowed to use this form.
+const ALLOWED_USER = "00000000-0000-4000-8000-0000000000aa";
 const space = spaces.space(SPACE_ID);
 const PRIORITIES = ["low", "medium", "high"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -46,9 +48,13 @@ const page = async (values: Values, errors: Errors = {}, created?: string) => {
 
 const empty: Values = { title: "", details: "", priority: "medium", due: "" };
 
-app.get("/", async c => c.page(await page(empty)));
+app.get("/", async c => {
+  if (c.user?.id !== ALLOWED_USER) return c.json({ error: "forbidden" }, 403);
+  return c.page(await page(empty));
+});
 
 app.post("/request", async c => {
+  if (c.user?.id !== ALLOWED_USER) return c.json({ error: "forbidden" }, 403);
   const form = await c.req.formData();
   const values: Values = {
     title: String(form.get("title") ?? "").trim(),

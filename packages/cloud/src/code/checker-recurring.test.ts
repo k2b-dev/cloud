@@ -27,7 +27,7 @@ test("recurring schedule preserves its constant zone and inline name in the chec
   ).toEqual(checked.entrypoints);
 });
 
-test("imported const timing and the original string form remain valid", () => {
+test("imported const timing and omitted zone remain valid; the old string form is refused", () => {
   const checked = analyzeCode({
     sdk,
     entry: "code.ts",
@@ -39,7 +39,8 @@ test("imported const timing and the original string form remain valid", () => {
   });
   expect(checked.diagnostics).toEqual([]);
   expect(checked.entrypoints[0]).toMatchObject({ entrypoint: "morning", timeZone: "Europe/Berlin" });
-  expect(analyze('"0 9 * * *"').entrypoints[0]).toMatchObject({ cron: "0 9 * * *" });
+  expect(analyze('{ cron: "0 9 * * *" }').entrypoints[0]).toMatchObject({ cron: "0 9 * * *" });
+  expect(analyze('"0 9 * * *"').diagnostics).toContainEqual(expect.objectContaining({ code: "code_static_schedule" }));
   expect(
     CodeVersionEntrypointSchema.safeParse({ kind: "schedule", entrypoint: "old", cron: "0 9 * * *", file: "code.ts", line: 1 }).success,
   ).toBeTrue();

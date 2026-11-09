@@ -13,6 +13,31 @@ updated: 2026-11-08
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
 
+## Code SDK declarations are simpler
+
+Resubmit Code sources after updating these preview SDK contracts:
+
+- Put schedule timing and metadata in one object:
+  `app.schedule({ cron: "0 8 * * 1", name: "weekly" }, handler)`.
+  Omitted `timeZone` inherits the instance's `app.timezone` setting.
+  Schedule handlers receive `{ runId, scheduledAt, input }`.
+- Use `core.ai.chat(id).run(...)` and target methods without repeating the
+  target type prefix. For example, `owner.member.list(...)` replaces
+  `owner.mailbox.member.list(...)` for mailbox Code.
+- Read `CodeError.code` and `status`; codes use lowercase snake_case and
+  403 remains distinct from 404. Action keys share one principal/capability
+  scope across runs for 24 hours, including chat delivery and turns.
+- Use `Button` and `cld code submit`. `Action`, `cld code push`, and the
+  unfinished `app.nav`, `app.webhook` and `app.fetch` members are removed.
+- Use `c.user.id`, `username`, `groupIds`, `groupNames`, `kind` and `name`.
+  `groups` and `provider` are removed. Every signed-in person can reach
+  non-public routes of personal Code too. Check visitor access in each
+  handler; public routes always receive `c.user === null`.
+
+See the [Code SDK](/en/docs/platform/code-sdk) for explicit access checks
+and the [runtime notes](/en/docs/operations/code-runtime#schedule-and-result-delivery-compatibility)
+for the schedule and route behavior.
+
 ## Mail rules and automatic replies are retired
 
 Guided incoming automations, YAML workflows, their timers, backfills and try

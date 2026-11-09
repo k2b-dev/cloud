@@ -51,7 +51,6 @@ const reservedExports = new Set([
   "Chart",
   "Link",
   "Button",
-  "Action",
   "Notice",
   "Stats",
   "Stat",
@@ -71,6 +70,7 @@ const reservedExports = new Set([
   "app",
   "owner",
   "__codeSdk",
+  "CodeError",
   "await",
   "break",
   "case",
@@ -236,7 +236,11 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
           kind,
           target: operation.target ? `${app.appId}.${operation.target}` : null,
           refs,
-          methodPath: path(operation.localId),
+          methodPath: path(
+            operation.target && operation.localId.startsWith(`${operation.target}.`)
+              ? operation.localId.slice(operation.target.length + 1)
+              : operation.localId,
+          ),
           inputSchema: structuredClone(operation.inputSchema),
           dataSchema: structuredClone(operation.dataSchema),
           schemaHash: operation.schemaHash,
@@ -256,6 +260,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
         schemaHash: event.schemaHash,
       });
     }
+  }
+  const methodPaths = new Set<string>();
+  for (const operation of manifest.operations) {
+    const key = JSON.stringify([operation.appId, operation.target, operation.methodPath]);
+    if (methodPaths.has(key)) throw new Error(`${operation.capability}: SDK path collision`);
+    methodPaths.add(key);
   }
   if (!("default" in authoringTypes) || typeof authoringTypes.default !== "string")
     throw new Error("Expected Code SDK authoring type source");
@@ -333,7 +343,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
 export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
       `export type CodeApp = {
-  schedule(when: string | { cron: string; timeZone?: string; name?: string } | { at: string; timeZone: string }, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp;
   /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
@@ -342,11 +352,6 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
   put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
   delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
   all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
-  /** Phase 2; check reports code_phase_unavailable. */
-  nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
-  /** Phase 3; check reports code_phase_unavailable. */
-  webhook(path: string, handler: (c: CodeWebhookContext) => Response | Promise<Response>): CodeApp;
-  fetch(request: Request): Promise<Response>;
 };`,
       "export declare const app: CodeApp;",
     );
@@ -376,6 +381,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     "export const secrets = __codeSdk.secrets;",
     "export const http = __codeSdk.http;",
     "export { __codeSdk };",
+    "export const CodeError = __codeSdk.CodeError;",
     ...manifest.apps.map((app) => `export const ${app.exportName} = __codeSdk.namespaces[${quote(app.exportName)}];`),
     ...(options.owner ? ["export const owner = __codeSdk.owner;"] : []),
     ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;"]),

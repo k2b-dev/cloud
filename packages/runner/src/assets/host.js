@@ -15,9 +15,9 @@ export class Cloud extends WorkerEntrypoint {
     } catch {
       // The supervisor may close an oversized upload before workerd reads its 413.
       // Code sees one stable code, never transport details.
-      throw new Error("runner_bridge_unavailable");
+      throw Object.assign(new Error("The Code bridge is unavailable."), { code: "runner_bridge_unavailable", status: 503 });
     }
-    if (!result.ok) throw new Error(result.error.origin ? result.error.code + ": " + result.error.origin : result.error.code);
+    if (!result.ok) throw Object.assign(new Error("The Code call was refused."), result.error);
     return result.data;
   }
 }

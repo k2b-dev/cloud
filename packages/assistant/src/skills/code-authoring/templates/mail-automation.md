@@ -42,7 +42,7 @@ async function categorise(message: Message): Promise<Category> {
 async function tag(conversationId: string, category: Category) {
   const name = TAGS[category];
   if (!name) return;
-  const { data: tags, page } = await owner.mailbox.tag.list({ limit: 50 });
+  const { data: tags, page } = await owner.tag.list({ limit: 50 });
   const match = tags.find(candidate => candidate.name === name);
   if (!match) {
     if (page?.hasMore) throw new Error(`Tag ${name} was not found on the first page; use its verified ID or a bounded lookup`);
@@ -57,7 +57,7 @@ async function assign(conversationId: string, category: Category) {
   const who = ASSIGN[category];
   if (!who) return;
   // The search also matches display names and groups: take only an exact user name.
-  const member = (await owner.mailbox.member.list({ query: who, limit: 20 })).data.find(candidate => candidate.uid === who);
+  const member = (await owner.member.list({ query: who, limit: 20 })).data.find(candidate => candidate.uid === who);
   if (!member) throw new Error(`Assignee ${who} is not a member of this mailbox`);
   const current = await conversation(conversationId);
   if (current.collaboration.assignees.length) return;
@@ -101,7 +101,7 @@ async function summarise(conversationId: string, message: Message) {
 
 async function draftReply(conversationId: string, message: Message, category: Category) {
   if (category !== "support" || !message.text) return;
-  const { data: [identity] } = await owner.mailbox.identity.list({ limit: 1 });
+  const { data: [identity] } = await owner.identity.list({ limit: 1 });
   if (!identity) return;
   const { data: reply } = await core.ai.generate({
     task: "mail.reply",

@@ -26,7 +26,7 @@ Recommend the lightest place that does the job:
 - always using one mailbox, notebook, or Space for a kind of request: a personalization workflow default, which Assistant learns from the user's stated rule or repeated use;
 - rules for one Project's shared work: Project instructions;
 - a recurring procedure, judgment, or output format used across chats: a Skill;
-- work that should run at a set time: reviewed personal Code using `app.schedule` with an explicit `timeZone`, then `core.ai.chat.run` for an ordinary owner-authorized turn; load `code-authoring` for the supported rebuild path;
+- work that should run at a set time: reviewed personal Code using `app.schedule` (Cloud's default time zone unless `timeZone` is set), then `core.ai.chat(id).run` for an ordinary owner-authorized turn; load `code-authoring` for the supported rebuild path;
 - a repeated calculation or an interactive tool: lasting Code, using the code-authoring Skill.
 
 ## Draft from the conversation

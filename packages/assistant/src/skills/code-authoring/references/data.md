@@ -10,7 +10,7 @@ owns it and read it again when you need it.
 | The state of a conversation (tags, status, assignees, summary) | Mail, through its Actions |
 | A to-do or a follow-up | A Spaces task |
 | A note for a team | A chat message |
-| A result for the owner | The owner's Gustav chat with `core.ai.chat.deliver` |
+| A result for the owner | The owner's Gustav chat with `core.ai.chat(chatId).deliver` |
 | A configuration, such as a tag name or a Space ID | A constant in the source; a change is a new version |
 
 Check in [Capabilities](capabilities.md) whether the Action you need runs
@@ -23,8 +23,7 @@ each run so a repeat changes nothing new:
 
 - Derive each `idempotencyKey` from the business effect: the message ID, the
   date of the occurrence, the form input. Retrying with the same key returns
-  the first result for 24 hours. Chat delivery and Gustav turns scope keys to
-  one run.
+  the first result for at least 24 hours across runs, including chat delivery and Gustav turns.
 - Read the current state before changing it and pass its revision
   (`expectedRevision`), so a person's change in between is not overwritten.
 - Check whether the effect is already there, such as a tag that is already
@@ -60,7 +59,7 @@ import { app, spaces } from "@sdk";
 
 const MAX_PAGES = 5;
 
-app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks" }, async () => {
+app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks", title: "Count tasks" }, async () => {
   let cursor: string | undefined;
   let tasks = 0;
   let complete = false;
@@ -71,7 +70,7 @@ app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks"
     cursor = page.nextCursor;
   }
   console.log(`Open tasks: ${complete ? tasks : `${tasks} or more`}`);
-}, { name: "count-tasks", title: "Count tasks" });
+});
 export default app;
 ```
 
@@ -85,7 +84,7 @@ import { app, filesv2 } from "@sdk";
 
 const MAX_PAGES = 5;
 
-app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files" }, async () => {
+app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files", title: "Count files" }, async () => {
   const [base] = (await filesv2.bases.list({})).data.items;
   if (!base) return;
   const folder = filesv2.entry(base.ref.id);
@@ -93,13 +92,13 @@ app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files"
   let files = 0;
   let complete = false;
   for (let page = 0; page < MAX_PAGES; page++) {
-    const { data: result } = await folder.entry.list({ type: "files", ...(after ? { after } : {}) });
+    const { data: result } = await folder.list({ type: "files", ...(after ? { after } : {}) });
     files += result.items.length;
     if (!result.next) { complete = true; break; }
     after = result.next;
   }
   console.log(`Files in the first folder: ${complete ? files : `${files} or more`}`);
-}, { name: "count-files", title: "Count files" });
+});
 export default app;
 ```
 

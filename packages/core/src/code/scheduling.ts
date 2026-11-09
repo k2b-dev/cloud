@@ -72,22 +72,26 @@ async function enqueue(
   }
   if (entry.kind === "event" && !input.tick && !input.rerunOf)
     throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
-  if (input.tick?.cron !== undefined && (input.tick.cron !== entry.cron || (input.tick.timeZone ?? "UTC") !== (entry.timeZone ?? "UTC")))
+  const defaultTimeZone = await coreSettings.get<string>("app.timezone");
+  const timeZone = entry.timeZone ?? defaultTimeZone;
+  if (input.tick?.cron !== undefined && (input.tick.cron !== entry.cron || (input.tick.timeZone ?? defaultTimeZone) !== timeZone))
     return null;
-  if (input.tick?.at !== undefined && (input.tick.at !== entry.at || input.tick.timeZone !== entry.timeZone)) return null;
+  if (input.tick?.at !== undefined && (input.tick.at !== entry.at || (input.tick.timeZone ?? defaultTimeZone) !== timeZone)) return null;
   if (input.tick && entry.at) {
     if (input.tick.slot.toISOString() !== new Date(entry.at).toISOString()) return null;
     const [ready] = await db<{ due: boolean }[]>`SELECT ${input.tick.slot}<=clock_timestamp() AS due`;
     if (!ready?.due) return null;
   }
   let historicalRerun = false;
+  let scheduledAt = input.tick?.slot ?? null;
   if (input.rerunOf) {
     const [original] = await db<
-      { id: string; input: unknown; historical: boolean }[]
-    >`SELECT id,input,EXISTS(SELECT FROM code.run_requests WHERE run_id=code.runs.id AND request_key LIKE 'historical:%') AS historical
+      { id: string; input: unknown; historical: boolean; scheduled_at: Date | null }[]
+    >`SELECT id,input,scheduled_at,EXISTS(SELECT FROM code.run_requests WHERE run_id=code.runs.id AND request_key LIKE 'historical:%') AS historical
       FROM code.runs WHERE id=${input.rerunOf}::uuid AND code_id=${code.id}
       AND entrypoint=${input.entrypoint} AND state='failed'`;
     if (!original) throw new CodeDataError("BAD_INPUT", "Only a failed run of this Code and entrypoint can run again.");
+    scheduledAt = original.scheduled_at;
     if (entry.kind === "event" && approvalArgsDigest(original.input) !== approvalArgsDigest(input.input))
       throw new CodeDataError("BAD_INPUT", "Event reruns must preserve the original envelope.");
     if (entry.kind === "event") {
@@ -141,7 +145,8 @@ async function enqueue(
       event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
   if (historicalRerun)
     await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${`historical:rerun:${runId}`},${runId}::uuid)`;
-  if (!input.tick && entry.kind === "schedule") await db`UPDATE code.runs SET schedule_key=${input.entrypoint} WHERE id=${runId}::uuid`;
+  if (entry.kind === "schedule")
+    await db`UPDATE code.runs SET schedule_key=${input.entrypoint},scheduled_at=${scheduledAt} WHERE id=${runId}::uuid`;
   if (input.rerunOf && context)
     await db`UPDATE code.runs SET rerun_of=${input.rerunOf}::uuid,rerun_by=${codePerson(context, true).id}::uuid WHERE id=${runId}::uuid`;
   if (input.tick) {
@@ -222,6 +227,7 @@ type ClaimedRun = {
   lease_expires_at: Date;
   input: RunnerLease["input"];
   trigger: string;
+  scheduled_at: Date | null;
   bundle_hash: string;
   mandate_id: string;
   mandate_revision: number;
@@ -366,7 +372,10 @@ export async function codeRunnerLease(
     deadlineAt,
     leaseExpiresAt: renewed.lease_expires_at.getTime(),
     heartbeatMs: CODE_RUN_HEARTBEAT_MS,
-    input: run.input,
+    input:
+      run.trigger === "path" || run.trigger === "event"
+        ? run.input
+        : { runId: run.id, scheduledAt: run.scheduled_at?.toISOString() ?? null, input: run.input },
   };
 }
 /** Heartbeats fence under the same row lock as the bridge and never refill a wall-clock budget. */

@@ -1545,7 +1545,7 @@ a durable receipt for the existing Assistant response notification recovery.
 Messages retain their Code/run provenance, form separate answers, and enter
 model context after an already-running interactive turn finishes.
 Notification delivery follows the person's preferences. The Action starts no
-AI turn. A repeated key in the same run returns the original message; changed
+AI turn. A repeated key for the same Code principal and capability within 24 hours returns the original message; changed
 text or destination returns `IDEMPOTENCY_CONFLICT`. Each call uses the ordinary
 Code call log. See [Code SDK](/en/docs/platform/code-sdk#deliver-a-result-to-your-gustav-chat)
 for the generated handle and an example.

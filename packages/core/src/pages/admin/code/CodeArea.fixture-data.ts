@@ -124,7 +124,7 @@ export const fixtureDecided = (): CodeAdminDecided[] => [
 const before = `import { app, ai, owner } from "@sdk";
 
 // Bei neuer Mail in info@ (der Besitzer dieses Codes)
-app.schedule("*/15 * * * *", async () => {
+app.schedule({ cron: "*/15 * * * *" }, async () => {
   const messages = await owner.message.list({ unread: true });
   for (const msg of messages) {
     if (msg.labels.includes("Newsletter")) continue;
@@ -136,7 +136,7 @@ app.schedule("*/15 * * * *", async () => {
 const after = `import { app, ai, owner, spaces } from "@sdk";
 
 // Bei neuer Mail in info@ (der Besitzer dieses Codes)
-app.schedule("*/15 * * * *", async () => {
+app.schedule({ cron: "*/15 * * * *" }, async () => {
   const messages = await owner.message.list({ unread: true });
   for (const msg of messages) {
     if (msg.labels.includes("Newsletter")) continue;

@@ -143,7 +143,7 @@ test("giant call input is refused before the supervisor callback and giant resul
     await attack(
       `export async function main(input, cloud) {
         try { await cloud.call('oversized', 'x'.repeat(${config.bridgeBytes * 2})); throw new Error('ESCAPE'); }
-        catch (error) { await cloud.call('report', error.message); }
+        catch (error) { await cloud.call('report', error.code); }
       }`,
       async (operation, input) => {
         if (operation === "oversized") admitted++;
@@ -159,7 +159,7 @@ test("giant call input is refused before the supervisor callback and giant resul
     await attack(
       `export async function main(input, cloud) {
         try { await cloud.call('oversized', null); throw new Error('ESCAPE'); }
-        catch (error) { await cloud.call('report', error.message); }
+        catch (error) { await cloud.call('report', error.code); }
         // The entrypoint discards return values and workerd stderr goes to /dev/null.
         // runner-attacks fails if this canary appears anywhere in the job log.
         const canary = ['C14', 'OUTPUT', 'CANARY'].join('_');
@@ -195,7 +195,7 @@ test("call flood receives the exact concurrency refusal without an unbounded que
             void cloud.call('hold', null).then(
               () => reject(new Error('unexpected admission')),
               error => {
-                if (error.message !== 'runner_bridge_busy') reject(error);
+                if (error.code !== 'runner_bridge_busy') reject(error);
                 else if (++refused === 32) resolve();
               }
             );

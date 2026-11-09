@@ -25,7 +25,6 @@ export const codePageMessages = i18n.define({
       refreshFailed: "Could not load the page again.",
       actionFailed: "The action did not complete.",
       signInRequired: "Your session ended. Sign in again and repeat the step.",
-      ownerOnly: "Only the owner of this Code can use this page.",
       csrfRequired: "This page is out of date. Reload it and repeat the step.",
       rateLimited: "Too many requests. Wait a minute and try again.",
       timeout: "The Code did not answer in time. Check the result before you try again.",
@@ -55,7 +54,6 @@ export const codePageMessages = i18n.define({
       refreshFailed: "Die Seite konnte nicht neu geladen werden.",
       actionFailed: "Die Aktion wurde nicht abgeschlossen.",
       signInRequired: "Deine Sitzung ist abgelaufen. Melde dich neu an und wiederhole den Schritt.",
-      ownerOnly: "Nur wer diesen Code besitzt, kann diese Seite nutzen.",
       csrfRequired: "Diese Seite ist veraltet. Lade sie neu und wiederhole den Schritt.",
       rateLimited: "Zu viele Anfragen. Warte eine Minute und versuche es erneut.",
       timeout: "Der Code hat nicht rechtzeitig geantwortet. Prüfe das Ergebnis, bevor du es erneut versuchst.",
@@ -73,8 +71,6 @@ export function codePageFailure(t: CodePageMessages, code: string | undefined, f
   switch (code) {
     case "code_sign_in_required":
       return t.signInRequired;
-    case "code_owner_only":
-      return t.ownerOnly;
     case "code_csrf_required":
       return t.csrfRequired;
     case "code_request_rate_limit":

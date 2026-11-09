@@ -30,4 +30,4 @@ export const sdk = generateCodeSdk(
 );
 
 export const ACCEPTANCE_SOURCE = `import { app, owner } from "@sdk";
-app.schedule("0 8 * * *", async () => { await owner.task.create({ title: String(Date.now()), idempotencyKey: "invoice:one" }); }, { name: "weekly" }); export default app;`;
+app.schedule({ cron: "0 8 * * *", name: "weekly" }, async () => { await owner.task.create({ title: String(Date.now()), idempotencyKey: "invoice:one" }); }); export default app;`;

@@ -131,7 +131,7 @@ suiteFor(
     resource = false,
     route = false,
     reply: "json" | "page" | "invalid" = "json",
-    once?: { at: string; timeZone: string } | { cron: string; timeZone: string },
+    once?: { at: string; timeZone?: string } | { cron: string; timeZone?: string },
   ) {
     const codeId = `c_c13${String(++ordinal).padStart(5, "0")}`;
     const files = { "code.ts": "fixture" },
@@ -270,7 +270,10 @@ suiteFor(
   ] as const)
     test(`HTTP ${reply} response of ${resource ? "resource" : "personal"} Code reaches the runner and Core validates it before returning`, async () => {
       const code = await fixture(owner, resource, true, reply);
-      expect(await codeRequestVersion(code.codeId)).toMatchObject({ versionId: code.versionId, personalOwner: resource ? null : owner });
+      expect(await codeRequestVersion(code.codeId)).toMatchObject({
+        versionId: code.versionId,
+        manifest: { entrypoints: [{ kind: "route", entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } }] },
+      });
       const registry = spyOn(cloud, "getApp").mockResolvedValue({
         id: "example",
         name: "Example",
@@ -320,7 +323,7 @@ suiteFor(
             contentType: "text/plain",
             body: "",
             params: {},
-            user: { id: other, groups: [], kind: "user", provider: "local", name: "Visitor" },
+            user: { id: other, username: "visitor", groupIds: [], groupNames: [], kind: "user", name: "Visitor" },
           },
         });
         if (reply === "invalid") await expect(response).rejects.toMatchObject({ code: "code_request_failed" });
@@ -567,6 +570,24 @@ suiteFor(
     ).toBeNull();
     expect(signed).toBe(false);
     expect(await sql`SELECT id FROM code.codes WHERE id=${code.codeId}`).toHaveLength(0);
+  });
+
+  test("schedule leases carry the original slot and manual input in one handler context", async () => {
+    const code = await fixture();
+    const tick = await processCurrentCodeScheduleTick({ ...code, slot, cron: distantCron });
+    expect(tick).not.toBeNull();
+    const scheduled = await take();
+    expect(scheduled.input).toEqual({ runId: tick!.runId, scheduledAt: slot.toISOString(), input: null });
+    await sql`UPDATE code.runs SET state='queued',lease_expires_at=NULL WHERE id=${scheduled.runId}::uuid`;
+    expect((await take()).input).toEqual(scheduled.input);
+    await sql`UPDATE code.runs SET state='failed',ended_at=clock_timestamp() WHERE id=${scheduled.runId}::uuid`;
+    await sql`DELETE FROM code.run_requests WHERE run_id=${scheduled.runId}::uuid`;
+    const request = { codeId: code.codeId, entrypoint: code.entrypoint };
+    const rerun = await startCodeRun({ ...request, idempotencyKey: "context:rerun", rerunOf: scheduled.runId }, context());
+    expect((await take()).input).toEqual({ runId: rerun.runId, scheduledAt: slot.toISOString(), input: null });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${rerun.runId}::uuid`;
+    const manual = await startCodeRun({ ...request, idempotencyKey: "context", input: { invoice: "one" } }, context());
+    expect((await take()).input).toEqual({ runId: manual.runId, scheduledAt: null, input: { invoice: "one" } });
   });
 
   test("same permanent key starts one run across Core replicas, while a new key explicitly reruns", async () => {
@@ -1327,6 +1348,23 @@ suiteFor(
     const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs WHERE code_id=${code.codeId}`;
     expect(count?.count).toBe(1);
   });
+  test("one-time schedules without a zone use the Cloud default in admission and listing", async () => {
+    await coreSettings.set("app.timezone", "America/New_York");
+    try {
+      const timing = { at: slot.toISOString() };
+      const code = await fixture(owner, false, false, "json", timing);
+      expect((await listCodeAutomations({ codeId: code.codeId }, context())).items[0]).toMatchObject({
+        ...timing,
+        timeZone: "America/New_York",
+      });
+      expect(await processCurrentCodeScheduleTick({ ...code, ...timing, timeZone: "UTC", slot })).toBeNull();
+      const admitted = await processCurrentCodeScheduleTick({ ...code, ...timing, timeZone: "America/New_York", slot });
+      expect(admitted).not.toBeNull();
+      expect((await take()).input).toEqual({ runId: admitted!.runId, scheduledAt: slot.toISOString(), input: null });
+    } finally {
+      await coreSettings.set("app.timezone", "UTC");
+    }
+  });
   test("recurring zones reach Sync and next runs skip spring gaps and repeat autumn slots only once", async () => {
     const code = await fixture(owner, false, false, "json", { cron: "30 2 * * *", timeZone: "Europe/Berlin" });
     const legacy = await fixture();
@@ -1337,7 +1375,7 @@ suiteFor(
       const scheduler = sync.scheduler({ id: "code" });
       await createCodeScheduleReconciler(scheduler)();
       const id = codeScheduleId(code.codeId, code.entrypoint);
-      expect((await scheduler.get({ id: codeScheduleId(legacy.codeId, legacy.entrypoint) }))?.timezone).toBe("UTC");
+      expect((await scheduler.get({ id: codeScheduleId(legacy.codeId, legacy.entrypoint) }))?.timezone).toBe("America/New_York");
       setSystemTime(new Date("2026-03-28T01:30:00Z"));
       expect(await scheduler.get({ id })).toMatchObject({ timezone: "Europe/Berlin", nextRunAt: new Date("2026-03-30T00:30:00Z") });
       setSystemTime(new Date("2026-10-25T00:30:00Z"));

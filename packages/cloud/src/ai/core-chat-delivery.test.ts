@@ -101,7 +101,7 @@ test("a personal recurring report checks with the actual generated delivery hand
       "code.ts": `
 import { app, core } from "@sdk";
 app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
-  await core.ai.chat("Chat23").ai.chat.deliver({ text: "Your weekly report is ready.", idempotencyKey: "weekly-report" });
+  await core.ai.chat("Chat23").deliver({ text: "Your weekly report is ready.", idempotencyKey: "weekly-report" });
 });
 export default app;
 `,
