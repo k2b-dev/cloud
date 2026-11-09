@@ -111,7 +111,7 @@ test("database evidence follows aliased typed calls", async () => {
       entry: "code.ts",
       files: {
         "code.ts": `import { app, db as store } from "@sdk";
-      
+
       app.schedule({ cron: "0 8 * * *" }, async () => { await store.query("SELECT ? AS value", ["bound"]); });
       export default app;`,
       },
