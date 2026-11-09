@@ -746,7 +746,7 @@ for (const width of [1200, 390])
       await settled(page);
       const loading = await boxes(page);
       await release(page);
-      await app(page).locator("[data-balance-mounted]").waitFor();
+      await app(page).locator("[data-balance-flow]").waitFor();
       await settled(page);
       expect(
         await app(page)
@@ -771,7 +771,7 @@ for (const width of [1200, 390])
       expect(await boxes(page)).toEqual(loading);
       // Drawing another instance reuses the already verified controller asset.
       await app(page).locator("#draw").click();
-      await app(page).locator("[data-balance-mounted]").waitFor();
+      await app(page).locator("[data-balance-flow]").waitFor();
       await settled(page);
       expect(
         await app(page)
@@ -804,7 +804,7 @@ test("a failed balance controller leaves a fixed retry state and maps formats af
     expect(await app(page).getByRole("alert").innerText()).toBe("The chart could not be loaded.");
     const failed = await boxes(page);
     await app(page).getByRole("button", { name: "Try again" }).click();
-    await app(page).locator("[data-balance-mounted]").waitFor();
+    await app(page).locator("[data-balance-flow]").waitFor();
     await settled(page);
     expect(await boxes(page)).toEqual(failed);
     expect(

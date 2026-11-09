@@ -9,6 +9,8 @@ import {
 import { prefersReducedMotion } from "../motion";
 import type { inspectChart as InspectChart } from "./chart-inspection-mount";
 
+const mounted = new WeakSet<HTMLElement>();
+
 export function selectBalanceFlowDatum(root: HTMLElement, selected: ChartDatumRef | null): void {
   for (const mark of root.querySelectorAll<SVGElement>("[data-chart-datum]")) {
     const datum: unknown = JSON.parse(mark.getAttribute("data-chart-datum") ?? "null");
@@ -36,28 +38,32 @@ export function mountBalanceFlowController(
   inspectChart: typeof InspectChart,
 ): () => void {
   const chart = root.querySelector<HTMLElement>('.k2b-chart[data-chart-kind="balanceFlow"]');
-  if (!chart || root.hasAttribute("data-balance-mounted")) return () => {};
-  root.setAttribute("data-balance-mounted", "");
+  if (!chart || mounted.has(root)) return () => {};
+  mounted.add(root);
   const locale = root.dataset.locale ?? options.locale ?? "en";
   const viewport = root.querySelector<HTMLElement>("[data-balance-scroll]")!;
   const months = Array.from(root.querySelectorAll<HTMLElement>("[data-balance-month]"));
   let period = Number(root.dataset.period) || 0;
   let animation: Animation | undefined;
-  const inspection = inspectChart(chart, {
-    kind: "balanceFlow",
-    nav: {
-      last: true,
-      pointer: false,
-      keepScroll: true,
-      reveal: (element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }),
-    },
-    locale,
-    format: options.tooltip ?? (({ datum }) => balanceFlowTooltip(datum, locale)),
-    select: (selection) => {
-      selectBalanceFlowDatum(root, selection.datum);
-      options.select?.(selection);
-    },
-  });
+  let inspection: ReturnType<typeof InspectChart> | undefined;
+  // The server frame stays intact until interaction actually needs a tooltip.
+  // Capture installs the shared listeners before the initiating event reaches the chart.
+  const inspect = () =>
+    (inspection ??= inspectChart(chart, {
+      kind: "balanceFlow",
+      nav: {
+        last: true,
+        pointer: false,
+        keepScroll: true,
+        reveal: (element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }),
+      },
+      locale,
+      format: options.tooltip ?? (({ datum }) => balanceFlowTooltip(datum, locale)),
+      select: (selection) => {
+        selectBalanceFlowDatum(root, selection.datum);
+        options.select?.(selection);
+      },
+    }));
   const listen = <K extends keyof HTMLElementEventMap>(event: K, listener: (value: HTMLElementEventMap[K]) => void) => {
     root.addEventListener(event, listener);
     return () => root.removeEventListener(event, listener);
@@ -105,7 +111,7 @@ export function mountBalanceFlowController(
     const next = period + delta,
       month = months[next];
     if (!month || !["data", "stale"].includes(root.dataset.state ?? "data")) return;
-    inspection.close();
+    inspection?.close();
     cancelMotion();
     update(next);
     if (root.dataset.view === "table") {
@@ -149,7 +155,7 @@ export function mountBalanceFlowController(
   viewport.addEventListener("scroll", scrolled, { passive: true });
   const interrupt = () => {
     cancelMotion();
-    inspection.close();
+    inspection?.close();
   };
   viewport.addEventListener("pointerdown", interrupt, { passive: true });
   viewport.addEventListener("wheel", interrupt, { passive: true });
@@ -165,7 +171,7 @@ export function mountBalanceFlowController(
       if (!target || target.disabled) return;
       if (target.dataset.balanceStep) move(Number(target.dataset.balanceStep));
       if (target.dataset.balanceView) {
-        inspection.close();
+        inspection?.close();
         const table = target.dataset.balanceView === "table";
         root.dataset.view = table ? "table" : "chart";
         chart.hidden = table;
@@ -187,14 +193,20 @@ export function mountBalanceFlowController(
     }
   };
   root.addEventListener("keydown", key, true);
+  const inspectionEvents = ["pointerdown", "pointermove", "focusin", "click", "keydown"] as const;
+  const beginInspection = (event: Event) => {
+    if (event.target instanceof Node && chart.contains(event.target)) inspect();
+  };
+  for (const event of inspectionEvents) root.addEventListener(event, beginInspection, true);
   return () => {
+    for (const event of inspectionEvents) root.removeEventListener(event, beginInspection, true);
     root.removeEventListener("keydown", key, true);
     cleanups.forEach((fn) => fn());
     cancelMotion();
     viewport.removeEventListener("scroll", scrolled);
     viewport.removeEventListener("pointerdown", interrupt);
     viewport.removeEventListener("wheel", interrupt);
-    inspection.destroy();
-    root.removeAttribute("data-balance-mounted");
+    inspection?.destroy();
+    mounted.delete(root);
   };
 }

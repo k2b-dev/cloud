@@ -61,8 +61,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  // BalanceFlow paint 14,432 B + interaction 8,234 B, exactly over main's 89,376 B guard.
-  expect(total).toBeLessThan(112_042);
+  // BalanceFlow paint 14,468 B + interaction 8,386 B, exactly over main's 89,376 B guard.
+  expect(total).toBeLessThan(112_230);
   const markers = {
     line: "k2b-line-forecast-band",
     area: "k2b-area-layer",

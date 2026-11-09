@@ -36,6 +36,8 @@ export const blockMessages = i18n.define({
       "chart-x-type": "Use numbers or ISO dates for x, or use type: bar for text labels.",
       "chart-one-series": "A bar chart shows one y column. Use one column per bar chart.",
       "chart-unsupported": "These values cannot be drawn as this chart.",
+      "chart-balance-period": ({ name }: { name?: string }) =>
+        `Check the amounts for ${name}: opening + inflows − outflows must equal closing, and opening must equal the previous closing.`,
     },
     de: {
       loading: "Diagramm wird gezeichnet …",
@@ -67,6 +69,8 @@ export const blockMessages = i18n.define({
       "chart-x-type": "Verwende Zahlen oder ISO-Daten für x oder type: bar für Textbeschriftungen.",
       "chart-one-series": "Ein Balkendiagramm zeigt eine y-Spalte. Verwende eine Spalte pro Balkendiagramm.",
       "chart-unsupported": "Diese Werte können nicht als dieses Diagramm dargestellt werden.",
+      "chart-balance-period": ({ name }) =>
+        `Beträge für ${name} prüfen: Anfang + Eingänge − Ausgänge muss Schluss ergeben; der Anfang muss dem vorherigen Schluss entsprechen.`,
     },
   },
 });
@@ -98,6 +102,7 @@ export const blockDiagnostic = (locale: string, diagnostic: NotebookBlockDiagnos
     case "invalid-source":
     case "duplicate-block":
     case "unknown-column":
+    case "chart-balance-period":
       return t[diagnostic.code](params);
     case "not-a-number":
       return t["not-a-number"](params);

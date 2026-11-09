@@ -19102,7 +19102,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__nav button:not(:disabled):hover { background: var(--k2b-surface-muted, #f4f4f5); }
 .k2b-ui .k2b-balance-flow__views button:focus-visible,
 .k2b-ui .k2b-balance-flow__nav button:focus-visible,
-.k2b-ui .k2b-balance-flow__status button:focus-visible { outline: 2px solid var(--k2b-balance-flow-mark, #3b82f6); outline-offset: 2px; }
+.k2b-ui .k2b-balance-flow__status button:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-balance-flow__nav { display: flex; justify-content: center; align-items: center; gap: 12px; height: 44px; }
 .k2b-ui .k2b-balance-flow__nav strong { font-size: 14px; font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-balance-flow__nav button { flex: none; min-width: 44px; min-height: 44px; font-size: 24px; }
@@ -19127,7 +19127,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__table caption { text-align: start; font-weight: 600; padding: 8px 0; }
 .k2b-ui .k2b-balance-flow__table :is(th, td) { padding: 8px 10px; text-align: start; overflow-wrap: anywhere; }
 .k2b-ui .k2b-balance-flow__table :is(th, td):first-child { width: 48%; }
-.k2b-ui .k2b-balance-flow__table .num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k2b-ui .k2b-balance-flow__table .k2b-balance-flow__number { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .k2b-ui .k2b-balance-flow__table tbody th { font-weight: 400; }
 .k2b-ui .k2b-balance-flow__data > [data-balance-table] { height: calc(52px + var(--k2b-balance-flow-height)); overflow: auto; }
 .k2b-ui .k2b-balance-flow__amounts { display: none; margin: 0; }
@@ -19135,9 +19135,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__amounts dt { overflow-wrap: anywhere; }
 .k2b-ui .k2b-balance-flow__amounts dd { margin: 0; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-balance-flow__amounts [data-direction="in"] dd,
-.k2b-ui .k2b-balance-flow__table [data-direction="in"] .num { color: var(--k2b-flow-in-text, #0e7490); }
+.k2b-ui .k2b-balance-flow__table [data-direction="in"] .k2b-balance-flow__number { color: var(--k2b-flow-in-text, #0e7490); }
 .k2b-ui .k2b-balance-flow__amounts [data-direction="out"] dd,
-.k2b-ui .k2b-balance-flow__table [data-direction="out"] .num { color: var(--k2b-flow-out-text, #7c3aed); }
+.k2b-ui .k2b-balance-flow__table [data-direction="out"] .k2b-balance-flow__number { color: var(--k2b-flow-out-text, #7c3aed); }
 .k2b-ui .k2b-balance-flow [hidden], .k2b-ui.k2b-balance-flow [hidden] { display: none !important; }
 @container balance-flow (min-width: 1000px) {
   .k2b-ui .k2b-balance-flow__content-box { --k2b-balance-period-size: 50cqw; }
@@ -19173,4 +19173,4 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__amounts > div { min-height: 44px; box-sizing: border-box; align-items: center; }
 
 .k2b-ui .k2b-chart[data-chart-kind="balanceFlow"] [data-inspected] > rect { stroke: var(--k2b-chart-inspection-color, #3b82f6); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
-.k2b-ui .k2b-chart[data-chart-kind="balanceFlow"] [data-selected] > rect { stroke: var(--k2b-chart-selection-color, #3b82f6) !important; stroke-width: 2.5px !important; vector-effect: non-scaling-stroke; }
+.k2b-ui .k2b-chart[data-chart-kind="balanceFlow"] [data-chart-datum][data-selected]:is([data-inspected], [data-selected]) > rect { stroke: var(--k2b-chart-selection-color, #3b82f6); stroke-width: 2.5px; vector-effect: non-scaling-stroke; }

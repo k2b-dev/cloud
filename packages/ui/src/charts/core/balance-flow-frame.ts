@@ -44,7 +44,7 @@ export function renderBalanceFlowHtml(
     )
       .map(
         (row) =>
-          `<tr data-direction="${row.direction}"><th scope="row">${escapeXml(row.label)}</th><td>${escapeXml(spec.periods[index]?.label ?? "")}</td><td>${escapeXml(balanceFlowDirection(row.direction, spec.locale))}</td><td class="num">${escapeXml(balanceFlowDisplayAmount(spec, row))}</td></tr>`,
+          `<tr data-direction="${row.direction}"><th scope="row">${escapeXml(row.label)}</th><td>${escapeXml(spec.periods[index]?.label ?? "")}</td><td>${escapeXml(balanceFlowDirection(row.direction, spec.locale))}</td><td class="${cls("number")}">${escapeXml(balanceFlowDisplayAmount(spec, row))}</td></tr>`,
       )
       .join("")}</tbody></table>`;
   const phone = (index: number) =>
@@ -66,7 +66,7 @@ export function renderBalanceFlowHtml(
 <div class="${cls("scroll")}" data-balance-scroll><div class="${cls("track")}" style="--k2b-balance-periods:${Math.max(1, spec.periods.length)}">
 <div class="${cls("months")}">${spec.periods.map((period, i) => `<div data-balance-month="${i}"${i === active ? " data-balance-active" : ""}><strong>${escapeXml(period.label)}</strong></div>`).join("")}</div>
 <div class="k2b-chart__svg">${diagram}</div></div></div></div>
-<div data-balance-table${view === "table" ? "" : " hidden"}>${spec.periods.map((_, i) => table(i)).join("")}</div><div data-balance-phone${view === "table" ? " hidden" : ""}>${spec.periods.map((_, i) => phone(i)).join("")}</div></div></div></div>
+<div class="k2b-chart__table" data-balance-table${view === "table" ? "" : " hidden"}>${spec.periods.map((_, i) => table(i)).join("")}</div><div data-balance-phone${view === "table" ? " hidden" : ""}>${spec.periods.map((_, i) => phone(i)).join("")}</div></div></div></div>
 <p class="k2b-sr-only" data-balance-summary role="status">${escapeXml(shown && p ? balanceFlowSummary(spec, active) : status)}</p>
 </section>`;
 }

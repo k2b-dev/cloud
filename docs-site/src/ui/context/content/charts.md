@@ -1364,7 +1364,9 @@ paint and interaction from separate cached offline assets when this kind is firs
 drawn. Other app frames retain only validation, initial sizing and lazy loading.
 Hosts with an existing inspector can call `mountBalanceFlowController(root, options,
 inspectChart)` from `@k2b/ui/charts`; `mountBalanceFlow` supplies that dependency
-for ordinary hosts. `chartNumberFormatters` in `@k2b/ui/charts/core` also serves
+for ordinary hosts. Initial mounting keeps the full server frame intact; the
+shared tooltip mounts when a person first interacts with the drawing.
+`chartNumberFormatters` in `@k2b/ui/charts/core` also serves
 the portable table adapter, preserving one number-formatting contract.
 
 In Notebook chart directives, use `type: balanceFlow`, `currency: EUR` and

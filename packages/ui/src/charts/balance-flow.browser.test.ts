@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { balanceFlowPage, balanceFlowSpec as spec } from "../../test/charts/balance-flow-page";
 import { renderBalanceFlowSvg } from "./core/balance-flow";
+import { renderBalanceFlowHtml } from "./core/balance-flow-frame";
 
 test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspection and real state boxes", async () => {
   const { html, bundle } = await balanceFlowPage();
@@ -22,6 +23,7 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
           const b = element.getBoundingClientRect();
           return { x: b.x + window.scrollX, y: b.y + window.scrollY, width: b.width, height: b.height };
         };
+        const serverFrame = await frame.innerHTML();
         const before = await svg.evaluate((e) => e.outerHTML),
           box = await frame.evaluate(documentBox);
         const newestRight = await frame.locator('[data-balance-month="3"]').evaluate((e) => e.getBoundingClientRect().right);
@@ -31,12 +33,22 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
         await page.locator("#mount").evaluate((e) => e.replaceChildren());
         await page.addScriptTag({ content: bundle });
         await settled(page);
+        expect(await frame.innerHTML()).toBe(serverFrame);
         expect(await svg.evaluate((e) => e.outerHTML)).toBe(before);
         expect(await frame.evaluate(documentBox)).toEqual(box);
         expect(await viewport.evaluate((e) => e.scrollLeft)).toBe(0);
         expect(await frame.getAttribute("data-period")).toBe("3");
         expect(await frame.locator('[data-balance-step="1"]').isDisabled()).toBe(true);
         expect(await chart.locator("[data-balance-period]").count()).toBe(4);
+        // Keyboard focus must start inspection even when no pointer has entered the chart yet.
+        await chart.focus();
+        await settled(page);
+        expect(await chart.locator('[role="tooltip"]:popover-open').isVisible()).toBe(true);
+        await page.keyboard.press("Escape");
+        await chart.evaluate((element) => {
+          if (element instanceof HTMLElement) element.blur();
+        });
+        await settled(page);
         for (let period = 0; period < 3; period++) {
           const boundary = chart.locator(`[data-balance-period="${period}"] [data-balance-key="closing"]`);
           const seam = await boundary.evaluate((e) => {
@@ -309,6 +321,14 @@ test("balance mark adapts to light and dark in base.css-only app frames", async 
           .evaluate((e) => getComputedStyle(e).fill),
       ).toBe(paint);
     }
+    await page.setContent(`<style>${css}</style>${renderBalanceFlowHtml(spec)}`);
+    await settled(page);
+    expect(await page.locator("[data-balance-table]").isVisible()).toBe(false);
+    await page.emulateMedia({ media: "print" });
+    await settled(page);
+    expect(await page.locator("[data-balance-table]").isVisible()).toBe(true);
+    expect(await page.locator("[data-balance-table] table").count()).toBe(4);
+    expect(await page.locator('.k2b-chart[data-chart-kind="balanceFlow"]').isVisible()).toBe(false);
     expect(errors).toEqual([]);
     await page.close();
   } finally {
