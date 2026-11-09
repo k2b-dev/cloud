@@ -49,11 +49,12 @@ const render = (state: ConversationContentSummary, locale: "de" | "en" = "de", c
   );
 
 describe("MailConversationSummaryCard", () => {
-  test("an AI summary sits on the AI surface with ✦, tools, its next step and where it came from", () => {
+  test("an AI summary is a Section with the AI tone and ✦, tools, its next step and where it came from", () => {
     const html = render(aiSummary());
     expect(html).toContain('data-mail-conversation-summary="text"');
     expect(html).toContain("data-mail-summary-ai");
-    expect(html).toContain("bg-[var(--k2b-ai-surface)]");
+    expect(html).toContain('class="k2b-section ');
+    expect(html).toContain('data-tone="ai"');
     expect(html).toContain("ti-sparkles");
     expect(html).toContain("Kurz gesagt");
     expect(html).toContain('aria-label="Neu schreiben"');
@@ -63,7 +64,7 @@ describe("MailConversationSummaryCard", () => {
     expect(html).toContain("Nächster Schritt");
     expect(html).toContain("Freigabe bis Mi., 29.10.");
     expect(html).toContain("Aus 5 Nachrichten · Regel „Lange Mails zusammenfassen“ · vor 3 Min.");
-    expect(html).toContain("min-h-[12.25rem]");
+    expect(html).toContain("min-h-[13.75rem]");
   });
 
   test("a text a person wrote stays neutral: no ✦, no plum", () => {
@@ -76,7 +77,7 @@ describe("MailConversationSummaryCard", () => {
       }),
     );
     expect(html).not.toContain("data-mail-summary-ai");
-    expect(html).not.toContain("--k2b-ai");
+    expect(html).not.toContain('data-tone="ai"');
     expect(html).not.toContain("ti-sparkles");
     expect(html).toContain("Von Lisa Brandt geschrieben · vor 2 Std.");
     expect(html).not.toContain('aria-label="Neu schreiben"');
@@ -103,8 +104,8 @@ describe("MailConversationSummaryCard", () => {
     expect(html).toContain('data-mail-conversation-summary="writing"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("wird geschrieben …");
-    expect(html).toContain("min-h-[12.25rem]");
-    expect(html.match(/k2b-skeleton/g)?.length).toBe(5);
+    expect(html).toContain("min-h-[13.75rem]");
+    expect(html.match(/k2b-section__skeleton-row/g)?.length).toBe(4);
     expect(html).not.toContain('aria-label="Neu schreiben"');
   });
 
