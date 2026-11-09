@@ -446,6 +446,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     options: {
       personal?: boolean;
       database?: boolean;
+      databaseEvidence?: boolean;
       invalidEntrypoint?: boolean;
       entry?: boolean;
       policyRows?: CodeCheckedVersionManifest["policyRows"];
@@ -541,9 +542,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       comparisonSourceHash: null,
       comparisonBundleHash: null,
     };
-    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding) VALUES(${codeId},${version!.id}::uuid,${JSON.stringify(binding)}::text::jsonb)`;
-    if (options.database)
-      await sql`UPDATE code.version_submissions SET evidence=evidence||'{"database":true}'::jsonb WHERE version_id=${version!.id}::uuid`;
+    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding,evidence)
+      VALUES(${codeId},${version!.id}::uuid,${JSON.stringify(binding)}::text::jsonb,
+        ${JSON.stringify(options.database && options.databaseEvidence !== false ? { database: true } : {})}::text::jsonb)`;
     const [stored] = await sql`SELECT jsonb_typeof(v.source_files) AS source_kind,jsonb_typeof(v.manifest) AS manifest_kind,
       jsonb_typeof(s.binding) AS binding_kind FROM code.versions v JOIN code.version_submissions s ON s.version_id=v.id
       WHERE v.id=${version!.id}::uuid`;
@@ -713,8 +714,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
 
   test("database calls require both checker manifest and submission evidence", async () => {
     await error({ operation: "db.query", input: { sql: "SELECT 1" } }, "code_db_undeclared", 403, 403);
-    await resetFixture({ entry: true, database: true, permissions: [], policyRows: [] });
-    await sql`UPDATE code.version_submissions SET evidence=evidence-'database' WHERE version_id=${claims.versionId}::uuid`;
+    await resetFixture({ entry: true, database: true, databaseEvidence: false, permissions: [], policyRows: [] });
     await error({ operation: "db.query", input: { sql: "SELECT 1" } }, "code_db_undeclared", 403, 403);
     expect(dbCalls).toEqual([]);
   });

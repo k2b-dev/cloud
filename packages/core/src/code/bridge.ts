@@ -8,9 +8,7 @@ import {
   CodeBridgeRefusal,
   type CodeBridgeRefusalKind,
   type CodeFileObservationHost,
-  type CodeRunnerDispatchDependencies,
   codeBridgeLocalRefusalKind,
-  createCodeRunnerCallRoutes,
 } from "@k2b/cloud/api";
 import { requireCodeCapabilityDeclared } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
@@ -23,12 +21,9 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
-import { dispatchCodeDatabase } from "./database";
-import { readCodeOwnOrigins } from "./origins";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
-import { dispatchCodeSecretHttp } from "./secret-http";
 import { codeSettings } from "./settings";
 import { appendCodeCall, findCode, finishCodeCall } from "./store";
 
@@ -362,12 +357,3 @@ export function createCodeBridgeHost(
   };
 }
 export { readCodeOwnOrigins } from "./origins";
-/** Mount only in Core; C13 adds the other runner protocol endpoints alongside this route. */
-export const createCodeBridgeRoutes = (overrides: Partial<CodeRunnerDispatchDependencies> = {}) =>
-  createCodeRunnerCallRoutes({
-    host: createCodeBridgeHost(),
-    ownOrigins: readCodeOwnOrigins,
-    http: dispatchCodeSecretHttp,
-    database: dispatchCodeDatabase,
-    ...overrides,
-  });
