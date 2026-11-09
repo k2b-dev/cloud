@@ -3,7 +3,7 @@ title: Use cases and templates
 navTitle: Use cases
 section: Guides
 order: 30
-description: Five things to build with feat/code, from mail sorting to AI loops that read invoices, each with the code to start from.
+description: Things to build with feat/code, from mail sorting to AI loops that read invoices, each with the code to start from.
 tags: [code, templates, examples, automation, ai]
 updated: 2026-11-09
 ---
@@ -18,6 +18,7 @@ chat" or "a form that files a Space task", and it starts from the template.
 | You want to … | Owner | Starts from |
 | --- | --- | --- |
 | [Sort and summarise incoming mail](#sort-and-summarise-incoming-mail) | mailbox | `app.on("mail.message.received")` |
+| [Assign tasks due tomorrow and notify the team chat](#assign-tasks-due-tomorrow-and-notify-the-team-chat) | you or a mailbox | `app.on(spaces.space(...), ...)`, `app.schedule` |
 | [Get a Monday report in your Gustav chat](#get-a-monday-report-in-your-gustav-chat) | you | `app.schedule` |
 | [Give a team a form that files tasks](#give-a-team-a-form-that-files-tasks) | you or a mailbox | `app.use`, `app.get`, `app.post` |
 | [Hand out a public survey](#hand-out-a-public-survey) | you | `{ public: true, layout: "plain" }` |
@@ -36,6 +37,26 @@ never run unattended in this release.
 
 Reference: [Automate incoming mail with Code](/en/docs/platform/mail-code-automations),
 including how to preview one real message without effects and catch up older mail.
+
+## Assign tasks due tomorrow and notify the team chat
+
+When a Space task is due tomorrow and unassigned, assign a chosen person and
+write a short note in the team chat. The template listens with
+`app.on(spaces.space(SPACE), "spaces.item.created", ...)` and
+`app.on(spaces.space(SPACE), "spaces.item.updated", ...)`. A daily 08:00 Berlin
+schedule catches tasks as the calendar advances: `spaces.item.due` fires at
+the deadline, so it cannot signal the day before.
+
+Both paths read the task and check its deadline. Unassigned tasks go through
+`spaces.space(SPACE).task.update({ itemId: task.id, addAssigneeIds: [PERSON] })`.
+Tasks assigned only to that person get a note through
+`chat.message.post({ conversation, body, idempotencyKey })`; tasks with other
+assignees are skipped. The chat key prevents duplicate notes for the same task
+and deadline. The executing account needs read and write access to the Space
+and membership in the team chat.
+
+Reference: [Complete Gustav template](https://github.com/k2b-dev/cloud/blob/feat/code/packages/assistant/src/skills/code-authoring/templates/task-due-tomorrow.md),
+[React to resource events](/en/docs/platform/code-sdk#react-to-resource-events).
 
 ## Get a Monday report in your Gustav chat
 
