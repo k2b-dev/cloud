@@ -53,11 +53,6 @@ const UPSTREAM_CHART_EXPORTS = new Set([
   "stepPathD",
 ]);
 const upstreamChartModule = (name: string | undefined): boolean => name === "@k2b/stdlib" || name === "@k2b/stdlib/charts";
-// Temporary B3b boundary: #3010 deletes Studio and moves Code to chat-code/runtime.
-const frozenStudioPath = (path: string): boolean =>
-  path.startsWith("packages/assistant/src/artifacts/") ||
-  path === "packages/assistant/src/frontend/AssistantWorkspace.island.tsx" ||
-  path === "packages/assistant/src/styles/app.css";
 const rawChartModule = (name: string | undefined): boolean => name === "@k2b/ui/charts/core" || name === "@k2b/ui/charts";
 const CHART_COMPONENTS = new Set(["Chart", "ChartExplorer", "ChartSnapshotView", "StatCell"]);
 const LIBRARIES = new Set(["ui", "cloud", "ssr", "editor"]);
@@ -367,7 +362,7 @@ export const rule: Rule = {
       const text = readFileSync(file, "utf8");
       // Upstream chart drawing is forbidden even in tests, scripts and otherwise allowed core adapters.
       // String fixtures in this rule's tests are data; the AST reports only real imports and accesses.
-      if (!frozenStudioPath(path) && text.includes("@k2b/stdlib")) {
+      if (text.includes("@k2b/stdlib")) {
         const source = parse(file, text);
         rawRenderers(
           source,

@@ -127,12 +127,10 @@ test.each([
   expect((await findings({ "packages/demo/src/plot.ts": source })).length).toBeGreaterThan(0);
 });
 
-test.each([
-  "packages/assistant/src/artifacts/runtime/cloud-lib.test.ts",
-  "packages/assistant/src/artifacts/runtime/lib.ts",
-  "packages/assistant/src/frontend/AssistantWorkspace.island.tsx",
-])("leaves only frozen Studio paths for B3b: %s", async (path) => {
-  expect(await findings({ [path]: "import { charts } from '@k2b/stdlib';" })).toEqual([]);
+test("the Assistant workspace has no Studio exemption", async () => {
+  expect(
+    (await findings({ "packages/assistant/src/frontend/AssistantWorkspace.island.tsx": "import { charts } from '@k2b/stdlib';" })).length,
+  ).toBeGreaterThan(0);
 });
 
 const panel = "import { Chart } from '@k2b/ui';\nexport const Panel = () => <Chart kind='bar' data={[]} />;";

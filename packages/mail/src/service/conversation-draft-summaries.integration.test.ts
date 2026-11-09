@@ -89,10 +89,7 @@ suite("conversation list draft summaries", () => {
         VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[0]}::uuid, ${messages[0]}::uuid, 'reply', ${identityId}::uuid,
           'user', ${users[0]}::uuid, 'user', ${users[0]}::uuid, ${state})`;
     }
-    await sql`INSERT INTO mail.drafts (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
-      author_kind, author_id, last_editor_kind, last_editor_id, origin)
-      VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[0]}::uuid, ${messages[0]}::uuid, 'reply', ${identityId}::uuid,
-        'workflow', ${users[0]}::uuid, 'workflow', ${users[0]}::uuid, 'workflow')`;
+    // Workflow drafts cannot exist: the retired-rules trigger rejects open workflow and automatic-reply drafts.
   });
   afterAll(async () => {
     if (mailboxId) {
