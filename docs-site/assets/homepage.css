@@ -1637,6 +1637,7 @@ html:not(.dark) :where(.cloud-site, .fibel-app) .fibel-control-icon-button:hover
   padding: 0.15rem 0.45rem;
   background: var(--c-sunken);
   color: var(--c-ink-2);
+  white-space: nowrap;
 }
 
 .cloud-formula i {

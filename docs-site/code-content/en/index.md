@@ -10,26 +10,27 @@ updated: 2026-11-09
 
 # feat/code
 
-What if n8n, Cloudflare Workers, TypeScript, SQLite and Lovable were one thing,
-inside the platform that already holds your mail, tasks, files and tables?
-That is feat/code. Code reacts to events, runs on a schedule, calls every
-Cloud app, asks AI for help and serves its own pages.
+What if workflow automation, serverless functions, typed code, your data and
+your files were one thing, inside the platform that already holds your mail,
+tasks and tables? That is feat/code. Code reacts to events, runs on a
+schedule, calls every Cloud app, asks AI for help and serves its own pages.
 
 Gustav writes it, you approve it. You can also write it in your editor. Cloud
 checks it, an administrator approves what needs approval, a person switches it
 on, and every call it makes is checked and logged.
 
-- **n8n:** automations start from an event or a schedule and call any app:
-  tag a mail, create a task, post into a chat. As code, not boxes and arrows.
-- **Cloudflare Workers:** sandboxed TypeScript with routes and pages
-  under `/code/<id>/`. No server, no deployment, no credentials in the source.
-- **TypeScript:** an SDK that your installation generates from its apps. Your
+- **Workflow automation:** automations start from an event or a schedule and
+  call any app: tag a mail, create a task, post into a chat. As code, not boxes
+  and arrows.
+- **Serverless functions:** sandboxed TypeScript with routes and pages under
+  `/code/<id>/`. No server, no deployment, no credentials in the source.
+- **Typed code:** an SDK that your installation generates from its apps. Your
   editor and the checker know every operation, input and result.
-- **SQLite:** data stays in tables people already see and share, in Grids,
+- **Your data:** data stays in tables people already see and share, in Grids,
   Spaces and Mail. Code reads and writes them through the SDK; it keeps no
   database of its own in this release.
-- **Lovable:** say what you need in a Gustav chat. Gustav writes, checks and
-  tests the Code, then hands you a version to switch on.
+- **Your files:** attachments and documents pass from one app to another as
+  references, and AI can read them, without the bytes ever entering the Code.
 
 ## See it
 

@@ -169,7 +169,7 @@ export default function HomePage(props: HomePageProps) {
                   <FeatCodeIcon />
                   feat/code
                 </p>
-                <h2 id="cloud-feat-code-title">What if n8n, Workers, TypeScript, SQLite and Lovable were one thing?</h2>
+                <h2 id="cloud-feat-code-title">What if n8n, Workers, TypeScript, SQLite and Google Drive were one thing?</h2>
               </div>
               <div class="cloud-feat-code-intro">
                 <p class="cloud-feat-code-lead">
@@ -188,7 +188,7 @@ export default function HomePage(props: HomePageProps) {
                   <i>+</i>
                   <span>SQLite</span>
                   <i>+</i>
-                  <span>Lovable</span>
+                  <span>Google Drive</span>
                   <i>=</i>
                   <b>feat/code</b>
                 </p>

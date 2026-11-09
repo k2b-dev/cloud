@@ -40,11 +40,11 @@ $ cld events ls
 The checker uses the server's current SDK, even when your local `sdk/` folder
 is older. Pull again after an app update.
 
-An agent outside Gustav, such as Claude Code or Codex, works the same way: it
-runs `cld code sdk pull` and reads the typed `sdk/` folder, and it reads
-`cld capabilities catalog --json` for descriptions and policy. Connected to the
-Cloud MCP server, it can also look up capabilities and events there. To
-change Code, it uses the same `cld code` commands as a person.
+An agent outside Gustav, such as a coding agent in your terminal, works the
+same way: it runs `cld code sdk pull` and reads the typed `sdk/` folder, and
+it reads `cld capabilities catalog --json` for descriptions and policy.
+Connected to the Cloud MCP server, it can also look up capabilities and events
+there. To change Code, it uses the same `cld code` commands as a person.
 
 ## How calls work
 
