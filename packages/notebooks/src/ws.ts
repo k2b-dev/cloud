@@ -1534,6 +1534,8 @@ const app = new Hono<AuthContext>().get(
         }
 
         if (pendingMessages >= MAX_PENDING_MESSAGES) {
+          // The browser reconnects after 1013 and resends its unsent edits; the log shows how often sockets are shed.
+          log.warn("Websocket shed: too many queued messages", { noteId: ctx.noteId, pendingMessages });
           await fatal(ctx, ERROR_CODE.backpressure, ctx.messages.tooManyMessages, ctx.noteShortId ?? undefined);
           return;
         }
