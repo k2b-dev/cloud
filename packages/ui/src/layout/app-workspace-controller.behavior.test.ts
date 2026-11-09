@@ -2816,7 +2816,11 @@ describe("waiting detail drawers", () => {
       main.append(control);
       if (state === "column") aside.style.removeProperty("--k2b-workspace-detail-waiting");
       if (state === "closed") aside.hidden = true;
-      if (state === "phone") window.innerWidth = 390;
+      if (state === "phone") {
+        window.innerWidth = 390;
+        // A normal phone sheet does not wait; only a reopenable phone page does.
+        aside.style.removeProperty("--k2b-workspace-detail-waiting");
+      }
       if (state === "unlinked") control.removeAttribute("aria-controls");
       if (state === "other workspace") {
         const other = waitingWorkspace();
@@ -2849,6 +2853,32 @@ describe("waiting detail drawers", () => {
       }
     });
   }
+
+  test("a waiting phone page opens through its request control without changing application visibility", () => {
+    window.innerWidth = 390;
+    const { root, main, aside } = waitingWorkspace();
+    aside.dataset.workspaceDetailPhone = "page";
+    aside.dataset.workspaceDetailReopen = "true";
+    aside.style.setProperty("--k2b-workspace-detail-phone-page", "1");
+    const control = document.createElement("button");
+    control.setAttribute("aria-controls", aside.id);
+    main.append(control);
+    let applicationClicks = 0;
+    control.addEventListener("click", () => applicationClicks++);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      control.dispatchEvent(event);
+      expect(applicationClicks).toBe(0);
+      expect(event.defaultPrevented).toBe(true);
+      expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+      expect(aside.hidden).toBe(false);
+      expect(control.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      dispose();
+    }
+  });
 
   for (const rendered of [null, "false", "true"]) {
     test(`request expansion restores the application's ${rendered ?? "absent"} attribute after waiting`, async () => {

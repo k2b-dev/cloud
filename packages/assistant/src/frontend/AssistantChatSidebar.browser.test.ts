@@ -6,9 +6,9 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
-import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
+import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 
 // Which presentation the sidebar takes, whether the server's first frame is final, and whether live updates move what
 // someone reads are layout results of the shipped cascade, which happy-dom does not model. A real engine lays out the
@@ -26,9 +26,7 @@ const entry = resolve(import.meta.dir, "AssistantChatSidebar.browser-entry.tsx")
 const entrySource = `
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { LocaleProvider } from "@k2b/ui";
 import { SidebarHarness } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatSidebar.browser-fixture.tsx"))};
-import { openAssistantChatSidebarSheet } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatSidebar.tsx"))};
 import { revealChatDelivery } from ${JSON.stringify(resolve(import.meta.dir, "chat-sidebar-layout.ts"))};
 
 const config = window.harness;
@@ -36,7 +34,6 @@ const [snapshot, setSnapshot] = createSignal(config.snapshot);
 // \`next\`: what the following reload returns; without it a reload returns the same content anew.
 const sidebar = { setSnapshot, jumps: [], revealed: null, next: null, actions: [] };
 window.sidebar = sidebar;
-const state = { snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined };
 render(
   () => (
     <SidebarHarness
@@ -47,20 +44,10 @@ render(
         sidebar.jumps.push(target);
         sidebar.revealed = revealChatDelivery(document.querySelector(".harness-timeline"), target)?.textContent ?? null;
       }}
-      onSheet={() =>
-        void openAssistantChatSidebarSheet({
-          state,
-          actions: {
-            onOpenFile() {},
-            onOpenApp() {},
-            onJump() {},
-            onOpenSecrets() {
-              sidebar.actions.push({ name: "secrets", sheetOpen: document.querySelector('[role="dialog"]') !== null });
-            },
-          },
-          wrap: (content) => <LocaleProvider locale="de">{content()}</LocaleProvider>,
-        })
-      }
+      onSecrets={() => {
+        const page = document.querySelector(".k2b-app-workspace__detail");
+        sidebar.actions.push({ name: "secrets", detailsShown: Boolean(page && page.getClientRects().length > 0) });
+      }}
     />
   ),
   document.getElementById("root"),
@@ -121,17 +108,23 @@ afterAll(async () => {
 });
 
 const pageHtml = (body: string, closed: boolean, snapshot: AssistantChatContextSnapshot) =>
-  `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-  `<body class="k2b-ui" style="margin:0"><div id="root">${body}</div>` +
+  `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+  `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style></head>` +
+  // The window is the app area, as in Cloud's shell below 1024 px.
+  `<body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;flex-direction:column;height:100dvh;container:k2b-app-area / inline-size">${body}</div>` +
   `<script>window.harness = ${JSON.stringify({ closed, snapshot })};</script></body></html>`;
 
 const newPage = (width: number, touch = width < 768) =>
-  browser.newPage({ viewport: { width, height: 800 }, isMobile: width < 768, hasTouch: touch });
+  browser.newPage({ viewport: { width, height: 800 }, isMobile: width < 768, hasTouch: touch, reducedMotion: "reduce" });
 
-/** Serves the page from an origin, so it has cookies and history like the real one. */
+/** Serves the page and the UI fonts from an origin, so it has cookies and history like the real one. */
 const load = async (page: Page, html: string) => {
+  await page.route("http://assistant.test/ui/**", (route) =>
+    route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(4)) }),
+  );
   await page.route("http://assistant.test/", (route) => route.fulfill({ body: html, contentType: "text/html" }));
   await page.goto("http://assistant.test/");
+  await page.evaluate(() => document.fonts.ready);
 };
 
 /** The server's HTML only, as the browser paints it before any script runs. */
@@ -148,27 +141,30 @@ const clientPage = async (width: number, closed = false, snapshot = sidebarSnaps
   await load(page, pageHtml("", closed, snapshot));
   page.setDefaultTimeout(4000);
   await page.addScriptTag({ content: script });
-  await page.locator("#assistant-chat-context").waitFor({ state: "attached" });
+  await page.locator(".assistant-context-sidebar").waitFor({ state: "attached" });
+  await settled(page);
   return page;
 };
 
+const DETAIL = "#k2b-workspace-detail-assistant-chat-context";
+const details = (page: Page) => page.locator(DETAIL);
+const detailsButton = (page: Page) => page.locator("[data-app-workspace-detail-toggle]");
+
 const layout = (page: Page) =>
-  page.evaluate(() => {
+  page.evaluate((selector) => {
     const box = (element: Element | null) => {
       if (!element || element.getClientRects().length === 0) return null;
       const rect = element.getBoundingClientRect();
       return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
     };
     return {
-      sidebar: box(document.getElementById("assistant-chat-context")),
-      toggle: box(document.querySelector(".assistant-context-toggle")),
+      sidebar: box(document.querySelector(selector)),
+      toggle: box(document.querySelector("[data-app-workspace-detail-toggle]")),
       timeline: box(document.querySelector(".harness-timeline")),
       composer: box(document.querySelector(".assistant-chat-composer")),
       firstResult: box(document.querySelector(".assistant-result")),
     };
-  });
-
-const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  }, DETAIL);
 
 type HarnessWindow = { sidebar: { setSnapshot: (value: unknown) => void; next: unknown; actions: unknown[] } };
 /** A live update: the snapshot as the server sends it, a new object every time. */
@@ -189,7 +185,7 @@ const workingFile = (path: string, index: number) => ({
 });
 
 describe(`Assistant chat sidebar in ${browserName}`, () => {
-  test("the server's first frame is final: column at 1280 px, toggle when closed or narrow, and the browser render agrees", async () => {
+  test("the server's first frame is final: a column at 1280 px, Details while closed or narrow, and the browser render agrees", async () => {
     for (const [width, closed] of [
       [1280, false],
       [1280, true],
@@ -200,19 +196,20 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const client = await clientPage(width, closed);
       try {
         const first = await layout(server);
-        await frames(client);
         expect(await layout(client)).toEqual(first);
         if (width === 1280 && !closed) {
-          // A 20 rem column at the right edge, the chat column next to it, no toggle.
-          expect(first.sidebar).toMatchObject({ width: 320, height: 800 });
-          expect(first.sidebar!.x).toBe(1280 - 320);
-          expect(first.timeline!.x + first.timeline!.width).toBeLessThanOrEqual(1280 - 320);
-          expect(first.toggle).toBeNull();
+          // The shared Detail column at the workspace's end, 8 px inside its edge, the chat beside it.
+          expect(first.sidebar).toMatchObject({ width: 416 });
+          expect(first.sidebar!.x + first.sidebar!.width).toBe(1280 - 1 - 8);
+          expect(first.timeline!.x + first.timeline!.width).toBeLessThanOrEqual(first.sidebar!.x);
           expect(first.firstResult).not.toBeNull();
+          expect(await detailsButton(client).getAttribute("aria-expanded")).toBe("true");
         } else {
+          // Closed, waiting as a drawer, or waiting as the phone page: only the Details button shows it.
           expect(first.sidebar).toBeNull();
-          expect(first.toggle).not.toBeNull();
+          expect(await detailsButton(client).getAttribute("aria-expanded")).toBe("false");
         }
+        if (width !== 390) expect(first.toggle).not.toBeNull();
       } finally {
         await server.close();
         await client.close();
@@ -224,52 +221,117 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     const page = await clientPage(1280);
     try {
       const before = await layout(page);
-      await page.getByRole("button", { name: "Seitenleiste schließen" }).click();
+      await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
+      await settled(page);
       const closed = await layout(page);
       expect(closed.sidebar).toBeNull();
       expect(closed.timeline!.y).toBe(before.timeline!.y);
       expect(closed.composer!.y).toBe(before.composer!.y);
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("assistant-context-toggle"))).toBe(true);
+      expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-app-workspace-detail-toggle"))).toBe(true);
       expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
 
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
+      await detailsButton(page).click();
+      await settled(page);
       expect(await layout(page)).toEqual(before);
-      expect(await page.evaluate(() => document.activeElement?.id)).toBe("assistant-chat-context-title");
       expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
+      // Escape in the column closes it like its close button.
+      await details(page).getByRole("heading", { name: "In diesem Chat" }).focus();
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect((await layout(page)).sidebar).toBeNull();
+      expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
     } finally {
       await page.close();
     }
   }, 20_000);
 
-  test("below 56 rem the toggle opens a drawer over the chat's edge without moving the chat; Escape closes it", async () => {
+  test("the column resizes from its leading edge and the chat gives way", async () => {
+    const page = await clientPage(1440);
+    try {
+      const handle = page.locator('[data-app-workspace-resize="detail"]');
+      expect(await handle.getAttribute("aria-controls")).toBe(DETAIL.slice(1));
+      const before = await layout(page);
+      await handle.focus();
+      await page.keyboard.press("ArrowLeft");
+      await settled(page);
+      const after = await layout(page);
+      expect(after.sidebar!.width).toBeGreaterThan(before.sidebar!.width);
+      expect(after.sidebar!.x + after.sidebar!.width).toBe(before.sidebar!.x + before.sidebar!.width);
+      expect(after.timeline!.x + after.timeline!.width).toBeLessThanOrEqual(after.sidebar!.x);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("at 820 px Details opens a drawer over the chat's edge without moving the chat; Escape and close park it", async () => {
     const page = await clientPage(820);
     try {
       const before = await layout(page);
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-      const open = await layout(page);
-      expect(open.sidebar).toMatchObject({ x: 820 - 320, width: 320 });
-      expect(open.timeline).toEqual(before.timeline);
-      expect(open.composer).toEqual(before.composer);
-      expect(await page.evaluate(() => document.activeElement?.id)).toBe("assistant-chat-context-title");
-      await page.keyboard.press("Escape");
-      expect(await layout(page)).toEqual(before);
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("assistant-context-toggle"))).toBe(true);
-      // Closing the drawer is not remembered.
-      expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
+      for (const park of ["Escape", "close"] as const) {
+        await detailsButton(page).press("Enter");
+        await settled(page);
+        const open = await layout(page);
+        expect(open.sidebar).toMatchObject({ width: 416 });
+        expect(open.sidebar!.x + open.sidebar!.width).toBe(820 - 1);
+        expect(open.timeline).toEqual(before.timeline);
+        expect(open.composer).toEqual(before.composer);
+        expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("In diesem Chat");
+        if (park === "Escape") await page.keyboard.press("Escape");
+        else await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
+        await settled(page);
+        expect(await layout(page)).toEqual(before);
+        expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-app-workspace-detail-toggle"))).toBe(true);
+        // Parking the drawer is not remembered.
+        expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
+      }
     } finally {
       await page.close();
     }
   }, 20_000);
 
-  test("on a phone the toggle opens the sidebar as a sheet that Back closes", async () => {
+  test("on a phone Details opens the chat details as a page, and close or Escape return to the chat", async () => {
     const page = await clientPage(390);
     try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-      const sheet = page.getByRole("dialog");
-      await sheet.getByText("Umsatzbericht Q1-Q3.pdf").first().waitFor();
-      expect(await sheet.getByRole("heading", { name: "In diesem Chat" }).count()).toBe(1);
-      await page.goBack();
-      await sheet.waitFor({ state: "detached" });
+      const before = await layout(page);
+      for (const park of ["close", "Escape"] as const) {
+        await detailsButton(page).click();
+        await settled(page);
+        expect((await layout(page)).sidebar).toEqual({ x: 0, y: 0, width: 390, height: 800 });
+        await details(page).getByText("Umsatzbericht Q1-Q3.pdf").first().waitFor();
+        expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("In diesem Chat");
+        expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+        if (park === "close") await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
+        else await page.keyboard.press("Escape");
+        await settled(page);
+        expect(await layout(page)).toEqual(before);
+        expect(await page.locator("[inert]").count()).toBe(0);
+        expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
+      }
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("empty results read None yet, your files list each upload, and Context opens in place", async () => {
+    const snapshot = emptySidebarSnapshot({ files: [upload("/image.png", minutesAgo(12), "image/png", 334_336)], fileCount: 1 });
+    const page = await clientPage(1280, false, snapshot);
+    try {
+      const sidebar = details(page);
+      const results = sidebar.locator("section", { has: page.getByRole("heading", { name: "Ergebnisse" }) });
+      expect(await results.locator(".k2b-detail-panel__section-header").textContent()).toContain("Noch keine");
+      expect(await results.locator(".k2b-detail-panel__section-body").count()).toBe(0);
+      const files = sidebar.locator("section", { has: page.getByRole("heading", { name: "Deine Dateien" }) });
+      expect(await files.locator(".k2b-detail-panel__section-header").textContent()).toContain("1");
+      const rows = files.locator(".k2b-detail-panel__action");
+      expect(await rows.count()).toBe(1);
+      expect(await rows.textContent()).toContain("image.png");
+      expect(await rows.textContent()).toContain("326.5 KB");
+      expect(await files.getByRole("button", { name: "image.png löschen" }).count()).toBe(1);
+      const context = sidebar.getByRole("button", { name: /^Kontext/ });
+      expect(await context.getAttribute("aria-expanded")).toBe("false");
+      expect(await context.textContent()).toContain("Secrets & Freigaben");
+      await context.click();
+      await sidebar.getByRole("button", { name: "Secrets & Freigaben" }).waitFor();
     } finally {
       await page.close();
     }
@@ -278,10 +340,11 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   test("a result that arrives while the pointer rests in the sidebar waits behind a count and nothing moves", async () => {
     const page = await clientPage(1280);
     try {
-      const sidebar = page.locator("#assistant-chat-context");
+      const sidebar = details(page);
       const heading = page.locator(".assistant-sidebar-results .k2b-detail-panel__section-header");
       const box = (await sidebar.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + 300);
+      await settled(page);
       const before = await layout(page);
       const headingBefore = await heading.boundingBox();
       const next = sidebarSnapshot();
@@ -293,7 +356,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
         (json) => (window as unknown as { sidebar: { setSnapshot: (value: unknown) => void } }).sidebar.setSnapshot(JSON.parse(json)),
         JSON.stringify(next),
       );
-      await frames(page);
+      await settled(page);
       expect(await layout(page)).toEqual(before);
       expect(await heading.boundingBox()).toEqual(headingBefore);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Umsatzbericht Q1-Q3.pdf");
@@ -302,7 +365,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
 
       // Leaving the sidebar takes over the new state.
       await page.mouse.move(100, 400);
-      await frames(page);
+      await settled(page);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Prognose Q4.xlsx");
       expect(await pending.count()).toBe(0);
     } finally {
@@ -339,6 +402,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     const page = await clientPage(1280);
     try {
       await page.getByRole("button", { name: "„Umsatzbericht Q1-Q3.pdf“ im Chat zeigen" }).click();
+      await settled(page);
       const state = await page.evaluate(() => (window as unknown as { sidebar: { jumps: unknown[]; revealed: string | null } }).sidebar);
       expect(state.jumps).toEqual([{ messageSeq: 9, callId: "call-/Umsatzbericht Q1-Q3.pdf", presentationId: null }]);
       expect(state.revealed).toBe("Übergabe 9");
@@ -353,20 +417,19 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   test("a drawer that widened into the column closes with its close button and stays closed", async () => {
     const page = await clientPage(820);
     try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
+      await detailsButton(page).click();
       await page.setViewportSize({ width: 1280, height: 800 });
-      await frames(page);
-      expect((await layout(page)).sidebar).toMatchObject({ x: 1280 - 320, width: 320 });
-      await page.getByRole("button", { name: "Seitenleiste schließen" }).click();
-      await frames(page);
-      const closed = await layout(page);
-      expect(closed.sidebar).toBeNull();
-      expect(closed.toggle).not.toBeNull();
-      expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
-      // Narrow again, it stays closed until the toggle opens it.
-      await page.setViewportSize({ width: 820, height: 800 });
-      await frames(page);
+      await settled(page);
+      expect((await layout(page)).sidebar).toMatchObject({ width: 416 });
+      await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
+      await settled(page);
       expect((await layout(page)).sidebar).toBeNull();
+      expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
+      // Narrow again, it stays closed until Details opens it.
+      await page.setViewportSize({ width: 820, height: 800 });
+      await settled(page);
+      expect((await layout(page)).sidebar).toBeNull();
+      expect(await detailsButton(page).getAttribute("aria-expanded")).toBe("false");
     } finally {
       await page.close();
     }
@@ -391,7 +454,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       });
     });
     try {
-      const sidebar = page.locator("#assistant-chat-context");
+      const sidebar = details(page);
       const august = sidebar.getByRole("button", { name: /August 2026/ });
       await august.click();
       await sidebar.getByRole("button", { name: /Arbeitsdateien/ }).click();
@@ -402,7 +465,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       // Every live update builds the groups from a new snapshot.
       await leaveSidebar(page);
       await push(page, snapshot);
-      await frames(page);
+      await settled(page);
       expect(await august.getAttribute("aria-expanded")).toBe("true");
       expect(await folder.getAttribute("aria-expanded")).toBe("true");
       expect(await sidebar.getByText("chart.png", { exact: true }).count()).toBe(1);
@@ -418,7 +481,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       await sidebar.getByRole("button", { name: "chart.png löschen" }).click();
       await page.getByRole("button", { name: "Löschen", exact: true }).click();
       await sidebar.getByText("chart.png", { exact: true }).waitFor({ state: "detached" });
-      await frames(page);
+      await settled(page);
       expect(await folder.getAttribute("aria-expanded")).toBe("true");
       expect(await august.getAttribute("aria-expanded")).toBe("true");
       expect(await sidebar.getByText("daten.csv", { exact: true }).count()).toBe(1);
@@ -431,19 +494,19 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   test("on a touch screen the drawer keeps what someone reads until they touch outside it", async () => {
     const page = await clientPage(820, false, sidebarSnapshot(), true);
     try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).tap();
-      const sidebar = page.locator("#assistant-chat-context");
+      await detailsButton(page).tap();
+      const sidebar = details(page);
       await sidebar.locator(".assistant-result__description").first().tap();
       const next = sidebarSnapshot();
       next.results = [fileResult("/Prognose Q4.xlsx", { at: SIDEBAR_NOW, turn: "turn-4", seq: 12 }), ...next.results];
       await push(page, next);
-      await frames(page);
+      await settled(page);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Umsatzbericht Q1-Q3.pdf");
       expect(await page.locator('.assistant-sidebar-new[data-pending="true"]').textContent()).toBe("Neu · 1");
 
       // A touch on the chat ends the reading.
       await page.touchscreen.tap(100, 400);
-      await frames(page);
+      await settled(page);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Prognose Q4.xlsx");
     } finally {
       await page.close();
@@ -453,14 +516,14 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   test("other changes than results also wait while someone reads, behind an update control", async () => {
     const page = await clientPage(1280);
     try {
-      const sidebar = page.locator("#assistant-chat-context");
+      const sidebar = details(page);
       const box = (await sidebar.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + 300);
       const next = sidebarSnapshot();
       next.files = [upload("/neu-hochgeladen.csv", SIDEBAR_NOW), ...next.files];
       next.fileCount += 1;
       await push(page, next);
-      await frames(page);
+      await settled(page);
       expect(await sidebar.getByText("neu-hochgeladen.csv", { exact: true }).count()).toBe(0);
       const update = page.locator('.assistant-sidebar-new[data-pending="true"]');
       expect(await update.textContent()).toBe("Aktualisieren");
@@ -474,13 +537,13 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
   test("a focused control that disappears, like Load more after the last page, does not keep holding the sidebar", async () => {
     const page = await clientPage(1280);
     try {
-      const sidebar = page.locator("#assistant-chat-context");
+      const sidebar = details(page);
       const box = (await sidebar.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + 300);
       // WebKit moves focus to the body without a focusout when the focused element leaves the document.
       await page.evaluate(() => {
         const control = document.createElement("button");
-        document.getElementById("assistant-chat-context")!.append(control);
+        document.querySelector(".assistant-context-sidebar")!.append(control);
         control.focus();
         control.remove();
       });
@@ -489,7 +552,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       next.files = [upload("/neu-hochgeladen.csv", SIDEBAR_NOW), ...next.files];
       next.fileCount += 1;
       await push(page, next);
-      await frames(page);
+      await settled(page);
       expect(await sidebar.getByText("neu-hochgeladen.csv", { exact: true }).count()).toBe(1);
     } finally {
       await page.close();
@@ -514,7 +577,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       });
     });
     try {
-      const sidebar = page.locator("#assistant-chat-context");
+      const sidebar = details(page);
       await sidebar.getByRole("button", { name: /^Quellen/ }).click();
       // The first page is two bundles, one per call; the older sources are one step away.
       await sidebar.getByRole("button", { name: "Alle 150" }).click();
@@ -525,7 +588,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       // A new first page ends elsewhere: the loaded pages start over instead of leaving a gap.
       await leaveSidebar(page);
       await push(page, { ...snapshot, sourceCount: 151, sourceCursor: "cursor-2" });
-      await frames(page);
+      await settled(page);
       expect(await sidebar.getByText("Ältere Seite", { exact: true }).count()).toBe(0);
       await sidebar.getByRole("button", { name: "Weitere laden" }).click();
       await sidebar.getByText("Ältere Seite", { exact: true }).waitFor();
@@ -548,7 +611,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     );
     const page = await clientPage(1280, false, snapshot);
     try {
-      const sidebar = page.locator("#assistant-chat-context");
+      const sidebar = details(page);
       await sidebar.getByRole("button", { name: /Arbeitsdateien/ }).click();
       await sidebar.locator(".assistant-sidebar-group__row").getByRole("button", { name: "Aktionen für Umsatzbericht Q1-Q3.pdf" }).click();
       await page.getByRole("menuitem", { name: "Gruppe löschen" }).click();
@@ -562,94 +625,56 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     }
   }, 20_000);
 
-  test("the toggle never covers the first message: below 56 rem the timeline starts below it", async () => {
-    for (const [width, closed] of [
-      [390, false],
-      [820, false],
-      [900, true],
-      [1280, true],
-    ] as const) {
-      const page = await clientPage(width, closed);
-      try {
-        const box = await page.evaluate(() => {
-          const content = document.querySelector(".harness-timeline")!;
-          const style = getComputedStyle(content);
-          const rect = content.getBoundingClientRect();
-          const toggle = document.querySelector(".assistant-context-toggle")!.getBoundingClientRect();
-          return {
-            top: rect.top + Number.parseFloat(style.paddingTop),
-            right: rect.right - Number.parseFloat(style.paddingRight),
-            toggleBottom: toggle.bottom,
-            toggleLeft: toggle.left,
-          };
-        });
-        // The messages start below the toggle, or end left of it.
-        expect(box.top >= box.toggleBottom || box.right <= box.toggleLeft).toBe(true);
-      } finally {
-        await page.close();
-      }
-    }
-  }, 30_000);
-
-  test("on a phone, an action in the sheet's Context runs after the sheet closed", async () => {
+  test("on a phone, an action in Context runs after the page gave the chat back", async () => {
     const page = await clientPage(390);
     try {
-      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-      const sheet = page.getByRole("dialog");
-      await sheet.getByRole("button", { name: /^Kontext/ }).click();
-      await sheet.getByRole("button", { name: "Secrets" }).click();
-      await sheet.waitFor({ state: "detached" });
+      await detailsButton(page).click();
+      await details(page)
+        .getByRole("button", { name: /^Kontext/ })
+        .click();
+      await details(page).getByRole("button", { name: "Secrets & Freigaben" }).click();
       await page.waitForFunction(() => (window as unknown as HarnessWindow).sidebar.actions.length > 0);
       expect(await page.evaluate(() => (window as unknown as HarnessWindow).sidebar.actions)).toEqual([
-        { name: "secrets", sheetOpen: false },
+        { name: "secrets", detailsShown: false },
       ]);
+      expect(await page.locator("[inert]").count()).toBe(0);
     } finally {
       await page.close();
     }
   }, 20_000);
 });
 
-// Error class: flat DetailPanel styles scoped to one host leave reused panels
-// with nested boxes. Exercise the real sidebar's column, drawer, and sheet.
+// Error class: an application host around a shared panel paints its own column, frame, or nested section boxes. The
+// chat details use the workspace's Detail in each presentation, with flat sections and no fill of their own.
 for (const theme of ["light", "dark"] as const)
   for (const width of [1440, 834, 390])
-    test(`${width} ${theme}: chat context shares one surface with flat sections`, async () => {
+    test(`${width} ${theme}: chat details share the Detail surface with flat sections`, async () => {
       const page = await clientPage(width);
       try {
-        await page.emulateMedia({ reducedMotion: "reduce" });
         await page.evaluate((theme) => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
-        if (width < 896) await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
-        const panel = page.locator(width === 390 ? ".assistant-context-sheet" : ".assistant-context-sidebar__panel");
-        await panel.waitFor();
-        const paint = await panel.evaluate((element) => {
+        if (width < 1000) await detailsButton(page).click();
+        await settled(page);
+        const paint = await details(page).evaluate((aside) => {
           const sections = Array.from(
-            element.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-detail-panel__section"),
+            aside.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-detail-panel__section"),
           );
-          const aside = element.closest(".assistant-context-sidebar");
-          const surface = document.createElement("span");
-          surface.style.background = "var(--k2b-surface)";
-          element.append(surface);
-          const color = getComputedStyle(surface).backgroundColor;
-          surface.remove();
+          const host = aside.querySelector(".assistant-context-sidebar")!;
           return {
             count: sections.length,
             flat: sections.every((section) => {
               const style = getComputedStyle(section);
               return style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderRadius === "0px";
             }),
-            color,
-            background: aside && getComputedStyle(aside).backgroundColor,
-            border: aside && getComputedStyle(aside).borderInlineStartWidth,
-            shadow: aside && getComputedStyle(aside).boxShadow,
+            host: getComputedStyle(host).backgroundColor,
+            header: Boolean(aside.querySelector(".k2b-detail-panel__header h2")),
+            drawer: aside.dataset.workspaceDetailDrawer ?? null,
           };
         });
         expect(paint.count).toBeGreaterThan(0);
         expect(paint.flat).toBe(true);
-        if (width !== 390) {
-          expect(paint.background).toBe(paint.color);
-          expect(paint.border).toBe("0px");
-        }
-        if (width === 834) expect(paint.shadow).toContain(theme === "light" ? "-14px 0px 36px" : "-16px 0px 40px");
+        expect(paint.host).toBe("rgba(0, 0, 0, 0)");
+        expect(paint.header).toBe(true);
+        expect(paint.drawer).toBe(width === 1440 ? null : "open");
       } finally {
         await page.close();
       }

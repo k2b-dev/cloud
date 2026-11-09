@@ -199,7 +199,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
     });
 
   return (
-    <DetailPanel>
+    <DetailPanel surface="plain">
       <DetailPanel.Header
         kind={
           <>
