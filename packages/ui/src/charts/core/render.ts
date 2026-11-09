@@ -1,13 +1,15 @@
-import { type BarChartOptions, renderBarChartSvg } from "../../content/chart-bar";
+import type { BarChartOptions } from "../../content/chart-bar";
 import { lineGapsSvg } from "../../content/chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../content/chart-map-viewport";
 import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimelineDomain } from "../../content/chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
+import { renderBarChartSvg } from "./bar-render";
 import { calendarLayout } from "./calendar";
 import { type FunnelOptions, renderFunnelSvg } from "./funnel";
 import { type HorizontalBarOptions, renderHbarSvg } from "./hbar";
+import { lineDetailsEnabled } from "./line-options";
 import { chartRenderers } from "./registry";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
@@ -59,6 +61,8 @@ export const renderChartSvg = (
         ? chartRenderers.treemap({ ...props, width, height, inspect: true })
         : chartRenderers.pareto({ ...props, width, height, inspect: true }),
     );
+
+  if (props.kind === "sankey") return responsiveChartSvg(chartRenderers.sankey({ ...props, width, height, inspect: true }));
   if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,
@@ -113,19 +117,23 @@ export const renderChartSvg = (
       }),
     );
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
-  // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
-  const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
+  // Ordinary lines retain their existing time-axis adapter; detailed lines draw calendar ticks directly.
+  const timeAxis = props.kind === "line" && !lineDetailsEnabled(props) ? props.timeAxis : undefined;
   const timeDomain = timeAxis && props.kind === "line" ? lineTimeDomain(props) : undefined;
   let svg = (chartRenderers[kind] as (o: unknown) => string)({
     ...opts,
+    ...(kind === "line" ? { locale: (opts as { locale?: string }).locale ?? renderLocale } : {}),
+    ...(props.kind === "line" && lineDetailsEnabled(props) ? { timeAxis: props.timeAxis } : {}),
     ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
-    ...(props.kind === "line" && props.legend && props.legendPlacement === "top-start" ? { legend: false } : {}),
+    ...(props.kind === "line" && props.legend && (props.legendPlacement === "top-start" || lineDetailsEnabled(props))
+      ? { legend: false }
+      : {}),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
     inspect: true,
   });
-  if (props.kind === "line" && props.maxGap !== undefined) {
+  if (props.kind === "line" && props.maxGap !== undefined && !lineDetailsEnabled(props)) {
     if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
     svg = lineGapsSvg(svg, props.maxGap, props);
   }
@@ -139,6 +147,7 @@ export const renderChartSvg = (
 const lineTimeDomain = (props: Extract<ChartDrawingOptions, { kind: "line" }>): [number, number] | undefined => {
   if (props.xAxis?.domain) return props.xAxis.domain;
   const xs = props.series.flatMap((series) => series.data.map((point) => point.x)).filter(Number.isFinite);
+  if (props.marker) xs.push(props.marker.at);
   if (!xs.length) return undefined;
   const lo = Math.min(...xs),
     hi = Math.max(...xs);

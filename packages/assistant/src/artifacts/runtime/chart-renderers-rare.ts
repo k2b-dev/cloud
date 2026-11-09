@@ -7,22 +7,47 @@ import { area } from "./chart-kind-area";
 import { barGauge } from "./chart-kind-barGauge";
 import { boxplot } from "./chart-kind-boxplot";
 import { bubble } from "./chart-kind-bubble";
+import { dots } from "./chart-kind-dots";
 import { funnel } from "./chart-kind-funnel";
 import { gauge } from "./chart-kind-gauge";
 import { hbar } from "./chart-kind-hbar";
 import { heatmap } from "./chart-kind-heatmap";
 import { histogram } from "./chart-kind-histogram";
+import { line } from "./chart-kind-line";
 import { pareto } from "./chart-kind-pareto";
 import { radar } from "./chart-kind-radar";
+import { sankey } from "./chart-kind-sankey";
 import { scatter } from "./chart-kind-scatter";
 import { treemap } from "./chart-kind-treemap";
 import { waterfall } from "./chart-kind-waterfall";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
-export { area, barGauge, boxplot, bubble, funnel, gauge, hbar, heatmap, histogram, pareto, radar, scatter, treemap, waterfall };
+export {
+  area,
+  barGauge,
+  boxplot,
+  bubble,
+  dots,
+  funnel,
+  gauge,
+  hbar,
+  heatmap,
+  histogram,
+  line,
+  pareto,
+  radar,
+  sankey,
+  scatter,
+  treemap,
+  waterfall,
+};
 
-export const rareChartSvg: RareChartRenderer = (mapped, common) => {
+export const rareChartSvg: RareChartRenderer = (mapped, common, locale) => {
   switch (mapped.kind) {
+    case "dots":
+      return dots(mapped, common);
+    case "line":
+      return line(mapped, common, locale);
     case "funnel":
       return funnel(mapped, common);
     case "hbar":
@@ -51,6 +76,8 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
       return bubble(mapped, common);
     case "radar":
       return radar(mapped, common);
+    case "sankey":
+      return sankey(mapped, common);
   }
   const unsupported: never = mapped;
   throw new Error(`Unsupported chart: ${String(unsupported)}`);

@@ -142,11 +142,7 @@ const shot = async (page: Page, name: string) => {
 };
 const sectionTitles = (page: Page) =>
   page.evaluate(() =>
-    Array.from(
-      document.querySelectorAll(
-        ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-title, .k2b-discussion__header h3, .k2b-detail-panel__group-title",
-      ),
-    )
+    Array.from(document.querySelectorAll(".k2b-section__title, .k2b-detail-panel__group-title"))
       .filter((element) => !element.closest("[hidden]"))
       .map((element) => element.textContent?.trim()),
   );

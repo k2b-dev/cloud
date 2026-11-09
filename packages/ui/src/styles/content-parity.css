@@ -3126,7 +3126,8 @@
   border-radius: 0.5rem;
   color: color-mix(in srgb, var(--k2b-calendar-accent) 60%, var(--k2b-text));
   background: color-mix(in srgb, var(--k2b-calendar-accent) 12%, var(--k2b-surface));
-  box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--k2b-calendar-accent) 60%, transparent);
+  /* A drag preview floats on layer 3; neutral, never in the app colour. */
+  box-shadow: var(--k2b-shadow-float);
   outline: 1.5px dashed color-mix(in srgb, var(--k2b-calendar-accent) 75%, transparent);
   outline-offset: -1.5px;
   font-size: 0.75rem;
@@ -5628,7 +5629,8 @@
   overflow: hidden;
   border-radius: 2px;
   background: #fff;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.12);
+  /* A page is an island on the viewer's ground: a hairline and the island shadow. */
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), var(--k2b-shadow-raised);
 }
 
 .k2b-ui .k2b-pdf-viewer__page > img {
@@ -5656,7 +5658,7 @@
   border: 1px solid var(--k2b-border);
   border-radius: 9999px;
   background: var(--k2b-surface-elevated);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+  box-shadow: var(--k2b-shadow-toolbar);
   pointer-events: auto;
 }
 
@@ -7015,13 +7017,13 @@
 .k2b-ui span.k2b-map-view__pin { cursor: default; pointer-events: none; }
 .k2b-ui .k2b-map-view__pin:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 /* Messages and the selected place carry text to read, so they stay solid. The zoom and locate groups are glass (`k2b-overlay-surface`). */
-.k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)) { background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); border: 0; }
-/* Dark floating surfaces sit on a dark map: an inset ring gives them their edge instead of a shadow nobody sees. */
+.k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)) { background: var(--k2b-map-surface); box-shadow: var(--k2b-shadow-toolbar); border: 0; }
+/* Dark floating surfaces sit on a dark map: an inset ring gives them their edge as well. */
 :where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
 .k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
 :where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-view__empty > span,
 .k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view__empty > span {
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 1px 4px rgb(0 0 0 / .4);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), var(--k2b-shadow-toolbar);
 }
 .k2b-ui .k2b-map-view__controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; }
 .k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate-group) { display: flex; flex-direction: column; border-radius: 9px; }
@@ -7047,7 +7049,7 @@
 .k2b-ui .k2b-map-view__attribution:empty { display: none; }
 .k2b-ui .k2b-map-view__attribution a { text-decoration: underline; }
 .k2b-ui .k2b-map-view__empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 48px; text-align: center; pointer-events: none; }
-.k2b-ui .k2b-map-view__empty > span { max-width: 100%; padding: 7px 14px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .12); color: var(--k2b-text-secondary); font-size: 13px; }
+.k2b-ui .k2b-map-view__empty > span { max-width: 100%; padding: 7px 14px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: var(--k2b-shadow-toolbar); color: var(--k2b-text-secondary); font-size: 13px; }
 .k2b-ui .k2b-map-view :is(.maplibregl-canvas-container, .maplibregl-canvas) { position: absolute; left: 0; top: 0; }
 .k2b-ui .k2b-map-view .maplibregl-canvas-container { width: 100%; height: 100%; }
 /* The canvas takes arrow keys for panning; its focus shows as the token ring inset on the rounded map, never clipped. */
@@ -7059,7 +7061,7 @@
 .k2b-ui .k2b-map-view .maplibregl-interactive { cursor: grab; user-select: none; }
 .k2b-ui .k2b-map-view .maplibregl-interactive:active { cursor: grabbing; }
 .k2b-ui .k2b-map-view .maplibregl-cooperative-gestures { touch-action: pan-x pan-y; }
-.k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max-content; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); font-size: 12.5px; text-align: center; pointer-events: none; visibility: hidden; }
+.k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max-content; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 15px; background: var(--k2b-map-surface); box-shadow: var(--k2b-shadow-toolbar); font-size: 12.5px; text-align: center; pointer-events: none; visibility: hidden; }
 .k2b-ui .k2b-map-view .maplibregl-cooperative-gesture-screen.maplibregl-show { visibility: visible; }
 .k2b-ui .k2b-map-view .maplibregl-mobile-message { display: none; }
 @media (hover: none), (pointer: coarse) {

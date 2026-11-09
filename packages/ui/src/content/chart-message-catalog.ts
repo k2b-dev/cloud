@@ -71,11 +71,15 @@ export const chartMessages = i18n.define({
           duration: "Duration",
           detail: "Detail",
           errY: "Y error",
+          forecastLow: "Lower forecast bound",
+          forecastHigh: "Upper forecast bound",
           errYHigh: "Upper Y error",
           errYLow: "Lower Y error",
           errX: "X error",
           errXHigh: "Upper X error",
           errXLow: "Lower X error",
+          incoming: "Incoming",
+          outgoing: "Outgoing",
           group: "Group",
         };
         return labels[key] ?? key;
@@ -154,11 +158,15 @@ export const chartMessages = i18n.define({
           duration: "Dauer",
           detail: "Details",
           errY: "Y-Fehler",
+          forecastLow: "Untere Prognosegrenze",
+          forecastHigh: "Obere Prognosegrenze",
           errYHigh: "Oberer Y-Fehler",
           errYLow: "Unterer Y-Fehler",
           errX: "X-Fehler",
           errXHigh: "Oberer X-Fehler",
           errXLow: "Unterer X-Fehler",
+          incoming: "Eingang",
+          outgoing: "Ausgang",
           group: "Bereich",
         };
         return labels[key] ?? key;

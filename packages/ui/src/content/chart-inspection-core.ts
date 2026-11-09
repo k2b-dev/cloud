@@ -23,6 +23,7 @@ import {
 /** Host policy for inspecting an overflowing drawing. */
 export type ChartInspectionNavigation = {
   last?: boolean;
+  order?: (entries: { datum: ChartDatum }[]) => void;
   pointer?: boolean;
   reveal?: (element: SVGGraphicsElement) => void;
   keepScroll?: boolean;
@@ -82,7 +83,7 @@ export function createChartInspector(options: {
       entries = [];
       byElement.clear();
       sortedPoints = [];
-      for (const element of Array.from(options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? [])) {
+      for (const element of options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? []) {
         try {
           const value: unknown = JSON.parse(element.getAttribute("data-chart-datum") ?? "null");
           if (isChartDatum(value)) {
@@ -94,6 +95,7 @@ export function createChartInspector(options: {
           /* Only valid renderer metadata participates in inspection. */
         }
       }
+      options.nav?.()?.order?.(entries);
       sortedPoints = entries.filter((entry) => entry.datum.role === "point").sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
     }
     return entries;
@@ -182,6 +184,11 @@ export function createChartInspector(options: {
     }
     highlighted = [];
   };
+  const cancelPendingMove = () => {
+    if (frame !== undefined) cancelAnimationFrame(frame);
+    frame = undefined;
+    pending = undefined;
+  };
   /** The open tooltip came from keyboard focus or keys, not from a pointer: it follows its mark when the page scrolls. */
   let byKeyboard = false;
   const close = (broadcast = true, cancelPending = true) => {
@@ -210,11 +217,7 @@ export function createChartInspector(options: {
         /* Detached during navigation. */
       }
     }
-    if (cancelPending) {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      frame = undefined;
-      pending = undefined;
-    }
+    if (cancelPending) cancelPendingMove();
   };
   const invalidate = () => {
     options.cursor?.()?.clear(source);
@@ -232,6 +235,7 @@ export function createChartInspector(options: {
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
     if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) {
+      active = entry;
       for (const item of highlighted) item.element.setAttribute("data-inspected", hover ? "hover" : "true");
       return;
     }
@@ -532,6 +536,7 @@ export function createChartInspector(options: {
       close();
       return;
     }
+    cancelPendingMove();
     pinned = true;
     show(entry);
     options.select({ kind: options.kind(), datum: entry.datum });
@@ -542,6 +547,7 @@ export function createChartInspector(options: {
       pointerFocusing = false;
       return;
     }
+    cancelPendingMove();
     byKeyboard = !pointerFocusing;
     const nodes = visibleRecords();
     const first = options.nav?.()?.last ? nodes.at(-1) : options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
@@ -554,6 +560,7 @@ export function createChartInspector(options: {
       return true;
     }
     if (event.key === "Enter" && active) {
+      cancelPendingMove();
       if (options.kind() === "map" && !visibleRecords().includes(active)) {
         close();
         return true;
@@ -580,6 +587,7 @@ export function createChartInspector(options: {
       });
     }
     if (!nodes.length) return false;
+    cancelPendingMove();
     event.preventDefault();
     pinned = false;
     let index = active

@@ -16,7 +16,7 @@ const BAR_GAUGE_ROW = 28;
  * How a card holds a drawing without clipping it: a stretching chart takes a calm fixed height; rows (bar lists,
  * horizontal bars, funnels) keep the height their rows need; a drawing that scales as a whole (pie, donut, gauge)
  * keeps its proportions. Calendars own their square-cell size and scroll viewport; other wide drawings keep
- * their logical width in the card.
+ * their logical width in the card. Sankey starts at its sources.
  */
 export const cardFit = (
   snapshot: ChartSnapshot,
@@ -70,9 +70,9 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
         {(snapshot) => {
           const fit = () => cardFit(snapshot().snapshot, cardSpan(props.example));
           let scroller: HTMLDivElement | undefined;
-          // A wide drawing opens at its newest end, like the calendar in a frame.
+          // Keep the existing wide-drawing origin; Sankey starts at its sources.
           onMount(() => {
-            if (scroller && fit().mode === "wide") scroller.scrollLeft = scroller.scrollWidth;
+            if (scroller && fit().mode === "wide" && snapshot().snapshot.kind !== "sankey") scroller.scrollLeft = scroller.scrollWidth;
           });
           // Slices name themselves in a legend under the card's drawing; the drawing's own legend is too small there.
           const slices = () =>
