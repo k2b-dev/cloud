@@ -567,19 +567,32 @@ export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: (
  * element there, as `hover()` does. Use it where a test compares boxes in viewport coordinates around a hover:
  * `Locator.hover()` retries a failed actionability check with its own `scrollIntoView` (`block: "end"`, then
  * `"center"` and `"start"`), so one transient retry moves the page and the test measures Playwright, not the
- * page (#3013). Here a covered or off-screen point fails at once instead.
+ * page (#3013). Here only the first attempt's scroll happens: a target not fully in view scrolls in once. A view
+ * transition, during which `<html>` takes all pointer input, is waited out in the target's frame; any other cover
+ * fails at once instead of a retry. Without `position`, the pointer goes to the center of the target's first line
+ * box, as with `hover()`. The `hover-in-place` check asks for it wherever a test reads geometry before and after a
+ * hover.
  */
-export const hoverInPlace = async (target: Locator, position: { x: number; y: number }): Promise<void> => {
-  const hit = await target.evaluate((element, offset) => {
+export const hoverInPlace = async (target: Locator, position?: { x: number; y: number }): Promise<void> => {
+  // As hover()'s first attempt: a target that is not fully in view scrolls in once; one in view stays put.
+  await target.scrollIntoViewIfNeeded();
+  const hit = await target.evaluate(async (element, offset) => {
+    const document = element.ownerDocument as Document & { activeViewTransition?: unknown };
+    while (document.activeViewTransition) await new Promise((resolve) => requestAnimationFrame(resolve));
     const box = element.getBoundingClientRect();
-    const x = box.x + offset.x;
-    const y = box.y + offset.y;
-    const top = element.ownerDocument.elementFromPoint(x, y);
+    // Without a position, as hover(): the center of the first line box, so a wrapped link is hit on its text.
+    const first = [...element.getClientRects()].find((rect) => rect.width > 0 && rect.height > 0) ?? box;
+    const x = offset ? offset.x : first.x - box.x + first.width / 2;
+    const y = offset ? offset.y : first.y - box.y + first.height / 2;
+    const top = document.elementFromPoint(box.x + x, box.y + y);
     const name = (node: Element | null) => (node ? `${node.tagName.toLowerCase()}${node.id ? `#${node.id}` : ""}` : "nothing");
     return { x, y, inside: top !== null && (top === element || element.contains(top)), top: name(top) };
   }, position);
   if (!hit.inside) throw new Error(`hoverInPlace: ${hit.top} is at the point, not the target`);
-  await target.page().mouse.move(hit.x, hit.y);
+  // The hit test ran in the target's frame; the mouse moves in the page's coordinates, also for a target in a frame.
+  const box = await target.boundingBox();
+  if (!box) throw new Error("hoverInPlace: the target has no box");
+  await target.page().mouse.move(box.x + hit.x, box.y + hit.y);
 };
 
 /**

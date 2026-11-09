@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { hoverInPlace, launchBrowser } from "../../test/browser";
 
 // Whether a row's surface, hit area, and columns stay put is a question of
 // layout and paint, which happy-dom does not model, so a real engine runs the
@@ -272,7 +272,7 @@ describe("@k2b/ui property rows and DetailPanel sections", () => {
 
           // Hover and keyboard focus leave the row where it is and paint no pill.
           const before = await boxes(page);
-          await page.getByRole("button", { name: /Recent activity/ }).hover();
+          await hoverInPlace(page.getByRole("button", { name: /Recent activity/ }));
           const hovered = await geometry("Recent activity");
           expect(hovered.fill).toBe(transparent);
           expect(await boxes(page)).toEqual(before);

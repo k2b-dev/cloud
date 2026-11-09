@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { funnelListFixtures } from "../../test/chart-funnel-list-fixtures";
 import { renderFunnelSvg } from "../charts/core/funnel";
 import { renderBarChartSvg } from "./chart-bar";
@@ -80,7 +80,7 @@ for (const width of [1440, 390])
         const before = await sample.boundingBox();
         const marks = chart.locator("[data-chart-datum]");
         const firstTarget = marks.first().locator(i === 3 ? ".stdlib-chart-bar" : ".k2b-chart-category-band");
-        await firstTarget.hover({ position: { x: 3, y: 3 } });
+        await hoverInPlace(firstTarget, { x: 3, y: 3 });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
@@ -88,7 +88,7 @@ for (const width of [1440, 390])
           nodes.flatMap((g) => [g, ...g.querySelectorAll("rect:not(.k2b-chart-category-band)")].map((e) => getComputedStyle(e).opacity)),
         );
         const tipBox = await chart.locator('[role="tooltip"]').boundingBox();
-        await firstTarget.hover({ position: { x: 6, y: 10 } });
+        await hoverInPlace(firstTarget, { x: 6, y: 10 });
         await settled(page);
         expect(await chart.locator('[role="tooltip"]').textContent()).toBe(first);
         expect(await chart.locator('[role="tooltip"]').boundingBox()).toEqual(tipBox);

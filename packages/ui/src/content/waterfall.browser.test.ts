@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { waterfallFixture } from "../../test/waterfall-fixture";
 import { renderWaterfallSvg } from "../charts/core/waterfall";
 
@@ -100,7 +100,7 @@ for (const width of [1440, 390])
     ).toBe(true);
     const box = await page.locator(".state-explorer").boundingBox();
     const viewportBox = await page.locator(".state-explorer .k2b-chart-explorer__viewport").boundingBox();
-    await chart.locator(".k2b-waterfall-bar").nth(2).hover();
+    await hoverInPlace(chart.locator(".k2b-waterfall-bar").nth(2));
     await page.waitForFunction(() => document.querySelector('[role="tooltip"]:popover-open')?.textContent?.includes("Wareneinkauf"));
     expect(await tooltip(page).textContent()).toContain("Raus");
     expect(await tooltip(page).textContent()).toContain("↗ 14.800");

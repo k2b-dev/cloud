@@ -11,7 +11,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
 import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
-import { browserName, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -763,7 +763,7 @@ describe("Spaces item detail in a browser", () => {
           const remove = blocker.getByRole("button", { name: "Blockierung durch Rename the computers entfernen" });
           if (!view.touch) {
             expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
-            await blocker.hover();
+            await hoverInPlace(blocker);
             expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
             expect(await boxes(page)).toEqual(rest);
           } else expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
@@ -952,7 +952,7 @@ describe("Spaces item detail in a browser", () => {
       expect(await page.locator(".spaces-dependency__remove").count()).toBe(0);
       expect(await page.getByText("Rename the computers").count()).toBe(1);
       const rest = await boxes(page);
-      await planningRow(page, "Priority").hover();
+      await hoverInPlace(planningRow(page, "Priority"));
       expect(await boxes(page)).toEqual(rest);
     } finally {
       await page.context().close();

@@ -9,7 +9,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 import { formatTemplateDate, proposeTemplateDates, templateSchedule } from "../../../../presentation/item-templates";
 import { templateDraftSource } from "../shared/item-form/templates";
 
@@ -262,7 +262,7 @@ describe(`Spaces templates in the + dialog in ${browserName}`, () => {
         if (view.touch) expect(row.chipHeight).toBeGreaterThanOrEqual(44);
 
         // Hovering or focusing a chip moves nothing.
-        if (!view.touch) await templateGroup.getByRole("radio", { name: "Release check" }).hover();
+        if (!view.touch) await hoverInPlace(templateGroup.getByRole("radio", { name: "Release check" }));
         await templateGroup.getByRole("radio", { name: "Blank" }).focus();
         await settle(page);
         expect(await layout(page)).toEqual(blank);

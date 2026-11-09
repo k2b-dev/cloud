@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -284,7 +284,7 @@ describe("selection colors in the browser", () => {
               const item = page.locator(`[href="#${id}"]`);
               const selected = await paint(item);
               const geometry = await box(item);
-              await item.hover();
+              await hoverInPlace(item);
               expect((await paint(item)).background).toEqual(selected.background);
               expect(await box(item)).toEqual(geometry);
             }

@@ -210,6 +210,51 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   });
 
+  test("hoverInPlace() waits out a view transition, points at a wrapped link's first line, and moves in frames", async () => {
+    const context = await browser.newContext({ viewport: { width: 400, height: 600 } });
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html>
+        <style>
+          body { margin: 0; font: 16px/20px sans-serif; }
+          p { width: 150px; margin: 20px; }
+          ::view-transition-group(root) { animation-duration: 400ms; }
+          iframe { position: absolute; top: 200px; left: 100px; width: 200px; height: 100px; border: 0; }
+        </style>
+        <p>Some words before <a id="link" href="#">a link that wraps</a></p>
+        <button id="target" style="position: absolute; top: 120px; left: 20px">Target</button>
+        <iframe srcdoc="<button id=inner style='margin: 30px'>Inner</button>"></iframe>`);
+      await page.frameLocator("iframe").locator("#inner").waitFor();
+      const hovered = (selector: string, frame = page.mainFrame()) =>
+        frame.waitForFunction((selector) => document.querySelector(`${selector}:hover`) !== null, selector);
+
+      // The link's box spans two lines; its center lies between them, beside the link's text.
+      expect(await page.locator("#link").evaluate((element) => element.getClientRects().length)).toBe(2);
+      await hoverInPlace(page.locator("#link"));
+      await hovered("#link");
+
+      const started = await page.evaluate(() => {
+        const start = (document as Document & { startViewTransition?: (update: () => void) => unknown }).startViewTransition;
+        if (!start) return false;
+        start.call(document, () => undefined);
+        return true;
+      });
+      if (started)
+        expect(await page.evaluate(() => Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition))).toBe(
+          true,
+        );
+      await hoverInPlace(page.locator("#target"));
+      await hovered("#target");
+
+      const frame = page.frame({ url: "about:srcdoc" });
+      if (!frame) throw new Error("Missing frame");
+      await hoverInPlace(page.frameLocator("iframe").locator("#inner"));
+      await hovered("#inner", frame);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("settled() returns on a page with a scroll-driven and an infinite animation", async () => {
     const context = await browser.newContext();
     try {
