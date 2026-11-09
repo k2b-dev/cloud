@@ -385,15 +385,17 @@ integration(
       expect(replayed.sort((a, b) => a - b)).toEqual(Array.from({ length: 21 }, (_, index) => index + 1));
 
       const manager = await jetstreamManager(connection);
-      const events = [];
+      const streams: Record<string, [string, number, number]> = {};
       for await (const info of manager.streams.list()) {
-        const metadata = info.config.metadata;
-        if (metadata?.["sync.namespace"] === namespace && !info.config.subjects.some((subject) => subject.endsWith(".dlq.>")))
-          events.push(info);
+        if (info.config.metadata?.["sync.namespace"] !== namespace) continue;
+        const kind = info.config.subjects.some((subject) => subject.endsWith(".dlq.>")) ? "dlq" : "events";
+        streams[kind] = [info.config.discard, info.config.max_age, info.config.max_bytes];
       }
-      expect(events.map((info) => [info.config.discard, info.config.max_age, info.config.max_bytes])).toEqual([
-        [DiscardPolicy.New, 0, maxBytes],
-      ]);
+      // Only the event stream changes; the dead letters keep their own policy.
+      expect(streams).toEqual({
+        events: [DiscardPolicy.New, 0, maxBytes],
+        dlq: [DiscardPolicy.Old, WEEK_MS * 1_000_000, 64 * 1024],
+      });
     } finally {
       await legacy.drain({ timeoutMs: 5_000 });
       await current.drain({ timeoutMs: 5_000 });
@@ -426,17 +428,33 @@ integration(
         ...limits,
       });
       await expect(rejecting.publish({ data: { n: 1 } })).rejects.toThrow("discard");
+      // Opts in, but its dead letters inherited the old age, which this change does not touch.
+      await legacy.topic<{ n: number }>({ id: "inherited", retention: { maxAgeMs: WEEK_MS, maxBytes }, maxPayloadBytes: 16_000 }).ready();
+      const inherited = current.topic<{ n: number }>({
+        id: "inherited",
+        whenFull: "reject",
+        retention: { maxBytes },
+        deadLetterRetention: { maxBytes },
+        maxPayloadBytes: 16_000,
+      });
+      await expect(inherited.publish({ data: { n: 1 } })).rejects.toThrow("max_age");
 
       const manager = await jetstreamManager(connection);
       const policies: Record<string, [string, number]> = {};
       for await (const info of manager.streams.list()) {
         const metadata = info.config.metadata;
-        if (metadata?.["sync.namespace"] === namespace && !info.config.subjects.some((subject) => subject.endsWith(".dlq.>")))
-          policies[metadata["sync.id"] ?? ""] = [info.config.discard, info.config.max_age];
+        if (metadata?.["sync.namespace"] !== namespace) continue;
+        const dlq = info.config.subjects.some((subject) => subject.endsWith(".dlq.>"));
+        policies[`${metadata["sync.id"]}${dlq ? ":dlq" : ""}`] = [info.config.discard, info.config.max_age];
       }
+      const week = WEEK_MS * 1_000_000;
       expect(policies).toEqual({
-        aged: [DiscardPolicy.Old, WEEK_MS * 1_000_000],
-        rejecting: [DiscardPolicy.Old, WEEK_MS * 1_000_000],
+        aged: [DiscardPolicy.Old, week],
+        "aged:dlq": [DiscardPolicy.Old, week],
+        rejecting: [DiscardPolicy.Old, week],
+        "rejecting:dlq": [DiscardPolicy.Old, week],
+        inherited: [DiscardPolicy.Old, week],
+        "inherited:dlq": [DiscardPolicy.Old, week],
       });
     } finally {
       await legacy.drain({ timeoutMs: 5_000 });

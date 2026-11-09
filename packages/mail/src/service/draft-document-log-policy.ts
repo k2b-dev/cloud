@@ -28,23 +28,34 @@ const recoverExpiredPrefix = async (): Promise<boolean> =>
     if (!lock?.acquired) return false;
     if (await checkpointed(db)) return true;
     const first = await mailDraftDocumentLog.firstSequence();
+    // A writer may hold a draft row and then ask for shared coverage. Never
+    // wait for such a row while holding the exclusive lock: skip it, and
+    // repeat the whole step later instead of recording the checkpoint.
     // A snapshot older than the retained window may miss events the old
     // policy expired. No retained event proves nothing: all may have expired.
+    const stale = () => db`
+      state NOT IN ('sent', 'discarded') AND doc_history_complete
+        AND doc_state IS NOT NULL AND COALESCE(doc_seq, 0) + 1 < ${first}
+    `;
     await db`
       UPDATE mail.drafts SET doc_history_complete = false
-      WHERE state NOT IN ('sent', 'discarded') AND doc_state IS NOT NULL AND doc_history_complete
-        AND COALESCE(doc_seq, 0) + 1 < ${first}
+      WHERE id IN (SELECT id FROM mail.drafts WHERE ${stale()} FOR UPDATE SKIP LOCKED)
     `;
+    if ((await db`SELECT 1 FROM mail.drafts WHERE ${stale()} LIMIT 1`).length) return false;
     // A draft without a snapshot was never acknowledged to anyone, but its
     // seed replays from zero: retained events behind an expired prefix need recovery.
-    const unseeded = await db<{ id: string }[]>`
-      SELECT id FROM mail.drafts
-      WHERE state NOT IN ('sent', 'discarded') AND doc_state IS NULL AND edit_mode = 'shared' AND doc_history_complete
-    `;
-    const topic = mailDraftDocumentLog.topic();
-    for (const row of first > 1 ? unseeded : [])
-      if (await topic.latestCursor({ tenantId: row.id }))
-        await db`UPDATE mail.drafts SET doc_history_complete = false WHERE id = ${row.id}::uuid`;
+    if (first > 1) {
+      const unseeded = () => db`
+        state NOT IN ('sent', 'discarded') AND doc_history_complete AND doc_state IS NULL AND edit_mode = 'shared'
+      `;
+      const all = await db<{ id: string }[]>`SELECT id FROM mail.drafts WHERE ${unseeded()}`;
+      const locked = await db<{ id: string }[]>`SELECT id FROM mail.drafts WHERE ${unseeded()} FOR UPDATE SKIP LOCKED`;
+      if (locked.length !== all.length) return false;
+      const topic = mailDraftDocumentLog.topic();
+      for (const row of locked)
+        if (await topic.latestCursor({ tenantId: row.id }))
+          await db`UPDATE mail.drafts SET doc_history_complete = false WHERE id = ${row.id}::uuid`;
+    }
     await db`INSERT INTO mail.draft_document_log_policy (log_id) VALUES (${mailDraftDocumentLog.id})`;
     return true;
   });
@@ -92,6 +103,13 @@ export const stopDraftDocumentLogPolicy = async (): Promise<void> => {
   await running?.done;
   running = undefined;
 };
+
+/**
+ * True once some process recorded the recovery marking. Until then no shared
+ * draft is read, edited or sent: a draft whose expired events were never
+ * stored in SQL would otherwise look complete.
+ */
+export const draftDocumentHistoryChecked = async (db: typeof sql): Promise<boolean> => migrated || (await checkpointed(db));
 
 /** True once this process prepared a log that keeps every event until Mail prunes it. */
 export const sharedDraftsSupported = async (): Promise<boolean> => migrated;

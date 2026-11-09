@@ -326,15 +326,22 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   const runDocumentStream = async (requestedAfter: string | null): Promise<void> => {
     const topic = mailDraftDocumentLog.topic();
     let after = requestedAfter;
-    // Every replayed event passes the same access check as a live one.
-    const emitAllowed = async (db: typeof sql, event: TopicEvent<SharedTextSyncEvent>): Promise<boolean> => {
+    // Every replayed snapshot and event passes the same access check, right
+    // before it is sent, as a live one: broker reads in between can outlast a grant.
+    const stillAllowed = async (db: typeof sql): Promise<boolean> => {
       const allowed = await requireDraftAccess(context, mailboxId, draftId, "write", db);
       if (closed || signal.aborted) return false;
-      if (!allowed.ok) {
-        close("ACCESS_DENIED", t.access);
-        return false;
-      }
+      if (!allowed.ok) close("ACCESS_DENIED", t.access);
+      return allowed.ok;
+    };
+    const emitAllowed = async (db: typeof sql, event: TopicEvent<SharedTextSyncEvent>): Promise<boolean> => {
+      if (!(await stillAllowed(db))) return false;
       emitEvent(event);
+      return !closed;
+    };
+    const snapshotAllowed = async (db: typeof sql, snapshot: DraftDocumentSnapshot): Promise<boolean> => {
+      if (!(await stillAllowed(db))) return false;
+      sendSnapshot(snapshot);
       return !closed;
     };
     while (!closed) {
@@ -352,7 +359,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           }
           const durable = state.durable.cursor ?? topic.cursorAt(0);
           if (after === null || compareStreamCursor(after, durable) < 0) {
-            sendSnapshot(state.durable);
+            if (!(await snapshotAllowed(db, state.durable))) return;
             after = durable;
           }
           const head = await topic.latestCursor({ tenantId: draftId });
@@ -364,7 +371,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
                 if (!(await emitAllowed(db, event))) return;
             } catch (error) {
               if (!(error instanceof RetentionGapError)) throw error;
-              sendSnapshot(state.durable);
+              if (!(await snapshotAllowed(db, state.durable))) return;
               for await (const event of replayDraftDocument({
                 draftId,
                 after: state.durable.cursor,
@@ -382,7 +389,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           // admission compares it with the draft's coverage, not the log head.
           cursor = globalHead;
           const base = head && compareStreamCursor(head, after) > 0 ? head : after;
-          if (!generation || closed) return;
+          if (!generation || closed || !(await stillAllowed(db))) return;
           joined = true;
           deliveredCursor = base;
           flushCommittedSnapshot();

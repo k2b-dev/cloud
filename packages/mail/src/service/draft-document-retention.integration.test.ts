@@ -154,6 +154,11 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     await manager.streams.purge(stream, { seq: mailDraftDocumentLog.topic().cursorSequence(kept.cursor) });
     const before = await manager.streams.info(stream);
     expect(before.state.first_seq).toBeGreaterThan(2);
+    // Before the marking ran, no shared draft is read, and none is sent.
+    expect(await readDraftDocument(unopened)).toMatchObject({ ok: false, error: { status: 409 } });
+    expect(
+      await loadSendContent({ db: sql, mailboxId, draftId: unopened.draftId, expectedRevision: 1, actor: { kind: "user", userId } }),
+    ).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED" } });
     // A snapshot older than the window may have lost events even when none of
     // them is retained any more; a snapshot inside the window lost nothing.
     await sql`UPDATE mail.drafts SET doc_state='\\x00'::bytea, doc_seq=1 WHERE id=${idle.draftId}::uuid`;
@@ -192,6 +197,36 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     await drainDraftDocumentPruning();
     expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${target.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(1);
     expect(await sql`SELECT 1 FROM mail.draft_document_log_policy WHERE log_id=${mailDraftDocumentLog.id}`).toHaveLength(1);
+    await retire(target);
+  });
+
+  test("recovery marking skips a draft row a writer holds and records no checkpoint until it marked it", async () => {
+    const target = await draft();
+    await sql`UPDATE mail.drafts SET doc_state='\\x00'::bytea, doc_seq=1 WHERE id=${target.draftId}::uuid`;
+    await sql`DELETE FROM mail.draft_document_log_policy`;
+    const held = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    // A writer that holds the row and would ask for shared coverage next.
+    const writer = sql.begin(async (db) => {
+      await db`SELECT 1 FROM mail.drafts WHERE id=${target.draftId}::uuid FOR UPDATE`;
+      held.resolve();
+      await release.promise;
+    });
+    await held.promise;
+    try {
+      const once = new AbortController();
+      once.abort();
+      // One attempt only: it must neither wait for the row nor record the checkpoint.
+      expect(await migrateDraftDocumentLogPolicy(once.signal)).toBe(false);
+      expect(await sql`SELECT 1 FROM mail.draft_document_log_policy`).toHaveLength(0);
+      expect(await sharedDraftsSupported()).toBe(false);
+    } finally {
+      release.resolve();
+      await writer;
+    }
+    expect(await migrateDraftDocumentLogPolicy()).toBe(true);
+    await drainDraftDocumentPruning();
+    expect(await sql`SELECT 1 FROM mail.drafts WHERE id=${target.draftId}::uuid AND NOT doc_history_complete`).toHaveLength(1);
     await retire(target);
   });
 

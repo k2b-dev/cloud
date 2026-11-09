@@ -191,6 +191,16 @@ const createStreamLimits = (connection: NatsConnection, namespace: string) => {
           const jsm = await manager();
           const info = await jsm.streams.info(widened);
           if (info.config.subjects.some((subject) => subject.endsWith(".dlq.>"))) throw error;
+          // Sync checks the dead-letter stream only after the event stream. Its
+          // age has no in-place change here, so a stream that would still
+          // drift there keeps its policy instead of ending half changed.
+          const deadLetterAge = (topic?.deadLetterRetention?.maxAgeMs ?? 0) * 1_000_000;
+          for await (const stream of jsm.streams.list()) {
+            const metadata = stream.config.metadata;
+            if (metadata?.["sync.namespace"] !== namespace || metadata["sync.kind"] !== "topic" || metadata["sync.id"] !== id) continue;
+            if (stream.config.subjects.some((subject) => subject.endsWith(".dlq.>")) && stream.config.max_age !== deadLetterAge)
+              throw error;
+          }
           // In place: the stream keeps every sequence, so persisted cursors stay valid.
           await jsm.streams.update(widened, { discard: DiscardPolicy.New, max_age: 0 });
           log.info("Changed a Sync topic to keep its events until the application prunes them", {

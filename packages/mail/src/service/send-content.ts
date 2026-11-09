@@ -6,6 +6,7 @@ import { type ActorRef, draftEditableContentInputSchema } from "../contracts";
 import { sha256Json } from "./canonical";
 import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
 import { lockDraftDocumentCoverage, mailDraftDocumentLog, replayDraftDocument } from "./draft-document-log";
+import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
 import { mailboxLogoContentId } from "./mailbox-logos";
 import { type OutboundDraftSnapshot, outboundDraftSnapshotSchema } from "./outbound-mime";
 
@@ -161,6 +162,8 @@ export const loadSendContent = async (params: {
     `;
     if (!current || String(current.doc_seq) !== String(draft.doc_seq) || Number(current.revision) !== params.expectedRevision)
       return fail(sendContentChanged());
+    // Until the recovery marking ran, SQL may lack events the old log expired.
+    if (!(await draftDocumentHistoryChecked(params.db))) return fail(sendContentChanged());
     try {
       const topic = mailDraftDocumentLog.topic();
       const head = await topic.latestCursor({ tenantId: params.draftId });

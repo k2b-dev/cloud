@@ -70,7 +70,8 @@ whose snapshot is older than the retained window may have lost expired
 events, even when none of its events is left, so Mail marks it for recovery.
 A checkpoint in `mail.draft_document_log_policy` records that this step
 finished; a process that stops earlier repeats it on the next start. Until
-then, shared mode stays unsupported in that process. The separate dead-letter
+some Mail instance has finished it, shared drafts can't be opened, saved or
+sent, and the step retries while a draft it must mark is being edited. The separate dead-letter
 stream keeps its seven-day age and 16 MiB budget. If the log cannot be
 prepared, Mail logs the reason and refuses shared mode; its other features
 remain available. Mail instances of an older release report drift for this

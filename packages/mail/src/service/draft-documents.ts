@@ -23,6 +23,7 @@ import {
   mailDraftDocumentLog,
   replayDraftDocument,
 } from "./draft-document-log";
+import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
 import { DRAFT_REVISION_OPERATION_ORIGIN, draftRevisionOperationContent, findDraftRevisionOperation } from "./draft-document-operation";
 import { awaitDraftDocumentQuery, withDraftDocumentTransaction } from "./draft-document-socket-sql";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
@@ -183,6 +184,7 @@ export const lockDraftDocumentInTransaction = async (
   if (!initial) return fail(err.notFound("Draft"));
   let row: DraftRow = initial;
   if (row.edit_mode !== "shared") return conflict("Draft uses lock editing; shared document APIs are unavailable");
+  if (!(await draftDocumentHistoryChecked(db))) return conflict("Shared drafts are starting; try again in a moment");
   if ((params.permission ?? "write") === "write") {
     const ready = editable(row);
     if (!ready.ok) return ready;
