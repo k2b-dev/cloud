@@ -871,6 +871,16 @@ helpers as `sheet` from `@sdk`. Other package imports remain unavailable.
 bindings. Secret values remain in the Assistant host. Files, views, progress,
 logs, return values and script errors keep their chat result format.
 
+Pass a streaming read's `FileRef` to the `file` argument of a file-input write
+Action in the same run. The host transfers the bytes and returns the completed
+Action data. A destination may choose its own upload name. Files above the
+destination's declared byte limit are refused before preparation or approval.
+Each reference can be used for one write attempt. The usual Action review and
+approval still apply. File bytes stay outside the script bridge.
+One-off runs allow 50 MiB per file and 250 MiB of
+stream transfers in total, counting both the read and the upload. After an
+interrupted write, inspect its status before attempting another import.
+
 One-off runs share runner capacity and use its fixed wall-clock, memory and
 bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs).
 Scheduled chat routines are retired. Rebuild timed work as reviewed personal
