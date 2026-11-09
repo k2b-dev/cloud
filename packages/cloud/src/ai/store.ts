@@ -1528,7 +1528,7 @@ export const aiConversations: AiConversationService = {
         (db, shortId) => db<ConversationRow[]>`
         INSERT INTO ai.conversations (short_id, created_by_user_id, title, place_type, place_id, place_title,
           draft_content, draft_revision, draft_updated_at)
-        VALUES (${shortId}, ${ownerUserId}::uuid, ${place.title}, ${place.ref.type}, ${place.ref.id}, ${place.title},
+        VALUES (${shortId}, ${ownerUserId}::uuid, ${place.title.slice(0, 120)}, ${place.ref.type}, ${place.ref.id}, ${place.title},
           ${JSON.stringify(draft)}::text::jsonb, 1, now())
         ON CONFLICT (created_by_user_id, place_type, place_id) WHERE archived_at IS NULL AND place_type IS NOT NULL
           DO UPDATE SET place_title = EXCLUDED.place_title

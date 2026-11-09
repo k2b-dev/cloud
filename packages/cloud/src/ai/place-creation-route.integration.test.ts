@@ -20,7 +20,7 @@ suiteFor("database", "valkey")("place chat creation route", () => {
     const available: places.PlaceAssistantState = {
       state: "available",
       ref,
-      title: "Marta Example",
+      title: "T".repeat(200),
       typeTitle: "Conversation",
       app: { id: "place-fixture", name: "Fixture", icon: null },
       tools: [],
@@ -57,7 +57,8 @@ suiteFor("database", "valkey")("place chat creation route", () => {
       const first = await post(body);
       expect(first.status).toBe(201);
       const chat = await first.json();
-      expect(chat.place).toEqual({ ref, title: "Marta Example" });
+      expect(chat.place).toEqual({ ref, title: available.title });
+      expect(chat.title).toBe("T".repeat(120));
       expect((await (await post(body)).json()).id).toBe(chat.id);
       expect((await (await post(body, ben)).json()).id).not.toBe(chat.id);
       expect((await post({ ...body, draft: { content: [{ type: "text", text: "Changed" }] } })).status).toBe(409);

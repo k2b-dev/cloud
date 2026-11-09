@@ -111,6 +111,9 @@ envelopes, targets, and Action policies.
 | `skills` | Required array, at most 8 names from `assistant.skills`. |
 | `starters` | Optional array, at most 3 `{ label, prompt }` objects; labels have at most 80 characters and prompts at most 500. |
 
+The place title keeps its full snapshot. A new chat's ordinary title uses its
+first 120 characters to fit the chat read and search contracts.
+
 The declaration supplies the allowed set; the Query chooses a subset for the
 current person and state. For example, return no tools when the person can read
 but cannot write. Cloud drops and logs IDs outside the declared set. Invalid or
