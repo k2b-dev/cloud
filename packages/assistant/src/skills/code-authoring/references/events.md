@@ -1,34 +1,59 @@
 # Events
 
-`app.on(event, handler)` starts a run for each matching event. Only resource
-Code can subscribe, and only to events at its own owner, the **place** of the
-event. Personal and app-owned Code cannot subscribe. Declare the handler at
-module level with a constant event name; one handler per event.
+`app.on(handle, event, handler)` starts a run for events at an exact readable
+place. Use flat SDK handles such as `spaces.space("Spc001")` or
+`notebooks.notebook("Ntb001")`. Personal Code executes as its owner;
+resource-owned and app-owned Code execute as their dedicated Code account.
+Share the place with that account before activation. Without a handle,
+`app.on(event, handler)` still uses the resource owning the Code, unchanged.
+Personal Code has no implicit place.
+
+Declare the handler at module level with constant event and place IDs. One
+handler per event and place is allowed; the same event may be registered at
+several places. Checking and approval record the exact event version and
+place. The runtime refuses any other pair. Activation checks read access,
+then each attempt checks again before Code receives the event. A revoked
+share stops further runs and appears in Runs; restore access before retrying.
 
 ## Which events exist
 
-| Event | Subject | Place | Can start Code today |
-| --- | --- | --- | --- |
-| `mail.message.received` | `mail.message` | `mail.mailbox` | Yes, in the mailbox's Code |
-| `spaces.item.created`, `spaces.item.completed` | `spaces.item` | `spaces.space` | No: Spaces offers no Code of a space yet |
-| `spaces.item.updated`, `spaces.item.due` | `spaces.item` | `spaces.space` | No: as above |
-| `spaces.comment.created` | `spaces.comment` | `spaces.space` | No: as above |
-| `notebooks.note.created`, `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | No: Notebooks offers no Code of a notebook yet |
-| `notebooks.notebook.created`, `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | No: as above |
-| `core.user.created` | `core.user` | none | No: events without a place start no Code |
+Check `code_sdk` for the current catalog. Every offered automation event with
+a place can start Code when its executing account can read that place; the
+place need not support owning Code itself.
 
-An event can start Code only when its app lets one of its resources own Code.
-Today that is the mailbox alone. `code_check` reports `code_event_owner` for
-an event at another place and `code_dynamic_event` in personal Code. Check `code_sdk` for the current list; do not promise
-a Spaces, Notebooks, Chat, Contacts or Files automation until its place can own Code.
+| Event | Subject | Place |
+| --- | --- | --- |
+| `mail.message.received` | `mail.message` | `mail.mailbox` |
+| `spaces.item.created`, `spaces.item.completed`, `spaces.item.updated`, `spaces.item.due` | `spaces.item` | `spaces.space` |
+| `spaces.comment.created` | `spaces.comment` | `spaces.space` |
+| `notebooks.note.created`, `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` |
+| `notebooks.notebook.created`, `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` |
+
+Events without a place, such as `core.user.created`, and events marked
+`automation: false` cannot start Code. `spaces.item.due` fires at its deadline,
+not the day before. For the day-before task and chat pattern, read
+[Task due tomorrow](template-task-due-tomorrow.md).
+
+<!-- check: personal -->
+```ts
+import { app, spaces, notebooks } from "@sdk";
+app.on(spaces.space("Spc001"), "spaces.item.due", async event => {
+  const { data: item } = await spaces.item.read({ id: event.subject.id });
+  console.log(item.title);
+});
+app.on(notebooks.notebook("Ntb001"), "notebooks.note.created", async event => {
+  console.log(event.subject.id);
+});
+export default app;
+```
 
 ## The envelope
 
 The handler receives `id`, `type`, `version`, `source`, `time`, `subject`
-(`{ type, id }`), `place` (`{ type, id }`, this Code's owner), optional `cause`
+(`{ type, id }`), `place` (`{ type, id }`, the declared place), optional `cause`
 and `data`. Data holds references, never content, and the event grants no
 access. Read the current state through the SDK. Cloud checks that the
-service account can still read the place before it admits a run.
+executing account can still read the place before it admits a run and again before each attempt.
 
 ## Handle incoming mail
 
@@ -111,8 +136,8 @@ edited the conversation fails the call; do not overwrite blindly.
 
 ## Order, retries and recovery
 
-- Runs for one mailbox start one at a time, in the order the receipts reached
-  Cloud, even when Code concurrency is higher.
+- Runs for one Code and place start one at a time, across event types, in the order the receipts reached
+  Cloud, even when Code concurrency is higher. Registrations share the existing `core.code.event_backlog` budget (default 100).
 - Before the first Action or internet request, a failed run restarts from the
   beginning, up to three attempts within the original 5-minute budget.
 - After an Action or internet request started, a failure is final and shows

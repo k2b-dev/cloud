@@ -7,10 +7,12 @@ import { CloudResourceRefSchema, CodeCheckedVersionManifestSchema } from "@k2b/c
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
 import { appEventFixture } from "@k2b/cloud/events/testing";
+import { AppAccessDeniedError } from "@k2b/cloud/server/middleware/app-access";
 import { accounts } from "@k2b/cloud/services";
 import { cancelResourceEventSubscriptions, createAppEventBroker, type ResourceEventBinding } from "@k2b/cloud/services/app-events";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
 import { resolveInvocationAuthority } from "@k2b/cloud/services/identity/invocation-actor";
+import * as issuance from "@k2b/cloud/services/identity/issue-invocation";
 import { createSync } from "@k2b/sync";
 import { z } from "zod";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -30,6 +32,7 @@ import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferen
 import { migrate as migrateRailShortcuts } from "../migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import { codeEventPrincipal, requireCodeEventAccess } from "./event-access";
 import {
   cancelCodeEventCatchup,
   codeEventCatchupPumpConfig,
@@ -41,7 +44,8 @@ import {
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
 import { admitCodeEvent, codeEventTargetKey, listCodeRunsWithEvents, replayCodeEventDelivery, startCodeEventConsumer } from "./events";
 import { processCodeOwnerDeleted } from "./lifecycle";
-import { claimCodeRuns, completeCodeRun, reconcileCodeRuns, startCodeRun } from "./scheduling";
+import * as ownerChecks from "./owner-check";
+import { claimCodeRuns, codeRunnerLease, completeCodeRun, reconcileCodeRuns, startCodeRun } from "./scheduling";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode } from "./store";
 
@@ -81,6 +85,14 @@ const declaration: CapabilityRegistryEntry = {
       },
     },
     events: {
+      renamed: {
+        version: 1,
+        title: "Renamed",
+        description: "An item was renamed.",
+        subject: "item",
+        place: "collection",
+        schema: z.strictObject({ id: CloudResourceRefSchema.shape.id }),
+      },
       changed: {
         version: 1,
         title: "Changed",
@@ -112,12 +124,15 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       registry: async () => [declaration, { ...declaration, appId: "mail", manifest: compileCapabilityManifest("mail", mailCapabilities) }],
       // The fixture reader has ordinary live read permission. Resolve the production event-proof identity against SQL first.
       authorizeResource: async (appId, current, envelope) => {
+        const code = (await findCode(codeId))!;
+        const executing = codeEventPrincipal(code);
+        const subjectId = executing.type === "user" ? executing.userId : executing.serviceAccountId;
         const authority = await resolveInvocationAuthority(
           {
-            sub: principal,
-            principal_type: "service_account",
-            access_subject_type: "service_account",
-            access_subject_id: principal,
+            sub: subjectId,
+            principal_type: executing.type,
+            access_subject_type: executing.type,
+            access_subject_id: subjectId,
             act: { sub: `app:${appId}` },
             credential_kind: "mandate",
             scopes: [],
@@ -161,7 +176,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     binding = row.resource_binding;
     time = row.cutoff;
   }
-  async function version(eventType = "fixture.changed", eventPlace = place, ai = false) {
+  async function version(eventType = "fixture.changed", eventPlace = place, ai = false, includeSecond = false) {
     number++;
     const files = { "code.ts": `fixture ${number}` },
       bundle = "export default {};";
@@ -169,16 +184,14 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      entrypoints: [
-        {
-          kind: "event",
-          entrypoint: `event:${eventType}@1`,
-          cron: null,
-          file: "code.ts",
-          line: 1,
-          event: { type: eventType, version: 1, place: eventPlace },
-        },
-      ],
+      entrypoints: [eventType, ...(includeSecond ? ["fixture.renamed"] : [])].map((type) => ({
+        kind: "event",
+        entrypoint: `event:${type}@1`,
+        cron: null,
+        file: "code.ts",
+        line: 1,
+        event: { type, version: 1, place: eventPlace },
+      })),
       permissions: [],
       ai,
       policyRows: ai ? ["ai", "read"] : ["read"],
@@ -487,6 +500,152 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       bundleHash: run.bundle_hash,
     };
   }
+  test.each(["resource", "person"] as const)("%s Code receives foreign-place events with the executing identity", async (kind) => {
+    if (kind === "resource") {
+      await sql`UPDATE code.codes SET owner_id='other-owner' WHERE id=${codeId}`;
+    } else {
+      await sql`UPDATE code.codes SET owner_kind='person',owner_type=NULL,owner_id=NULL,owner_user_id=${owner}::uuid,service_account_id=NULL WHERE id=${codeId}`;
+      await sql`UPDATE auth.mandates SET subject_kind='user',subject_service_account_id=NULL,subject_user_id=${owner}::uuid WHERE id=${mandateId}::uuid`;
+    }
+    await activate();
+    await publish(90);
+    await broker.work();
+    expect(await runs()).toHaveLength(1);
+    expect((await runs())[0]?.input).toEqual(event(90));
+  });
+
+  test("activation refuses a foreign place without read access and registration budgets use the existing event limit", async () => {
+    await sql`UPDATE code.codes SET owner_id='other-owner' WHERE id=${codeId}`;
+    const reader = spyOn(catalogProvider, "readResourcePrincipals").mockResolvedValue({ state: "checked", readable: [] });
+    try {
+      await expect(requireCodeEventAccess((await findCode(codeId))!, versionId)).rejects.toMatchObject({ code: "FORBIDDEN" });
+      readable = false;
+      await publish(91);
+      await broker.work();
+      expect(await runs()).toHaveLength(0);
+      backlog = 0;
+      await expect(activate()).rejects.toMatchObject({ code: "BAD_INPUT" });
+    } finally {
+      reader.mockRestore();
+    }
+  });
+
+  test("read access is checked after admission on every attempt; a withdrawal is visible and no token is signed", async () => {
+    await sql`UPDATE code.codes SET owner_id='other-owner' WHERE id=${codeId}`;
+    await activate();
+    await publish(92);
+    await broker.work();
+    const reader = spyOn(catalogProvider, "readResourcePrincipals").mockImplementation(async (input) => ({
+      state: "checked",
+      readable: readable ? [...input.principals] : [],
+    }));
+    const ownerCheck = spyOn(ownerChecks, "checkCodeOwnerBeforeRun").mockResolvedValue(true);
+    let signed = 0;
+    const sign = async () => {
+      signed++;
+      return "fixture-run-token";
+    };
+    try {
+      const [first] = await claimCodeRuns(1, limits);
+      expect(await codeRunnerLease(first!, sign)).not.toBeNull();
+      expect(signed).toBe(1);
+      await completeCodeRun(claims(first!), "failed");
+      const [retry] = await claimCodeRuns(1, limits);
+      readable = false;
+      expect(await codeRunnerLease(retry!, sign)).toBeNull();
+      expect(signed).toBe(1);
+      expect(reader).toHaveBeenCalledTimes(2);
+      expect((await listCodeRunsWithEvents({ codeId, limit: 20 }, editor)).items[0]).toMatchObject({
+        state: "failed",
+        outcome: "resource_access_revoked",
+      });
+    } finally {
+      reader.mockRestore();
+      ownerCheck.mockRestore();
+    }
+  });
+
+  test("personal Code loses queued event access when its source app grant is withdrawn", async () => {
+    await sql`UPDATE code.codes SET owner_kind='person',owner_type=NULL,owner_id=NULL,owner_user_id=${owner}::uuid,service_account_id=NULL WHERE id=${codeId}`;
+    await sql`UPDATE auth.mandates SET subject_kind='user',subject_service_account_id=NULL,subject_user_id=${owner}::uuid WHERE id=${mandateId}::uuid`;
+    await activate();
+    await publish(96);
+    await broker.work();
+    const [run] = await claimCodeRuns(1, limits);
+    const ownerCheck = spyOn(ownerChecks, "checkCodeOwnerBeforeRun").mockResolvedValue(true);
+    const authority = spyOn(issuance, "resolveIssuanceAuthority").mockResolvedValue(editor.authority);
+    const gate = spyOn(issuance, "requireRegisteredAppAccess").mockRejectedValue(new AppAccessDeniedError({ id: "fixture" }));
+    const reader = spyOn(catalogProvider, "readResourcePrincipals").mockImplementation(async (input) => ({
+      state: "checked",
+      readable: [...input.principals],
+    }));
+    let signed = false;
+    try {
+      expect(
+        await codeRunnerLease(run!, async () => {
+          signed = true;
+          return "never";
+        }),
+      ).toBeNull();
+      expect(signed).toBe(false);
+      expect(reader).not.toHaveBeenCalled();
+      expect((await runs())[0]).toMatchObject({ state: "failed", outcome: "resource_access_revoked" });
+    } finally {
+      gate.mockRestore();
+      authority.mockRestore();
+      reader.mockRestore();
+      ownerCheck.mockRestore();
+    }
+  });
+
+  test("Core refuses an undeclared event/place pair before signing even if a queued envelope was changed", async () => {
+    await publish(93);
+    await broker.work();
+    const [run] = await claimCodeRuns(1, limits);
+    const ownerCheck = spyOn(ownerChecks, "checkCodeOwnerBeforeRun").mockResolvedValue(true);
+    const reader = spyOn(catalogProvider, "readResourcePrincipals").mockImplementation(async () => {
+      throw new Error("Undeclared places must not reach the reader");
+    });
+    let signed = false;
+    try {
+      const forged = { ...run!, input: { ...event(93), place: { ...place, id: "undeclared" } } };
+      expect(
+        await codeRunnerLease(forged, async () => {
+          signed = true;
+          return "never";
+        }),
+      ).toBeNull();
+      expect(signed).toBe(false);
+      expect(reader).not.toHaveBeenCalled();
+      expect((await runs())[0]).toMatchObject({ state: "failed", outcome: "code_event_undeclared" });
+    } finally {
+      ownerCheck.mockRestore();
+      reader.mockRestore();
+    }
+  });
+
+  test("different event types at one place share broker order and one running handler", async () => {
+    await version("fixture.changed", place, false, true);
+    await activate();
+    const first = await publish(94);
+    const second = { ...event(95, "other-subject"), type: "fixture.renamed" };
+    await broker.accept(second, ++sequence);
+    const pending = await broker.claim();
+    expect(pending).toHaveLength(1);
+    for (const row of pending) await broker.deliver(row);
+    const later = await broker.claim();
+    expect(later).toHaveLength(1);
+    for (const row of later) await broker.deliver(row);
+    // Runs admitted before the rollout retain the previous event-qualified key.
+    await sql`UPDATE code.runs SET event_subject_key=${`fixture.changed@1:${place.type}:${place.id}`} WHERE input->>'id'=${first.id}`;
+    const [run] = await claimCodeRuns(3, limits);
+    expect(run?.input).toEqual(first);
+    expect(await claimCodeRuns(3, limits)).toEqual([]);
+    await completeCodeRun(claims(run!), "succeeded");
+    const [next] = await claimCodeRuns(3, limits);
+    expect(next?.input).toEqual(second);
+  });
+
   test("different messages of one resource run in receipt order even with raised concurrency", async () => {
     await publish(20);
     await publish(21, "another-message");

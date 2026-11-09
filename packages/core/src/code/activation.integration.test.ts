@@ -129,14 +129,31 @@ databaseSuite()("durable Code activation", () => {
     await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${id},${share!.id}::uuid)`;
     return (await findCode(id))!;
   }
-  async function version(code: Code, targets = ["A", "B"], baseVersionId: string | null = null, op = "item.change") {
+  async function version(
+    code: Code,
+    targets = ["A", "B"],
+    baseVersionId: string | null = null,
+    op = "item.change",
+    eventPlace?: { type: string; id: string },
+  ) {
     const sourceFiles = { "code.ts": `export const version = '${++ordinal}';` },
       bundle = `bundle:${ordinal}`;
     const manifest: CodeCheckedVersionManifest = {
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(sourceFiles, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      entrypoints: [{ kind: "manual", entrypoint: "run", title: "Lieferungen eintragen", cron: null, file: "code.ts", line: 1 }],
+      entrypoints: eventPlace
+        ? [
+            {
+              kind: "event",
+              entrypoint: "event:example.changed@1:place:0",
+              event: { type: "example.changed", version: 1, place: eventPlace },
+              cron: null,
+              file: "code.ts",
+              line: 1,
+            },
+          ]
+        : [{ kind: "manual", entrypoint: "run", title: "Lieferungen eintragen", cron: null, file: "code.ts", line: 1 }],
       policyRows: ["silent_draft"],
       ai: false,
       // The checker could place the call at A in the run entrypoint, not the one at B.
@@ -243,6 +260,35 @@ databaseSuite()("durable Code activation", () => {
       state: "active",
       policy: null,
     });
+  });
+
+  test.each([true, false])("foreign-place activation checks account readability (allowed=%s)", async (allowed) => {
+    const code = await newCode();
+    const place = { type: "spaces.space", id: "Spc001" };
+    const submitted = await version(code, [], null, "item.change", place);
+    const readers = readersSpy.mockImplementation(async (input) => ({ state: "checked", readable: allowed ? [...input.principals] : [] }));
+    try {
+      const activation = await start(code, submitted.version.id);
+      await run(activation.id);
+      const result = await status(code, activation.id);
+      expect(readers).toHaveBeenCalledWith(
+        expect.objectContaining({ ref: place, principals: [{ type: "service_account", serviceAccountId: code.serviceAccountId }] }),
+      );
+      if (allowed) {
+        expect(result.state).toBe("active");
+        expect(
+          (await sql`SELECT resource_binding FROM events.app_subscriptions WHERE resource_binding->>'key'=${code.id}`)[0]?.resource_binding
+            .place,
+        ).toEqual(place);
+      } else {
+        expect(result).toMatchObject({ state: "failed", failure: { code: "FORBIDDEN" } });
+        expect(result.failure?.reason).toContain("cannot read");
+        expect(await sql`SELECT id FROM events.app_subscriptions WHERE resource_binding->>'key'=${code.id}`).toHaveLength(0);
+        expect((await findCode(code.id))?.activeVersionId).toBeNull();
+      }
+    } finally {
+      readersSpy.mockImplementation(async (input) => ({ state: "checked", readable: [...input.principals] }));
+    }
   });
 
   test("personal activation creates its owner's version mandate without resource grants", async () => {

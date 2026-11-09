@@ -1,6 +1,6 @@
 ---
 name: code-authoring
-description: Build or change lasting Cloud Code. Use for automations that react to incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Rebuild exported Mail rules or Assistant routines as reviewed candidates. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version that the person switches on. One-off analysis or exports in this chat use assistant-code-mode and code_run.
+description: Build or change lasting Cloud Code. Use for automations that react to events at readable places across apps or incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Rebuild exported Mail rules or Assistant routines as reviewed candidates. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version that the person switches on. One-off analysis or exports in this chat use assistant-code-mode and code_run.
 load-tools: [code_init, code_pull, code_sdk, code_write, code_check, code_test, code_simulate, code_submit, code_diff]
 ---
 # Write Code
@@ -70,6 +70,7 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 
 | Need | Use | Read |
 | --- | --- | --- |
+| React to a Space, notebook or another readable place | `app.on(handle, event, handler)` | [Events](references/events.md), [task due tomorrow](references/template-task-due-tomorrow.md) |
 | React to each incoming message of a mailbox | `app.on("mail.message.received", …)` in mailbox Code | [Events](references/events.md) |
 | Sort, tag, assign, set status, summarise, draft a reply | Mail Actions on `owner` | [Capabilities](references/capabilities.md), [mail template](references/template-mail-automation.md) |
 | Run at a local time, weekly or once | `app.schedule({ cron | at, timeZone?, name?, title? }, handler)` | [Schedules](references/schedules.md) |
@@ -145,6 +146,7 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | [Survey](references/template-survey.md) | personal | Public form without the Cloud layout that files each answer as a Space task |
 | [Mail automation](references/template-mail-automation.md) | mailbox | Categorise with AI, tag, assign, set status, summarise, draft a reply |
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
+| [Task due tomorrow](references/template-task-due-tomorrow.md) | personal | Spaces events and a daily schedule assign tomorrow’s tasks and notify a team chat |
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |
 | [Mail invoices to an app](references/template-mail-invoices.md) | mailbox | Pass invoice attachments to an import app as FileRefs, then tag the conversation |
 

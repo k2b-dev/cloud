@@ -8,6 +8,9 @@ type Version = { version: number };
 const OUTCOME_DE: Record<string, string> = {
   previous_schedule_running: "Übersprungen, vorheriger Lauf läuft noch",
   lease_lost: "Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.",
+  resource_access_revoked:
+    "Das Code-Konto kann den Ereignisort nicht mehr lesen. Stelle den Lesezugriff auf den Ort und die App wieder her und wiederhole die Zustellung oder den Lauf.",
+  code_event_undeclared: "Ereignis und Ort sind in dieser Version nicht deklariert.",
   code_not_active: "Die angenommene Code-Version ist nicht mehr aktiv",
   code_admission_refused: "Die aktuelle Richtlinie oder Versionsfreigabe verhindert diesen Lauf",
   code_mandate_mismatch: "Das Versionsmandat ist nicht verfügbar",
@@ -22,6 +25,9 @@ const OUTCOME_DE: Record<string, string> = {
 const OUTCOME_EN: Record<string, string> = {
   previous_schedule_running: "Skipped, previous run is still running",
   lease_lost: "Runner disconnected. Review the recorded calls before running again.",
+  resource_access_revoked:
+    "The Code account can no longer read the event place. Restore access to the place and its app, then retry delivery or the run.",
+  code_event_undeclared: "This event and place are not declared in this version.",
   code_not_active: "The accepted Code version is no longer active",
   code_admission_refused: "The current policy or version approval prevents this run",
   code_mandate_mismatch: "The version mandate is unavailable",

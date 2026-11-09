@@ -40,6 +40,7 @@ type TestModule = {
   app: {
     schedule(when: { cron: string; name?: string; title?: string }, fn: () => void | Promise<void>): unknown;
     on(event: string, fn: (input: unknown) => void | Promise<void>): unknown;
+    on(place: TestHandle, event: string, fn: (input: unknown) => void | Promise<void>): unknown;
     get(path: string, fn: () => Response): unknown;
   };
   __codeSdk: {
@@ -732,4 +733,17 @@ test("resource app.on registers one checked event and passes its reference envel
     "code_event_input",
   );
   expect(() => sdk.app.on("work-shop.changed", () => {})).toThrow("code_duplicate_on");
+});
+
+test("foreign app.on registrations reject duplicate pairs and keep distinct places", async () => {
+  const manifest = sdkFixture();
+  manifest.events![0]!.place = "workshop";
+  const sdk = await runtime({ mode: "personal" }, manifest);
+  sdk.app.on(sdk.work_shop.workshop("one"), "work-shop.changed", () => {});
+  sdk.app.on(sdk.work_shop.workshop("two"), "work-shop.changed", () => {});
+  expect(sdk.__codeSdk.entries().map((entry) => entry.entrypoint)).toEqual([
+    "event:work-shop.changed@1:place:0",
+    "event:work-shop.changed@1:place:1",
+  ]);
+  expect(() => sdk.app.on(sdk.work_shop.workshop("one"), "work-shop.changed", () => {})).toThrow("code_duplicate_on");
 });

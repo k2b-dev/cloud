@@ -1017,6 +1017,14 @@ test("human check output uses reviewed titles and JSON retains both titles and s
   const entries = [
     { kind: "schedule" as const, entrypoint: "deliver", title: "Lieferungen eintragen", cron: "0 8 * * 1", file: "code.ts", line: 1 },
     { kind: "manual" as const, entrypoint: "legacy", cron: null, file: "code.ts", line: 2 },
+    {
+      kind: "event" as const,
+      entrypoint: "event:spaces.item.due@1:place:0",
+      cron: null,
+      file: "code.ts",
+      line: 3,
+      event: { type: "spaces.item.due", version: 1, place: { type: "spaces.space", id: "Spc001" } },
+    },
   ];
   data.result.manifest.entrypoints = entries;
   data.manifest.entrypoints = entries;
@@ -1024,6 +1032,7 @@ test("human check output uses reviewed titles and JSON retains both titles and s
   printCodeCheck(human.ctx, data);
   expect(human.printed.join("\n")).toContain("Lieferungen eintragen (deliver) · 0 8 * * 1");
   expect(human.printed.join("\n")).toContain("legacy · Handstart");
+  expect(human.printed.join("\n")).toContain("spaces.item.due@1 · spaces.space:Spc001");
   const { directory } = await project();
   const machine = context(["check", directory], {}, "json", () => Response.json(data));
   expect(await code.run(machine.ctx)).toBe(0);

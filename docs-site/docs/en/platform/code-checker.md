@@ -63,7 +63,10 @@ Removed app members (`nav`, `webhook`, `fetch`) and `c.user.provider` are type
 errors; analysis also reports `code_removed_api`.
 A second `app.on` for the same event and place also reports
 `code_duplicate_on`, including an explicit owner handle after an implicit owner
-subscription.
+subscription. Each event entry records the exact event type, version and place
+in review evidence. Explicit handles may name other places; activation and every
+run check the executing account's current read access. The checked bundle and
+Core both refuse an event/place pair absent from that immutable version.
 
 Declare `app.use()` at module scope, as a statement or a `const` initializer,
 with an optional string-literal path prefix; prefix variables and casts are
@@ -82,7 +85,7 @@ the [SDK title contract](/en/docs/platform/code-sdk#name-an-automation);
 invalid or dynamic titles report `code_static_title`. A name in an imported options object needs a literal
 type, such as `{ name: "weekly" as const }`. Names must be unique. Unnamed
 schedules use the SDK's `schedule:0`, `schedule:1`, … identifiers in runtime module
-evaluation order. Resource-owned and personal Code need at least one schedule;
+evaluation order. Resource-owned and personal Code need at least one schedule, event handler or route;
 otherwise the checker returns `code_no_entrypoint`. The manual
 start and scheduled start invoke the same named runner export.
 
@@ -106,7 +109,8 @@ On success, store the exact source, bundle, and `CodeVersionManifest` together.
 Validate stored manifests with `CodeVersionManifestSchema`. This version-1
 contract, shared with the version service, contains:
 
-- `entrypoints`: schedule/manual kinds, named ESM exports, optional trimmed human `title`, cron expression or
+- `entrypoints`: schedule/manual/event/route kinds, named ESM exports, exact event/place
+  metadata for event handlers, optional trimmed human `title`, cron expression or
   null, optional one-time `at` and `timeZone`, and declaration file and line;
 - `permissions`: `{ operation, target, file, line, entrypoints? }`, with a row
   for each literal target and additional reference. `entrypoints` lists, sorted,

@@ -703,32 +703,55 @@ unique in the module. Keep the name across versions to identify the same task.
 
 ## React to resource events
 
-Resource-owned Code can register a declared automation event at its own place:
+Personal, resource-owned and app-owned Code can react to a declared automation
+event at a place its executing account can read. Pass a handle from the flat
+SDK to select the place:
 
 ```ts
-import { app, owner } from "@sdk";
+import { app, spaces, notebooks } from "@sdk";
 
-app.on("inventory.item.changed", async (event) => {
-  // event.subject identifies the changed item; event.place is this Code's owner.
-  // Read current data through the SDK before deciding what to do.
+app.on(spaces.space("Spc001"), "spaces.item.due", async event => {
+  // Read the task through spaces.item.read({ id: event.subject.id }).
 });
+app.on(notebooks.notebook("Ntb001"), "notebooks.note.created", async event => {
+  // event.place is the notebook; event.subject is the new note.
+});
+export default app;
 ```
 
-Use an event actually offered by the generated SDK. `app.on(owner, event, handler)`
-is the explicit form. The event name and place must be constants at module level.
-Only one handler per event is allowed. Personal Code and app-owned Code cannot
-subscribe. Events without a place, events at another place, and declarations
-with `automation: false` cannot start this Code.
+Use event names offered by the generated SDK. The event must declare the
+handle's type as its place. Event names and place IDs must be constants at
+module level. One handler per event and place is allowed; combine rules for
+that pair inside its handler. The same event may have handlers at several
+places. Events without a place and declarations with `automation: false`
+cannot start Code.
+
+Without a handle, `app.on(event, handler)` still uses the resource that owns
+this Code. For example, mailbox Code can keep
+`app.on("mail.message.received", handler)` unchanged. Personal Code has no
+implicit place and must supply a handle.
 
 The handler receives the typed reference envelope: `id`, `type`, `version`,
 `source`, `time`, `subject`, `place`, optional `cause`, and `data`. Data stays
-reference-only; the event grants no access to the referenced resource. Cloud
-checks the Code account's current read permission at the place before admitting
-a run. Actual SDK calls still check their current target permissions.
+reference-only; the event grants no access. Actual SDK calls still check their
+current target permissions. Share each event place
+with the executing account before activation. Personal Code uses its owner's
+account, including its current source-app access; resource-owned and app-owned
+Code use their dedicated Code account.
+Activation refuses a place the account cannot read. Cloud checks again before
+every run, including catch-up, retries and deliberate reruns. A withdrawn
+share prevents the next run; Runs shows that the account can no longer read
+the event place, with retry available after access is restored.
 
-Checking records the exact event version and owner place in the immutable
-manifest. Activation installs those subscriptions with the approved version's
-execution mandate. The stable entrypoint is `event:<event-type>@<version>`.
+Checking records each exact place, event and version in the immutable manifest
+shown in the version approval. The checked bundle and Core refuse an event
+from any other place. Activation installs these subscriptions with the
+approved version's execution mandate. Own-place entrypoints retain
+`event:<event-type>@<version>`; foreign-place entrypoints use a checked `:place:<index>` suffix.
+Read the event metadata for the exact place; the name stays within the Runner
+entrypoint budget even when the place has a long identifier. Runs for one Code and place execute in order without overlapping,
+even across different event types. Existing run, backlog and capability
+budgets apply; `core.code.event_backlog` also bounds registrations per Code.
 See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
 pause, replay, deduplication and queue behavior.
 

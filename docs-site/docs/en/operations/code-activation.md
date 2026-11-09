@@ -11,9 +11,9 @@ updated: 2026-11-05
 # Code activation recovery
 
 Core runs activation and old-version drain workers in its normal lifecycle.
-Activation checks the owner and version approval, then switches the active
-version and its version entry atomically. It never creates, inspects or repairs
-target rights. Target managers use the normal share dialog to grant the Code
+Activation checks the owner, version approval and the executing account’s read
+access at every declared event place, then switches the active version and its
+version entry atomically. It never creates or repairs target grants. Target managers use the normal share dialog to grant the Code
 service account View or Edit by its exact handle.
 
 ## Upgrade the access model

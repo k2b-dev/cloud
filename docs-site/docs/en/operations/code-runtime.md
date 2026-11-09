@@ -134,3 +134,25 @@ continue using their bundled SDK. Middleware adds no policy classification;
 its SDK calls use the version's ordinary declared capabilities and the Code
 account's current grants. Request variables remain transient, per request.
 See [Middleware and request variables](/en/docs/platform/code-sdk#middleware-and-request-variables).
+
+## Event place compatibility
+
+`app.on(handle, event, handler)` can subscribe to a readable place in another
+app. Existing mailbox handlers without a handle keep their owner and
+entrypoint names. Activation checks the executing account's read access;
+every Runner attempt repeats that check. Withdrawn access leaves a visible
+`resource_access_revoked` delivery or run and sends no event to the Runner.
+Restore the share before using Retry delivery or Run again. An unavailable
+readability provider prevents execution and follows the existing recovery
+budget.
+
+The generic event-place readability query is generated from the ordinary Type
+reader when the application has no explicit batch-readable hook. Deploy the
+publisher apps with the same platform release before activating new event
+places; an older app manifest may not yet expose this query.
+
+`core.code.event_backlog` also bounds active registrations per Code; no new
+transport or queue is installed. Handlers at one place share ordered admission
+and execution even when they react to different event types. Catch-up uses
+the same saved snapshots and checkpoints as Mail, only for events whose
+publisher declares a catch-up reader. See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries).

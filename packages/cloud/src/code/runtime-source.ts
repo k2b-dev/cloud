@@ -152,11 +152,13 @@ app.on = (...args) => {
   const fn = args[explicit ? 2 : 1];
   const place = explicit ? handles.get(args[0]) : manifest.owner?.kind === "resource" ? manifest.owner.ref : undefined;
   const spec = manifest.events.find(event => event.type === eventType);
-  if (typeof fn !== "function" || !spec || manifest.owner?.kind !== "resource" || !place ||
-      spec.place !== manifest.owner.ref.type || place.type !== manifest.owner.ref.type || place.id !== manifest.owner.ref.id)
+  if (![2, 3].includes(args.length) || typeof fn !== "function" || !spec || !place || spec.place !== place.type)
     throw new CodeError("code_event_owner");
-  const entrypoint = "event:" + eventType + "@" + spec.version;
-  if (schedules.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_duplicate_on");
+  const own = manifest.owner?.kind === "resource" && place.type === manifest.owner.ref.type && place.id === manifest.owner.ref.id;
+  const entrypoint = "event:" + eventType + "@" + spec.version + (own ? "" : ":place:" + schedules.filter(value => value.kind === "event").length);
+  if (schedules.some(value => value.kind === "event" && value.event.type === eventType &&
+      value.event.version === spec.version && value.event.place.type === place.type && value.event.place.id === place.id))
+    throw new CodeError("code_duplicate_on");
   schedules.push({ kind: "event", entrypoint, cron: null, event: { type: eventType, version: spec.version, place: { type: place.type, id: place.id } }, handler: fn });
   return app;
 };

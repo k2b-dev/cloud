@@ -30,10 +30,18 @@ test("app.on records the exact event version, owner place and handler permission
   ]);
   expect(result.permissions).toMatchObject([{ operation: "work-shop.stock.list", entrypoints: ["event:work-shop.changed@1"] }]);
 }, 30_000);
-test("a foreign place, missing owner or app owner cannot subscribe", () => {
-  expect(analyze('app.on(work_shop.workshop("other"), "work-shop.changed", () => {});').diagnostics).toContainEqual(
-    expect.objectContaining({ code: "code_event_owner" }),
-  );
+test("foreign places are checked explicitly for personal and resource Code", () => {
+  for (const mode of [options, { mode: "personal" } as const]) {
+    const result = analyze('app.on(work_shop.workshop("other"), "work-shop.changed", () => {});', mode);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.entrypoints[0]?.event).toEqual({
+      type: "work-shop.changed",
+      version: 1,
+      place: { type: "work-shop.workshop", id: "other" },
+    });
+  }
+}, 30_000);
+test("without a handle the resource owner still applies", () => {
   expect(analyze('app.on("work-shop.changed", () => {});', { mode: "personal" }).diagnostics).toContainEqual(
     expect.objectContaining({ code: "code_dynamic_event" }),
   );
@@ -48,4 +56,19 @@ test("registration must be static and unique", () => {
   expect(analyze('app.on("work-shop.changed", () => {}); app.on(owner, "work-shop.changed", () => {});').diagnostics).toContainEqual(
     expect.objectContaining({ code: "code_duplicate_on" }),
   );
+}, 30_000);
+
+test("the same event at two places has two distinct checked entrypoints", () => {
+  const result = analyze(
+    'app.on(work_shop.workshop("a"), "work-shop.changed", () => {}); app.on(work_shop.workshop("b"), "work-shop.changed", () => {});',
+  );
+  expect(result.diagnostics).toEqual([]);
+  expect(new Set(result.entrypoints.map((entry) => entry.entrypoint)).size).toBe(2);
+}, 30_000);
+
+test("foreign event registrations stay within the Runner name budget for long resource IDs", () => {
+  const result = analyze(`app.on(work_shop.workshop("${"x".repeat(512)}"), "work-shop.changed", () => {});`);
+  expect(result.diagnostics).toEqual([]);
+  expect(result.entrypoints[0]!.entrypoint.length).toBeLessThanOrEqual(256);
+  expect(result.entrypoints[0]?.event?.place.id).toHaveLength(512);
 }, 30_000);

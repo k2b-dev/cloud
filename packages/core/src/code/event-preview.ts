@@ -4,6 +4,7 @@ import { type CodeContext, CodeDataError, requireCodePermission } from "./access
 import { createCodeCheckRequest } from "./authoring-check";
 import type { CodeAuthoringInput } from "./authoring-contracts";
 import { type CodeSourceFiles, CodeSourceFilesSchema } from "./contracts";
+import { codeEventEntry } from "./event-access";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { readCode } from "./store";
 import { type CodeTestingHost, simulateCode } from "./testing";
@@ -12,16 +13,13 @@ import { type CodeTestingHost, simulateCode } from "./testing";
 export async function simulateCodeEvent(input: CodeAuthoringInput<"simulateEvent">, context: CodeContext) {
   const { code } = await readCode(input.codeId, context);
   await requireCodePermission(code, context, true);
-  if (code.owner.kind !== "resource" || code.activeVersionId !== input.versionId || code.state !== "active")
-    throw new CodeDataError("CONFLICT", "Preview requires the active resource Code version.");
+  if (code.activeVersionId !== input.versionId || code.state !== "active")
+    throw new CodeDataError("CONFLICT", "Preview requires the active Code version.");
   const [version] = await sql<{ source_files: CodeSourceFiles; manifest: unknown }[]>`SELECT source_files,manifest FROM code.versions
     WHERE id=${input.versionId}::uuid AND code_id=${code.id}`;
   const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
-  const entry = manifest.entrypoints.find(
-    (e) => e.kind === "event" && e.event?.type === input.event.type && e.event.version === input.event.version,
-  );
-  if (!entry?.event || input.event.place?.type !== code.owner.ref.type || input.event.place.id !== code.owner.ref.id)
-    throw new CodeDataError("BAD_INPUT", "Preview event does not belong to this Code handler.");
+  const entry = codeEventEntry(manifest, input.event);
+  if (!entry?.event) throw new CodeDataError("BAD_INPUT", "Preview event does not belong to this Code handler.");
   const request = await createCodeCheckRequest(code.id, CodeSourceFilesSchema.parse(version?.source_files), manifest.entry, context);
   return previewCodeEvent(request, entry.entrypoint, input, await createRunnerCodeTestingHost(context), context.signal);
 }
@@ -39,7 +37,7 @@ export function previewCodeEvent(
       trace: true,
       fixture: {
         version: 1,
-        name: "Mail message preview",
+        name: "Event preview",
         now: Date.parse(input.event.time),
         seed: 0,
         mocks: input.mocks,
