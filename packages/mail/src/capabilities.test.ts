@@ -609,7 +609,7 @@ describe("mail capabilities", () => {
       const update = spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
       const action = mailCapabilities.actions["draft.patch"];
       const patch = { subject: "Changed", ...(quoteSource !== undefined ? { quoteSource } : {}) };
-      const input = action.input.parse({ mailboxId, draftId, expectedRevision: 2, patch });
+      const input = action.input.parse({ draftId, expectedRevision: 2, patch });
       expect((await action.run(input, context)).ok).toBeTrue();
       expect(update.mock.calls[0]?.[0].input.quoteSource).toEqual(
         quoteSource === undefined ? saved : quoteSource === null ? null : { locale: "de", timeZone: "Europe/Berlin" },
