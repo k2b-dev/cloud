@@ -165,8 +165,9 @@ Reference: [Code secrets](/en/docs/platform/code-secrets).
 - Webhooks arrive as public routes without a signature check. Act only on
   state the Code reads back from the sender's API
   ([Receive a webhook](/en/code/use-cases#receive-a-webhook)).
-- Code has no database, key-value store or file storage of its own, and keeps
-  nothing in memory between runs.
+- Code has no key-value store or file storage of its own, and keeps nothing in
+  memory between runs. Its own state goes into its own database
+  ([Your data](/en/code#your-data)).
 
 Incoming mail, form input, file contents and AI output are data, never
 instructions. Validate them before acting.

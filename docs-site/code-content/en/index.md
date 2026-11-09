@@ -26,9 +26,8 @@ on, and every call it makes is checked and logged.
   `/code/<id>/`. No server, no deployment, no credentials in the source.
 - **Typed code:** an SDK that your installation generates from its apps. Your
   editor and the checker know every operation, input and result.
-- **Your data:** data stays in tables people already see and share, in Grids,
-  Spaces and Mail. Code reads and writes them through the SDK; it keeps no
-  database of its own in this release.
+- **Your data:** shared data stays in tables people already see, in Grids,
+  Spaces and Mail. For its own state, every Code has its own SQL database.
 - **Your files:** attachments and documents pass from one app to another as
   references, and AI can read them, without the bytes ever entering the Code.
 
@@ -126,6 +125,54 @@ Code always runs as exactly one account: its execution owner.
 A service account starts without rights. Whoever manages a target shares View or
 Edit with it, the same way they share with a person, and can take it back.
 
+## Your data
+
+Shared data lives where people see it: in Grids, Spaces and Mail. For its own
+state, every lasting Code has its own SQLite database. Cloud creates it on the
+first `db` call. It survives new versions, and deleting the Code or its owner
+deletes it too.
+
+- `db.query` reads rows, `db.exec` runs one write or schema statement, and
+  `db.batch` runs several statements that commit together or not at all.
+- Values go in as bound parameters behind `?`, never pasted into the SQL.
+- An administrator sets how large a database may grow. A write beyond that
+  fails with `code_db_full`; the Code page shows storage used and the limit.
+- A one-off `code_run` in a chat has no database.
+
+Every Monday, this personal Code remembers how many tasks were open and tells
+you the trend in your Gustav chat:
+
+```ts
+import { app, core, db, spaces } from "@sdk";
+
+const SPACE_ID = "Spc001"; // fictional
+const CHAT_ID = "Chat23"; // fictional
+
+app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "open-tasks" }, async ({ scheduledAt }) => {
+  const week = (scheduledAt ?? new Date().toISOString()).slice(0, 10);
+  const { data: open, page } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", limit: 50 });
+
+  await db.exec("CREATE TABLE IF NOT EXISTS weeks (week TEXT PRIMARY KEY, open INTEGER NOT NULL)");
+  const [last] = await db.query<{ open: number }>(
+    "SELECT open FROM weeks WHERE week < ? ORDER BY week DESC LIMIT 1", [week],
+  );
+  await db.exec(
+    "INSERT INTO weeks(week, open) VALUES (?, ?) ON CONFLICT(week) DO UPDATE SET open = excluded.open",
+    [week, open.length],
+  );
+
+  const count = `${open.length}${page?.hasMore ? "+" : ""}`;
+  const text = last ? `Open tasks: ${count} (last week: ${last.open})` : `Open tasks: ${count}`;
+  await core.ai.chat(CHAT_ID).deliver({ text, idempotencyKey: `open-tasks:${week}` });
+});
+
+export default app;
+```
+
+A retried Monday writes the same row again and delivers once.
+
+Reference: [Database](/en/docs/platform/code-sdk#database).
+
 ## In this release
 
 Included:
@@ -136,6 +183,7 @@ Included:
 - `core.ai.generate`, `core.ai.decide` and model loops with SDK tools and files;
 - HTTPS requests to approved origins, with secrets as placeholders;
 - files from one app to another as `FileRef`;
+- a SQLite database of its own for every lasting Code;
 - tests, simulation, `cld code` and the Gustav tools.
 
 Not in this release:
@@ -143,8 +191,8 @@ Not in this release:
 - Actions that ask a person (send, delete, cannot undo, …) never run
   unattended. Code drafts a reply; a person sends it.
 - Signature checks for incoming webhooks.
-- A database, key-value store or file storage of its own, and state in memory
-  between runs.
+- A key-value store or file storage of its own, and state in memory between
+  runs.
 
 ## Read on
 
