@@ -77,7 +77,11 @@ suiteFor(
   "nats",
   "valkey",
 )("C25 mailbox schedule acceptance with two stateless runners", () => {
-  useTestSettings({ "app.url": issuer });
+  useTestSettings({
+    "app.url": issuer,
+    "app.timezone": "UTC",
+    "security.rate_limit_per_second": 60,
+  });
   let lea: User, ben: User, reviewer: User;
   let author: ReturnType<typeof context>, manager: ReturnType<typeof context>;
   let mailboxId: string, mailboxRef: { type: string; id: string }, senderId: string;
@@ -125,8 +129,6 @@ suiteFor(
             : CODE_SETTINGS[key].default,
     );
     restores.push(() => settings.mockRestore());
-    await coreSettings.set("app.timezone", "UTC");
-    await coreSettings.set("security.rate_limit_per_second", 60);
     // Ben manages both resources; Lea has an explicit Code editor share and ordinary mailbox write access.
     const mailbox = await createMailbox(manager, { name: "rechnung@beispiel.test" });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
