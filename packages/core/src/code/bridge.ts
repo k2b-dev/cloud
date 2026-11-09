@@ -22,7 +22,7 @@ import { coreSettings, mandates } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
-import { codeAiReferenceCost, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
+import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
 import { readCodeOwnOrigins } from "./origins";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
@@ -213,10 +213,7 @@ export function createCodeBridgeHost(
         await sql.begin((tx) => lockCall(call, tx));
         response = await execution.observation();
       } else {
-        if (
-          call.call.capability.startsWith("core.ai.") &&
-          !["core.ai.chat.deliver", "core.ai.chat.run", "core.ai.chat.run.read"].includes(call.call.capability)
-        ) {
+        if (codeAiReservesAttemptBudget(call.call.capability)) {
           aiProfiles = (await readAiSettingsState()).profiles;
           aiReservation = await sql.begin(async (tx) => {
             // Resolve current group policy before reserving; issuance rechecks it before the model is called.
