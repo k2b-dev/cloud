@@ -76,6 +76,13 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
             return c.redirect(createLoginRedirectUrl(c.req.url));
           return c.json({ code: "code_sign_in_required" }, 401);
         }
+        if (!isPublic && actor?.kind === "user") {
+          const limiter = ratelimit({ id: "code-visitor-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
+          if ((await waitCodeRequest(limiter.check(`user:${actor.user.id}`), signal)).limited) {
+            c.header("Retry-After", "60");
+            return c.json({ code: "code_request_rate_limit" }, 429);
+          }
+        }
         if (isPublic) {
           const limiter = ratelimit({ id: "code-public-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
           if (

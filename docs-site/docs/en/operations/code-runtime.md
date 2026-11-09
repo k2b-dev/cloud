@@ -54,7 +54,7 @@ that setting too. Changing it changes future ticks of those schedules; use an
 explicit IANA zone when a schedule must keep its own wall-clock time.
 Handlers receive `{ runId, scheduledAt, input }`; retry attempts keep the same
 run ID and original scheduled instant. Action idempotency keys have the same
-principal/capability scope across runs for 24 hours, including chat delivery
+principal/capability scope across runs for at least 24 hours, including chat delivery
 and chat turns. Include the intended occurrence in keys for recurring effects.
 Grids workflows retain their own schedules. Old Assistant routines are retired;
 rebuild them as Code.
@@ -62,7 +62,7 @@ rebuild them as Code.
 All non-public Code routes now admit every signed-in person, including routes
 owned by a person. Handlers restrict access through the explicit `c.user`
 identity before reading or changing data. SDK calls retain the Code account's
-grants. Public routes always receive `c.user === null`. Resubmit old sources
+grants. Public routes always receive `c.user === null`. Previously checked non-public page bundles fail closed with 503 after this SDK update until they are resubmitted; schedule old page versions for resubmission before upgrading a development stack. Resubmit old sources
 using `c.user.groups` or `provider`: the supported fields are `id`, `username`,
 `groupIds`, `groupNames`, `kind` and `name`.
 

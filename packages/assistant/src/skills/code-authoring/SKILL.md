@@ -62,7 +62,7 @@ For a Mail rule or Assistant routine export, read
 [Rebuild exported Mail rules and routines](references/rebuild.md). Explain the
 old behavior, discover its current SDK equivalents, and draft through the same
 check, fictional test and submit tools. The export grants nothing; activation
-stays with a person. Open-ended routines schedule `core.ai.chat.run` in the
+stays with a person. Open-ended routines schedule `core.ai.chat(chatId).run` in the
 owner's original Gustav chat; deterministic routines keep explicit operations.
 Automatic replies remain reference evidence and are not rebuilt as sending Code.
 
@@ -75,8 +75,8 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | Run at a local time, weekly or once | `app.schedule({ cron | at, timeZone?, name?, title? }, handler)` | [Schedules](references/schedules.md) |
 | Summarise or extract fields with AI | `core.ai.generate` | [AI](references/ai.md) |
 | Classify with probabilities, such as category and urgency | `core.ai.decide` | [AI](references/ai.md) |
-| Put a result into the owner's Gustav chat | `core.ai.chat.deliver` (personal Code) | [AI](references/ai.md), [weekly report](references/template-weekly-report.md) |
-| Let Gustav do open-ended work with tools | `core.ai.chat.run` (personal Code) | [AI](references/ai.md) |
+| Put a result into the owner's Gustav chat | `core.ai.chat(chatId).deliver` (personal Code) | [AI](references/ai.md), [weekly report](references/template-weekly-report.md) |
+| Let Gustav do open-ended work with tools | `core.ai.chat(chatId).run` (personal Code) | [AI](references/ai.md) |
 | Rebuild an Assistant routine as Code | Personal Code: the routine's schedule and time zone, then `deliver` for a fixed result or `run` for open-ended work | [Rebuild](references/rebuild.md), [Schedules](references/schedules.md), [AI](references/ai.md) |
 | Post into a team chat conversation | `chat.message.post` | [Capabilities](references/capabilities.md), [event to chat](references/template-event-to-chat.md) |
 | Create or update a task in a Space | `spaces.task.create`, `spaces.task.update` | [Capabilities](references/capabilities.md), [form app](references/template-form-app.md) |

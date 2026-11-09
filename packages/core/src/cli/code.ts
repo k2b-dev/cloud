@@ -242,7 +242,7 @@ export function buildCodeCli(locale?: string) {
         args: projectArg,
         flags: {
           baseVersionId: flag.string({
-            description: t("Explicit base UUID, or null for first submission", "Basis-UUID oder null für den erste Einreichung"),
+            description: t("Explicit base UUID, or null for first submission", "Basis-UUID oder null für die erste Einreichung"),
           }),
         },
         async run({ ctx, args, flags }) {
@@ -385,8 +385,8 @@ export default {
         ctx.error(
           body.error.code === "code_version_conflict"
             ? localizeCloudCliText(ctx.options.locale, {
-                en: "A newer version exists. Review the diff and pull into a new directory before pushing again.",
-                de: "Neuere Version vorhanden. Prüfe den Unterschied und hole den Stand in ein neues Verzeichnis, bevor du erneut pushst.",
+                en: "A newer version exists. Review the diff and pull into a new directory before submitting again.",
+                de: "Neuere Version vorhanden. Prüfe den Unterschied und hole den Stand in ein neues Verzeichnis, bevor du erneut einreichst.",
               })
             : body.error.message,
         );

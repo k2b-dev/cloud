@@ -136,6 +136,17 @@ describe("Code SDK generation", () => {
       expect(() => generateCodeSdk([conflicting], { mode: "personal" })).toThrow("SDK path collision");
     }
   });
+  test("rejects duplicate target methods after prefix removal", () => {
+    const operation = fixture.actions[0]!;
+    const conflicting = {
+      ...fixture,
+      actions: [
+        { ...operation, target: "workshop", localId: "workshop.move" },
+        { ...operation, target: "workshop", localId: "move" },
+      ],
+    };
+    expect(() => generateCodeSdk([conflicting], { mode: "personal" })).toThrow("SDK path collision");
+  });
   test("retains typed app factories beside direct app methods", async () => {
     const appFactory = { ...fixture, types: [...fixture.types, { ...fixture.types[0]!, localId: "app" }] };
     const sdk = generateCodeSdk([appFactory], { mode: "personal" });

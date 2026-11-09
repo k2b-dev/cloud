@@ -141,7 +141,11 @@ export function createCodeTestExecutor(config: RunnerConfig, suppliedLimits: Cod
               entrypoint: run.entrypoint,
               value:
                 registered.kind === "schedule"
-                  ? { runId: `test-${index}`, scheduledAt: new Date(run.now ?? fixture.now).toISOString(), input: run.input }
+                  ? {
+                      runId: `test-${index}`,
+                      scheduledAt: run.scheduledAt === undefined ? new Date(run.now ?? fixture.now).toISOString() : run.scheduledAt,
+                      input: run.input,
+                    }
                   : run.input,
             },
           };

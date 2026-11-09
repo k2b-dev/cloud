@@ -75,11 +75,11 @@ overlapping tick of the same schedule.
 ## Keys for each occurrence
 
 The handler receives `{ runId, scheduledAt, input }`. `scheduledAt` is the
-original tick instant as an ISO string, stable across retries; it is `null`
+original tick instant as an ISO string, stable across retries and explicit reruns of a failed tick; it is `null`
 for a manual start. `input` is the value supplied to `core.code.run`, or `null`
 for a tick. `runId` identifies the durable run and is unchanged on retry.
 
-Every Action uses the same 24-hour key scope: Code principal, capability and
+Every Action uses the same key scope, retained at least 24 hours: acting user or service account, capability and
 key, across runs. A tick can be retried; give each Action a key that names the occurrence,
 such as `weekly-review:2026-11-09`, so a retry returns the first result
 instead of creating a second task. Use `scheduledAt` for scheduled effects, and `runId` when each manual start

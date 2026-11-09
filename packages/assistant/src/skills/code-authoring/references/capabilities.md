@@ -285,7 +285,10 @@ Reading from several apps in one personal page:
 ```tsx
 import { app, contacts, filesv2, jsx, notebooks, Page, Table, Column } from "@sdk";
 
+// Fictional Cloud user ID allowed to read these personal resources.
+const ALLOWED_USER = "00000000-0000-4000-8000-0000000000aa";
 app.get("/", async c => {
+  if (c.user?.id !== ALLOWED_USER) return c.json({ error: "forbidden" }, 403);
   const [base] = (await filesv2.bases.list({})).data.items;
   const files = base ? (await filesv2.entry(base.ref.id).list({ sort: "modified", order: "desc" })).data.items.slice(0, 10) : [];
   const { data: people } = await contacts.contact.search({ query: "supplier", tags: [], limit: 10 });

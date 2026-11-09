@@ -2388,6 +2388,74 @@ test.each(["all pages", "call limit"])("generated Code queries walk envelope cur
   }
 });
 
+test("local Core refusal status reaches the SDK independently of transport status", async () => {
+  const now = new Date("2026-11-03T12:00:00Z");
+  setSystemTime(now);
+  const claims: runTokens.CodeRunTokenClaims = {
+    ver: 1,
+    token_use: "code_run",
+    iss: "https://cloud.example",
+    aud: "cloud-code-bridge",
+    iat: now.getTime() / 1000,
+    nbf: now.getTime() / 1000,
+    exp: now.getTime() / 1000 + 300,
+    codeId: "c_fixture",
+    versionId: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    generation: 1,
+    mandateId: "33333333-3333-4333-8333-333333333333",
+    mandateRevision: 1,
+    entrypoint: "weekly",
+    bundleHash: "a".repeat(64),
+  };
+  const auth = spyOn(appRequests, "authenticateSignedAppRequest").mockResolvedValue({
+    appId: "runner",
+    serviceAccountId: claims.mandateId,
+    credentialId: claims.mandateId,
+    scope: "identity:invoke",
+  });
+  const token = spyOn(runTokens, "verifyCodeRunToken").mockResolvedValue(claims);
+  try {
+    for (const [code, status] of [
+      ["code_policy_never", 403],
+      ["code_approval_required", 403],
+      ["code_unattended_forbidden", 403],
+      ["code_access_removed", 403],
+      ["code_rate_limited", 429],
+      ["code_wall_clock_limit", 429],
+      ["code_operation_not_found", 404],
+      ["code_ai_budget_reserved", 409],
+      ["code_bridge_unavailable", 503],
+    ] as const) {
+      const route = createCodeRunnerCallRoutes({
+        ownOrigins: async () => [],
+        host: {
+          async withCall() {
+            throw new CodeBridgeRefusal(code);
+          },
+        },
+        dispatch: { getCapability: async () => entry() },
+      });
+      const response = await route.request(RUNNER_PATHS.call, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runId: claims.runId,
+          generation: 1,
+          token: "fixture",
+          operation: "demo.get",
+          input: { call: { capability: "demo.get", target: null, refs: {}, input: { id: "one" } }, metadata: {} },
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(RunnerCallResponseSchema.parse(await response.json())).toEqual({ ok: false, error: { code, status } });
+    }
+  } finally {
+    token.mockRestore();
+    auth.mockRestore();
+  }
+});
+
 test("target HTTP statuses survive runner dispatch and Code page data without payload", async () => {
   const now = new Date("2026-11-03T12:00:00Z");
   setSystemTime(now);

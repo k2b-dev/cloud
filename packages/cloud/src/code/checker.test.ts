@@ -201,8 +201,6 @@ test("cld code init's TSX page passes cld code check and its generated editor ts
   });
   const [exit, stdout, stderr] = await Promise.all([types.exited, new Response(types.stdout).text(), new Response(types.stderr).text()]);
   expect({ exit, stdout, stderr }).toEqual({ exit: 0, stdout: "", stderr: "" });
-  // The starting page is one Core draws: key figures, a section with a chart, a form and a table.
-  const module = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString("base64")}`);
   // Both routes deny access until an author fills the explicit group allowlist.
   const request = {
     method: "GET",
@@ -217,6 +215,9 @@ test("cld code init's TSX page passes cld code check and its generated editor ts
     ["route:GET:/", "GET", "/"],
     ["route:POST:/orders", "POST", "/orders"],
   ]) {
+    const modulePath = join(directory, `init-${method}.mjs`);
+    await writeFile(modulePath, bundle);
+    const module = await import(modulePath);
     const response = await module[entrypoint!](
       { ...request, method, path },
       {

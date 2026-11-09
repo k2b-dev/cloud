@@ -70,7 +70,7 @@ wrong block fails with `code_page_child`.
 | `Chart.Waterfall`, `Chart.Area`, `Chart.Bar`, `Chart.Hbar`, `Chart.Line`, `Chart.Scatter`, `Chart.Pie`, `Chart.Donut`, `Chart.Histogram`, `Chart.Gauge`, `Chart.Sparkline`, `Chart.Boxplot`, `Chart.Heatmap`, `Chart.BarGauge`, `Chart.Stat`, `Chart.Funnel`, `Chart.Treemap`, `Chart.Pareto`, `Chart.Bubble`, `Chart.Radar`, `Chart.Sankey` | the chart's own props, such as `title`, `data`, `series`; optional `width` | none |
 | `Chart.Empty` | `title`, `empty`, optional `width` | none |
 | `Link` | `label`, `href` inside this Code | none |
-| `Button`, `Action` | `label`, `action`, optional text `values`; always POST | none |
+| `Button` | `label`, `action`, optional text `values`; always POST | none |
 | `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` | none |
 
 `icon` is a Tabler class such as `ti ti-package`. `color` is `zinc`, `blue`,
@@ -90,7 +90,7 @@ Order a page like a Cloud dashboard: key figures first, then sections. Charts,
 is `third`, `half`, `twoThirds` or `full` (default). Panels in one row share
 its height. Up to 1,000 px a third takes half a row; up to 600 px every panel
 takes the row. Other blocks always take the whole row. Neighbouring `Button`
-and `Action` blocks share one row.
+and `Button` blocks share one row.
 
 <!-- check: personal -->
 ```tsx
@@ -239,7 +239,7 @@ camera for QR codes; the read text goes into the field.
 
 Paths have literal segments and `:name` parameters, read with
 `c.req.param(name)`; query strings with `c.req.query(name)`. `Link` and
-`Button` targets stay inside this Code. `Button` and `Action` POST their
+`Button` targets stay inside this Code. `Button` POSTs its
 `values` as form fields.
 
 <!-- check: personal -->
@@ -294,3 +294,6 @@ app.get("/", c => c.page(
 ));
 export default app;
 ```
+
+Signed-in page requests share a limit of 20 requests per minute per visitor,
+across Code pages. Public routes retain their per-IP and per-Code limits.

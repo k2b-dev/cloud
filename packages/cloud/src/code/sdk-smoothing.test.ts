@@ -22,6 +22,9 @@ test("one schedule object carries metadata and forwards the durable run context"
   expect(sdk.__codeSdk.entries()).toEqual([{ kind: "schedule", entrypoint: "morning", cron: "0 8 * * *", title: "Morning" }]);
   await sdk.__codeSdk.run("morning", context);
   expect(received).toEqual(context);
+  const manual = { runId: "manual-1", scheduledAt: null, input: null };
+  await sdk.__codeSdk.run("morning", manual);
+  expect(received).toEqual(manual);
   expect(() => sdk.app.schedule("0 8 * * *", () => {})).toThrow();
   expect(() => sdk.app.schedule({ cron: "0 8 * * *" }, () => {}, { name: "old" })).toThrow();
 });

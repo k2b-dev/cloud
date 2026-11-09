@@ -261,6 +261,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       });
     }
   }
+  const methodPaths = new Set<string>();
+  for (const operation of manifest.operations) {
+    const key = JSON.stringify([operation.appId, operation.target, operation.methodPath]);
+    if (methodPaths.has(key)) throw new Error(`${operation.capability}: SDK path collision`);
+    methodPaths.add(key);
+  }
   if (!("default" in authoringTypes) || typeof authoringTypes.default !== "string")
     throw new Error("Expected Code SDK authoring type source");
   const declarations = [

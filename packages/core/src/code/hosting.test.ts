@@ -193,6 +193,23 @@ test("service accounts and agents cannot become page visitors", async () => {
     expect(publicPage.calls[0]?.request.user).toBeNull();
   }
 });
+test("signed-in visitors share a bounded request budget by UID before runner admission", async () => {
+  const page = hosting(false, true);
+  const keys: string[] = [];
+  page.rate.mockImplementation(({ id }) => ({
+    id,
+    check: async (key: string) => {
+      keys.push(key);
+      return { limited: true, remaining: 0, resetIn: 60 };
+    },
+    checkOrThrow: async () => ({ limited: true, remaining: 0, resetIn: 60 }),
+  }));
+  const response = await page.router.request(`/code/${codeId}/`);
+  expect(response.status).toBe(429);
+  expect(response.headers.get("Retry-After")).toBe("60");
+  expect(keys).toEqual([`user:${person.id}`]);
+  expect(page.calls).toHaveLength(0);
+});
 test("public handlers are anonymous even for signed-in people and return exactly Code data", async () => {
   const page = hosting(true, true);
   const response = await page.router.request(`/code/${codeId}/`);

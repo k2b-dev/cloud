@@ -1447,9 +1447,9 @@ export type CodeRunnerDispatchDependencies = {
   ownOrigins: () => Promise<readonly string[]>;
 };
 
-const codeBridgeError = (code: string, status = 200, capabilityStatus?: number) =>
+const codeBridgeError = (code: string, status: CodeBridgeRefusal["status"] = 200, capabilityStatus?: number) =>
   Response.json(
-    { ok: false, error: { code, ...(capabilityStatus === undefined ? {} : { status: capabilityStatus }) } },
+    { ok: false, error: { code, status: capabilityStatus ?? new CodeBridgeRefusal(code, status).errorStatus } },
     { status, headers: { "Cache-Control": "no-store" } },
   );
 const CodeSdkInvocationSchema = z

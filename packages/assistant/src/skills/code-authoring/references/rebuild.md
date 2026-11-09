@@ -52,16 +52,16 @@ fictional tests and `baseVersionId` at submit. Use its existing patterns:
   offset. Completed/expired tasks stay historical unless the person requests
   a new time. Preserve prompts, schemas, choices and recorded budgets.
 - **Open-ended routines:** use the [Start a Gustav turn pattern](ai.md#start-a-gustav-turn).
-  Personal Code belongs to the exported owner and schedules `core.ai.chat.run`
+  Personal Code belongs to the exported owner and schedules `core.ai.chat(chatId).run`
   with the exact exported `prompt` in their original `targetChat`. Optional
   `context` contains untrusted source data. Keep tool choices in the agent turn;
   a text generator, delivery-only call or precompiled tool sequence is not an
   equivalent replacement. Follow the pattern's admission, human waits, busy-chat
   refusal and actual-usage rules. Read a later snapshot through
-  `core.ai.chat.run.read`; as a Query, its state is in `data`, while the start
+  `core.ai.chat(chatId).run.read`; as a Query, its state is in `data`, while the start
   Action's reply remains direct. Do not poll for a human.
 - **Targets and rights:** an Assistant `targetChat` is a Gustav chat, different
-  from a general Chat conversation. Deterministic output uses `core.ai.chat.deliver`
+  from a general Chat conversation. Deterministic output uses `core.ai.chat(chatId).deliver`
   for the original chat; use `chat.message.post` only for an explicitly chosen
   general Chat target. Open-ended turns report themselves; do not post a second
   copy. Exported grants/mandates never become shares. Follow [Access](access.md).
@@ -94,8 +94,8 @@ provider/action refusal, revision conflicts,
 human edits and repeated delivery. For agent routines, also cover exact
 prompt/chat, owner mismatch, budget refusal, approval waits and DST boundaries.
 
-Keys recover the same result across runs for the Code principal and capability
-for 24 hours; changed input conflicts. Give each intended occurrence its own
+Keys recover the same result across runs for the acting user or service account and capability
+for at least 24 hours; changed input conflicts. Give each intended occurrence its own
 key using the schedule context's `scheduledAt` or `runId`. Fixtures share fake
 receipts within one fixture, so simulate retry recovery with the same key and
 independent occurrences with different keys. Never rerun a schedule as a

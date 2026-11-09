@@ -167,7 +167,7 @@ decision limits in Fibel `/en/docs/ai/structured-and-background-ai`.
 assistant message (1–10,000 characters) to one of the owner's active chats and
 marks it unread. It starts no AI turn and costs no AI budget. Find the chat ID
 with `core.ai.chats.search` in this conversation, never invent it. The key is
-scoped to the Code principal and capability across runs for 24 hours: a retry
+scoped to the acting user or service account and capability across runs for at least 24 hours: a retry
 returns the first message; the same key with other
 text returns `idempotency_conflict`. Mailbox and app Code, archived chats and
 other people's chats are refused. See the [weekly report](template-weekly-report.md).
@@ -186,11 +186,11 @@ When the work needs Gustav to choose and use tools, start a turn:
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ cron: "30 7 * * 1-5", timeZone: "Europe/Berlin", name: "morning-plan", title: "Morning plan" }, async () => {
+app.schedule({ cron: "30 7 * * 1-5", timeZone: "Europe/Berlin", name: "morning-plan", title: "Morning plan" }, async ({ runId, scheduledAt }) => {
   // Fictional chat ID of the owner's own chat.
   const run = await core.ai.chat("Chat23").run({
     prompt: "Look at my open tasks and mail that needs action and write a short plan for today.",
-    idempotencyKey: "morning-plan",
+    idempotencyKey: `morning-plan:${scheduledAt ?? runId}`,
   });
   if (run.status === "waiting_for_approval") console.log("The owner decides in the chat.");
 });

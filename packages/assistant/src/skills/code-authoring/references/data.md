@@ -10,7 +10,7 @@ owns it and read it again when you need it.
 | The state of a conversation (tags, status, assignees, summary) | Mail, through its Actions |
 | A to-do or a follow-up | A Spaces task |
 | A note for a team | A chat message |
-| A result for the owner | The owner's Gustav chat with `core.ai.chat.deliver` |
+| A result for the owner | The owner's Gustav chat with `core.ai.chat(chatId).deliver` |
 | A configuration, such as a tag name or a Space ID | A constant in the source; a change is a new version |
 
 Check in [Capabilities](capabilities.md) whether the Action you need runs
@@ -23,8 +23,7 @@ each run so a repeat changes nothing new:
 
 - Derive each `idempotencyKey` from the business effect: the message ID, the
   date of the occurrence, the form input. Retrying with the same key returns
-  the first result for 24 hours. Chat delivery and Gustav turns scope keys to
-  one run.
+  the first result for at least 24 hours across runs, including chat delivery and Gustav turns.
 - Read the current state before changing it and pass its revision
   (`expectedRevision`), so a person's change in between is not overwritten.
 - Check whether the effect is already there, such as a tag that is already

@@ -83,7 +83,7 @@ Use one explicit field per identifier. `id` is the immutable Cloud user ID;
 effective Cloud group IDs and names. IPA groups have Cloud UUIDs assigned on
 sync and their IPA group names. Names may change and may coincide with IDs or
 usernames. Prefer IDs when the rule must survive a rename. There is no mixed
-user/group or ID/name lookup.
+user/group or ID/name lookup. Group names can repeat across identity providers; a name check admits all matching groups. Prefer `groupIds` for an unambiguous group authorization rule.
 
 A fixed list of user IDs:
 

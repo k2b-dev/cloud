@@ -35,7 +35,7 @@ async function execution(source: string, cases: CodeTestCase[]): Promise<CodeTes
                 ? sdk.runtime
                 : args.path === "code:entry"
                   ? source
-                  : 'import { __codeSdk } from "@sdk"; export async function weekly(input, cloud) { __codeSdk.bind(cloud); await import("code:entry"); return __codeSdk.run("weekly"); }',
+                  : 'import { __codeSdk } from "@sdk"; export async function weekly(input, cloud) { __codeSdk.bind(cloud); await import("code:entry"); return __codeSdk.run("weekly", input); }',
           }));
         },
       },
@@ -75,6 +75,38 @@ const fixture = (): CodeTestCase => ({
 });
 const schedule = (body: string) => `import { app, owner } from "@sdk";
 app.schedule({ cron: "0 8 * * *", name: "weekly" }, async () => { ${body} }); export default app;`;
+
+test("schedule simulations distinguish the original occurrence from a manual start", async () => {
+  const source = `import { app, owner } from "@sdk";
+    app.schedule({ cron: "0 8 * * *", name: "weekly" }, async ({ runId, scheduledAt, input }) => {
+      await owner.task.create({ title: JSON.stringify({ runId, scheduledAt, input }), idempotencyKey: runId });
+    }); export default app;`;
+  const cases: CodeTestCase[] = [
+    {
+      ...fixture(),
+      runs: [
+        { entrypoint: "weekly", scheduledAt: "2030-01-01T08:00:00Z", input: { retry: true } },
+        { entrypoint: "weekly", scheduledAt: null, input: { manual: true } },
+      ],
+      mocks: [
+        {
+          operation: "spaces.task.create",
+          target,
+          replies: [
+            { ok: true, data: { id: "one" } },
+            { ok: true, data: { id: "two" } },
+          ],
+        },
+      ],
+    },
+  ];
+  const result = await createCodeTestExecutor(config, limits)(await execution(source, cases));
+  expect(result.ok).toBe(true);
+  expect(result.cases[0]?.runs.map((run) => run.calls[0]?.call.input)).toEqual([
+    { title: JSON.stringify({ runId: "test-0", scheduledAt: "2030-01-01T08:00:00Z", input: { retry: true } }) },
+    { title: JSON.stringify({ runId: "test-1", scheduledAt: null, input: { manual: true } }) },
+  ]);
+});
 
 test("acceptance: schedule creates a Space task, then replays the old result with the same key", async () => {
   const request = await execution(ACCEPTANCE_SOURCE, [fixture()]);

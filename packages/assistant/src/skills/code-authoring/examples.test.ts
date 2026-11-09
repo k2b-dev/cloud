@@ -190,7 +190,11 @@ test("every fixture runs against the example above it with the fake bridge and m
         const entry = example.result.manifest.entrypoints.find((entry) => entry.entrypoint === run.entrypoint);
         const input =
           entry?.kind === "schedule"
-            ? { runId: `test-${index}`, scheduledAt: new Date(run.now ?? fixture.now).toISOString(), input: run.input }
+            ? {
+                runId: `test-${index}`,
+                scheduledAt: run.scheduledAt === undefined ? new Date(run.now ?? fixture.now).toISOString() : run.scheduledAt,
+                input: run.input,
+              }
             : run.input;
         const value = await module[run.entrypoint]!(input, bridge);
         outcome = { ok: true, error: null, value: value ?? null };

@@ -508,9 +508,9 @@ The SDK removes ref fields from domain input and writes their coordinates into
 matching the dispatcher contract. Choose a stable key from
 the business operation, such as a message ID and revision. Keys are trimmed,
 contain 1–200 visible ASCII characters, and cannot contain spaces. Repeating a key
-has the platform's existing 24-hour idempotency semantics.
+has the platform's existing idempotency retention of at least 24 hours.
 All Actions, including chat delivery and chat turns, use the same scope:
-Code principal, capability and key, across runs.
+acting user or service account, capability and key, across runs. Personal Codes of one owner share this scope; prefix keys with the Code or business process and the intended occurrence.
 
 Methods resolve the operation's domain `data`, typed from `dataSchema`.
 Bridge refusals reject the promise; catch a failure only when the Code can
@@ -558,6 +558,7 @@ occurrence. The checked manifest retains the declared `timeZone`.
 
 The handler receives `{ runId, scheduledAt, input }`. `runId` identifies the
 same durable run on retries. `scheduledAt` is the original tick's ISO instant,
+retained when explicitly rerunning a failed tick,
 or `null` for a manual start. `input` is the manual `core.code.run` input,
 or `null` for a tick. Use `scheduledAt` in occurrence keys so a delayed retry
 keeps the original identity; use `runId` for a distinct effect per manual run.
@@ -589,16 +590,16 @@ activation. The automation list shows its `at`, `timeZone`, and a null
 ## Deliver a result to your Gustav chat
 
 Personal Code can append a result to one of its owner's own active Assistant
-chats through `core.ai.chat.deliver`. Discover the actual chat ID and generated
+chats through `core.ai.chat(chatId).deliver`. Discover the actual chat ID and generated
 handle before writing the call:
 
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async ({ runId, scheduledAt }) => {
   await core.ai.chat("Chat23").deliver({
     text: "Your weekly report is ready.",
-    idempotencyKey: "weekly-report",
+    idempotencyKey: `weekly-report:${scheduledAt ?? runId}`,
   });
 });
 export default app;
@@ -624,17 +625,17 @@ budget.
 
 ## Start a Gustav turn in your own chat
 
-Personal Code uses `core.ai.chat.run` when the task needs Gustav to choose and
+Personal Code uses `core.ai.chat(chatId).run` when the task needs Gustav to choose and
 use tools. Discover the owner's chat ID and the generated handle first:
 
 ```ts
 import { app, core } from "@sdk";
 
 app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "morning-review", title: "Review open work" },
-  async () => {
+  async ({ runId, scheduledAt }) => {
     const run = await core.ai.chat("Chat23").run({
       prompt: "Review my open work and prepare a short plan in this chat.",
-      idempotencyKey: "morning-review",
+      idempotencyKey: `morning-review:${scheduledAt ?? runId}`,
     });
     console.log(run.id, run.status);
   });
@@ -667,7 +668,7 @@ and turn time limits still apply. The chat and run show “Started by Code
 {name}” (or “Gestartet von Code {name}”). The invoking Code keeps its ordinary
 capability call log.
 
-One stable key identifies one intended turn across Code runs for 24 hours. Repeating it recovers
+One stable key identifies one intended turn across Code runs for at least 24 hours. Repeating it recovers
 the original turn, even after its allowance is exhausted; the admission reply
 may be replayed. Read `ai.chat.run.read` to get the current state.
 Changing the prompt, context or destination under that key returns
@@ -747,6 +748,9 @@ app.get("/hello/:name", c => c.json({
 }));
 app.get("/health", c => c.text("Ready"), { public: true });
 app.post("/save", async c => {
+  const allowedUserIds = ["u_example"];
+  if (!c.user || !allowedUserIds.includes(c.user.id))
+    return c.json({ error: "forbidden" }, 403);
   const input = await c.req.json();
   // Validate input and perform any authorized SDK calls here.
   return c.redirect("/hello/saved");
@@ -833,7 +837,7 @@ Use one explicit field per identifier. `id` is the immutable Cloud user ID;
 effective Cloud group IDs and names. IPA groups have Cloud UUIDs assigned on
 sync and their IPA group names. Names may change and may coincide with IDs or
 usernames. Prefer IDs when the rule must survive a rename. There is no mixed
-user/group or ID/name lookup.
+user/group or ID/name lookup. Group names can repeat across identity providers; a name check admits all matching groups. Prefer `groupIds` for an unambiguous group authorization rule.
 
 A fixed list of user IDs:
 
@@ -1009,7 +1013,7 @@ interrupted write, inspect its status before attempting another import.
 One-off runs share runner capacity and use its fixed wall-clock, memory and
 bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs).
 Scheduled chat routines are retired. Rebuild timed work as reviewed personal
-Code with `app.schedule` and `core.ai.chat.run` or `core.ai.chat.deliver`.
+Code with `app.schedule` and `core.ai.chat(chatId).run` or `core.ai.chat(chatId).deliver`.
 Routine grants do not transfer. Studio RSQL `database` grants are unavailable in
 runner `code_run`. Chat accepts inline `code` and optional `inputPaths` only;
 saved script `id`, published `version`, and Studio `resourceId` contexts are
@@ -1124,3 +1128,6 @@ application capability performs that effect under its own permissions.
 
 See [Text and JSON capabilities](/en/docs/ai/structured-and-background-ai#generate-text-and-extract-json-through-capabilities)
 for schemas, size limits, model selection and stable errors.
+
+Signed-in page requests share a limit of 20 requests per minute per visitor,
+across Code pages. Public routes retain their per-IP and per-Code limits.

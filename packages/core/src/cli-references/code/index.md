@@ -52,12 +52,11 @@ cannot write production resources. `--trace` adds run boundaries. See the canoni
 A busy or unavailable runner returns a visible failure. Retry after capacity
 returns. A failed check saves no version.
 
-## Pull, push and submit
+## Pull and submit
 
 ```sh
 cld code pull c_1234 --out ./fresh-code
-cld code push ./fresh-code/example/box_1234 --json
-# Alternative to push: cld code submit ./fresh-code/example/box_1234 --json
+cld code submit ./fresh-code/example/box_1234 --json
 cld code diff ./fresh-code/example/box_1234 --json
 ```
 
@@ -209,7 +208,7 @@ A new name requires `--binding` with a destination definition:
 For an existing name, pass its current `binding_revision` from list/set as
 `--binding-revision <UUID>`. Omit `--binding` to retain the destination.
 Changed destinations create a new immutable binding revision and require a
-new version submission; `push` and `submit` then use each secret's current
+new version submission; `submit` then use each secret's current
 destination, and a deleted value stays out. Replacing a value applies immediately to all versions
 using that name. One final newline from file/stdin is removed; other bytes
 are preserved. Values must satisfy the server's printable ASCII contract. Selected input files
@@ -233,7 +232,7 @@ C19 chat tools use the same schemas and `codeAuthoringServices`.
 | sdk pull | `{version:1, files}` |
 | check | `{version:1, result, manifest, permissions}` |
 | test, simulate | C17 `{version:1, mode, ok, error, diagnostics, cases, trace?}` |
-| push, submit | `{version:1, submission}` |
+| submit | `{version:1, submission}` |
 | diff | `{version:1, diff}` |
 | activate | `{version:1, activation}` (`--json` needs `--yes` and `--activation-id`) |
 | run | `{version:1, run:{runId, duplicate}}` |

@@ -15,6 +15,45 @@ export class CodeBridgeRefusal extends Error {
   ) {
     super(code);
   }
+  get errorStatus(): number {
+    if (this.status !== 200) return this.status;
+    if (this.code === "code_operation_not_found") return 404;
+    if (
+      [
+        "code_rate_limited",
+        "code_call_limit",
+        "code_wall_clock_limit",
+        "code_ai_budget_limit",
+        "code_ai_daily_budget_limit",
+        "code_ai_owner_daily_budget_limit",
+      ].includes(this.code)
+    )
+      return 429;
+    if (
+      [
+        "code_ai_budget_reserved",
+        "code_file_spent",
+        "code_file_mismatch",
+        "code_not_active",
+        "code_bundle_mismatch",
+        "code_version_mismatch",
+        "code_mandate_mismatch",
+        "code_hash_mismatch",
+      ].includes(this.code)
+    )
+      return 409;
+    if (["code_bridge_unavailable", "code_file_unavailable"].includes(this.code)) return 503;
+    if (
+      ["code_invalid_call", "code_http_invalid_call", "code_file_invalid", "code_input_limit", "code_file_size_limit"].includes(this.code)
+    )
+      return 400;
+    if (
+      codeBridgeLocalRefusalKind(this.code) !== "bridge" ||
+      ["code_access_removed", "code_file_source_refused", "code_file_target_refused"].includes(this.code)
+    )
+      return 403;
+    return 503;
+  }
 }
 /** Live registry metadata for one ACTUAL schema-checked call, never the version's static permission list. */
 export type CodeBridgeCall = {
