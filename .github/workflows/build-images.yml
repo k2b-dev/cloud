@@ -102,7 +102,7 @@ jobs:
             CLOUD_DOCS_SITE_URL=https://cloud.k2b.dev
           outputs: type=image,push-by-digest=true,name-canonical=true,push=${{ inputs.push }},name=ghcr.io/${{ needs.list.outputs.owner }}/${{ matrix.image.image }}
           cache-from: type=registry,ref=ghcr.io/${{ needs.list.outputs.owner }}/cloud-buildcache:${{ matrix.image.image }}-${{ matrix.arch }}
-          cache-to: ${{ inputs.push && format('type=registry,mode=max,ref=ghcr.io/{0}/cloud-buildcache:{1}-{2}', needs.list.outputs.owner, matrix.image.image, matrix.arch) || '' }}
+          cache-to: ${{ inputs.push && format('type=registry,mode=max,ref=ghcr.io/{0}/cloud-buildcache:{1}-{2},ignore-error=true', needs.list.outputs.owner, matrix.image.image, matrix.arch) || '' }}
       - name: Record digest
         if: inputs.push
         env:

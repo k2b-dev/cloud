@@ -1008,7 +1008,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
               {(color) => (
                 <button
                   type="button"
-                  class="h-8 w-8 rounded border border-black/15 shadow-sm dark:border-white/20"
+                  class="h-8 w-8 rounded border border-black/15 dark:border-white/20"
                   classList={{ "ring-2 ring-blue-500 ring-offset-1": markupColor() === color.value }}
                   style={{ "background-color": color.value }}
                   onClick={() => setMarkupColor(color.value)}

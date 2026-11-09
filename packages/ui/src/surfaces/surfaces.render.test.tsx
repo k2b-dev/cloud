@@ -18,6 +18,7 @@ const { DotStrip } = await import("./DotStrip");
 const { LinkCard } = await import("./LinkCard");
 const { NotFoundState } = await import("./NotFoundState");
 const { NoticeCard } = await import("./NoticeCard");
+const { NoticeRow } = await import("./NoticeRow");
 const { Paper } = await import("./Paper");
 const { LocaleProvider } = await import("../intl/locale");
 const { default: Placeholder } = await import("./Placeholder");
@@ -52,6 +53,28 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(info).not.toContain("k2b-sr-only");
   });
 
+  test("NoticeRow renders one notice row: decorative tile, text, then the action, with NoticeCard's tones", () => {
+    const html = renderToString(() =>
+      createComponent(NoticeRow, {
+        tone: "danger",
+        tile: "ti ti-photo-shield",
+        tileColor: "var(--k2b-reference-image)",
+        "aria-label": "External images",
+        children: "External images blocked",
+        action: "Load images",
+      }),
+    );
+    expect(html).toMatch(/^<article aria-label="External images" class="k2b-notice-card\s*" data-tone="danger" data-row="">/);
+    expect(html).toContain(
+      '<span class="k2b-notice-card__tile k2b-icon-tile" style="color:var(--k2b-reference-image)" aria-hidden="true"><i class="ti ti-photo-shield"></i></span><div class="k2b-notice-card__content">External images blocked</div><div class="k2b-notice-card__action">Load images</div></article>',
+    );
+    // Without a tile or an action the row keeps only its text, on the neutral tint.
+    const plain = renderToString(() => createComponent(NoticeRow, { children: "Release note" }));
+    expect(plain).toContain('data-tone="neutral"');
+    expect(plain).not.toContain("k2b-notice-card__tile");
+    expect(plain).not.toContain("k2b-notice-card__action");
+  });
+
   test("NoticeCard keeps its calm markup without a Markdown callout icon", () => {
     const html = renderToString(() => createComponent(NoticeCard, { tone: "warning", title: "x", children: "Body" }));
     expect(html).toContain('data-tone="warning"');
@@ -82,7 +105,8 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).toContain('data-interactive="true"');
     expect(link).toContain('aria-label="Projects"');
     expect(rule).toContain("border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent)");
-    expect(rule).toContain("box-shadow: var(--k2b-shadow-surface)");
+    expect(rule).toContain("box-shadow: var(--k2b-island-shadow)");
+    expect(rule).toContain("background: var(--k2b-island-surface)");
     expect(rule).not.toContain("padding:");
     expect(parityCss).toContain('.k2b-paper[data-elevated="true"]');
     expect(parityCss).toContain("box-shadow: var(--k2b-shadow-frame)");
@@ -241,6 +265,51 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(enhanced).toContain('data-interactive="true"');
     expect(enhanced).toContain('data-color="cyan"');
     expect(renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced" }))).toBe(document);
+  });
+
+  test("a plain LinkCard is a flat anchor without frame or chevron, the same with enhanced navigation", () => {
+    const props = {
+      href: "/storage",
+      title: "Team Marketing",
+      description: "Group · Cloud",
+      icon: "ti ti-users",
+      surface: "plain" as const,
+      meta: "Missing",
+    };
+    const document = renderToString(() => createComponent(LinkCard, props));
+    const enhanced = renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced", onNavigate: () => {} }));
+    // `Link` may leave trailing whitespace in its class; the class list is what must match.
+    const attributes = (html: string) =>
+      (html.match(/^<a([^>]*)>/)?.[1]?.match(/[\w-]+="[^"]*"/g) ?? [])
+        .filter((attribute) => !attribute.startsWith("data-hk="))
+        .map((attribute) => attribute.replace(/\s+"$/, '"'))
+        .sort();
+    expect(attributes(enhanced)).toEqual(attributes(document));
+    expect(enhanced.slice(enhanced.indexOf(">"))).toBe(document.slice(document.indexOf(">")));
+    expect(document).toMatch(/^<a[^>]*class="k2b-link-card"/);
+    expect(document).toContain('data-surface="plain"');
+    expect(document).not.toContain("k2b-paper");
+    expect(document).not.toContain("k2b-link-card__chevron");
+    expect(document).toContain('<span class="k2b-link-card__meta">Missing</span>');
+    // The framed card keeps its look and chevron.
+    const framed = renderToString(() => createComponent(LinkCard, { ...props, surface: undefined }));
+    expect(framed).toContain("k2b-paper");
+    expect(framed).toContain("k2b-link-card__chevron");
+    expect(framed).not.toContain("data-surface");
+  });
+
+  test("media replaces the icon tile of a LinkCard", () => {
+    const html = renderToString(() =>
+      createComponent(LinkCard, {
+        href: "/file",
+        title: "Budget.xlsx",
+        description: "Projects / Planning",
+        surface: "plain",
+        media: createComponent(Tag, { children: "XLSX" }),
+      }),
+    );
+    expect(html).toContain('<div class="k2b-link-card__media">');
+    expect(html).not.toContain("k2b-link-card__icon");
   });
 
   test("lets a LinkCard follow the app accent and carry one trailing fact", () => {
@@ -617,9 +686,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
   });
 
   test("keeps the Cloud chrome that earlier ports dropped", () => {
-    // Every neutral surface inherits the same flat Cloud paper shadow token.
+    // Every Paper is an island: it reads the one island hook, which each layer sets (layers and shadows).
     const paperRule = parityCss.match(/\.k2b-ui \.k2b-paper \{[^}]*\}/)?.[0] ?? "";
-    expect(paperRule).toContain("box-shadow: var(--k2b-shadow-surface)");
+    expect(paperRule).toContain("box-shadow: var(--k2b-island-shadow)");
     for (const selector of [".k2b-link-card", ".k2b-stat-grid", ".k2b-stat-cell", ".k2b-widget"]) {
       const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
       expect(rule).not.toContain("box-shadow:");

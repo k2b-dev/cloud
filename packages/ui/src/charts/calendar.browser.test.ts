@@ -6,6 +6,17 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { renderCalendarSvg } from "./core/calendar";
 
+// Resolve the CSS length in the SVG's query-container context, not in the host.
+const scrollRange = (container: Element) => {
+  const svg = container.querySelector("svg[data-calendar]")!;
+  const probe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  probe.style.width = "var(--k2b-calendar-overflow)";
+  probe.style.height = "0px";
+  svg.append(probe);
+  const css = Number.parseFloat(getComputedStyle(probe).width);
+  probe.remove();
+  return { css, dom: container.scrollWidth - container.clientWidth };
+};
 const root = resolve(import.meta.dir, "../..");
 const spec = {
   kind: "heatmap" as const,
@@ -66,10 +77,16 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         );
         await settled(page);
         const before = await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML);
+        const serverStyle = await page.locator("#mount .k2b-chart").evaluate((e) => (e as HTMLElement).style.cssText);
+        const serverPinned = await page
+          .locator("#mount [data-calendar-pinned] text")
+          .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON()));
         await page.locator("#mount").evaluate((e) => e.replaceChildren());
         await page.addScriptTag({ content: bundle });
         await settled(page);
+        expect(errors).toEqual([]);
         expect(await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML)).toBe(before);
+        expect(await page.locator("#mount .k2b-chart").evaluate((e) => (e as HTMLElement).style.cssText)).toBe(serverStyle);
         const titled = page.locator("#titled .k2b-chart");
         const headerBox = await titled.locator(".stdlib-chart-title").boundingBox();
         const titledBox = await titled.boundingBox();
@@ -87,18 +104,104 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
           .first()
           .evaluate((e) => getComputedStyle(e).fill);
         const chart = page.locator("#mount .k2b-chart");
+        expect(
+          await chart.locator("[data-calendar-pinned] text").evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON())),
+        ).toEqual(serverPinned);
+        // Reproduce a host that changes the nearest query box while leaving the
+        // scrollport unchanged. Its CSS estimate differs from the DOM by 34px.
+        if (width === 390) {
+          await page.locator("section.k2b-ui").evaluate((e) => (e.style.containerType = "inline-size"));
+          await chart.evaluate((e) => (e.style.containerType = "normal"));
+          await settled(page);
+          // A query-context change need not resize the scrollport. Its first
+          // real scroll refreshes the native correction, including at zero.
+          await chart.evaluate((e) => (e.scrollLeft = -1));
+          await settled(page);
+          await chart.evaluate((e) => (e.scrollLeft = 0));
+          await settled(page);
+        }
+        const newestRange = await chart.evaluate(scrollRange);
+        expect(newestRange.css).toBe(newestRange.dom);
         const visible = await chart.boundingBox(),
           last = await chart.locator("[data-chart-datum]").last().boundingBox();
         expect(last!.x).toBeGreaterThanOrEqual(visible!.x);
         expect(last!.x + last!.width).toBeLessThanOrEqual(visible!.x + visible!.width + 1);
-        const weekdayBox = await chart.locator("[data-calendar-weekdays] text").first().boundingBox();
-        expect(weekdayBox!.x).toBeGreaterThanOrEqual(visible!.x);
-        expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + 32);
+        const newestGap = await chart.evaluate((e) => {
+          const label = e.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect(),
+            mask = e.querySelector("[data-calendar-weekdays] > rect")!.getBoundingClientRect(),
+            viewport = e.getBoundingClientRect();
+          // Include the visible part of a cell clipped by the opaque weekday rail.
+          const paintedLeft = Math.min(
+            ...Array.from(e.querySelectorAll("[data-chart-datum] rect"))
+              .map((cell) => cell.getBoundingClientRect())
+              .filter((cell) => cell.right > mask.right && cell.left < viewport.right)
+              .map((cell) => Math.max(cell.left, mask.right)),
+          );
+          return paintedLeft - label.right;
+        });
+        expect(newestGap).toBeGreaterThanOrEqual(0);
+        expect(newestGap).toBeLessThanOrEqual(8);
+        // The newest end can cut through a week. A fully visible cell then starts
+        // up to one column step after the pinned labels; that is scroll phase,
+        // not label padding. Measure padding at the oldest, full-column origin.
+        // Newest-first visibility is checked above, before changing scroll.
+        const newestScroll = await chart.evaluate((e) => e.scrollLeft);
+        await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
+        await settled(page);
+        const originRange = await chart.evaluate(scrollRange);
+        expect(originRange.css).toBe(originRange.dom);
+        // Use one geometry API for both SVG text and cells. WebKit's
+        // Playwright text quad differs from its DOM client rect; mixing them
+        // measures different text extents, even at the same scroll origin.
+        const originGeometry = await chart.evaluate((e) => {
+          const label = e.querySelector<SVGGraphicsElement>("[data-calendar-weekdays] text")!,
+            text = label.getBoundingClientRect(),
+            viewport = e.getBoundingClientRect(),
+            anchor = new DOMPoint(-3, 0).matrixTransform(label.getScreenCTM()!),
+            firstCell = Math.min(
+              ...Array.from(e.querySelectorAll("[data-chart-datum] rect"))
+                .map((cell) => cell.getBoundingClientRect().left)
+                .filter((x) => x >= text.right),
+            );
+          return {
+            left: text.left - viewport.left,
+            right: viewport.right - text.right,
+            gap: firstCell - text.right,
+            anchorError: Math.abs(text.right - anchor.x),
+          };
+        });
+        expect(originGeometry.left).toBeGreaterThanOrEqual(0);
+        expect(originGeometry.right).toBeGreaterThanOrEqual(0);
+        expect(originGeometry.anchorError).toBeLessThan(0.1);
+        expect(originGeometry.gap, JSON.stringify({ originRange, originGeometry })).toBeGreaterThanOrEqual(0);
+        expect(originGeometry.gap, JSON.stringify({ originRange, originGeometry })).toBeLessThanOrEqual(8);
+        // The opaque rail is painted after the cells, so partial columns cannot
+        // show through the pinned weekday labels during touch/trackpad scrolling.
+        expect(
+          await chart.locator("[data-calendar-weekdays]").evaluate((rail) => {
+            const background = rail.querySelector("rect")!;
+            const cell = rail.closest("svg")!.querySelector("[data-chart-datum]")!;
+            return {
+              fill: getComputedStyle(background).fill,
+              afterCells: Boolean(cell.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING),
+            };
+          }),
+        ).toEqual({ fill: "rgb(255, 255, 255)", afterCells: true });
+        if (width === 390) {
+          await chart.evaluate((e) => e.style.removeProperty("container-type"));
+          await page.locator("section.k2b-ui").evaluate((e) => e.style.removeProperty("container-type"));
+          await chart.evaluate((e) => (e.style.width = "280.375px"));
+          await settled(page);
+          const resizedRange = await chart.evaluate(scrollRange);
+          expect(resizedRange.css).toBe(resizedRange.dom);
+          await chart.evaluate((e) => e.style.removeProperty("width"));
+          await settled(page);
+        }
+        await chart.evaluate((e, scroll) => (e.scrollLeft = scroll), newestScroll);
+        await settled(page);
         const monthBoxes = await chart
           .locator("[data-calendar-month]")
-          .evaluateAll((elements) =>
-            elements.map((e) => (e as SVGGraphicsElement).getBBox()).map((b) => ({ left: b.x, right: b.x + b.width })),
-          );
+          .evaluateAll((elements) => elements.map((e) => e.getBoundingClientRect()).map((b) => ({ left: b.x, right: b.x + b.width })));
         for (let i = 1; i < monthBoxes.length; i++) expect(monthBoxes[i]!.left).toBeGreaterThan(monthBoxes[i - 1]!.right);
         const cellBox = await chart.locator("[data-chart-datum] rect").last().boundingBox();
         const legendBox = await chart.locator("[data-calendar-legend]").boundingBox();
@@ -133,7 +236,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         expect(await chart.locator("[data-selected]").count()).toBe(1);
         expect(await chart.locator("[data-selected] rect").evaluate((e) => getComputedStyle(e).strokeWidth)).toBe("2.5px");
         await page.keyboard.press("Escape");
-        await chart.evaluate((e) => (e.scrollLeft = 0));
+        await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
         await settled(page);
         await chart.evaluate((e) => e.blur());
         const mark = chart.locator("[data-chart-datum]").first().locator("rect");
@@ -254,3 +357,66 @@ test("calendar explicit short date formats preserve SSR text for US, German and 
     await browser.close();
   }
 });
+
+for (const width of [280.375, 284.625])
+  test(`calendar native scroll correction preserves exact SSR markup and cleans up at ${width}px`, async () => {
+    const ServerChart = (await import(resolve(root, "dist/ssr/content/Chart.js"))).default;
+    const server = renderToString(() => createComponent(ServerChart, spec));
+    const build = await Bun.build({
+      entrypoints: ["calendar-scroll-mount"],
+      target: "browser",
+      format: "iife",
+      plugins: [
+        {
+          name: "mount",
+          setup(b) {
+            b.onResolve({ filter: /^calendar-scroll-mount$/ }, () => ({ path: "entry", namespace: "mount" }));
+            b.onLoad({ filter: /.*/, namespace: "mount" }, () => ({
+              loader: "ts",
+              contents: `import {mountCalendarScroll} from ${JSON.stringify(resolve(root, "dist/browser/content/chart-calendar.js"))};
+              document.getElementById('cleanup').onclick=mountCalendarScroll(document.querySelector('.k2b-chart'));`,
+            }));
+          },
+        },
+      ],
+    });
+    expect(build.success).toBe(true);
+    const script = await build.outputs[0]!.text();
+    const browser = await launchBrowser();
+    try {
+      const page = await browser.newPage({ reducedMotion: "reduce" });
+      try {
+        const errors = pageErrors(page);
+        await page.setContent(`<style>${await Bun.file(resolve(root, "dist/styles.css")).text()}</style>
+          <section class="k2b-ui" style="width:${width}px">${server}</section><button id="cleanup">Unmount</button>`);
+        await settled(page);
+        const chart = page.locator(".k2b-chart");
+        const before = await chart.evaluate((e) => e.outerHTML);
+        const sheets = await page.evaluate(() => document.adoptedStyleSheets.length);
+        // Native clientWidth rounds to a whole pixel; CSS query lengths do not.
+        const estimate = await chart.evaluate(scrollRange);
+        expect(estimate.css).not.toBe(estimate.dom);
+        await page.addScriptTag({ content: script });
+        await settled(page);
+        expect(errors).toEqual([]);
+        expect(await chart.evaluate((e) => e.outerHTML)).toBe(before);
+        expect(await page.evaluate(() => document.adoptedStyleSheets.length)).toBe(sheets + 1);
+        const newest = await chart.evaluate(scrollRange);
+        expect(newest.css).toBe(newest.dom);
+        await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
+        await settled(page);
+        const oldest = await chart.evaluate(scrollRange);
+        expect(oldest.css).toBe(oldest.dom);
+        expect(await chart.evaluate((e) => e.outerHTML)).toBe(before);
+        await page.locator("#cleanup").click();
+        await settled(page);
+        expect(await page.evaluate(() => document.adoptedStyleSheets.length)).toBe(sheets);
+        expect(await chart.evaluate((e) => e.outerHTML)).toBe(before);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  });

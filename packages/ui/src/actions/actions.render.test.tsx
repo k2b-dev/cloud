@@ -349,6 +349,21 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).toContain("Rename file");
   });
 
+  test("passes a menu note to the split button's secondary menu and describes the menu with it", () => {
+    const html = renderToString(() =>
+      createComponent(SplitButton, {
+        items: [{ label: "Save as draft", action: () => {} }],
+        menuLabel: "More send options",
+        menuNote: "Drafts stay in this mailbox.",
+        phone: "sheet",
+        children: "Send",
+      }),
+    );
+    expect(html).toContain('class="k2b-dropdown__note"');
+    expect(html).toContain("Drafts stay in this mailbox.");
+    expect(html).toMatch(/aria-describedby="[^"]+-note"/);
+  });
+
   test("disables both split button actions while loading", () => {
     const html = renderToString(() =>
       createComponent(SplitButton, {

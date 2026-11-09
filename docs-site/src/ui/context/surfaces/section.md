@@ -2,8 +2,10 @@
 
 `Section` is one topic of an object: an icon, a title with its count or state,
 at most one control, and its content. On a full page, such as a customer file,
-every section is a card with the light 1 px frame of `Paper`, on white ground
-and without a shadow. In a detail panel the same component stands flat, and the
+every section is a card with the light 1 px frame of `Paper` and, like `Paper`,
+an island: it reads the island shadow and surface from the
+[layer model](/en/ui/surfaces/elevation), so it has a soft shadow in the main
+content and none in a flat layer. In a detail panel the same component stands flat, and the
 panel frames it. `Section.Part` divides a section into sub-topics without a
 frame of its own, and `Field` shows one value with its label.
 

@@ -1,7 +1,37 @@
 import { type ChartOptions, chartDatumSvg, escapeXml, niceStep, renderHeader, svgRoot } from "./svg";
+
+// Keep fitting in this leaf: sharing it only with calendar creates a second
+// frame chunk, while adding it to every chart's shared part wastes its budget.
+function chartTextWidth(text: string, size: number): number {
+  return (
+    Array.from(text).reduce(
+      (width, glyph) =>
+        width +
+        (/\s/.test(glyph)
+          ? 0.34
+          : /[ilI.,:;!|'`]/.test(glyph)
+            ? 0.32
+            : /[MW@%&]/.test(glyph)
+              ? 1
+              : /[A-Z0-9]/.test(glyph)
+                ? 0.74
+                : /[a-zäöüßéèáàóúñç()-]/i.test(glyph)
+                  ? 0.64
+                  : 1),
+      0,
+    ) * size
+  );
+}
+
+function fitChartText(text: string, width: number, size: number): string {
+  if (chartTextWidth(text, size) <= width) return text;
+  const glyphs = Array.from(text);
+  while (glyphs.length && chartTextWidth(glyphs.join("") + "…", size) > width) glyphs.pop();
+  return chartTextWidth("…", size) <= width ? glyphs.join("") + "…" : "";
+}
 export type ParetoOptions = ChartOptions & {
   labels: [string, string];
-  data: { label: string; value: number; prev: number }[];
+  data: { label: string; value: number; prev: number; rest?: boolean }[];
   locale?: string;
   format?: (value: number) => string;
   displayWidth?: number;
@@ -18,7 +48,7 @@ export function paretoLayout(spec: ParetoOptions, size = { width: spec.width ?? 
         throw new RangeError("Pareto values must be finite and nonnegative.");
       return { ...d, index };
     })
-    .sort((a, b) => Number(a.label.toLowerCase() === "rest") - Number(b.label.toLowerCase() === "rest") || b.value - a.value);
+    .sort((a, b) => Number(a.rest === true) - Number(b.rest === true) || b.value - a.value);
   const total = data.reduce((s, d) => s + d.value, 0),
     rawMax = Math.max(0, ...data.flatMap((d) => [d.value, d.prev])) || 1;
   const step = niceStep(rawMax, 3),
@@ -29,7 +59,8 @@ export function paretoLayout(spec: ParetoOptions, size = { width: spec.width ?? 
       ? Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step)
       : [0, max / 2, max];
   if (!Number.isFinite(total)) throw new RangeError("Pareto total must be finite.");
-  const left = Math.min(112, width * 0.25),
+  const labelWidth = Math.max(0, ...data.map((d) => chartTextWidth(d.label, 12))) + 12;
+  const left = Math.min(112, width * 0.4, Math.max(width * 0.25, labelWidth)),
     plot = width - left - 30,
     rowHeight = (height - top - bottom) / Math.max(1, data.length);
   let sum = 0;
@@ -55,6 +86,11 @@ export function renderParetoSvg(spec: ParetoOptions): string {
   const s = paretoLayout(spec);
   const number = spec.format ?? new Intl.NumberFormat(spec.locale ?? "en", { maximumSignificantDigits: 15 }).format;
   const percent = new Intl.NumberFormat(spec.locale ?? "en", { style: "percent", maximumFractionDigits: 1 });
+  const changePercent = new Intl.NumberFormat(spec.locale ?? "en", {
+    style: "percent",
+    maximumFractionDigits: 1,
+    signDisplay: "exceptZero",
+  });
   const color = "var(--stdlib-chart-c1,#3b82f6)";
   const body: string[] = [
     s.header.svg
@@ -83,7 +119,7 @@ export function renderParetoSvg(spec: ParetoOptions): string {
     const hatch = `<path class="k2b-chart-pareto-hatch" d="${Array.from({ length: Math.floor(prevWidth / 5) }, (_, i) => `M${s.left + i * 5},${row.y + 1 + bh}l${Math.min(4, prevWidth - i * 5)},-${bh}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1" pointer-events="none"/>`;
     body.push(
       chartDatumSvg(
-        `<rect class="k2b-chart-pareto-current" x="${s.left}" y="${row.y - bh - 1}" width="${valueWidth}" height="${bh}" rx="2" fill="${color}" stroke="none"/><rect class="k2b-chart-pareto-previous" x="${s.left}" y="${row.y + 1}" width="${prevWidth}" height="${bh}" rx="2" fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-width="0.8"/>${hatch}<rect class="k2b-chart-category-band" x="0" y="${row.y - s.rowHeight / 2}" width="${s.width}" height="${s.rowHeight}" fill="transparent" pointer-events="none"/><text x="${s.left - 8}" y="${row.y + 4}" text-anchor="end" font-size="12" fill="var(--k2b-text,#27272a)">${escapeXml(row.label.length > Math.floor((s.left * (spec.displayWidth ?? 296)) / s.width / 7) - 1 ? row.label.slice(0, Math.max(1, Math.floor((s.left * (spec.displayWidth ?? 296)) / s.width / 7) - 2)) + "…" : row.label)}</text>`,
+        `<rect class="k2b-chart-pareto-current" x="${s.left}" y="${row.y - bh - 1}" width="${valueWidth}" height="${bh}" rx="2" fill="${color}" stroke="none"/><rect class="k2b-chart-pareto-previous" x="${s.left}" y="${row.y + 1}" width="${prevWidth}" height="${bh}" rx="2" fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-width="0.8"/>${hatch}<rect class="k2b-chart-category-band" x="0" y="${row.y - s.rowHeight / 2}" width="${s.width}" height="${s.rowHeight}" fill="transparent" pointer-events="none"/><text x="${s.left - 8}" y="${row.y + 4}" text-anchor="end" font-size="12" fill="var(--k2b-text,#27272a)">${escapeXml(fitChartText(row.label, s.left - 12, 12))}</text>`,
         {
           role: "item",
           index: row.index,
@@ -96,7 +132,7 @@ export function renderParetoSvg(spec: ParetoOptions): string {
             {
               key: "change",
               value: Number.isFinite(change) ? change : 0,
-              formatted: Number.isFinite(change) ? percent.format(change) : "–",
+              formatted: Number.isFinite(change) ? changePercent.format(change) : "–",
             },
             { key: "cumulative", value: row.cumulative, formatted: s.total ? percent.format(row.cumulative) : "–" },
           ],
@@ -122,7 +158,7 @@ export function renderParetoSvg(spec: ParetoOptions): string {
   names.forEach((name, index) => {
     const x = lx;
     lx += Math.min(s.width / 3, name.length * 12 + 32);
-    const display = name.slice(0, Math.max(1, Math.floor(((spec.displayWidth ?? 296) / 3 - 28) / 7)));
+    const display = fitChartText(name, s.width / 3 - 28, 11);
     body.push(
       `${index === 2 ? `<line x1="${x}" x2="${x + 12}" y1="${s.height - 10}" y2="${s.height - 10}" stroke="var(--k2b-text-muted,#45454e)"/>` : `<rect x="${x}" y="${s.height - 15}" width="10" height="10" rx="2" fill="${color}" fill-opacity="${index === 1 ? 0.2 : 1}"/>${index === 1 ? `<path d="M${x},${s.height - 6}l8,-8" stroke="${color}"/>` : ""}`}<text x="${x + 16}" y="${s.height - 6}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(display)}</text>`,
     );

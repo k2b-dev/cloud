@@ -67,6 +67,31 @@ describe("Section in a real engine", () => {
     }
   });
 
+  test("a page section is an island with the raised shadow, and the same section in a flat layer casts none", async () => {
+    const page = await browser.newPage({ viewport: { width: 1024, height: 700 } });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui">${markup}` +
+          `<div id="flat-layer" data-k2b-layer="flat">${markup.replaceAll('id="', 'id="flat-')}</div></body></html>`,
+      );
+      await settled(page);
+      const shadows = await page.evaluate(() => {
+        const probe = document.body.appendChild(document.createElement("span"));
+        probe.style.boxShadow = "var(--k2b-shadow-raised)";
+        const raised = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        const shadow = (selector: string) => getComputedStyle(document.querySelector(selector)!).boxShadow;
+        return { raised, page: shadow("#page"), flat: shadow("#flat-page") };
+      });
+      expect(shadows.raised).not.toBe("none");
+      expect(shadows.page).toBe(shadows.raised);
+      expect(shadows.flat).not.toBe(shadows.raised);
+      expect(shadows.flat).toMatch(/^(none|rgba\(0, 0, 0, 0\) 0px 0px 0px 0px)$/);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("a flat disclosure row keeps a 44 px hit area on touch without growing", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true });
     try {

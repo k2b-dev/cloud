@@ -29,26 +29,41 @@
  */
 
 /* ---------------------------------------------------------------- Paper -- */
+/* Paper is an island (layer 1, index.css): in the main content it carries the
+   island shadow and surface; in a flat layer (a column beside the main
+   content, a panel, a dialog, a dense collection) the same hooks are flat. */
 .k2b-ui .k2b-paper {
   border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
-  box-shadow: var(--k2b-shadow-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   transition:
     color 150ms,
     background-color 150ms,
     border-color 150ms;
 }
 
+/* No depth inside depth: everything inside an island is flat, so a Paper or
+   card inside a Paper, a framed Section, or a ResourceCard casts no shadow. */
+.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) .k2b-ui {
+  --k2b-island-shadow: 0 0 #0000;
+}
+/* Inside an island the surface beneath is the island's: a fill that mixes into
+   what lies below it, such as a selected table row, uses `--k2b-surface-beneath`
+   and so matches the lighter dark island. Fields and controls keep `--k2b-surface`. */
+.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) > * {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-surface-beneath: var(--k2b-island-surface);
+}
+
 .k2b-ui .k2b-paper[data-elevated="true"] {
   box-shadow: var(--k2b-shadow-frame);
 }
 
-/* A clickable card keeps a light 1 px border in every state and casts no
-   shadow; hover darkens the fill only. */
+/* A clickable card is a content card: it keeps the island shadow and a light
+   1 px border in every state; hover darkens the fill only. */
 .k2b-ui .k2b-paper[data-interactive="true"] {
   border-color: var(--k2b-border-strong);
-  box-shadow: none;
 }
 
 .k2b-ui .k2b-paper[data-interactive="true"]:hover {
@@ -180,6 +195,29 @@
 /* Cards never move on hover; only the chevron color responds. */
 .k2b-ui .k2b-link-card__chevron { flex: 0 0 auto; color: var(--k2b-text-muted); transition: color 120ms ease; }
 .k2b-ui .k2b-link-card:hover .k2b-link-card__chevron { color: var(--k2b-action); }
+/* `media` replaces the icon tile, for example with a FileTypeIcon. It takes the tile's width, so titles line up
+   whether a card shows a tile or media. */
+.k2b-ui .k2b-link-card__media { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 2.5rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__media { width: 2.25rem; }
+
+/* Plain LinkCard: a flat entry in a quiet overview. No frame and no surface until hover, the same tile, title and
+   one description line, no chevron. Hover and focus change only the surface and the ring, so nothing moves. */
+.k2b-ui .k2b-link-card[data-surface="plain"] {
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--k2b-radius-surface);
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.k2b-ui .k2b-link-card[data-surface="plain"]:hover { background: var(--k2b-hover); }
+.k2b-ui .k2b-link-card[data-surface="plain"]:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__icon { width: 2.25rem; height: 2.25rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__glyph { font-size: 1.125rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__title { font-weight: 500; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__description { margin-top: 1px; font-size: 0.78125rem; }
 
 /* Without an explicit color the glyph follows the active application accent
    through the same optional hook as AppOverview's icon; it defaults to the
@@ -208,8 +246,9 @@
 
 /* ---------------------------------------------------------- ResourceCard -- */
 /* One size in every state: a fixed width and three fixed lines, so a card that
-   resolves, loses access, or is deleted moves nothing around it. The fill is
-   the reference fill, so the card follows any surface below it. */
+   resolves, loses access, or is deleted moves nothing around it. The card is a
+   thing one can open, so it is an island (layer 1): a light frame on the
+   island surface with the island shadow, flat inside a panel or another island. */
 .k2b-ui .k2b-resource-card {
   display: grid;
   box-sizing: border-box;
@@ -223,11 +262,13 @@
   column-gap: 0;
   overflow: hidden;
   padding-block: 0;
-  padding-inline: 0.625rem 0.875rem;
-  border: 0;
-  border-radius: var(--k2b-radius-control);
+  /* The 1 px frame belongs to the inset, so icon and text keep their place. */
+  padding-inline: calc(0.625rem - 1px) calc(0.875rem - 1px);
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
   color: var(--k2b-text);
-  background: var(--k2b-reference-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   font: inherit;
   text-align: start;
   text-decoration: none;
@@ -242,7 +283,7 @@
 
 /* Cards never move on hover; only the fill responds. */
 .k2b-ui :is(a, button).k2b-resource-card:hover {
-  background: var(--k2b-reference-surface-hover);
+  background: var(--k2b-edge-hover-bg);
 }
 
 .k2b-ui :is(a, button).k2b-resource-card:focus-visible {
@@ -263,7 +304,7 @@
    of the same colour. */
 .k2b-ui .k2b-resource-card__icon:not(.k2b-icon-tile) {
   color: var(--k2b-text-secondary);
-  background: var(--k2b-surface);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-resource-card__icon.k2b-icon-tile {
@@ -453,6 +494,27 @@
 }
 .k2b-ui .k2b-notice-card[data-icon] .k2b-notice-card__title { color: inherit; }
 .k2b-ui .k2b-notice-card__icon { display: flex; height: 1.375rem; align-items: center; color: var(--k2b-notice-ink); font-size: 1.125rem; }
+/* `NoticeRow`: a notice as one row of at least 48px: the 32px tile, the text,
+   then the action, all centred. The action never wraps below the text; the
+   text takes what is left. Phones get a 28px tile. The padding gives way to
+   the transparent forced-colours border, so a small button (32px) makes the
+   row exactly 48px. */
+.k2b-ui .k2b-notice-card[data-row] {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.875rem - 1px);
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-notice-card[data-row]:has(> .k2b-notice-card__tile) { padding-left: calc(0.5rem - 1px); }
+.k2b-ui .k2b-notice-card[data-row] > .k2b-notice-card__content { flex: 1 1 auto; }
+.k2b-ui .k2b-notice-card__tile { width: 2rem; height: 2rem; color: var(--k2b-notice-ink); font-size: 1.125rem; }
+.k2b-ui .k2b-notice-card__action { display: flex; flex: 0 0 auto; align-items: center; gap: 0.5rem; }
+@media not all and (min-width: 48rem) {
+  .k2b-ui .k2b-notice-card[data-row] { gap: 0.625rem; }
+  .k2b-ui .k2b-notice-card__tile { width: 1.75rem; height: 1.75rem; font-size: 1rem; }
+}
 /* Markdown callouts add a decorative type icon and a title in the tone colour.
    The icon scales with the reading size and sits centred on the first text
    line, so it adds no height. */

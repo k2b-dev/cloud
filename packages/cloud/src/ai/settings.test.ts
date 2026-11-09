@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   AI_MODEL_CLASSES,
   type AiModelClass,
@@ -6,10 +6,36 @@ import {
   aiModelClassFallbackChain,
   parseAiModelChoice,
 } from "../shared/ai-models";
+import * as credentials from "./credentials";
 import { aiAssignmentFixture, aiModelFixture, aiSettingsFixture } from "./model-fixture";
-import { resolveAiModelRef, selectAiModelProfile } from "./settings";
+import * as connections from "./provider-connections";
+import * as requestHeaders from "./request-headers";
+import { resolveAiModelFromState, resolveAiModelRef, selectAiModelProfile } from "./settings";
 
 describe("model class resolution", () => {
+  test("legacy reasoning models discover real output ceilings; explicit budgets avoid discovery and unavailable metadata preserves defaults", async () => {
+    const credential = spyOn(credentials, "getAiCredential").mockResolvedValue(null);
+    const headers = spyOn(requestHeaders, "getAiRequestHeaders").mockResolvedValue({});
+    const listing = spyOn(connections, "listProviderModels").mockResolvedValue([
+      { providerModel: "chat", contextWindow: 1_048_576, outputTokenLimit: 65_536 },
+    ]);
+    const profile = aiModelFixture({ provider: "openai-compatible", baseURL: "https://example.invalid/v1" });
+    try {
+      const resolved = await resolveAiModelFromState(aiSettingsFixture({ profiles: [profile] }));
+      expect(resolved.profile.outputTokenLimit).toBe(65_536);
+      expect(resolved.provider.contextWindow).toBe(1_048_576);
+      expect(listing).toHaveBeenCalledTimes(1);
+      await resolveAiModelFromState(aiSettingsFixture({ profiles: [{ ...profile, maxOutputTokens: 123 }] }));
+      expect(listing).toHaveBeenCalledTimes(1);
+      listing.mockRejectedValue(new Error("Unavailable listing"));
+      const unknown = await resolveAiModelFromState(aiSettingsFixture({ profiles: [profile] }));
+      expect(unknown.profile.outputTokenLimit).toBeUndefined();
+    } finally {
+      credential.mockRestore();
+      headers.mockRestore();
+      listing.mockRestore();
+    }
+  });
   const chains: Record<AiModelClass, AiModelClass[]> = {
     fast: ["balanced", "thorough", "maximum"],
     balanced: ["fast", "thorough", "maximum"],

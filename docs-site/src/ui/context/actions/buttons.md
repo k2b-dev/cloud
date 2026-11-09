@@ -164,7 +164,11 @@ for a shorter or richer hint, such as a keyboard shortcut. Content follows the
 `SplitButton` extends Button props with required `items: readonly DropdownItem[]`
 and `menuLabel: string`. `menuPosition?: DropdownPosition | (() => DropdownPosition)`
 and `menuWidth?: string` configure the menu; position defaults to `"bottom-left"`, and the menu sizes to its
-entries unless `menuWidth` sets an exact CSS length. See
+entries unless `menuWidth` sets an exact CSS length. `phone="sheet"` opens
+both menus as a bottom sheet below 48rem, as on `Dropdown.Root`; the default
+`phone="menu"` keeps them beside the trigger. `menuNote?: string` adds one quiet
+sentence below the secondary menu's entries that explains them all and describes
+the menu, as `Dropdown`'s `note`. See
 [menu types](/en/ui/actions/menus#api-reference). Link buttons' `onNavigate`
 uses the [navigation event contract](/en/ui/getting-started#icons-tones-and-navigation).
 

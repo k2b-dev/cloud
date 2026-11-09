@@ -13,7 +13,7 @@ import { hasRole, type User } from "../contracts/shared";
 import { isAppSessionActor } from "../server/actor";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
-import { dates, resolveHomePath } from "../shared";
+import { createLoginRedirectUrl, dates, resolveHomePath } from "../shared";
 import { publicCloudOrigin } from "../shared/app-url";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
@@ -408,6 +408,7 @@ export default function Layout(props: LayoutProps) {
                 title={appLabel ?? breadcrumbs.at(-1)?.title}
                 launchpad={!!(user || appLabel)}
                 breadcrumbs={user ? undefined : breadcrumbs}
+                loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}
               />,
               user && announcements && <AnnouncementBanners banners={announcements.banners} />,
               user && <ProfileWarnings user={user} locale={lang} />,

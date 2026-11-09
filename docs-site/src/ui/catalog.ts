@@ -66,6 +66,12 @@ const portableSections = [
       page("boolean", "Boolean inputs", "ti ti-toggle-right", "Switch, checkbox, and descriptive checkbox-card controls."),
       page("select", "Selection controls", "ti ti-list-check", "Single, multi, and compact controlled selection."),
       page(
+        "field-suggestion",
+        "Field suggestions",
+        "ti ti-sparkles",
+        "A proposed value inside an empty field that only becomes the value when someone accepts it, with Accept all for a group.",
+      ),
+      page(
         "rich-select",
         "RichSelect",
         "ti ti-list-details",
@@ -266,6 +272,12 @@ const portableSections = [
         "Colors and selection",
         "ti ti-color-swatch",
         "Color style guidelines: when color carries meaning, the app color of a selected row, view, or filter, and what stays blue or neutral.",
+      ),
+      page(
+        "elevation",
+        "Layers and shadows",
+        "ti ti-stack-2",
+        "Four layers, one rule: content cards in the main content are islands with a soft shadow; lists, grids, panels, and controls stay flat.",
       ),
       page(
         "base-stylesheet",

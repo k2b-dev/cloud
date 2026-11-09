@@ -59,6 +59,7 @@ import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
 import inputDictation from "./input/dictation.md" with { type: "text" };
 import inputEmojiPicker from "./input/emoji-picker.md" with { type: "text" };
+import inputFieldSuggestion from "./input/field-suggestion.md" with { type: "text" };
 import inputFileDropTarget from "./input/file-drop-target.md" with { type: "text" };
 import inputFileDropzone from "./input/file-dropzone.md" with { type: "text" };
 import inputIcon from "./input/icon.md" with { type: "text" };
@@ -105,6 +106,7 @@ import surfaceCards from "./surfaces/cards.md" with { type: "text" };
 import surfaceChangeList from "./surfaces/change-list.md" with { type: "text" };
 import surfaceColor from "./surfaces/color.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
+import surfaceElevation from "./surfaces/elevation.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
 import surfacePaper from "./surfaces/paper.md" with { type: "text" };
@@ -150,6 +152,7 @@ const catalogContextSources = {
   "input/choice-slider": { file: "input/choice-slider.md", content: inputChoiceSlider },
   "input/slider": { file: "input/slider.md", content: inputSlider },
   "input/boolean": { file: "input/boolean.md", content: inputBoolean },
+  "input/field-suggestion": { file: "input/field-suggestion.md", content: inputFieldSuggestion },
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
   "actions/copy-remove": { file: "actions/copy-remove.md", content: actionCopyRemove },
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
@@ -182,6 +185,7 @@ const catalogContextSources = {
   "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
+  "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/section": { file: "surfaces/section.md", content: surfaceSection },
