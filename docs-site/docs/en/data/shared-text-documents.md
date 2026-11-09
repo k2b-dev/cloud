@@ -58,9 +58,11 @@ The stream keeps its name and sequences, so persisted cursors stay valid. Any
 other difference still raises `ResourceDriftError`. Updates that the old
 policy already expired stay gone. Before the application prunes or tolerates
 a retention gap, it must send every document whose snapshot is older than the
-retained window, and that has newer events, to recovery. Use
-`log.firstSequence()` to find that window. Run this step once, and record its
-completion durably.
+retained window to recovery, even when none of its events is retained any
+more. Use `log.firstSequence()` to find that window. Run this step once,
+after the application has started, and record its completion durably. Run it
+after startup because a declared log that Cloud cannot prepare would
+otherwise fail the readiness of the whole application.
 
 `log.id` identifies the resource. `log.topicConfig` exposes the exact readonly
 Sync declaration, passed through unchanged. `log.topic()` returns a fresh

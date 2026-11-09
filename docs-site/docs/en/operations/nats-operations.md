@@ -176,6 +176,30 @@ stream deletes retained work and can make unsnapshotted notebook edits
 unrecoverable. For `ResourceDriftError`, follow the release's specific recovery
 instructions rather than deleting a namespace to make readiness pass.
 
+### Topics that keep events until the application prunes them
+
+Some document logs, such as the shared Mail draft log, must keep every
+accepted event until the application has stored a covering snapshot. Their
+topic is declared to reject new events when full, and it has no age limit. An
+older stream for the same topic may still discard its oldest events and
+expire them after a few days. On the first use after the upgrade, Cloud
+changes that event stream **in place**: it stops discarding the oldest events
+and removes the age limit. The stream keeps its name, byte limit, events and
+sequences, so cursors that applications store stay valid. The application
+logs `Changed a Sync topic to keep its events until the application prunes
+them`. Any other difference still fails with `ResourceDriftError` and changes
+nothing.
+
+This is a runtime contract change. After the change, a process of an older
+release that still declares the old policy reports `ResourceDriftError` for
+that topic. Deploy the release to every instance of the application, and do
+not roll back to an older release, without first following that release's
+recovery notes. Events that the old policy already removed stay gone. Each
+application decides what that means for its documents; for Mail, see
+[Outgoing mail operations](/en/docs/operations/outgoing-mail). A log that is
+full rejects new writes until the application prunes covered events. Never
+purge or delete such a stream by hand to free space.
+
 ## Restart NATS and applications together
 
 Applications and the gateway do not need to start after NATS. They wait for

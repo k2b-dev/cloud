@@ -1,5 +1,5 @@
 import { expect, spyOn } from "bun:test";
-import { createSync, type JobConfig, type QueueConfig, type Sync } from "@k2b/sync";
+import { createSync, type JobConfig, type QueueConfig, type Sync, type Topic } from "@k2b/sync";
 import { DiscardPolicy, jetstreamManager, RetentionPolicy } from "@nats-io/jetstream";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
@@ -368,6 +368,7 @@ integration(
         maxPayloadBytes: 16_000,
       });
       const first = await legacyTopic.publish({ tenantId: "doc", data: { n: 1 } });
+      for (let n = 2; n <= 20; n++) await legacyTopic.publish({ tenantId: n % 2 ? "doc" : "other", data: { n } });
 
       const topic = current.topic<{ n: number }>({
         id: "documents",
@@ -376,12 +377,12 @@ integration(
         deadLetterRetention,
         maxPayloadBytes: 16_000,
       });
-      const second = await topic.publish({ tenantId: "doc", data: { n: 2 } });
-      expect(topic.cursorSequence(second.cursor)).toBe(topic.cursorSequence(first.cursor) + 1);
+      const last = await topic.publish({ tenantId: "doc", data: { n: 21 } });
+      expect(topic.cursorSequence(last.cursor)).toBe(topic.cursorSequence(first.cursor) + 20);
       const replayed: number[] = [];
-      for await (const event of topic.replay({ tenantId: "doc", after: topic.cursorAt(0), until: second.cursor }))
-        replayed.push(event.data.n);
-      expect(replayed).toEqual([1, 2]);
+      for (const tenantId of ["doc", "other"])
+        for await (const event of topic.replay({ tenantId, after: topic.cursorAt(0), until: last.cursor })) replayed.push(event.data.n);
+      expect(replayed.sort((a, b) => a - b)).toEqual(Array.from({ length: 21 }, (_, index) => index + 1));
 
       const manager = await jetstreamManager(connection);
       const events = [];
@@ -397,6 +398,97 @@ integration(
       await legacy.drain({ timeoutMs: 5_000 });
       await current.drain({ timeoutMs: 5_000 });
       await connection.drain();
+    }
+  },
+  30_000,
+);
+
+integration(
+  "a topic that does not opt into keeping events reports an age or discard difference and keeps its stream",
+  async () => {
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const namespace = testSyncNamespace("budget-topic-age");
+    const maxBytes = 4 * 1024 * 1024;
+    const limits = { deadLetterRetention: { maxAgeMs: WEEK_MS, maxBytes: 64 * 1024 }, maxPayloadBytes: 16_000 };
+    const legacy = openSync(connection, namespace, false);
+    const current = openSync(connection, namespace);
+    try {
+      await legacy.topic<{ n: number }>({ id: "aged", retention: { maxAgeMs: WEEK_MS, maxBytes }, ...limits }).ready();
+      await legacy.topic<{ n: number }>({ id: "rejecting", retention: { maxAgeMs: WEEK_MS, maxBytes }, ...limits }).ready();
+      // Still discards the oldest events and only drops the age.
+      const aged = current.topic<{ n: number }>({ id: "aged", retention: { maxBytes }, ...limits });
+      await expect(aged.publish({ data: { n: 1 } })).rejects.toThrow("max_age");
+      // Rejects when full but keeps a finite age.
+      const rejecting = current.topic<{ n: number }>({
+        id: "rejecting",
+        whenFull: "reject",
+        retention: { maxAgeMs: WEEK_MS, maxBytes },
+        ...limits,
+      });
+      await expect(rejecting.publish({ data: { n: 1 } })).rejects.toThrow("discard");
+
+      const manager = await jetstreamManager(connection);
+      const policies: Record<string, [string, number]> = {};
+      for await (const info of manager.streams.list()) {
+        const metadata = info.config.metadata;
+        if (metadata?.["sync.namespace"] === namespace && !info.config.subjects.some((subject) => subject.endsWith(".dlq.>")))
+          policies[metadata["sync.id"] ?? ""] = [info.config.discard, info.config.max_age];
+      }
+      expect(policies).toEqual({
+        aged: [DiscardPolicy.Old, WEEK_MS * 1_000_000],
+        rejecting: [DiscardPolicy.Old, WEEK_MS * 1_000_000],
+      });
+    } finally {
+      await legacy.drain({ timeoutMs: 5_000 });
+      await current.drain({ timeoutMs: 5_000 });
+      await connection.drain();
+    }
+  },
+  30_000,
+);
+
+integration(
+  "processes that start together change an old event stream once and lose no concurrent event",
+  async () => {
+    const namespace = testSyncNamespace("budget-topic-race");
+    const maxBytes = 4 * 1024 * 1024;
+    const deadLetterRetention = { maxAgeMs: WEEK_MS, maxBytes: 64 * 1024 };
+    const declaration = { id: "documents", deadLetterRetention, maxPayloadBytes: 16_000 };
+    const connections = await Promise.all([1, 2, 3].map(() => connectTestNats({ ignoreClusterUpdates: true })));
+    const [legacyConnection, ...currentConnections] = connections as [NatsConnection, NatsConnection, NatsConnection];
+    const legacy = openSync(legacyConnection, namespace, false);
+    const current = currentConnections.map((connection) => openSync(connection, namespace));
+    try {
+      const legacyTopic = legacy.topic<{ n: number }>({ ...declaration, retention: { maxAgeMs: WEEK_MS, maxBytes } });
+      await legacyTopic.publish({ data: { n: 0 } });
+      const topics = current.map((sync) => sync.topic<{ n: number }>({ ...declaration, whenFull: "reject", retention: { maxBytes } }));
+      // An instance of the older release keeps publishing while both new processes start.
+      let published = 1;
+      let stop = false;
+      const writer = (async () => {
+        while (!stop) await legacyTopic.publish({ data: { n: published++ } });
+      })();
+      await Promise.all(topics.map((topic) => topic.ready()));
+      stop = true;
+      await writer;
+      const [first, second] = topics as [Topic<{ n: number }>, Topic<{ n: number }>];
+      const a = await first.publish({ data: { n: published++ } });
+      const b = await second.publish({ data: { n: published++ } });
+      const replayed: number[] = [];
+      for await (const event of first.replay({ after: first.cursorAt(0), until: b.cursor })) replayed.push(event.data.n);
+      expect(replayed).toEqual(Array.from({ length: published }, (_, index) => index));
+      expect(first.cursorSequence(b.cursor)).toBe(first.cursorSequence(a.cursor) + 1);
+
+      const manager = await jetstreamManager(legacyConnection);
+      const changed = [];
+      for await (const info of manager.streams.list())
+        if (info.config.metadata?.["sync.namespace"] === namespace && !info.config.subjects.some((subject) => subject.endsWith(".dlq.>")))
+          changed.push([info.config.discard, info.config.max_age, info.state.first_seq]);
+      expect(changed).toEqual([[DiscardPolicy.New, 0, 1]]);
+    } finally {
+      await legacy.drain({ timeoutMs: 5_000 });
+      for (const sync of current) await sync.drain({ timeoutMs: 5_000 });
+      for (const connection of connections) await connection.drain();
     }
   },
   30_000,

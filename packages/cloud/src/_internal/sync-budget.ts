@@ -74,12 +74,16 @@ const byteLimitDrift = (error: unknown): { stream: string; maxBytes: number } | 
   return { stream: error.resource, maxBytes: difference.declared };
 };
 
+/** A topic that keeps every event until its application prunes it. */
+const keepsEventsUntilPruned = (config: TopicConfig): boolean => config.whenFull === "reject" && config.retention?.maxAgeMs === undefined;
+
 /**
- * The stream when Sync refused a topic only because its existing event stream
- * discards or ages out events that the declaration keeps: `whenFull: "reject"`
- * without `maxAgeMs`. Keeping more never deletes an accepted event.
+ * The stream when Sync refused a topic that keeps every event until pruned
+ * only because its existing event stream discards or ages out events.
+ * Keeping more never deletes an accepted event.
  */
-const retentionWidening = (error: unknown): string | undefined => {
+const retentionWidening = (config: TopicConfig, error: unknown): string | undefined => {
+  if (!keepsEventsUntilPruned(config)) return undefined;
   if (!(error instanceof ResourceDriftError) || error.differences.length === 0) return undefined;
   const widening = error.differences.every(
     (difference) =>
@@ -172,15 +176,16 @@ const createStreamLimits = (connection: NatsConnection, namespace: string) => {
    * topic, only the dead-letter stream, whose subjects end in `.dlq.>`, is
    * changed: its event stream keeps Sync's drift check, so applications that
    * declare one topic differently still fail instead of overwriting each
-   * other's limit.
+   * other's limit. The one exception is a topic declared to keep every event
+   * until pruned, whose event stream may stop discarding and expiring events.
    */
-  const adopt = async (kind: Kind, id: string, ready: () => Promise<void>): Promise<void> => {
+  const adopt = async (kind: Kind, id: string, ready: () => Promise<void>, topic?: TopicConfig): Promise<void> => {
     const changed = new Set<string>();
     for (;;) {
       try {
         return await ready();
       } catch (error) {
-        const widened = kind === "topic" ? retentionWidening(error) : undefined;
+        const widened = topic ? retentionWidening(topic, error) : undefined;
         if (widened && !changed.has(widened)) {
           changed.add(widened);
           const jsm = await manager();
@@ -336,7 +341,7 @@ export const withSyncBudgets = (sync: Sync, { connection, namespace }: { connect
     queue: <T>(config: QueueConfig) => deferQueue(declareWork("queue", config, (declaration) => sync.queue<T>(declaration))),
     topic: <T>(config: TopicConfig) => {
       const topic = sync.topic<T>(config);
-      const ready = once(() => adopt("topic", config.id, () => topic.ready()));
+      const ready = once(() => adopt("topic", config.id, () => topic.ready(), config));
       declared.set(`topic:${config.id}`, ready);
       return deferTopic(topic, ready);
     },
