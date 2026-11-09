@@ -25,7 +25,8 @@ export * from "./calendar";
 export { nestedDotOptions } from "./dot-options";
 export { renderDotMatrixLayoutSvg } from "./dots";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
-export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
+export { renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
+export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout } from "./hbar-layout";
 export * from "./inspection";
 export { lineBase } from "./line-base";
 export { renderLineDetailsSvg } from "./line-details";
@@ -36,6 +37,8 @@ export * from "./pareto";
 export * from "./radar";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
+export { renderSankeySvg, type SankeyLink, type SankeyNode, type SankeyOptions, sankeyColor, sankeyLayout } from "./sankey";
+export { sankeyFrame, sankeyGraph, sankeyWidth } from "./sankey-size";
 export * from "./snapshot";
 export { charts } from "./svg";
 export {

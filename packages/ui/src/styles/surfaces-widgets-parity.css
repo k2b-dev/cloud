@@ -45,13 +45,13 @@
 
 /* No depth inside depth: everything inside an island is flat, so a Paper or
    card inside a Paper, a framed Section, or a ResourceCard casts no shadow. */
-.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) .k2b-ui {
+.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"], .k2b-dashboard-panel, .k2b-stat-cell) .k2b-ui {
   --k2b-island-shadow: 0 0 #0000;
 }
 /* Inside an island the surface beneath is the island's: a fill that mixes into
    what lies below it, such as a selected table row, uses `--k2b-surface-beneath`
    and so matches the lighter dark island. Fields and controls keep `--k2b-surface`. */
-.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) > * {
+.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"], .k2b-dashboard-panel, .k2b-stat-cell) > * {
   --k2b-island-shadow: 0 0 #0000;
   --k2b-surface-beneath: var(--k2b-island-surface);
 }
@@ -841,13 +841,16 @@
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.875rem 1rem;
-  border: 1px solid var(--k2b-border);
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
   color: inherit;
-  background: var(--k2b-surface);
+  /* An island like Paper: a lifted tile in the main content, flat in a column, panel, or another island. */
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   text-decoration: none;
 }
-.k2b-ui .k2b-stat-cell[data-surface="muted"] { background: var(--k2b-surface-muted); }
+/* A muted tile is a fill on its surface, not a lifted island. */
+.k2b-ui .k2b-stat-cell[data-surface="muted"] { background: var(--k2b-surface-muted); box-shadow: 0 0 #0000; }
 .k2b-ui .k2b-stat-cell[data-size="sm"] { gap: 0.125rem; padding: 0.625rem 0.75rem; }
 .k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { min-height: 8.5rem; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell { container: k2b-stat-cell / inline-size; }
@@ -1819,15 +1822,17 @@
    (two on a phone) columns. */
 .k2b-ui .k2b-dashboard-section__grid > .k2b-stat-grid { grid-column: 1 / -1; min-width: 0; }
 
-/* Every panel is one light frame; content inside never adds a second. */
+/* Every panel is one light frame, an island like Paper; content inside never
+   adds a second frame or shadow (the island rule near Paper). */
 .k2b-ui .k2b-dashboard-panel {
   container: k2b-dashboard-panel / inline-size;
   position: relative;
   min-width: 0;
   padding: 0.875rem 1rem;
-  border: 1px solid var(--k2b-border);
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   color: var(--k2b-text);
 }
 

@@ -22,6 +22,7 @@ import * as mapExamples from "./map";
 import * as paretoExamples from "./pareto";
 import * as pieExamples from "./pie";
 import * as radarExamples from "./radar";
+import * as sankeyExamples from "./sankey";
 import * as scatterExamples from "./scatter";
 import * as sparklineExamples from "./sparkline";
 import * as statExamples from "./stat";
@@ -54,6 +55,7 @@ export const exampleModules: Record<string, unknown>[] = [
   paretoExamples,
   pieExamples,
   radarExamples,
+  sankeyExamples,
   scatterExamples,
   sparklineExamples,
   statExamples,

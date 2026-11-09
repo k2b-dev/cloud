@@ -156,6 +156,14 @@ type Variants<N> =
       locale?: string;
     }
   | {
+      kind: "sankey";
+      nodes: { id: string; label: string; tone?: "in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax" }[];
+      links: { source: string; target: string; value: number }[];
+      legend?: { tone: "in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax"; label: string }[];
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
       kind: "bubble";
       groups: string[];
       data: { label: string; group: string; x: number; y: number; size?: number }[];

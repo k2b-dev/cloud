@@ -1,5 +1,5 @@
 import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
-import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled, nestedDotOptions } from "@k2b/ui/charts/core";
+import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled, nestedDotOptions, sankeyGraph } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { chartLocaleSchema } from "./chart-locale";
 
@@ -51,6 +51,7 @@ export const chartKindSchema = () =>
     "pareto",
     "bubble",
     "radar",
+    "sankey",
   ]);
 
 export const chartParts = (limits?: ChartLimits) => {
@@ -528,6 +529,35 @@ export const chartKinds = (limits?: ChartLimits) => {
       .superRefine((spec, ctx) => {
         if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
           ctx.addIssue({ code: "custom", message: "Pareto total must be finite." });
+      }),
+    z
+      .object({
+        kind: z.literal("sankey"),
+        ...ChartKindCommon,
+        nodes: list(
+          z.object({
+            id: z.string().min(1),
+            label: ChartLabel,
+            tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        links: list(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }), 1, limits?.maxMarks),
+        legend: list(
+          z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }),
+          0,
+          limits?.maxSeries,
+        ).optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        try {
+          sankeyGraph(spec);
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid Sankey graph." });
+        }
       }),
     z
       .object({

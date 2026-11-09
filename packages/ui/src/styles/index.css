@@ -413,7 +413,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Layers and shadows: one model for every app.
    0 the workspace: the app card and its columns, flat.
    1 islands in the main content: Paper, a framed Section, LinkCard,
-     ResourceCard, DashboardFrame. They read `--k2b-island-shadow` and
+     ResourceCard, DashboardFrame, DashboardPanel, StatCell. They read `--k2b-island-shadow` and
      `--k2b-island-surface` and never pick a shadow themselves.
    2 overlaying surfaces: drawer, sheet, PanelDialog (`--k2b-shadow-side`, `-sheet`).
    3 floating surfaces: menu, popover, dialog, toast, drag preview
@@ -17211,6 +17211,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
   flex-shrink: 0;
 }
+/* `edge="top"`: the strip sticks to the top of its column instead, in its
+   place in the flow, such as above the newest message of a conversation. */
+.k2b-ui .k2b-toolbar-float[data-edge="top"] {
+  inset-block: 0 auto;
+  margin-block-start: 0;
+}
 /* ToolbarDock: one floating row for several pills, the first at the start
    edge and the last at the end edge. The row keeps its place in the flow, so
    the end of the content always stays reachable above it. */
@@ -17273,6 +17279,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
   height: 1.5rem;
+}
+/* An action with `text` shows its label beside the icon while there is room;
+   a compact toolbar keeps only the icon, at the same height. */
+.k2b-ui .k2b-toolbar .k2b-toolbar__action[data-text] {
+  width: auto;
+  gap: 0.375rem;
+  padding-inline: 0.75rem;
+}
+.k2b-ui .k2b-toolbar .k2b-toolbar__text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__action[data-text] {
+  padding-inline: 0;
+}
+.k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__text {
+  display: none;
 }
 /* A toolbar at a text selection (SelectionToolbar): in the top layer, so no scroll container clips it. */
 .k2b-ui .k2b-selection-toolbar {
@@ -18650,6 +18674,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }
 
+/* Flow geometry keeps readable stage labels on a narrow host; sources are visible first. */
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] { overflow-x: auto; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] > .k2b-chart__svg { min-width: 620px; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-inspected] > .k2b-chart-sankey-link,
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-selected] > .k2b-chart-sankey-link { fill-opacity: 0.6; stroke: none !important; }
 /* New distribution marks keep the selected state stronger than calm hover. */
 .k2b-ui .k2b-chart:is([data-chart-kind="bubble"],[data-chart-kind="radar"]) [data-selected] > circle { stroke-width: 3px !important; }
 .k2b-ui .k2b-chart[data-chart-kind="radar"] [data-inspected] > .k2b-chart-radar-axis { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px !important; }

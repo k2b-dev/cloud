@@ -414,4 +414,24 @@ export const chartCatalog = [
       ],
     },
   },
+  {
+    name: "sankey",
+    useFor: "Converging and diverging flows with a common unit.",
+    avoidFor: "Cycles or unrelated measures; use bars for unrelated categories.",
+    example: {
+      kind: "sankey",
+      title: "Paths after the click",
+      nodes: [
+        { id: "click", label: "Clicked", tone: "blue" },
+        { id: "article", label: "Article", tone: "green" },
+        { id: "offer", label: "Offer", tone: "violet" },
+        { id: "signup", label: "Signed up", tone: "in" },
+      ],
+      links: [
+        { source: "click", target: "article", value: 520 },
+        { source: "click", target: "offer", value: 280 },
+        { source: "article", target: "signup", value: 140 },
+      ],
+    },
+  },
 ] as const;

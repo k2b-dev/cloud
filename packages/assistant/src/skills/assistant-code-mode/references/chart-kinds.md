@@ -370,3 +370,17 @@ Avoid for: Combining unrelated units or independently scaled axes.
 ```json
 {"kind":"radar","title":"Plan scores","axes":["Quality","Speed","Cost"],"max":5,"unit":"points","series":[{"label":"Plan A","data":[4,3,2]},{"label":"Plan B","data":[2,4,4]}]}
 ```
+
+## sankey
+
+Use for: Converging and diverging flows with a common unit.
+
+Avoid for: Cycles or unrelated measures; use bars for unrelated categories.
+
+- `nodes` ({id,label,tone?}[]): Unique ids; tone colors outgoing flows. Each node shows the larger of incoming and outgoing totals, keeping imbalances visible.
+- `links` ({source,target,value}[]): Positive values and existing endpoints; no cycles.
+- `legend` ({tone,label}[]): Explicit color meanings; wraps within the plot width.
+
+```json
+{"kind":"sankey","title":"Paths after the click","nodes":[{"id":"click","label":"Clicked","tone":"blue"},{"id":"article","label":"Article","tone":"green"},{"id":"offer","label":"Offer","tone":"violet"},{"id":"signup","label":"Signed up","tone":"in"}],"links":[{"source":"click","target":"article","value":520},{"source":"click","target":"offer","value":280},{"source":"article","target":"signup","value":140}]}
+```

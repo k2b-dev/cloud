@@ -61,6 +61,8 @@ export const renderChartSvg = (
         ? chartRenderers.treemap({ ...props, width, height, inspect: true })
         : chartRenderers.pareto({ ...props, width, height, inspect: true }),
     );
+
+  if (props.kind === "sankey") return responsiveChartSvg(chartRenderers.sankey({ ...props, width, height, inspect: true }));
   if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,

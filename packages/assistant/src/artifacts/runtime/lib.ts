@@ -25,6 +25,8 @@ import {
   lineDetailsEnabled,
   pie,
   renderBarBaseSvg,
+  sankeyFrame,
+  sankeyWidth,
   seriesBarLayout,
   sparkline,
   stat,
@@ -254,13 +256,24 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const { svg, table } = drawChart(prepared, locale, width, height);
   if (svg === undefined && !deferChartDrawing) throw new CloudError("invalid", "cloud.chart: The chart renderer returned no SVG.");
   // Bar rows take the height their labels need; the box reserves it.
+  const sankey = input.kind === "sankey";
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
   // CSS fits identical geometry before and after the lazy renderer arrives.
   const calendarSize = calendar ? pendingCalendarSize(prepared, locale, width, height) : undefined;
   const drawnHeight =
-    calendarSize?.height ??
-    (Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height));
-  const calendarWidth = calendarSize?.width ?? width;
+    input.kind === "sankey"
+      ? sankeyFrame({
+          nodes: input.nodes,
+          links: input.links,
+          legend: input.legend,
+          width,
+          height,
+          title: prepared.title,
+          subtitle: input.subtitle,
+        }).height
+      : (calendarSize?.height ??
+        (Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height)));
+  const calendarWidth = input.kind === "sankey" ? sankeyWidth(input, width) : (calendarSize?.width ?? width);
   const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = prepared.title ?? "";
   const subtitle = input.subtitle ?? "";
@@ -284,7 +297,7 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;display:flex;flex-direction:row-reverse;align-items:flex-start"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;flex:0 0 100%;margin-right:auto;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;display:flex;flex-direction:row-reverse;align-items:flex-start"' : sankey ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;flex:0 0 100%;margin-right:auto;` : sankey ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
 }
 
@@ -302,6 +315,11 @@ export function pendingChartHeight(prepared: StoredChart, locale: string, width:
   return mapped.kind === "hbar"
     ? hbarLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, { width, height }).height
     : height;
+}
+
+/** Reserve Sankey scrolling geometry before its renderer arrives. */
+export function pendingChartWidth(prepared: StoredChart, width: number): number {
+  return prepared.input.kind === "sankey" ? sankeyWidth(prepared.input, width) : width;
 }
 
 /** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
