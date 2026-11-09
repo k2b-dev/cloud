@@ -122,7 +122,7 @@ A shared draft allows one active editor. When the information is available, the 
 - If Mail reports recovery copies, check them before you discard or overwrite content.
 - If the browser reloads after unsaved typing, accept the restored browser recovery when it matches your work.
 
-Starting another reply does not hide existing work. The **Continue a draft?** dialog shows the author, the update time, and a content preview. You can continue the right draft or create another one on purpose.
+Starting another reply does not hide existing work. The conversation shows every draft with its author, update time, and a content preview, and **Reply** opens the existing reply draft instead of a second one.
 
 ## A sent message is missing from Sent {icon="send"}
 

@@ -525,9 +525,36 @@ stays in place. If your Cloud sign-in expires, the composer keeps your text and
 shows **Sign in again**. That action returns to the same draft after sign-in
 and restores unsaved changes kept in this browser.
 
+## Write in the conversation
+
+Replies, forwards, and new messages are written in the conversation, not on a
+separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
+above the newest message grow into the draft at that place; on a phone the bar
+waits at the bottom and the draft opens at the top over the full width. Mail
+creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
+An existing draft with the same purpose opens instead of a second one, and the
+conversation lists its other drafts as rows. **Compose** puts **New message**
+at the top of the list with an empty conversation beside it.
+
+- The URL carries the open draft as `?draft=`, so reload and Back open it
+  again. Old `/compose/:draftId` links open the conversation with the draft;
+  `?window=1` and drafts with an open approval keep the compose page.
+- Opening another conversation saves typing the autosave has not sent yet
+  before Mail releases the editing lease.
+- **Full screen** moves the list and details aside and is remembered per
+  browser; from 1500 px of reader width, the history stands beside the draft.
+- **Preview** shows the mail as it arrives, with the mailbox's design; the
+  editor keeps Cloud's calm style.
+- A reply offers **Attach quote** for its source message. The draft stores
+  `quoteSource: { locale, timeZone }`, and the quote goes out after the
+  signature with that person's date format.
+- A Gustav suggestion (`suggestion: true`) opens in plum until someone edits it.
+
 ## Write signatures and snippets
 
-The composer shows **Signature** below your text when a signature is available.
+The draft shows the chosen signature as a fixed block after your text, exactly
+as Mail inserts it at send (`POST /mailboxes/:id/compose-signature`). The
+signature button in the draft's tools switches it.
 New messages, replies, and forwards start with the sender's default; a personal
 default takes precedence over the mailbox default. Choose another signature or
 **No signature**. Switching the sender switches to that sender's default.

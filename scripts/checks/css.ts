@@ -252,6 +252,7 @@ export const rule: Rule = {
       "--k2b-choice-min-width", // inputs/choice.ts: the trigger width, or the widest the open popover was
       "--mail-row-height", // MailConversationRow.tsx: measured height of a leaving row
       "--mail-tag", // MailConversationRow.tsx: the color of each tag chip
+      "--mail-peer-color", // MailComposer.tsx: the caret colour of a person writing along in a shared draft
       "--mail-time-samples", // MailConversationList.tsx: the longest localized times that size the columns view's time column
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks

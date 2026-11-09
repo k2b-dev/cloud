@@ -9,13 +9,23 @@ order: 30
 
 ## Eine Nachricht beginnen {icon="square-plus"}
 
-Wähle **Verfassen** für eine neue Nachricht. Wähle in einer Unterhaltung **Antworten**, **Allen antworten**, **Weiterleiten** oder **Auswahl zitieren**. Mail erstellt zuerst einen gemeinsamen Entwurf und öffnet dann die Seite des Editors. Mail behält den Zweck des Entwurfs bei, deshalb heißt die letzte Aktionsschaltfläche **Senden**, **Antworten**, **Allen antworten** oder **Weiterleiten**.
+Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste über der neuesten Nachricht, oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, über der neuesten Nachricht, und die Schreibmarke steht im Text. Am Telefon wartet die Leiste unten, und der Entwurf öffnet oben über die volle Breite. Mail legt den gemeinsamen Entwurf an, bevor du tippst. So liegt nichts nur in deinem Browser.
+
+Wähle **Verfassen** für eine neue Nachricht. Sie steht als **Neue Nachricht** oben in der Liste, und rechts steht eine leere Unterhaltung mit dem Entwurf. Nach dem Senden wird daraus eine Unterhaltung.
+
+Der Kopf des Entwurfs zeigt die Empfänger, **Cc, Bcc**, **…**, **Vollbild** und **Einklappen (Esc)**. Eine leise Zeile darunter zeigt Absender und Betreff. Esc verlässt zuerst das Vollbild und klappt dann den Entwurf ein. Ein gerade begonnener Entwurf ohne Änderung verschwindet beim Einklappen; jeder andere Entwurf wird gespeichert und bleibt in der Unterhaltung.
+
+- **Platz:** Der Entwurf nimmt etwa 60 Prozent der Höhe des Lesebereichs ein und wächst mit deinem Text. **Vollbild** schiebt Liste und Details zur Seite; Mail merkt sich diese Wahl in diesem Browser. Auf einem breiten Bildschirm steht der Verlauf neben dem Entwurf.
+- **Signatur:** Die gewählte Signatur folgt dem Text als fester Block, genau so, wie Mail sie beim Senden einfügt. Wechsle sie mit der Signatur-Schaltfläche in den Werkzeugen des Entwurfs.
+- **Zitat:** Eine Antwort bietet **Zitat anhängen** für die Nachricht an, auf die sie antwortet. Das Zitat ist im Entwurf eingeklappt und geht nach der Signatur mit, mit Datum in deiner Sprache und Zeitzone.
+- **Vorschau:** zeigt die Mail genau so, wie sie ankommt, mit dem Design des Postfachs. Der Editor selbst bleibt im ruhigen Cloud-Stil.
+- **Eigenes Fenster:** **…** › **In eigenem Fenster** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf. Alte Links auf die Seite des Editors öffnen die Unterhaltung mit offenem Entwurf.
 
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
 
 Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte aus dem Kontaktverzeichnis vor. Danach folgen Adressen, an die dieses Postfach geschrieben oder von denen es E-Mails erhalten hat. Diese Vorschläge funktionieren auch ohne die Contacts-App. Ein Briefsymbol kennzeichnet sie. Mit den Pfeiltasten markierst du einen Vorschlag, mit der Eingabetaste fügst du ihn hinzu. Wer nur zugewiesene Unterhaltungen sieht, bekommt keine Vorschläge aus dem Postfach.
 
-Der Editor ist vom Arbeitsbereich des Postfachs getrennt. **Zurück zum Postfach** speichert die letzten Änderungen, gibt die Bearbeitungssperre frei und kehrt zum Postfach zurück. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf.
+Öffnest du mit offenem Entwurf eine andere Unterhaltung oder ein anderes Postfach, speichert Mail die letzten Änderungen, bevor es die Bearbeitungssperre freigibt. Zurück und Neuladen öffnen die Unterhaltung wieder mit offenem Entwurf.
 
 ## Den Entwurf mit Assistant fortsetzen {icon="sparkles"}
 
@@ -70,7 +80,9 @@ Dein Standardformat steht unter **… → Einstellungen → Schreiben → Format
 
 ## Einen vorhandenen Entwurf einer Unterhaltung fortsetzen {icon="pencil"}
 
-Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Hat eine Unterhaltung schon Entwürfe, öffnen **Antworten**, **Allen antworten** oder **Weiterleiten** den Dialog **Entwurf fortsetzen?**. Der Dialog zeigt, wer jeden Entwurf erstellt hat, wann er sich geändert hat, und eine Vorschau des Inhalts. Setze den passenden Entwurf fort oder erstelle eine separate Nachricht.
+Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Eine Unterhaltung zeigt ihre Entwürfe: den offenen an der Stelle der Leiste, jeden weiteren als Zeile mit Autor, Änderungszeit und Vorschau. Wähle eine Zeile, um den Entwurf an Ort und Stelle zu öffnen. **Antworten**, **Allen** oder **Weiterleiten** öffnen einen vorhandenen Entwurf mit demselben Zweck, statt einen zweiten zu beginnen. In der Liste zeigt eine Unterhaltung mit Entwürfen **Entwurf** oder die Anzahl der Entwürfe mit den Personen, die daran schreiben.
+
+Ein Vorschlag von Gustav ist ein echter Entwurf, der schon offen in der Unterhaltung steht, in Pflaume, mit **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und Gustav ersetzt ihn nie.
 
 Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt Mail im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
 
