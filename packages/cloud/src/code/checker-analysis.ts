@@ -182,6 +182,20 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const property = checker.getPropertyOfType(checker.getTypeAtLocation(node.expression), names[0]!);
     return !!property?.declarations?.length && property.declarations.every((declaration) => declaration.getSourceFile() === sdkSource);
   };
+  // Keep reference admission shared by methods and callable namespace nodes.
+  // JSX tags are allowed for SDK methods; namespaces retain their stricter use rules.
+  function isAllowedSdkReference(node: ts.Expression, allowJsx = false): boolean {
+    let wrapped = node;
+    while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
+    const use = wrapped.parent;
+    return (
+      sdkMemberAccess(use, wrapped) ||
+      (ts.isCallExpression(use) && use.expression === wrapped) ||
+      (allowJsx &&
+        (ts.isJsxOpeningElement(node.parent) || ts.isJsxSelfClosingElement(node.parent) || ts.isJsxClosingElement(node.parent)) &&
+        node.parent.tagName === node)
+    );
+  }
   const sdkHandle = (type: ts.Type) =>
     type
       .getProperties()
@@ -263,7 +277,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       const declaration = checker.getResolvedSignature(wrapped)?.declaration;
       if (declaration && factoryDeclarations.has(declaration)) return;
     }
-    if (sdkMemberAccess(use, wrapped) || (ts.isCallExpression(use) && use.expression === wrapped) || sdkRefArgument(wrapped)) return;
+    if (isAllowedSdkReference(wrapped) || sdkRefArgument(wrapped)) return;
     if (
       ts.isVariableDeclaration(use) &&
       use.initializer === wrapped &&
@@ -440,16 +454,9 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     }
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const signatures = checker.getTypeAtLocation(node).getCallSignatures();
-      let wrapped: ts.Expression = node;
-      while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
       if (
         signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts" && !factoryDeclarations.has(s.declaration)) &&
-        !sdkMemberAccess(wrapped.parent, wrapped) &&
-        !(ts.isCallExpression(wrapped.parent) && wrapped.parent.expression === wrapped) &&
-        !(
-          (ts.isJsxOpeningElement(node.parent) || ts.isJsxSelfClosingElement(node.parent) || ts.isJsxClosingElement(node.parent)) &&
-          node.parent.tagName === node
-        )
+        !isAllowedSdkReference(node, true)
       )
         report(node, "code_detached_sdk_method", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
     }
