@@ -745,7 +745,7 @@ jobs:
           target: test
           tags: cloud-runner:ci
           cache-from: type=gha,scope=ci-runner
-          cache-to: type=gha,mode=max,scope=ci-runner
+          cache-to: type=gha,mode=max,scope=ci-runner,ignore-error=true
       - name: Exercise the compiled runner under its container restrictions
         run: |
           sudo apparmor_parser -r packages/runner/apparmor.profile
