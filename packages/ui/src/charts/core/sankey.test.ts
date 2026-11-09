@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { chartRenderHeight } from "./render-size";
 import { renderSankeySvg, sankeyFrame, sankeyGraph, sankeyLayout } from "./sankey";
 
 const spec = {
@@ -113,6 +114,7 @@ test("eager sizing matches renderer geometry for dense and stage-skipping flows"
     for (const width of [390, 900]) {
       const size = { width, height: 280 };
       expect(sankeyFrame(dense, size).height).toBe(sankeyLayout(dense, size).height);
+      expect(chartRenderHeight({ ...dense, kind: "sankey" })).toBe(sankeyLayout(dense).height);
       expect(sankeyFrame(dense, size).width).toBe(sankeyLayout(dense, size).width);
     }
   }

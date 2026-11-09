@@ -1,17 +1,6 @@
-import {
-  Chart,
-  ChartExplorer,
-  type ChartExplorerColumn,
-  type ChartLegendEntry,
-  type ChartSnapshot,
-  createChartCursor,
-  prepareChartSnapshot,
-  useLocale,
-} from "@k2b/ui";
+import { Chart, createChartCursor, prepareChartSnapshot, useLocale } from "@k2b/ui";
 import { createMemo, createUniqueId, Index, type JSX, Show } from "solid-js";
 import {
-  type CloudAiChartRow,
-  type CloudAiChartTable,
   cloudAiChartLegend,
   cloudAiChartMarkKey,
   cloudAiChartReferenceMark,
@@ -21,11 +10,26 @@ import {
   cloudAiChartXValueFormat,
 } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
-import { type CloudAiGroupView, parseCloudAiChartToolView } from "../view-block";
+import { type CloudGroupDescription, parseCloudAiChartToolView } from "../view-block";
+import { type DrawnChart, type GroupSummary, ChartFrame as SharedChartFrame } from "./chart-frame";
 import { aiChatMessages } from "./messages";
 
 type Kind = CloudAiChartInput["kind"];
-type DrawnChart = { input: CloudAiChartInput; table: CloudAiChartTable; snapshot: ChartSnapshot; legend: ChartLegendEntry[] };
+
+// This module is the lazy Chat drawing boundary; the shared placeholder never imports a renderer.
+function ChartFrame(props: Parameters<typeof SharedChartFrame>[0]) {
+  const locale = useLocale();
+  const balance = createMemo(() => {
+    if (props.chart?.input.kind !== "balanceFlow") return undefined;
+    const drawing = cloudAiChartRenderOptions(props.chart.input, locale());
+    return drawing.kind === "balanceFlow" ? drawing : undefined;
+  });
+  return (
+    <Show when={balance()} fallback={<SharedChartFrame {...props} />}>
+      {(drawing) => <Chart {...drawing()} title={props.title} subtitle={props.subtitle} />}
+    </Show>
+  );
+}
 
 /** Draws a chart for display and fills its table from that drawing; null when nothing can be drawn. */
 const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null => {
@@ -36,101 +40,16 @@ const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null 
       key: ({ datum }) => cloudAiChartMarkKey(datum),
       tooltip: ({ datum }) => {
         const row = rows.add(datum);
-        return cloudAiChartTooltip(rows.columns(), row, input.kind);
+        return cloudAiChartTooltip(rows.columns(), row, input);
       },
       reference: ({ datum }) => cloudAiChartReferenceMark(input, datum),
     });
-    return snapshot.marks.length > 0 ? { input, table: rows.table(), snapshot, legend: cloudAiChartLegend(input, locale) } : null;
+    return snapshot.marks.length > 0 || input.kind === "balanceFlow"
+      ? { input, table: rows.table(), snapshot, legend: cloudAiChartLegend(input, locale) }
+      : null;
   } catch {
     return null;
   }
-};
-
-/**
- * Single values and trends need less room than a plot with axes. Bar gauges hold at most eight 28-unit rows of the
- * 280-unit drawing; at 12rem a row is still taller than its text.
- */
-const chartHeight = (kind: Kind) => (kind === "sparkline" ? "8rem" : kind === "stat" ? "10rem" : kind === "barGauge" ? "12rem" : "18rem");
-/** A drawing taller than the usual 280 units, such as many bar rows, grows its frame up to 40rem and scrolls inside. */
-const grownHeight = (kind: Kind, chart: DrawnChart | null) =>
-  chart && chart.snapshot.height > 280 ? `min(40rem, max(${chartHeight(kind)}, ${chart.snapshot.height}px))` : chartHeight(kind);
-
-function ChartFrame(props: {
-  title: string;
-  subtitle?: string;
-  kind: Kind;
-  chart: DrawnChart | null;
-  empty?: JSX.Element;
-  cursor?: ReturnType<typeof createChartCursor>;
-  /** A chart of a titled group: its title sits one heading level and one size below the group's. */
-  nested?: boolean;
-  /**
-   * The frame takes the drawing's height (`grownHeight`). Only for a drawing present with the first frame: a frame
-   * that waits for its data keeps the kind's height, so the data never moves the chat.
-   */
-  grow?: boolean;
-}) {
-  const locale = useLocale();
-  const columns = () =>
-    props.chart
-      ? props.chart.table.columns.map(
-          (column): ChartExplorerColumn<CloudAiChartRow> => ({
-            id: column.id,
-            label: column.label,
-            value: (row) => row.cells[column.id] ?? "",
-            sortValue: (row) => row.values[column.id] ?? null,
-            align: column.numeric ? "right" : "left",
-          }),
-        )
-      : // A frame without a drawing keeps the explorer's header and height; its one column is never shown.
-        [{ id: "value", label: aiChatMessages(locale()).chartUnavailable, value: () => "" }];
-  const balanceDrawing = createMemo(() => {
-    const input = props.chart?.input;
-    if (input?.kind !== "balanceFlow") return undefined;
-    const drawing = cloudAiChartRenderOptions(input, locale());
-    return drawing.kind === "balanceFlow" ? drawing : undefined;
-  });
-  return (
-    <Show
-      when={balanceDrawing()}
-      fallback={
-        <ChartExplorer
-          title={props.title}
-          headingLevel={props.nested ? 4 : 3}
-          description={props.subtitle ? <span class="text-sm text-secondary">{props.subtitle}</span> : undefined}
-          height={props.grow ? grownHeight(props.kind, props.chart) : chartHeight(props.kind)}
-          data={
-            props.chart ? { chart: props.chart.snapshot, rows: props.chart.table.rows } : { chart: emptySnapshot(props.kind), rows: [] }
-          }
-          columns={columns()}
-          legend={props.chart?.legend.length ? props.chart.legend : undefined}
-          cursor={props.cursor}
-          empty={props.empty}
-          renderDetails={false}
-          class={props.nested ? "[&_h4]:text-sm!" : undefined}
-        />
-      }
-    >
-      {(drawing) => <Chart {...drawing()} title={props.title} subtitle={props.subtitle} />}
-    </Show>
-  );
-}
-
-const emptySnapshot = (kind: Kind): ChartSnapshot => ({
-  kind,
-  svg: "",
-  width: 480,
-  height: 280,
-  stretch: true,
-  marks: [],
-});
-
-type GroupSummary = {
-  title: string;
-  subtitle?: string;
-  linkX: boolean;
-  layout: "stack" | "grid";
-  charts: { kind: Kind; title: string; subtitle?: string }[];
 };
 
 /**
@@ -139,7 +58,7 @@ type GroupSummary = {
  * cannot be drawn alone shows unavailable in its own frame. With `linkX`, one cursor follows the pointer or a tap
  * across every chart. A grid puts two charts side by side once the chat column has room for both.
  */
-function ChartGroupFrame(props: { summary: GroupSummary; group: CloudAiGroupView | null | undefined; empty?: JSX.Element }) {
+function ChartGroupFrame(props: { summary: GroupSummary; group: CloudGroupDescription | null | undefined; empty?: JSX.Element }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const id = `cloud-chart-group-${createUniqueId()}`;
@@ -180,7 +99,7 @@ function ChartGroupFrame(props: { summary: GroupSummary; group: CloudAiGroupView
   );
 }
 
-const groupSummary = (group: CloudAiGroupView): GroupSummary => ({
+const groupSummary = (group: CloudGroupDescription): GroupSummary => ({
   title: group.title,
   subtitle: group.subtitle,
   linkX: group.linkX ?? false,
@@ -204,11 +123,15 @@ export function CloudChartBlock(props: { args: unknown; completed: boolean }) {
   // filled from that drawing.
   const chart = createMemo(() => {
     const value = view();
-    return value?.view === "chart" ? drawChart(value, locale()) : null;
+    if (value?.view !== "chart") return null;
+    const { view: _view, ...description } = value;
+    return drawChart(description, locale());
   });
   const group = createMemo(() => {
     const value = view();
-    return value?.view === "group" ? value : undefined;
+    if (value?.view !== "group") return undefined;
+    const { view: _view, ...description } = value;
+    return { block: "group" as const, ...description };
   });
   return (
     <Show
@@ -256,7 +179,7 @@ export function CloudChartView(props: {
 }
 
 /** A group view file, sized by its `present` summary like a chart view. */
-export function CloudChartGroupView(props: { summary: GroupSummary; group: CloudAiGroupView | null | undefined }) {
+export function CloudChartGroupView(props: { summary: GroupSummary; group: CloudGroupDescription | null | undefined }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   return (

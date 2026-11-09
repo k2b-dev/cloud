@@ -92,6 +92,8 @@ export type AiModelProfile = {
   contextWindow?: number;
   temperature?: number;
   maxOutputTokens?: number;
+  /** Provider-reported maximum completion size; a bound for the automatic reasoning budget. */
+  outputTokenLimit?: number;
   reasoningEffort?: string;
   extraBody?: Record<string, unknown>;
   /** Maximum deferred tools retained per conversation. Missing or <= 0 keeps all loaded tools. */
@@ -277,6 +279,8 @@ export type AiConversationProjectUpdateResult =
   | { ok: false; reason: "not_found" | "active_turn" | "already_assigned" };
 
 export type AiStoredMessage = {
+  /** Personal composer hint, projected only for the person who triggered the latest completed answer. */
+  suggestedNextMessage?: { text: string; dismissedAt: string | null };
   id: string;
   shortId: string;
   conversationId: string;

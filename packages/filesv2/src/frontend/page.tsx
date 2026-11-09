@@ -12,6 +12,7 @@ import { readConfiguration } from "../service/configuration";
 import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
+import { directoryPageCount, directoryPages } from "./directory-pages";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
 import { searchRequest, searchState } from "./search-state";
@@ -44,6 +45,12 @@ export default ssr<AuthContext>(async (c) => {
   // A search orders and filters itself; only a folder reads the browse options.
   const query = (search ? BrowseQuerySchema.pick({ path: true, after: true }) : BrowseQuerySchema).safeParse(c.req.query());
   if (!query.success) return ssr.error(c, 400);
+  let pages: number;
+  try {
+    pages = directoryPageCount(new URL(c.req.url).searchParams);
+  } catch {
+    return ssr.error(c, 400);
+  }
   const requestedFile = c.req.query("file");
   const searchQuery = search ? SearchQuerySchema.safeParse({ ...searchRequest(search), ...query.data }) : null;
   if (searchQuery && !searchQuery.success) return ssr.error(c, 400);
@@ -62,6 +69,7 @@ export default ssr<AuthContext>(async (c) => {
       : filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, browse),
     "https://files.invalid",
   );
+  if (pages > 1) source.searchParams.set("pages", String(pages));
   if (view === "trash" || view === "shares" || view === "recent" || view === "favorites" || editView) source.searchParams.set("view", view);
   if (c.req.query("refreshed") === "true") source.searchParams.set("refreshed", "true");
   const timeZone = getTimeZone(c);
@@ -107,18 +115,23 @@ export default ssr<AuthContext>(async (c) => {
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
-      initial.directory = searchQuery?.success
-        ? await searchPage(c, requestCall(c), selected, searchQuery.data)
-        : await filesService.list(requestCall(c), { baseId: selected.id, ...query.data, ...browse }).catch(async (error: unknown) => {
-            // An old folder address: the history may know where the folder went. Without visible history it stays 404.
-            const missing =
-              (error instanceof FilesError && error.code === "not_found") || (error instanceof FilegateError && error.status === 404);
-            if (!missing || !query.data.path || query.data.after) throw error;
-            initial.moved = await movedLookup(c, selected.id, query.data.path);
-            if (!initial.moved) throw error;
-            c.status(404);
-            return null;
-          });
+      initial.directory = await directoryPages(
+        pages,
+        query.data.after,
+        (after) =>
+          searchQuery?.success
+            ? searchPage(c, requestCall(c), selected, { ...searchQuery.data, after })
+            : filesService.list(requestCall(c), { baseId: selected.id, ...query.data, ...browse, after }),
+        AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_SECONDS * 1000)]),
+      ).catch(async (error: unknown) => {
+        const missing =
+          (error instanceof FilesError && error.code === "not_found") || (error instanceof FilegateError && error.status === 404);
+        if (!missing || !query.data.path || query.data.after) throw error;
+        initial.moved = await movedLookup(c, selected.id, query.data.path);
+        if (!initial.moved) throw error;
+        c.status(404);
+        return null;
+      });
       if (requestedFile && initial.directory) {
         // Detail failures belong to the inspector, not the surrounding directory.
         initial.detail = await filesService.entry(requestCall(c), { baseId: selected.id, path: requestedFile }).catch(() => null);
@@ -135,8 +148,13 @@ export default ssr<AuthContext>(async (c) => {
       }
     }
   } catch (error) {
-    if ((error instanceof FilesError || error instanceof FilegateError) && error.code === "cursor_invalid" && query.data.after) {
+    if (
+      (error instanceof FilesError || error instanceof FilegateError) &&
+      error.code === "cursor_invalid" &&
+      (query.data.after || pages > 1)
+    ) {
       source.searchParams.delete("after");
+      source.searchParams.delete("pages");
       source.searchParams.set("refreshed", "true");
       return c.redirect(`${source.pathname}${source.search}`);
     }

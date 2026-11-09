@@ -20,8 +20,8 @@ export type {
 export { ColorInput, PinInput, Slider } from "./ChoiceInputs";
 export type { ChoiceListOption, ChoiceListProps } from "./ChoiceList";
 export { ChoiceList } from "./ChoiceList";
-export type { ChoiceSliderOption, ChoiceSliderProps } from "./ChoiceSlider";
-export { ChoiceSlider } from "./ChoiceSlider";
+export type { ChoiceSliderIndicatorProps, ChoiceSliderOption, ChoiceSliderProps } from "./ChoiceSlider";
+export { ChoiceSlider, ChoiceSliderIndicator } from "./ChoiceSlider";
 export type { ChoiceTileOption, ChoiceTilesProps } from "./ChoiceTiles";
 export { ChoiceTiles } from "./ChoiceTiles";
 export type { ColorChoiceOption, ColorChoicesProps } from "./ColorChoices";
@@ -68,7 +68,9 @@ export type { FileDropDetails, FileDropOptions, FileDropRejection, FileDropTarge
 export { FileDropTarget, fileDropTarget } from "./FileDropTarget";
 export type { FileDropzoneProps, ImageCropperProps, ImageInputProps } from "./FileInputs";
 export { FileDropzone, ImageCropper, ImageInput } from "./FileInputs";
-export type { DateContext, FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
+export type { DateContext, FieldProps, FieldSuggestion, FieldSuggestionProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
+export type { SuggestionGroupProps } from "./field-suggestion";
+export { SuggestionGroup } from "./field-suggestion";
 export type { IconChoiceOption, IconChoicesProps } from "./IconChoices";
 export { IconChoices } from "./IconChoices";
 export { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
@@ -99,8 +101,26 @@ export type {
 export { MultiSelectInput } from "./MultiSelectInput";
 export type { MarkdownEditorProps } from "./markdown/MarkdownEditor";
 export { MarkdownEditor } from "./markdown/MarkdownEditor";
+export type { MarkdownSelectionToolbarProps } from "./markdown/MarkdownSelectionToolbar";
+export { MarkdownSelectionToolbar } from "./markdown/MarkdownSelectionToolbar";
+export type { SlashCommandsProps } from "./markdown/SlashCommands";
+export { SlashCommands } from "./markdown/SlashCommands";
 export type { NumberInputProps } from "./NumberInput";
 export { NumberInput } from "./NumberInput";
+export type { PeriodPickerProps } from "./PeriodPicker";
+export { PeriodPicker } from "./PeriodPicker";
+export type { PeriodClock, PeriodContext, PeriodPreset, PeriodRange, PeriodValue } from "./period";
+export {
+  formatPeriodDays,
+  formatPeriodRange,
+  isPeriodDay,
+  parsePeriodValue,
+  periodContext,
+  periodDayCount,
+  periodInstants,
+  periodPresets,
+  resolvePeriod,
+} from "./period";
 export type { QrScannerError, QrScannerProps } from "./QrScanner";
 export { QrScanner } from "./QrScanner";
 export type {

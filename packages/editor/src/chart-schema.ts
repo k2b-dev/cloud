@@ -1,12 +1,17 @@
+import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
+import {
+  BalanceFlowError,
+  CALENDAR_MAX_DAYS,
+  calendarDay,
+  lineDetailsEnabled,
+  sankeyGraph,
+  validateBalanceFlow,
+} from "@k2b/ui/charts/core";
+import { z } from "zod";
 import { chartLocaleSchema } from "./chart-locale";
 
+export type { ChartDateFormat, ChartDescription, ChartFormat, ChartInput, ChartLimits, ChartNumberFormat } from "@k2b/ui/charts";
 export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
-
-import { BalanceFlowError, CALENDAR_MAX_DAYS, calendarDay, sankeyGraph, validateBalanceFlow } from "@k2b/ui/charts/core";
-import { z } from "zod";
-
-/** Optional caller policy. Rendering itself has no AI input budget. */
-export type ChartLimits = { maxSeries: number; maxValues: number; maxMarks: number };
 
 // Every chart schema is built by a function whose call is marked pure, so a bundle that imports neither chart contract
 // leaves them out. App frames include the app contract through `cloud.chart()`.
@@ -31,14 +36,13 @@ export const chartNumberFormatSchema = () =>
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
 
-export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
-export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
-
 export const chartKindSchema = () =>
   z.enum([
+    "waterfall",
     "area",
     "bar",
+    "hbar",
+    "funnel",
     "line",
     "scatter",
     "pie",
@@ -50,6 +54,10 @@ export const chartKindSchema = () =>
     "heatmap",
     "barGauge",
     "stat",
+    "treemap",
+    "pareto",
+    "bubble",
+    "radar",
     "sankey",
     "balanceFlow",
   ]);
@@ -102,6 +110,7 @@ export const chartParts = (limits?: ChartLimits) => {
   );
   return {
     ChartLabel,
+    ChartCoordinate: z.union([z.number(), ChartDate]),
     ChartTooltip,
     ChartNumber,
     list,
@@ -116,13 +125,26 @@ export const chartParts = (limits?: ChartLimits) => {
     }),
     ChartCategory: z.object({ label: ChartLabel, value: ChartNumber }),
     ChartSlice: z.object({ label: ChartLabel, value: limits ? z.number().min(0) : ChartNumber }),
-    ChartSeries: (points: z.ZodArray<typeof ChartPoint>) =>
+    ChartSeries: <T extends z.ZodType>(points: z.ZodArray<T>) =>
       z.object({
         label: ChartLabel.optional(),
         data: points,
         role: z.literal("reference").optional(),
       }),
     ChartPoints: list(ChartPoint, 0, limits?.maxValues),
+    ChartLinePoints: list(
+      ChartPoint.extend({
+        y: (limits
+          ? z
+              .number()
+              .nullable()
+              .transform((value) => value ?? Number.NaN)
+          : ChartNumber
+        ).describe("line: value; null is a gap only with forecast, zero, threshold, marker or legendValues enabled."),
+      }),
+      0,
+      limits?.maxValues,
+    ),
     ChartBins: z
       .union([
         limits ? z.number().int().min(1).max(limits?.maxValues) : z.number().int().min(1),
@@ -157,7 +179,9 @@ export const chartKinds = (limits?: ChartLimits) => {
     ChartCommon,
     ChartTooltip,
     ChartLabel,
+    ChartCoordinate,
     ChartPoints,
+    ChartLinePoints,
     ChartSeries,
     ChartSlice,
     ChartReferences,
@@ -170,6 +194,27 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("waterfall"),
+        ...ChartKindCommon,
+        start: z.object({ label: ChartLabel, value: z.number() }),
+        steps: list(z.object({ label: ChartLabel, value: z.number() }), 0, limits?.maxValues),
+        end: z.strictObject({ label: ChartLabel }),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        let balance = spec.start.value;
+        let lo = Math.min(0, balance),
+          hi = Math.max(0, balance);
+        for (const step of spec.steps) {
+          balance += step.value;
+          lo = Math.min(lo, balance);
+          hi = Math.max(hi, balance);
+        }
+        if (!Number.isFinite(balance) || !Number.isFinite(hi - lo))
+          ctx.addIssue({ code: "custom", message: "Waterfall balances must form a finite range." });
+      }),
     z
       .object({
         kind: z.literal("area"),
@@ -191,36 +236,154 @@ export const chartKinds = (limits?: ChartLimits) => {
           if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
         });
       }),
+    z
+      .object({
+        kind: z.literal("bar"),
+        ...ChartKindCommon,
+        data: list(ChartCategory, 0, limits?.maxValues).default([]),
+        x: list(ChartLabel, 0, limits?.maxValues).optional(),
+        series: list(
+          z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }),
+          1,
+          limits?.maxSeries,
+        ).optional(),
+        layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
+        normalize: z.boolean().optional(),
+        share: z.boolean().optional(),
+        limit: z.number().int().positive().optional(),
+        tone: z.enum(["in", "out"]).optional(),
+        format: numberFormat.optional(),
+        compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
+        xAxis: ChartAxis.pick({ label: true }).extend({ ordered: z.boolean().optional() }).strict().optional(),
+        yAxis: ChartAxis.optional(),
+        colorByBar: z.boolean().optional(),
+        showValues: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+        if (limits && !bar.series && !bar.data.length)
+          ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
+        if ((bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) && bar.layout !== "rows")
+          issue("Share, limit and tone require rows layout.");
+        if (
+          (bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) &&
+          bar.data.some((d) => Number.isFinite(d.value) && d.value < 0)
+        )
+          issue("Share, limit and tone need nonnegative values.");
+        if (bar.series) {
+          if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
+          if (bar.data.length) issue("Use data or aligned series, not both.");
+          if (bar.layout === "rows" || bar.layout === "columns") issue("Series bars use grouped or stacked layout.");
+        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked")
+          issue("This layout needs aligned x and series.");
+        if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
+        if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
+        if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
+          issue("Stacked bars require nonnegative values.");
+        if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
+          issue("Comparison needs one current series and aligned previous values.");
+      }),
     z.object({
-      kind: z.literal("bar"),
+      kind: z.literal("funnel"),
       ...ChartKindCommon,
-      data: list(ChartCategory, 1, limits?.maxValues),
-      xAxis: ChartAxis.pick({ label: true }).strict().optional(),
-      yAxis: ChartAxis.optional(),
-      colorByBar: z.boolean().optional(),
-      showValues: z.boolean().optional(),
-      legend: z.boolean().optional(),
-      references: ChartReferences.optional(),
+      data: list(z.object({ label: ChartLabel, value: z.number().nonnegative().nullable() }), 1, limits?.maxValues),
+      format: numberFormat.optional(),
     }),
-    z.object({
-      kind: z.literal("line"),
-      ...ChartKindCommon,
-      series: list(
-        ChartSeries(
-          limits
-            ? ChartPoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
-            : ChartPoints,
-        ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
-        1,
-        limits?.maxSeries,
-      ),
-      xAxis: ChartAxis.optional(),
-      yAxis: ChartAxis.optional(),
-      legend: z.boolean().optional(),
-      area: z.boolean().optional(),
-      smooth: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
+    z
+      .object({
+        kind: z.literal("hbar"),
+        ...ChartKindCommon,
+        series: list(ChartLabel, 1, limits?.maxSeries),
+        rows: list(
+          z.object({
+            group: ChartLabel.optional(),
+            label: ChartLabel,
+            values: list(z.number().nonnegative().nullable(), 0, limits?.maxSeries),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        if (bar.rows.some((r) => r.values.length !== bar.series.length))
+          ctx.addIssue({ code: "custom", message: "Horizontal bar values must match series." });
+      }),
+    z
+      .object({
+        kind: z.literal("line"),
+        ...ChartKindCommon,
+        series: list(
+          ChartSeries(
+            limits
+              ? ChartLinePoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
+              : ChartLinePoints,
+          ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
+          1,
+          limits?.maxSeries,
+        ),
+        xAxis: ChartAxis.optional(),
+        yAxis: ChartAxis.optional(),
+        legend: z.boolean().optional(),
+        area: z.boolean().optional(),
+        smooth: z.boolean().optional(),
+        step: z.enum(["after", "before", "middle"]).optional(),
+        zero: z.boolean().optional(),
+        legendValues: z.boolean().optional(),
+        forecast: z
+          .object({
+            from: ChartCoordinate,
+            band: list(z.tuple([z.number(), z.number()]), 0, limits?.maxValues).optional(),
+          })
+          .optional(),
+        threshold: z.object({ value: z.number(), label: ChartLabel }).optional(),
+        marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (limits && !lineDetailsEnabled(spec))
+          spec.series.forEach((series, seriesIndex) => {
+            series.data.forEach((point, pointIndex) => {
+              if (!Number.isFinite(point.y))
+                ctx.addIssue({
+                  code: "custom",
+                  path: ["series", seriesIndex, "data", pointIndex, "y"],
+                  message: "Null gaps require forecast, zero, threshold, marker or legendValues enabled.",
+                });
+            });
+          });
+        const coordinate = (x: number | string) => (typeof x === "number" ? x : chartDateTime(x));
+        const at = spec.marker && coordinate(spec.marker.at);
+        if (at !== undefined && spec.xAxis?.domain && (at < spec.xAxis.domain[0]! || at > spec.xAxis.domain[1]!))
+          ctx.addIssue({ code: "custom", path: ["marker", "at"], message: "Marker must be inside the explicit X domain." });
+        if (!spec.forecast) return;
+        const from = coordinate(spec.forecast.from);
+        const points = spec.series[0]?.data ?? [];
+        if (!points.some((point) => coordinate(point.x) === from)) {
+          ctx.addIssue({ code: "custom", path: ["forecast", "from"], message: "Forecast must start at an X value of the first series." });
+        }
+        const count = points.filter((point) => {
+          const x = coordinate(point.x);
+          return x !== undefined && from !== undefined && x >= from;
+        }).length;
+        if (spec.forecast.band && spec.forecast.band.length !== count)
+          ctx.addIssue({
+            code: "custom",
+            path: ["forecast", "band"],
+            message: "Forecast band must match the first series from forecast.from, ordered by X.",
+          });
+        spec.forecast.band?.forEach(([lo, hi], index) => {
+          if (lo > hi)
+            ctx.addIssue({
+              code: "custom",
+              path: ["forecast", "band", index],
+              message: "Forecast lower bound must not exceed its upper bound.",
+            });
+        });
+      }),
     z.object({
       kind: z.literal("scatter"),
       ...ChartKindCommon,
@@ -337,32 +500,36 @@ export const chartKinds = (limits?: ChartLimits) => {
     }),
     z
       .object({
-        kind: z.literal("sankey"),
+        kind: z.literal("treemap"),
         ...ChartKindCommon,
-        nodes: list(
-          z.object({
-            id: z.string().min(1),
-            label: ChartLabel,
-            tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
-          }),
-          1,
-          limits?.maxValues,
-        ),
-        links: list(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }), 1, limits?.maxMarks),
-        legend: list(
-          z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }),
-          0,
-          limits?.maxSeries,
-        ).optional(),
+        groups: list(ChartLabel, 1, limits?.maxSeries),
+        data: list(z.object({ label: ChartLabel, group: ChartLabel, value: z.number().nonnegative() }), 1, limits?.maxMarks),
+        legend: z.boolean().optional(),
         format: numberFormat.optional(),
         locale: chartLocaleSchema().optional(),
       })
       .superRefine((spec, ctx) => {
-        try {
-          sankeyGraph(spec);
-        } catch (error) {
-          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid Sankey graph." });
-        }
+        if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
+          ctx.addIssue({ code: "custom", message: "Treemap total must be finite." });
+        if (spec.data.some((d) => !spec.groups.includes(d.group)))
+          ctx.addIssue({ code: "custom", message: "Treemap groups must contain every item group." });
+      }),
+    z
+      .object({
+        kind: z.literal("pareto"),
+        ...ChartKindCommon,
+        labels: z.tuple([ChartLabel, ChartLabel]),
+        data: list(
+          z.object({ label: ChartLabel, value: z.number().nonnegative(), prev: z.number().nonnegative(), rest: z.boolean().optional() }),
+          1,
+          limits?.maxValues,
+        ),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
+          ctx.addIssue({ code: "custom", message: "Pareto total must be finite." });
       }),
     z
       .object({
@@ -393,6 +560,81 @@ export const chartKinds = (limits?: ChartLimits) => {
           });
         }
       }),
+    z
+      .object({
+        kind: z.literal("sankey"),
+        ...ChartKindCommon,
+        nodes: list(
+          z.object({
+            id: z.string().min(1),
+            label: ChartLabel,
+            tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        links: list(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }), 1, limits?.maxMarks),
+        legend: list(
+          z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }),
+          0,
+          limits?.maxSeries,
+        ).optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        try {
+          sankeyGraph(spec);
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid Sankey graph." });
+        }
+      }),
+    z
+      .object({
+        kind: z.literal("bubble"),
+        ...ChartKindCommon,
+        groups: list(ChartLabel, 1, limits?.maxSeries),
+        data: list(
+          z.object({ label: ChartLabel, group: ChartLabel, x: z.number(), y: z.number(), size: z.number().nonnegative().optional() }),
+          1,
+          limits?.maxMarks,
+        ),
+        xLabel: ChartLabel,
+        yLabel: ChartLabel,
+        sizeLabel: ChartLabel.optional(),
+        averages: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        xFormat: numberFormat.optional(),
+        yFormat: numberFormat.optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (spec.data.some((p) => !spec.groups.includes(p.group)))
+          ctx.addIssue({ code: "custom", message: "Bubble groups must contain every point group." });
+        for (const key of ["x", "y"] as const)
+          if (!Number.isFinite(Math.max(0, ...spec.data.map((p) => p[key])) - Math.min(0, ...spec.data.map((p) => p[key]))))
+            ctx.addIssue({ code: "custom", message: "Bubble coordinate ranges must be finite." });
+      }),
+    z
+      .object({
+        kind: z.literal("radar"),
+        ...ChartKindCommon,
+        axes: z.array(ChartLabel).min(3).max(8),
+        max: z.number().positive(),
+        unit: ChartUnit.optional(),
+        series: z
+          .array(z.object({ label: ChartLabel, data: z.array(z.number().nonnegative()).min(3).max(8) }))
+          .min(1)
+          .max(4),
+        format: numberFormat.optional(),
+        legend: z.boolean().optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (spec.series.some((s) => s.data.length !== spec.axes.length || s.data.some((v) => v > spec.max)))
+          ctx.addIssue({ code: "custom", message: "Radar series need one value per axis between zero and the common maximum." });
+      }),
   ]);
 };
 
@@ -413,5 +655,10 @@ export const chartDateTime = (value: string): number | undefined => {
   return date.toISOString().startsWith(`${year}-${month}-${day}T${hour}:${minute}:${second}`) ? date.getTime() : undefined;
 };
 
-/** One chart as the shared renderers read it. */
-export type ChartInput = z.output<ReturnType<typeof chartKinds>>;
+// Both directions are checked: a validator change must update the ui-owned description too.
+type Assert<T extends true> = T;
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type _ChartSchemaMatchesDescription = Assert<Same<z.output<ReturnType<typeof chartKinds>>, ChartInput>>;
+type _ChartNumberFormatSchemaMatchesDescription = Assert<
+  Same<z.output<ReturnType<typeof chartNumberFormatSchema>>, import("@k2b/ui/charts").ChartNumberFormat>
+>;

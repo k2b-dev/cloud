@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 
 // The frame's anchor, the fill heights, scrolling and the phone layout need a real layout engine.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
@@ -198,14 +198,17 @@ const show = async (tab: Page, name: string, options: { editable?: boolean; read
   await tab.waitForSelector(".filesv2-preview-dialog[open]");
   await settle(tab);
 };
-/** Whether the icon font is still on its way: a held test measures once before it arrives and once after. */
+/**
+ * Whether the icon font is still on its way: a held test measures once before it arrives and once after. A split
+ * font leaves the faces the page does not use unloaded, so only the faces it asked for count.
+ */
 const iconFont = (tab: Page) =>
   tab.evaluate(() => {
-    let status: string | undefined;
+    const statuses = new Set<string>();
     document.fonts.forEach((face) => {
-      if (face.family === "tabler-icons") status = face.status;
+      if (face.family === "tabler-icons" && face.status !== "unloaded") statuses.add(face.status);
     });
-    return status;
+    return [...statuses].join(" ");
   });
 type Box = { left: number; top: number; width: number; height: number };
 const box = (tab: Page, selector: string): Promise<Box> =>
@@ -661,13 +664,18 @@ describe("file preview dialog in a browser", () => {
       }
     });
 
-    for (const theme of ["light", "dark"] as const)
-      test(`a reel fills a phone's width and plays inline (${theme})`, async () => {
-        const tab = await open(phone, theme);
-        try {
-          await show(tab, "Reel.webm");
-          await metadata(tab);
-          await settle(tab);
+    test("a reel fills a phone's width and plays inline in light and dark", async () => {
+      const tab = await open(phone);
+      try {
+        await show(tab, "Reel.webm");
+        await metadata(tab);
+        // Both themes measure the same loaded reel: no second page, lease or media pipeline to start.
+        for (const theme of ["light", "dark"] as const) {
+          await tab.evaluate((theme) => {
+            document.documentElement.classList.toggle("dark", theme === "dark");
+            document.body.dataset.theme = theme;
+          }, theme);
+          await settled(tab);
           expect(await box(tab, ".filesv2-preview-dialog")).toEqual({ left: 0, top: 0, width: 390, height: 844 });
           const frame = await box(tab, ".k2b-video-player");
           const body = await box(tab, ".k2b-panel-dialog__body");
@@ -677,10 +685,11 @@ describe("file preview dialog in a browser", () => {
           // The reel is limited by the phone's width or the frame's height, never cropped.
           expect(shown.width === frame.width || shown.height === frame.height).toBe(true);
           expect(await tab.$eval(".k2b-video-player__video", (video) => video.hasAttribute("playsinline"))).toBe(true);
-        } finally {
-          await tab.context().close();
         }
-      });
+      } finally {
+        await tab.context().close();
+      }
+    });
 
     test("a lease that cannot be fetched shows its retry inside the video's frame, which keeps its size", async () => {
       failingLeases.add("Clip.webm");

@@ -46,8 +46,9 @@ import {
   weekendBands,
   yearMonth,
 } from "./date-picker";
-import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import type { ChoiceAppearance } from "./Select";
 
 export type { DateRangeValue } from "./date-picker";
@@ -81,10 +82,12 @@ export type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
   readOnly?: boolean;
 };
 
-export type DatePickerProps = DatePickerBaseProps<string | null> & {
-  /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
-  renderValue?: (value: string) => JSX.Element;
-};
+export type DatePickerProps = DatePickerBaseProps<string | null> &
+  /** A suggested day is a date key such as `2026-10-28`; only the default `field` appearance shows it. */
+  FieldSuggestionProps<string> & {
+    /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
+    renderValue?: (value: string) => JSX.Element;
+  };
 export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
   /** Trigger content for a set value, for example the date and time with a relative hint. */
   renderValue?: (value: string) => JSX.Element;
@@ -331,7 +334,8 @@ function PresetRail<T>(props: { presets?: readonly DatePreset<T>[]; onSelect: (v
   );
 }
 
-function DatePickerPanel(props: {
+/** One month of days. Exported for composite pickers in this package (the period picker shows two side by side). */
+export function DatePickerPanel(props: {
   visibleMonth: () => Date;
   setVisibleMonth: (date: Date) => void;
   selected?: () => string | null | undefined;
@@ -343,6 +347,14 @@ function DatePickerPanel(props: {
   /** Earliest and latest selectable day as date keys. */
   min?: string;
   max?: string;
+  /** Which month steps this panel offers; a second month beside it offers the other one. */
+  nav?: "both" | "previous" | "next";
+  /** Leaves the days of neighbouring months empty (`visibility: hidden`), so two months side by side never show a day twice. */
+  hideOutside?: boolean;
+  /** Whether a day is already on screen, also in a neighbouring panel; arrow keys then move there without paging. */
+  isShown?: (date: Date) => boolean;
+  /** Where keyboard navigation looks for the day to focus; the panel itself by default. */
+  focusRoot?: () => HTMLElement | undefined;
 }): JSX.Element {
   const messages = useUiMessages();
   const [view, setView] = createSignal<PanelView>("days");
@@ -445,8 +457,11 @@ function DatePickerPanel(props: {
   const focusDate = (date: Date) => {
     const targetKey = dateKey(date, context());
     if (blocked(targetKey)) return;
-    if (!dates.isSameMonth(date, props.visibleMonth(), context())) props.setVisibleMonth(date);
-    queueMicrotask(() => calendar?.querySelector<HTMLElement>(`[data-date-day="${targetKey}"]`)?.focus());
+    const shown = props.isShown ? props.isShown(date) : dates.isSameMonth(date, props.visibleMonth(), context());
+    if (!shown) props.setVisibleMonth(date);
+    queueMicrotask(() =>
+      (props.focusRoot?.() ?? calendar)?.querySelector<HTMLElement>(`[data-date-day="${targetKey}"]:not([data-hidden="true"])`)?.focus(),
+    );
   };
 
   const handleDayKeyDown = (event: KeyboardEvent, day: Date) => {
@@ -479,6 +494,7 @@ function DatePickerPanel(props: {
         <button
           type="button"
           class="k2b-date-calendar__nav"
+          data-hidden={props.nav === "next" ? "true" : undefined}
           onClick={() => (view() === "days" ? moveMonth(-1) : moveYear(-1))}
           disabled={stepBlocked(-1)}
           aria-label={previousLabel()}
@@ -493,6 +509,7 @@ function DatePickerPanel(props: {
         <button
           type="button"
           class="k2b-date-calendar__nav"
+          data-hidden={props.nav === "previous" ? "true" : undefined}
           onClick={() => (view() === "days" ? moveMonth(1) : moveYear(1))}
           disabled={stepBlocked(1)}
           aria-label={nextLabel()}
@@ -543,7 +560,12 @@ function DatePickerPanel(props: {
           </For>
           <For each={dayRows()}>
             {(week) => (
-              <div class="k2b-date-week" role="row">
+              // A week of a neighbouring month only, left empty beside a second month, is hidden as a whole.
+              <div
+                class="k2b-date-week"
+                role="row"
+                aria-hidden={props.hideOutside && week.every((cell) => cell.outside) ? "true" : undefined}
+              >
                 <For each={week}>
                   {(cell, cellIndex) => {
                     const selected = () => props.selected?.() === cell.key;
@@ -551,6 +573,7 @@ function DatePickerPanel(props: {
                     const active = () => selected() || isRangeEdge(cell.key, range());
                     const focusable = () => cell.key === defaultFocus();
                     const today = () => cell.key === todayKey();
+                    const hidden = () => Boolean(props.hideOutside && cell.outside);
                     const label = () => {
                       const name = today() ? todayLabel(cell.label) : cell.label;
                       return blocked(cell.key) ? inputMessages().notSelectable({ date: name }) : name;
@@ -562,6 +585,7 @@ function DatePickerPanel(props: {
                         data-date-day={cell.key}
                         data-date-focus={focusable() ? "true" : undefined}
                         data-outside={cell.outside ? "true" : undefined}
+                        data-hidden={hidden() ? "true" : undefined}
                         data-weekend={weekendColumns()[cellIndex()] ? "true" : undefined}
                         data-in-range={inRange(cell.key, range()) && !active() ? "true" : undefined}
                         data-today={today() ? "true" : undefined}
@@ -784,6 +808,12 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   const externalError = () => resolveMaybeAccessor(props.owner.error);
   const invalid = () => Boolean(failure() || externalError());
+  const suggestion = useFieldSuggestion({
+    props: props.owner,
+    meta,
+    value: props.value,
+    format,
+  });
   const status = createMemo((): { tone: DateStatusTone; text: JSX.Element } => {
     const failed = failure();
     if (failed) return { tone: "error", text: failed };
@@ -796,7 +826,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     const external = externalError();
     if (external) return { tone: "error", text: external };
     const value = props.value();
-    if (!value || result) return { tone: "rest", text: "" };
+    // With a suggestion the line shares the label row and speaks only while typing or on an error.
+    if (!value || result || suggestion.enabled) return { tone: "rest", text: "" };
     return { tone: "rest", text: props.owner.renderValue?.(value) ?? restStatusText(value, today(), locale()) };
   });
 
@@ -925,12 +956,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   return (
     <Field
-      class={props.owner.class}
+      class={suggestion.field(props.owner.class)}
       label={props.owner.label}
       description={props.owner.description}
       required={props.owner.required}
       disabled={props.owner.disabled}
       meta={meta}
+      labelEnd={suggestion.status}
     >
       <div
         class="k2b-date-picker k2b-date-field"
@@ -955,11 +987,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             aria-haspopup="dialog"
             aria-expanded={calendar.open() || sheetOpen()}
             aria-controls={sheetOpen() ? sheetId : popoverId}
-            aria-describedby={[props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
-              .filter(Boolean)
-              .join(" ")}
+            aria-describedby={suggestion.describe(
+              [props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
+                .filter(Boolean)
+                .join(" "),
+            )}
             aria-invalid={invalid() ? "true" : undefined}
-            placeholder={props.owner.placeholder ?? datePattern(locale(), t())}
+            placeholder={suggestion.placeholder() ?? props.owner.placeholder ?? datePattern(locale(), t())}
             value={text()}
             disabled={props.owner.disabled}
             readOnly={props.owner.readOnly}
@@ -1211,7 +1245,17 @@ function DateRangeTextField(props: {
     setFailure(undefined);
     calendar.close();
   };
-  /** Calendar clicks fill both halves at once, so the text, the status line and the calendar show the same range. */
+  /**
+   * A pick in the popover fills the field's text, so the text, the status line and the calendar show the same range.
+   * A pick in the phone sheet stays in the sheet until it is saved: the field never shows an unsaved range, also not in
+   * the moment between a dismissed sheet and the end of its history step.
+   */
+  const showPick = (range: DateRangeValue) => {
+    if (sheetOpen()) return;
+    fill(range);
+    setDirty(true);
+  };
+  /** Calendar clicks fill both halves at once. */
   const pickDay = (key: string) => {
     const next = pickRangeDay(picked(), anchor(), key);
     // One update: the start alone would read as a typed range and reset the anchor of the next click.
@@ -1219,8 +1263,7 @@ function DateRangeTextField(props: {
       setPicked(next.range);
       setAnchor(next.anchor);
       setPreviewDate(null);
-      fill(next.range);
-      setDirty(true);
+      showPick(next.range);
     });
   };
   const apply = (range: DateRangeValue) => {
@@ -1240,8 +1283,7 @@ function DateRangeTextField(props: {
               batch(() => {
                 setPicked(next);
                 setAnchor(null);
-                fill(next);
-                setDirty(true);
+                showPick(next);
               });
               if (value) setVisibleMonth(parseDateValue(value, props.dateConfig()));
             }}
@@ -1278,7 +1320,6 @@ function DateRangeTextField(props: {
   const openSheet = async () => {
     setSheetOpen(true);
     calendar.close();
-    const before = { start: startText(), end: endText(), dirty: dirty() };
     // Every opening starts from the text, also after a dismissed sheet left other days picked.
     batch(() => {
       setPicked(draft());
@@ -1300,14 +1341,8 @@ function DateRangeTextField(props: {
         }),
     });
     setSheetOpen(false);
-    // A dismissed sheet saves nothing and leaves the text as it was before the sheet opened.
-    if (!range)
-      batch(() => {
-        setStartText(before.start);
-        setEndText(before.end);
-        setDirty(before.dirty);
-        setAnchor(null);
-      });
+    // A dismissed sheet saves nothing; its picks never reached the text (see `showPick`).
+    if (!range) setAnchor(null);
     toggle?.focus({ preventScroll: true });
   };
   const openCalendar = (focusDay: boolean) => {

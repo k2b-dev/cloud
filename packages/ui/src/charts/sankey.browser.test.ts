@@ -80,7 +80,10 @@ test("Sankey SSR, calm hover, keyboard, touch, scroll, theme and fixed host stat
           });
         });
         expect(bounds.every(Boolean)).toBe(true);
-        const sourceLabel = page.locator('#mount [data-chart-datum]').filter({has:page.locator("rect")}).first();
+        const sourceLabel = page
+          .locator("#mount [data-chart-datum]")
+          .filter({ has: page.locator("rect") })
+          .first();
         expect(await sourceLabel.locator("text").count()).toBe(2);
         expect(await sourceLabel.locator("title").textContent()).toContain(spec.nodes[0]!.label);
         expect(await sourceLabel.textContent()).toContain("…");

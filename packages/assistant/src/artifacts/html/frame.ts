@@ -120,12 +120,16 @@ document.addEventListener("securitypolicyviolation", (event) => {
 const bridge = createBridge((message) => send(message as FrameToHost));
 let inflight = 0;
 let lastSettled = performance.now();
-configureChartModule(config.chartModule, (task) => {
-  inflight++;
-  return task.finally(() => {
-    if (!--inflight) lastSettled = performance.now();
-  });
-});
+configureChartModule(
+  config.chartHashes,
+  (kind) => bridge.rpc("runtime.chart", [kind]),
+  (task) => {
+    inflight++;
+    return task.finally(() => {
+      if (!--inflight) lastSettled = performance.now();
+    });
+  },
+);
 const thenable = (value: unknown, depth = 0): boolean =>
   !!value &&
   typeof value === "object" &&
@@ -297,11 +301,8 @@ const charts = new ResizeObserver((entries) => {
   for (const entry of entries) {
     const element = entry.target as HTMLElement;
     const options = chartOptions.get(element.dataset.chartId ?? "");
-    const calendar = element.querySelector("svg[data-calendar]");
     const width = Math.round(
-      calendar || options?.input.kind === "sankey"
-        ? (element.parentElement?.clientWidth ?? entry.contentRect.width)
-        : entry.contentRect.width,
+      options?.input.kind === "sankey" ? (element.parentElement?.clientWidth ?? entry.contentRect.width) : entry.contentRect.width,
     );
     if (element.hasAttribute("data-chart-pending")) continue;
     if (!options || width < 120 || Math.abs((drawn.get(element) ?? 0) - width) < 8) continue;
@@ -310,10 +311,7 @@ const charts = new ResizeObserver((entries) => {
     element.style.setProperty("--k2b-chart-width", `${width}px`);
     element.innerHTML = chartSvg(options, config.context.locale, width, height);
     // Bar rows at a new width can wrap their labels differently and take another height.
-    const intrinsicWidth =
-      options.input.kind === "sankey"
-        ? element.querySelector("svg")?.viewBox.baseVal.width
-        : Number(element.querySelector("svg[data-calendar]")?.getAttribute("data-chart-min-width"));
+    const intrinsicWidth = options.input.kind === "sankey" ? element.querySelector("svg")?.viewBox.baseVal.width : undefined;
     if (intrinsicWidth) {
       element.style.width = `${intrinsicWidth}px`;
       element.style.minWidth = `${intrinsicWidth}px`;
@@ -358,13 +356,13 @@ async function paintChart(element: HTMLElement) {
       return (measured >= 120 ? measured : 0) || Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) || 480;
     };
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
-    if (measure && (options.input.kind === "sankey" || (options.input.kind === "heatmap" && options.input.layout === "calendar"))) {
-      const reservedWidth = pendingChartWidth(options, config.context.locale, widthAt(), height);
+    if (measure && options.input.kind === "sankey") {
+      const reservedWidth = pendingChartWidth(options, widthAt());
       element.style.width = element.style.minWidth = `${reservedWidth}px`;
       element.style.aspectRatio = `${reservedWidth}/${height}`;
       element.style.setProperty("--k2b-chart-width", `${reservedWidth}px`);
     }
-    await loadChartRenderer().catch((error) => {
+    await loadChartRenderer(options.input.kind).catch((error) => {
       loadFailed = true;
       throw error;
     });

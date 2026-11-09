@@ -12,6 +12,18 @@ Every non-empty chart has tooltips, keyboard inspection, and tap by default; see
 
 Use `StatCell` for one value. Use `DataTable` when readers need exact records rather than a visual summary.
 
+## Save a chart as JSON
+
+`ChartDescription`, `ChartInput`, `ChartNumberFormat`, and `ChartFormat` are
+owned by `@k2b/ui/charts`. A portable node uses `{kind, title, ...}` and named
+formats such as `{style: "currency", currency: "EUR"}`. It contains no
+callbacks. Use ISO text for dates and `null` for missing observations.
+
+The portable Zod validator `chartKinds()` from `@k2b/editor/charts` is checked
+against those types at compile time. It normalizes null gaps to non-finite
+renderer values; stacked area keeps its nullable series. Keep the original JSON when saving. Its optional limits are
+host policy. Each consuming application keeps its own input budget.
+
 ## Import
 
 ```tsx
@@ -67,8 +79,23 @@ import { Chart } from "@k2b/ui";
 DOM dependencies. Use `layout(spec, { width, height })` and `toSvg(scene)` for
 a fixed logical scene, or `renderChartSvg(spec, width, height)` for the same SVG
 that `Chart` displays. `chartRenderHeight(spec)` calculates the standard height.
+For a bar gauge in a host without an explicit height, opt into its compact row
+height with `chartRenderHeight(spec, { contentHeight: true })` and pass the result
+to both the drawing and its container. The standard calculation keeps its
+280-unit minimum; explicit-height drawings keep their existing geometry.
+
+```ts
+const spec = { kind: "barGauge" as const, data: [
+  { label: "CPU", value: 65 }, { label: "Memory", value: 72 },
+] };
+const height = chartRenderHeight(spec, { contentHeight: true });
+const svg = renderChartSvg(spec, 480, height);
+```
+
 `prepareChartSnapshot` prepares that drawing and its keyed inspection data for
-`ChartSnapshotView` and `ChartExplorer`. Existing root imports remain supported.
+`ChartSnapshotView` and `ChartExplorer`. Its optional third argument forwards
+`{ contentHeight: true }` to the height calculation for unsized bar-gauge hosts.
+Existing root imports remain supported.
 
 ```ts
 import { layout, toSvg } from "@k2b/ui/charts/core";
@@ -190,6 +217,42 @@ Axis, category and value text uses the UI font with tabular figures.
   yAxis={{ label: "Umsatz", format: (v) => euro.format(v) }} />
 ```
 
+## Several bar series and period comparison
+
+Keep category labels in `x` and pass one equally long `data` array per series.
+`null` means a gap. Grouped bars each start at zero. Stacked bars accumulate
+nonnegative segments; negative stacks are rejected at the portable JSON entry.
+With `normalize`, positive totals fill 100%; a zero total stays a gap.
+
+```tsx
+<Chart kind="bar" layout="stacked" x={["Q1", "Q2"]}
+  series={[{ label: "Store", data: [35, 42] }, { label: "Web", data: [24, 31] }]} />
+```
+
+Add `compare={{ label: "Previous", data: [28, 39] }}` to a single current
+series. The previous bars appear hatched on the left; current bars appear solid
+on the right. Both totals remain in the legend until inspection shows the
+category values. The tooltip includes the percentage change; a zero previous
+value has no defined percentage and displays `–`.
+
+Use `kind="hbar"` for horizontal stacks with `series: string[]` and
+`rows: { group?: string; label: string; values: (number | null)[] }[]`.
+Each row ends with its total; segment values print only where they fit.
+Group headings follow first appearance. All source values remain in the
+accessible table, including values that do not fit on a segment.
+
+Horizontal row drawings stay within `--k2b-row-measure` (40rem by default), keeping labels and values together in wide frames. Narrow frames use their available width. This applies to automatic and explicit bar rows, including horizontal segments.
+
+`Chart.Bar` exposes grouped, stacked and compared columns; `Chart.Hbar` exposes horizontal segments. The matching JSON kinds are `bar` and `hbar`, and both use the portable `@k2b/ui/charts/core` renderer. A host that loads horizontal drawing on demand can reserve `hbarLayout(spec, size).height` and pass the same prepared geometry to `renderHbarLayoutSvg(spec, geometry)` when its drawing module arrives.
+
+Both renderers inspect whole categories. A calm band appears behind the active
+category on pointer hover without outlining its segments. Keyboard inspection
+and controlled selection outline the marks using their series color. Arrow keys move between categories,
+Home/End jump to the edges, Enter pins and Escape closes inspection. A tap
+selects only when it has not become a swipe.
+
+Category hover bands carry a transparent SVG presentation fill, so standalone SVGs and base-styled print or app frames retain the same drawing. Series legends keep each value six pixels after its label, use at most one quarter of the frame, and truncate long names; the tooltip and data table retain full names. Dense grouped bars drop their inner gap before reducing bar width. Category labels stay whole and thin to fit. Missing totals display “–”; zero observations remain zero. Comparison changes and total labels inherit the UI locale.
+
 ## Props reference
 
 Use the discriminated `ChartProps` union to type data builders without widening
@@ -245,9 +308,9 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 
 | Kind | Required payload | Additional options and defaults |
 | --- | --- | --- |
-| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`. |
+| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`, `legendValues=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`. |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
-| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode. See [Bar charts](#bar-charts). |
+| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. Aligned `x` and `series` support `layout="grouped"` or `"stacked"`; `normalize` shows 100% shares. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
 | `sparkline` | `data: number[]` or `Point[]` | `smooth=true`, `area=false`, `showLast=false`, `showMinMax=false`. Numeric arrays use the original array index as X; points sort by X. |
 | `histogram` | `data: number[]` of observations | `bins?: number` (equal-width bin count) or `number[]` (ordered bin edges); omitted uses `ceil(log2(n)) + 1`. `xAxis`, `yAxis`, `references`. Supply at least two distinct finite edges. Bins exclude the upper boundary except for the last bin. |
@@ -271,7 +334,11 @@ over `autoVariant`. Non-finite coordinates are skipped.
 `AxisOptions` supports `label?: string`, `format?: (value: number) => string`,
 `ticks?: number` (suggested count, default 5), `scale?: "linear" | "log"`
 (default linear), `minorTicks?: boolean` (default false), and optional exact
-`domain?: [number, number]` comparison bounds. See the snapshot section for domain validation.
+`domain?: [number, number]` comparison bounds. Existing tick positions and centered
+numeric X labels stay unchanged by default. Opt in with `insetEndpointLabels: true`
+to align numeric X endpoint labels inward and omit nice ticks within one interval
+of exact bounds. This keeps long endpoint units inside compact plots; use it only
+on axes that need this layout. See the snapshot section for domain validation.
 For line and scatter charts, log axes exclude non-positive coordinates. `references` is an array of
 `{ value: number; axis?: "x" | "y"; label?: string }`; the default axis is Y.
 Categorical bars ignore X references. Use the
@@ -323,7 +390,10 @@ pie slices and heatmap cells get a 1.5 px outline; points keep their 2 px ring.
 Hover or tap a datum to show its values; click or tap pins the tooltip and calls the optional
 `onSelect` callback. Hover and focus never emit selection events. Escape,
 focus leaving the chart, an outside tap, scrolling, resizing, and a data update
-clear the inspection. Map and timeline dragging does not select data.
+clear the inspection. In `Chart` and the explorer, a tooltip opened from the
+keyboard stays while the page scrolls and follows its value, so focusing a
+chart that the browser first scrolls into view keeps its tooltip;
+`inspectChart` closes on every scroll. Map and timeline dragging does not select data.
 
 Line inspection groups the actual values at the nearest X coordinate across
 series. Scatter plots and maps inspect individual points. Histograms expose
@@ -818,7 +888,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `actions` | Optional owner actions in the header before Copy data, such as a button that shows the query behind the chart. Keep them icon-sized. The actions move below the title only when the title itself does not fit beside them; a long description wraps in the space the title leaves, so explorers side by side keep one header layout. |
 | `headingLevel` | Level of the title heading, `2`–`6`; default `3`. Use one level below the surrounding heading, for example `4` for charts under a group's `h3`. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
-| `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
+| `height` | CSS viewport height; default `"18rem"`, or content height for a calendar snapshot, shared by chart and scrollable table. |
 | `legend` | Optional `ChartLegendEntry[]` (`{ label, color, style?, reference? }`, `color` is the palette index 0–7). Shows the series names as a wrapping list below the chart, inside the same viewport height, and only in chart view. The chart keeps at least 60% of the height; a longer legend scrolls in the rest. Prepare the snapshot with `legend: false` and pass the names here: the renderer's legend is one SVG row and runs out of a stretched phone-width chart. `style` `"dashed"` or `"dotted"` shows a line swatch; `reference` shows a hollow swatch like the comparison marks. |
 | `empty` | Optional JSX shown in the viewport without rows; default **No data**. With `request`, write one sentence that says why, such as "No newsletter was sent in this period." The header and height stay in place. |
 
@@ -1082,6 +1152,37 @@ as dots; Antarctica appears only in the list. Values that are not positive finit
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
 
+### Line outlooks and reference marks
+
+Line annotations (`forecast`, `zero`, `threshold`, `marker`) opt in to the detailed line presentation, including cursor values. Use `legendValues: true` to enable cursor values alone. Existing line descriptions keep their original drawing, legends and tooltips.
+
+A line can add `forecast: {from, band?}` without changing existing saved JSON. The Chat tool accepts `y: null` only when `forecast`, `zero: true`, `threshold`, `marker` or `legendValues: true` enables line details; scatter and lines without these options still require numeric Y values. `from` is an existing X coordinate in the first series; ISO dates are accepted in portable JSON. The line is dashed from that coordinate. Optional `[lower, upper]` bounds belong to the first series, ordered by X from `from`, and have exactly that suffix's length. Lower bounds cannot exceed upper bounds. A missing observation remains a gap in both the line and its forecast band. An isolated observation keeps a visible point and a narrow confidence band.
+
+Use `zero: true` to include zero and tint the area under zero red. `threshold: {value, label}` draws a labelled dashed warning line, and `marker: {at, label}` marks a coordinate such as Today. Labels come from the application; a marker must be inside an explicit `xAxis.domain`. Forecast tooltips keep the existing title and value/error rows and append their lower and upper bounds. `step: "before" | "after"` adds steps; existing smooth and area options remain available. The legend starts at `marker.at` when a marker is present; otherwise it starts at the latest X. Inspection replaces that resting value, with a dash for a missing observation. Both forecast bounds follow the line’s interpolation (`smooth`, straight or explicit steps). Detailed portable lines with ISO dates (or an explicit date format) use UTC calendar ticks over the exact data range; supplied `xAxis.domain` bounds are preserved. The pure renderer accepts the existing `timeAxis: {timeZone, locale?}` option for detailed lines too. Edge date labels point into the plot to stay clear of Y ticks. Ordinary lines retain their existing axis rendering. The threshold label sits in the upper plot margin so the line and band stay clear. Hover, keyboard and tap share the same inspection state. Outlooks keep full number labels readable at phone width.
+
+## Treemap and Pareto
+
+`Chart.Treemap` accepts `groups: string[]` and `data: {label,group,value}[]`.
+Every group exists in `groups`; values are finite and nonnegative. Squarified
+cells preserve value proportions. Color identifies the group and the wrapping
+legend names it (`legend={false}` hides it). Labels and values print only when
+both fit; the tooltip and table keep every item, including zero-valued items.
+
+`Chart.Pareto` accepts `labels: [current, previous]` and
+`data: {label,value,prev,rest?}[]`. It ranks current values descending and places a
+category flagged with `rest: true` last. The label stays free text, supplied and localized by the author; an unflagged `Rest` has no special meaning. Solid bars show current values; hatched bars show
+the previous period. The cumulative line uses the percentage axis below;
+the absolute value axis is above. The dashed 80% line marks concentration.
+Both periods must be nonnegative. A zero previous value or zero total shows
+an undefined percentage as an en dash.
+
+Both kinds support portable number `format`, explicit BCP 47 `locale`, and
+measured `displayWidth` for app frames. Locale overrides the inherited provider.
+Arrows inspect items, Enter selects and Escape dismisses; tap uses the same
+inspector. Hover outlines one treemap cell or adds a quiet Pareto row band.
+Keep the host's fixed content height across loading, empty, error/retry and
+stale-subtitle states. The live chart catalog demonstrates both kinds.
+
 ## Sankey flows
 
 `Chart.Sankey` and `kind="sankey"` accept `nodes: {id,label,tone?}[]` and
@@ -1099,6 +1200,58 @@ Hover strengthens one band without dimming others. Arrows inspect nodes and
 links, Home/End jump, Enter pins and Escape dismisses; tap shares this behavior.
 Use the host's fixed-height loading, empty, error/retry and stale-subtitle states.
 Plain SVG hosts pass `nav: sankeyInspectionNavigation` (from `@k2b/ui/charts`) to `inspectChart` for node-first keyboard traversal and scroll reveal. The newsletter showcase includes converging and diverging flows.
+
+## Named scatter points and bubbles
+
+Use `Chart.Bubble` (`kind: "bubble"`) to compare two numeric measures for named observations. Set `groups`,
+`data: [{label, group, x, y, size?}]`, `xLabel` and `yLabel`. Omitting `size` gives named scatter points;
+`Chart.Scatter` keeps its existing series contract. Bubble area follows `size` and radius follows its square root.
+Sizes must be nonnegative and every point must name a declared group. A zero-size observation remains in the table.
+
+Names appear only where they fit without overlapping another name or point. Every observation remains available
+through the tooltip, keyboard and table. `averages: true` adds two guides explicitly labelled **Unweighted average**:
+every observation contributes equally, regardless of bubble size. `size` belongs to each point, not to the chart. `sizeLabel` names the area measure. Narrow or short drawings reduce bubble radii together so every point remains inside the plot; the area ratios stay unchanged. Average labels have their own space above the Y-axis title. Below 200px drawing height, the numeric average row is available in the accessible SVG title; the unweighted-average label stays visible.
+
+JSON accepts `xFormat`, `yFormat` and `format` as number-format descriptions; typed props take formatter functions
+(`xFormat`, `yFormat`, `sizeFormat`). Explicit `locale` wins over the inherited UI locale. Measured hosts forward
+`displayWidth`; the server and initial browser drawing use identical geometry.
+
+## Radar charts
+
+`Chart.Radar` (`kind: "radar"`) takes 3–8 `axes`, one positive `max`, an optional shared `unit`, and up to four
+`series: [{label, data: number[]}]`. Every series has one value per axis, between zero and the shared maximum.
+All axes use that same unit and maximum; use another chart when the axes measure different units.
+
+Hover or tap an axis to compare every series there. Arrow keys, Home and End move across axes; Enter selects,
+and Escape closes inspection. Selection has a stronger outline than hover. Both kinds keep all other marks
+visible and use the shared loading, empty, error/retry and stale frame states.
+
+## Waterfall charts
+
+Use `kind="waterfall"` to explain how ordered changes connect an opening
+balance to a closing balance. Pass `start: { label, value }`,
+`steps: { label, value }[]` and `end: { label }`. The closing balance is
+calculated; callers cannot supply a conflicting total. Negative balances
+and changes that cross zero are supported. All inputs and cumulative balances
+must be finite. A missing change is rejected rather than treated as zero.
+
+Totals rest on zero in a neutral colour. Inflows use `--k2b-flow-in-mark`
+and ↙; outflows use `--k2b-flow-out-mark` and ↗. Without flow tokens,
+the pure renderer retains turquoise and violet fallback colours. Connectors join running balances.
+Tooltips name the direction (In/Out), show the unsigned amount and the balance
+after each step. Opening and closing totals show only Balance, using the inherited locale. Phone labels are thinned, while the closing label always remains visible inside the right plot edge;
+every complete label remains in inspection and the data table.
+
+`renderWaterfallSvg({ ...options, width, height, inspect: true })` and
+`waterfallLayout(options, { width, height })` from `@k2b/ui/charts` expose the
+same pure drawing and calculation; both are also available from `@k2b/ui/charts/core`.
+`Chart.Waterfall` renders the same options as the `kind` discriminator. Measured
+hosts pass `displayWidth` in CSS pixels; other hosts use the phone-safe default.
+Values print when bars have at least 46 CSS pixels and the text fits its slot. SVG marks carry their paint attributes,
+so server, PDF and app-frame hosts do not require `.k2b-ui` to see them.
+Portable JSON accepts `format: { style: "currency", currency: "EUR", decimals: 0 }`;
+the component and renderer accept a `format(value)` function.
+
 ## Calendar heatmaps
 
 `Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
@@ -1108,10 +1261,10 @@ days and null values remain gaps. The date span is limited to three years. Weeks
 
 The color scale includes every observation. Diverging values use turquoise
 for positive and violet for negative values, with zero neutral. Phone charts
-scroll to the newest weeks. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
+open at the newest weeks in the server frame, before JavaScript runs. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
 Home/End jump, Enter pins and Escape dismisses. The exact date and value are
 also available in the table. Optional `locale` takes precedence over the UI
-provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Month and weekday labels use explicit short Intl formats; full dates use explicit long parts and a shared date pattern. Older engines use the US Sunday and other-locale Monday week-start fallback. Print output scales uniformly to the page. Measured hosts pass `displayWidth`. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts`, pass `nav: calendarInspectionNavigation` to `inspectChart`, and dispose both cleanups.
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells grow with the available width from 14px to a maximum of 32px, aligned to the left. The drawing height follows its seven rows and legend. Horizontal scrolling starts only when the minimum cells do not fit. `ChartExplorer` uses this content height when its first frame includes a calendar snapshot, and retains that reserve if a request later omits the snapshot. For a first load with only `{rows: []}`, it keeps its standard 18rem frame when data arrives. Provide a snapshot prepared from the known date span (null observations are valid) or an explicit `height` to choose the first reserve. The reserve includes 16px for a classic horizontal scrollbar. Weekday labels stay visible and attached to the grid while the weeks scroll or the panel resizes. Their grid gap stays small as cells grow; month/year rows and the legend keep fixed text spacing. The weekday rail masks partially visible month names. Month and weekday labels use explicit short Intl formats; full dates use explicit long parts and a shared date pattern. Older engines use the US Sunday and other-locale Monday week-start fallback. Print output scales uniformly to the page. CSS fits the same coordinate space on the server and in the browser; a measured redraw is unnecessary. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts`, pass `nav: calendarInspectionNavigation` to `inspectChart`, and dispose both cleanups. Scroll measurements use a calendar-scoped CSSOM rule so fractional widths preserve the server markup; cleanup removes that rule.
 
 Keep loading, empty, error/retry and stale feedback in the host's fixed-height
 frame. The newsletter example shows daily opens across a complete year.
@@ -1140,8 +1293,27 @@ The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
 
+Pareto axis endpoints align inward so full formatted values remain visible in small cards. Treemap text uses one name/value block with fixed line spacing; cells without room for both lines leave the text to inspection.
+
 Small Sankey cards start at their source nodes. Labels stay within the scrollable drawing; scroll horizontally to follow later stages.
 
+Waterfall labels and printed amounts follow the drawn container width. Amounts appear when bars are at least 46 CSS pixels wide and the text fits its slot; shrinking to a phone hides them without a hydration redraw.
+
+Deferred drawing hosts can also prepare `waterfallLayout(spec, size)` and pass that geometry to `renderWaterfallLayoutSvg(spec, geometry)`. The prepared and direct renderers produce identical SVG.
+
+Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
+without importing the catalog dispatcher. Adding another chart kind therefore
+does not add its renderer to pages that only show stat trends.
+
+### Funnels and ranked lists
+
+Use `kind="funnel"` with `data: [{ label, value }]` for a sequence of counts. Each step shows its value and share of the start; the tooltip also gives its share of the previous step. Values must be nonnegative, and steps may rise above the starting count. A zero or missing denominator shows `–`; missing steps stay gaps. Geometry fits the largest step, so rising counts stay inside the plot.
+
+Use `kind="bar" layout="rows"` for category values, including negative values. If any value is negative, rows retain source order and bars diverge around zero. Ordered categories (`xAxis.ordered`), reference lines, `colorByBar`, explicit `showValues`, axis labels and value-axis domain, scale or ticks also keep the original row drawing. These options preserve the drawing of saved Cloud 0.69 charts.
+
+Unordered nonnegative values without those drawing options use a ranked list. Rows sort descending, with stable order for ties. `share` prints each row's share of the entire input. `limit` shows that many rows and a final “n more · total” summary; the data table retains every source row. `tone="in" | "out"` records flow direction and uses the theme’s incoming or outgoing flow color, falling back to the neutral chart palette. The portable schema rejects `share`, `limit` or `tone` on signed data with “Share, limit and tone need nonnegative values.” Automatic rows in existing data-only bars retain their original layout.
+
+Both descriptions accept `format: NumberFormat` for source values. Percentage calculations keep their own format. The inherited locale formats shares and the remainder label. They use the same category band, keyboard inspection, touch guard and fixed host states as other category charts.
 ## Balance flows across periods
 
 `Chart.BalanceFlow` and `kind="balanceFlow"` explain a settlement balance in one

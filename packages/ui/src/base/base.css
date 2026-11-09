@@ -21,12 +21,14 @@
     color-scheme: light;
 
     --k2b-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --k2b-row-measure: 40rem;
     --k2b-font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --k2b-radius-control: 0.5rem;
     --k2b-radius-surface: 0.75rem;
     --k2b-radius-dialog: 0.875rem;
     --k2b-focus-width: 2px;
     --k2b-danger-500: #ef4444;
+    --k2b-warning-500: #f59e0b;
     --stdlib-chart-c1: #3b82f6;
     --stdlib-chart-c2: #10b981;
     --stdlib-chart-c3: #f59e0b;
@@ -955,8 +957,24 @@
     --k2b-chart-inverse-y: tan(atan2(var(--k2b-chart-height), 100cqh));
   }
 
+  /* Preserve readable Y labels without imposing phone margins on wide line plots. */
+  .k2b-chart__svg[data-stretch] > svg[data-line-axis-room] {
+    --k2b-line-inset: max(0px, calc((var(--k2b-line-label-room) - var(--k2b-line-axis-fraction) * 100cqw) * var(--k2b-line-axis-expand)));
+    --k2b-chart-inverse-x: tan(atan2(var(--k2b-chart-width), calc(100cqw - var(--k2b-line-inset))));
+    margin-left: var(--k2b-line-inset);
+    width: calc(100% - var(--k2b-line-inset));
+    overflow: visible;
+  }
+
   .k2b-chart__svg[data-stretch] text {
     scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+  }
+
+  /* The bottom Y label must clear the first centred date label in small cards. */
+  @container (max-width: 400px) {
+    .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg[data-line-details="true"] > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {
+      translate: 0 calc(-6px * var(--k2b-chart-inverse-y));
+    }
   }
 
   .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {
@@ -1014,7 +1032,16 @@
   .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
     flex: none;
     height: var(--k2b-chart-height);
+    max-width: var(--k2b-row-measure, 40rem);
   }
+
+  .k2b-chart-category-band { stroke: none; }
+  .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
+  .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
+  .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
+
+  .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 12.5px; }
+  .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 13px; }
 
   .stdlib-chart-series-0 { fill: var(--stdlib-chart-c1); stroke: var(--stdlib-chart-c1); }
   .stdlib-chart-series-1 { fill: var(--stdlib-chart-c2); stroke: var(--stdlib-chart-c2); }
@@ -1082,7 +1109,7 @@
 
   /* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row of a category chart gets a
      light band behind it instead (data-inspecting="category"). */
-  .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+  .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
     stroke: var(--k2b-chart-inspection-color);
     vector-effect: non-scaling-stroke;
   }
@@ -1095,6 +1122,12 @@
   }
 
   /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
+  .k2b-chart:focus-visible:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+    stroke: var(--k2b-chart-inspection-color);
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+  }
+
   .k2b-chart[data-inspecting="category"] {
     isolation: isolate;
   }
@@ -1111,6 +1144,14 @@
     background: color-mix(in srgb, currentColor 7%, transparent);
     pointer-events: none;
   }
+
+  .k2b-chart { --k2b-chart-selection-color: currentColor; }
+  .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color); stroke-width: 2.5px; }
+  .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px; }
+
+  /* Pointer hover paints the band instead of outlining every segment. */
+  .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
+  .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none; }
 
   .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
     fill: var(--k2b-chart-inspection-color);
@@ -1314,6 +1355,16 @@
   }
 }
 
+/* Category hover paints only the band; keyboard and selection outline marks. */
+@layer k2b-base {
+.k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none; }
+.k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none; }
+}
+
+@layer k2b-base {
+.k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
+}
+
 @layer k2b-base {
 .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
 }
@@ -1349,7 +1400,6 @@
 .k2b-ui .k2b-balance-flow__content-box { min-height: var(--k2b-balance-flow-height); position: relative; }
 .k2b-ui .k2b-balance-flow__status { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; padding: 16px; text-align: center; }
 .k2b-ui .k2b-balance-flow__status p { max-width: 48ch; }
-.k2b-ui .k2b-balance-flow__data [data-balance-month-text] { display: none; }
 /* Only the viewport is a query container; shrink-to-fit hosts keep their intrinsic width. */
 .k2b-ui .k2b-balance-flow__content { --k2b-balance-peek: 0px; --k2b-balance-period-size: min(var(--k2b-balance-period-width, 620px), 100cqw); }
 .k2b-ui .k2b-balance-flow__data > .k2b-chart { width: 100%; position: relative; }
@@ -1406,7 +1456,7 @@
   .k2b-ui.k2b-chart[data-balance-pending] > .k2b-chart__svg { height: calc(160px + var(--k2b-balance-flow-phone-height) + var(--k2b-balance-flow-rows) * 44px); }
 }
 
-.k2b-ui.k2b-balance-flow > *, .k2b-ui .k2b-balance-flow > *, .k2b-ui .k2b-balance-flow__content-box > * { margin: 0; }
+.k2b-ui.k2b-balance-flow > *, .k2b-ui .k2b-balance-flow > *, .k2b-ui .k2b-balance-flow__content-box > *, .k2b-ui .k2b-balance-flow__data > * { margin: 0; }
 .k2b-ui [data-balance-summary] { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .k2b-ui .k2b-balance-flow__amounts > div { min-height: 44px; box-sizing: border-box; align-items: center; }
 

@@ -7,24 +7,7 @@ import type { AppFrameAssets } from "./assets";
 import type { AppFiles } from "./compose";
 import { type Confirm, type Mount, type MountEvent, mountApp } from "./host";
 
-const assets = new Map<string, Promise<AppFrameAssets>>();
-/** Prelude and base stylesheet, fetched once per page from `/api/assistant/artifacts/runtime` or the public runner API. */
-export function loadAppAssets(base: string): Promise<AppFrameAssets> {
-  let pending = assets.get(base);
-  if (!pending) {
-    pending = fetch(`${base}/app-assets`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return (await response.json()) as AppFrameAssets;
-      })
-      .catch((error) => {
-        assets.delete(base);
-        throw error;
-      });
-    assets.set(base, pending);
-  }
-  return pending;
-}
+export { loadAppAssets } from "./prepare-assets";
 
 /**
  * The confirm button arms late and is never the default, so a click meant for the app cannot open the link.
@@ -82,7 +65,7 @@ export function AppFrame(props: {
       prelude: props.assets.prelude,
       preludeHash: props.assets.preludeHash,
       baseCss: props.assets.baseCss,
-      chartModule: props.assets.chartModule,
+      chartParts: props.assets.chartParts,
       context: props.context,
       title: props.title,
       hash: props.hash,

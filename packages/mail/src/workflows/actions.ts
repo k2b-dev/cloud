@@ -30,6 +30,7 @@ import {
   updateWorkflowConversationCollaborationInTransaction,
 } from "../service/collaboration";
 import { hasCurrentMailboxUserPermission } from "../service/collaborators";
+import { projectMailMessagePrecondition } from "../service/command-message-state";
 import {
   adoptWorkflowSendCommand,
   createWorkflowCommand,
@@ -50,7 +51,6 @@ import { updateWorkflowConversationLocalTagInTransaction } from "../service/loca
 import { parseMessageProtocolFacts } from "../service/message-protocol";
 import { type MailboxOwnedPublicResourceTable, publicIds, requirePublicId, resolveMailboxPublicId } from "../service/public-resources";
 import { loadSendContent } from "../service/send-content";
-import { renderMailWorkflowTemplate } from "../service/template-rendering";
 import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
@@ -64,7 +64,6 @@ import {
   mailWorkflowConversationLinkView,
   mailWorkflowMessagePrecondition,
   mailWorkflowTriggerMessageId,
-  projectMailWorkflowMessagePrecondition,
 } from "../service/workflow-message-preconditions";
 import {
   applyMailConversationTransition,
@@ -79,6 +78,7 @@ import {
   mailWorkflowExecutionAuthorityActive,
   resolveMailWorkflowExecutionAuthority,
 } from "../service/workflow-runtime-context";
+import { renderMailWorkflowTemplate } from "../service/workflow-template-rendering";
 import { mailWorkflowTemplateOutput } from "./template-validation";
 
 type JsonObject = Record<string, WorkflowJsonValue>;
@@ -532,7 +532,7 @@ const messageAction = (
           throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
         }
         const remoteMessageRefId = target.remote_message_ref_id;
-        const expectedRemoteState = projectMailWorkflowMessagePrecondition(
+        const expectedRemoteState = projectMailMessagePrecondition(
           mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId }),
           mailWorkflowMessageStateTransitions(message),
         );
@@ -636,6 +636,15 @@ const conversationMutation = (
               (() => {
                 throw new Error("status must resolve to a value");
               })());
+        const preconditions = ctx.invocation.context?.preconditions;
+        const trigger = isObject(preconditions) && isObject(preconditions.message) ? preconditions.message : null;
+        // List-only grouping grants no authority over the conversation's work state.
+        if (trigger?.listOnly === true) {
+          return {
+            state: "succeeded",
+            output: { action: kind, applied: false, value, conversationId: publicConversationId, skipped: "list_only" },
+          };
+        }
         // Match provider command lock order before taking the per-message ordering lock.
         await tx`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR SHARE`;
         const effectClass = kind === "assignConversation" ? "assignment" : "status";

@@ -177,8 +177,12 @@ test("balance flow chat retains the period navigator, full table and explicit lo
     ],
   });
   expect(html).toContain("data-balance-flow");
-  expect(html).toContain('data-balance-template="1"');
+  expect(html).toContain('data-balance-month="1"');
   expect(html.match(/<h3[^>]*>Settlements<\/h3>/g)).toHaveLength(1);
   expect(html).toContain("↙ 20,00 €");
   expect(html).toContain("Nächster Zeitraum");
+  const empty = render({ kind: "balanceFlow", title: "Settlements", currency: "EUR", periods: [] });
+  expect(empty).toContain("data-balance-flow");
+  expect(empty).toContain('data-state="empty"');
+  expect(empty).toContain("No periods to show.");
 });

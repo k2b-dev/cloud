@@ -1,8 +1,8 @@
-import { calendarLayout } from "./calendar";
+import { calendarLayout } from "./calendar-layout";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
-import { sankeyWidth } from "./sankey";
-import { escapeXml } from "./svg";
+import { sankeyWidth } from "./sankey-size";
+import { escapeXml } from "./svg-renderers";
 import type { ChartDatum, ChartKind } from "./types";
 
 /** Trusted output of prepareChartSnapshot; never accept arbitrary user SVG. */
@@ -13,6 +13,8 @@ export type ChartSnapshot = {
   height: number;
   stretch: boolean;
   minWidth?: number;
+  /** Uniform calendar growth stops at 32px cells. */
+  maxWidth?: number;
   marks: readonly { key: string; rowKey: string; datum: ChartDatum; tooltip: ChartTooltip; reference?: boolean }[];
 };
 
@@ -35,15 +37,11 @@ export function prepareChartSnapshot(
     tooltip: ChartTooltipFormatter;
     reference?: (selection: ChartSelection) => boolean;
   },
+  sizing: Parameters<typeof chartRenderHeight>[1] = {},
 ): ChartSnapshot {
   const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
-  const width =
-    options.kind === "balanceFlow"
-      ? 620
-      : options.kind === "sankey"
-        ? sankeyWidth(options, options.displayWidth ?? 480)
-        : (calendar?.width ?? 480);
-  const height = chartRenderHeight(options);
+  const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : (calendar?.width ?? 480);
+  const height = chartRenderHeight(options, sizing);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
   const keys = new Set<string>();
@@ -87,8 +85,8 @@ export function prepareChartSnapshot(
     svg: formattedSvg,
     width: options.kind === "balanceFlow" ? width * Math.max(1, options.periods.length) : width,
     height,
-    ...(calendar ? { minWidth: calendar.minWidth } : {}),
-    stretch: !calendar && !["map", "pie", "donut", "gauge", "balanceFlow"].includes(options.kind),
+    ...(calendar ? { minWidth: calendar.minWidth, maxWidth: calendar.maxWidth } : {}),
+    stretch: !calendar && !["map", "pie", "donut", "gauge", "radar", "balanceFlow"].includes(options.kind),
     marks,
   };
 }

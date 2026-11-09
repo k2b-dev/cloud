@@ -298,7 +298,7 @@ ContextMenu.Content = (props) => {
       <Portal>
         <div
           role="menu"
-          class={`fixed z-50 w-56 max-w-[min(22rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-zinc-300/60 bg-white/95 py-1 text-sm text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur-sm dark:border-zinc-600/50 dark:bg-zinc-950/95 dark:text-zinc-100 ${props.class ?? ""}`}
+          class={`fixed z-50 w-56 max-w-[min(22rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-zinc-300/60 bg-white py-1 text-sm text-zinc-900 shadow-[var(--k2b-shadow-float)] ring-1 ring-black/5 dark:border-zinc-600/50 dark:bg-zinc-950 dark:text-zinc-100 ${props.class ?? ""}`}
           style={{
             left: `${Math.min(menu.x(), window.innerWidth - 232)}px`,
             top: `${Math.min(menu.y(), window.innerHeight - 320)}px`,

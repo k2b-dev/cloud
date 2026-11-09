@@ -88,7 +88,7 @@ Use **Show later** when the next review depends on a date or time. Choose when t
 
 Mail sets the next step this way:
 
-- New incoming mail changes the conversation to **Needs action** and removes it from **Later** once Mail loads it or gives up loading it. If loading fails for good, the reader shows **The message body could not be synchronized** for that message. When you mark a conversation **Done** or set a **Show later** time, this also covers the messages that Mail still loads. An automation that sets **Done** or **Waiting for reply** covers only the message that started it. Other incoming mail sets **Needs action** again.
+- Incoming mail normally changes the conversation to **Needs action** and removes it from **Later** once Mail loads it or gives up loading it. If loading fails for good, the reader shows **The message body could not be synchronized** for that message. When you mark a conversation **Done** or set a **Show later** time, this also covers the messages that Mail still loads. An automation that sets **Done** or **Waiting for reply** covers only the message that started it. Other incoming mail sets **Needs action** again. Mailing-list replies grouped from people not yet in the conversation keep its status and Show later time.
 - A human reply or reply-all changes it to **Waiting for reply**, but only after Mail confirms the delivery.
 - A new message that you write in Cloud starts a conversation in **Waiting for reply**. So does a message that Mail finds in your Sent folder from another email client.
 - Mail from your own address that arrives in the Inbox starts in **Needs action**. An example is a contact form that sends in the name of your mailbox.
@@ -266,13 +266,15 @@ With **Manage** access, you can also create a public download link for an attach
 
 Mail blocks images that a message would load from an external server. Loading such an image can tell the sender that you opened the message. Images included directly in the message stay visible.
 
-When a message contains blocked images, choose:
+When a message contains blocked images, the line **External images blocked** appears above it. Choose:
 
 - **Load images** to load them for this open message only.
-- **Always for sender** to allow images in future messages from that exact address.
-- **Always for domain** to allow images from every address at that domain. Use this broader option only for a domain that you trust.
+- the arrow next to **Load images**, then **Always from …** with the address, to allow images in future messages from that exact address. Mail then loads the images at once.
+- the arrow, then **Always from everyone at …** with the domain, to allow images from every address at that domain. Use this broader option only for a domain that you trust.
 
-These preferences apply only to you in the current mailbox. They do not change what collaborators see. To review or remove saved preferences, open **… → Remote images**.
+A message with several senders offers only **Load images**. After loading, the line shows **Images loaded**; **Always load** still lets you allow the sender or the domain. When one of your preferences loads images on its own, the line says **… always load**. Choose **Change → Stop loading automatically** there to remove that preference again. When images cannot be loaded, the line stays with **Try again**. When a message is larger than the safe limit, Mail loads only some of its images and says so in the line.
+
+These preferences apply only to you in the current mailbox. They do not change what collaborators see. To review or remove saved preferences, open **… → Remote images** or **Rules for external images…** in the line.
 
 Mail loads allowed images through its protected image service, so your browser never gets the image address. The external server can still learn that someone requested its image. Keep images blocked for unknown or suspicious senders.
 
@@ -302,7 +304,13 @@ Mail removes a deleted local tag from every conversation in that mailbox. Saved 
 
 ## Correct conversation grouping {icon="arrows-split-2"}
 
-Mail groups a message with the conversation that its reply headers point to. This also works when a reply synchronized before the message that it answers. Replies to a message that the mailbox does not hold stay together.
+Mail uses reply headers and provider threads to find conversations in the same mailbox. A new message joins only when its sender already appears in From, To, Cc, or Reply-To of an earlier message, belongs to the same mailing list, or is the mailbox itself or a configured sender alias. Bcc recipients of the mailbox’s own sent messages count too. Mailing-list replies need a matching list identity and the same posting address on both messages. The posting address must be outside this mailbox and its aliases. Both messages must carry the same List-Post email address; To and Cc do not establish this match. Mailing-list replies from people not yet in a conversation are grouped but do not reopen it. They keep its current status and Show later time, including later replies grouped only through the list. Mailbox automations skip changes to status, Show later and assignment for these replies; the automation log explains why. Reading and tagging steps can still run. The same rule applies when replies synchronize before the original: the messages already stored supply the participants. An original arriving later can also join when a stored reply sent by this mailbox directly replies to its Message-ID and has a matching, nonempty subject.
+
+Known participants can reply to a stored message with a changed or empty subject and keep the conversation. Grouping by subject alone needs a matching, nonempty subject. Common reply and forward prefixes, such as `Re:`, `AW:`, `Fwd:`, `RV:`, `SV:`, and `Antw:`, and leading list or gateway tags do not change that match. Tags containing a digit or `#` remain part of the subject comparison.
+
+Previously stored subjects are not recalculated during the upgrade. Replies that only match by subject may therefore start a new conversation with older threads. Replies quoting a stored message are unaffected.
+
+Replies from new people, such as a colleague who received a forward, start a separate conversation. Other mail that refers to a conversation no longer reopens or unsnoozes it. Merge the conversations below if they belong together. Existing conversations are not regrouped, including after thread repair.
 
 A message without reply headers joins an earlier conversation only when both of these apply:
 

@@ -27,16 +27,9 @@ const canonicalSharedStylesheetImports: readonly string[] = [
 
 const withoutCssComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, "");
 
-const selectorPrelude = (lines: readonly string[], index: number): string => {
-  const parts = [lines[index]!.trim()];
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const previous = lines[cursor]!.trim();
-    if (!previous) continue;
-    if (/[{};]$/.test(previous) || previous.startsWith("@")) break;
-    parts.unshift(previous);
-  }
-  return parts.join(" ");
-};
+/** Inspect each rule opening, including compact rules and several rules on one line. */
+const selectorPreludes = (source: string): string[] =>
+  [...source.matchAll(/(?:^|(?<=[{};]))\s*([^{};]+?)\s*\{/g)].map((match) => match[1]!.trim());
 
 const readCssFiles = (dir: string): string[] => {
   if (!existsSync(dir)) return [];
@@ -115,35 +108,18 @@ const checkEmbeddableUiStyles = (packagesRoot: string, report: Report) => {
     report(uiStylesheet, "embeddable UI CSS must not style html, body, or :root");
   }
 
-  const lines = source.split("\n");
-  for (const [index, line] of lines.entries()) {
-    const selector = line.trim();
-    if (
-      !selector.endsWith("{") ||
-      selector.startsWith("@") ||
-      selector === "from {" ||
-      selector === "to {" ||
-      /^(?:\d+(?:\.\d+)?%)(?:\s*,\s*\d+(?:\.\d+)?%)*\s*\{$/.test(selector)
-    )
-      continue;
-    const prelude = selectorPrelude(lines, index);
-    if (!prelude.includes(".k2b-ui")) {
-      report(uiStylesheet, `selector must stay below .k2b-ui: ${prelude.slice(0, -1).trim()}`);
-    }
+  for (const prelude of selectorPreludes(source)) {
+    if (prelude.startsWith("@") || prelude.split(",").every((part) => /^(?:from|to|\d+(?:\.\d+)?%)$/.test(part.trim()))) continue;
+    if (!prelude.includes(".k2b-ui")) report(uiStylesheet, `selector must stay below .k2b-ui: ${prelude}`);
   }
 
   if (!existsSync(uiFontPreset)) {
     report(uiFontPreset, "missing optional IBM Plex preset");
   } else {
     const fontSource = withoutCssComments(readFileSync(uiFontPreset, "utf8"));
-    const lines = fontSource.split("\n");
-    for (const [index, line] of lines.entries()) {
-      const selector = line.trim();
-      if (!selector.endsWith("{") || selector.startsWith("@")) continue;
-      const prelude = selectorPrelude(lines, index);
-      if (!prelude.includes(".k2b-ui")) {
-        report(uiFontPreset, `font preset selector must stay below .k2b-ui: ${prelude.slice(0, -1).trim()}`);
-      }
+    for (const prelude of selectorPreludes(fontSource)) {
+      if (prelude.startsWith("@")) continue;
+      if (!prelude.includes(".k2b-ui")) report(uiFontPreset, `font preset selector must stay below .k2b-ui: ${prelude}`);
     }
   }
 };
@@ -253,8 +229,11 @@ export const rule: Rule = {
       ),
     );
 
+    // The UI workspace controller owns these at runtime: it writes the saved and resized widths inline on each
+    // workspace. Applications may each give their own workspace a different starting width below that.
+    const uiRuntimeProperties = new Set(["--k2b-workspace-sidebar-width"]);
     for (const [property, owners] of customPropertyOwners) {
-      if (owners.size < 2 || uiCustomProperties.has(property)) continue;
+      if (owners.size < 2 || uiCustomProperties.has(property) || uiRuntimeProperties.has(property)) continue;
       report(
         [...owners][0]!,
         `${property} has multiple owner files: ${[...owners].map((file) => relative(workspaceRoot, file)).join(", ")}`,

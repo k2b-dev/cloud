@@ -20,6 +20,7 @@ export function renderBalanceFlowHtml(
   retry = false,
   standalone = true,
 ): string {
+  const cls = (name: string) => `k2b-balance-flow__${name}`;
   const t = balanceFlowWords(spec.locale),
     active = Math.max(0, spec.periods.length - 1),
     height = balanceFlowHeight(spec.periods, spec.height);
@@ -37,7 +38,7 @@ export function renderBalanceFlowHtml(
   const shown = state === "data" || state === "stale",
     p = spec.periods[active];
   const table = (index: number) =>
-    `<table class="k2b-balance-flow__table"><caption>${escapeXml(spec.periods[index]?.label ?? "")}</caption><thead><tr><th scope="col">${escapeXml(t.chartFields({ key: "detail" }))}</th><th scope="col">${escapeXml(t.balancePeriod)}</th><th scope="col">${escapeXml(t.balanceDirection)}</th><th scope="col">${escapeXml(spec.valueLabel ?? t.chartFields({ key: "value" }))}</th></tr></thead><tbody>${balanceFlowRows(
+    `<table class="${cls("table")}"><caption>${escapeXml(spec.periods[index]?.label ?? "")}</caption><thead><tr><th scope="col">${escapeXml(t.chartFields({ key: "detail" }))}</th><th scope="col">${escapeXml(t.balancePeriod)}</th><th scope="col">${escapeXml(t.balanceDirection)}</th><th scope="col">${escapeXml(spec.valueLabel ?? t.chartFields({ key: "value" }))}</th></tr></thead><tbody>${balanceFlowRows(
       spec,
       index,
     )
@@ -47,7 +48,7 @@ export function renderBalanceFlowHtml(
       )
       .join("")}</tbody></table>`;
   const phone = (index: number) =>
-    `<dl class="k2b-balance-flow__amounts" tabindex="0" aria-label="${escapeXml(spec.periods[index]?.label ?? "")}" data-balance-phone-period="${index}"${index === active ? "" : " hidden"}>${balanceFlowRows(
+    `<dl class="${cls("amounts")}" tabindex="0" aria-label="${escapeXml(spec.periods[index]?.label ?? "")}" data-balance-phone-period="${index}"${index === active ? "" : " hidden"}>${balanceFlowRows(
       spec,
       index,
     )
@@ -58,15 +59,14 @@ export function renderBalanceFlowHtml(
       .join("")}</dl>`;
   const status = state === "loading" ? t.chartLoading : state === "error" ? (error ?? t.balanceInvalid) : t.balanceEmpty;
   return `<section class="${standalone ? "k2b-ui " : ""}k2b-balance-flow" data-balance-flow data-period="${active}" data-locale="${escapeXml(spec.locale ?? "en")}" data-view="${view}" data-state="${state}" style="--k2b-balance-flow-height:${height}px;--k2b-balance-period-width:${Math.max(620, spec.width ?? 620)}px;--k2b-balance-flow-phone-height:${(180 * (height - 46)) / height + 2}px;--k2b-balance-flow-rows:${Math.min(6, ...spec.periods.map((p) => p.inflows.length + p.outflows.length + 3))}" aria-busy="${state === "loading"}">
-<header class="k2b-balance-flow__header"><div>${spec.title ? `<h3 title="${escapeXml(spec.title)}">${escapeXml(spec.title)}</h3>` : ""}<div class="k2b-balance-flow__subtitle" role="status">${escapeXml(state === "stale" ? t.balanceStale : (spec.subtitle ?? ""))}</div></div><div class="k2b-balance-flow__views" role="group" aria-label="${escapeXml(t.chartView)}"><button type="button" data-balance-view="chart" aria-pressed="${view === "chart"}">${escapeXml(t.chartDiagram)}</button><button type="button" data-balance-view="table" aria-pressed="${view === "table"}">${escapeXml(t.chartData)}</button></div></header>
-<nav class="k2b-balance-flow__nav" aria-label="${escapeXml(t.balancePeriod)}"><button type="button" data-balance-step="-1" aria-label="${escapeXml(t.balancePrevious)}"${!shown || active === 0 ? " disabled" : ""}>‹</button><strong data-balance-label>${escapeXml(p?.label ?? "—")}</strong><button type="button" data-balance-step="1" aria-label="${escapeXml(t.balanceNext)}"${!shown || active >= spec.periods.length - 1 ? " disabled" : ""}>›</button></nav>
-<div class="k2b-balance-flow__content"><div class="k2b-balance-flow__content-box"><div class="k2b-balance-flow__status" role="${state === "error" ? "alert" : "status"}"${shown ? " hidden" : ""}><p>${escapeXml(status)}</p>${state === "error" && retry ? `<button type="button" data-balance-retry>${escapeXml(t.balanceRetry)}</button>` : ""}</div><div class="k2b-balance-flow__data"${shown ? "" : " hidden"}>
+<header class="${cls("header")}"><div>${spec.title ? `<h3>${escapeXml(spec.title)}</h3>` : ""}<div class="${cls("subtitle")}" role="status">${escapeXml(state === "stale" ? t.balanceStale : (spec.subtitle ?? ""))}</div></div><div class="${cls("views")}" role="group" aria-label="${escapeXml(t.chartView)}"><button type="button" data-balance-view="chart" aria-pressed="${view === "chart"}">${escapeXml(t.chartDiagram)}</button><button type="button" data-balance-view="table" aria-pressed="${view === "table"}">${escapeXml(t.chartData)}</button></div></header>
+<nav class="${cls("nav")}" aria-label="${escapeXml(t.balancePeriod)}"><button type="button" data-balance-step="-1" aria-label="${escapeXml(t.balancePrevious)}"${!shown || active === 0 ? " disabled" : ""}>‹</button><strong data-balance-label>${escapeXml(p?.label ?? "—")}</strong><button type="button" data-balance-step="1" aria-label="${escapeXml(t.balanceNext)}"${!shown || active >= spec.periods.length - 1 ? " disabled" : ""}>›</button></nav>
+<div class="${cls("content")}"><div class="${cls("content-box")}"><div class="${cls("status")}" role="${state === "error" ? "alert" : "status"}"${shown ? " hidden" : ""}><p>${escapeXml(status)}</p>${state === "error" && retry ? `<button type="button" data-balance-retry>${escapeXml(t.balanceRetry)}</button>` : ""}</div><div class="${cls("data")}"${shown ? "" : " hidden"}>
 <div class="k2b-chart" data-chart-kind="balanceFlow"${view === "table" ? " hidden" : ""} tabindex="0" role="group" aria-label="${escapeXml(spec.title ?? t.balancePeriod)}" aria-description="${escapeXml(t.balanceKeyboard)}">
-<div class="k2b-balance-flow__scroll" data-balance-scroll><div class="k2b-balance-flow__track" style="--k2b-balance-periods:${Math.max(1, spec.periods.length)}">
-<div class="k2b-balance-flow__months">${spec.periods.map((period, i) => `<div data-balance-month="${i}"${i === active ? " data-balance-active" : ""} data-label="${escapeXml(period.label)}" data-summary="${escapeXml(balanceFlowSummary(spec, i))}"><strong>${escapeXml(period.label)}</strong></div>`).join("")}</div>
+<div class="${cls("scroll")}" data-balance-scroll><div class="${cls("track")}" style="--k2b-balance-periods:${Math.max(1, spec.periods.length)}">
+<div class="${cls("months")}">${spec.periods.map((period, i) => `<div data-balance-month="${i}"${i === active ? " data-balance-active" : ""}><strong>${escapeXml(period.label)}</strong></div>`).join("")}</div>
 <div class="k2b-chart__svg">${diagram}</div></div></div></div>
 <div data-balance-table${view === "table" ? "" : " hidden"}>${spec.periods.map((_, i) => table(i)).join("")}</div><div data-balance-phone${view === "table" ? " hidden" : ""}>${spec.periods.map((_, i) => phone(i)).join("")}</div></div></div></div>
-<div class="k2b-sr-only" data-balance-summaries${shown ? "" : " hidden"}>${spec.periods.map((_, i) => `<p>${escapeXml(balanceFlowSummary(spec, i))}</p>`).join("")}</div>
 <p class="k2b-sr-only" data-balance-summary role="status">${escapeXml(shown && p ? balanceFlowSummary(spec, active) : status)}</p>
 </section>`;
 }

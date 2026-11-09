@@ -3,6 +3,164 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.70.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.69.0...cloud-v0.70.0) (2026-11-08)
+
+
+### Features
+
+* **assistant:** app frames receive only the chart kinds they draw ([#2915](https://github.com/k2b-dev/cloud/issues/2915)) ([bba4b9f](https://github.com/k2b-dev/cloud/commit/bba4b9fb2add20a9ce2b7e3585515fbec95d3d80))
+* **assistant:** the chart tool describes every chart kind with an example ([#2916](https://github.com/k2b-dev/cloud/issues/2916)) ([c6953b8](https://github.com/k2b-dev/cloud/commit/c6953b83ca082a47a768a2fd0e938f910452bbf9))
+* **files:** automations hear new and replaced files ([#2807](https://github.com/k2b-dev/cloud/issues/2807)) ([a22c036](https://github.com/k2b-dev/cloud/commit/a22c036b22488a22bc6ff6ea5bbe2980b1271dd7)), closes [#2812](https://github.com/k2b-dev/cloud/issues/2812)
+* **filesv2:** compact activity rows that lead to the file ([#2924](https://github.com/k2b-dev/cloud/issues/2924)) ([e65d037](https://github.com/k2b-dev/cloud/commit/e65d037e45d28eaf1ab71821f71024118fd0872d))
+* **ui:** a selection toolbar for MarkdownEditor that floats above selected text ([#2798](https://github.com/k2b-dev/cloud/issues/2798)) ([86aee61](https://github.com/k2b-dev/cloud/commit/86aee61997bcde50f732e3fa0ae05ed7bba2874c))
+* **ui:** a shared thumbnail strip, in the gallery from four images ([#2898](https://github.com/k2b-dev/cloud/issues/2898)) ([d1002be](https://github.com/k2b-dev/cloud/commit/d1002beba448a6564e28d8ae739d4acead5424a7))
+* **ui:** funnels and ranked bar lists ([#2736](https://github.com/k2b-dev/cloud/issues/2736)) ([b2875ae](https://github.com/k2b-dev/cloud/commit/b2875ae2d34782a6bd013d598133570ef1457600))
+* **ui:** named bubbles with averages and radar charts ([#2779](https://github.com/k2b-dev/cloud/issues/2779)) ([334f441](https://github.com/k2b-dev/cloud/commit/334f4417ca4be015c9650b26a723f2c43ce15e90))
+* **ui:** pictures and videos fill the preview dialog under floating chips ([#2899](https://github.com/k2b-dev/cloud/issues/2899)) ([9a1c2b8](https://github.com/k2b-dev/cloud/commit/9a1c2b87f44b3ceb549d74533bb5521410385570))
+* **ui:** place slider value and reset beside the label ([#2910](https://github.com/k2b-dev/cloud/issues/2910)) ([ce81cde](https://github.com/k2b-dev/cloud/commit/ce81cdead2ce1b5bd30aeea7bb01bfd6c11693e3))
+* **ui:** treemaps and pareto charts ([#2777](https://github.com/k2b-dev/cloud/issues/2777)) ([6fefdbf](https://github.com/k2b-dev/cloud/commit/6fefdbf3f5f428d2f6aebc1464ff7190b127e1f4))
+
+
+### Bug Fixes
+
+* **cloud:** description panels sort and search tables by what they show, keep table heights, money tones and a named empty figure ([#2896](https://github.com/k2b-dev/cloud/issues/2896)) ([7b81f1c](https://github.com/k2b-dev/cloud/commit/7b81f1c347459a6335ac7aae9bfd5f5c16fecf43))
+* **docs:** check overview geometry without hydrating every chart ([#2914](https://github.com/k2b-dev/cloud/issues/2914)) ([3fc3d5d](https://github.com/k2b-dev/cloud/commit/3fc3d5d8709feb28c4ac6447f9508f80bcd7c016)), closes [#2913](https://github.com/k2b-dev/cloud/issues/2913)
+* **docs:** count the UI catalog components from the package instead of by hand ([#2890](https://github.com/k2b-dev/cloud/issues/2890)) ([f69f60a](https://github.com/k2b-dev/cloud/commit/f69f60a465a4a6f4149f26855316dec5cf257267))
+* **docs:** the chart showcase registry cannot drift from its example files ([#2902](https://github.com/k2b-dev/cloud/issues/2902)) ([14ba2cf](https://github.com/k2b-dev/cloud/commit/14ba2cf05c9bc3c061249384a5d2a42dd9e9562b))
+* **filesv2:** an uncertain inbox upload keeps its key so a retry cannot publish twice ([#2894](https://github.com/k2b-dev/cloud/issues/2894)) ([8779aee](https://github.com/k2b-dev/cloud/commit/8779aeec247368e16b6977a1ac14237caddb48e9))
+* **mail:** only earlier participants join an existing conversation automatically, and list replies from new people no longer reopen it ([8779aee](https://github.com/k2b-dev/cloud/commit/8779aeec247368e16b6977a1ac14237caddb48e9))
+* **notebooks:** the slash suggestion test waits for the filtered list ([#2905](https://github.com/k2b-dev/cloud/issues/2905)) ([3fa02a1](https://github.com/k2b-dev/cloud/commit/3fa02a1c49e6570f1265a4269e2060bf9bdef1cd)), closes [#2666](https://github.com/k2b-dev/cloud/issues/2666)
+* **ssr:** focus survives an island's first render, and focused charts keep their tooltip ([#2851](https://github.com/k2b-dev/cloud/issues/2851)) ([115b3f3](https://github.com/k2b-dev/cloud/commit/115b3f31770747b84852fa50f7b05c7e509d4e9b))
+* **test:** keep late icon font checks within the default budget ([#2906](https://github.com/k2b-dev/cloud/issues/2906)) ([48937da](https://github.com/k2b-dev/cloud/commit/48937da6a93c6def66104376ebeef1db230b4660)), closes [#2668](https://github.com/k2b-dev/cloud/issues/2668)
+* **test:** observe benchmark startup before loading domain modules ([#2907](https://github.com/k2b-dev/cloud/issues/2907)) ([b6da5b2](https://github.com/k2b-dev/cloud/commit/b6da5b2043838550e336fb65c2f547dcfc25c7f8)), closes [#2903](https://github.com/k2b-dev/cloud/issues/2903)
+* **ui:** dashboard frames keep their subtitle's text across the first client render ([#2900](https://github.com/k2b-dev/cloud/issues/2900)) ([545e1d2](https://github.com/k2b-dev/cloud/commit/545e1d2865f6cbf72a3c371eac8fe191d98f6203))
+* **ui:** keep a saved workspace sidebar width on every frame ([#2922](https://github.com/k2b-dev/cloud/issues/2922)) ([eded6aa](https://github.com/k2b-dev/cloud/commit/eded6aa05260bdee00beed5590bde22fc94e995a))
+* **ui:** make disabled sliders visibly unavailable ([#2911](https://github.com/k2b-dev/cloud/issues/2911)) ([25b2942](https://github.com/k2b-dev/cloud/commit/25b2942e29080d8e28024bee4e282faf6a786200))
+* **ui:** tables keep their text across the first client render ([#2814](https://github.com/k2b-dev/cloud/issues/2814)) ([b251339](https://github.com/k2b-dev/cloud/commit/b2513396fb8be7678ae553dd0671cb7a6858209f))
+
+
+### Performance Improvements
+
+* **assistant:** prepare chart assets before apps start ([#2919](https://github.com/k2b-dev/cloud/issues/2919)) ([bbfc026](https://github.com/k2b-dev/cloud/commit/bbfc0268e30ab05aa79bfea0d207babd9c4f022f))
+
+## [0.69.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.68.0...cloud-v0.69.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** Cloud no longer serves speedtest transfer data, JavaScript or Python measurement scripts. Download the shared Node/Bun CLI from the standalone speedtest server; see its operator guide.
+
+### Features
+
+* **automation:** export Mail rules and routine definitions ([#2816](https://github.com/k2b-dev/cloud/issues/2816)) ([d64f84d](https://github.com/k2b-dev/cloud/commit/d64f84d67ba7efb6fd220af5e83dbe6dac64ceeb))
+* **chat:** automations hear posted messages and mentions ([#2808](https://github.com/k2b-dev/cloud/issues/2808)) ([4f1e3d9](https://github.com/k2b-dev/cloud/commit/4f1e3d96423123a1d57b0906bae5bd2bde83b309))
+* **cloud:** Assistant suggests the next message when it helps ([#2796](https://github.com/k2b-dev/cloud/issues/2796)) ([8c09060](https://github.com/k2b-dev/cloud/commit/8c0906044b7a3f55aa4a1fde4bb6aa101084101f))
+* **cloud:** Chat and Notebooks share one chart description owned by @k2b/ui ([#2778](https://github.com/k2b-dev/cloud/issues/2778)) ([05299cb](https://github.com/k2b-dev/cloud/commit/05299cb9d7451df2c91e712407614a267435b589))
+* **cloud:** the model trigger shows its level ([#2837](https://github.com/k2b-dev/cloud/issues/2837)) ([b11c3f6](https://github.com/k2b-dev/cloud/commit/b11c3f6c41167bb788bfb6b93a3a7ad86db100a4))
+* **contacts:** automations hear new and changed contacts ([#2809](https://github.com/k2b-dev/cloud/issues/2809)) ([afcc1e4](https://github.com/k2b-dev/cloud/commit/afcc1e4d09ac7179537e4ddc9afe56fad6568d78))
+* **grids:** expose integrity and document capabilities without workflows ([#2749](https://github.com/k2b-dev/cloud/issues/2749)) ([c0bf3e4](https://github.com/k2b-dev/cloud/commit/c0bf3e4c2f2b1ad51af6e76bb0110a74fe5a0316))
+* **grids:** publish transactional record events ([#2762](https://github.com/k2b-dev/cloud/issues/2762)) ([ffdfa99](https://github.com/k2b-dev/cloud/commit/ffdfa99669af20633e92a0abdac464a0c59f89f8))
+* **notebooks:** automations hear comments and may comment and create notes ([#2806](https://github.com/k2b-dev/cloud/issues/2806)) ([578f549](https://github.com/k2b-dev/cloud/commit/578f549217cd9af02f5b75d1f2dfdfdf52d71083))
+* **pulse:** SQL dashboards share portable chart descriptions ([#2781](https://github.com/k2b-dev/cloud/issues/2781)) ([0733391](https://github.com/k2b-dev/cloud/commit/07333918ae621a81bc7f0be787cf6bc07e6291cd))
+* **spaces:** automations hear comments, changes and due tasks ([#2801](https://github.com/k2b-dev/cloud/issues/2801)) ([366c110](https://github.com/k2b-dev/cloud/commit/366c110a70cdf9b81debca6c8a99bdd46ab7b6a1))
+* **speedtest:** add bounded standalone measurements ([#2827](https://github.com/k2b-dev/cloud/issues/2827)) ([67387e1](https://github.com/k2b-dev/cloud/commit/67387e1ee54e2f619aa20fe2d49f7f35e3dc1107))
+* **tools:** add bounded PDF page operations ([#2881](https://github.com/k2b-dev/cloud/issues/2881)) ([17879ae](https://github.com/k2b-dev/cloud/commit/17879aebbf8ea817974b3aeda39021d0ef834791))
+* **tools:** move speedtests to the shared standalone engine ([#2834](https://github.com/k2b-dev/cloud/issues/2834)) ([fc5b1e2](https://github.com/k2b-dev/cloud/commit/fc5b1e2836f75da65477e6a4ca3f400288271274))
+* **ui:** a leading checkbox on DetailPanel actions ([#2799](https://github.com/k2b-dev/cloud/issues/2799)) ([50e866e](https://github.com/k2b-dev/cloud/commit/50e866e2381db2bd36ed538f4f98afcb0bb6b8bf))
+* **ui:** a slider's reset names the value it returns to ([#2888](https://github.com/k2b-dev/cloud/issues/2888)) ([13a3d9a](https://github.com/k2b-dev/cloud/commit/13a3d9ad8f8a3ebf465bc33aee33250f104f470b))
+* **ui:** a wide split button gives its room to the main action ([#2889](https://github.com/k2b-dev/cloud/issues/2889)) ([5a4167a](https://github.com/k2b-dev/cloud/commit/5a4167a243fd747776a54aa7b36b84887a4b3ae4))
+* **ui:** commands confirm success and errors where their list was ([#2867](https://github.com/k2b-dev/cloud/issues/2867)) ([57b6f9b](https://github.com/k2b-dev/cloud/commit/57b6f9be4fefa55f169eb200829669785b19a169))
+* **ui:** dashboard panels as one shared component family ([#2813](https://github.com/k2b-dev/cloud/issues/2813)) ([1f0f47a](https://github.com/k2b-dev/cloud/commit/1f0f47a07a4639470a107873f2a93c99a09ea00b))
+* **ui:** MarkdownEditor can write in the sans font ([#2887](https://github.com/k2b-dev/cloud/issues/2887)) ([bab5b04](https://github.com/k2b-dev/cloud/commit/bab5b0409b985583618b8280328152159026d59c))
+* **ui:** one glass surface for layers over pictures and maps ([#2870](https://github.com/k2b-dev/cloud/issues/2870)) ([d31c85d](https://github.com/k2b-dev/cloud/commit/d31c85d542b4aa25f48545ece445f802af672a13))
+* **ui:** one period picker with presets and a custom range ([#2845](https://github.com/k2b-dev/cloud/issues/2845)) ([234c799](https://github.com/k2b-dev/cloud/commit/234c799b6486c1bedcbeeb91d0d94b2ca564fb15))
+* **ui:** PDFs draw with pdf.js in every browser ([#2880](https://github.com/k2b-dev/cloud/issues/2880)) ([a74d849](https://github.com/k2b-dev/cloud/commit/a74d849ddd68444eed2c8d2199331180dc8c38d5))
+* **ui:** slash commands dock above the composer and run with its text ([#2848](https://github.com/k2b-dev/cloud/issues/2848)) ([fd7d090](https://github.com/k2b-dev/cloud/commit/fd7d0904c580a5e40f95b52887151ea080cfe7a8))
+* **ui:** slash commands in MarkdownEditor and a shared CommandMenu ([#2797](https://github.com/k2b-dev/cloud/issues/2797)) ([a0a5047](https://github.com/k2b-dev/cloud/commit/a0a50472a6d42e374b7a84a885dbba8cb64145bd))
+* **ui:** sliders show a changed value and reset in place ([#2873](https://github.com/k2b-dev/cloud/issues/2873)) ([fb6f152](https://github.com/k2b-dev/cloud/commit/fb6f152bbf681106658fe23461b5ddf2d65cb724))
+* **ui:** split buttons read as one body with a light divider ([#2860](https://github.com/k2b-dev/cloud/issues/2860)) ([69c9faa](https://github.com/k2b-dev/cloud/commit/69c9faa8d5c5e87d98a1772000d374311de91eb9))
+* **ui:** stacked, grouped, compared and horizontal bars ([#2729](https://github.com/k2b-dev/cloud/issues/2729)) ([cbfea20](https://github.com/k2b-dev/cloud/commit/cbfea2061617aa5f24bef50aefd01f41d7d316e3))
+* **ui:** the choice slider reads as a slider ([#2811](https://github.com/k2b-dev/cloud/issues/2811)) ([8ea2260](https://github.com/k2b-dev/cloud/commit/8ea226095b4076fab7c90ca48977316788302bca))
+* **ui:** waterfall charts ([#2758](https://github.com/k2b-dev/cloud/issues/2758)) ([3b05ef2](https://github.com/k2b-dev/cloud/commit/3b05ef22952c7cb3b883f1d688ada671344db2c2))
+* **ui:** wide label–value rows stay readable ([#2819](https://github.com/k2b-dev/cloud/issues/2819)) ([3e751ef](https://github.com/k2b-dev/cloud/commit/3e751efb428682cad31f3b12e891d3f3001eecc8))
+
+
+### Bug Fixes
+
+* **assistant:** batch offline chart checks within browser deadlines ([#2842](https://github.com/k2b-dev/cloud/issues/2842)) ([9b795dd](https://github.com/k2b-dev/cloud/commit/9b795dd5b4ff765271d0de0520b4544aef6c9093))
+* **ci:** reserve measured slowdown headroom in WebKit shards ([#2804](https://github.com/k2b-dev/cloud/issues/2804)) ([2ab3846](https://github.com/k2b-dev/cloud/commit/2ab3846a534ec7afddfa1501615a5efd4775c172)), closes [#1998](https://github.com/k2b-dev/cloud/issues/1998)
+* **ci:** WebKit shards keep headroom for new browser files ([#2839](https://github.com/k2b-dev/cloud/issues/2839)) ([b6ef5b8](https://github.com/k2b-dev/cloud/commit/b6ef5b841d2781c55fb97cab2349c389b392ff67))
+* **cloud:** background runs never use remembered approvals ([#2858](https://github.com/k2b-dev/cloud/issues/2858)) ([d588867](https://github.com/k2b-dev/cloud/commit/d588867971ef011028470878734236644143f43e))
+* **cloud:** Chat loads chart drawing on first use ([#2791](https://github.com/k2b-dev/cloud/issues/2791)) ([da1b8f5](https://github.com/k2b-dev/cloud/commit/da1b8f5b7e1c1cc6b408e0650a37dc6c82d979ee))
+* **cloud:** localize chart points and keep schema assertions internal ([#2783](https://github.com/k2b-dev/cloud/issues/2783)) ([b2e4a1a](https://github.com/k2b-dev/cloud/commit/b2e4a1a6a396b733dbb5778abecf210febf54228))
+* **docs:** chart showcase draws its Sankeys, sizes cards by kind and lists each option once ([#2793](https://github.com/k2b-dev/cloud/issues/2793)) ([24cf0ba](https://github.com/k2b-dev/cloud/commit/24cf0baec56fdc9015176c74c723527f8231c909))
+* **files:** pace upload segments after measuring throughput ([#2835](https://github.com/k2b-dev/cloud/issues/2835)) ([b11fe90](https://github.com/k2b-dev/cloud/commit/b11fe90e5f36e69965265f4062db345aab5872dc))
+* **filesv2:** append entries with quiet load-more actions ([#2829](https://github.com/k2b-dev/cloud/issues/2829)) ([851797f](https://github.com/k2b-dev/cloud/commit/851797f888b8492813d4c84493c6df8dd903740c))
+* **filesv2:** estimate remaining upload time from byte throughput ([#2828](https://github.com/k2b-dev/cloud/issues/2828)) ([4bf8b4c](https://github.com/k2b-dev/cloud/commit/4bf8b4cdbdc7a2e2061d76f5e012c623a8431caf))
+* **mail:** unreadable mailboxes answer like unknown IDs ([afcc1e4](https://github.com/k2b-dev/cloud/commit/afcc1e4d09ac7179537e4ddc9afe56fad6568d78))
+* **notebooks:** await delivered print media transitions ([#2836](https://github.com/k2b-dev/cloud/issues/2836)) ([aa1a736](https://github.com/k2b-dev/cloud/commit/aa1a736866d95cb01815c036000f4cfc2df772da))
+* **test:** island size budgets measure live code, not naming noise from dead modules ([#2879](https://github.com/k2b-dev/cloud/issues/2879)) ([8b641c4](https://github.com/k2b-dev/cloud/commit/8b641c49f4e9bc46e6db35fc2074312394bcec9c))
+* **tools:** keep navigation consistent across utilities ([#2831](https://github.com/k2b-dev/cloud/issues/2831)) ([567162c](https://github.com/k2b-dev/cloud/commit/567162ce6cbab39e93e8ae94cfbea99484d453d8))
+* **ui:** status-line retry links are underlined and the chart showcase uses the dashboard grid ([#2883](https://github.com/k2b-dev/cloud/issues/2883)) ([c270f4d](https://github.com/k2b-dev/cloud/commit/c270f4d1ed5e42df293726a7f4b6e2ca6eb92fdb))
+
+## [0.68.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.67.0...cloud-v0.68.0) (2026-11-07)
+
+
+### Features
+
+* **access:** resolve batch permissions in the caller transaction ([#2742](https://github.com/k2b-dev/cloud/issues/2742)) ([7da2090](https://github.com/k2b-dev/cloud/commit/7da20908c0394daad5222afc0a352c1b26332c56))
+* **assistant:** app frames load rare chart kinds when first drawn ([#2787](https://github.com/k2b-dev/cloud/issues/2787)) ([8787d00](https://github.com/k2b-dev/cloud/commit/8787d005b2c0822278973a47c7bc0fb999a1d7c5))
+* **chat:** post results into writable chats ([#2740](https://github.com/k2b-dev/cloud/issues/2740)) ([a909d27](https://github.com/k2b-dev/cloud/commit/a909d272597a041bc60e41afa46fed2df2ef32b4))
+* **cloud:** publish help and skills only when content changes ([#2475](https://github.com/k2b-dev/cloud/issues/2475)) ([ba07d4a](https://github.com/k2b-dev/cloud/commit/ba07d4a80c5815ef7e61a2ebe6d0e0d85d124fed))
+* **docs:** a chart showcase that starts from what you want to show ([#2747](https://github.com/k2b-dev/cloud/issues/2747)) ([312e849](https://github.com/k2b-dev/cloud/commit/312e849e7bebd84eac42188a784e5f68d54b7cf6))
+* **events:** deliver resource events to mandate-bound workloads ([#2728](https://github.com/k2b-dev/cloud/issues/2728)) ([f9afc45](https://github.com/k2b-dev/cloud/commit/f9afc454b17761fd609e8534d50f74cd324bd2ab)), closes [#2725](https://github.com/k2b-dev/cloud/issues/2725)
+* **events:** install the platform outbox in app test databases ([#2741](https://github.com/k2b-dev/cloud/issues/2741)) ([40f9f26](https://github.com/k2b-dev/cloud/commit/40f9f26102a67890a7db4d8d20d304802944b9e2))
+* **mail:** enable protected collaboration actions ([#2732](https://github.com/k2b-dev/cloud/issues/2732)) ([9807796](https://github.com/k2b-dev/cloud/commit/9807796c27a6a952884329c511131167fdd16f8b))
+* **mail:** publish incoming message receipt events ([#2761](https://github.com/k2b-dev/cloud/issues/2761)) ([00b3a85](https://github.com/k2b-dev/cloud/commit/00b3a85d99d1ec371c70dfe80122ce2a7500842e))
+* **mail:** quieter sidebar with a Mailboxes menu for new and deleted mailboxes ([#2752](https://github.com/k2b-dev/cloud/issues/2752)) ([9c24e57](https://github.com/k2b-dev/cloud/commit/9c24e578caf666bedc1867ae1b2e6bd9893be32b))
+* **mail:** show image attachment thumbnails in list rows ([#2229](https://github.com/k2b-dev/cloud/issues/2229)) ([64c3fc2](https://github.com/k2b-dev/cloud/commit/64c3fc268cf67b9b251aa33d43c0aa988cc7fc11))
+* **pulse:** dashboards read in the base's time zone with round time ticks ([#2723](https://github.com/k2b-dev/cloud/issues/2723)) ([ec40dbd](https://github.com/k2b-dev/cloud/commit/ec40dbd740debb312abaf09d40fd07b7670774c0))
+* **pulse:** dashboards show plain icons, framed tables and explorable line charts ([#2721](https://github.com/k2b-dev/cloud/issues/2721)) ([23a7763](https://github.com/k2b-dev/cloud/commit/23a7763e74eef0072616079aea82714bf154f84f))
+* **spaces:** allow scoped background creations and links ([#2738](https://github.com/k2b-dev/cloud/issues/2738)) ([149fc18](https://github.com/k2b-dev/cloud/commit/149fc18ed732f7e7959c28c65af8cad375e4d91b))
+* **ui:** AI surfaces use plum instead of cyan ([#2727](https://github.com/k2b-dev/cloud/issues/2727)) ([d623e33](https://github.com/k2b-dev/cloud/commit/d623e3326f0768a50048a34acb3e2fb6a299b61d))
+* **ui:** budgets and balance rows ([#2757](https://github.com/k2b-dev/cloud/issues/2757)) ([0d6fcef](https://github.com/k2b-dev/cloud/commit/0d6fcefd8ec44697155af1994006b986fbe0178e))
+* **ui:** calendar heatmaps ([#2774](https://github.com/k2b-dev/cloud/issues/2774)) ([1687e8e](https://github.com/k2b-dev/cloud/commit/1687e8e343693ae14fc4735f41f5b8b1a4ce2e05))
+* **ui:** chart frames keep their place while loading, empty, failing or stale ([#2731](https://github.com/k2b-dev/cloud/issues/2731)) ([f0f1446](https://github.com/k2b-dev/cloud/commit/f0f1446061f2fa227baa2b3746c609d216eeb670))
+* **ui:** charts draw with the @k2b/ui core instead of stdlib ([#2734](https://github.com/k2b-dev/cloud/issues/2734)) ([f40d118](https://github.com/k2b-dev/cloud/commit/f40d1181d95b98e368c93b367f4d5d137c03242e))
+* **ui:** dashboards share one grid with two-thirds panels and key figures in their sections ([#2770](https://github.com/k2b-dev/cloud/issues/2770)) ([21be97b](https://github.com/k2b-dev/cloud/commit/21be97bd0bc732e18d87b6873d974097a344c828))
+* **ui:** key figures show as single tiles with change and comparison ([#2748](https://github.com/k2b-dev/cloud/issues/2748)) ([4aa167c](https://github.com/k2b-dev/cloud/commit/4aa167cedadd1a677184d7bee8a1059aafc06eca))
+* **ui:** money shows its direction with turquoise in and violet out ([#2754](https://github.com/k2b-dev/cloud/issues/2754)) ([635db06](https://github.com/k2b-dev/cloud/commit/635db0653681babe1c20dfb945cc5fb104b3f6ef))
+* **ui:** stacked and 100 % area charts ([#2763](https://github.com/k2b-dev/cloud/issues/2763)) ([2a1cb51](https://github.com/k2b-dev/cloud/commit/2a1cb5152262132dcb542ad475cb5239144097f2))
+* **ui:** tables format numbers in the reader's language ([#2733](https://github.com/k2b-dev/cloud/issues/2733)) ([e0eb4bc](https://github.com/k2b-dev/cloud/commit/e0eb4bceba486ade4857c5d6b4c696e01b2d086f))
+* **ui:** tables search, group and type their columns ([#2765](https://github.com/k2b-dev/cloud/issues/2765)) ([9028f93](https://github.com/k2b-dev/cloud/commit/9028f9304abf12e40601cf552ea5edeb72cba79a))
+* **ui:** typed chart components and a Solid-free chart core entry ([#2726](https://github.com/k2b-dev/cloud/issues/2726)) ([70526ad](https://github.com/k2b-dev/cloud/commit/70526ad8bbf23b7982d0efee4743309d416b7d96))
+
+
+### Bug Fixes
+
+* **assistant:** keep Studio scroll canvas in the selected theme ([#1657](https://github.com/k2b-dev/cloud/issues/1657)) ([4b4d3e9](https://github.com/k2b-dev/cloud/commit/4b4d3e9f8d8e6a8d59da24fa52a76bfc98e9f83b))
+* **assistant:** preserve chat search when results appear ([#2722](https://github.com/k2b-dev/cloud/issues/2722)) ([34d3aac](https://github.com/k2b-dev/cloud/commit/34d3aac03bc460fca26116927e1a452c74fe1b0c))
+* **chat:** For You and the channel directory keep one back control ([#2249](https://github.com/k2b-dev/cloud/issues/2249)) ([9eb243a](https://github.com/k2b-dev/cloud/commit/9eb243af93ac8d41c02ad748583acfa20b3a3d52))
+* **cloud:** Chat loads its table tools on first use ([#2789](https://github.com/k2b-dev/cloud/issues/2789)) ([a986780](https://github.com/k2b-dev/cloud/commit/a9867802da6df41b53c35a3f3c1abe36a7ea9f45))
+* **cloud:** Core opens its bundled location databases on a read-only root filesystem ([#2720](https://github.com/k2b-dev/cloud/issues/2720)) ([2806f45](https://github.com/k2b-dev/cloud/commit/2806f4545f2e923c920baa657b0cf70aa506894f))
+* **cloud:** keep mixed color-mix() colors in standalone apps' compiled CSS ([#772](https://github.com/k2b-dev/cloud/issues/772)) ([5dffdf9](https://github.com/k2b-dev/cloud/commit/5dffdf91c598dd0fd24faadcc0155997f575ce93))
+* **docs:** the docs image builds again with browser tests in the site ([#2792](https://github.com/k2b-dev/cloud/issues/2792)) ([f169979](https://github.com/k2b-dev/cloud/commit/f1699798ea4197328b151811b769aaae327119ff))
+* **files:** the execution record leads back up to Activity ([#2254](https://github.com/k2b-dev/cloud/issues/2254)) ([c7216f1](https://github.com/k2b-dev/cloud/commit/c7216f1f2cde67be7a45072ece86c71b779caa1a))
+* **mail:** reject stale mailbox logo settings ([#1774](https://github.com/k2b-dev/cloud/issues/1774)) ([119791a](https://github.com/k2b-dev/cloud/commit/119791a888cc88c51146a02474b691138d55a83a))
+* **mail:** settle compose navigation without incidental transitions ([#2782](https://github.com/k2b-dev/cloud/issues/2782)) ([73c8c2b](https://github.com/k2b-dev/cloud/commit/73c8c2b83edcf47ba7d3cdcc3d81b73a1d31d6d0)), closes [#2780](https://github.com/k2b-dev/cloud/issues/2780)
+* **mail:** the row menu test waits for the row state after the menu opens or closes ([#2771](https://github.com/k2b-dev/cloud/issues/2771)) ([26816ab](https://github.com/k2b-dev/cloud/commit/26816ab985cadd747d67a49418ee727d8f92fed2)), closes [#2769](https://github.com/k2b-dev/cloud/issues/2769)
+* **notebooks:** version history and the graph keep one back control ([#2248](https://github.com/k2b-dev/cloud/issues/2248)) ([d1bec7e](https://github.com/k2b-dev/cloud/commit/d1bec7e5435cacf7b15df4a8331132ce8731b173))
+* **observability:** bound history reads and cancel abandoned queries ([#2428](https://github.com/k2b-dev/cloud/issues/2428)) ([e131766](https://github.com/k2b-dev/cloud/commit/e1317661865d689cc57ec297d28e1bcab9621cc0))
+* **observability:** drain log and telemetry retention in bounded batches ([#2427](https://github.com/k2b-dev/cloud/issues/2427)) ([4af9b44](https://github.com/k2b-dev/cloud/commit/4af9b44c83743e25dfe5279947a33c41441e7f47))
+* **pulse:** a panel that cannot render fails alone, and day buckets before the range render ([#2714](https://github.com/k2b-dev/cloud/issues/2714)) ([21aba89](https://github.com/k2b-dev/cloud/commit/21aba89f872095d5a2b72a2d1720499e6a383b17)), closes [#2713](https://github.com/k2b-dev/cloud/issues/2713)
+* **pulse:** the SQL console test waits for the edited SQL in the address ([#2767](https://github.com/k2b-dev/cloud/issues/2767)) ([ddf0044](https://github.com/k2b-dev/cloud/commit/ddf004464c41e805824a8fd9134ab4cc1e0a427d))
+* **test:** closing a dead browser no longer waits up to 2 s for its profile cleanup ([#2136](https://github.com/k2b-dev/cloud/issues/2136)) ([50c1956](https://github.com/k2b-dev/cloud/commit/50c19560d37a27a360b2562c73c0bfe2189b4748))
+* **ui:** a chosen context-menu entry returns focus, and an open Mail row menu hides the row's tooltip ([#2228](https://github.com/k2b-dev/cloud/issues/2228)) ([f5d903e](https://github.com/k2b-dev/cloud/commit/f5d903e437cfd64d30414b3bd4c89cfde0317f64))
+* **ui:** chart axes finish drawing for every finite value ([#2785](https://github.com/k2b-dev/cloud/issues/2785)) ([391bf9e](https://github.com/k2b-dev/cloud/commit/391bf9e6814cc691cde95279675d285f9cc35570))
+* **ui:** fade workspace head filters at the edge that hides chips ([#1804](https://github.com/k2b-dev/cloud/issues/1804)) ([43393b0](https://github.com/k2b-dev/cloud/commit/43393b0008b5680e61b82782cbc25fcd2947d5c5))
+* **ui:** key figure tiles never cut their value ([#2773](https://github.com/k2b-dev/cloud/issues/2773)) ([cafacd8](https://github.com/k2b-dev/cloud/commit/cafacd815b170c807d96762270ac3f169c7ab835))
+* **ui:** key figures in a row share one line and never cut their comparison ([#2785](https://github.com/k2b-dev/cloud/issues/2785)) ([391bf9e](https://github.com/k2b-dev/cloud/commit/391bf9e6814cc691cde95279675d285f9cc35570))
+
 ## [0.67.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.66.0...cloud-v0.67.0) (2026-11-06)
 
 

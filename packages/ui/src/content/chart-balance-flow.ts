@@ -1,4 +1,4 @@
-import { balanceFlowTooltip } from "../charts/core/balance-flow";
+import { balanceFlowTooltip } from "../charts/core/balance-flow-data";
 import {
   type ChartDatumRef,
   type ChartSelection,
@@ -7,7 +7,7 @@ import {
   sameChartDatum,
 } from "../charts/core/inspection";
 import { prefersReducedMotion } from "../motion";
-import { inspectChart } from "./chart-inspection-core";
+import { inspectChart } from "./chart-inspection-mount";
 
 export function selectBalanceFlowDatum(root: HTMLElement, selected: ChartDatumRef | null): void {
   for (const mark of root.querySelectorAll<SVGElement>("[data-chart-datum]")) {
@@ -66,8 +66,9 @@ export function mountBalanceFlow(
     root.dataset.period = String(period);
     options.periodChange?.(period);
     for (const [index, month] of months.entries()) month.toggleAttribute("data-balance-active", index === period);
-    root.querySelector("[data-balance-label]")!.textContent = months[period]?.dataset.label ?? "";
-    root.querySelector("[data-balance-summary]")!.textContent = months[period]?.dataset.summary ?? "";
+    root.querySelector("[data-balance-label]")!.textContent = months[period]?.textContent ?? "";
+    root.querySelector("[data-balance-summary]")!.textContent =
+      chart.querySelector(`[data-balance-period="${period}"]`)?.getAttribute("aria-label") ?? "";
     for (const list of root.querySelectorAll<HTMLElement>("[data-balance-phone-period]"))
       list.hidden = Number(list.dataset.balancePhonePeriod) !== period;
     for (const button of root.querySelectorAll<HTMLButtonElement>("[data-balance-step]"))

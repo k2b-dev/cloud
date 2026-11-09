@@ -14,6 +14,6 @@ export const chartLocaleSchema = () =>
     }, "Use a valid BCP 47 locale, such as de-DE.");
 
 /** The portable renderers which honour an explicit locale. Keep one policy for single charts and groups. */
-const localeKinds = new Set(["sankey", "balanceFlow", "treemap", "pareto", "bubble", "radar"]);
+const localeKinds = new Set(["treemap", "pareto", "bubble", "radar", "sankey", "balanceFlow"]);
 export const chartAcceptsLocale = (chart: { kind?: string; layout?: string }): boolean =>
   chart.kind === "heatmap" ? chart.layout === "calendar" : localeKinds.has(chart.kind ?? "");

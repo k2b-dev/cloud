@@ -5,6 +5,7 @@ import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
+import { migrateAiNextMessages } from "./next-message-store";
 import { migrateAiQuotas } from "./quotas-migrate";
 import { withAiShortId } from "./short-id";
 
@@ -2640,6 +2641,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_ai_messages_submitted_draft
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
+  await migrateAiNextMessages();
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {
@@ -2763,6 +2765,7 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
       updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL, UNIQUE(model_id,slug),
       CHECK(id = CASE WHEN slug = 'standard' THEN model_id ELSE model_id || ':' || slug END)
     )`;
+  await db`ALTER TABLE ai.models ADD COLUMN IF NOT EXISTS output_token_limit INTEGER CHECK(output_token_limit > 0)`;
   await db`CREATE TABLE IF NOT EXISTS ai.model_assignments (
       slot TEXT PRIMARY KEY CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio','liveAudio','decision')),
       variant_id TEXT REFERENCES ai.model_variants(id), revision INTEGER NOT NULL DEFAULT 1,

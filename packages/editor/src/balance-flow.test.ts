@@ -49,7 +49,7 @@ test("every shared tooltip and table field matches Solid including the inherited
   const table = chartTable(input, "en");
   expect(table.rows.map((r) => r.cells.label)).toEqual(balanceFlowDatums(options).map((datum) => datum.label));
   expect(table.rows[0]!.cells.value).toBe("100,00 €");
-  expect(table.columns.map((c) => c.label)).toEqual(["Detail", "Zeitraum", "Richtung", "Wert"]);
+  expect(table.columns.map((c) => c.label)).toEqual(["Details", "Zeitraum", "Richtung", "Wert"]);
 });
 test("notebooks reserve the max period and preserve navigation and period tables for print", () => {
   const input = chartKinds().parse(source);

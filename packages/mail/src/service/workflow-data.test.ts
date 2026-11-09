@@ -1,15 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { normalizeMailKeywords } from "./command-message-state";
 import { extractMessageProtocolFacts } from "./message-protocol";
 import type { MailWorkflowTargetSnapshot } from "./workflow-data";
-import { getWorkflowSnapshot, getWorkflowSnapshots, mailWorkflowEventContext, normalizeWorkflowKeywords } from "./workflow-data";
+import { getWorkflowSnapshot, getWorkflowSnapshots, mailWorkflowEventContext } from "./workflow-data";
 import { mailWorkflowMessagePrecondition } from "./workflow-message-preconditions";
 
 describe("Mail workflow event context", () => {
   test("freezes only keywords the remote precondition can express", () => {
     const target = { messageId: "message", remoteMessageRefId: "remote", folderId: "folder" };
-    const keywords = normalizeWorkflowKeywords(["\\Inbox", "\\Important", " review ", "needs action", "", "zebra", "a".repeat(101)]);
+    const keywords = normalizeMailKeywords(["\\Inbox", "\\Important", " review ", "needs action", "", "zebra", "a".repeat(101)]);
     expect(keywords).toEqual(["review", "zebra"]);
     expect(
       mailWorkflowMessagePrecondition(
@@ -54,12 +55,16 @@ describe("Mail workflow event context", () => {
 
 // Test the row-to-context boundary for both point reads and batch reads, without a database.
 test("hydrated snapshot contexts omit bodies and preserve the view's own xid and link order with its revision", async () => {
-  for (const xid of [null, "9007199254740993"]) {
+  for (const [xid, listOnly] of [
+    [null, false],
+    ["9007199254740993", true],
+  ] as const) {
     const row = {
       remote_message_ref_id: "remote",
       message_id: "message",
       message_short_id: "msg001",
       conversation_id: "conversation",
+      list_only: listOnly,
       conversation_short_id: "conv001",
       mailbox_short_id: "mail01",
       subject: "Snapshot",
@@ -107,6 +112,7 @@ test("hydrated snapshot contexts omit bodies and preserve the view's own xid and
         attachmentCount: 0,
         isBulk: true,
       });
+      expect(snapshot.preconditions.message.listOnly).toBe(listOnly);
       expect(snapshot.source.conversation?.messageCount).toBe(4);
       expect(snapshot?.preconditions.conversation).toEqual({
         id: "conversation",

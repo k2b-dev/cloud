@@ -18,6 +18,7 @@ import { type ExecutionContext, type ExecutionIdentity, FilegateError, type Node
 import { z } from "zod";
 import type { ActivityInput, ActivityPage } from "../activity-contracts";
 import { filegateErrorCode } from "../api/filegate-error";
+import { uploadEventScope } from "../app-events";
 import { readBoundedBody } from "../bounded-body";
 import type {
   AdminResult,
@@ -1178,6 +1179,7 @@ export function createFilesService(
     }
     if (session.received !== session.size) throw new FilesError("upload_incomplete");
     signal?.throwIfAborted();
+    await uploads.bindEventScope(row.id, await uploadEventScope(current.inspection.summary, current.node, current.relative));
     const node = await uploadAction(row.id, () => root.commitSession(sessionId));
     const result = uploadResult(current, row, node);
     await uploads.finish(row.id, "committed", node);
@@ -2122,7 +2124,12 @@ export function createFilesService(
           expected_revision: input.expectedRevision ?? null,
           execution: executionFor(current),
         },
-        { call, target, previous: existing },
+        {
+          call,
+          target,
+          previous: existing,
+          eventScope: await uploadEventScope(current.inspection.summary, current.node, current.relative),
+        },
       );
       return openUpload(current, row);
     },
@@ -2640,7 +2647,15 @@ export function createFilesService(
     async entryById(call: UserFilesCall, id: string): Promise<EntryResult> {
       const actor = call.actor;
       const current = await located(actor, id);
-      if (!current.relative) throw new FilesError("invalid_path");
+      if (!current.relative) {
+        // The file provider exposes storage roots as empty-path refs; they are readable places too.
+        const base = current.inspection.summary;
+        return {
+          base,
+          entry: { ...fileEntry({ id: base.id }, "", current.node), name: base.name },
+          resourceId: id,
+        };
+      }
       return entryResult(current);
     },
     async recent(call: UserFilesCall): Promise<MarkedEntry[]> {

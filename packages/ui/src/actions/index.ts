@@ -1,9 +1,12 @@
 export type { ButtonAlign, ButtonLinkProps, ButtonProps, ButtonSize, ButtonVariant, IconButtonLinkProps, IconButtonProps } from "./Button";
 export { Button, ButtonLink, IconButton, IconButtonLink } from "./Button";
+export type { CommandMenuProps } from "./CommandMenu";
+export { CommandMenu } from "./CommandMenu";
 export type { ContextMenuProps } from "./ContextMenu";
 export { ContextMenu } from "./ContextMenu";
 export type { CopyButtonProps, CopyButtonValue } from "./CopyButton";
 export { CopyButton } from "./CopyButton";
+export type { CommandContext, CommandItem, CommandSource, CommandStep } from "./command-items";
 export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
 export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";
@@ -46,7 +49,14 @@ export {
 } from "./SpotlightSearch";
 export type { TabOption, TabsItemProps, TabsProps } from "./Tabs";
 export { Tabs } from "./Tabs";
-export type { ToolbarActionProps, ToolbarGroupProps, ToolbarLabelProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
-export { Toolbar } from "./Toolbar";
+export type {
+  ToolbarActionProps,
+  ToolbarDockProps,
+  ToolbarGroupProps,
+  ToolbarLabelProps,
+  ToolbarProps,
+  ToolbarSeparatorProps,
+} from "./Toolbar";
+export { Toolbar, ToolbarDock } from "./Toolbar";
 export type { ViewTab, ViewTabsProps } from "./ViewTabs";
 export { ViewTabs } from "./ViewTabs";

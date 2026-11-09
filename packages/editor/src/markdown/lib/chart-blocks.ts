@@ -1,7 +1,7 @@
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
-import { barChartLayout } from "@k2b/ui/charts";
-import { balanceFlowHeight, renderBalanceFlowHtml, sankeyLayout } from "@k2b/ui/charts/core";
+import { barChartLayout, calendarLayout, calendarViewportHeight, hbarLayout } from "@k2b/ui/charts";
+import { balanceFlowHeight, paretoLayout, renderBalanceFlowHtml, sankeyFrame } from "@k2b/ui/charts/core";
 import { Lexer, type Tokens } from "marked";
 import type { z } from "zod";
 import {
@@ -37,7 +37,7 @@ type Frame = {
   area?: boolean;
   title: string;
   subtitle?: string;
-  height?: number;
+  height?: number | string;
   balanceFlow?: Extract<ChartInput, { kind: "balanceFlow" }>;
 };
 type Entry = { value: string; line: number };
@@ -536,12 +536,16 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
  * categories make the drawing taller. The server and an editor placeholder read it from the same parsed block, so
  * both reserve the same box. Undefined for every other drawing, which fits the frame.
  */
-export const notebookChartHeight = (input: ChartInput, locale: string): number | undefined => {
+export const notebookChartHeight = (input: ChartInput, locale: string): number | string | undefined => {
   const options = chartRenderOptions(input, locale, { legend: "outside" });
   if (options.kind === "balanceFlow") return balanceFlowHeight(options.periods);
-  if (options.kind === "sankey") return sankeyLayout(options).height;
-  if (options.kind === "heatmap" && options.layout === "calendar") return 280;
-  if (options.kind === "area") return 280;
+  if (options.kind === "treemap") return 280;
+  if (options.kind === "pareto") return paretoLayout(options).height;
+  if (options.kind === "sankey") return sankeyFrame(options).height;
+  if (options.kind === "bubble" || options.kind === "radar") return 280;
+  if (options.kind === "hbar") return hbarLayout(options).height;
+  if (options.kind === "heatmap" && options.layout === "calendar") return calendarViewportHeight(calendarLayout(options));
+  if (options.kind === "waterfall" || options.kind === "area") return 280;
   if (options.kind !== "bar") return undefined;
   const layout = barChartLayout(options);
   return layout.layout === "rows" ? layout.height : undefined;
@@ -567,7 +571,7 @@ export const notebookChartFrameHtml = (
         false,
         Boolean(options.print),
       )
-    : `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}${frame.height ? ` style="--notebook-chart-height:${frame.height}px"` : ""}>${viewportHtml}</div></figure>`;
+    : `<figure class="notebook-book-chart"${typeof frame.height === "string" ? ' data-calendar="true" style="container-type:inline-size"' : ""} data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}${frame.height ? ` style="--notebook-chart-height:${typeof frame.height === "number" ? `${frame.height}px` : frame.height}"` : ""}>${viewportHtml}</div></figure>`;
 
 /** A chart's data as a note table: the PDF prints it below the figure, and the table view shows it in the frame. */
 export const notebookChartTableHtml = (table: ChartTable, options: { label?: string; className?: string } = {}): string =>
@@ -593,7 +597,7 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
       key: ({ datum }) => chartMarkKey(datum),
       tooltip: ({ datum }) => {
         const row = rows.add(datum);
-        return chartTooltip(rows.columns(), row, input.kind);
+        return chartTooltip(rows.columns(), row, input);
       },
       reference: ({ datum }) => chartReferenceMark(input, datum),
     });
@@ -603,9 +607,16 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
     const valueField = input.kind === "area" ? (input.normalize ? "percent" : "value") : "y";
     let lastX = -Infinity;
     for (const mark of snapshot.marks) lastX = Math.max(lastX, mark.datum.anchor[0]);
+    const sourceX = input.kind === "line" ? snapshot.svg.match(/data-line-default-x="([^"]+)"/)?.[1] : undefined;
     const legendValue = (index: number) => {
       const field = snapshot.marks
-        .find((mark) => mark.datum.seriesIndex === index && mark.datum.anchor[0] === lastX)
+        .find(
+          (mark) =>
+            mark.datum.seriesIndex === index &&
+            (sourceX === undefined
+              ? mark.datum.anchor[0] === lastX
+              : mark.datum.values.some((field) => field.key === "x" && field.value === Number(sourceX))),
+        )
         ?.datum.values.find((field) => field.key === valueField);
       return field
         ? (field.formatted ??
@@ -615,10 +626,13 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
         : "—";
     };
     const legendHtml = legend.length
-      ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry, index) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}${input.kind === "area" ? `<b data-chart-legend-value data-series-index="${index}" data-field="${valueField}" data-default="${escape(legendValue(index))}">${escape(legendValue(index))}</b>` : ""}</li>`).join("")}</ul>`
+      ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry, index) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}${(input.kind === "line" && snapshot.svg.includes("data-line-details")) || input.kind === "area" ? `<b data-chart-legend-value data-series-index="${entry.seriesIndex ?? index}" data-field="${valueField}" data-default="${escape(legendValue(entry.seriesIndex ?? index))}">${escape(legendValue(entry.seriesIndex ?? index))}</b>` : ""}</li>`).join("")}</ul>`
       : "";
-    const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="${snapshot.minWidth ? "min-width:0;" : ""}--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
-    const height = notebookChartHeight(input, locale);
+    const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="${snapshot.minWidth ? `min-width:${options.print ? "0" : `${snapshot.minWidth}px`};max-width:${snapshot.maxWidth}px;aspect-ratio:${snapshot.width}/${snapshot.height};` : ""}--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
+    const height =
+      options.print && snapshot.maxWidth
+        ? `calc(min(100cqw, ${snapshot.maxWidth}px) * ${snapshot.height / snapshot.width})`
+        : notebookChartHeight(input, locale);
     const figure = notebookChartFrameHtml(height ? { ...input, height } : input, viewport, {
       legend: legend.length > 0,
       ...(options.print ? { print: true } : { input }),

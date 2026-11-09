@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import type { Browser } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
-import { appAssetsJson } from "./html/test-assets";
+import { appAssetResponse, appAssetsJson } from "./html/test-assets";
 
 const FILES = [
   {
@@ -28,6 +28,7 @@ let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 let release: () => void = () => {};
 let pdfHtml = "";
+let assets = "";
 const requests: string[] = [];
 
 beforeAll(async () => {
@@ -41,7 +42,7 @@ beforeAll(async () => {
   const css = await Bun.build({ entrypoints: [new URL("../styles/app.css", import.meta.url).pathname], plugins: [tailwind] });
   if (!css.success) throw new Error(css.logs.join("\n"));
   const appCss = await css.outputs[0]!.text();
-  const assets = await appAssetsJson();
+  assets = await appAssetsJson();
   let ready = Promise.withResolvers<void>();
   release = () => {
     ready.resolve();
@@ -57,8 +58,8 @@ beforeAll(async () => {
       if (path === "/bundle.js") return new Response(bundle, { headers: { "content-type": "application/javascript" } });
       if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
       if (path === "/app.css") return new Response(appCss, { headers: { "content-type": "text/css" } });
-      if (path === "/api/assistant/artifacts/runtime/app-assets")
-        return new Response(assets, { headers: { "content-type": "application/json" } });
+      if (path === "/api/assistant/artifacts/runtime/app-assets" || path === "/api/assistant/artifacts/runtime/chart-parts")
+        return appAssetResponse(assets, path);
       if (path === "/api/assistant/artifacts/runtime/context")
         return Response.json({ locale: "de-DE", timeZone: "Europe/Berlin", user: null });
       if (path === "/api/assistant/artifacts/runtime/pdf") {
@@ -105,6 +106,16 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
     await card.waitFor();
     const reserved = (await card.boundingBox())!.height;
     expect(reserved).toBe(360);
+    // In the chat the card is an island: it carries the island shadow, like a Paper beside it.
+    expect(
+      await card.evaluate((element) => {
+        const probe = document.body.appendChild(document.createElement("div"));
+        probe.style.boxShadow = "var(--k2b-shadow-raised)";
+        const raised = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        return getComputedStyle(element).boxShadow === raised && raised !== "none";
+      }),
+    ).toBe(true);
     // The chat sidebar jumps to a result through this attribute.
     expect(await card.getAttribute("data-presentation-id")).toBe("00000000-0000-4000-8000-000000000001");
     release();
@@ -193,3 +204,163 @@ test("a chat app that fails while starting says so in Cloud's words, not the app
     await context.close();
   }
 }, 60000);
+
+test("an interactive host prepares parts at low priority; a chart-free start reuses them", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    await context.addInitScript(() => {
+      const fetch = globalThis.fetch;
+      Reflect.set(globalThis, "partPriorities", []);
+      globalThis.fetch = Object.assign(
+        (input: RequestInfo | URL, options?: RequestInit) => {
+          if (String(input).endsWith("/chart-parts")) Reflect.get(globalThis, "partPriorities").push(options?.priority);
+          return fetch(input, options);
+        },
+        { preconnect: fetch.preconnect },
+      );
+    });
+    const page = await context.newPage();
+    let partRequests = 0;
+    await page.route("**/chart-parts", async (route) => {
+      partRequests++;
+      if (partRequests > 1) return route.abort();
+      await route.fulfill({ json: await appAssetResponse(assets, "/chart-parts").json() });
+    });
+    // No chart calls: the measured regression also affected ordinary apps.
+    await page.route("**/presentations/*", (route) =>
+      route.fulfill({
+        json: {
+          id: "00000000-0000-4000-8000-000000000001",
+          title: "Plain app",
+          conversationId: "abc234",
+          artifactId: null,
+          files: [FILES[0]],
+        },
+      }),
+    );
+    await page.goto(server.url.href);
+    const start = page.getByRole("button", { name: "Starten", exact: true });
+    await start.waitFor();
+    const prepared = page.waitForResponse((response) => response.url().endsWith("/chart-parts"));
+    await page.evaluate(() => globalThis.chartPreparation.prepare());
+    await (await prepared).finished();
+    expect(await page.locator("iframe").count()).toBe(0);
+    const frameResponse = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/app-assets"));
+    await start.click();
+    const payload = await (await frameResponse).text();
+    expect(payload).not.toContain('"chartParts"');
+    expect(payload).not.toContain("k2b-area-layer");
+    await page.waitForFunction(() => document.querySelector(".studio-app") && !document.querySelector(".studio-app[aria-busy]"));
+    expect(await app(page).locator("#total").textContent()).toBe("20");
+    expect(partRequests).toBe(1);
+    expect(await page.evaluate(() => Reflect.get(globalThis, "partPriorities"))).toEqual(["low"]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an early start joins in-flight preparation before cold offline first use", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const releaseParts = Promise.withResolvers<void>();
+  try {
+    const page = await context.newPage();
+    let partRequests = 0;
+    await page.route("**/chart-parts", async (route) => {
+      partRequests++;
+      await releaseParts.promise;
+      await route.fulfill({ json: await appAssetResponse(assets, "/chart-parts").json() });
+    });
+    await page.goto(server.url.href);
+    await page.locator(".assistant-chat-presentation").waitFor();
+    release();
+    const start = page.getByRole("button", { name: "Starten", exact: true });
+    await start.waitFor();
+    const preparing = page.waitForRequest((request) => request.url().endsWith("/chart-parts"));
+    await page.evaluate(() => globalThis.chartPreparation.prepare());
+    await preparing;
+    const frameResponse = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/app-assets"));
+    await start.click();
+    await (await frameResponse).finished();
+    expect(await page.locator("iframe").count()).toBe(0);
+    expect(partRequests).toBe(1);
+    releaseParts.resolve();
+    await page.waitForFunction(() => document.querySelector(".studio-app") && !document.querySelector(".studio-app[aria-busy]"));
+    await context.setOffline(true);
+    const requests: string[] = [];
+    // WebKit reports local blob module imports too. The offline contract forbids network access.
+    page.on("request", (request) => {
+      if (/^https?:/.test(request.url())) requests.push(request.url());
+    });
+    await app(page)
+      .locator("body")
+      .evaluate((element) => {
+        element.insertAdjacentHTML("beforeend", Reflect.get(globalThis, "cloud").chart({ kind: "gauge", title: "Offline", value: 75 }));
+      });
+    await app(page).locator('[data-chart-kind="gauge"] svg').waitFor();
+    expect(requests).toEqual([]);
+  } finally {
+    releaseParts.resolve();
+    await context.close();
+  }
+});
+
+test("preparation cancellation, failure retry and a deployment preserve complete offline assets", async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    let partRequests = 0;
+    await page.route("**/chart-parts", async (route) => {
+      partRequests++;
+      if (partRequests === 1) return route.fulfill({ status: 503 });
+      await route.fulfill({ json: await appAssetResponse(assets, "/chart-parts").json() });
+    });
+    await page.goto(server.url.href);
+    await page.getByRole("button", { name: "Leave chat" }).waitFor();
+    await page.evaluate(() => {
+      globalThis.chartPreparation.prepare();
+      globalThis.chartPreparation.cancel();
+    });
+    // Reach idle after both paint boundaries, so an uncancelled preparation has run.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              if (typeof requestIdleCallback === "function") requestIdleCallback(() => resolve());
+              else setTimeout(resolve, 0);
+            }),
+          ),
+        ),
+    );
+    expect(partRequests).toBe(0);
+    expect(
+      await page.evaluate(() =>
+        globalThis.chartPreparation.load().then(
+          () => false,
+          () => true,
+        ),
+      ),
+    ).toBe(true);
+    let fullRequests = 0;
+    await page.route("**/app-assets*", async (route) => {
+      if (!new URL(route.request().url()).search) {
+        fullRequests++;
+        return route.fulfill({ body: assets, contentType: "application/json" });
+      }
+      const frame: unknown = await appAssetResponse(assets, "/app-assets").json();
+      if (typeof frame !== "object" || frame === null || !("chartHashes" in frame)) throw new Error("Expected frame hashes");
+      await route.fulfill({ json: { ...frame, chartHashes: { shared: "new-deployment", kinds: {} } } });
+    });
+    const loaded = await page.evaluate(async () => {
+      const assets = await globalThis.chartPreparation.load();
+      return { kinds: Object.keys(assets.chartParts.kinds), hash: assets.chartParts.shared.hash };
+    });
+    expect(partRequests).toBe(2);
+    expect(fullRequests).toBe(1);
+    expect(loaded.kinds).toContain("gauge");
+    expect(loaded.hash).toMatch(/^[a-f0-9]{64}$/);
+  } finally {
+    release();
+    await context.close();
+  }
+});

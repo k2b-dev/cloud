@@ -24,6 +24,7 @@ source). Without `rows`, use these payloads:
 | `heatmap` | `data: [{x, y, value}]`, text categories, each pair once; at most 17 rows (y), column labels that fit a phone |
 | `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters |
 | `gauge`, `stat` | `value` |
+| every other kind | as in [Chart kinds](chart-kinds.md), which has one example per kind |
 
 Canonical x values are finite numbers or `YYYY-MM-DD[THH:mm[:ss]]`, wall-clock
 time without an offset. All series use the same x type. No markup, functions,
@@ -72,6 +73,15 @@ show shares; their `format` applies to the values in tooltips and the table.
 
 Bar takes `colorByBar`, `showValues`, `legend`; line/scatter take `legend`;
 line also takes `area`, `smooth` and series `style: "solid" | "dashed" | "dotted"`.
+Line also accepts `forecast: {from, band?: [lower, upper][]}`, `marker: {at, label}`,
+`threshold: {value, label}`, `zero`, `step: "before" | "after" | "middle"` and
+`legendValues`. The forecast begins at an existing first-series x; bounds match
+that series' sorted suffix and lower is at most upper. Forecast, marker,
+threshold, `zero: true` or `legendValues: true` enable gaps for null y.
+The marker sets the resting legend value;
+inspection shows the value at the cursor. See the complete
+[cash outlook example](charts.md#forecast-lines), valid for `cloud.view.chart`.
+
 Line/scatter series may have `role: "reference"` for a comparison period:
 line defaults to dashed unless style is set, scatter uses hollow points in chat.
 Pie/donut take `legend`, `showLabels`; sparkline takes `area`.

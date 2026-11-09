@@ -1,5 +1,98 @@
 # Changelog
 
+## [0.63.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.62.0...npm-cloud-v0.63.0) (2026-11-08)
+
+
+### Features
+
+* **assistant:** the chart tool describes every chart kind with an example ([#2916](https://github.com/k2b-dev/cloud/issues/2916)) ([c6953b8](https://github.com/k2b-dev/cloud/commit/c6953b83ca082a47a768a2fd0e938f910452bbf9))
+* **ui:** funnels and ranked bar lists ([#2736](https://github.com/k2b-dev/cloud/issues/2736)) ([b2875ae](https://github.com/k2b-dev/cloud/commit/b2875ae2d34782a6bd013d598133570ef1457600))
+* **ui:** named bubbles with averages and radar charts ([#2779](https://github.com/k2b-dev/cloud/issues/2779)) ([334f441](https://github.com/k2b-dev/cloud/commit/334f4417ca4be015c9650b26a723f2c43ce15e90))
+* **ui:** treemaps and pareto charts ([#2777](https://github.com/k2b-dev/cloud/issues/2777)) ([6fefdbf](https://github.com/k2b-dev/cloud/commit/6fefdbf3f5f428d2f6aebc1464ff7190b127e1f4))
+
+
+### Bug Fixes
+
+* **cloud:** description panels sort and search tables by what they show, keep table heights, money tones and a named empty figure ([#2896](https://github.com/k2b-dev/cloud/issues/2896)) ([7b81f1c](https://github.com/k2b-dev/cloud/commit/7b81f1c347459a6335ac7aae9bfd5f5c16fecf43))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.21.0 to 0.21.1
+    * @k2b/ui bumped from 0.51.0 to 0.52.0
+    * @k2b/editor bumped from 0.8.0 to 0.9.0
+
+## [0.62.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.61.0...npm-cloud-v0.62.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** Cloud no longer serves speedtest transfer data, JavaScript or Python measurement scripts. Download the shared Node/Bun CLI from the standalone speedtest server; see its operator guide.
+
+### Features
+
+* **automation:** export Mail rules and routine definitions ([#2816](https://github.com/k2b-dev/cloud/issues/2816)) ([d64f84d](https://github.com/k2b-dev/cloud/commit/d64f84d67ba7efb6fd220af5e83dbe6dac64ceeb))
+* **cloud:** Assistant suggests the next message when it helps ([#2796](https://github.com/k2b-dev/cloud/issues/2796)) ([8c09060](https://github.com/k2b-dev/cloud/commit/8c0906044b7a3f55aa4a1fde4bb6aa101084101f))
+* **cloud:** Chat and Notebooks share one chart description owned by @k2b/ui ([#2778](https://github.com/k2b-dev/cloud/issues/2778)) ([05299cb](https://github.com/k2b-dev/cloud/commit/05299cb9d7451df2c91e712407614a267435b589))
+* **cloud:** the model trigger shows its level ([#2837](https://github.com/k2b-dev/cloud/issues/2837)) ([b11c3f6](https://github.com/k2b-dev/cloud/commit/b11c3f6c41167bb788bfb6b93a3a7ad86db100a4))
+* **pulse:** SQL dashboards share portable chart descriptions ([#2781](https://github.com/k2b-dev/cloud/issues/2781)) ([0733391](https://github.com/k2b-dev/cloud/commit/07333918ae621a81bc7f0be787cf6bc07e6291cd))
+* **tools:** add bounded PDF page operations ([#2881](https://github.com/k2b-dev/cloud/issues/2881)) ([17879ae](https://github.com/k2b-dev/cloud/commit/17879aebbf8ea817974b3aeda39021d0ef834791))
+* **tools:** move speedtests to the shared standalone engine ([#2834](https://github.com/k2b-dev/cloud/issues/2834)) ([fc5b1e2](https://github.com/k2b-dev/cloud/commit/fc5b1e2836f75da65477e6a4ca3f400288271274))
+* **ui:** dashboard panels as one shared component family ([#2813](https://github.com/k2b-dev/cloud/issues/2813)) ([1f0f47a](https://github.com/k2b-dev/cloud/commit/1f0f47a07a4639470a107873f2a93c99a09ea00b))
+* **ui:** one glass surface for layers over pictures and maps ([#2870](https://github.com/k2b-dev/cloud/issues/2870)) ([d31c85d](https://github.com/k2b-dev/cloud/commit/d31c85d542b4aa25f48545ece445f802af672a13))
+* **ui:** stacked, grouped, compared and horizontal bars ([#2729](https://github.com/k2b-dev/cloud/issues/2729)) ([cbfea20](https://github.com/k2b-dev/cloud/commit/cbfea2061617aa5f24bef50aefd01f41d7d316e3))
+* **ui:** waterfall charts ([#2758](https://github.com/k2b-dev/cloud/issues/2758)) ([3b05ef2](https://github.com/k2b-dev/cloud/commit/3b05ef22952c7cb3b883f1d688ada671344db2c2))
+
+
+### Bug Fixes
+
+* **cloud:** background runs never use remembered approvals ([#2858](https://github.com/k2b-dev/cloud/issues/2858)) ([d588867](https://github.com/k2b-dev/cloud/commit/d588867971ef011028470878734236644143f43e))
+* **cloud:** Chat loads chart drawing on first use ([#2791](https://github.com/k2b-dev/cloud/issues/2791)) ([da1b8f5](https://github.com/k2b-dev/cloud/commit/da1b8f5b7e1c1cc6b408e0650a37dc6c82d979ee))
+* **cloud:** localize chart points and keep schema assertions internal ([#2783](https://github.com/k2b-dev/cloud/issues/2783)) ([b2e4a1a](https://github.com/k2b-dev/cloud/commit/b2e4a1a6a396b733dbb5778abecf210febf54228))
+* **filesv2:** append entries with quiet load-more actions ([#2829](https://github.com/k2b-dev/cloud/issues/2829)) ([851797f](https://github.com/k2b-dev/cloud/commit/851797f888b8492813d4c84493c6df8dd903740c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.50.0 to 0.51.0
+    * @k2b/editor bumped from 0.7.0 to 0.8.0
+
+## [0.61.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.60.0...npm-cloud-v0.61.0) (2026-11-07)
+
+
+### Features
+
+* **access:** resolve batch permissions in the caller transaction ([#2742](https://github.com/k2b-dev/cloud/issues/2742)) ([7da2090](https://github.com/k2b-dev/cloud/commit/7da20908c0394daad5222afc0a352c1b26332c56))
+* **cloud:** publish help and skills only when content changes ([#2475](https://github.com/k2b-dev/cloud/issues/2475)) ([ba07d4a](https://github.com/k2b-dev/cloud/commit/ba07d4a80c5815ef7e61a2ebe6d0e0d85d124fed))
+* **events:** deliver resource events to mandate-bound workloads ([#2728](https://github.com/k2b-dev/cloud/issues/2728)) ([f9afc45](https://github.com/k2b-dev/cloud/commit/f9afc454b17761fd609e8534d50f74cd324bd2ab)), closes [#2725](https://github.com/k2b-dev/cloud/issues/2725)
+* **events:** install the platform outbox in app test databases ([#2741](https://github.com/k2b-dev/cloud/issues/2741)) ([40f9f26](https://github.com/k2b-dev/cloud/commit/40f9f26102a67890a7db4d8d20d304802944b9e2))
+* **ui:** AI surfaces use plum instead of cyan ([#2727](https://github.com/k2b-dev/cloud/issues/2727)) ([d623e33](https://github.com/k2b-dev/cloud/commit/d623e3326f0768a50048a34acb3e2fb6a299b61d))
+* **ui:** calendar heatmaps ([#2774](https://github.com/k2b-dev/cloud/issues/2774)) ([1687e8e](https://github.com/k2b-dev/cloud/commit/1687e8e343693ae14fc4735f41f5b8b1a4ce2e05))
+* **ui:** charts draw with the @k2b/ui core instead of stdlib ([#2734](https://github.com/k2b-dev/cloud/issues/2734)) ([f40d118](https://github.com/k2b-dev/cloud/commit/f40d1181d95b98e368c93b367f4d5d137c03242e))
+* **ui:** stacked and 100 % area charts ([#2763](https://github.com/k2b-dev/cloud/issues/2763)) ([2a1cb51](https://github.com/k2b-dev/cloud/commit/2a1cb5152262132dcb542ad475cb5239144097f2))
+* **ui:** tables search, group and type their columns ([#2765](https://github.com/k2b-dev/cloud/issues/2765)) ([9028f93](https://github.com/k2b-dev/cloud/commit/9028f9304abf12e40601cf552ea5edeb72cba79a))
+
+
+### Bug Fixes
+
+* **cloud:** Chat loads its table tools on first use ([#2789](https://github.com/k2b-dev/cloud/issues/2789)) ([a986780](https://github.com/k2b-dev/cloud/commit/a9867802da6df41b53c35a3f3c1abe36a7ea9f45))
+* **cloud:** Core opens its bundled location databases on a read-only root filesystem ([#2720](https://github.com/k2b-dev/cloud/issues/2720)) ([2806f45](https://github.com/k2b-dev/cloud/commit/2806f4545f2e923c920baa657b0cf70aa506894f))
+* **cloud:** keep mixed color-mix() colors in standalone apps' compiled CSS ([#772](https://github.com/k2b-dev/cloud/issues/772)) ([5dffdf9](https://github.com/k2b-dev/cloud/commit/5dffdf91c598dd0fd24faadcc0155997f575ce93))
+* **observability:** bound history reads and cancel abandoned queries ([#2428](https://github.com/k2b-dev/cloud/issues/2428)) ([e131766](https://github.com/k2b-dev/cloud/commit/e1317661865d689cc57ec297d28e1bcab9621cc0))
+* **observability:** drain log and telemetry retention in bounded batches ([#2427](https://github.com/k2b-dev/cloud/issues/2427)) ([4af9b44](https://github.com/k2b-dev/cloud/commit/4af9b44c83743e25dfe5279947a33c41441e7f47))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.49.0 to 0.50.0
+    * @k2b/editor bumped from 0.6.5 to 0.7.0
+
 ## [0.60.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.59.0...npm-cloud-v0.60.0) (2026-11-06)
 
 

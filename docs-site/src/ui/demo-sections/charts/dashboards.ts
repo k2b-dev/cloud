@@ -1,5 +1,6 @@
 import { balanceFlowExamples } from "./examples/balanceFlow";
 import type { JsonValue } from "./examples/types";
+import { liquidityForecastSpec } from "./liquidity-forecast";
 
 export type ShowcasePanel = {
   id: string;
@@ -94,8 +95,8 @@ export const newsletterDashboard: ShowcaseDashboard = {
           empty: "No newsletter was sent in this period.",
           spec: {
             kind: "bar",
-            title: "Opens and clicks per month",
-            subtitle: "Share of recipients · one dot is 5 %",
+            title: "Opens and clicks",
+            subtitle: "Per month · one dot is 5 % of recipients",
             x: months,
             layout: "nested",
             marks: "dots",
@@ -117,7 +118,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           empty: "No revenue through newsletter links yet.",
           spec: {
             kind: "bar",
-            title: "Revenue from the newsletter",
+            title: "Newsletter revenue",
             subtitle: "October against September",
             x: ["1–7", "8–14", "15–21", "22–28", "29–31"],
             series: [{ label: "October", data: [3120, 4380, 3940, 4610, 2370] }],
@@ -140,7 +141,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           empty: "No campaign was sent in this period.",
           spec: {
             kind: "funnel",
-            title: "From sending to buying",
+            title: "Sending to buying",
             subtitle: "Weekly letter 44",
             data: [
               { label: "Sent", value: 46900 },
@@ -171,7 +172,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
               { id: "buy", label: "Purchase", tone: "in" },
               { id: "wish", label: "Wish list" },
               { id: "signup", label: "Fair sign-up" },
-              { id: "left", label: "Left", tone: "neutral" },
+              { id: "left", label: "Left", tone: "muted" },
             ],
             links: [
               { source: "weekly", target: "products", value: 2600 },
@@ -204,7 +205,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           id: "campaign-table",
           intended: "Table",
           width: "full",
-          height: 260,
+          height: 300,
           empty: "No campaign in this period.",
           spec: {
             block: "table",
@@ -346,14 +347,6 @@ export const newsletterDashboard: ShowcaseDashboard = {
   ],
 };
 
-// Balance per day from 1 Oct to 4 Jan: booked until today (6 Nov), forecast afterwards.
-const balance = Array.from({ length: 96 }, (_, index) => {
-  const swing = Math.sin(index / 6) * 3800 + Math.sin(index / 2.3) * 1400;
-  const trend = index < 60 ? 0 : -(index - 60) * 220;
-  return Math.round((19800 + swing + trend + (index > 62 && index < 70 ? -6000 : 0)) / 10) * 10;
-});
-const today = 36;
-
 export const liquidityDashboard: ShowcaseDashboard = {
   slug: "liquidity",
   eyebrow: "Code page · from the catalog only",
@@ -414,21 +407,7 @@ export const liquidityDashboard: ShowcaseDashboard = {
           width: "full",
           height: 280,
           empty: "No account is connected yet.",
-          spec: {
-            kind: "line",
-            title: "Balance",
-            subtitle: "Business account · forecast with range from today",
-            series: [{ label: "Balance", data: balance.map((y, index) => ({ x: isoDay("2026-10-01", index), y })) }],
-            step: "after",
-            forecast: {
-              from: isoDay("2026-10-01", today),
-              band: balance.slice(today).map((value, index) => [value - 600 - index * 70, value + 600 + index * 70]),
-            },
-            threshold: { value: 10000, label: "Threshold 10,000 €" },
-            marker: { at: isoDay("2026-10-01", today), label: "Today" },
-            zero: true,
-            yAxis: { format: { style: "currency", currency: "EUR", compact: true } },
-          },
+          spec: liquidityForecastSpec,
         },
       ],
     },
@@ -445,8 +424,8 @@ export const liquidityDashboard: ShowcaseDashboard = {
           empty: "No bookings in October.",
           spec: {
             kind: "waterfall",
-            title: "From the start to the end of the month",
-            subtitle: "Business account · October 2026",
+            title: "October in steps",
+            subtitle: "Business account · start to end of month",
             start: { label: "1 Oct", value: 18800 },
             steps: [
               { label: "Sales", value: 29260 },
@@ -497,21 +476,21 @@ export const liquidityDashboard: ShowcaseDashboard = {
           empty: "No bookings in October.",
           spec: {
             kind: "sankey",
-            title: "Where from and where to",
-            subtitle: "October 2026 · income, spending, levies",
+            title: "In and out",
+            subtitle: "October 2026 · where from and where to",
             nodes: [
               { id: "shop", label: "Shop", tone: "in" },
               { id: "web", label: "Web shop", tone: "in" },
               { id: "fair", label: "Trade fair", tone: "in" },
-              { id: "reserve", label: "From the balance", tone: "neutral" },
+              { id: "reserve", label: "From the balance", tone: "muted" },
               { id: "month", label: "Money in October" },
               { id: "purchasing", label: "Purchasing", tone: "out" },
               { id: "staff", label: "Staff", tone: "out" },
               { id: "rent", label: "Rent", tone: "out" },
               { id: "other", label: "Other", tone: "out" },
               { id: "wages", label: "Net wages", tone: "out" },
-              { id: "tax", label: "Wage tax", tone: "levy" },
-              { id: "social", label: "Social security", tone: "levy" },
+              { id: "tax", label: "Wage tax", tone: "tax" },
+              { id: "social", label: "Social security", tone: "tax" },
             ],
             links: [
               { source: "shop", target: "month", value: 16090 },

@@ -1,8 +1,49 @@
-import { resolveChartMessages } from "../../content/chart-message-catalog";
-import { type BalanceFlowPeriod, balanceFlowHeight, validateBalanceFlow } from "./balance-flow-size";
-import { type SankeyNode, sankeyLayout } from "./sankey";
-import { type ChartOptions, chartDatumSvg, escapeXml, renderHeader, svgRoot } from "./svg";
-import { fitChartText } from "./text";
+import {
+  type BalanceFlowOptions,
+  balanceFlowDatums,
+  balanceFlowDisplayAmount,
+  balanceFlowRows,
+  balanceFlowSummary,
+  balanceFlowTooltip,
+  balanceFlowWords,
+} from "./balance-flow-data";
+
+export * from "./balance-flow-data";
+
+import { balanceFlowHeight, validateBalanceFlow } from "./balance-flow-size";
+import { chartDatumSvg, escapeXml, renderHeader, svgRoot } from "./svg-common";
+
+/** Conservative proportional-font advances in em, shared by DOM-free SVG label layout.
+ * Wide glyphs retain their natural shape; fitting removes whole code points instead of stretching text.
+ */
+function chartTextWidth(text: string, size: number): number {
+  return (
+    Array.from(text).reduce(
+      (width, glyph) =>
+        width +
+        (/\s/.test(glyph)
+          ? 0.34
+          : /[ilI.,:;!|'`]/.test(glyph)
+            ? 0.32
+            : /[MW@%&]/.test(glyph)
+              ? 1
+              : /[A-Z0-9]/.test(glyph)
+                ? 0.74
+                : /[a-zäöüßéèáàóúñç()-]/i.test(glyph)
+                  ? 0.64
+                  : 1),
+      0,
+    ) * size
+  );
+}
+
+function fitChartText(text: string, width: number, size: number): string {
+  if (chartTextWidth(text, size) <= width) return text;
+  const glyphs = Array.from(text);
+  while (glyphs.length && chartTextWidth(glyphs.join("") + "…", size) > width) glyphs.pop();
+  return chartTextWidth("…", size) <= width ? glyphs.join("") + "…" : "";
+}
+
 import type { ChartDatum } from "./types";
 
 export {
@@ -12,110 +53,6 @@ export {
   balanceFlowHeight,
   validateBalanceFlow,
 } from "./balance-flow-size";
-export type BalanceFlowOptions = ChartOptions & {
-  periods: BalanceFlowPeriod[];
-  currency: string;
-  locale?: string;
-  /** Period used by row/summary helpers; the continuous frame always opens at the newest end. */
-  period?: number;
-  format?: (value: number) => string;
-  valueLabel?: string;
-  displayWidth?: number;
-};
-export const balanceFlowAmount = (spec: Pick<BalanceFlowOptions, "locale" | "currency" | "format">, value: number): string =>
-  spec.format?.(Math.abs(value)) ??
-  new Intl.NumberFormat(spec.locale ?? "en", { style: "currency", currency: spec.currency }).format(Math.abs(value));
-export const balanceFlowDisplayAmount = (
-  spec: Pick<BalanceFlowOptions, "locale" | "currency" | "format">,
-  row: Pick<BalanceFlowRow, "direction" | "value">,
-): string => `${row.direction === "in" ? "↙ " : row.direction === "out" ? "↗ " : ""}${balanceFlowAmount(spec, row.value)}`;
-export const balanceFlowWords = (locale = "en") => resolveChartMessages(locale);
-export type BalanceFlowRow = { label: string; value: number; direction: "balance" | "in" | "out" | "neutral"; key: string };
-export function balanceFlowRows(spec: BalanceFlowOptions, index = spec.period ?? 0): BalanceFlowRow[] {
-  const p = spec.periods[index];
-  if (!p) return [];
-  const t = balanceFlowWords(spec.locale);
-  const owed = (label: string, value: number) => (value < 0 ? `${label} (${t.balanceOwed})` : label);
-  return [
-    { key: "opening", label: owed(t.balanceOpening, p.opening), value: p.opening, direction: "balance" },
-    ...p.inflows.map((n, i) => ({ ...n, key: `in-${i}`, direction: "in" as const })),
-    {
-      key: "balance",
-      label: t.balanceAvailable,
-      value: Math.max(p.opening, 0) + p.inflows.reduce((s, n) => s + n.value, 0) + Math.max(-p.closing, 0),
-      direction: "neutral",
-    },
-    ...p.outflows.map((n, i) => ({ ...n, key: `out-${i}`, direction: "out" as const })),
-    {
-      key: "closing",
-      label: index + 1 < spec.periods.length ? balanceFlowBoundaryLabel(spec, index) : owed(t.balanceClosing, p.closing),
-      value: p.closing,
-      direction: "balance",
-    },
-  ];
-}
-export const balanceFlowDirection = (direction: string, locale = "en") => {
-  const t = balanceFlowWords(locale);
-  return direction === "in"
-    ? t.balanceInflows
-    : direction === "out"
-      ? t.balanceOutflows
-      : direction === "neutral"
-        ? t.balanceAvailable
-        : t.balanceBalance;
-};
-export const balanceFlowSummary = (spec: BalanceFlowOptions, index = spec.period ?? 0): string => {
-  const p = spec.periods[index];
-  if (!p) return balanceFlowWords(spec.locale).balanceEmpty;
-  const t = balanceFlowWords(spec.locale),
-    amount = (v: number) => `${balanceFlowAmount(spec, v)}${v < 0 ? ` (${t.balanceOwed})` : ""}`;
-  return `${p.label}: ${t.balanceOpening} ${amount(p.opening)}, ${t.balanceInflows} ${amount(p.inflows.reduce((s, n) => s + n.value, 0))}, ${t.balanceOutflows} ${amount(p.outflows.reduce((s, n) => s + n.value, 0))}, ${t.balanceClosing} ${amount(p.closing)}.`;
-};
-/** Same column order and text as editor chartRows/chartTooltip. */
-export function balanceFlowTooltip(datum: ChartDatum, locale = "en") {
-  const t = balanceFlowWords(locale);
-  return {
-    title: datum.label,
-    rows: datum.values.map((field) => ({
-      label:
-        field.label ??
-        (field.key === "period" ? t.balancePeriod : field.key === "direction" ? t.balanceDirection : t.chartFields({ key: field.key })),
-      value: field.formatted ?? String(field.value),
-    })),
-  };
-}
-/** A shared boundary is described once, in the preceding period's closing datum. */
-const balanceFlowBoundaryLabel = (spec: BalanceFlowOptions, index: number): string => {
-  const t = balanceFlowWords(spec.locale),
-    current = spec.periods[index]!,
-    next = spec.periods[index + 1];
-  return next
-    ? `${t.balanceClosing} ${current.label} = ${t.balanceOpening} ${next.label}${current.closing < 0 ? ` (${t.balanceOwed})` : ""}`
-    : t.balanceClosing;
-};
-/** Full table data includes zero flows, although zero-width links have no inspection target. */
-export function balanceFlowDatums(spec: BalanceFlowOptions): ChartDatum[] {
-  return spec.periods.flatMap((_, period) =>
-    balanceFlowRows(spec, period).map((row, index) => ({
-      index,
-      seriesIndex: period,
-      role: "item" as const,
-      label: row.label,
-      anchor: [0, 0] as [number, number],
-      values: [
-        { key: "period", value: spec.periods[period]!.label },
-        { key: "direction", value: balanceFlowDirection(row.direction, spec.locale) },
-        {
-          key: "value",
-          value: row.value,
-          formatted: balanceFlowDisplayAmount(spec, row),
-          ...(spec.valueLabel ? { label: spec.valueLabel } : {}),
-        },
-      ],
-    })),
-  );
-}
-
 export const balanceFlowColors = {
   balance: "var(--k2b-balance-flow-mark,#3b82f6)",
   in: "var(--k2b-flow-in-mark,#0891b2)",
@@ -126,20 +63,39 @@ export const balanceFlowColors = {
 export function balanceFlowLayout(spec: BalanceFlowOptions) {
   validateBalanceFlow(spec.periods);
   const index = spec.period ?? 0;
-  if (!Number.isInteger(index) || index < 0 || index >= Math.max(1, spec.periods.length))
-    throw new RangeError("Balance flow period is outside the supplied periods.");
+  if (!Number.isInteger(index) || index < 0 || index >= Math.max(1, spec.periods.length)) throw new RangeError("Invalid period.");
   const width = Math.max(620, spec.width ?? 620),
     height = balanceFlowHeight(spec.periods, spec.height);
   const rows = balanceFlowRows(spec, index);
-  const nodes: SankeyNode[] = rows.map((n) => ({ id: n.key, label: n.label }));
+  const nodes = rows.map((n, index) => ({
+    id: n.key,
+    index,
+    incoming: 0,
+    outgoing: 0,
+    value: 0,
+    stage: 0,
+    x: 0,
+    y: 0,
+    height: 0,
+    showLabel: false,
+  }));
   const links = rows
     .filter((n) => n.key !== "balance" && n.value !== 0)
     .map((n) => {
       const source = n.direction === "in" || (n.key === "opening" && n.value > 0) || (n.key === "closing" && n.value < 0);
       return { source: source ? n.key : "balance", target: source ? "balance" : n.key, value: Math.abs(n.value) };
     });
-  // Reuse the Sankey graph's exact in/out semantics, including balances owed.
-  const scene = sankeyLayout({ nodes, links, width, height });
+  // This reconciled star is acyclic by construction. Keep Sankey node value = max(in, out),
+  // without running a general graph layout that every position below would replace.
+  const routedLinks = links.map((link) => {
+    const sourceNode = nodes.find((n) => n.id === link.source)!;
+    const targetNode = nodes.find((n) => n.id === link.target)!;
+    sourceNode.outgoing += link.value;
+    targetNode.incoming += link.value;
+    return { ...link, sourceNode, targetNode };
+  });
+  for (const node of nodes) node.value = Math.max(node.incoming, node.outgoing);
+  const scene = { nodes, links: routedLinks, width, height, header: { height: 0 } };
   const bottom = height - 46,
     top = 16;
   const largest = Math.max(1, ...spec.periods.map((_, i) => balanceFlowRows(spec, i).find((r) => r.key === "balance")!.value));
@@ -218,7 +174,7 @@ export function balanceFlowLayout(spec: BalanceFlowOptions) {
       path: `M${x1},${sy}C${mid},${sy} ${mid},${ty} ${x2},${ty}L${x2},${ty + thickness}C${mid},${ty + thickness} ${mid},${sy + thickness} ${x1},${sy + thickness}Z`,
     };
   });
-  return { ...scene, nodeWidth, links: routed, rows, index, period: spec.periods[index], labelY, scale, bottom };
+  return { ...scene, nodeWidth, links: routed, rows, labelY, scale, bottom };
 }
 export function renderBalanceFlowSvg(spec: BalanceFlowOptions): string {
   validateBalanceFlow(spec.periods);
@@ -238,7 +194,7 @@ export function renderBalanceFlowSvg(spec: BalanceFlowOptions): string {
         target = scene.rows[link.targetNode.index]!;
       const direction = source.direction === "neutral" ? target.direction : source.direction;
       body.push(
-        `<path class="k2b-balance-flow-band" data-balance-band="${source.key}-${target.key}" fill="${balanceFlowColors[direction]}" fill-opacity="0.24" stroke="none" d="${link.path}"/>`,
+        `<path class="k2b-balance-flow-band" data-balance-band="${source.key}-${target.key}" fill="${balanceFlowColors[direction]}" fill-opacity="0.24" stroke="none" pointer-events="none" d="${link.path}"/>`,
       );
     }
     for (const node of scene.nodes) {
@@ -269,7 +225,7 @@ export function renderBalanceFlowSvg(spec: BalanceFlowOptions): string {
       const datum = datums.find((d) => d.seriesIndex === period && d.index === node.index)!;
       body.push(
         chartDatumSvg(
-          `<rect data-balance-key="${row.key}" x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="0" fill="${color}" fill-opacity="1" stroke="none"/>${caption}`,
+          `<rect data-balance-key="${row.key}" x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" fill="${color}" stroke="none"/>${caption}`,
           { ...datum, anchor: [node.x + scene.nodeWidth / 2, y] },
           spec.inspect,
         )
@@ -280,15 +236,10 @@ export function renderBalanceFlowSvg(spec: BalanceFlowOptions): string {
           ),
       );
     }
-    body.push(
-      `<text data-balance-month-text x="16" y="${scene.height - 16}" fill="var(--k2b-text-muted,#71717a)" font-size="12">${escapeXml(spec.periods[period]!.label)}</text></g>`,
-    );
+    body.push("</g>");
   }
   const height = balanceFlowHeight(spec.periods, spec.height) + header.height;
   return svgRoot({ width, height, className: spec.className }, body.join(""))
     .replace(/<style>[\s\S]*?<\/style>/, "")
-    .replace(
-      "<svg ",
-      `<svg data-balance-flow-svg="true" aria-label="${escapeXml(spec.periods.map((_, i) => balanceFlowSummary(spec, i)).join(" "))}" `,
-    );
+    .replace("<svg ", '<svg data-balance-flow-svg="true" ');
 }

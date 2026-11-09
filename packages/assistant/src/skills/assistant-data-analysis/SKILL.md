@@ -9,7 +9,8 @@ Start with the question the reader needs to answer. Load `assistant-code-mode`
 with `load_skill`, not `load_tools`, for execution, delivery and approval rules.
 Read its `/skills/assistant-code-mode/references/views.md` for computed charts,
 groups, tables, key figures and record details,
-`/skills/assistant-code-mode/references/charts.md` for
+`/skills/assistant-code-mode/references/chart-kinds.md` to choose a chart kind
+(one example each), `/skills/assistant-code-mode/references/charts.md` for
 `cloud.chart()` in apps/PDFs, and `/skills/assistant-code-mode/references/apps.md`
 for interfaces. Loading a skill installs no library and grants no access.
 
@@ -70,13 +71,14 @@ found by a script instead of Markdown links. Choose the chart by the question:
 | Question | Chart |
 | --- | --- |
 | Compare category counts or totals | Bar; sort by value unless categories have their own order. |
-| Show ordered trends | Line; several measures over the same time axis use a group with `linkX`, each with its own units. There is no second y axis. |
+| Show ordered trends | Line; use `forecast` and its confidence `band` for an outlook, `marker` for Today, `threshold` for a reserve and `zero` for negative regions. The Code charts reference has a complete cash outlook example. Several measures over the same time axis use a group with `linkX`, each with its own units. There is no second y axis. |
 | Show a continuous distribution | Histogram rows form over all observations, rather than a sample. |
 | Compare distributions across categories | Boxplot; observations count toward the mark budget, so check the limits before delivery. |
 | Compare two categorical dimensions | Heatmap; aggregate to one value per x/y pair. |
 | Compare a few values against capacity | BarGauge; at most 8 items, short labels, meaningful min/max and thresholds. |
 | Show one headline number with change | Stat; compute `delta` in the value's units and set `better` only when improvement has a defined direction. |
 | Show shares of one whole | Pie/donut for two to four shares; many status counts read better as sorted bars. |
+| Follow quantities through merging or branching stages | Sankey; unique node IDs, positive links and no cycles. Imbalances stay visible. Use bars for unrelated categories. |
 
 Use `references` for targets or averages. For a last-period comparison, align
 periods to comparable x values and put the comparison in a line/scatter series

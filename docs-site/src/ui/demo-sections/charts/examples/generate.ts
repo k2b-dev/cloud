@@ -4,9 +4,9 @@ import { exampleFiles } from "./files";
 
 const target = resolve(import.meta.dir, "registry.generated.ts");
 
-/** The registry module for the example files in this folder. */
-export const exampleRegistrySource = () => {
-  const names = exampleFiles().map((file) => file.replace(/\.ts$/, ""));
+/** The registry module for the example files in this folder, or for the given example file names. */
+export const exampleRegistrySource = (files = exampleFiles()) => {
+  const names = files.map((file) => file.replace(/\.ts$/, "")).sort();
   // One line per file, named after it, so two lanes that each add a file touch different lines.
   const name = (file: string) => `${file.replace(/[^\w$]/g, "_")}Examples`;
   return [

@@ -41,8 +41,11 @@ const describe = (container: HTMLElement, id: string, on: boolean) => {
 
 /** Mark roles that stand for a whole category: hovering anywhere in its column (or row) inspects it. */
 const rowLayout = (container: HTMLElement | undefined) => Boolean(container?.querySelector('svg[data-bar-layout="rows"]'));
-const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", histogram: "bin", boxplot: "box" };
+const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", waterfall: "item", histogram: "bin", boxplot: "box" };
 type CategoryBand = { entry: Entry; left: number; right: number; top: number; bottom: number };
+
+/** An element's box on screen; one name for the many reads below keeps the framework-free entry small. */
+const box = (element: Element) => element.getBoundingClientRect();
 
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
 export function createChartInspector(options: {
@@ -129,7 +132,7 @@ export function createChartInspector(options: {
     const matrix = entry.element.getScreenCTM?.();
     const [x, y] = entry.datum.anchor;
     if (matrix) return { x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f };
-    const rect = entry.element.getBoundingClientRect();
+    const rect = box(entry.element);
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
   };
   const visibleRecords = () => {
@@ -152,7 +155,8 @@ export function createChartInspector(options: {
   };
   const rawX = (entry: Entry) => entry.datum.values.find((field) => field.key === "x")?.value;
   const category = (entry: Entry) => (options.kind() === "area" ? entry.datum.index : rawX(entry));
-  const seriesChart = () => options.kind() === "line" || options.kind() === "area" || options.kind() === "sparkline";
+  const groupedSeriesChart = () => options.kind() === "line" || options.kind() === "area";
+  const seriesChart = () => groupedSeriesChart() || options.kind() === "sparkline";
   const updateLegend = (items: Entry[] | undefined) => {
     const root = options.legend?.() ?? options.container();
     for (const node of root?.querySelectorAll<HTMLElement | SVGElement>("[data-chart-legend-value]") ?? []) {
@@ -160,9 +164,9 @@ export function createChartInspector(options: {
         node.textContent = node.getAttribute("data-default") ?? "";
         continue;
       }
-      const series = Number(node.getAttribute("data-series-index"));
+      const series = node.dataset.seriesIndex;
       const field = items
-        .find((item) => item.datum.seriesIndex === series)
+        .find((item) => item.datum.seriesIndex?.toString() === series)
         ?.datum.values.find((field) => field.key === node.getAttribute("data-field"));
       node.textContent = field
         ? (field.formatted ??
@@ -180,6 +184,13 @@ export function createChartInspector(options: {
     }
     highlighted = [];
   };
+  const cancelPendingMove = () => {
+    if (frame !== undefined) cancelAnimationFrame(frame);
+    frame = undefined;
+    pending = undefined;
+  };
+  /** The open tooltip came from keyboard focus or keys, not from a pointer: it follows its mark when the page scrolls. */
+  let byKeyboard = false;
   const close = (broadcast = true, cancelPending = true) => {
     const state = linkedCursor?.read();
     if (broadcast && state && state.source !== source) return;
@@ -206,11 +217,7 @@ export function createChartInspector(options: {
         /* Detached during navigation. */
       }
     }
-    if (cancelPending) {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      frame = undefined;
-      pending = undefined;
-    }
+    if (cancelPending) cancelPendingMove();
   };
   const invalidate = () => {
     options.cursor?.()?.clear(source);
@@ -220,23 +227,24 @@ export function createChartInspector(options: {
     byElement.clear();
     receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry, broadcast = true) => {
+  const show = (entry: Entry, broadcast = true, hover = false) => {
     const x = rawX(entry);
     if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) return;
+    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) {
+      active = entry;
+      for (const item of highlighted) item.element.setAttribute("data-inspected", hover ? "hover" : "true");
+      return;
+    }
     clearHighlight();
     active = entry;
-    highlighted =
-      options.kind() === "line" || options.kind() === "area"
-        ? records().filter((candidate) => category(candidate) === category(entry))
-        : [entry];
+    highlighted = groupedSeriesChart() ? records().filter((candidate) => category(candidate) === category(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
-      item.element.setAttribute("data-inspected", "true");
+      item.element.setAttribute("data-inspected", hover ? "hover" : "true");
     }
     updateLegend(highlighted);
     const document = tooltip.ownerDocument;
@@ -260,23 +268,19 @@ export function createChartInspector(options: {
     const commonTitle =
       sharedTitle ??
       (contents.every(({ content }) => content.title === contents[0]?.content.title) ? contents[0]?.content.title : undefined);
-    if (commonTitle) {
+    const appendTitle = (text: string) => {
       const title = document.createElement("strong");
       title.className = "k2b-chart__tooltip-title";
-      title.textContent = commonTitle;
+      title.textContent = text;
       tooltip.append(title);
-    }
+    };
+    if (commonTitle) appendTitle(commonTitle);
     for (const { item, content, missing } of contents) {
-      if (content.title && !commonTitle) {
-        const title = document.createElement("strong");
-        title.className = "k2b-chart__tooltip-title";
-        title.textContent = content.title;
-        tooltip.append(title);
-      }
+      if (content.title && !commonTitle) appendTitle(content.title);
       for (const row of content.rows) {
         const line = document.createElement("span");
         line.className = "k2b-chart__tooltip-row";
-        if (options.kind() === "line" || options.kind() === "area") {
+        if (groupedSeriesChart()) {
           const swatch = document.createElement("i");
           swatch.setAttribute("aria-hidden", "true");
           const series = container.querySelector(
@@ -309,7 +313,7 @@ export function createChartInspector(options: {
         tooltip.append(line);
       }
     }
-    const rect = container.getBoundingClientRect(),
+    const rect = box(container),
       point = screenPoint(entry);
     const slot = categoryBands().find((candidate) => candidate.entry === entry);
     // A renderer that draws its own band inside the category's mark keeps it; the overlay only fills the others.
@@ -347,9 +351,9 @@ export function createChartInspector(options: {
     const rows = rowLayout(container);
     const slots = records()
       .filter((entry) => entry.datum.role === role)
-      .map((entry) => ({ entry, rect: entry.element.getBoundingClientRect() }));
+      .map((entry) => ({ entry, rect: box(entry.element) }));
     if (!slots.length) return [];
-    const guides = [...container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")].map((node) => node.getBoundingClientRect());
+    const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) => box(node));
     // The band spans the plot across the categories: grid lines and every mark, so rows without value ticks, whose
     // only guide is one vertical baseline, still get a band from the baseline to the longest bar.
     const spans = [...guides, ...slots.map((slot) => slot.rect)];
@@ -373,14 +377,14 @@ export function createChartInspector(options: {
   const updatePlotBounds = () => {
     const container = options.container();
     if (!container) return;
-    const axes = [...container.querySelectorAll(".stdlib-chart-axis")].map((axis) => axis.getBoundingClientRect());
+    const axes = Array.from(container.querySelectorAll(".stdlib-chart-axis")).map(box);
     if (axes.length < 2) return;
     const left = Math.min(...axes.map((a) => a.left)),
       right = Math.max(...axes.map((a) => a.right));
     const top = Math.min(...axes.map((a) => a.top)),
       bottom = Math.max(...axes.map((a) => a.bottom));
     if (right <= left || bottom <= top) return;
-    const rect = container.getBoundingClientRect();
+    const rect = box(container);
     for (const [name, value] of Object.entries({
       left: left - rect.left,
       right: rect.right - right,
@@ -493,7 +497,7 @@ export function createChartInspector(options: {
   };
   const move = (event: PointerEvent) => {
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
-    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 6) moved = true;
+    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 8) moved = true;
     if (!options.enabled() || pinned || event.pointerType === "touch" || event.buttons) return;
     pending = { x: event.clientX, y: event.clientY, target: event.target instanceof Element ? event.target : null };
     if (frame !== undefined) return;
@@ -504,11 +508,12 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
-        show(entry);
+        byKeyboard = false;
+        show(entry, true, true);
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");
-          container?.style.setProperty("--k2b-chart-inspection-y", `${sample.y - container.getBoundingClientRect().top}px`);
+          container?.style.setProperty("--k2b-chart-inspection-y", `${sample.y - box(container).top}px`);
         }
       } else close();
     });
@@ -516,6 +521,7 @@ export function createChartInspector(options: {
   let pointerFocusing = false;
   const down = (event: PointerEvent) => {
     pointerFocusing = true;
+    byKeyboard = false;
     pointerStart = { x: event.clientX, y: event.clientY };
     moved = false;
   };
@@ -530,6 +536,7 @@ export function createChartInspector(options: {
       close();
       return;
     }
+    cancelPendingMove();
     pinned = true;
     show(entry);
     options.select({ kind: options.kind(), datum: entry.datum });
@@ -540,6 +547,8 @@ export function createChartInspector(options: {
       pointerFocusing = false;
       return;
     }
+    cancelPendingMove();
+    byKeyboard = !pointerFocusing;
     const nodes = visibleRecords();
     const first = options.nav?.()?.last ? nodes.at(-1) : options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
     if (first) show(first);
@@ -551,6 +560,7 @@ export function createChartInspector(options: {
       return true;
     }
     if (event.key === "Enter" && active) {
+      cancelPendingMove();
       if (options.kind() === "map" && !visibleRecords().includes(active)) {
         close();
         return true;
@@ -567,7 +577,7 @@ export function createChartInspector(options: {
     if (!["Home", "End", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return false;
     let nodes = visibleRecords();
     if (seriesChart()) nodes = [...nodes].sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
-    if (options.kind() === "line" || options.kind() === "area") {
+    if (groupedSeriesChart()) {
       const seen = new Set<string | number | undefined>();
       nodes = nodes.filter((entry) => {
         const x = category(entry);
@@ -577,10 +587,11 @@ export function createChartInspector(options: {
       });
     }
     if (!nodes.length) return false;
+    cancelPendingMove();
     event.preventDefault();
     pinned = false;
     let index = active
-      ? options.kind() === "line" || options.kind() === "area"
+      ? groupedSeriesChart()
         ? nodes.findIndex((entry) => category(entry) === category(active!))
         : nodes.indexOf(active)
       : -1;
@@ -610,6 +621,7 @@ export function createChartInspector(options: {
     const next = nodes[Math.max(0, Math.min(nodes.length - 1, index))]!;
     options.nav?.()?.reveal?.(next.element);
     show(next);
+    byKeyboard = true;
     return true;
   };
   return {
@@ -623,6 +635,17 @@ export function createChartInspector(options: {
     click,
     focus,
     key,
+    /**
+     * The page scrolled: a keyboard tooltip, or one a linked chart keeps open, follows its mark; others close. A
+     * focused chart scrolled into view would otherwise close the tooltip its focus just opened.
+     */
+    scroll: () => {
+      if (!byKeyboard) close();
+      // Still open (keyboard, or a linked chart keeps it): show the same mark again at its new place.
+      const entry = active;
+      active = undefined;
+      if (entry) show(entry, false);
+    },
     close: () => close(),
     invalidate,
     leave: () => {
@@ -636,15 +659,17 @@ export function closeChartInspectionOnOutside(options: {
   container: () => HTMLElement | undefined;
   tooltip: () => HTMLElement | undefined;
   close: () => void;
+  /** What a page scroll does; defaults to close. An inspector passes its `scroll`, which keeps keyboard tooltips. */
+  scroll?: () => void;
   keepScroll?: () => boolean | undefined;
 }): () => void {
   const outside = (event: PointerEvent) => {
     if (event.target instanceof Node && !options.container()?.contains(event.target)) options.close();
   };
   const scroll = (event: Event) => {
-    if (event.target === options.container() && options.keepScroll?.()) return;
+    if (event.target instanceof Node && options.container()?.contains(event.target) && options.keepScroll?.()) return;
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
-    options.close();
+    (options.scroll ?? options.close)();
   };
   window.addEventListener("pointerdown", outside);
   window.addEventListener("scroll", scroll, true);
@@ -653,102 +678,5 @@ export function closeChartInspectionOnOutside(options: {
     window.removeEventListener("pointerdown", outside);
     window.removeEventListener("scroll", scroll, true);
     window.removeEventListener("resize", options.close);
-  };
-}
-
-export type InspectChartOptions = {
-  kind: ChartKind;
-  nav?: ChartInspectionNavigation;
-  format: ChartTooltipFormatter;
-  select?: (selection: ChartSelection) => void;
-  cursor?: ChartCursor;
-  locale?: string;
-  /** Host for a separately rendered series legend. Defaults to the chart container. */
-  legend?: ParentNode;
-};
-export type ChartInspection = { invalidate(): void; close(): void; destroy(): void };
-
-let tooltipId = 0;
-
-/** Attach inspection to stdlib SVG rendered with inspect: true, without a framework. */
-export function inspectChart(container: HTMLElement, options: InspectChartOptions): ChartInspection {
-  const document = container.ownerDocument;
-  const anchor = document.createElement("span");
-  anchor.className = "k2b-chart__anchor";
-  anchor.setAttribute("aria-hidden", "true");
-  const tooltip = document.createElement("span");
-  tooltip.className = "k2b-tooltip k2b-chart__tooltip";
-  tooltip.setAttribute("role", "tooltip");
-  tooltip.setAttribute("popover", "manual");
-  tooltip.setAttribute("data-instant", "true");
-  do {
-    tooltip.id = `k2b-chart-tooltip-${++tooltipId}`;
-  } while (document.getElementById(tooltip.id));
-  container.append(anchor, tooltip);
-  const addedTabindex = !container.hasAttribute("tabindex");
-  if (addedTabindex) container.setAttribute("tabindex", "0");
-
-  const inspector = createChartInspector({
-    container: () => container,
-    locale: () => options.locale ?? "en",
-    legend: () => options.legend,
-    cursor: () => options.cursor,
-    tooltip: () => tooltip,
-    anchor: () => anchor,
-    kind: () => options.kind,
-    nav: () => options.nav,
-    enabled: () => true,
-    format: options.format,
-    select: (selection) => options.select?.(selection),
-  });
-  const listen = <K extends keyof HTMLElementEventMap>(name: K, listener: (event: HTMLElementEventMap[K]) => unknown) => {
-    container.addEventListener(name, listener);
-    return () => container.removeEventListener(name, listener);
-  };
-  const removeListeners = [
-    listen("pointerdown", inspector.down),
-    listen("pointerup", inspector.up),
-    listen("pointercancel", inspector.up),
-    listen("pointermove", inspector.move),
-    listen("click", inspector.click),
-    listen("pointerleave", inspector.leave),
-    listen("focusin", inspector.focus),
-    listen("focusout", inspector.close),
-    listen("keydown", inspector.key),
-  ];
-  const removeOutside = closeChartInspectionOnOutside({
-    container: () => container,
-    tooltip: () => tooltip,
-    close: inspector.close,
-    keepScroll: () => options.nav?.keepScroll,
-  });
-  const unlinkCursor = inspector.linkCursor(options.cursor);
-  let destroyed = false;
-  return {
-    invalidate: () => {
-      if (!destroyed) inspector.invalidate();
-    },
-    close: () => {
-      if (!destroyed) inspector.close();
-    },
-    destroy() {
-      if (destroyed) return;
-      destroyed = true;
-      for (const remove of removeListeners) remove();
-      removeOutside();
-      unlinkCursor();
-      inspector.destroy();
-      for (const element of container.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]")) {
-        element.removeAttribute("data-inspected");
-        element.style.removeProperty("--k2b-chart-inspection-color");
-        if (!element.getAttribute("style")) element.removeAttribute("style");
-      }
-      // Inspection geometry the inspector wrote onto the host container.
-      for (const name of ["inspection-x", "inspection-y", "plot-left", "plot-right", "plot-top", "plot-bottom"])
-        container.style.removeProperty(`--k2b-chart-${name}`);
-      anchor.remove();
-      tooltip.remove();
-      if (addedTabindex) container.removeAttribute("tabindex");
-    },
   };
 }

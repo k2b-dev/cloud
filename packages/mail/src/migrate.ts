@@ -17,6 +17,7 @@ import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { MAIL_ACTIVITY_FEED_ACTIONS } from "./service/activity-feed";
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
+import { migrateSourceNames } from "./service/source-names-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
 type SqlClient = typeof sql;
@@ -211,6 +212,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
 
   await tx`CREATE INDEX IF NOT EXISTS outbox_submissions_draft_idx ON mail.outbox_submissions (draft_id, created_at DESC)`.simple();
 
+  await addMailingListConversationLinks(tx);
+
   // NULL = no status decision since Mail linked the message; true = a decision covers it and its
   // hydration keeps the status; false = a later decision released it. Moving the message to another
   // conversation resets it to NULL.
@@ -364,6 +367,21 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
+};
+
+/** List-only membership keeps its provenance across copies, hydration and restarts. */
+const addMailingListConversationLinks = async (tx: SqlClient): Promise<void> => {
+  const [current] = await tx<{ allows: boolean }[]>`
+    SELECT pg_get_constraintdef(oid) LIKE '%''list''%' AS allows
+    FROM pg_constraint
+    WHERE conrelid = 'mail.conversation_messages'::regclass AND conname = 'conversation_messages_added_by_check'
+  `;
+  if (current?.allows) return;
+  await tx`ALTER TABLE mail.conversation_messages DROP CONSTRAINT IF EXISTS conversation_messages_added_by_check`.simple();
+  await tx`
+    ALTER TABLE mail.conversation_messages ADD CONSTRAINT conversation_messages_added_by_check
+    CHECK (added_by = ANY (ARRAY['provider', 'headers', 'heuristic', 'manual', 'outbox', 'list'])) NOT VALID
+  `.simple();
 };
 
 /** Accepted Undo requests survive the client and wait for the original move's destination copy. */
@@ -663,7 +681,7 @@ const migrationErrorCode = (error: unknown): string | null => {
  * The whole migration runs in one transaction under a transaction-scoped
  * advisory lock, so the guard also holds behind a transaction pooler. A run
  * that waits longer than `lock_timeout` for the guard or for DDL locks fails
- * with `55P03` and is retried with backoff.
+ * with `55P03` and is retried with backoff; deadlock victims (`40P01`) retry too.
  */
 export const migrate = async (): Promise<void> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -675,12 +693,13 @@ export const migrate = async (): Promise<void> => {
         await applyAdditions(tx);
         await migrateBackfillActivity(tx);
         await migrateAiDailyBudget(tx);
+        await migrateSourceNames(tx);
         await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
       });
       return;
     } catch (error) {
-      if (migrationErrorCode(error) !== "55P03" || attempt === 2) throw error;
+      if (!["55P03", "40P01"].includes(migrationErrorCode(error) ?? "") || attempt === 2) throw error;
       await Bun.sleep(250 * 2 ** attempt);
     }
   }

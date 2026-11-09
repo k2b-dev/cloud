@@ -1,4 +1,5 @@
 import actionButtons from "./actions/buttons.md" with { type: "text" };
+import actionCommandMenu from "./actions/command-menu.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
 import actionDragAndDrop from "./actions/drag-and-drop.md" with { type: "text" };
@@ -58,6 +59,7 @@ import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
 import inputDictation from "./input/dictation.md" with { type: "text" };
 import inputEmojiPicker from "./input/emoji-picker.md" with { type: "text" };
+import inputFieldSuggestion from "./input/field-suggestion.md" with { type: "text" };
 import inputFileDropTarget from "./input/file-drop-target.md" with { type: "text" };
 import inputFileDropzone from "./input/file-dropzone.md" with { type: "text" };
 import inputIcon from "./input/icon.md" with { type: "text" };
@@ -65,6 +67,7 @@ import inputIconChoices from "./input/icon-choices.md" with { type: "text" };
 import inputImage from "./input/image.md" with { type: "text" };
 import inputImageCropper from "./input/image-cropper.md" with { type: "text" };
 import inputNumber from "./input/number.md" with { type: "text" };
+import inputPeriodPicker from "./input/period-picker.md" with { type: "text" };
 import inputPin from "./input/pin.md" with { type: "text" };
 import inputQrScanner from "./input/qr-scanner.md" with { type: "text" };
 import inputRichSelect from "./input/rich-select.md" with { type: "text" };
@@ -103,6 +106,7 @@ import surfaceCards from "./surfaces/cards.md" with { type: "text" };
 import surfaceChangeList from "./surfaces/change-list.md" with { type: "text" };
 import surfaceColor from "./surfaces/color.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
+import surfaceElevation from "./surfaces/elevation.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
 import surfacePaper from "./surfaces/paper.md" with { type: "text" };
@@ -122,6 +126,7 @@ const catalogContextSources = {
   "input/autocomplete-select": { file: "input/autocomplete-select.md", content: inputAutocompleteSelect },
   "input/number": { file: "input/number.md", content: inputNumber },
   "input/date-picker": { file: "input/date-picker.md", content: inputDatePicker },
+  "input/period-picker": { file: "input/period-picker.md", content: inputPeriodPicker },
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
@@ -146,9 +151,11 @@ const catalogContextSources = {
   "input/choice-slider": { file: "input/choice-slider.md", content: inputChoiceSlider },
   "input/slider": { file: "input/slider.md", content: inputSlider },
   "input/boolean": { file: "input/boolean.md", content: inputBoolean },
+  "input/field-suggestion": { file: "input/field-suggestion.md", content: inputFieldSuggestion },
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
   "actions/copy-remove": { file: "actions/copy-remove.md", content: actionCopyRemove },
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
+  "actions/command-menu": { file: "actions/command-menu.md", content: actionCommandMenu },
   "actions/drag-and-drop": { file: "actions/drag-and-drop.md", content: actionDragAndDrop },
   "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },
@@ -177,6 +184,7 @@ const catalogContextSources = {
   "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
+  "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },

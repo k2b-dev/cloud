@@ -1,5 +1,5 @@
 import type { SankeyNode, SankeyOptions } from "./sankey";
-import { renderHeader } from "./svg";
+import { renderHeader } from "./svg-common";
 
 /** Shared by JSON validation and direct core calls. Kahn's traversal is linear and never recurses. */
 export function sankeyGraph(spec: Pick<SankeyOptions, "nodes" | "links">) {

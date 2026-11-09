@@ -164,12 +164,13 @@ describe("Filesv2 interactions", () => {
     const dom = createDomTestHarness();
     const Browser = await browserWithUploads();
     let opened = "";
+    const navigate = mock(async () => {});
     const dispose = render(
       () =>
         createComponent(Browser, {
           directory,
           bases: [directory.base],
-          onNavigate: async () => {},
+          onNavigate: navigate,
           onOpenDirectory: (path) => (opened = path),
         }),
       dom.root,
@@ -181,8 +182,9 @@ describe("Filesv2 interactions", () => {
     const rows = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row:not(.filesv2-list__row--up)")];
     rows[0]!.click();
     expect(opened).toBe("Budget #1/Final ?");
-    const next = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) => entry.textContent?.includes("Next page"))!;
-    expect(new URL(next.href, "https://cloud.test").searchParams.get("after")).toBe("next/+=");
+    // Continuation now appends through a button rather than navigating to a cursor link.
+    const more = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Load more");
+    expect(more).toBeDefined();
     rows[1]!.click();
     await flush();
     const download = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__header button")].find(
@@ -199,7 +201,14 @@ describe("Filesv2 interactions", () => {
     requests[before]!.resolve(Response.json({ code: "forbidden", message: "Access changed." }, { status: 403 }));
     await flush();
     expect(dom.document.body.textContent).toContain("Access changed");
-    expect(dom.root.textContent).toContain("report.txt");
+    expect(
+      [...dom.root.querySelectorAll(".filesv2-list__row:not(.filesv2-list__row--up) .filesv2-list__name")].map((name) =>
+        name.getAttribute("title"),
+      ),
+    ).toEqual(directory.items.map((item) => item.path));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(opened).toBe("Budget #1/Final ?");
+    expect(more?.isConnected).toBe(true);
     expect(download.disabled).toBe(false);
     download.click();
     await flush();

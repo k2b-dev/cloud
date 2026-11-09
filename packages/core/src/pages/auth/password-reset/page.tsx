@@ -35,7 +35,7 @@ export default ssr(async (c) => {
     <LocaleProvider locale={locale}>
       <div class="min-h-svh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
         <div class="flex min-h-svh flex-col items-center justify-center gap-5 p-4">
-          <div class="standalone-card grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_16px_48px_rgb(24_24_27/0.12)] dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[0.9fr_1.1fr]">
+          <div class="standalone-card grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[var(--k2b-shadow-frame)] dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[0.9fr_1.1fr]">
             <aside class="hidden flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 md:flex dark:border-zinc-800 dark:bg-zinc-900/60">
               <div class="flex flex-1 items-center justify-center">
                 <div class="flex flex-col items-center gap-4 text-center">
@@ -67,7 +67,7 @@ export default ssr(async (c) => {
                     <h1 class="text-3xl font-semibold tracking-tight text-primary">{formTitle}</h1>
                     <p class="mt-1 text-sm text-dimmed">{formSubtitle}</p>
                   </div>
-                  <span class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 shadow-sm dark:bg-emerald-950/45 dark:text-emerald-300">
+                  <span class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/45 dark:text-emerald-300">
                     <i class="ti ti-shield-lock" />
                     {t.secure}
                   </span>

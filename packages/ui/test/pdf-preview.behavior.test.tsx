@@ -1,8 +1,29 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
+// pdf.js draws pages only in a real browser (pdf-viewer.browser.test.ts covers it). Here it always fails, so every
+// preview takes the fallback these tests cover: the browser's own viewer in a frame, or the hint where there is none.
+mock.module("../src/content/pdf-document", () => ({
+  openPdfDocument: async () => {
+    throw new Error("pdf.js draws only in a real browser");
+  },
+  pageImageWidth: () => 400,
+  PDF_LIMITS: { maxBytes: 1, maxPages: 1, maxCanvasPixels: 1, maxImageWidth: 1 },
+  PDF_TOO_LARGE: "PdfTooLargeError",
+}));
+// Loaded ahead, so the preview's lazy viewer resolves from the module cache within a few turns.
+if (!isServer) {
+  const dom = createDomTestHarness();
+  await import("../src/content/PdfViewer");
+  dom.cleanup();
+}
+
 const domTest = isServer ? test.skip : test;
+/** Lets a shown document reach its fallback: the viewer loads, pdf.js fails, the frame or the hint takes over. */
+const settle = async () => {
+  for (let turn = 0; turn < 10; turn++) await Bun.sleep(0);
+};
 const click = (button: HTMLButtonElement) => {
   const event = new MouseEvent("click", { bubbles: true });
   Object.defineProperty(event, "currentTarget", { value: button });
@@ -51,7 +72,7 @@ for (const autoLoad of [false, true]) {
       expect(dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")!.disabled).toBe(true);
       dispose();
       resolvePdf(new Blob(["pdf"], { type: "application/pdf" }));
-      await Bun.sleep(0);
+      await settle();
       expect(created).toEqual(["blob:preview"]);
       expect(revoked).toEqual(created);
     } finally {
@@ -81,7 +102,7 @@ domTest("disabled automatic previews do not issue a request", async () => {
     dom.root,
   );
   try {
-    await Bun.sleep(0);
+    await settle();
     expect(calls).toBe(0);
     // It never starts, so it keeps the idle state instead of the loading state an automatic preview begins with.
     expect(dom.root.querySelector('[role="status"]')).toBeNull();
@@ -109,7 +130,7 @@ domTest("automatic preview failures stay visible and retry only after an explici
     dom.root,
   );
   try {
-    await Bun.sleep(0);
+    await settle();
     expect(calls).toBe(1);
     // The error takes the viewer's place as the placeholder's error state, which carries the one retry action.
     const alert = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="error"][role="alert"]')!;
@@ -119,7 +140,7 @@ domTest("automatic preview failures stay visible and retry only after an explici
     expect(retry.disabled).toBe(false);
     retry.focus();
     click(retry);
-    await Bun.sleep(0);
+    await settle();
     expect(calls).toBe(2);
     // The failed retry shows a new error state; keyboard focus lands on its retry instead of the page.
     expect(dom.document.activeElement).toBe(dom.root.querySelector('[role="alert"] button'));
@@ -160,12 +181,12 @@ domTest("composed preview keeps controls in the caller's header and exposes a fa
   );
   try {
     click(dom.root.querySelector<HTMLButtonElement>("header button:last-child")!);
-    await Bun.sleep(0);
+    await settle();
     expect(dom.root.querySelector(".k2b-content-pdf-preview")).toBeNull();
     expect(dom.root.querySelectorAll("header button")).toHaveLength(2);
     expect(dom.root.querySelector("iframe")?.title).toBe("Invoice preview");
     click(dom.root.querySelector<HTMLButtonElement>("header button:last-child")!);
-    await Bun.sleep(0);
+    await settle();
     expect(dom.root.querySelector("iframe")).toBeNull();
     expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe("Check your draft: Due date is missing");
     expect(dom.root.querySelector(".k2b-content-pdf-preview__empty")).toBeNull();
@@ -226,14 +247,14 @@ domTest("an automatic preview opens the shown document in a new tab and offers t
   );
   try {
     expect(labels(dom.root)).toEqual(["Open in new tab", "Download"]);
-    await Bun.sleep(0);
+    await settle();
     // Rendering again would show the same document, so only open and download remain.
     expect(labels(dom.root)).toEqual(["Open in new tab", "Download"]);
     const [open, download] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"));
     click(download!);
     expect(downloads).toBe(1);
     click(open!);
-    await Bun.sleep(0);
+    await settle();
     expect(calls).toBe(1);
     expect(browser.tab.opener).toBeNull();
     expect(browser.objectUrls.get(browser.tab.location.href)).toBe(pdf);
@@ -265,10 +286,10 @@ domTest("an on-demand preview keeps rendering and opens the current document for
   try {
     const [open, renderPreview] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2b-content-pdf-preview__actions button"));
     click(renderPreview!);
-    await Bun.sleep(0);
+    await settle();
     expect(labels(dom.root)).toEqual(["Open preview", "Preview PDF"]);
     click(open!);
-    await Bun.sleep(0);
+    await settle();
     expect(versions).toHaveLength(2);
     expect(browser.objectUrls.get(browser.tab.location.href)).toBe(versions[1]);
   } finally {
@@ -303,7 +324,7 @@ domTest(
       dom.root,
     );
     try {
-      await Bun.sleep(0);
+      await settle();
       const open = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button")!;
       // The render action moves into the error state with the caller's label.
       expect(labels(dom.root)).toEqual(["Open in new tab", "Try again"]);
@@ -317,7 +338,7 @@ domTest(
       expect(status.textContent).toBe("Loading...");
       expect(dom.root.querySelector('[role="alert"]')).toBeNull();
       resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
-      await Bun.sleep(0);
+      await settle();
       expect(calls).toBe(2);
       const frame = dom.root.querySelector("iframe")!;
       // The same loading state stays over the frame until the frame has loaded the document.
@@ -359,12 +380,12 @@ domTest("a host that shows only the content gets keyboard focus on the document 
     dom.root,
   );
   try {
-    await Bun.sleep(0);
+    await settle();
     const retry = dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
     retry.focus();
     click(retry);
     resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
-    await Bun.sleep(0);
+    await settle();
     // No open action is shown, so focus continues in the viewer instead of the page. The frame beneath the loading state
     // is out of reach until it has loaded the document, so focus never sits on something invisible.
     const viewer = dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__viewer")!;
@@ -408,7 +429,7 @@ domTest("beside a caller's error content, an automatic preview keeps its own ret
     dom.root,
   );
   try {
-    await Bun.sleep(0);
+    await settle();
     expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe("Network error");
     const [open, retry] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"));
     expect(labels(dom.root)).toEqual(["Open in new tab", "Try again"]);
@@ -419,7 +440,7 @@ domTest("beside a caller's error content, an automatic preview keeps its own ret
     expect(retry!.disabled).toBe(true);
     expect(dom.root.querySelector('[role="status"]')?.textContent).toBe("Loading...");
     resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
-    await Bun.sleep(0);
+    await settle();
     expect(calls).toBe(2);
     expect(dom.root.querySelector("iframe")).not.toBeNull();
     // The shown document makes the retry redundant; keyboard focus continues on the open action.
@@ -463,7 +484,7 @@ domTest("an on-demand preview shows its idle, loading, and error states in one p
     expect(viewer.dataset.state).toBe("loading");
     expect(viewer.textContent).toBe("Wird geladen...");
     rejectRender(new Error("Vorlage fehlt"));
-    await Bun.sleep(0);
+    await settle();
     const error = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="error"]')!;
     expect(error.getAttribute("role")).toBe("alert");
     // The render action stays in the toolbar and is the only retry, so the error state adds no second one.
@@ -474,7 +495,7 @@ domTest("an on-demand preview shows its idle, loading, and error states in one p
     click(retry);
     expect(dom.root.querySelector('.k2b-content-pdf-preview__placeholder[data-state="loading"]')).not.toBeNull();
     rejectRender(new Error("Vorlage fehlt"));
-    await Bun.sleep(0);
+    await settle();
     setDisabled(true);
     expect(retry.disabled).toBe(true);
   } finally {
@@ -505,12 +526,12 @@ domTest("a blocked tab keeps the shown document and says so in the inherited loc
     dom.root,
   );
   try {
-    await Bun.sleep(0);
+    await settle();
     const frame = dom.root.querySelector("iframe");
     expect(frame).not.toBeNull();
     const open = dom.root.querySelector<HTMLButtonElement>("button")!;
     click(open);
-    await Bun.sleep(0);
+    await settle();
     expect(dom.root.querySelector("iframe")).toBe(frame);
     expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe(
       "Der Browser hat den neuen Tab blockiert. Erlaube Pop-ups und versuche es erneut.",
@@ -519,7 +540,7 @@ domTest("a blocked tab keeps the shown document and says so in the inherited loc
     expect(labels(dom.root)).toEqual(["Vorschau öffnen"]);
     blocked = false;
     click(open);
-    await Bun.sleep(0);
+    await settle();
     expect(dom.root.querySelector('[role="alert"]')).toBeNull();
     expect(browser.tab.document.body.textContent).toBe("PDF-Vorschau wird erstellt…");
     expect(browser.objectUrls.get(browser.tab.location.href)).toBe(pdf);
@@ -559,7 +580,7 @@ domTest("a caller's open address opens as a plain link, so reloading and the vie
     dom.root,
   );
   try {
-    await Bun.sleep(0);
+    await settle();
     const link = dom.root.querySelector<HTMLAnchorElement>(".k2b-content-pdf-preview__actions a")!;
     expect(link.textContent?.trim()).toBe("Open in new tab");
     expect(link.getAttribute("href")).toBe("/api/files/Q3%20Report.pdf");
@@ -568,7 +589,7 @@ domTest("a caller's open address opens as a plain link, so reloading and the vie
     expect(dom.root.querySelector("iframe")).not.toBeNull();
     // The browser follows the link to the caller's address itself: no local copy, no second request.
     link.click();
-    await Bun.sleep(0);
+    await settle();
     expect(opened).toEqual([["http://localhost/api/files/Q3%20Report.pdf", "_blank", "noopener"]]);
     expect(browser.objectUrls.size).toBe(1);
     expect(calls).toBe(1);
@@ -592,7 +613,7 @@ domTest("the loading state covers the frame until the frame has loaded each docu
     const renderPreview = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")!;
     const viewer = dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__viewer")!;
     click(renderPreview);
-    await Bun.sleep(0);
+    await settle();
     // The frame already loads the document in the viewer's box, still transparent under the loading state.
     const frame = viewer.querySelector("iframe")!;
     expect(frame.getAttribute("src")).toBe("blob:document-1");
@@ -603,13 +624,13 @@ domTest("the loading state covers the frame until the frame has loaded each docu
     frame.dispatchEvent(new Event("load"));
     expect(frame.hasAttribute("data-drawn")).toBe(true);
     expect(viewer.querySelector(".k2b-content-pdf-preview__placeholder")).toBeNull();
-    // A new document in the same frame is covered again until it is loaded.
+    // A new document goes to pdf.js first again; its fallback frame is covered again until it is loaded.
     click(renderPreview);
-    await Bun.sleep(0);
-    expect(viewer.querySelector("iframe")).toBe(frame);
-    expect(frame.getAttribute("src")).toBe("blob:document-2");
+    await settle();
+    const next = viewer.querySelector("iframe")!;
+    expect(next.getAttribute("src")).toBe("blob:document-2");
     expect(viewer.querySelector('[data-state="loading"]')).not.toBeNull();
-    frame.dispatchEvent(new Event("load"));
+    next.dispatchEvent(new Event("load"));
     expect(viewer.querySelector(".k2b-content-pdf-preview__placeholder")).toBeNull();
     expect(dom.root.querySelector(".k2b-content-pdf-preview__viewer")).toBe(viewer);
   } finally {
@@ -631,7 +652,7 @@ const hintText =
   "Dieses PDF kann hier nicht angezeigt werden" +
   "Dein Browser kann PDFs nicht innerhalb einer Seite anzeigen. Öffne das Dokument, um es anzusehen.";
 
-domTest("without an inline PDF viewer, an automatic preview requests nothing and leaves the document to its open action", async () => {
+domTest("without an inline PDF viewer, an automatic preview still loads, and shows the hint only when pdf.js cannot draw", async () => {
   const dom = createDomTestHarness();
   dom.document.documentElement.lang = "de";
   const browser = stubPdfBrowser(dom);
@@ -656,34 +677,32 @@ domTest("without an inline PDF viewer, an automatic preview requests nothing and
       dom.root,
     );
     try {
-      // The browser could only show the hint, so the preview fetches nothing and says so at once, without a frame.
-      await Bun.sleep(0);
-      expect(calls).toBe(0);
+      // pdf.js draws in every browser, so the preview requests its document as anywhere else; a failure shows with
+      // its retry.
+      await settle();
+      expect(calls).toBe(1);
+      const alert = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="error"]')!;
+      expect(alert.textContent).toContain("Netzwerkfehler");
+      fail = false;
+      click(alert.querySelector("button")!);
+      await settle();
+      expect(calls).toBe(2);
+      // Here pdf.js cannot draw it and no browser viewer can take over: the hint takes the document's place, without
+      // a frame and without an action of its own; open and download remain.
       expect(dom.root.querySelector("iframe")).toBeNull();
       const hint = dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__placeholder")!;
       expect(hint.dataset.state).toBe("empty");
       expect(hint.textContent).toBe(hintText);
-      // The hint adds no action, and rendering would show only the hint again: open and download remain.
       expect(hint.querySelector("button, a")).toBeNull();
       expect(labels(dom.root)).toEqual(["Vorschau öffnen", "Herunterladen"]);
       const [open, download] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2b-content-pdf-preview__actions button"));
       click(download!);
       expect(downloads).toBe(1);
-      // The open action fetches the document when someone asks for it; a failure shows in the viewer without a second
-      // retry, because the open action is that retry.
+      // The open action shows the loaded document without a second request.
       click(open!);
-      await Bun.sleep(0);
-      expect(calls).toBe(1);
-      const alert = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="error"]')!;
-      expect(alert.textContent).toBe("Netzwerkfehler");
-      expect(alert.querySelector("button")).toBeNull();
-      expect(labels(dom.root)).toEqual(["Vorschau öffnen", "Herunterladen"]);
-      fail = false;
-      click(open!);
-      await Bun.sleep(0);
+      await settle();
       expect(calls).toBe(2);
       expect(browser.objectUrls.get(browser.tab.location.href)).toBe(pdf);
-      expect(dom.root.querySelector(".k2b-content-pdf-preview__placeholder")?.textContent).toBe(hintText);
     } finally {
       dispose();
       browser.restore();
@@ -692,7 +711,7 @@ domTest("without an inline PDF viewer, an automatic preview requests nothing and
   });
 });
 
-domTest("without an inline PDF viewer, a host that shows only the content gets the hint at once and no request", async () => {
+domTest("without an inline PDF viewer, a host that shows only the content gets the hint once pdf.js cannot draw", async () => {
   const dom = createDomTestHarness();
   dom.document.documentElement.lang = "de";
   const { default: PdfPreview } = await import("../src/content/PdfPreview");
@@ -713,8 +732,8 @@ domTest("without an inline PDF viewer, a host that shows only the content gets t
       dom.root,
     );
     try {
-      await Bun.sleep(0);
-      expect(calls).toBe(0);
+      await settle();
+      expect(calls).toBe(1);
       expect(dom.root.querySelector("iframe")).toBeNull();
       expect(dom.root.querySelector(".k2b-content-pdf-preview__placeholder")?.textContent).toBe(hintText);
     } finally {
@@ -755,7 +774,7 @@ domTest("without an inline PDF viewer, an on-demand preview still renders, then 
       expect(calls).toBe(1);
       expect(placeholder.getAttribute("role")).toBe("status");
       resolveRender(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
-      await Bun.sleep(0);
+      await settle();
       // The loading status turns into the hint in the same box, which is no live region any more, so the preview
       // announces it.
       expect(dom.root.querySelector("iframe")).toBeNull();
@@ -774,7 +793,7 @@ domTest("without an inline PDF viewer, an on-demand preview still renders, then 
       expect(calls).toBe(2);
       const opened = new Blob(["%PDF-1.4 opened"], { type: "application/pdf" });
       resolveRender(opened);
-      await Bun.sleep(0);
+      await settle();
       expect(browser.objectUrls.get(browser.tab.location.href)).toBe(opened);
     } finally {
       dispose();

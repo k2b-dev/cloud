@@ -52,6 +52,11 @@ export type ToolbarProps = {
   /** Class of the scrolling action row inside. */
   toolsClass?: string;
   /**
+   * With a class, `start`, the action row, and dictation share one wrapper with this class, and `end` stands beside
+   * it, so a host can draw them as two floating pills at the edges of its column.
+   */
+  mainClass?: string;
+  /**
    * On touch screens with an open keyboard, lift the toolbar to the keyboard's top edge while the editor has focus,
    * and give up the same height in the page above it, so the caret line stays visible.
    */
@@ -201,18 +206,8 @@ export function Toolbar(props: ToolbarProps) {
     measure();
   });
 
-  return (
-    // Pointer presses on any control, menu items included, keep focus and selection in the editor. A native listener,
-    // because the menus are popovers inside this element and must not depend on delegation reaching them.
-    <div
-      ref={root}
-      class={props.class ?? "k2b-editor-toolbar flex min-w-0 items-center gap-2 text-dimmed"}
-      // The stylesheet sizes every control's icon here, the host's start and end controls included.
-      data-k2b-editor-toolbar=""
-      data-dictating={dictating() ? "" : undefined}
-      style={{ "margin-bottom": lift() ? `${lift()}px` : undefined }}
-      on:mousedown={(event) => event.preventDefault()}
-    >
+  const main = () => (
+    <>
       {props.start}
       <Show when={!dictating()} fallback={<DictationBar dictation={dictation} />}>
         <UiToolbar label={props.label ?? t().formatting} class={props.toolsClass ?? "no-scrollbar min-w-0 flex-1 overflow-x-auto"}>
@@ -242,6 +237,24 @@ export function Toolbar(props: ToolbarProps) {
       </Show>
       <Show when={props.dictation && !dictating()}>
         <DictationButton dictation={dictation} size="xs" class="text-dimmed" />
+      </Show>
+    </>
+  );
+
+  return (
+    // Pointer presses on any control, menu items included, keep focus and selection in the editor. A native listener,
+    // because the menus are popovers inside this element and must not depend on delegation reaching them.
+    <div
+      ref={root}
+      class={props.class ?? "k2b-editor-toolbar flex min-w-0 items-center gap-2 text-dimmed"}
+      // The stylesheet sizes every control's icon here, the host's start and end controls included.
+      data-k2b-editor-toolbar=""
+      data-dictating={dictating() ? "" : undefined}
+      style={{ "margin-bottom": lift() ? `${lift()}px` : undefined }}
+      on:mousedown={(event) => event.preventDefault()}
+    >
+      <Show when={props.mainClass} fallback={main()}>
+        {(mainClass) => <div class={mainClass()}>{main()}</div>}
       </Show>
       {props.end}
     </div>

@@ -88,7 +88,7 @@ Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder e
 
 So setzt Mail den nächsten Schritt:
 
-- Neue eingehende E-Mails setzen die Unterhaltung auf **Handlungsbedarf** und entfernen sie aus **Später**, sobald Mail sie geladen hat oder das Laden endgültig aufgibt. Gibt Mail auf, zeigt der Lesebereich bei dieser Nachricht **Der Nachrichteninhalt konnte nicht synchronisiert werden**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**.
+- Neue eingehende E-Mails setzen die Unterhaltung normalerweise auf **Handlungsbedarf** und entfernen sie aus **Später**, sobald Mail sie geladen hat oder das Laden endgültig aufgibt. Gibt Mail auf, zeigt der Lesebereich bei dieser Nachricht **Der Nachrichteninhalt konnte nicht synchronisiert werden**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**. Mailinglisten-Antworten von Personen, die noch nicht an der Unterhaltung beteiligt sind, behalten den Status und die Zeit für „Später anzeigen“ bei.
 - Eine menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, aber erst, wenn Mail die Zustellung bestätigt.
 - Eine neue Nachricht, die du in Cloud schreibst, beginnt eine Unterhaltung in **Wartet auf Antwort**. Das gilt auch für eine Nachricht, die Mail aus einem anderen E-Mail-Programm in deinem Ordner Gesendet findet.
 - E-Mails von deiner eigenen Adresse, die im Posteingang ankommen, beginnen in **Handlungsbedarf**. Ein Beispiel ist ein Kontaktformular, das im Namen deines Postfachs sendet.
@@ -266,13 +266,15 @@ Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link f�
 
 Mail blockiert Bilder, die eine Nachricht von einem externen Server laden würde. Das Laden eines solchen Bildes kann dem Absender verraten, dass du die Nachricht geöffnet hast. Direkt in der Nachricht enthaltene Bilder bleiben sichtbar.
 
-Enthält eine Nachricht blockierte Bilder, wähle:
+Enthält eine Nachricht blockierte Bilder, steht über ihr die Zeile **Externe Bilder blockiert**. Wähle:
 
 - **Bilder laden**, um sie nur für diese geöffnete Nachricht zu laden.
-- **Für diesen Absender immer laden**, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben.
-- **Für diese Domain immer laden**, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
+- den Pfeil neben **Bilder laden** und dann **Immer von …** mit der Adresse, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben. Mail lädt die Bilder dann sofort.
+- den Pfeil und dann **Immer von allen bei …** mit der Domain, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
 
-Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **… → Externe Bilder**.
+Hat eine Nachricht mehrere Absender, gibt es nur **Bilder laden**. Nach dem Laden zeigt die Zeile **Bilder geladen**; über **Immer laden** kannst du den Absender oder die Domain auch dann noch erlauben. Lädt Mail Bilder durch eine deiner Einstellungen von selbst, sagt die Zeile **… werden immer geladen**. Wähle dort **Ändern → Nicht mehr automatisch laden**, um diese Einstellung wieder zu entfernen. Können Bilder nicht geladen werden, bleibt die Zeile mit **Erneut versuchen** stehen. Ist eine Nachricht größer als das sichere Limit, lädt Mail nur einen Teil der Bilder und sagt das in der Zeile.
+
+Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **… → Externe Bilder** oder in der Zeile **Regeln für externe Bilder …**.
 
 Mail lädt erlaubte Bilder über seinen geschützten Bilddienst, dein Browser bekommt die Bildadresse also nie. Der externe Server kann trotzdem erfahren, dass jemand sein Bild angefordert hat. Lass Bilder bei unbekannten oder verdächtigen Absendern blockiert.
 
@@ -302,7 +304,13 @@ Mail entfernt einen gelöschten lokalen Tag aus jeder Unterhaltung im Postfach. 
 
 ## Gruppierung von Unterhaltungen korrigieren {icon="arrows-split-2"}
 
-Mail ordnet eine Nachricht der Unterhaltung zu, auf die ihre Antwort-Header verweisen. Das funktioniert auch, wenn eine Antwort vor der Nachricht synchronisiert wurde, auf die sie antwortet. Antworten auf eine Nachricht, die das Postfach nicht enthält, bleiben zusammen.
+Mail sucht über Antwort-Header und Anbieter-Verläufe nach Unterhaltungen im selben Postfach. Eine neue Nachricht wird nur zugeordnet, wenn ihr Absender bereits in Von, An, Cc oder Reply-To einer früheren Nachricht steht, zur selben Mailingliste gehört oder eine eigene Postfachadresse beziehungsweise ein eingerichteter Absender-Alias ist. Bcc-Empfänger eigener gesendeter Nachrichten zählen ebenfalls. Antworten über Mailinglisten brauchen dieselbe Listenkennung und dieselbe Listenadresse in beiden Nachrichten. Diese Adresse muss außerhalb des Postfachs und seiner Aliase liegen. Beide Nachrichten müssen dieselbe E-Mail-Adresse in List-Post enthalten; An und Cc reichen dafür nicht. Mailinglisten-Antworten von Personen, die noch nicht an der Unterhaltung beteiligt sind, werden zugeordnet, öffnen sie aber nicht erneut. Sie behalten den aktuellen Status und die Zeit für „Später anzeigen“ bei. Das gilt auch für spätere Antworten, die nur über die Liste zugeordnet werden. Postfach-Automationen überspringen für diese Antworten Änderungen an Status, „Später anzeigen“ und Zuweisung. Das Automationsprotokoll nennt den Grund. Lesen und das Setzen von Tags bleiben möglich. Das gilt auch, wenn Antworten vor dem Original synchronisiert werden: Die bereits gespeicherten Nachrichten bestimmen die Beteiligten. Ein später eintreffendes Original kann ebenfalls zugeordnet werden, wenn eine gespeicherte eigene Antwort direkt auf seine Message-ID antwortet und ihr nicht leerer Betreff übereinstimmt.
+
+Bekannte Beteiligte können auf eine gespeicherte Nachricht mit einem geänderten oder leeren Betreff antworten und in der Unterhaltung bleiben. Eine Gruppierung allein über den Betreff braucht einen passenden, nicht leeren Betreff. Übliche Antwort- und Weiterleitungspräfixe wie `Re:`, `AW:`, `Fwd:`, `RV:`, `SV:` und `Antw:` sowie führende Listen- oder Gateway-Tags ändern diesen Vergleich nicht. Tags mit einer Ziffer oder `#` bleiben Teil des Betreffvergleichs.
+
+Bereits gespeicherte Betreffzeilen werden beim Upgrade nicht neu berechnet. Antworten, die nur über den Betreff zu älteren Unterhaltungen passen, können deshalb eine neue Unterhaltung beginnen. Antworten mit einem Verweis auf eine gespeicherte Nachricht sind davon nicht betroffen.
+
+Antworten neuer Personen, etwa einer Kollegin nach einer Weiterleitung, beginnen eine eigene Unterhaltung. Andere Nachrichten, die auf eine Unterhaltung verweisen, öffnen diese nicht mehr erneut und entfernen auch nicht „Später anzeigen“. Gehören die Unterhaltungen zusammen, kannst du sie wie unten beschrieben zusammenführen. Bestehende Unterhaltungen werden nicht neu gruppiert, auch nicht bei einer Reparatur.
 
 Eine Nachricht ohne Antwort-Header schließt sich einer früheren Unterhaltung nur an, wenn beides zutrifft:
 

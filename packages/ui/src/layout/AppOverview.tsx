@@ -30,6 +30,8 @@ export type AppOverviewEmptyStateProps = {
 
 export type AppOverviewCardsProps = {
   class?: string;
+  /** `plain` is the closer grid for `LinkCard surface="plain"`; the cards' text lines up with the heading above. */
+  surface?: "paper" | "plain";
   children: JSX.Element;
 };
 
@@ -74,7 +76,9 @@ const AppOverviewAside = (props: AppOverviewPanelProps): JSX.Element => (
 );
 
 const AppOverviewCards = (props: AppOverviewCardsProps): JSX.Element => (
-  <div class={`k2b-app-overview__cards ${props.class ?? ""}`}>{props.children}</div>
+  <div class={`k2b-app-overview__cards ${props.class ?? ""}`} data-surface={props.surface === "plain" ? "plain" : undefined}>
+    {props.children}
+  </div>
 );
 
 const AppOverviewEmptyState = (props: AppOverviewEmptyStateProps): JSX.Element => (

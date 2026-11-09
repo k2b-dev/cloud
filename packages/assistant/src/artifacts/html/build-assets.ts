@@ -1,8 +1,24 @@
-// Builds the two browser assets of an HTML app frame: the prelude (an IIFE that
-// the app document pins by hash) and the base stylesheet of @k2b/ui with the
-// Plex faces it needs as data URLs, because app frames load nothing from the network.
+// Builds the frame prelude, chart parts and @k2b/ui base stylesheet with Plex
+// faces as data URLs. The host holds the parts; app frames load nothing from
+// the network and receive only requested kinds over the existing bridge.
+
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { BunPlugin } from "bun";
+import type { RareChart } from "../runtime/chart-renderer-types";
+import { CHART_SHARED_IMPORT, type ChartPart, type ChartParts } from "./chart-parts";
+
+// App frames strip the embedded SVG stylesheet and use their shared base.css.
+// Omit that duplicate from the offline asset; standalone charts keep it verbatim.
+const frameChartStyles: BunPlugin = {
+  name: "frame-chart-styles",
+  setup(build) {
+    build.onLoad({ filter: /\/charts\/core\/default-styles\.[jt]s$/ }, () => ({
+      contents: 'export const DEFAULT_STYLES = "";',
+      loader: "js",
+    }));
+  },
+};
 
 export function buildPrelude(): Promise<string> {
   return buildFrame("frame.ts");
@@ -20,6 +36,7 @@ async function buildFrame(entry: string): Promise<string> {
     minify: true,
     define: { "import.meta.url": JSON.stringify("about:blank") },
     plugins: [
+      frameChartStyles,
       {
         name: "offline-chart-module",
         setup(build) {
@@ -35,16 +52,49 @@ async function buildFrame(entry: string): Promise<string> {
   return (await build.outputs[0]!.text()).trim().replace(/<\/(script)/gi, "<\\/$1");
 }
 
-/** Separate ESM asset: transported with the frame, parsed only on first rare chart. */
-export async function buildChartModule(): Promise<string> {
+/** Split at renderer exports; Bun deduplicates helpers into one shared asset. */
+export async function buildChartParts(): Promise<ChartParts> {
+  // The exhaustive dispatch switch alone cannot catch a forgotten named export.
+  const renderers = (await import("../runtime/chart-renderers-rare")) satisfies Record<RareChart["kind"], unknown>;
+  const kinds = Object.keys(renderers).filter((name) => !["rareChartSvg", "loadChartRenderer", "deferChartDrawing"].includes(name));
   const build = await Bun.build({
-    entrypoints: [join(import.meta.dir, "../runtime/chart-renderers-rare.ts")],
+    entrypoints: kinds.map((kind) => `chart-kind:${kind}.ts`),
     target: "browser",
     format: "esm",
+    splitting: true,
     minify: true,
+    naming: { entry: "[name].js", chunk: "shared-[hash].js" },
+    plugins: [
+      frameChartStyles,
+      {
+        name: "chart-kind-entries",
+        setup(build) {
+          build.onResolve({ filter: /^chart-kind:/ }, ({ path }) => ({ path: path.slice(11), namespace: "chart-kind" }));
+          build.onLoad({ filter: /.*/, namespace: "chart-kind" }, ({ path }) => ({
+            contents: `export { ${path.slice(0, -3)} as render } from ${JSON.stringify(join(import.meta.dir, `../runtime/chart-kind-${path}`))};`,
+            loader: "ts",
+          }));
+        },
+      },
+    ],
   });
-  if (!build.success) throw new AggregateError(build.logs, "The offline chart module did not build");
-  return build.outputs[0]!.text();
+  if (!build.success) throw new AggregateError(build.logs, "The chart parts did not build");
+  const shared = build.outputs.filter((output) => /\/shared-/.test(output.path) && output.size);
+  if (shared.length !== 1) throw new Error(`Expected one shared chart part, got ${shared.length}`);
+  const sharedName = shared[0]!.path.split("/").pop()!;
+  const part = (source: string): ChartPart => {
+    const code = source.trim();
+    return { code, hash: new Bun.CryptoHasher("sha256").update(code).digest("hex") };
+  };
+  const entries = await Promise.all(
+    kinds.map(async (kind) => {
+      const output = build.outputs.find((output) => output.path.endsWith(`/chart-kind:${kind}.js`));
+      if (!output) throw new Error(`Missing chart part: ${kind}`);
+      const code = (await output.text()).replaceAll(`"./${sharedName}"`, JSON.stringify(CHART_SHARED_IMPORT));
+      return [kind, part(code)] as const;
+    }),
+  );
+  return { shared: part(await shared[0]!.text()), kinds: Object.fromEntries(entries) };
 }
 
 /** Plex Sans 400-700 and Plex Mono 400, Latin and Latin Extended (Łukasz, Şahin), as in the base stylesheet's tokens. */

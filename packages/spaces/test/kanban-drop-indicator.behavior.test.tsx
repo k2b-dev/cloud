@@ -273,12 +273,12 @@ describe("Spaces Kanban drop indicator", () => {
     expect(line.outerHTML).toContain("bg-[var(--ui-app-accent-border)]");
     expect(line.outerHTML).not.toContain("--ui-focus");
 
-    // The active wormhole ring is `--ui-focus` as its own box-shadow layer; nested inside another shadow it drops the whole shadow.
+    // The active wormhole ring is `--ui-focus` as its own box-shadow; a drop target casts no inner shade (layers and shadows).
     const wormhole = dom.document.querySelector<HTMLElement>(WORMHOLE_TARGET)!;
     expect(wormhole.style.boxShadow).not.toContain("--ui-focus");
     await moveTo(3, 70);
     expect(slots()).toEqual(["Open: A B C D", "Review: X Y", "Later: empty"]);
-    expect(wormhole.style.boxShadow).toStartWith("var(--ui-focus),");
+    expect(wormhole.style.boxShadow).toBe("var(--ui-focus)");
 
     // Dropping where the line points puts the card exactly there.
     await moveTo(0, cardCenter(2) + 10);

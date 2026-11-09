@@ -71,6 +71,7 @@ import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 import { revokeChatWebsite } from "../artifacts/approval-preferences";
 import { createCodeApprovals } from "../artifacts/CapabilityApproval";
 import { ChatPresentation } from "../artifacts/ChatPresentation";
+import { scheduleChartPreparation } from "../artifacts/html/prepare-assets";
 import { artifactMessages } from "../artifacts/messages";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
@@ -368,6 +369,7 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
   onMount(() => {
+    onCleanup(scheduleChartPreparation("/api/assistant/artifacts/runtime"));
     const subscription = followAssistantLive(liveHub, {
       cursor: props.initialLiveCursor,
       failing: (failing) => setLiveError(failing ? t().liveRetry : null),

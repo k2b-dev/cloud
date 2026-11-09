@@ -159,6 +159,9 @@
   --k2b-edge-selected-hover-fill: 14%;
   /* The 1 px border of secondary buttons: light in every state. */
   --k2b-control-border-soft: #c8c8d0;
+  /* The resting rail of a slider: at least 3:1 on every surface, muted included, so the track reads as one. */
+  --k2b-rail: #8a8a94;
+  --k2b-rail-hover: var(--k2b-neutral-500);
   /* The grey track of a segmented control, and an option hovered on it. */
   --k2b-tray: #ececef;
   --k2b-tray-hover: rgb(9 9 11 / 0.06);
@@ -173,16 +176,20 @@
   --k2b-radius-control: 0.5rem;
   /* One reading column for long text beside wide space: conversation history and its composer, the mail reader. */
   --k2b-reading-column: 47.5rem;
+  /* One measure for label–value rows (budgets, sums): the value stays within reach of its label on a wide screen. */
+  --k2b-row-measure: 40rem;
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: 0.875rem;
   /* One motion vocabulary: every time and curve comes from these tokens. */
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
   --k2b-motion-sheet: 220ms; /* panels, sheets, period changes */
+  --k2b-motion-morph: 280ms; /* one large surface changes size or place: a pill grows into a draft */
   --k2b-motion-celebrate: 600ms; /* completion moments only */
   --k2b-fresh-fade: 1600ms; /* color only: a highlight fades out */
   --k2b-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* standard curve */
   --k2b-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small marks only: check, switch knob, badge */
+  --k2b-ease-morph: cubic-bezier(0.2, 0, 0, 1); /* with --k2b-motion-morph: a soft start and a long, calm landing */
   /* Cloud pins `--ui-shadow-surface: none` in both themes: flat surfaces carry
      a border, not a drop shadow, and an outer shadow is clipped anyway by the
      `overflow: hidden` parents these surfaces sit in. Only genuinely floating,
@@ -199,9 +206,23 @@
   --k2b-shadow-column-active-mid: rgb(24 24 27 / 0.016);
   --k2b-shadow-column-active-edge: rgb(24 24 27 / 0.055);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
+  /* Light glass for layers that float over a picture, video, or map (`k2b-overlay-surface`). */
+  --k2b-overlay-surface: rgb(255 255 255 / 0.78);
+  --k2b-overlay-surface-hover: rgb(255 255 255 / 0.94);
+  --k2b-overlay-edge: rgb(255 255 255 / 0.7);
+  --k2b-overlay-ring: rgb(9 9 11 / 0.09);
+  --k2b-overlay-lift: 0 12px 32px -18px rgb(9 9 11 / 0.35);
+  /* What the glass becomes when the system asks for less transparency. */
+  --k2b-overlay-solid: var(--k2b-surface-elevated);
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
   --k2b-shadow-sheet: 0 -14px 36px rgb(9 9 11 / 0.16); /* a sheet rising from the bottom edge */
+  /* Layer 1, an island in the main content: a section, a content card, a dashboard frame. */
+  --k2b-shadow-raised: 0 1px 2px rgb(15 23 19 / 0.05), 0 4px 12px -6px rgb(15 23 19 / 0.12);
+  /* The surface of an island. In dark mode a lighter surface replaces the shadow. */
+  --k2b-surface-raised: var(--k2b-surface);
+  /* A floating pill or toolbar that stays open: softer than a menu that opens for a moment. */
+  --k2b-shadow-toolbar: 0 1px 2px rgb(9 9 11 / 0.06), 0 6px 18px -8px rgb(9 9 11 / 0.16);
 
   --stdlib-chart-c1: var(--k2b-accent-500);
   --stdlib-chart-c2: var(--k2b-success-500);
@@ -235,6 +256,7 @@
     --k2b-motion-fast: 0ms;
     --k2b-motion-base: 0ms;
     --k2b-motion-sheet: 0ms;
+    --k2b-motion-morph: 0ms;
     --k2b-motion-celebrate: 0ms;
     --k2b-fresh-fade: 0ms;
   }
@@ -258,6 +280,7 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-fast: 0ms;
   --k2b-motion-base: 0ms;
   --k2b-motion-sheet: 0ms;
+  --k2b-motion-morph: 0ms;
   --k2b-motion-celebrate: 0ms;
   --k2b-fresh-fade: 0ms;
 }
@@ -338,6 +361,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-warning: var(--k2b-warning-500);
   --k2b-edge-selected-share: 55%;
   --k2b-control-border-soft: #46505c;
+  --k2b-rail: #6b7280;
+  --k2b-rail-hover: #8d8d98;
   --k2b-tray: #1a2028;
   --k2b-tray-hover: rgb(255 255 255 / 0.08);
   --k2b-info-surface: var(--k2b-accent-950);
@@ -364,9 +389,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);
   --k2b-shadow-column-active-edge: rgb(0 0 0 / 0.14);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
+  --k2b-overlay-surface: rgb(30 36 44 / 0.86);
+  --k2b-overlay-surface-hover: rgb(44 51 61 / 0.95);
+  --k2b-overlay-edge: rgb(255 255 255 / 0.08);
+  --k2b-overlay-ring: rgb(0 0 0 / 0.55);
+  --k2b-overlay-lift: 0 12px 32px -16px rgb(0 0 0 / 0.7);
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
+  /* No shadow, as a transparent no-op layer so lists such as `ring, var(--k2b-shadow-raised)` stay valid. */
+  --k2b-shadow-raised: 0 0 #0000;
+  --k2b-surface-raised: var(--k2b-surface-elevated);
+  --k2b-shadow-toolbar: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 22px -10px rgb(0 0 0 / 0.5);
   color-scheme: dark;
   --k2b-chart-highlight-mix: white;
 }
@@ -376,6 +410,55 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui *::before,
 .k2b-ui *::after {
   box-sizing: border-box;
+}
+
+/* Layers and shadows: one model for every app.
+   0 the workspace: the app card and its columns, flat.
+   1 islands in the main content: Paper, a framed Section, LinkCard,
+     ResourceCard, DashboardFrame, DashboardPanel, StatCell. They read `--k2b-island-shadow` and
+     `--k2b-island-surface` and never pick a shadow themselves.
+   2 overlaying surfaces: drawer, sheet, PanelDialog (`--k2b-shadow-side`, `-sheet`).
+   3 floating surfaces: menu, popover, dialog, toast, drag preview
+     (`--k2b-shadow-float`, `-toast`); floating pills and toolbars (`--k2b-shadow-toolbar`).
+   A shadow appears only between layers. Every column beside the main content,
+   every overlaying or floating surface, and every region marked
+   `data-k2b-layer="flat"` (a dense collection) is flat inside; the inside of an
+   island is flat too (surfaces-widgets-parity.css), so depth never nests. */
+.k2b-ui {
+  --k2b-island-shadow: var(--k2b-shadow-raised);
+  --k2b-island-surface: var(--k2b-surface-raised);
+}
+
+:is(.k2b-ui, .k2b-ui *):is(
+    [data-k2b-layer="flat"],
+    dialog,
+    [popover],
+    .k2b-app-workspace__sidebar,
+    .k2b-app-workspace__detail,
+    .k2b-detail-panel,
+    .k2b-bottom-sheet,
+    .k2b-floating-window,
+    .k2b-context-menu,
+    .k2b-toolbar
+  ),
+/* A nested `.k2b-ui` scope inside a flat layer stays flat; it would otherwise
+   declare the main-content default again. */
+:is(
+    [data-k2b-layer="flat"],
+    dialog,
+    [popover],
+    .k2b-app-workspace__sidebar,
+    .k2b-app-workspace__detail,
+    .k2b-detail-panel,
+    .k2b-bottom-sheet,
+    .k2b-floating-window,
+    .k2b-context-menu,
+    .k2b-toolbar
+  )
+  .k2b-ui {
+  /* A transparent no-op layer, not `none`, so an island may list it after a ring. */
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-island-surface: var(--k2b-surface);
 }
 
 .k2b-ui::selection,
@@ -489,6 +572,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: var(--k2b-focus-offset);
 }
 
+/* A landing point is not a control. After a page swap or when a panel closes,
+   code moves focus to the page's main region, its root, or its first heading
+   with tabindex -1, so screen readers start there. It is outside the tab
+   order, so it draws no ring. The browser's default ring would otherwise draw
+   a dark edge around the whole page card. Roving items with tabindex -1 are
+   controls and keep their ring. */
+.k2b-ui :is(main, [data-scroll-page], h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .k2b-ui .k2b-sr-only {
   position: absolute;
   width: 1px;
@@ -499,6 +592,40 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: -1px;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+}
+
+/* Light glass for a layer that floats over a picture, a video, or a map: the
+   chips, bars, and controls an image viewer or a map lays over its content.
+   The component that owns such a layer sets the class on it; the glass never
+   reaches its descendants. Never use it where text, form fields, or lines lie
+   underneath (forms, lists, tables, documents, diagrams), nor on menus,
+   popovers, or dialogs: blurred text reads as a rendering fault. A surface
+   that asks for less transparency or more contrast turns solid, and forced
+   colours draw a real border. `--k2b-overlay-*` holds the values; a stage that
+   is always dark, such as a lightbox, sets the dark values on itself. */
+.k2b-ui .k2b-overlay-surface {
+  background: var(--k2b-overlay-surface);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow:
+    inset 0 0 0 1px var(--k2b-overlay-edge),
+    0 0 0 1px var(--k2b-overlay-ring),
+    var(--k2b-overlay-lift);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .k2b-ui .k2b-overlay-surface {
+    background: var(--k2b-overlay-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-overlay-surface {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
 }
 
 /* Navigation labels that do not fit fade out at their end; they never end in
@@ -1697,8 +1824,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-chart-inverse-y: tan(atan2(var(--k2b-chart-height), 100cqh));
 }
 
+/* Preserve readable Y labels without imposing phone margins on wide line plots. */
+.k2b-ui .k2b-chart__svg[data-stretch] > svg[data-line-axis-room] {
+  --k2b-line-inset: max(0px, calc((var(--k2b-line-label-room) - var(--k2b-line-axis-fraction) * 100cqw) * var(--k2b-line-axis-expand)));
+  --k2b-chart-inverse-x: tan(atan2(var(--k2b-chart-width), calc(100cqw - var(--k2b-line-inset))));
+  margin-left: var(--k2b-line-inset);
+  width: calc(100% - var(--k2b-line-inset));
+  overflow: visible;
+}
+
 .k2b-ui .k2b-chart__svg[data-stretch] text {
   scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+}
+
+/* The bottom Y label must clear the first centred date label in small cards. */
+@container (max-width: 400px) {
+  .k2b-ui .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg[data-line-details="true"] > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {
+    translate: 0 calc(-6px * var(--k2b-chart-inverse-y));
+  }
 }
 
 .k2b-ui .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {
@@ -1747,6 +1890,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
   flex: none;
   height: var(--k2b-chart-height);
+  max-width: var(--k2b-row-measure, 40rem);
 }
 
 /* Labels and guide strokes leave hit testing to the data geometry below. */
@@ -1760,7 +1904,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 /* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row
  * of a category chart gets a light band behind it instead (data-inspecting="category"). */
-.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-inspection-color) !important;
   vector-effect: non-scaling-stroke;
 }
@@ -1770,6 +1914,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
 .k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
   stroke-width: 2px;
+}
+/* Keyboard inspection outlines category marks; pointer hover keeps their resting paint. */
+.k2b-ui .k2b-chart:focus-visible:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  stroke: var(--k2b-chart-inspection-color) !important;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
 }
 /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
 .k2b-ui .k2b-chart[data-inspecting="category"] {
@@ -2070,6 +2220,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
+/* Quiet continuation actions share link ink without acquiring a button surface. */
+.k2b-ui .k2b-button[data-variant="link"] {
+  padding-inline: 0;
+  border-inline-width: 0;
+  color: var(--k2b-action);
+  background: transparent;
+  font-weight: 400;
+  text-underline-offset: 0.2em;
+}
+
+.k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-action);
+  background: transparent;
+  text-decoration: underline;
+}
+
 /* A destructive text action, such as Remove at the foot of a menu, takes the
    danger ink that destructive menu items use, at rest and on hover. */
 .k2b-ui .k2b-button[data-variant="text"][data-danger="true"],
@@ -2231,7 +2397,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 2.5rem;
 }
 
+/* A split button is one body: the segments touch, only the outer corners
+   round, and each segment draws its focus ring inside itself, so a ring
+   never covers the neighbouring segment. */
 .k2b-ui .k2b-dropdown.k2b-split-button {
+  --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-focus-on-fill: currentColor;
   gap: 0;
   transition: scale 100ms ease-out;
 }
@@ -2252,11 +2423,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-split-button__primary-menu { gap: 0; }
 
+/* A split button the host makes wider gives the room to its main action; the menu segment keeps its width. At its
+   natural width nothing changes. */
+.k2b-ui .k2b-split-button > :is(.k2b-split-button__primary, .k2b-split-button__primary-menu),
+.k2b-ui .k2b-split-button__primary-menu > .k2b-split-button__primary {
+  flex: 1 1 auto;
+}
+
+/* Filled segments meet at a fine line in their label colour, light on every
+   fill in both themes. Bordered segments overlap by one pixel and share their
+   light border as the divider, so it never darkens. */
 .k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger {
   margin-inline-start: -1px;
-  border-inline-start-color: color-mix(in srgb, currentColor 24%, transparent);
   border-start-start-radius: 0;
   border-end-start-radius: 0;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger:is([data-variant="secondary"], [data-variant="subtle"], [data-variant="input"]) {
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2470,31 +2655,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     --k2b-field-control-row: 3;
     --k2b-field-control-height: max-content;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__label {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > :is(.k2b-field__label, .k2b-field__label-row) {
     grid-row: 1;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__description)) > .k2b-field__label {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__description)) > :is(.k2b-field__label, .k2b-field__label-row) {
     grid-row: 1 / 3;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__description {
     grid-row: 2;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label)) > .k2b-field__description {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row)) > .k2b-field__description {
     grid-row: 1 / 3;
   }
   /* The control's row travels in a custom property. A rule after :has() whose
      last part names no class, such as this :not(), makes every :has() change
      restyle the whole document: seconds per click in a mailbox. */
-  .k2b-ui .k2b-field > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
+  .k2b-ui .k2b-field > :not(.k2b-field__label, .k2b-field__label-row, .k2b-field__description, .k2b-field__error) {
     grid-row: var(--k2b-field-control-row);
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__error)) {
     --k2b-field-control-row: 3 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)) {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row, > .k2b-field__description)) {
     --k2b-field-control-row: 1 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)):has(> .k2b-field__error) {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row, > .k2b-field__description)):has(> .k2b-field__error) {
     --k2b-field-control-row: 1 / 4;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__error {
@@ -2506,7 +2691,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
      and the actions below it. A start-aligned control measures its content
      anyway; saying so explicitly keeps the rows tall enough there and changes
      nothing in a grid. Zero specificity keeps any control's own height. */
-  :where(.k2b-ui .k2b-field) > :where(:not(.k2b-field__label, .k2b-field__description, .k2b-field__error)) {
+  :where(.k2b-ui .k2b-field) > :where(:not(.k2b-field__label, .k2b-field__label-row, .k2b-field__description, .k2b-field__error)) {
     height: var(--k2b-field-control-height);
   }
 }
@@ -2532,6 +2717,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-danger-text);
 }
 
+.k2b-ui .k2b-field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .k2b-ui .k2b-field__description,
 .k2b-ui .k2b-field__error {
   margin: 0;
@@ -2554,6 +2746,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input,
 .k2b-ui .k2b-tags-input,
 .k2b-ui .k2b-date-trigger,
+.k2b-ui .k2b-period-picker__trigger,
 .k2b-ui .k2b-color-input__value {
   @apply flex min-w-0 items-center;
   --k2b-edge-color: var(--k2b-edge);
@@ -2581,6 +2774,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input:hover,
 .k2b-ui .k2b-tags-input:hover,
 .k2b-ui .k2b-date-trigger:hover,
+.k2b-ui .k2b-period-picker__trigger:hover,
 .k2b-ui .k2b-color-input__value:hover {
   background: var(--k2b-edge-hover-bg);
 }
@@ -2591,6 +2785,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input:focus-within,
 .k2b-ui .k2b-tags-input:focus-within,
 .k2b-ui .k2b-date-trigger:focus-visible,
+.k2b-ui .k2b-period-picker__trigger:focus-visible,
 .k2b-ui .k2b-color-input__value:focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
   background: var(--k2b-surface);
@@ -2603,6 +2798,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input:not(:has(> input:disabled)),
 .k2b-ui .k2b-tags-input[data-invalid="true"]:not([data-disabled="true"]),
 .k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger:not(:disabled),
+.k2b-ui .k2b-period-picker[data-invalid="true"] .k2b-period-picker__trigger:not(:disabled),
 .k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:not(:disabled) {
   --k2b-edge-color: var(--k2b-edge-danger);
 }
@@ -2614,6 +2810,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input:not(:has(> input:disabled)):focus-within,
 .k2b-ui .k2b-tags-input[data-invalid="true"]:not([data-disabled="true"]):focus-within,
 .k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger:not(:disabled):focus-visible,
+.k2b-ui .k2b-period-picker[data-invalid="true"] .k2b-period-picker__trigger:not(:disabled):focus-visible,
 .k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:not(:disabled):focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
 }
@@ -2626,6 +2823,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input:has(> input:disabled),
 .k2b-ui .k2b-tags-input[data-disabled="true"],
 .k2b-ui .k2b-date-trigger:disabled,
+.k2b-ui .k2b-period-picker__trigger:disabled,
 .k2b-ui .k2b-color-input__value:disabled {
   --k2b-edge-color: transparent;
   background: var(--k2b-surface-muted);
@@ -2884,7 +3082,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1rem;
   border-radius: 999px;
   background: #ffffff;
-  box-shadow: 0 1px 2px rgb(9 9 11 / 0.2);
   transition: transform 120ms ease;
 }
 
@@ -3680,8 +3877,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button,
-.k2b-ui .k2b-discussion__fold,
-.k2b-ui .k2b-discussion__load-more {
+.k2b-ui .k2b-discussion__fold {
   min-height: 1.75rem;
   padding: 0.25rem 0.5rem;
   border: 0;
@@ -3692,7 +3888,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui :is(.k2b-discussion__load-more, .k2b-discussion__fold) {
+.k2b-ui .k2b-discussion__fold {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
@@ -3702,8 +3898,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button:hover,
-.k2b-ui .k2b-discussion__fold:hover,
-.k2b-ui .k2b-discussion__load-more:hover {
+.k2b-ui .k2b-discussion__fold:hover {
   background: var(--k2b-surface-muted);
 }
 
@@ -3727,9 +3922,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
-.k2b-ui .k2b-discussion__load-more:disabled {
-  cursor: wait;
-  opacity: 0.7;
+.k2b-ui .k2b-discussion__load-more {
+  align-self: flex-start;
 }
 
 .k2b-ui .k2b-discussion__list {
@@ -4145,6 +4339,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-detail-panel__action-menu {
   flex: 0 0 auto;
+}
+
+/* A row's own checkbox, such as "done": in the icon column on the section's
+   text edge, with the row's usual gap before its title or icon. It always
+   shows, since it carries the row's state. */
+.k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action-check {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  align-items: flex-start;
+  justify-content: center;
+  margin-inline-end: 0.625rem;
 }
 
 .k2b-ui .k2b-button.k2b-detail-panel__action-secondary,
@@ -4858,6 +5063,84 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    of shrinking until descendants (for example stat grids) clip internally. */
 .k2b-ui .k2b-panel-dialog__body > * {
   flex-shrink: 0;
+}
+
+/* A media dialog shows a picture or a video edge to edge on the muted canvas; its header floats over it as glass
+   chips (title and subtitle, actions, close), so the picture keeps the dialog's full height. */
+.k2b-ui .k2b-panel-dialog[data-media] {
+  position: relative;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__header {
+  position: absolute;
+  z-index: 2;
+  inset: 0.75rem 0.75rem auto;
+  min-height: 0;
+  padding: 0;
+  gap: 0.375rem;
+  align-items: center;
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__header > * {
+  pointer-events: auto;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading {
+  display: flex;
+  min-width: 0;
+  min-height: 2rem;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  /* Title and facts share one 20 px line box; centring them keeps the chip at
+     32 px in every engine, where baseline alignment of the two font sizes
+     adds a sub-pixel in WebKit and lifts the chip off the close button's line. */
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading h2 {
+  display: block;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* Short of room the facts give way first, so the name stays readable. */
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading p {
+  min-width: 0;
+  flex: 0 100 auto;
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+/* A phone has room for the name only; the facts stay for wider screens. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading p {
+    display: none;
+  }
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__actions {
+  flex: none;
+  margin-inline-start: auto;
+  padding: 0.125rem;
+  gap: 0.125rem;
+  border-radius: 0.625rem;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__body {
+  padding: 0;
 }
 
 .k2b-ui .k2b-panel-dialog__body[data-surface="floating"] {
@@ -6738,6 +7021,379 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Phones zoom into fields below 16px. */
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search > input {
   font-size: 1rem;
+}
+
+/* Command lists: the slash menu of MarkdownEditor and CommandMenu share these
+   rows. The list scrolls below its back control and keeps a fixed width, so
+   filtering or a second list never resizes the popover. */
+.k2b-ui .k2b-command-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.125rem;
+  overflow: auto;
+}
+
+/* An unavailable command is greyed: muted label, faint icon or logo, its reason
+   in the description's place. It is never marked, by keys or pointer, and has
+   no hover fill, so nothing suggests it can be chosen. */
+.k2b-ui .k2b-dropdown__item[aria-disabled="true"],
+.k2b-ui .k2b-dropdown__item[aria-disabled="true"]:hover {
+  color: var(--k2b-text-muted);
+  background: transparent;
+  cursor: default;
+}
+
+.k2b-ui .k2b-command-list .k2b-dropdown__item[aria-disabled="true"] > :is(i:first-child, .k2b-command-list__image, .k2b-command-list__leading) {
+  opacity: 0.5;
+}
+
+.k2b-ui .k2b-command-list__leading {
+  display: inline-flex;
+  min-width: 1rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+/* An entry's image, such as a service's logo: an icon-sized box that keeps its
+   size before the image loads, so the row never moves. With one image per
+   theme, only the matching one shows. */
+.k2b-ui .k2b-command-list__image {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.k2b-ui .k2b-command-list__image > img {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+.k2b-ui .k2b-command-list__image-dark,
+.k2b-ui[data-theme="dark"] .k2b-command-list__image-light,
+.k2b-ui.k2b-dark .k2b-command-list__image-light,
+.dark .k2b-ui .k2b-command-list__image-light {
+  display: none !important;
+}
+
+.k2b-ui[data-theme="dark"] .k2b-command-list__image-dark,
+.k2b-ui.k2b-dark .k2b-command-list__image-dark,
+.dark .k2b-ui .k2b-command-list__image-dark {
+  display: block !important;
+}
+
+/* A running command shows a spinner in its icon's place, at the icon's size. */
+.k2b-ui .k2b-command-list__busy {
+  flex: 0 0 auto;
+  color: var(--k2b-action);
+}
+
+/* One line per entry: the label, then quietly its description, the reason it
+   is unavailable, or why it failed. The description gives way first, then the
+   label; an alert reads a failure in full. */
+.k2b-ui .k2b-command-list .k2b-command-list__text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__text > span {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__description {
+  min-width: 0;
+  max-inline-size: none;
+  flex: 1 1000 0%;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A command's outcome takes the list's place: the container becomes one status
+   line of the same width, in the status green or red, and settles in calmly. */
+.k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome] {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome="success"] {
+  border-color: color-mix(in srgb, var(--k2b-success-text) 35%, var(--k2b-surface));
+  background: var(--k2b-success-surface);
+}
+
+.k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome="error"] {
+  border-color: color-mix(in srgb, var(--k2b-danger-text) 35%, var(--k2b-surface));
+  background: var(--k2b-danger-surface);
+}
+
+.k2b-ui .k2b-command-outcome {
+  display: flex;
+  min-height: 2.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.625rem;
+  padding: 0.25rem 0.25rem 0.25rem 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  outline: none;
+  animation: k2b-command-outcome-in 160ms ease-out;
+}
+
+.k2b-ui .k2b-command-outcome[data-state="success"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-command-outcome[data-state="error"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-command-outcome:focus-visible {
+  border-radius: var(--k2b-radius-control);
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring);
+}
+
+.k2b-ui .k2b-command-outcome > i {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  font-size: 1.125rem;
+  text-align: center;
+}
+
+/* A message is read in full: on a narrow composer its buttons move to a line of
+   their own rather than cutting it; it never changes while it shows. */
+.k2b-ui .k2b-command-outcome__text {
+  display: -webkit-box;
+  min-width: 0;
+  flex: 1 1 12rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-command-outcome > button {
+  display: inline-flex;
+  min-height: 1.75rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-command-outcome > .k2b-command-outcome__close {
+  width: 1.75rem;
+  padding: 0;
+}
+
+/* Buttons that moved to their own line stay at its end. */
+.k2b-ui .k2b-command-outcome__text + button {
+  margin-left: auto;
+}
+
+.k2b-ui .k2b-command-outcome > button:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.k2b-ui .k2b-command-outcome > button:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+@keyframes k2b-command-outcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.125rem);
+  }
+}
+
+/* Forced colors drop the inset ring; an outline keeps the focused line visible. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-command-outcome:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-command-outcome {
+    animation: none;
+  }
+
+  .k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome] {
+    transition: none;
+  }
+}
+
+/* The state of entries on their way: one row, like an entry, at the end. */
+.k2b-ui .k2b-command-list__state {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0.4375rem 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-command-list__state > i {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-command-list__state[data-error] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-command-list__state > button {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* One leading slot for icons, images, avatars, and the busy spinner, so every
+   label starts on the same line. */
+.k2b-ui .k2b-command-list .k2b-dropdown__item > :is(i:first-child, .k2b-command-list__image, .k2b-command-list__leading) {
+  display: inline-flex;
+  width: 1.25rem;
+  min-width: 1.25rem;
+  flex: 0 0 1.25rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The hint gives way before the label: it shrinks first and leaves narrow
+   screens entirely. */
+.k2b-ui .k2b-command-list__hint {
+  min-width: 0;
+  flex: 0 1000 auto;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-family: var(--k2b-font-mono);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+  .k2b-ui .k2b-command-list__hint {
+    display: none;
+  }
+}
+
+.k2b-ui .k2b-command-list__next {
+  flex: 0 0 auto;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-command-list__step {
+  display: flex;
+  min-height: 2rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.k2b-ui .k2b-command-list__back {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 0.375rem;
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-command-list__back:hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-command-list__step-hint {
+  min-width: 0;
+  margin-left: auto;
+  padding-right: 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-command-list__back {
+    min-height: 2.75rem;
+  }
+}
+
+/* The slash menu of MarkdownEditor: the same width as CommandMenu. */
+/* Both command menus: as wide as their longest label, at least 20rem and at
+   most 28rem, and a viewport margin of 1rem as other menus keep. Labels stay
+   on one line; a narrow menu gives the hint up first. Once open, a menu keeps
+   at least the width it opened with, so filtering never narrows it. */
+.k2b-ui .k2b-autocomplete__options[data-commands],
+.k2b-ui .k2b-dropdown__menu.k2b-command-menu {
+  width: max-content;
+  min-width: min(20rem, 100vw - 2rem);
+  max-width: min(28rem, 100vw - 2rem);
+}
+
+.k2b-ui .k2b-autocomplete__options[data-commands] {
+  display: none;
+  max-height: min(24rem, calc(100dvh - 1rem));
+  flex-direction: column;
+}
+
+/* Docked to its composer, a list takes the composer's width instead, and stays
+   flat beside it: its frame alone sets it apart, no shadow falls on the text. */
+.k2b-ui .k2b-autocomplete__options[data-commands][data-docked],
+.k2b-ui .k2b-dropdown__menu.k2b-command-menu[data-docked] {
+  min-width: 0;
+  max-width: none;
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-autocomplete__options[data-commands]:popover-open {
+  display: flex;
 }
 
 .k2b-ui .k2b-dropdown__note {
@@ -9541,6 +10197,227 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
+/* PeriodPicker: a compact field-edged trigger (it sits in card headers) and one popover with the preset list and,
+   for a custom range, the calendar beside it. */
+.k2b-ui .k2b-period-picker {
+  @apply min-w-0;
+}
+
+.k2b-ui .k2b-period-picker__trigger {
+  gap: 0.5rem;
+  min-height: 2rem;
+  max-width: 100%;
+  padding: 0.25rem 0.625rem;
+  color: var(--k2b-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-period-picker__trigger > i {
+  flex: 0 0 auto;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-period-picker__trigger[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* Every text the trigger can show shares one grid cell; only the current one is visible, so the width never moves. */
+.k2b-ui .k2b-period-picker__value {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-period-picker__value > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-period-picker__value > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-period-picker__value[data-placeholder="true"] > span:not([aria-hidden]) {
+  color: var(--k2b-placeholder-color);
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-period-picker__detail {
+  color: var(--k2b-text-muted);
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-period-picker__popover {
+  position: fixed;
+  z-index: 1000;
+  inset: unset;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100dvh - 1rem);
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+}
+
+.k2b-ui .k2b-period-picker__panel {
+  display: flex;
+  align-items: flex-start;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] {
+  display: block;
+}
+
+.k2b-ui .k2b-period-picker__list {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 15rem;
+  padding: 0.25rem;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__list {
+  padding: 0;
+}
+
+.k2b-ui .k2b-period-picker__option {
+  color: var(--k2b-text);
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-period-picker__option[aria-selected="true"] {
+  background: var(--k2b-selected);
+}
+
+/* "Custom range" stands a little apart from the presets, without a line. */
+.k2b-ui .k2b-period-picker__custom {
+  margin-top: 0.375rem;
+}
+
+.k2b-ui .k2b-period-picker__custom > .k2b-dropdown__check {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-period-picker__hint {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-period-picker__editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-period-picker__back {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem 0 0.25rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-period-picker__back:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-period-picker__fields {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.625rem 0;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__fields {
+  padding: 0.25rem 0 0;
+}
+
+.k2b-ui .k2b-period-picker__field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-period-picker__field .k2b-input {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The error line keeps its height, so a message never moves the calendar. */
+.k2b-ui .k2b-period-picker__error {
+  min-height: 1rem;
+  margin: 0.25rem 0 0;
+  color: var(--k2b-danger-text);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-period-picker__months {
+  display: flex;
+}
+
+.k2b-ui .k2b-period-picker__months > .k2b-date-calendar {
+  flex: none;
+  width: 16.5rem;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__months > .k2b-date-calendar {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+/* Hidden, not removed: the slot keeps its size, and hidden elements leave the tab order and the accessibility tree. */
+.k2b-ui .k2b-date-calendar__nav[data-hidden="true"],
+.k2b-ui .k2b-date-grid button[data-hidden="true"],
+.k2b-ui .k2b-date-week[aria-hidden="true"] > button {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-period-picker__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0 0.625rem 0.625rem;
+}
+
+.k2b-ui .k2b-period-picker__actions > .k2b-date-duration {
+  margin-right: auto;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__actions {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0.5rem 0 0;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-date-apply {
+  min-height: 2.75rem;
+  font-size: 0.9375rem;
+}
+
 .k2b-ui .k2b-date-durations {
   display: flex;
   min-width: 0;
@@ -9709,6 +10586,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-slider,
+.k2b-ui .k2b-slider__value,
 .k2b-ui .k2b-color-input {
   display: flex;
   align-items: center;
@@ -9722,6 +10600,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   appearance: none;
   border-radius: 999px;
   accent-color: var(--k2b-action);
+}
+
+/* The value shares the label's line height; the reset's hit area may extend into the field gap. */
+.k2b-ui .k2b-slider__value {
+  height: 1.125rem;
+  flex-shrink: 0;
+}
+
+/* Keep the track aligned with the standard slider's reserved reset row in mixed field grids. */
+.k2b-ui .k2b-slider[data-value-placement="label"] {
+  min-height: 1.5rem;
 }
 
 .k2b-ui .k2b-slider input::-webkit-slider-thumb {
@@ -9746,6 +10635,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-slider input:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.k2b-ui .k2b-field[data-disabled="true"]:has(> .k2b-slider) .k2b-field__label,
+.k2b-ui .k2b-field[data-disabled="true"]:has(> .k2b-slider) output {
+  color: var(--k2b-text-muted);
 }
 
 .k2b-ui .k2b-slider input:disabled::-webkit-slider-thumb {
@@ -9784,6 +10678,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-choice-slider__track {
+  /* One rail without gaps; the fill ends exactly at the thumb's centre. The
+     rail reaches past the end stops so its round caps sit around them. */
+  --k2b-choice-slider-overhang: 0.1875rem;
+  --k2b-choice-slider-rail-height: 0.375rem;
+  --k2b-choice-slider-stop-size: 0.25rem;
+  --k2b-choice-slider-thumb-size: 1.375rem;
   position: relative;
   height: 1.875rem;
   margin: 0 0.75rem;
@@ -9797,48 +10697,82 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   opacity: 0.55;
 }
 
-.k2b-ui .k2b-choice-slider__segment {
+.k2b-ui .k2b-choice-slider__rail,
+.k2b-ui .k2b-choice-slider__fill {
   position: absolute;
   top: 50%;
-  height: 0.375rem;
-  margin-top: -0.1875rem;
+  left: calc(-1 * var(--k2b-choice-slider-overhang));
+  height: var(--k2b-choice-slider-rail-height);
+  margin-top: calc(var(--k2b-choice-slider-rail-height) / -2);
   border-radius: 999px;
-  background: var(--k2b-surface-muted);
 }
 
-.k2b-ui .k2b-choice-slider__stop {
-  position: absolute;
-  top: 50%;
-  width: 0.4375rem;
-  height: 0.4375rem;
-  margin: -0.21875rem 0 0 -0.21875rem;
-  border-radius: 999px;
-  background: var(--k2b-border-strong);
+.k2b-ui .k2b-choice-slider__rail {
+  right: calc(-1 * var(--k2b-choice-slider-overhang));
+  background: var(--k2b-rail);
 }
 
-.k2b-ui .k2b-choice-slider__segment[data-on],
-.k2b-ui .k2b-choice-slider__stop[data-on] {
+.k2b-ui .k2b-choice-slider__track:hover:not([aria-disabled="true"]) .k2b-choice-slider__rail {
+  background: var(--k2b-rail-hover);
+}
+
+.k2b-ui .k2b-choice-slider__fill {
+  width: calc(var(--k2b-choice-slider-at) + var(--k2b-choice-slider-overhang));
   background: var(--k2b-action-solid);
 }
 
+.k2b-ui .k2b-choice-slider__fill[hidden] {
+  display: none;
+}
+
+/* Stops sit on the rail: surface-coloured on the grey, light on the fill. */
+.k2b-ui .k2b-choice-slider__stop {
+  position: absolute;
+  top: 50%;
+  width: var(--k2b-choice-slider-stop-size);
+  height: var(--k2b-choice-slider-stop-size);
+  margin: calc(var(--k2b-choice-slider-stop-size) / -2) 0 0 calc(var(--k2b-choice-slider-stop-size) / -2);
+  border-radius: 999px;
+  background: var(--k2b-surface-elevated);
+}
+
+.k2b-ui .k2b-choice-slider__stop[data-on] {
+  background: rgb(255 255 255 / 0.8);
+}
+
+/* An unavailable stop stays visible as a hollow ring on the rail. */
 .k2b-ui .k2b-choice-slider__stop[data-unavailable] {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong);
+  --k2b-choice-slider-stop-size: 0.625rem;
+  background: var(--k2b-surface-elevated);
+  box-shadow: inset 0 0 0 2px var(--k2b-rail);
 }
 
 .k2b-ui .k2b-choice-slider__stop[data-current] {
   visibility: hidden;
 }
 
+/* The thumb is a control like any other: white with the 2 px edge in the
+   primary colour, no shadow. Dragging fills it lightly. */
 .k2b-ui .k2b-choice-slider__thumb {
   position: absolute;
   top: 50%;
-  width: 1.375rem;
-  height: 1.375rem;
-  margin: -0.6875rem 0 0 -0.6875rem;
+  left: var(--k2b-choice-slider-at);
+  width: var(--k2b-choice-slider-thumb-size);
+  height: var(--k2b-choice-slider-thumb-size);
+  margin: calc(var(--k2b-choice-slider-thumb-size) / -2) 0 0 calc(var(--k2b-choice-slider-thumb-size) / -2);
   border-radius: 999px;
-  background: var(--k2b-action-solid);
-  box-shadow: 0 0 0 3px var(--k2b-surface-elevated);
+  background: var(--k2b-surface-elevated);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-action-solid);
+  cursor: grab;
+}
+
+.k2b-ui .k2b-choice-slider__track[data-dragging] .k2b-choice-slider__thumb {
+  background: color-mix(in srgb, var(--k2b-action-solid) 12%, var(--k2b-surface-elevated));
+  cursor: grabbing;
+}
+
+.k2b-ui .k2b-choice-slider__track[aria-disabled="true"] .k2b-choice-slider__thumb {
+  cursor: default;
 }
 
 .k2b-ui .k2b-choice-slider__thumb[hidden] {
@@ -9846,7 +10780,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-choice-slider__thumb[data-tone="warning"] {
-  background: var(--k2b-warning-text);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-warning-text);
 }
 
 /* Without a thumb, for a choice outside the stops, the track carries the focus ring. */
@@ -9862,34 +10796,58 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__track {
+  --k2b-choice-slider-rail-height: 0.5rem;
+  --k2b-choice-slider-stop-size: 0.3125rem;
+  --k2b-choice-slider-thumb-size: 1.75rem;
   height: 2.75rem;
   margin: 0 1rem;
 }
 
-.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__segment {
-  height: 0.5rem;
-  margin-top: -0.25rem;
+/* The indicator: the same rail, fill and thumb in 24 px for a trigger that
+   opens the slider. It never takes the pointer; the trigger does. */
+.k2b-ui .k2b-choice-slider[data-size="indicator"] {
+  display: inline-block;
+  flex: none;
+  width: 1.5rem;
+  height: 0.875rem;
+  vertical-align: middle;
 }
 
-.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__stop {
-  width: 0.5625rem;
-  height: 0.5625rem;
-  margin: -0.28125rem 0 0 -0.28125rem;
-}
-
-.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__thumb {
-  width: 1.75rem;
-  height: 1.75rem;
-  margin: -0.875rem 0 0 -0.875rem;
+.k2b-ui .k2b-choice-slider[data-size="indicator"] .k2b-choice-slider__track {
+  --k2b-choice-slider-overhang: 0rem;
+  --k2b-choice-slider-rail-height: 0.1875rem;
+  --k2b-choice-slider-thumb-size: 0.625rem;
+  display: block;
+  height: 100%;
+  margin: 0 0.125rem;
+  cursor: inherit;
+  pointer-events: none;
 }
 
 .k2b-ui .k2b-slider output,
+.k2b-ui .k2b-slider__value output,
 .k2b-ui .k2b-color-input code {
   min-width: 3.5rem;
   color: var(--k2b-text-muted);
   font-family: var(--k2b-font-mono);
   font-size: 0.75rem;
   text-align: right;
+}
+
+/* A value away from its default shows in the accent color. */
+.k2b-ui .k2b-slider[data-changed="true"] output,
+.k2b-ui .k2b-slider__value[data-changed="true"] output {
+  color: var(--k2b-action);
+}
+
+/* The reset button keeps its slot, so a change moves nothing; at the default it is invisible and out of reach. */
+.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset,
+.k2b-ui .k2b-slider__value:not([data-changed="true"]) .k2b-slider__reset {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-slider .k2b-slider__reset {
+  margin-inline-start: -0.5rem;
 }
 
 .k2b-ui .k2b-color-input {
@@ -10319,7 +11277,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A selected row is a clear fill in the app colour, never a coloured line,
    so its geometry and the row lines stay as they are. */
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface-beneath, var(--k2b-surface)));
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
@@ -11113,29 +12071,45 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-scrollbar-thumb);
 }
 
-/* Large workspace scrollers stay visually quiet until the pointer or keyboard
-   enters their region. The scrollbar geometry never changes, and touch or
-   coarse-pointer devices keep their normal always-visible treatment. */
+/* Large workspace scrollers, and every scroller marked `k2b-quiet-scrollbar`,
+   stay visually quiet until the pointer or keyboard enters their region. Only
+   the colour changes, never the scrollbar geometry, so nothing moves and no
+   fade runs when it appears. Touch or coarse-pointer devices keep their native
+   treatment. */
 @media (hover: hover) and (pointer: fine) {
   .k2b-ui .k2b-app-workspace__sidebar-body,
-  .k2b-ui .k2b-chat-timeline__viewport {
+  .k2b-ui .k2b-chat-timeline__viewport,
+  .k2b-ui .k2b-quiet-scrollbar {
     scrollbar-color: transparent transparent;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
   .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb {
+  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
     background: transparent;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within),
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within) {
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within),
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within) {
     scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
   }
 
+  /* WebKit repaints a styled scrollbar, such as a fixed track, only when the
+     scrollbar's own style changes, not when its thumb's does. This invisible
+     change makes the thumb appear there too. */
+  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar,
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar,
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar {
+    background: transparent;
+  }
+
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
     border: 1px solid transparent;
     border-radius: 9999px;
     background: var(--k2b-scrollbar-thumb);
@@ -11143,7 +12117,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover {
+  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
+  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover {
     background: var(--k2b-scrollbar-thumb-hover);
     background-clip: padding-box;
   }
@@ -11232,7 +12207,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-elevated);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--k2b-text) 10%, transparent);
+  box-shadow: var(--k2b-shadow-toolbar);
   font: inherit;
   font-size: 0.75rem;
   cursor: pointer;
@@ -11347,7 +12322,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-elevated);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--k2b-text) 10%, transparent);
+  box-shadow: var(--k2b-shadow-toolbar);
   font-size: 0.75rem;
   pointer-events: none;
   transform: translateX(-50%);
@@ -15318,6 +16293,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui,
   .k2b-ui .k2b-app-workspace__sidebar-body,
   .k2b-ui .k2b-chat-timeline__viewport,
+  .k2b-ui .k2b-quiet-scrollbar,
   .k2b-ui .k2b-table-wrap {
     scrollbar-color: auto;
   }
@@ -15328,8 +16304,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui *::-webkit-scrollbar-thumb,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
   .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb {
+  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
+  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
     border: revert;
     background: revert;
   }
@@ -15410,9 +16388,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-surface);
-  background: color-mix(in srgb, var(--k2b-surface-elevated) 92%, transparent);
-  box-shadow: var(--k2b-shadow-float);
-  backdrop-filter: blur(12px);
+  /* Solid: fields and text scroll underneath, and blurred they read as a fault.
+     A bar that stays open floats with the toolbar shadow, softer than a menu. */
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
 }
 
 .k2b-ui .k2b-settings-save-bar p {
@@ -16244,23 +17223,66 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
   flex-shrink: 0;
 }
+/* `edge="top"`: the strip sticks to the top of its column instead, in its
+   place in the flow, such as above the newest message of a conversation. */
+.k2b-ui .k2b-toolbar-float[data-edge="top"] {
+  inset-block: 0 auto;
+  margin-block-start: 0;
+}
+/* ToolbarDock: one floating row for several pills, the first at the start
+   edge and the last at the end edge. The row keeps its place in the flow, so
+   the end of the content always stays reachable above it. */
+.k2b-ui .k2b-toolbar-dock {
+  position: sticky;
+  inset-block-end: 0;
+  margin-block-start: auto;
+  display: flex;
+  min-inline-size: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.625rem;
+  padding: 0.5rem 1rem 1rem;
+  pointer-events: none;
+  z-index: 1;
+  flex-shrink: 0;
+}
+/* Each strip takes an equal share of the row, whatever its pill shows, so
+   widening the row resizes every strip and its toolbar measures again: moved
+   actions and labels come back. A share that followed the pill's content would
+   keep a compact pill compact. */
+.k2b-ui .k2b-toolbar-dock > .k2b-toolbar-float {
+  position: static;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  justify-content: flex-start;
+}
+.k2b-ui .k2b-toolbar-dock > .k2b-toolbar-float:last-child:not(:first-child) {
+  justify-content: flex-end;
+}
+/* A floating toolbar is a pill on layer 3 that stays open: the toolbar shadow,
+   softer than a menu's, and a light 1 px edge. It is solid, never glass, so
+   text scrolling beneath it never shows through. */
 .k2b-ui .k2b-toolbar[data-variant="floating"] {
   position: relative;
   pointer-events: auto;
   max-inline-size: 100%;
-  block-size: 3.25rem;
+  /* 44 px controls with room for their key hints, plus the 1 px edge on each side. */
+  block-size: calc(3.25rem + 2px);
   padding: 0.25rem;
   gap: 0.125rem;
-  border-radius: 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: 999px;
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-toolbar);
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] > .k2b-button,
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__group .k2b-button,
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__more .k2b-dropdown__trigger {
   min-inline-size: 2.75rem;
   block-size: 2.75rem;
-  border-radius: 0.625rem;
+  border-radius: 999px;
   flex: none;
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button i {
@@ -16269,6 +17291,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
   height: 1.5rem;
+}
+/* An action with `text` shows its label beside the icon while there is room;
+   a compact toolbar keeps only the icon, at the same height. */
+.k2b-ui .k2b-toolbar .k2b-toolbar__action[data-text] {
+  width: auto;
+  gap: 0.375rem;
+  padding-inline: 0.75rem;
+}
+.k2b-ui .k2b-toolbar .k2b-toolbar__text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__action[data-text] {
+  padding-inline: 0;
+}
+.k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__text {
+  display: none;
 }
 /* A toolbar at a text selection (SelectionToolbar): in the top layer, so no scroll container clips it. */
 .k2b-ui .k2b-selection-toolbar {
@@ -16593,6 +17633,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.25rem;
   letter-spacing: 0;
 }
+/* Opt-in fallback for a list that must span a very wide container: a dotted leader joins each term to its value,
+   which aligns right in tabular figures. Never the default; first keep rows within the row measure. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) {
+  grid-template-columns: fit-content(40%) minmax(1.5rem, 1fr) auto auto;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
+  grid-template-areas: "term leader description action";
+}
+/* Term and leader sit on the value's first line, so a wrapped value keeps its term beside where it starts. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item::before {
+  content: "";
+  grid-area: leader;
+  align-self: start;
+  height: 0;
+  margin-block-start: 1.375rem;
+  border-bottom: 1px dotted var(--k2b-border-strong);
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item :is(dt, dd) {
+  align-self: start;
+  padding-block-start: 0.5rem;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;
 }
@@ -16777,7 +17842,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
-.k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle) {
+.k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)) !important;
   stroke-width: 3px;
   vector-effect: non-scaling-stroke;
@@ -16805,7 +17870,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__dimension-value { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 3.5rem; overflow: hidden; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
 .k2b-ui .k2b-chart-explorer__dimension-value > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__dimension-value > [aria-hidden] { visibility: hidden; }
-.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: 0 2px 6px #00000008; visibility: hidden; pointer-events: none; font-size: .625rem; }
+.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: var(--k2b-shadow-toolbar); visibility: hidden; pointer-events: none; font-size: .625rem; }
 .k2b-ui .k2b-chart-explorer__steps span { padding: .0625rem .1875rem; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: .1875rem; font-weight: 500; }
 .k2b-ui .k2b-chart-explorer__dimension:is([data-keyboard="true"], :has(input:active)) .k2b-chart-explorer__steps { visibility: visible; }
@@ -17355,6 +18420,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-rich-select__create-input,
   .k2b-ui .k2b-emoji-picker__search > input,
   .k2b-ui .k2b-chat-composer__command-search > input,
+  .k2b-ui .k2b-dropdown__search > input,
   .k2b-ui .k2b-pin-input__digit {
     font-size: max(1rem, 16px);
     line-height: 1.25rem;
@@ -17612,23 +18678,409 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+.k2b-ui .k2b-chart[data-chart-kind="treemap"] [data-inspected]:not([data-chart-role="value"]) > rect,
+.k2b-ui .k2b-chart[data-chart-kind="treemap"] [data-selected] > rect { stroke-width:1.5px; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > :is(.k2b-chart-pareto-current,.k2b-chart-category-band) { stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-category-band { fill:color-mix(in srgb,var(--stdlib-chart-c1,#3b82f6) 7%,transparent); }
+
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }
+
 /* Flow geometry keeps readable stage labels on a narrow host; sources are visible first. */
 .k2b-ui .k2b-chart[data-chart-kind="sankey"] { overflow-x: auto; }
 .k2b-ui .k2b-chart[data-chart-kind="sankey"] > .k2b-chart__svg { min-width: 620px; }
 .k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-inspected] > .k2b-chart-sankey-link,
 .k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-selected] > .k2b-chart-sankey-link { fill-opacity: 0.6; stroke: none !important; }
-/* Calendar coordinates stay square in every host. */
-.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
-.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }
+/* New distribution marks keep the selected state stronger than calm hover. */
+.k2b-ui .k2b-chart:is([data-chart-kind="bubble"],[data-chart-kind="radar"]) [data-selected] > circle { stroke-width: 3px !important; }
+.k2b-ui .k2b-chart[data-chart-kind="radar"] [data-inspected] > .k2b-chart-radar-axis { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px !important; }
+.k2b-ui .k2b-chart[data-chart-kind="radar"] [data-selected] > .k2b-chart-radar-axis { stroke-width: 2.5px !important; }
+
+
+/* Pointer hover paints only the band; keyboard inspection and selection outline the marks. */
+.k2b-ui .k2b-chart-category-band { stroke: none; }
+.k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
+.k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
+.k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none !important; }
+.k2b-ui .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 12.5px; }
+.k2b-ui .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 13px; }
+.k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
+.k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
+/* Category hover paints only the band; keyboard and selection outline marks. */
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
+
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
+/* Reserve from the viewport's own width, including 16px for a classic scrollbar.
+   Keeping size containment here preserves the explorer's intrinsic header width. */
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar] { container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr); }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar]::before { content: ""; grid-area: 1 / 1; height: var(--k2b-calendar-height); }
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-calendar][data-view="table"] { --k2b-calendar-available: calc(100cqw - 2 * var(--k2b-chart-explorer-inset)); }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar] > * { grid-area: 1 / 1; min-height: 0; contain: size; }
+/* An optional external legend keeps its own row inside the same reserve. */
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar][data-legend] { grid-template-rows: minmax(0, 1fr) auto; }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar][data-legend]::before { grid-row: 1 / 3; }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar][data-legend] > .k2b-chart-legend { grid-area: 2 / 1; height: auto; contain: none; }
+/* The calendar viewport alone owns size queries. Reversed flex starts at the
+   newest week even before JavaScript, without changing tooltip text direction. */
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  overflow-x: auto;
+  container-type: inline-size;
+}
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) {
+  flex: 0 0 100%;
+  margin-right: auto;
+  width: 100%;
+  height: auto;
+}
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) rect { vector-effect: non-scaling-stroke; }
+/* Geometry stays numeric in the core; these calculations also run in the server frame. */
+.k2b-ui svg[data-calendar] {
+  --k2b-calendar-width: clamp(var(--k2b-calendar-min), 100cqw, var(--k2b-calendar-max));
+  --k2b-calendar-inverse: tan(atan2(var(--k2b-calendar-base), var(--k2b-calendar-width)));
+  /* CSS owns the server frame; after mount use the scrollport's actual range. */
+  --k2b-calendar-overflow: var(--k2b-calendar-measured-overflow, max(0px, calc(var(--k2b-calendar-width) - 100cqw)));
+  --k2b-calendar-rail: mod(calc(-1 * (var(--k2b-calendar-overflow) + var(--k2b-calendar-scroll, 0px))), calc(var(--k2b-calendar-step) * var(--k2b-calendar-width)));
+}
+/* Pin headers and the rail in SVG coordinates, before or after mounting. */
+.k2b-ui svg[data-calendar] [data-calendar-pinned] {
+  transform: translateX(calc((var(--k2b-calendar-overflow) + var(--k2b-calendar-scroll, 0px)) * var(--k2b-calendar-inverse)));
+}
+.k2b-ui [data-calendar-weekdays] { transform: translateX(calc(var(--k2b-calendar-rail) * var(--k2b-calendar-inverse))); }
+/* Text blocks keep fixed pixel spacing around their grid/legend anchor. */
+.k2b-ui svg[data-calendar] [data-calendar-fixed] {
+  transform-origin: 0 0;
+  scale: var(--k2b-calendar-inverse);
+}
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected]:not([data-selected]):not([data-chart-role="value"]) > rect { stroke-width: 1.5px; }
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 2.5px !important; }
 @media print {
-  .k2b-ui .k2b-chart:has(svg[data-calendar]) { --k2b-calendar-header-x: 0px !important; }
-  .k2b-ui svg[data-calendar] [data-calendar-month] { visibility: visible !important; }
+  .k2b-ui svg[data-calendar] { --k2b-calendar-overflow: 0px !important; --k2b-calendar-scroll: 0px !important; }
   .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
 }
 .k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
 
+/* Bubble radii must shrink with a narrow or short drawing: their centers are
+ * padded in SVG units, while the shared marker rule normally fixes pixel size. */
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] circle {
+  --k2b-bubble-shrink: max(1, var(--k2b-chart-inverse-x), var(--k2b-chart-inverse-y));
+  scale: calc(var(--k2b-chart-inverse-x) / var(--k2b-bubble-shrink)) calc(var(--k2b-chart-inverse-y) / var(--k2b-bubble-shrink));
+}
+
+/* Keep the two average lines in pixels, even when the SVG is short. The short
+ * variant retains the average values in its accessible SVG title. */
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-label {
+  transform: translateY(calc(11px - 11px / var(--k2b-chart-inverse-y)));
+}
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-value {
+  transform: translateY(calc(29px - 29px / var(--k2b-chart-inverse-y)));
+}
+@container (max-height: 199px) {
+  .k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart-bubble-average-value { display: none; }
+}
+
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-x-title {
+  transform: translateY(calc(14px - 14px / var(--k2b-chart-inverse-y)));
+}
+
+.k2b-ui .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color) !important; stroke-width: 2.5px !important; }
+.k2b-ui .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color) !important; stroke-width: 1.5px; }
+
+/* Field suggestions. A value proposed for a field, such as one an assistant
+   read from a document, shows inside the empty field as a strong placeholder
+   in the AI colour, never as the value. The status line beside the label is
+   reserved whenever a field takes suggestions, so nothing moves when a
+   suggestion arrives, is accepted, is overruled, or goes away. These rules
+   come last so they win over each control's own placeholder colour. */
+.k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row {
+  min-height: 1.5rem;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row {
+    min-height: 2rem;
+  }
+}
+
+/* The label keeps its width whatever the status says, so it never wraps
+   differently between states; a long label wraps the same way in every state,
+   and the status text gives way instead. */
+.k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-field__label {
+  max-width: 60%;
+  flex-shrink: 0;
+}
+
+.k2b-ui .k2b-ai-suggestion {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  color: var(--k2b-ai-accent);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-ai-suggestion-field__control {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-field__control > .k2b-ai-suggestion,
+.k2b-ui .k2b-ai-suggestion-field > .k2b-ai-suggestion {
+  min-height: 1.5rem;
+  justify-content: flex-start;
+}
+
+.k2b-ui .k2b-ai-suggestion__reason {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.k2b-ui .k2b-ai-suggestion__note {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+}
+
+.k2b-ui .k2b-ai-suggestion__note > i {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-ai-suggestion__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-ai-suggestion:is([data-view="accepted"], [data-view="matches"], [data-view="error"], [data-locked="true"]) .k2b-ai-suggestion__text {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-ai-suggestion__note[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-ai-suggestion__action.k2b-button[data-variant="text"],
+.k2b-ui .k2b-ai-suggestion__action.k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  flex-shrink: 0;
+  color: var(--k2b-ai-accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-ai-suggestion__action.k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-ai-accent-hover);
+}
+
+/* A typed date field keeps its own status line (what a typed date means, or an
+   error). With a suggestion that line shares the label row instead of reserving
+   a line under the field, so every field row keeps the same rhythm. While it
+   speaks it covers the suggestion's status; at rest it is empty. */
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) {
+  position: relative;
+}
+
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) > .k2b-date-field {
+  position: static;
+}
+
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) > .k2b-date-field > .k2b-date-status {
+  position: absolute;
+  top: 0;
+  right: 0;
+  max-width: 40%;
+  height: 1.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+  text-align: end;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) > .k2b-date-field > .k2b-date-status {
+    height: 2rem;
+    line-height: 2rem;
+  }
+}
+
+.k2b-ui .k2b-ai-suggestion-field:has(> .k2b-date-field > .k2b-date-status:not(:empty)) > .k2b-field__label-row > .k2b-ai-suggestion {
+  visibility: hidden;
+}
+
+/* The field: AI edge and fill while the suggestion stands in for the value. The
+   field's own classes carry the state, so the controls need no attribute. */
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open :is(.k2b-input-shell, .k2b-choice-trigger) {
+  --k2b-edge-color: var(--k2b-ai-border);
+  background: var(--k2b-ai-surface);
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-unsure :is(.k2b-input-shell, .k2b-choice-trigger) {
+  --k2b-edge-color: var(--k2b-edge-warning);
+}
+
+/* Focus takes the platform edge; the fill stays, so the suggestion stays recognisable. */
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open :is(.k2b-input-shell:focus-within, .k2b-choice-trigger:focus-visible) {
+  --k2b-edge-color: var(--k2b-edge-focus);
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open[data-invalid="true"] :is(.k2b-input-shell, .k2b-choice-trigger):not(:disabled, :focus-within, :focus-visible),
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-input-shell[data-invalid="true"]:not(:focus-within) {
+  --k2b-edge-color: var(--k2b-edge-danger);
+}
+
+/* A read-only field shows the suggestion dimmed, without the AI edge and fill. */
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-input-shell:has(.k2b-input:read-only:not(:disabled)) {
+  --k2b-edge-color: var(--k2b-edge);
+  background: var(--k2b-surface);
+}
+
+/* A disabled field keeps its muted well; the suggestion only dims inside it. */
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-input-shell:has(.k2b-input:disabled),
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-choice-trigger:disabled {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-input-shell .k2b-input::placeholder,
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-choice-control > .k2b-choice-trigger > .k2b-choice-trigger__value {
+  color: var(--k2b-ai-accent);
+  opacity: 1;
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-input-shell .k2b-number-input__control::placeholder {
+  font-family: var(--k2b-font-mono);
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-input-shell .k2b-input:is(:disabled, :read-only)::placeholder,
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-choice-control > .k2b-choice-trigger:disabled > .k2b-choice-trigger__value {
+  opacity: 0.6;
+}
+
+/* While a suggestion loads, an empty field shows a quiet bar where the value will appear. */
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-loading .k2b-input-shell .k2b-input,
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-loading .k2b-choice-trigger .k2b-choice-trigger__value {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--k2b-ai-accent) 16%, transparent),
+    color-mix(in srgb, var(--k2b-ai-accent) 16%, transparent)
+  );
+  background-position: left 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: min(7rem, 60%) 0.5rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-loading .k2b-choice-trigger .k2b-choice-trigger__value {
+  background-position: left center;
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-loading .k2b-input-shell .k2b-number-input__control {
+  background-position: right 0.5rem center;
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-loading .k2b-input-shell .k2b-input::placeholder,
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-loading .k2b-choice-trigger .k2b-choice-trigger__value {
+  color: transparent;
+}
+
+/* A switch keeps its real position; the ring and the line beside it show the suggestion. */
+.k2b-ui .k2b-ai-suggestion-switch {
+  display: flex;
+  min-height: 1.25rem;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-switch__value {
+  min-width: 0;
+  color: var(--k2b-ai-accent);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-switch > input + .k2b-switch__track {
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-ai-border);
+}
+
+.k2b-ui .k2b-ai-suggestion-field.k2b-ai-suggestion-open .k2b-switch > input:not(:checked) + .k2b-switch__track {
+  background: var(--k2b-ai-surface);
+}
+
+/* The group line: what was read, the counts, and Accept all for the certain values. */
+.k2b-ui .k2b-ai-suggestion-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__bar {
+  display: flex;
+  min-height: 3rem;
+  min-width: 0;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.875rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-ai-accent);
+  background: var(--k2b-ai-surface);
+}
+
+.k2b-ui .k2b-ai-suggestion-group__icon {
+  flex-shrink: 0;
+  font-size: 1.125rem;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__title {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+/* The counts give way first on narrow screens; the line never grows. */
+.k2b-ui .k2b-ai-suggestion-group__counts {
+  min-width: 0;
+  flex: 0 100 auto;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-ai-suggestion-group__accept {
+  flex-shrink: 0;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-ai-suggestion-group__retry-label {
+    display: none;
+  }
+}
 /* BalanceFlow: equal accounting roles, stable content height and legible phone rows. */
 .k2b-ui.k2b-balance-flow, .k2b-ui .k2b-balance-flow {
   display: block; min-width: 0; width: 100%; color: var(--k2b-text, #27272a);
@@ -17660,7 +19112,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__content-box { min-height: var(--k2b-balance-flow-height); position: relative; }
 .k2b-ui .k2b-balance-flow__status { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; padding: 16px; text-align: center; }
 .k2b-ui .k2b-balance-flow__status p { max-width: 48ch; }
-.k2b-ui .k2b-balance-flow__data [data-balance-month-text] { display: none; }
 /* Only the viewport is a query container; shrink-to-fit hosts keep their intrinsic width. */
 .k2b-ui .k2b-balance-flow__content { --k2b-balance-peek: 0px; --k2b-balance-period-size: min(var(--k2b-balance-period-width, 620px), 100cqw); }
 .k2b-ui .k2b-balance-flow__data > .k2b-chart { width: 100%; position: relative; }
@@ -17717,7 +19168,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui.k2b-chart[data-balance-pending] > .k2b-chart__svg { height: calc(160px + var(--k2b-balance-flow-phone-height) + var(--k2b-balance-flow-rows) * 44px); }
 }
 
-.k2b-ui.k2b-balance-flow > *, .k2b-ui .k2b-balance-flow > *, .k2b-ui .k2b-balance-flow__content-box > * { margin: 0; }
+.k2b-ui.k2b-balance-flow > *, .k2b-ui .k2b-balance-flow > *, .k2b-ui .k2b-balance-flow__content-box > *, .k2b-ui .k2b-balance-flow__data > * { margin: 0; }
 .k2b-ui [data-balance-summary] { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .k2b-ui .k2b-balance-flow__amounts > div { min-height: 44px; box-sizing: border-box; align-items: center; }
 

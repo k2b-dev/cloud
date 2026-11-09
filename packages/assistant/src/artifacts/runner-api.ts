@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { etag } from "hono/etag";
 import { z } from "zod";
 import { hasInterface } from "./contracts";
-import { appFrameAssets } from "./html/assets";
+import { appFrameAssets, frameAssetPayload } from "./html/assets";
 import { artifactMessages } from "./messages";
 import { RunnerMetadata } from "./runner-contracts";
 import { ChunkName, chunkSource } from "./runtime/chunks";
@@ -37,7 +37,13 @@ export const createRunnerRoutes = () =>
         error: artifactMessages.resolve([getLocale(c)]).t[code],
       });
     })
-    .get("/app-assets", etag(), async (c) => c.json(await appFrameAssets(), 200, { "Cache-Control": "no-cache" }))
+    .get("/chart-parts", etag(), async (c) =>
+      c.json({ chartParts: (await appFrameAssets()).chartParts }, 200, { "Cache-Control": "no-cache" }),
+    )
+    .get("/app-assets", etag(), async (c) => {
+      const assets = await appFrameAssets();
+      return c.json(c.req.query("charts") === "separate" ? frameAssetPayload(assets) : assets, 200, { "Cache-Control": "no-cache" });
+    })
     .get("/chunks/:name", etag(), async (c) =>
       c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, {
         "Content-Type": "text/javascript",

@@ -1,4 +1,5 @@
 import {
+  AppOverview,
   AppWorkspace,
   Avatar,
   AvatarFaces,
@@ -44,6 +45,8 @@ import {
   TextInput,
   Timeline,
   type TimelineItem,
+  Toolbar,
+  ToolbarDock,
   ViewTabs,
 } from "@k2b/ui";
 import baseCss from "@k2b/ui/base.css" with { type: "text" };
@@ -537,18 +540,103 @@ const PaperDemo = () => (
   </DemoCard>
 );
 
+const elevationTiles = ["Halle B.jpg", "Sekretär.jpg", "Lieferschein.pdf", "Kühlregal.pdf"];
+
+const ElevationDemo = () => (
+  <DemoCard
+    id="elevation"
+    chip={[
+      { kind: "component", name: "Paper", from: "@k2b/ui" },
+      { kind: "component", name: "LinkCard", from: "@k2b/ui" },
+      { kind: "component", name: "ResourceCard", from: "@k2b/ui" },
+      { kind: "component", name: "ToolbarDock", from: "@k2b/ui" },
+    ]}
+    description="One workspace with all layers. In the main content, the topic card, the storage card, and the resource card are islands with the soft island shadow. The docked column on the right and the file grid are flat, also with the same Paper inside. Two floating pills sit at the edges of the column with the toolbar shadow. Switch the site to dark mode: the islands become one step lighter instead."
+    code={`import { LinkCard, Paper, ResourceCard, Toolbar, ToolbarDock } from "@k2b/ui";
+
+{/* Main content: islands get the shadow by default. */}
+<Paper as="section">…</Paper>
+<LinkCard href="/files/team" icon="ti ti-folder" title="Team Logistik" description="128 files" />
+<ResourceCard title="Lieferung Spedition Nord" context="Task in Team Logistik" href="/spaces/t/1" />
+
+{/* A dense collection stays flat. */}
+<div data-k2b-layer="flat">{tiles}</div>
+
+{/* A docked column (DetailPanel, AppWorkspace.Detail) is flat inside by itself. */}
+<DetailPanel>…<Paper>Flat here</Paper></DetailPanel>
+
+{/* Two pills at the edges of one column. */}
+<ToolbarDock>
+  <Toolbar label="Formatting" variant="floating">…</Toolbar>
+  <Toolbar label="Page" variant="floating">…</Toolbar>
+</ToolbarDock>`}
+  >
+    <div class="ui-elevation-demo">
+      <div class="ui-elevation-demo__main">
+        <div class="ui-elevation-demo__scroll">
+          <Paper as="section" class="ui-elevation-demo__topic">
+            <strong>Reachable</strong>
+            <span>Marlene Hofbauer · +49 8142 555 0182</span>
+          </Paper>
+          <div class="ui-elevation-demo__cards">
+            <LinkCard href="#elevation" icon="ti ti-folder" title="Team Logistik" description="128 files" />
+            <ResourceCard
+              title="Lieferung Spedition Nord"
+              context="Task in Team Logistik · due Thu"
+              icon="ti ti-checkbox"
+              href="#elevation"
+            />
+          </div>
+          <div class="ui-elevation-demo__grid" data-k2b-layer="flat">
+            <For each={elevationTiles}>
+              {(name) => (
+                <Paper class="ui-elevation-demo__tile">
+                  <FileTypeIcon name={name} />
+                  <span>{name}</span>
+                </Paper>
+              )}
+            </For>
+          </div>
+        </div>
+        <ToolbarDock>
+          <Toolbar label="Formatting" variant="floating">
+            <Toolbar.Action label="Bold" icon="ti ti-bold" priority={1} />
+            <Toolbar.Action label="Italic" icon="ti ti-italic" priority={2} />
+            <Toolbar.Action label="List" icon="ti ti-list" priority={3} />
+          </Toolbar>
+          <Toolbar label="Page" variant="floating">
+            <Toolbar.Action label="Comments" icon="ti ti-message" />
+            <Toolbar.Action label="Details" icon="ti ti-info-circle" />
+          </Toolbar>
+        </ToolbarDock>
+      </div>
+      <aside class="ui-elevation-demo__column" data-k2b-layer="flat" aria-label="Details">
+        <strong>Details</strong>
+        <Paper class="ui-elevation-demo__topic">
+          <span>The same Paper, flat in a column</span>
+        </Paper>
+      </aside>
+    </div>
+  </DemoCard>
+);
+
 const CardsDemo = () => (
   <DemoCard
     id="cards"
     chip={[
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
+      { kind: "component", name: "AppOverview", from: "@k2b/ui" },
       { kind: "component", name: "Avatar", from: "@k2b/ui" },
     ]}
-    description="LinkCard puts its icon in a soft chip of an explicit color or the app accent and can carry one trailing count. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
-    code={`import { Avatar, LinkCard } from "@k2b/ui";
+    description="LinkCard puts its icon in a soft chip of an explicit color or the app accent and can carry one trailing count. A plain LinkCard is a flat entry for a quiet overview, in AppOverview.Cards with the plain surface; media replaces the tile, for example with a file type. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
+    code={`import { AppOverview, Avatar, FileTypeIcon, LinkCard } from "@k2b/ui";
 
 <LinkCard href="/runtime" title="Runtime" description="Open details" icon="ti ti-server" color="cyan" />
 <LinkCard href="/apps/pulse" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
+<AppOverview.Cards surface="plain">
+  <LinkCard surface="plain" href="/storage/marketing" title="Team Marketing" description="Group · Cloud" icon="ti ti-users" />
+  <LinkCard surface="plain" href="/file/budget" title="Budget_2027.xlsx" description="Projects / Planning" media={<FileTypeIcon name="Budget_2027.xlsx" />} />
+</AppOverview.Cards>
 <Avatar name="Ada Lovelace" src="/avatars/ada.webp" size="lg" />
 <Avatar name="Grace Hopper" fallback="GH" size="md" />
 <Avatar name="Grace Hopper" size="sm" ring="success" alt="Grace Hopper is working on it" />
@@ -558,6 +646,16 @@ const CardsDemo = () => (
     <div class="ui-demo-form-grid">
       <LinkCard href="#cards" title="Runtime" description="Open runtime details" icon="ti ti-server" color="cyan" />
       <LinkCard href="#cards" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
+      <AppOverview.Cards surface="plain">
+        <LinkCard surface="plain" href="#cards" title="Team Marketing" description="Group · Cloud" icon="ti ti-users" />
+        <LinkCard
+          surface="plain"
+          href="#cards"
+          title="Budget_2027.xlsx"
+          description="Projects / Planning"
+          media={<FileTypeIcon name="Budget_2027.xlsx" />}
+        />
+      </AppOverview.Cards>
       <div class="ui-demo-row">
         <Avatar name="Ada Lovelace" src="/assets/logo.svg" size="lg" />
         <Avatar name="Grace Hopper" fallback="GH" size="md" />
@@ -652,7 +750,9 @@ const DetailsDemo = () => {
     { term: "Priority", description: <Select aria-label="Priority" appearance="plain" placeholder="No priority" clearable options={priorities} value={priority} onValueChange={setPriority} /> },
     { term: "Labels", description: <MultiSelectInput aria-label="Labels" appearance="plain" placeholder="Label" placeholderIcon="ti ti-plus" options={labelOptions} value={labels} onValueChange={setLabels} /> },
   ]}
-/>`}
+/>
+{/* Fallback only: a wide sum list joins term and value with a dotted leader */}
+<DescriptionList layout="rows" size="sm" leader="dotted" items={sums} />`}
     >
       <div class="ui-demo-form-grid">
         <article class="ui-detail-panel-pattern">
@@ -776,6 +876,22 @@ const DetailsDemo = () => {
                 ),
               },
               { term: "Created", description: "31 July 2026, 14:32" },
+            ]}
+          />
+        </article>
+        <article class="ui-detail-panel-pattern" style={{ "grid-column": "1 / -1" }}>
+          <header>
+            <strong>Wide sums with a dotted leader (fallback)</strong>
+            <span>Only for a list that must span a very wide container: the leader joins each term to its right-aligned value.</span>
+          </header>
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            leader="dotted"
+            items={[
+              { term: "Net amount", description: "€1,240.00" },
+              { term: "VAT 19 %", description: "€235.60" },
+              { term: "Total", description: "€1,475.60" },
             ]}
           />
         </article>
@@ -940,7 +1056,7 @@ const StatsDemo = () => (
 <StatCell label="Unsubscribes" value={182} stale="As of 09:12 · not current" onRetry={reload} />
 
 <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-  <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+  <StatCell label="Requests" value="42k" sub="last hour" deltaPlacement="below" delta={{ value: 1200, unit: "absolute", better: "up" }} trend={[12, 18, 16, 24, 42]} />
   <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="app-latency-warning" />
   <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
 </StatGrid>`}
@@ -994,7 +1110,14 @@ const StatsDemo = () => (
         />
       </StatGrid>
       <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-        <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+        <StatCell
+          label="Requests"
+          value="42k"
+          sub="last hour"
+          deltaPlacement="below"
+          delta={{ value: 1200, unit: "absolute", better: "up" }}
+          trend={[12, 18, 16, 24, 42]}
+        />
         <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
         <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
       </StatGrid>
@@ -1380,6 +1503,11 @@ const demos: DemoSection = {
   color: () => (
     <DemoGrid columns="one">
       <ColorDemo />
+    </DemoGrid>
+  ),
+  elevation: () => (
+    <DemoGrid columns="one">
+      <ElevationDemo />
     </DemoGrid>
   ),
   "base-stylesheet": () => (

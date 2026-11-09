@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertCapabilityReview, assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
-  type CapabilityActionDefinition,
+  CapabilityActionCallReviewSchema,
+  CapabilityActionReviewDataSchema,
   type CapabilityActionReviewResult,
-  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityContractIssues,
@@ -42,9 +42,9 @@ const publicTagId = "Tag001";
 const timestamp = "2026-08-02T08:00:00.000Z";
 
 test("only exposes remembered approval for bounded contact changes", () => {
-  const rememberable = (Object.entries(contactsCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
-    .filter(([, action]) => action.approval === "rememberable")
-    .map(([localId]) => localId)
+  const rememberable = compileCapabilityManifest("contacts", contactsCapabilities)
+    .actions.filter((action) => action.approval === "rememberable")
+    .map((action) => action.localId)
     .sort();
   expect(rememberable).toEqual(["contact.create", "contact.update", "favorite.set", "note.create", "tag.change"]);
 });
@@ -498,48 +498,92 @@ describe("contacts capabilities", () => {
     ];
 
     expect(results).toHaveLength(
-      (Object.values(contactsCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
-        .length,
+      compileCapabilityManifest("contacts", contactsCapabilities).actions.filter((action) => action.approval === "rememberable").length,
     );
-    expect(results.map((result) => (result.ok ? CapabilityActionReviewSchema.parse(result.data).approvalScope : null))).toEqual([
-      `book:${publicBookId}`,
-      `book:${publicBookId}`,
-      "favorites",
-      `book:${publicBookId}`,
-      `contact:${publicContactId}`,
-    ]);
-    expect(tagReview).toMatchObject({
-      ok: true,
-      data: {
-        details: [
-          { label: "Contact", value: "Ada Example" },
-          { label: "Add", value: "Customer" },
-          { label: "Remove", value: "None" },
-        ],
-        links: [{ rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` }],
-      },
-    });
+    expect(
+      results.map((result) => {
+        if (!result.ok) return null;
+        const review = CapabilityActionReviewDataSchema.parse(result.data);
+        return "sentence" in review ? review.scope : review.approvalScope;
+      }),
+    ).toEqual([`book:${publicBookId}`, `book:${publicBookId}`, "favorites", `book:${publicBookId}`, `contact:${publicContactId}`]);
+    expect(tagReview.ok).toBe(true);
+    if (tagReview.ok) {
+      const review = CapabilityActionCallReviewSchema.parse(tagReview.data);
+      expect(review.content?.kind).toBe("page");
+      if (review.content?.kind === "page") {
+        expect(review.content.body).toContain("Contact: Ada Example");
+        expect(review.content.body).toContain("Add: Customer");
+        expect(review.content.body).toContain("Remove: None");
+      }
+      expect(review.links).toEqual([
+        { rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` },
+      ]);
+    }
     const localizedReview = await contactsCapabilities.actions["tag.change"].review!(
       { contactId: publicContactId, addTagIds: [publicTagId], removeTagIds: [] },
       { ...context, locale: "de-CH" },
     );
-    expect(localizedReview).toMatchObject({
-      ok: true,
-      data: {
-        message: "Tags von Ada Example ändern.",
-        details: [
-          { label: "Kontakt", value: "Ada Example" },
-          { label: "Hinzufügen", value: "Customer" },
-          { label: "Entfernen", value: "Keine" },
-        ],
-      },
-    });
+    expect(localizedReview.ok).toBe(true);
+    if (localizedReview.ok) {
+      assertCapabilityReview(localizedReview.data, {
+        policy: { silent: "shared" },
+        approval: "rememberable",
+        locales: ["en", "de"],
+        queries: [],
+        validateQueryInput: () => false,
+      });
+      const review = CapabilityActionCallReviewSchema.parse(localizedReview.data);
+      expect(review.locale).toBe("de");
+      if (review.content?.kind === "page") {
+        expect(review.content.body).toContain("Kontakt: Ada Example");
+        expect(review.content.body).toContain("Hinzufügen: Customer");
+      }
+    }
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope?.length).toBeGreaterThan(0);
-      const parsed = CapabilityActionReviewSchema.safeParse(result.data);
+      const review = CapabilityActionReviewDataSchema.parse(result.data);
+      expect(("sentence" in review ? review.scope : review.approvalScope)?.length).toBeGreaterThan(0);
+      if ("sentence" in review)
+        assertCapabilityReview(review, {
+          policy: { silent: "shared" },
+          approval: "rememberable",
+          locales: ["en", "de"],
+          queries: [],
+          validateQueryInput: () => false,
+        });
+      const parsed = CapabilityActionReviewDataSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
+    }
+  });
+
+  test("shared note reviews retain complete proposed text beyond the compact preview in both locales", async () => {
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(contact);
+    const content = `${"Follow up. ".repeat(100)}Final detail.`;
+    for (const locale of ["en", "de-CH"]) {
+      const result = await contactsCapabilities.actions["note.create"].review!(
+        { contactId: publicContactId, content },
+        { ...context, locale },
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      assertCapabilityReview(result.data, {
+        policy: { silent: "shared" },
+        approval: "rememberable",
+        locales: ["en", "de"],
+        queries: [],
+        validateQueryInput: () => false,
+      });
+      const review = CapabilityActionCallReviewSchema.parse(result.data);
+      expect(review.locale).toBe(locale === "en" ? "en" : "de");
+      expect(review.scope).toBe(`contact:${publicContactId}`);
+      expect(review.preview?.kind).toBe("page");
+      if (review.preview?.kind === "page") expect(review.preview.body).not.toContain("Final detail.");
+      expect(review.content?.kind).toBe("page");
+      if (review.content?.kind === "page") expect(review.content.body).toContain(content);
     }
   });
 

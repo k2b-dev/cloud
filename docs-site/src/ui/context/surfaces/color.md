@@ -21,7 +21,9 @@ Color goes only where it means something.
   colored surface it is white. Only the one main action of a view is fully
   filled, so two accent fills never sit side by side.
 - **No fake depth.** No paper, stone, grooves, or decorative shadows. A
-  surface is flat; depth comes from inset space and the shared surface roles.
+  shadow appears only between layers, from the shared tokens: an island in the
+  main content casts a soft one, and everything else is flat
+  ([Layers and shadows](/en/ui/surfaces/elevation)).
 
 ## Contrast
 
@@ -170,6 +172,7 @@ and checked cards.
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
 | Selected range | `RangePicker` | `k2b-range-picker` |
+| Selected period preset | `PeriodPicker` | `k2b-period-picker` |
 | Selected tone or emoji group | `EmojiPicker` | `k2b-emoji-picker` |
 | Pressed toolbar button | `Toolbar` | `k2b-toolbar` |
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |

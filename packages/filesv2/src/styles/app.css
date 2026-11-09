@@ -56,10 +56,9 @@
 .filesv2-browser__pagination {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  flex-direction: column;
   gap: 0.5rem;
-}
-.filesv2-browser__pagination:has(a) {
   padding: 0.5rem 0.75rem 0.75rem;
 }
 .filesv2-filename {
@@ -416,11 +415,6 @@
     display: none;
   }
 }
-.filesv2-list__more {
-  padding: 0.25rem 0;
-  font-size: 0.75rem;
-  color: var(--k2b-action);
-}
 .filesv2-list__row--more:hover {
   background: transparent;
 }
@@ -535,6 +529,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Files' widths before anyone resizes. The saved layout is the workspace's inline style and wins over them. */
+.k2b-app-workspace.filesv2-workspace {
+  --k2b-workspace-sidebar-width: 248px;
+  --k2b-workspace-detail-filesv2-inspector-width: 400px;
 }
 
 /* Sidebar tree: the label carries a marker; the row's own icon slot turns into a spinner so nothing shifts. */
@@ -1030,10 +1030,9 @@
   font-size: 0.75rem;
   line-height: 1rem;
 }
-/* The only row highlight: a quiet inset tint on the file in flight. */
+/* The only row highlight: a quiet tint on the file in flight; rows stay flat. */
 .filesv2-upload-row[data-status="working"] {
   background: var(--k2b-surface-muted);
-  box-shadow: inset 0 1px 2px rgb(9 9 11 / 0.05);
 }
 .filesv2-upload-row__status {
   display: grid;

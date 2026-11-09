@@ -164,23 +164,20 @@ export default function ChatNotificationSettings(props: {
             )}
           </Show>
         </div>
-        <p class="chat-notifications__note">
-          <i class="ti ti-settings" aria-hidden="true" />
-          <span>
-            {t().notificationsSettingsLead}{" "}
-            <ButtonLink href={NOTIFICATION_SETTINGS_HREF} variant="text" size="xs">
-              {t().notificationsSettingsLink}
-            </ButtonLink>
-          </span>
-        </p>
+        {/* The shared inline pattern keeps the icon on the first text line and the link on the text's own line height. */}
+        <InlineGuidance icon="ti ti-settings">
+          {t().notificationsSettingsLead}{" "}
+          <ButtonLink href={NOTIFICATION_SETTINGS_HREF} variant="text" size="xs">
+            {t().notificationsSettingsLink}
+          </ButtonLink>
+        </InlineGuidance>
         <Show when={props.notifications.following?.first ? props.notifications.following : null}>
           {(following) => (
             <div class="chat-notifications__following">
               <h4 class="chat-notifications__subtitle">{t().followOn}</h4>
-              <p class="chat-notifications__note">
-                <i class="ti ti-bell-ringing" aria-hidden="true" />
-                <span>{t().followingSummary({ name: following().first!.name, more: following().count - 1 })}</span>
-              </p>
+              <InlineGuidance icon="ti ti-bell-ringing">
+                {t().followingSummary({ name: following().first!.name, more: following().count - 1 })}
+              </InlineGuidance>
             </div>
           )}
         </Show>

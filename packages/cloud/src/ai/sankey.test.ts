@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { chartCatalog } from "./chart-catalog.generated";
 import { CloudAiChartInputSchema, parseCloudAiChartInput } from "./default-tool-contracts";
 import { parseCloudAiChartToolView } from "./view-block";
 
@@ -28,4 +29,18 @@ test("model input rejects invalid locales and retains a valid BCP 47 locale", ()
   );
   expect(parseCloudAiChartInput({ ...spec, locale: "de-DE" })).toMatchObject({ locale: "de-DE" });
   expect(CloudAiChartInputSchema.safeParse({ ...spec, legend: [{ tone: "tax", label: "Tax" }] }).success).toBe(true);
+});
+
+test("Gustav's generated Sankey example keeps existing endpoints at the model and saved-view boundaries", async () => {
+  const guide = await Bun.file(
+    new URL("../../../assistant/src/skills/assistant-code-mode/references/chart-kinds.md", import.meta.url),
+  ).text();
+  const example = guide.split("## sankey")[1]?.match(/```json\n([\s\S]*?)\n```/)?.[1];
+  expect(example).toBeDefined();
+  const input: unknown = JSON.parse(example!);
+  expect(CloudAiChartInputSchema.safeParse(input).success).toBe(true);
+  expect(parseCloudAiChartToolView(input)).toMatchObject({ view: "chart", kind: "sankey" });
+  const modelExample = chartCatalog.find((entry) => entry.example.kind === "sankey")?.example;
+  expect(input).toEqual(modelExample);
+  expect(CloudAiChartInputSchema.safeParse(modelExample).success).toBe(true);
 });

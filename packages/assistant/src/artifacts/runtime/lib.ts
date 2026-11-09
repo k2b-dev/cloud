@@ -19,14 +19,18 @@ import {
   calendarLayout,
   donut,
   escapeXml,
+  funnelLayout,
+  hbarLayout,
   isChartDatum,
-  line,
+  lineBase,
+  lineDetailsEnabled,
   pie,
   renderBarChartSvg,
   sankeyFrame,
   sankeyWidth,
   sparkline,
   stat,
+  waterfallLayout,
 } from "@k2b/ui/charts/core";
 import type { ChartDrawing } from "./chart-renderer-types";
 import { deferChartDrawing, loadChartRenderer, rareChartSvg } from "./chart-renderers-rare";
@@ -54,10 +58,12 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Html 
   return new Html(out);
 }
 
-const KEEP_ASPECT = new Set(["pie", "donut", "gauge"]);
+const KEEP_ASPECT = new Set(["pie", "donut", "gauge", "radar"]);
 type ChartOptions = Record<string, unknown> & {
   kind: string;
   format?: CloudAiNumberFormat | ((value: number) => string);
+  xFormat?: CloudAiNumberFormat | ((value: number) => string);
+  yFormat?: CloudAiNumberFormat | ((value: number) => string);
   xAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
   yAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
 };
@@ -108,6 +114,12 @@ function drawChart(
     const formats = { x: options.xFormat, y: options.yFormat, value: options.format };
     const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
     const common: ChartDrawing = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
+    if (mapped.kind === "hbar") {
+      common.hbar = hbarLayout({ ...mapped, ...common }, { width, height });
+      common.height = common.hbar.height;
+    }
+    if (mapped.kind === "funnel") common.funnel = funnelLayout({ ...mapped, ...common }, common);
+    if (mapped.kind === "waterfall") common.waterfall = waterfallLayout({ ...mapped, ...common }, common);
     let svg: string | undefined;
     switch (mapped.kind) {
       case "bar": {
@@ -117,7 +129,7 @@ function drawChart(
         break;
       }
       case "line":
-        svg = line({ ...mapped, ...common });
+        svg = lineDetailsEnabled(mapped) ? rareChartSvg(mapped, common, locale) : lineBase({ ...mapped, ...common });
         break;
       case "pie":
         svg = pie({ ...mapped, ...common });
@@ -132,7 +144,7 @@ function drawChart(
         svg = sparkline({ ...mapped, ...common });
         break;
       default:
-        svg = rareChartSvg(mapped, common);
+        svg = rareChartSvg(mapped, common, locale);
     }
     if (svg === undefined || mapped.kind === "balanceFlow") return { svg, table: { columns: [], rows: [] } };
     // Walk marks in emitted order, exactly as the chat builds its table and tooltips.
@@ -157,7 +169,7 @@ function drawChart(
           opening = opening.replace(/ data-chart-datum="[^"]*"/, () => ` data-chart-datum="${escapeXml(JSON.stringify(datum))}"`);
         }
         const row = rows.add(datum);
-        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input.kind);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input);
         const text = [tooltip.title, ...tooltip.rows.map((row) => `${row.label}: ${row.value}`)].filter(Boolean).join(" · ");
         // Single-quoted XML attributes keep compact JSON quotes literal, saving space on dense charts.
         const encodedTooltip = escapeXml(JSON.stringify(tooltip)).replace(/&quot;/g, '"');
@@ -195,6 +207,12 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
       if (name === "xAxis") stored.xFormat = format;
       else stored.yFormat = format;
       raw[name] = rest;
+    }
+  }
+  for (const name of ["xFormat", "yFormat"] as const) {
+    if (typeof raw[name] === "function") {
+      stored[name] = raw[name];
+      delete raw[name];
     }
   }
   if (typeof raw.format === "function") {
@@ -239,6 +257,10 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
     );
   }
   // Bar rows take the height their labels need; the box reserves it.
+  const sankey = input.kind === "sankey";
+  const calendar = input.kind === "heatmap" && input.layout === "calendar";
+  // CSS fits identical geometry before and after the lazy renderer arrives.
+  const calendarSize = calendar ? pendingCalendarSize(prepared, locale, width, height) : undefined;
   const drawnHeight =
     input.kind === "sankey"
       ? sankeyFrame({
@@ -250,13 +272,9 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
           title: prepared.title,
           subtitle: input.subtitle,
         }).height
-      : Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || height;
-  const sankey = input.kind === "sankey";
-  const calendar = input.kind === "heatmap" && input.layout === "calendar";
-  // Only sizing stays eager; the calendar renderer itself belongs to the offline module.
-  let calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg ?? "")?.[1]) || width : width;
-  if (calendar && svg === undefined) calendarWidth = pendingChartWidth(prepared, locale, width, height);
-  if (sankey) calendarWidth = sankeyWidth(input, width);
+      : (calendarSize?.height ??
+        (Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height)));
+  const calendarWidth = input.kind === "sankey" ? sankeyWidth(input, width) : (calendarSize?.width ?? width);
   const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = prepared.title ?? "";
   const subtitle = input.subtitle ?? "";
@@ -273,24 +291,41 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
         .join("")}</tbody></table>`
     : "";
   let id = "";
-  if (((stretch || calendar) && measure) || svg === undefined) {
+  if ((stretch && measure) || svg === undefined) {
     id = `c${++chartSeq}`;
     if (svg === undefined) pendingChartOptions.set(id, prepared);
     else chartOptions.set(id, prepared);
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar || sankey ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${(stretch || calendar) && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendar || sankey ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;display:flex;flex-direction:row-reverse;align-items:flex-start"' : sankey ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;flex:0 0 100%;margin-right:auto;` : sankey ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
 }
 
-/** Reserve scrolling geometry before its renderer arrives, including at a measured frame width. */
-export function pendingChartWidth(prepared: StoredChart, locale: string, width: number, height: number): number {
+/** Reserve horizontal rows before the offline renderer arrives. */
+export function pendingChartHeight(prepared: StoredChart, locale: string, width: number, height: number): number {
+  if (prepared.input.kind === "balanceFlow") return balanceFlowHeight(prepared.input.periods);
+  if (prepared.input.kind !== "hbar") return height;
+  const mapped = cloudAiChartRenderOptions(prepared.input, locale, {
+    width,
+    formats: { x: prepared.xFormat, y: prepared.yFormat, value: prepared.format },
+  });
+  return mapped.kind === "hbar"
+    ? hbarLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, { width, height }).height
+    : height;
+}
+
+/** Reserve Sankey scrolling geometry before its renderer arrives. */
+export function pendingChartWidth(prepared: StoredChart, width: number): number {
+  return prepared.input.kind === "sankey" ? sankeyWidth(prepared.input, width) : width;
+}
+
+/** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
+function pendingCalendarSize(prepared: StoredChart, locale: string, width: number, height: number) {
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, { width });
-  if (mapped.kind === "sankey") return sankeyWidth(mapped, width);
   return mapped.kind === "heatmap" && mapped.layout === "calendar"
-    ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle }).width
-    : width;
+    ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle })
+    : undefined;
 }
 
 /** Frame loading/error states share the chart's existing fixed content box. */
@@ -301,17 +336,23 @@ export function chartLoading(locale: string): string {
 /** Finish chart markup before app-authored HTML crosses the asynchronous PDF boundary. */
 export async function resolveChartHtml(content: string, locale: string): Promise<string> {
   if (!content.includes("data-chart-pending=")) return content;
-  await loadChartRenderer();
-  return content.replace(
-    /<div class="k2b-chart(?: k2b-ui)?"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g,
-    (markup, id: string) => {
+  const pendingMarkup =
+    /<div class="k2b-chart(?: k2b-ui)?"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g;
+  const ids = [...content.matchAll(pendingMarkup)].map((match) => match[1]!);
+  await Promise.all(
+    ids.map((id) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
-      const width = Number(/--k2b-chart-width:\s*([\d.]+)px/.exec(markup)?.[1]) || 480;
-      const height = Number(/--k2b-chart-height:\s*([\d.]+)px/.exec(markup)?.[1]) || 280;
-      return String(chartMarkup(options, locale, width, height, false));
-    },
+      return loadChartRenderer(options.input.kind);
+    }),
   );
+  return content.replace(pendingMarkup, (markup, id: string) => {
+    const options = pendingChartOptions.get(id);
+    if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
+    const width = Number(/--k2b-chart-width:\s*([\d.]+)px/.exec(markup)?.[1]) || 480;
+    const height = Number(/--k2b-chart-height:\s*([\d.]+)px/.exec(markup)?.[1]) || 280;
+    return String(chartMarkup(options, locale, width, height, false));
+  });
 }
 
 /** stdlib money with the user's locale as the default for format and parse. */

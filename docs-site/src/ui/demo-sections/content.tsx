@@ -52,6 +52,7 @@ import {
   PanelDialog,
   Paper,
   PdfPreview,
+  PdfViewer,
   Placeholder,
   panelDialogFixedOptions,
   panelDialogOptions,
@@ -65,6 +66,7 @@ import {
   TemplatePreview,
   TemplateSampleData,
   TextInput,
+  ThumbnailStrip,
   Timeline,
   type TimelineColor,
   type TimelineController,
@@ -1454,18 +1456,51 @@ const StructuredDemo = () => (
   </DemoCard>
 );
 
-const gallery = [
-  {
-    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%2306b6d4'/%3E%3C/svg%3E",
-    alt: "Cyan field",
-  },
-  {
-    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%238b5cf6'/%3E%3C/svg%3E",
-    alt: "Purple field",
-  },
-];
+// Six images, so the gallery shows its thumbnail strip instead of dots.
+const gallery = (
+  [
+    ["06b6d4", "Cyan field"],
+    ["8b5cf6", "Purple field"],
+    ["f59e0b", "Amber field"],
+    ["10b981", "Green field"],
+    ["ef4444", "Red field"],
+    ["64748b", "Slate field"],
+  ] as const
+).map(([color, alt]) => ({
+  src: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%23${color}'/%3E%3C/svg%3E`,
+  alt,
+}));
+/** A two-page sample PDF built in the browser, so the demo shows pdf.js drawing a real document. */
+const samplePdf = (): Blob => {
+  const objects = [
+    "",
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  for (const [page, title] of ["Sample report", "Appendix"].entries()) {
+    const stream = `BT /F1 28 Tf 72 740 Td (${title}) Tj ET\nBT /F1 12 Tf 72 700 Td (Page ${page + 1} of 2, drawn by pdf.js.) Tj ET`;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
+    );
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  }
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = body.length;
+    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xref = body.length;
+  body += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id++) body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Blob([body], { type: "application/pdf" });
+};
+
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
+  const [strip, setStrip] = createSignal("0");
   const openPreview = () =>
     dialogCore.open<void>(
       (close) => (
@@ -1500,15 +1535,19 @@ const MediaDemo = () => {
       chip={[
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
         { kind: "component", name: "PdfPreview", from: "@k2b/ui" },
+        { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
+        { kind: "component", name: "ThumbnailStrip", from: "@k2b/ui" },
       ]}
-      description="Application-owned media, a standalone PDF preview, and a composed dialog with header actions and an actionable error."
+      description="Application-owned media with a thumbnail strip from four images, the strip on its own with an unsaved dot and a + tile, a standalone PDF preview drawn by pdf.js, the viewer on its own with zoom and selectable text, and a composed dialog with header actions and an actionable error."
       code={`const [open, setOpen] = createSignal(false);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
 <Show when={open()}>
   <Lightbox images={images} initialIndex={0} onClose={() => setOpen(false)} />
 </Show>
-<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />`}
+<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />
+<PdfViewer data={pdfBlob} title="Report" />
+<ThumbnailStrip label="Images" items={items} currentItem={current()} onSelectItem={setCurrent} onAddItems={pickImages} />`}
     >
       <div class="ui-demo-row">
         <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -1521,12 +1560,20 @@ const MediaDemo = () => {
       <Show when={open()}>
         <Lightbox images={gallery} initialIndex={0} onClose={() => setOpen(false)} />
       </Show>
-      <div class="ui-pdf-demo">
-        <PdfPreview
-          request={async () => new Blob(["%PDF-1.4\n%%EOF"], { type: "application/pdf" })}
-          title="Sample report"
-          emptyText="Generate the local sample to inspect it."
+      <div class="ui-thumbnail-strip-demo">
+        <ThumbnailStrip
+          label="Images"
+          items={gallery.map((image, i) => ({ id: String(i), name: image.alt, thumbnail: image.src, dirty: i === 2 }))}
+          currentItem={strip()}
+          onSelectItem={setStrip}
+          onAddItems={() => void toast("The application opens its file picker.")}
         />
+      </div>
+      <div class="ui-pdf-demo">
+        <PdfPreview request={async () => samplePdf()} title="Sample report" emptyText="Generate the local sample to inspect it." />
+      </div>
+      <div class="ui-pdf-viewer-demo">
+        <PdfViewer data={samplePdf()} title="Sample report" />
       </div>
     </DemoCard>
   );
