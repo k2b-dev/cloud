@@ -570,6 +570,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: var(--k2b-focus-offset);
 }
 
+/* A landing point is not a control. After a page swap or when a panel closes,
+   code moves focus to the page's main region, its root, or its first heading
+   with tabindex -1, so screen readers start there. It is outside the tab
+   order, so it draws no ring. The browser's default ring would otherwise draw
+   a dark edge around the whole page card. Roving items with tabindex -1 are
+   controls and keep their ring. */
+.k2b-ui :is(main, [data-scroll-page], h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .k2b-ui .k2b-sr-only {
   position: absolute;
   width: 1px;
