@@ -7,6 +7,7 @@ import {
   loadAiStreamState,
 } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
+import { loadPlaceAssistant } from "@k2b/cloud/ai/server";
 import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { AuthContext } from "@k2b/cloud/server";
 import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
@@ -27,9 +28,10 @@ import {
 } from "../code-summary";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarSnapshot } from "../sidebar";
+import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
+import { readAssistantPlace } from "./assistant-place";
 import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./chat-sidebar-layout";
 import { assistantMessages } from "./messages";
 
@@ -97,10 +99,15 @@ export default ssr<AuthContext>(async (c) => {
     codeDetail,
     runsToday,
     attention,
+    placeState,
   ] = await Promise.all([
     assistantAiSettingsState(subject),
     getLiveDictationStatus(c.get("accessSubject")),
-    loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
+    loadAssistantSidebarSnapshot(
+      { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+      { locale, timeZone },
+      placeAppsFromCatalog(catalog),
+    ),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
     // Also without the view: the sidebar shows its Approvals row from the first paint, so it never shifts the workspace.
@@ -116,7 +123,22 @@ export default ssr<AuthContext>(async (c) => {
     // A missing count only leaves the line without numbers.
     codeOpen && !detailCodeId ? countOwnRunsSince(invokeCode, startOfDayIn(timeZone, new Date())).catch(() => null) : undefined,
     approvalsOpen ? loadCodeAttentionView(invokeCode, catalog).catch(() => null) : undefined,
+    // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
+    panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
   ]);
+  // An app that does not answer right now leaves the place to the panel, which shows "Try again" in the bar.
+  const initialPlace = (() => {
+    try {
+      return panelScope && placeState ? readAssistantPlace(panelScope, placeState) : null;
+    } catch {
+      return null;
+    }
+  })();
+  // The panel at a place opens on the person's chat there, unless the address names another one.
+  const placeConversationId =
+    initialPlace && (initialPlace.state === "available" || initialPlace.state === "unavailable") && !approvalsOpen && !codeOpen
+      ? initialPlace.conversationId
+      : null;
   // The panel names its place from the first paint, and knows whether that place could have Code at all.
   const codePlace = panelScope && codeBlockPage !== undefined ? await loadCodePlace(panelScope, invokeCode, catalog) : undefined;
   // An unknown answer keeps "My apps & automations" in the sidebar, so a failure never hides the person's Code.
@@ -146,7 +168,9 @@ export default ssr<AuthContext>(async (c) => {
   const selectedConversationId =
     activeProject || approvalsOpen || codeOpen
       ? null
-      : (requestedConversationId ?? (embedded ? null : conversations.find((conversation) => !conversation.isDone)?.shortId) ?? null);
+      : (requestedConversationId ??
+        (embedded ? placeConversationId : conversations.find((conversation) => !conversation.isDone)?.shortId) ??
+        null);
   const resolvedActiveConversation = selectedConversationId
     ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;
@@ -181,6 +205,10 @@ export default ssr<AuthContext>(async (c) => {
     <AssistantWorkspace
       embedded={embedded}
       initialPanelContext={panelContext}
+      initialPlace={initialPlace}
+      initialPlaceChats={sidebar.placeChats ?? null}
+      // A chat at a place opens with the list that holds it, so a reload keeps the person where they were.
+      initialPlacesFilter={url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place))}
       initialQuotas={initialQuotas}
       userId={user.id}
       cloudUrl={publicCloudOrigin(appUrl)}
