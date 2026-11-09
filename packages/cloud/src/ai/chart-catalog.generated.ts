@@ -83,6 +83,24 @@ export const chartCatalog = [
     },
   },
   {
+    name: 'bar (layout "nested")',
+    useFor: "Counts nested inside a known capacity",
+    avoidFor: "Independent series or exact small differences",
+    example: {
+      kind: "bar",
+      title: "Campaign engagement",
+      layout: "nested",
+      marks: "dots",
+      total: 1000,
+      dots: 100,
+      x: ["Mon", "Tue", "Wed"],
+      series: [
+        { label: "Opened", data: [780, 620, 810] },
+        { label: "Clicked", data: [320, 210, 420] },
+      ],
+    },
+  },
+  {
     name: 'bar (layout "stacked")',
     useFor: "Parts and their total",
     avoidFor: "Negative segments",
