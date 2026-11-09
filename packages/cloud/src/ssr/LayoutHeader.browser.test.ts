@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 
 // Which control a tap reaches depends on layout, paint order, and the island
 // wrappers around each header action, which only a real engine shows.
@@ -47,11 +47,16 @@ const header = (authenticated: boolean) =>
           title: "Files",
           launchpad: true,
           breadcrumbs: authenticated ? undefined : [{ title: "Files", href: "/app/files" }],
-          signInHref: "/auth/login?redirectTo=%2Fapp%2Ffiles",
+          loginHref: authenticated ? undefined : "/auth/login?redirectTo=%2Fapp%2Ffiles",
         });
       },
     }),
   );
+
+/** The header in the shell frame it gets from Layout, which decides its shape. */
+const inCanvas = (authenticated: boolean) =>
+  `<div class="cloud-app-canvas" data-layout-header${authenticated ? ' data-layout-authenticated="true"' : ""}>` +
+  `<div class="layout-shell-content">${header(authenticated)}</div></div>`;
 
 /**
  * Taps every pixel of every visible header control with the touch hit areas
@@ -109,16 +114,76 @@ const takenPixels = async (markup: string) => {
 
 test("phone header actions keep every visible pixel and Home is finger-sized when touch hit areas are on", async () => {
   const finger = [true, true, true, true];
-  expect(await takenPixels(header(true))).toEqual({
+  expect(await takenPixels(inCanvas(true))).toEqual({
     visible: ["Open global search", "Open help", "Open apps"],
     taken: {},
     homeReach: [],
   });
-  expect(await takenPixels(header(false))).toEqual({
-    visible: ["Home", "Open help", "Open apps", "Appearance and language", "Sign in"],
+  expect(await takenPixels(inCanvas(false))).toEqual({
+    visible: ["Home", "Open help", "Open apps", "Language: English", "Appearance: Light. Switches to Dark.", "Sign in"],
     taken: {},
     homeReach: finger,
   });
+}, 30_000);
+
+test("the signed-out header is the same card with the same controls at every width; only the labels shorten (#2921)", async () => {
+  const controls = ["Home", "Open help", "Open apps", "Language: English", "Appearance: Light. Switches to Dark.", "Sign in"];
+  for (const [width, language, title, breadcrumbs] of [
+    [360, "EN", false, false],
+    [390, "EN", false, false],
+    [900, "English", true, false],
+    [1280, "English", false, true],
+  ] as const) {
+    // Phones draw their scrollbar over the page, as in the Layout, so the stable gutter takes no width there.
+    const phone = width < 768;
+    const page = await browser.newPage({ viewport: { width, height: 700 }, isMobile: phone, hasTouch: phone });
+    try {
+      // A public page with an app workspace below the header: the two cards share their radius.
+      await page.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<body class="k2b-ui"><div class="cloud-app-canvas" data-layout-header><div class="layout-shell-content">${header(false)}` +
+          `<main class="layout-content-main"><div class="k2b-app-workspace" data-flat="true"></div></main></div></div></body></html>`,
+      );
+      await settled(page);
+      const shape = await page.evaluate(() => {
+        const header = document.querySelector<HTMLElement>(".layout-header")!;
+        const box = header.getBoundingClientRect();
+        const style = getComputedStyle(header);
+        const workspace = getComputedStyle(document.querySelector(".k2b-app-workspace")!);
+        const shown = Array.from(header.querySelectorAll("a[href], button")).filter((element) => element.checkVisibility());
+        const language = header.querySelector('[aria-haspopup="menu"]') as HTMLElement;
+        return {
+          box: { left: box.left, top: box.top, right: innerWidth - box.right, height: box.height },
+          card: [style.borderTopLeftRadius, style.borderTopWidth, style.borderBottomWidth, style.boxShadow],
+          workspaceRadius: workspace.borderTopLeftRadius,
+          controls: shown.map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
+          language: language.innerText.trim(),
+          title: Boolean(header.querySelector(".layout-header-title")?.checkVisibility()),
+          breadcrumbs: Boolean(header.querySelector("nav")?.checkVisibility()),
+          // Every control sits inside the card: nothing is cut off or pushed past its edge.
+          inside: shown.every((element) => {
+            const rect = element.getBoundingClientRect();
+            return rect.left >= box.left && rect.right <= box.right && rect.top >= box.top && rect.bottom <= box.bottom;
+          }),
+          signIn: (header.querySelector('a[href^="/auth/login"]') as HTMLAnchorElement).getAttribute("href"),
+        };
+      });
+      expect(shape).toEqual({
+        box: { left: 8, top: 8, right: 8, height: 46 },
+        card: ["14px", "1px", "1px", "none"],
+        // A phone shows the workspace edge to edge; from md it is a card with the header's radius.
+        workspaceRadius: phone ? "0px" : "14px",
+        controls,
+        language,
+        title,
+        breadcrumbs,
+        inside: true,
+        signIn: "/auth/login?redirectTo=%2Fapp%2Ffiles",
+      });
+    } finally {
+      await page.close();
+    }
+  }
 }, 30_000);
 
 test("toasts at the top of a phone start below the header instead of covering it", async () => {
@@ -128,7 +193,7 @@ test("toasts at the top of a phone start below the header instead of covering it
       // The rail reads the offset through @k2b/ui's narrow-viewport rule, like the probe below.
       await page.setContent(
         `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-          `<body class="k2b-ui"><div class="cloud-app-canvas" data-layout-header><div class="layout-shell-content">${header(authenticated)}</div></div>` +
+          `<body class="k2b-ui">${inCanvas(authenticated)}` +
           `<div id="probe" style="position:fixed;top:var(--k2b-toast-offset-top,0px)"></div></body></html>`,
       );
       const edges = await page.evaluate(() => [

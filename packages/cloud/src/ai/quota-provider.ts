@@ -8,6 +8,7 @@ import { logger } from "../services/logging";
 import type { AiResolvedModelRef } from "../shared/ai-models";
 import { isAssistantChatTurn } from "./assistant-models";
 import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
+import { aiOutputBudget } from "./output-budget";
 import { observeTransport, transportRefused } from "./provider-transport";
 import type { AiModelProfile } from "./types";
 
@@ -60,7 +61,7 @@ export function inferenceProvider(
             profile,
             ctx,
             inputTokens,
-            request.maxOutputTokens ?? profile.maxOutputTokens,
+            aiOutputBudget(profile, provider, inputTokens, request),
             provider.contextWindow,
           );
         } catch (error) {

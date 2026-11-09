@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.52.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.51.0...npm-ui-v0.52.0) (2026-11-08)
+
+
+### Features
+
+* **assistant:** app frames receive only the chart kinds they draw ([#2915](https://github.com/k2b-dev/cloud/issues/2915)) ([bba4b9f](https://github.com/k2b-dev/cloud/commit/bba4b9fb2add20a9ce2b7e3585515fbec95d3d80))
+* **ui:** a selection toolbar for MarkdownEditor that floats above selected text ([#2798](https://github.com/k2b-dev/cloud/issues/2798)) ([86aee61](https://github.com/k2b-dev/cloud/commit/86aee61997bcde50f732e3fa0ae05ed7bba2874c))
+* **ui:** a shared thumbnail strip, in the gallery from four images ([#2898](https://github.com/k2b-dev/cloud/issues/2898)) ([d1002be](https://github.com/k2b-dev/cloud/commit/d1002beba448a6564e28d8ae739d4acead5424a7))
+* **ui:** funnels and ranked bar lists ([#2736](https://github.com/k2b-dev/cloud/issues/2736)) ([b2875ae](https://github.com/k2b-dev/cloud/commit/b2875ae2d34782a6bd013d598133570ef1457600))
+* **ui:** named bubbles with averages and radar charts ([#2779](https://github.com/k2b-dev/cloud/issues/2779)) ([334f441](https://github.com/k2b-dev/cloud/commit/334f4417ca4be015c9650b26a723f2c43ce15e90))
+* **ui:** pictures and videos fill the preview dialog under floating chips ([#2899](https://github.com/k2b-dev/cloud/issues/2899)) ([9a1c2b8](https://github.com/k2b-dev/cloud/commit/9a1c2b87f44b3ceb549d74533bb5521410385570))
+* **ui:** place slider value and reset beside the label ([#2910](https://github.com/k2b-dev/cloud/issues/2910)) ([ce81cde](https://github.com/k2b-dev/cloud/commit/ce81cdead2ce1b5bd30aeea7bb01bfd6c11693e3))
+* **ui:** treemaps and pareto charts ([#2777](https://github.com/k2b-dev/cloud/issues/2777)) ([6fefdbf](https://github.com/k2b-dev/cloud/commit/6fefdbf3f5f428d2f6aebc1464ff7190b127e1f4))
+
+
+### Bug Fixes
+
+* **cloud:** description panels sort and search tables by what they show, keep table heights, money tones and a named empty figure ([#2896](https://github.com/k2b-dev/cloud/issues/2896)) ([7b81f1c](https://github.com/k2b-dev/cloud/commit/7b81f1c347459a6335ac7aae9bfd5f5c16fecf43))
+* **ssr:** focus survives an island's first render, and focused charts keep their tooltip ([#2851](https://github.com/k2b-dev/cloud/issues/2851)) ([115b3f3](https://github.com/k2b-dev/cloud/commit/115b3f31770747b84852fa50f7b05c7e509d4e9b))
+* **ui:** dashboard frames keep their subtitle's text across the first client render ([#2900](https://github.com/k2b-dev/cloud/issues/2900)) ([545e1d2](https://github.com/k2b-dev/cloud/commit/545e1d2865f6cbf72a3c371eac8fe191d98f6203))
+* **ui:** keep a saved workspace sidebar width on every frame ([#2922](https://github.com/k2b-dev/cloud/issues/2922)) ([eded6aa](https://github.com/k2b-dev/cloud/commit/eded6aa05260bdee00beed5590bde22fc94e995a))
+* **ui:** make disabled sliders visibly unavailable ([#2911](https://github.com/k2b-dev/cloud/issues/2911)) ([25b2942](https://github.com/k2b-dev/cloud/commit/25b2942e29080d8e28024bee4e282faf6a786200))
+* **ui:** tables keep their text across the first client render ([#2814](https://github.com/k2b-dev/cloud/issues/2814)) ([b251339](https://github.com/k2b-dev/cloud/commit/b2513396fb8be7678ae553dd0671cb7a6858209f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.21.0 to 0.21.1
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 to ^0.21.1
+
 ## [0.51.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.50.0...npm-ui-v0.51.0) (2026-11-08)
 
 

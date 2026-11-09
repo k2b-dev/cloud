@@ -46,8 +46,9 @@ import {
   weekendBands,
   yearMonth,
 } from "./date-picker";
-import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import type { ChoiceAppearance } from "./Select";
 
 export type { DateRangeValue } from "./date-picker";
@@ -81,10 +82,12 @@ export type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
   readOnly?: boolean;
 };
 
-export type DatePickerProps = DatePickerBaseProps<string | null> & {
-  /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
-  renderValue?: (value: string) => JSX.Element;
-};
+export type DatePickerProps = DatePickerBaseProps<string | null> &
+  /** A suggested day is a date key such as `2026-10-28`; only the default `field` appearance shows it. */
+  FieldSuggestionProps<string> & {
+    /** Content for a set value: the trigger of a `plain` picker, or the resting status line of a typed field. */
+    renderValue?: (value: string) => JSX.Element;
+  };
 export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
   /** Trigger content for a set value, for example the date and time with a relative hint. */
   renderValue?: (value: string) => JSX.Element;
@@ -805,6 +808,12 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   const externalError = () => resolveMaybeAccessor(props.owner.error);
   const invalid = () => Boolean(failure() || externalError());
+  const suggestion = useFieldSuggestion({
+    props: props.owner,
+    meta,
+    value: props.value,
+    format,
+  });
   const status = createMemo((): { tone: DateStatusTone; text: JSX.Element } => {
     const failed = failure();
     if (failed) return { tone: "error", text: failed };
@@ -817,7 +826,8 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     const external = externalError();
     if (external) return { tone: "error", text: external };
     const value = props.value();
-    if (!value || result) return { tone: "rest", text: "" };
+    // With a suggestion the line shares the label row and speaks only while typing or on an error.
+    if (!value || result || suggestion.enabled) return { tone: "rest", text: "" };
     return { tone: "rest", text: props.owner.renderValue?.(value) ?? restStatusText(value, today(), locale()) };
   });
 
@@ -946,12 +956,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   return (
     <Field
-      class={props.owner.class}
+      class={suggestion.field(props.owner.class)}
       label={props.owner.label}
       description={props.owner.description}
       required={props.owner.required}
       disabled={props.owner.disabled}
       meta={meta}
+      labelEnd={suggestion.status}
     >
       <div
         class="k2b-date-picker k2b-date-field"
@@ -976,11 +987,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             aria-haspopup="dialog"
             aria-expanded={calendar.open() || sheetOpen()}
             aria-controls={sheetOpen() ? sheetId : popoverId}
-            aria-describedby={[props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
-              .filter(Boolean)
-              .join(" ")}
+            aria-describedby={suggestion.describe(
+              [props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
+                .filter(Boolean)
+                .join(" "),
+            )}
             aria-invalid={invalid() ? "true" : undefined}
-            placeholder={props.owner.placeholder ?? datePattern(locale(), t())}
+            placeholder={suggestion.placeholder() ?? props.owner.placeholder ?? datePattern(locale(), t())}
             value={text()}
             disabled={props.owner.disabled}
             readOnly={props.owner.readOnly}
@@ -1232,7 +1245,17 @@ function DateRangeTextField(props: {
     setFailure(undefined);
     calendar.close();
   };
-  /** Calendar clicks fill both halves at once, so the text, the status line and the calendar show the same range. */
+  /**
+   * A pick in the popover fills the field's text, so the text, the status line and the calendar show the same range.
+   * A pick in the phone sheet stays in the sheet until it is saved: the field never shows an unsaved range, also not in
+   * the moment between a dismissed sheet and the end of its history step.
+   */
+  const showPick = (range: DateRangeValue) => {
+    if (sheetOpen()) return;
+    fill(range);
+    setDirty(true);
+  };
+  /** Calendar clicks fill both halves at once. */
   const pickDay = (key: string) => {
     const next = pickRangeDay(picked(), anchor(), key);
     // One update: the start alone would read as a typed range and reset the anchor of the next click.
@@ -1240,8 +1263,7 @@ function DateRangeTextField(props: {
       setPicked(next.range);
       setAnchor(next.anchor);
       setPreviewDate(null);
-      fill(next.range);
-      setDirty(true);
+      showPick(next.range);
     });
   };
   const apply = (range: DateRangeValue) => {
@@ -1261,8 +1283,7 @@ function DateRangeTextField(props: {
               batch(() => {
                 setPicked(next);
                 setAnchor(null);
-                fill(next);
-                setDirty(true);
+                showPick(next);
               });
               if (value) setVisibleMonth(parseDateValue(value, props.dateConfig()));
             }}
@@ -1299,7 +1320,6 @@ function DateRangeTextField(props: {
   const openSheet = async () => {
     setSheetOpen(true);
     calendar.close();
-    const before = { start: startText(), end: endText(), dirty: dirty() };
     // Every opening starts from the text, also after a dismissed sheet left other days picked.
     batch(() => {
       setPicked(draft());
@@ -1321,14 +1341,8 @@ function DateRangeTextField(props: {
         }),
     });
     setSheetOpen(false);
-    // A dismissed sheet saves nothing and leaves the text as it was before the sheet opened.
-    if (!range)
-      batch(() => {
-        setStartText(before.start);
-        setEndText(before.end);
-        setDirty(before.dirty);
-        setAnchor(null);
-      });
+    // A dismissed sheet saves nothing; its picks never reached the text (see `showPick`).
+    if (!range) setAnchor(null);
     toggle?.focus({ preventScroll: true });
   };
   const openCalendar = (focusDay: boolean) => {

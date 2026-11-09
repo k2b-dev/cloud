@@ -95,6 +95,7 @@ export const AiModelInputSchema = z
     capabilities: z.array(z.enum(["tools", "vision", "transcription", "live-transcription"])).default([]),
     contextWindow: z.number().int().positive().nullable().default(null),
     maxOutputTokens: z.number().int().positive().nullable().default(null),
+    outputTokenLimit: z.number().int().positive().nullable().optional(),
     temperature: z.number().min(0).max(2).nullable().default(null),
     extraBody: AiExtraBodySchema.nullable().default(null),
     maxLoadedTools: z.number().int().nullable().default(null),

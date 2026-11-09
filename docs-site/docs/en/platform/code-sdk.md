@@ -247,6 +247,10 @@ a kind the chart data gains becomes a block of its own. A table sorts by any col
 and shows `empty`, or a default text, when it has no rows. Neighbouring
 `Button` and `Action` blocks share one row.
 
+Line charts support `forecast`, `marker`, `threshold`, `zero`, `step`, and
+`legendValues`. With forecast, zero, threshold, marker, or legendValues enabled,
+an observation's `y: null` leaves a gap.
+
 A `scan` field is a text field with a **Scan** button. The button opens the
 device camera in Cloud's QR code scanner; the read text goes into the field and
 nothing is sent until the form is submitted. Typing, or a handheld scanner that

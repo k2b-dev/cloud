@@ -2569,6 +2569,7 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
       updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL, UNIQUE(model_id,slug),
       CHECK(id = CASE WHEN slug = 'standard' THEN model_id ELSE model_id || ':' || slug END)
     )`;
+  await db`ALTER TABLE ai.models ADD COLUMN IF NOT EXISTS output_token_limit INTEGER CHECK(output_token_limit > 0)`;
   await db`CREATE TABLE IF NOT EXISTS ai.model_assignments (
       slot TEXT PRIMARY KEY CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio','liveAudio','decision')),
       variant_id TEXT REFERENCES ai.model_variants(id), revision INTEGER NOT NULL DEFAULT 1,

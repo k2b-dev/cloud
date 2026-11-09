@@ -328,18 +328,18 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     );
   }
   if (!("default" in pageTypes) || typeof pageTypes.default !== "string") throw new Error("Expected page type source");
-  const pageType = schemaTypes(z.toJSONSchema(CodePageTreeSchema), "CodePage");
-  const chartType = schemaTypes(
-    z.toJSONSchema(CodeChartDescriptionSchema, {
+  // Page and chart authors provide inputs, including null gaps that the renderer normalizes to NaN.
+  const authoringSchema = (schema: z.ZodType) =>
+    z.toJSONSchema(schema, {
       io: "input",
       override: ({ jsonSchema }) => {
         // Strip-mode objects accept unknown input keys, but authoring exposes only the retained props.
         // An open index signature would also erase their named types when Chart props omit `kind`.
         if (jsonSchema.type === "object" && jsonSchema.additionalProperties === undefined) jsonSchema.additionalProperties = false;
       },
-    }),
-    "CodeChart",
-  );
+    });
+  const pageType = schemaTypes(authoringSchema(CodePageTreeSchema), "CodePage");
+  const chartType = schemaTypes(authoringSchema(CodeChartDescriptionSchema), "CodeChart");
   declarations.push(
     ...pageType.declarations,
     `export type CodePageTree = ${pageType.type};`,

@@ -10,6 +10,8 @@ export type ChartParityRow = {
   spec: PortedChartOptions;
   /** Compatibility input for an additive option with no predecessor in stdlib. */
   legacySpec?: PortedChartOptions;
+  /** Frozen pre-port row used when this additive option had no predecessor. */
+  legacyId?: string;
   proof: { file: string; test: string; kind?: "demo" };
   gap?: string;
 };
@@ -67,6 +69,81 @@ const date = (value: number) => new Date(value).toISOString().slice(0, 10);
 
 /** Every approved parity item has a concrete SVG spec and a named test or existing live demo. */
 export const chartParity: readonly ChartParityRow[] = [
+  {
+    id: "line-forecast",
+    feature: "Line: forecast and first-series band",
+    proof: {
+      file: "packages/ui/src/charts/core/line-forecast.test.ts",
+      test: "forecast layout binds ordered bounds to the first series suffix",
+    },
+    spec: {
+      ...line,
+      forecast: {
+        from: 2,
+        band: [
+          [4, 6],
+          [2, 4],
+        ],
+      },
+    },
+    legacySpec: line,
+    legacyId: "kind-line",
+  },
+  {
+    id: "line-zero",
+    feature: "Line: negative zone",
+    proof: {
+      file: "packages/ui/src/charts/core/line-forecast.test.ts",
+      test: "forecast, zero zone, warning threshold and today use portable presentation attributes",
+    },
+    spec: { ...line, zero: true },
+    legacySpec: line,
+    legacyId: "kind-line",
+  },
+  {
+    id: "line-threshold",
+    feature: "Line: warning threshold",
+    proof: {
+      file: "packages/ui/src/charts/core/line-forecast.test.ts",
+      test: "forecast, zero zone, warning threshold and today use portable presentation attributes",
+    },
+    spec: { ...line, threshold: { value: 4, label: "Reserve" } },
+    legacySpec: line,
+    legacyId: "kind-line",
+  },
+  {
+    id: "line-marker",
+    feature: "Line: labelled today marker",
+    proof: {
+      file: "packages/ui/src/charts/core/line-forecast.test.ts",
+      test: "forecast, zero zone, warning threshold and today use portable presentation attributes",
+    },
+    spec: { ...line, marker: { at: 2, label: "Today" } },
+    legacySpec: line,
+    legacyId: "kind-line",
+  },
+  {
+    id: "line-step-directions",
+    feature: "Line: before and after steps",
+    proof: {
+      file: "packages/ui/src/charts/core/line-forecast.test.ts",
+      test: "both step directions and existing middle steps remain distinct",
+    },
+    spec: { ...line, step: "after" },
+    legacySpec: line,
+    legacyId: "kind-line",
+  },
+  {
+    id: "line-cursor-values",
+    feature: "Line: values at cursor",
+    proof: {
+      file: "packages/ui/src/charts/core/line-forecast.test.ts",
+      test: "line legends carry cursor fields, missing final values and bounded names",
+    },
+    spec: { ...line, legend: true, legendValues: true },
+    legacySpec: line,
+    legacyId: "kind-line",
+  },
   {
     id: "kind-line",
     feature: "line",

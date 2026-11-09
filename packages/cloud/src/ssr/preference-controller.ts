@@ -1,5 +1,5 @@
-import type { DropdownAction, DropdownItem } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import type { DropdownAction } from "@k2b/ui";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { profilePreferenceLocale, setLocalePreference } from "../shared/locale-preference";
 import { type CloudThemePreference, getCurrentThemePreference, setThemePreference } from "../shared/theme";
 import { profilePreferencesMessages } from "./profile-preferences-messages";
@@ -68,10 +68,8 @@ export const createPreferenceController = (initialTheme: CloudThemePreference, l
     action: cycleTheme,
   };
   const languageItem = (): DropdownAction => ({ action: toggleLanguage, icon: "ti ti-language", label: languageLabel() });
-  const items = createMemo<DropdownItem[]>(() => [appearanceItem, languageItem()]);
 
   return {
-    items,
     appearanceItem,
     languageItem,
     themeOption,

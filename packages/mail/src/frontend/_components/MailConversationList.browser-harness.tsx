@@ -121,7 +121,7 @@ const detailFor = (item: MailListItem | undefined, deletedOnServer = false, plai
     selectedHeaders: {},
     sourceAvailable: true,
     mailingList: null,
-    remoteContent: { imageIds: [], allowedByRule: false, sender: "person@example.test", domain: "example.test" },
+    remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "person@example.test", domain: "example.test" },
     delivery: null,
     attachments: [],
   };

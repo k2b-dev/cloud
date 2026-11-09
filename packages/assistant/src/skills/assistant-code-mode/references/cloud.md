@@ -117,6 +117,129 @@ interface CloudCapabilities {
   };
 }
 
+// ---------------------------------------------------------------- chart
+
+type AxisOptions = {
+  /** Label under/next to the axis. */
+  label?: string;
+  /** Tick text; the default is the user's number format (dates for date x values). */
+  format?: (value: number) => string;
+  /** Exact bounds; must contain every value. */
+  domain?: [number, number];
+  ticks?: number;
+  scale?: "linear" | "log";
+};
+type ChartBase = {
+  title?: string;
+  subtitle?: string;
+  /** Logical drawing size. Cartesian charts stretch to the container width; text keeps its pixel size. */
+  width?: number;
+  height?: number;
+};
+type ChartPoint = { x: number | Date | string /* ISO date */; y: number };
+type ChartSeries = { label?: string; data: ChartPoint[] };
+type ChartItem = { label: string; value: number };
+type ChartOptions =
+  | (ChartBase & { kind: "bar"; data: ChartItem[]; yAxis?: AxisOptions; colorByBar?: boolean; showValues?: boolean; legend?: boolean })
+  | (ChartBase & {
+      kind: "line";
+      series: ChartSeries[];
+      xAxis?: AxisOptions;
+      yAxis?: AxisOptions;
+      area?: boolean;
+      smooth?: boolean;
+      legend?: boolean;
+      forecast?: { from: number | string; band?: [number, number][] };
+      marker?: { at: number | string; label: string };
+      threshold?: { value: number; label: string };
+      zero?: boolean;
+      step?: "before" | "after" | "middle";
+      legendValues?: boolean;
+    })
+  | (ChartBase & { kind: "scatter"; series: ChartSeries[]; xAxis?: AxisOptions; yAxis?: AxisOptions; legend?: boolean })
+  | (ChartBase & { kind: "pie" | "donut"; data: ChartItem[]; legend?: boolean; showLabels?: boolean })
+  | (ChartBase & { kind: "histogram"; data: number[]; bins?: number; xAxis?: AxisOptions; yAxis?: AxisOptions })
+  | (ChartBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string })
+  | (ChartBase & { kind: "sparkline"; data: number[]; area?: boolean });
+// Every other kind with an example: chart-kinds.md; declarative formats, references and thresholds: charts.md.
+
+// ---------------------------------------------------------------- views (script runs only)
+
+type ChartKind =
+  | "waterfall" | "area" | "bar" | "hbar" | "funnel" | "line" | "scatter" | "pie" | "donut" | "histogram"
+  | "gauge" | "sparkline" | "boxplot" | "heatmap" | "barGauge" | "stat" | "treemap" | "pareto" | "bubble" | "radar";
+type ViewRef = { path: string; title: string; subtitle?: string } & (
+  | { view: "chart"; kind: ChartKind }
+  | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }
+  | { view: "table"; rows: number; columns: number; footer: boolean }
+  | { view: "explorer"; rows: number; columns: number; views: { id: string; label: string; kind: "bar" | "line" | "scatter" | "heatmap" }[]; step: boolean; filter: boolean; compare: boolean }
+  | { view: "stats"; items: { label: string; sparkline: boolean; sub: boolean; delta: boolean }[] }
+  | { view: "details"; items: number; fields: { label: string; ref: boolean; chars: number }[] }
+);
+type ViewBase = { title: string; subtitle?: string };
+type ViewAxis = { label?: string; domain?: [number, number]; ticks?: number; scale?: "linear" | "log" };
+type ViewPoint = { x: number | string; y: number };
+type ViewRows = Record<string, unknown>[];
+type ViewBar = ViewBase & { kind: "bar"; yAxis?: ViewAxis; colorByBar?: boolean; showValues?: boolean; legend?: boolean };
+type ViewSlices = ViewBase & { kind: "pie" | "donut"; legend?: boolean; showLabels?: boolean };
+type ViewLines = ViewBase & { kind: "line"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean; area?: boolean; smooth?: boolean };
+type ViewScatter = ViewBase & { kind: "scatter"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean };
+type ViewSparkline = ViewBase & { kind: "sparkline"; area?: boolean };
+type ViewHistogram = ViewBase & { kind: "histogram"; bins?: number | number[] };
+type ViewChartSpec =
+  | ((ViewBar | ViewSlices) & ({ data: ChartItem[] } | { rows: ViewRows; x: string; y: string }))
+  | ((ViewLines | ViewScatter) & (
+      | { series: { label?: string; data: ViewPoint[] }[] }
+      | { rows: ViewRows; x: string; y: string | string[]; series?: string }
+    ))
+  | (ViewSparkline & ({ data: number[] } | { rows: ViewRows; y: string }))
+  | (ViewHistogram & ({ data: number[] } | { rows: ViewRows; value: string }))
+  | (ViewBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string });
+// boxplot, heatmap, barGauge, stat, formats, references, thresholds and series style/role: views.md.
+type ViewGroupSpec = ViewBase & { charts: ViewChartSpec[]; linkX?: boolean; layout?: "stack" | "grid" };
+type ViewFormat = { unit?: string; decimals?: number; compact?: boolean } & (
+  | { style: "currency"; currency: string }
+  | { style?: "number" | "percent"; currency?: never }
+);
+type ViewColumn = { id: string; label?: string; type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat };
+type ViewTableSpec = ViewBase & {
+  rows: ViewRows;
+  columns?: (string | ViewColumn)[];
+  footer?: Record<string, unknown>;
+  sort?: { column: string; direction: "asc" | "desc" };
+};
+type ViewExplorerChart = { id: string; label: string } & (
+  | { kind: "bar"; x: string; y: string }
+  | { kind: "line" | "scatter"; x: string; y: string | string[]; series?: string }
+  | { kind: "heatmap"; x: string; y: string; value: string }
+);
+type ViewExplorerSpec = ViewBase & {
+  rows: ViewRows;
+  columns?: (string | ViewColumn)[];
+  views: ViewExplorerChart[];
+  controls?: { filter?: string; step?: string; compare?: boolean };
+};
+type ViewReference = { type: string; id: string; title?: string };
+type ViewStatsSpec = ViewBase & { items: {
+  label: string; value: number | string; format?: ViewFormat; sub?: string;
+  delta?: number; better?: "up" | "down"; sparkline?: number[];
+}[] };
+type ViewDetailsSpec = ViewBase & { items: {
+  label: string; value?: string | number | Date | null | ViewReference;
+  type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat;
+}[] };
+/** Script runs only; HTML apps draw with cloud.chart(). Server validates every saved spec. */
+interface CloudView {
+  chart(spec: ViewChartSpec): Promise<ViewRef>;
+  /** 2..6 related charts under one heading. */
+  group(spec: ViewGroupSpec): Promise<ViewRef>;
+  table(spec: ViewTableSpec): Promise<ViewRef>;
+  stats(spec: ViewStatsSpec): Promise<ViewRef>;
+  details(spec: ViewDetailsSpec): Promise<ViewRef>;
+  /** One dataset with local filtering, steps and comparison; see views.md. */
+  explorer(spec: ViewExplorerSpec): Promise<ViewRef>;
+}
+
 // ---------------------------------------------------------------- money
 
 /** Exact money: `amount` in minor units (cents). Decimal inputs are strings, e.g. "1234.50". */

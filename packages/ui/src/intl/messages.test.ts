@@ -51,6 +51,7 @@ const catalogs = {
   Completion: (await import("../inputs/completion-messages")).checkCompletionMessages,
   Tag: (await import("../inputs/tag-messages")).checkTagMessages,
   Input: (await import("../inputs/input-messages")).checkInputMessages,
+  Suggestion: (await import("../inputs/suggestion-messages")).checkSuggestionMessages,
   DateInput: (await import("../inputs/date-input-messages")).checkDateInputMessages,
   PeriodPicker: (await import("../inputs/period-picker-messages")).checkPeriodPickerMessages,
   Icon: (await import("../inputs/icon-messages")).checkIconMessages,

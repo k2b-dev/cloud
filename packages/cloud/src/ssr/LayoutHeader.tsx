@@ -9,8 +9,8 @@ type LayoutHeaderProps = {
   title?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
-  /** Sign in for anonymous pages; it returns to the page afterwards. */
-  signInHref: string;
+  /** Where Sign in leads on signed-out pages; it returns the person to this page afterwards. */
+  loginHref?: string;
 };
 
 /**
@@ -19,10 +19,12 @@ type LayoutHeaderProps = {
  * and their profile through the rail, so the app area starts at the top edge.
  * On a signed-in phone it is the title row on the app gradient: it holds the
  * title, search, help, and the app menu, which leads with Start; help also
- * opens the panel there. Anonymous pages have no rail: up to `lg` their header keeps Home,
- * the app name, help, search, and the app grid, and from `lg` it shows the
- * breadcrumbs. Home and Sign in stay server markup, so focus on them survives
- * the shell's mount; the shell renders the title and the controls between them.
+ * opens the panel there. Anonymous pages have no rail: their header is the
+ * same floating card at every width with Home, help, the app grid when apps
+ * are open to visitors, language, appearance, and Sign in. Between Home and
+ * the controls it shows the app name from `md` and the breadcrumbs from `lg`.
+ * Home and Sign in stay server markup, so focus on them survives the shell's
+ * mount; the shell renders the title and the controls between them.
  */
 export default function LayoutHeader(props: LayoutHeaderProps) {
   const locale = useLocale();
@@ -50,8 +52,8 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
         breadcrumbs={props.breadcrumbs}
       />
       {!props.authenticated && (
-        <div class="ml-1 flex shrink-0">
-          <ButtonLink href={props.signInHref} size="sm" variant="primary">
+        <div class="ml-2 flex shrink-0">
+          <ButtonLink href={props.loginHref ?? "/auth/login"} variant="primary">
             <i class="ti ti-login" aria-hidden="true" />
             {t().signIn}
           </ButtonLink>

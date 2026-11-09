@@ -408,7 +408,7 @@ export default function Layout(props: LayoutProps) {
                 title={appLabel ?? breadcrumbs.at(-1)?.title}
                 launchpad={!!(user || appLabel)}
                 breadcrumbs={user ? undefined : breadcrumbs}
-                signInHref={createLoginRedirectUrl(c.req.raw.url)}
+                loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}
               />,
               user && announcements && <AnnouncementBanners banners={announcements.banners} />,
               user && <ProfileWarnings user={user} locale={lang} />,

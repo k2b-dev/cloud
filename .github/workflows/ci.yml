@@ -566,7 +566,7 @@ jobs:
             CLOUD_RELEASE=sha-${{ github.sha }}
             CLOUD_DOCS_SITE_URL=http://localhost:3000
           cache-from: type=gha,scope=ci-website
-          cache-to: type=gha,mode=max,scope=ci-website
+          cache-to: type=gha,mode=max,scope=ci-website,ignore-error=true
 
   # Release PRs resolve already published sibling pins from npm, as app authors do.
   # Normal PRs use workspace tarballs because their changes get version bumps in the release PR.
@@ -701,7 +701,7 @@ jobs:
             CLOUD_VERSION=0.0.0-ci
             CLOUD_RELEASE=sha-${{ github.sha }}
           cache-from: type=gha,scope=ci-core
-          cache-to: type=gha,mode=max,scope=ci-core
+          cache-to: type=gha,mode=max,scope=ci-core,ignore-error=true
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -714,7 +714,7 @@ jobs:
             CLOUD_VERSION=0.0.0-ci
             CLOUD_RELEASE=sha-${{ github.sha }}
           cache-from: type=gha,scope=ci-gateway
-          cache-to: type=gha,mode=max,scope=ci-gateway
+          cache-to: type=gha,mode=max,scope=ci-gateway,ignore-error=true
       # The Cloud Login image runs its typecheck and tests inside the build; a
       # missing file in its narrow COPY set only shows up here, not in bun run test.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -726,7 +726,7 @@ jobs:
             CLOUD_VERSION=0.0.0-ci
             CLOUD_RELEASE=sha-${{ github.sha }}
           cache-from: type=gha,scope=ci-pwa-auth
-          cache-to: type=gha,mode=max,scope=ci-pwa-auth
+          cache-to: type=gha,mode=max,scope=ci-pwa-auth,ignore-error=true
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -735,7 +735,7 @@ jobs:
           load: true
           tags: cloud-notes:ci
           cache-from: type=gha,scope=ci-notes
-          cache-to: type=gha,mode=max,scope=ci-notes
+          cache-to: type=gha,mode=max,scope=ci-notes,ignore-error=true
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -781,7 +781,7 @@ jobs:
           load: true
           tags: cloud-speedtest:ci
           cache-from: type=gha,scope=ci-speedtest
-          cache-to: type=gha,mode=max,scope=ci-speedtest
+          cache-to: type=gha,mode=max,scope=ci-speedtest,ignore-error=true
       - name: Boot standalone speedtest without Cloud infrastructure
         run: |
           set -euo pipefail

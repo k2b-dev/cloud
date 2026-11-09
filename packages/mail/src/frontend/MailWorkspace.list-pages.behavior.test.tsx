@@ -142,7 +142,7 @@ const readerMessage: MailboxPageData["detailMessages"][number] = {
   selectedHeaders: {},
   sourceAvailable: true,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "sender@example.test", domain: "example.test" },
   delivery: null,
   attachments: [],
 };

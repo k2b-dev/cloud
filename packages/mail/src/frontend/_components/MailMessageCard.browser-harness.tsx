@@ -40,7 +40,7 @@ const pending: MessageDetail = {
   selectedHeaders: {},
   sourceAvailable: false,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: "ada@example.test", domain: "example.test" },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "ada@example.test", domain: "example.test" },
   delivery: null,
   attachments: [],
 };

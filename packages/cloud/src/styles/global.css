@@ -404,14 +404,18 @@ solid-island {
      document's. From md, `main` bounds its height and it scrolls. */
   .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated]) .layout-content-main > .k2b-scroll-area { scrollbar-gutter: auto; }
   .cloud-app-canvas > .layout-shell-content { gap: 0; }
+  /* The anonymous header floats as the same card as from md, with the shell
+     spacing that the canvas gives it there. */
   .cloud-app-canvas:not([data-layout-authenticated]) .layout-header {
-    border-radius: 0; border: 0; border-bottom: 1px solid var(--ui-border);
-    box-shadow: none !important;
+    margin: var(--ui-space-shell) var(--ui-space-shell) 0;
   }
   /* Toasts at the top edge of a phone start below the header instead of
      covering its menu and search buttons. */
   :root:has(> body > .cloud-app-canvas[data-layout-header]) {
     --k2b-toast-offset-top: 2.875rem;
+  }
+  :root:has(> body > .cloud-app-canvas[data-layout-header]:not([data-layout-authenticated])) {
+    --k2b-toast-offset-top: calc(2.875rem + var(--ui-space-shell));
   }
 
   /* Signed-in phones: the app gradient is the page. The title row sits on it
@@ -444,7 +448,7 @@ solid-island {
     border-top: 1px solid transparent;
     border-radius: 1.75rem 1.75rem 0 0;
     background: var(--k2b-surface);
-    box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+    box-shadow: var(--k2b-shadow-frame);
   }
   /* Dark: a faint top edge keeps the card apart from the dark gradient. */
   .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
@@ -492,7 +496,7 @@ solid-island {
         border-top: 1px solid transparent;
         border-radius: 1.75rem 1.75rem 0 0;
         background: var(--k2b-surface);
-        box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+        box-shadow: var(--k2b-shadow-frame);
       }
 
       & > .k2b-app-workspace__head {
@@ -611,9 +615,6 @@ solid-island {
     }
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item:hover {
       background: color-mix(in srgb, var(--k2b-surface) 45%, transparent);
-    }
-    .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active {
-      box-shadow: 0 1px 2px rgb(9 9 11 / 0.06);
     }
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active,
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active:hover {

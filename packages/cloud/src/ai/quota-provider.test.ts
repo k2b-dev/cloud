@@ -261,6 +261,33 @@ test("background admission waits for reservations without calling the provider t
   expect(f.calls).toBe(1);
   expect(f.booked).toHaveLength(1);
 });
+
+test("reasoning admission reserves the derived budget before sending it, while allowances can reduce it", async () => {
+  const f = fixture([event]);
+  f.provider.contextWindow = 131_072;
+  f.provider.capabilities.thinking = true;
+  const sent: (number | undefined)[] = [];
+  const reserved: number[] = [];
+  f.provider.stream = async function* (request) {
+    sent.push(request.maxOutputTokens);
+    yield event;
+  };
+  const wrapped = inferenceProvider(
+    f.provider,
+    { ...profile, outputTokenLimit: 65_536 },
+    { kind: "chat", task: "chat" },
+    {
+      ...f.lifecycle,
+      begin: async (_profile, _context, _input, requested) => {
+        reserved.push(requested!);
+        return { id: crypto.randomUUID(), maxOutputTokens: Math.min(requested!, 50_000) };
+      },
+    },
+  );
+  await drain(wrapped);
+  expect(reserved).toEqual([65_536]);
+  expect(sent).toEqual([50_000]);
+});
 test("waiting for a reservation can be canceled without spending or booking", async () => {
   const f = fixture([]);
   const controller = new AbortController();

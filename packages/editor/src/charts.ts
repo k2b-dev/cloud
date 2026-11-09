@@ -20,6 +20,7 @@ import {
   hbarLayout,
   histogram,
   line,
+  lineDetailsEnabled,
   niceLogTicks,
   niceStep,
   type ParetoOptions,
@@ -119,6 +120,8 @@ const labels = /* @__PURE__ */ i18n.define({
       q3: "Q3",
       whiskerLow: "Whisker low",
       whiskerHigh: "Whisker high",
+      forecastLow: "Lower forecast bound",
+      forecastHigh: "Upper forecast bound",
       delta: "Change",
       startShare: "Share of start",
       previousShare: "Share of previous step",
@@ -152,6 +155,8 @@ const labels = /* @__PURE__ */ i18n.define({
       q3: "Q3",
       whiskerLow: "Unterer Whisker",
       whiskerHigh: "Oberer Whisker",
+      forecastLow: "Untere Prognosegrenze",
+      forecastHigh: "Obere Prognosegrenze",
       delta: "Änderung",
       startShare: "Anteil am Start",
       previousShare: "Anteil am vorigen Schritt",
@@ -332,8 +337,9 @@ const formats = (input: ChartInput, locale: string): Formats => {
   // An unformatted x axis often counts years or steps, which compact notation would turn into 2.02K.
   const xTick = new Intl.NumberFormat(locale, { maximumSignificantDigits: 15, useGrouping: "min2" });
   const written = chartSeries(input).flatMap((series) => series.data.flatMap((point) => (typeof point.x === "string" ? [point.x] : [])));
-  if (!written.length) return { ...y, x: { tick: xFormat ? x.tick : (v) => xTick.format(v), value: x.value } };
   const dateFormat = xFormat && "date" in xFormat ? xFormat.date : undefined;
+  if (!written.length && !(input.kind === "line" && lineDetailsEnabled(input) && dateFormat))
+    return { ...y, x: { tick: xFormat ? x.tick : (v) => xTick.format(v), value: x.value } };
   const times = dateFormat ? dateFormat !== "day" : written.some((date) => date.length > 10);
   const seconds = dateFormat ? dateFormat === "second" : written.some((date) => date.length > 16);
   const clock: Intl.DateTimeFormatOptions = times ? { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) } : {};
@@ -371,7 +377,7 @@ const thinned = <T extends { label: string }>(data: T[], left: number, width = W
 export function chartLegend(
   input: ChartInput,
   locale: string,
-): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean }[] {
+): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean; seriesIndex?: number }[] {
   // These category renderers own their live legends, including prepared snapshots.
   if (input.kind === "hbar" || (input.kind === "bar" && input.series)) return [];
   if (input.kind === "bar")
@@ -383,6 +389,7 @@ export function chartLegend(
   return input.series.map((entry, index) => ({
     label: entry.label ?? `${t.series} ${index + 1}`,
     color: index % 8,
+    ...(input.kind === "line" && lineDetailsEnabled(input) ? { seriesIndex: index } : {}),
     ...(input.kind === "line" ? { style: input.series[index]?.style ?? (entry.role === "reference" ? "dashed" : "solid") } : {}),
     ...(entry.role === "reference" ? { reference: true } : {}),
   }));
@@ -548,7 +555,13 @@ export function chartRenderOptions(
         ...(input.kind === "line" ? { lineStyle: input.series[index]?.style ?? (entry.role === "reference" ? "dashed" : undefined) } : {}),
       }));
       const points = series.flatMap((entry) => entry.data);
-      const xAxis = referencedAxis(input, "x");
+      const calendarLine =
+        input.kind === "line" &&
+        lineDetailsEnabled(input) &&
+        (input.series.some((entry) => entry.data.some((point) => typeof point.x === "string")) ||
+          (input.xAxis?.format && "date" in input.xAxis.format));
+      // The detailed time renderer includes references without rounding their domain to decimal milliseconds.
+      const xAxis = calendarLine ? input.xAxis : referencedAxis(input, "x");
       const yAxis = referencedAxis(input, "y");
       const candidates = tickCandidates([...points.map((point) => point.x), ...chartReferenceValues(input, "x")], xAxis).filter(
         Number.isFinite,
@@ -566,7 +579,21 @@ export function chartRenderOptions(
           right: Math.max(16, Math.ceil(((format.x.tick(lastTick).length * CHAR) / 2 + 4) * factor)),
         },
       };
-      return input.kind === "line" ? { kind: "line", ...common, area: input.area, smooth: input.smooth } : { kind: "scatter", ...common };
+      return input.kind === "line"
+        ? {
+            kind: "line",
+            ...common,
+            area: input.area,
+            smooth: input.smooth,
+            step: input.step,
+            zero: input.zero,
+            legendValues: input.legendValues,
+            forecast: input.forecast ? { ...input.forecast, from: dateTime(input.forecast.from) } : undefined,
+            marker: input.marker ? { ...input.marker, at: dateTime(input.marker.at) } : undefined,
+            threshold: input.threshold,
+            ...(calendarLine ? { timeAxis: { timeZone: "UTC", locale } } : {}),
+          }
+        : { kind: "scatter", ...common };
     }
     case "pie":
     case "donut":
@@ -748,10 +775,11 @@ export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 export function chartTooltip(
   columns: ChartColumn[],
   row: ChartRow,
-  kind?: ChartInput["kind"],
+  kind?: ChartInput["kind"] | ChartInput,
 ): { title?: string; rows: { label: string; value: string }[] } {
   if (row.tooltip) return row.tooltip;
-  if (kind === "area")
+  const chartKind = typeof kind === "object" ? kind.kind : kind;
+  if (chartKind === "area")
     return {
       title: row.cells.x,
       rows: [{ label: row.cells.series ?? "", value: `${row.cells.percent ? `${row.cells.percent} · ` : ""}${row.cells.value ?? "—"}` }],
@@ -973,6 +1001,7 @@ export function chartRows(
             ? (field.formatted ?? valueFormat(value))
             : `${valueFormat(value)}${unit}`,
         );
+      else if (field.key === "forecastLow" || field.key === "forecastHigh") cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")
         cell(field.key, t[field.key], value, valueFormat(value));
@@ -995,7 +1024,12 @@ export function chartRows(
     add,
     columns: () => [...columns.values()],
     table: (): ChartTable => {
-      if (input.kind === "bar" && input.layout === "rows" && input.limit !== undefined) {
+      if (
+        input.kind === "bar" &&
+        input.layout === "rows" &&
+        input.limit !== undefined &&
+        rows.some((row) => row.values.rank !== undefined)
+      ) {
         const source = { ...input, limit: undefined };
         const all = chartRows(source, locale, options);
         const layout = rankedBarLayout({ data: source.data, title: source.title, subtitle: source.subtitle, valueFormat, locale });
@@ -1018,6 +1052,23 @@ export function chartRows(
           });
         }
         return all.table();
+      }
+      if (input.kind === "treemap") {
+        const total = input.data.reduce((sum, item) => sum + item.value, 0);
+        input.data.forEach((item, index) => {
+          if (item.value !== 0 || rows.some((row) => row.key === chartMarkKey({ index }))) return;
+          add({
+            role: "item",
+            index,
+            label: item.label,
+            anchor: [0, 0],
+            values: [
+              { key: "group", value: item.group },
+              { key: "value", value: 0 },
+              { key: "percent", value: 0, formatted: total ? percent.format(0) : "–" },
+            ],
+          });
+        });
       }
       return { columns: [...columns.values()], rows };
     },
