@@ -206,31 +206,30 @@ const ready = async (tab: Awaited<ReturnType<typeof open>>["tab"]) => {
   await tab.evaluate(() => document.fonts.ready);
 };
 
-test("SQL catalog additions keep exact frames and Pareto names across desktop, phone and dark", async () => {
-  const panels = sqlCatalogFixtures.map(sqlCatalogPanel);
-  const dashboard = { ...dashboardTestKinds, name: "SQL chart catalog", definition: { panels } };
-  const panelData = Object.fromEntries(sqlCatalogFixtures.map((fixture) => [fixture.kind, sqlCatalogData(fixture)]));
-  const view = await open({ dashboard, panelData, touch: true });
-  const errors = pageErrors(view.tab);
-  const good = (panel: (typeof panels)[number]) => {
-    const result = dashboardTestPanelResult(panel);
-    return { ...result, lastGood: { ...result.lastGood!, data: panelData[panel.id]! } };
-  };
-  const boxes = () =>
-    view.tab.locator(".pulse-dashboard__panel").evaluateAll((elements) =>
-      elements.map((element) => {
-        const box = element.getBoundingClientRect();
-        return { width: box.width, height: box.height };
-      }),
-    );
-  try {
-    for (const [width, dark] of [
-      [1440, false],
-      [390, false],
-      [390, true],
-    ] as const) {
-      await view.tab.setViewportSize({ width, height: 1000 });
-      await view.tab.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), dark);
+// Each variant draws all 17 kinds through every state within its own bounded test.
+for (const [width, dark] of [
+  [1440, false],
+  [390, false],
+  [390, true],
+] as const) {
+  test(`SQL catalog additions keep exact frames and Pareto names at ${width}px, dark=${dark}`, async () => {
+    const panels = sqlCatalogFixtures.map(sqlCatalogPanel);
+    const dashboard = { ...dashboardTestKinds, name: "SQL chart catalog", definition: { panels } };
+    const panelData = Object.fromEntries(sqlCatalogFixtures.map((fixture) => [fixture.kind, sqlCatalogData(fixture)]));
+    const view = await open({ dashboard, panelData, width, dark, touch: true });
+    const errors = pageErrors(view.tab);
+    const good = (panel: (typeof panels)[number]) => {
+      const result = dashboardTestPanelResult(panel);
+      return { ...result, lastGood: { ...result.lastGood!, data: panelData[panel.id]! } };
+    };
+    const boxes = () =>
+      view.tab.locator(".pulse-dashboard__panel").evaluateAll((elements) =>
+        elements.map((element) => {
+          const box = element.getBoundingClientRect();
+          return { width: box.width, height: box.height };
+        }),
+      );
+    try {
       await ready(view.tab);
       const charts = view.tab.locator(".pulse-dashboard__plot .k2b-chart");
       expect(await charts.count()).toBe(panels.length);
@@ -290,12 +289,12 @@ test("SQL catalog additions keep exact frames and Pareto names across desktop, p
       await ready(view.tab);
       expect(await charts.count()).toBe(panels.length);
       expect(await boxes()).toEqual(before);
+      expect(errors).toEqual([]);
+    } finally {
+      await view.tab.close();
     }
-    expect(errors).toEqual([]);
-  } finally {
-    await view.tab.close();
-  }
-}, 30_000);
+  }, 30_000);
+}
 
 test("saved bars keep flattened series, multiple values and duplicate rows in the actual panel view", async () => {
   const fixtures = savedChartFixtures.filter((fixture) => fixture.kind === "bar" && fixture.id);
