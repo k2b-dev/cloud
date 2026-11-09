@@ -462,6 +462,45 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-island-surface: var(--k2b-surface);
 }
 
+/* A quiet area, such as settings and administration, is flat: forms, lists,
+   tables, and framed sections keep their frame without a shadow. Only data
+   surfaces lift there, because their depth carries meaning: a chart, a
+   dashboard frame or panel, and a key figure. They stay flat in a flat layer
+   and inside another island. */
+:is(.k2b-ui, .k2b-ui *)[data-k2b-layer="quiet"],
+[data-k2b-layer="quiet"] .k2b-ui {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-island-surface: var(--k2b-surface);
+}
+
+.k2b-ui [data-k2b-layer="quiet"]
+  :is(.k2b-dashboard-frame, .k2b-dashboard-panel, .k2b-stat-cell, .k2b-chart-explorer):not(
+    :is(
+        [data-k2b-layer="flat"],
+        dialog,
+        [popover],
+        .k2b-app-workspace__sidebar,
+        .k2b-app-workspace__detail,
+        .k2b-detail-panel,
+        .k2b-bottom-sheet,
+        .k2b-floating-window,
+        .k2b-paper,
+        .k2b-resource-card,
+        .k2b-section[data-frame="line"],
+        .k2b-dashboard-panel,
+        .k2b-stat-cell
+      )
+      *
+  ) {
+  --k2b-island-shadow: var(--k2b-shadow-raised);
+  --k2b-island-surface: var(--k2b-surface-raised);
+}
+
+/* What a chart holds, such as its table view, stays flat. */
+.k2b-ui [data-k2b-layer="quiet"] .k2b-chart-explorer > * {
+  --k2b-island-shadow: 0 0 #0000;
+}
+
 .k2b-ui::selection,
 .k2b-ui ::selection {
   background-color: var(--k2b-selection);
@@ -3743,6 +3782,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section[data-size="md"][data-tone] > .k2b-section__header .k2b-section__icon {
   background: color-mix(in srgb, var(--k2b-section-tone) 12%, var(--k2b-surface));
+}
+
+/* A heading with an action keeps its title whole. When the row is too narrow
+   for the title, its count, and the action, the action moves to a second line
+   at the trailing edge before the title truncates. Only a title longer than
+   the row beside the icon still ends in an ellipsis. */
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: 0px;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.k2b-ui .k2b-section[data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: calc(1.25rem + 0.625rem);
+}
+
+.k2b-ui .k2b-section[data-size="md"][data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: calc(1.75rem + 0.75rem);
+}
+
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__copy {
+  flex: 1 0 auto;
+  max-width: calc(100% - var(--k2b-section-lead));
+}
+
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__actions {
+  margin-inline-start: auto;
 }
 
 /* A count is a quiet chip right after its title; zero reads as words. */
@@ -18504,13 +18570,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
-/* Bottom-edge modal presentation. PanelDialog owns the internal scroll layout. */
+/* Bottom-edge modal presentation. PanelDialog owns the internal scroll layout.
+ * `BottomSheet` moves the sheet itself (`data-sheet-motion`): its height is
+ * fixed while it is open, and it slides only by `--k2b-sheet-y`, a transform.
+ * `overflow: clip`, never `hidden`: a hidden box still scrolls, and focus
+ * scrolling it would cancel every downward slide. */
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame {
   top: auto;
   bottom: 0;
   left: 50%;
   margin: 0;
-  transform: translateX(-50%);
+  transform: translate3d(-50%, var(--k2b-sheet-y, 0px), 0);
   width: min(100%, 36rem);
   max-width: 100%;
   max-height: min(92dvh, var(--k2b-dialog-available-height));
@@ -18518,6 +18588,40 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
   overflow: clip;
   animation: k2b-bottom-sheet-enter 160ms ease-out;
+}
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
+  animation-name: none;
+}
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion][data-sheet-dragging] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* With detents the sheet has its full height from the first frame; half
+ * height only slides it down. The footer stays on the screen's edge. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-detents] {
+  height: min(92dvh, var(--k2b-dialog-available-height));
+}
+.k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport,
+.k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog {
+  height: 100%;
+}
+.k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+  position: relative;
+  z-index: 1;
+  background: var(--k2b-surface-elevated);
+  transform: translate3d(0, var(--k2b-sheet-footer-y, 0px), 0);
+}
+/* A sheet only dims what lies behind it, without blur, so a drag stays
+ * smooth; the dim follows the sheet below its lowest rest. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame:not(.is-adaptive)::backdrop {
+  backdrop-filter: none;
+  opacity: var(--k2b-sheet-dim, 1);
+}
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive::backdrop {
+    backdrop-filter: none;
+    opacity: var(--k2b-sheet-dim, 1);
+  }
 }
 .k2b-ui .k2b-bottom-sheet-viewport {
   max-height: min(92dvh, var(--k2b-dialog-available-height));
@@ -18586,6 +18690,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive .k2b-bottom-sheet__handle {
     display: none;
+  }
+  /* As a dialog, a sheet with detents takes its content's height and keeps its footer in place. */
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[data-sheet-detents] {
+    height: auto;
+  }
+  .k2b-ui .k2b-bottom-sheet-frame.is-adaptive[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+    transform: none;
   }
 }
 @keyframes k2b-sheet-dialog-enter {

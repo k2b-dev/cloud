@@ -200,6 +200,8 @@ type MailWorkspaceProps = {
   /** `null` under Automatic: only the browser knows the device scheme, and it is read on mount. */
   initialTheme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
+  /** Live dictation is set up and allowed for this person; a draft's editor then offers Dictate. */
+  liveDictation?: boolean;
   /** The mailboxes the sidebar lists, with this person's pins and hidden mailboxes. */
   sidebar: {
     mailboxes: MailSidebarMailbox[];
@@ -250,6 +252,12 @@ function createMailboxController(props: MailboxControllerProps) {
   const [requestPath, setRequestPath] = createSignal(props.requestPath);
   const [listCollapsed, setListCollapsed] = createSignal(props.initialPreferences.listCollapsed);
   const [detailsOpen, setDetailsOpen] = createSignal(props.initialPreferences.detailsOpen);
+  // A draft open inside the reader, from the URL on the server too, so the first render already knows full screen.
+  const [draftOpen, setDraftOpen] = createSignal(
+    Boolean(new URL(props.requestPath, "http://mail.invalid").searchParams.get("draft") && props.data.selectedConversationId),
+  );
+  // F7: full screen is this browser's last choice and never turns on by itself.
+  const [draftFullscreen, setDraftFullscreen] = createSignal(props.initialPreferences.draftFullscreen);
   const [toolbarActions, setToolbarActions] = createSignal(props.initialPreferences.toolbarActions);
   const [theme, setTheme] = createSignal<CloudTheme | null>(props.initialTheme);
   const [presence, setPresence] = createSignal<ConversationPresenceSnapshot>({
@@ -1323,7 +1331,36 @@ function createMailboxController(props: MailboxControllerProps) {
   /** Columns over the full main area: the list pane closes and the list takes the reader's place. */
   const columnsWide = () => !data.scheduledMode && !data.draftsMode && largeLayout().list === "full";
   const listPresence = createMemo(() => resolveMailListPresence(largeLayout(), hasSelection(), listCollapsed()));
-  const listOpen = () => listPresence().open;
+  /** Full screen moves the list and the details aside while a draft is open in the reader. */
+  const draftFullscreenActive = () => draftOpen() && draftFullscreen() && hasSelection();
+  const toggleDraftFullscreen = () => {
+    const next = !draftFullscreen();
+    setDraftFullscreen(next);
+    updateMailWorkspacePreferences({ draftFullscreen: next });
+  };
+  /**
+   * The open draft belongs in the URL, so reload, Back, and a shared link open it again. It replaces the entry: a
+   * draft is a state of the conversation, not a place of its own.
+   */
+  const setDraftParam = (draftId: string | null, options: { history?: boolean } = {}) => {
+    setDraftOpen(draftId !== null);
+    // Another conversation took the reader: its route is already on its way and carries no draft. The entry of the
+    // conversation that held the draft keeps its `?draft=`, so Back opens the draft again.
+    if (options.history === false) return;
+    const current = new URL(window.location.href);
+    if ((current.searchParams.get("draft") ?? null) === draftId) return;
+    if (draftId) current.searchParams.set("draft", draftId);
+    else current.searchParams.delete("draft");
+    window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
+    const path = `${current.pathname}${current.search}`;
+    const source = encodeRouteSource(path, data.listMode);
+    if (!workspaceTransition && sameRouteList(source, committedRouteSource)) {
+      committedRouteSource = source;
+      setRouteSource(source);
+    }
+    setRequestPath(path);
+  };
+  const listOpen = () => listPresence().open && !draftFullscreenActive();
   const listAway = () => listPresence().away;
   const listHideable = () => listPresence().hideable;
   // Who is responsible only matters where more than one person can be assigned.
@@ -2988,6 +3025,7 @@ function createMailboxController(props: MailboxControllerProps) {
       ...props.initialPreferences,
       listCollapsed: listCollapsed(),
       detailsOpen: detailsOpen(),
+      draftFullscreen: draftFullscreen(),
       toolbarActions: toolbarActions(),
       searchDiscovered: searchDiscovered(),
       searchHintDismissed: searchHintDismissed(),
@@ -3051,6 +3089,10 @@ function createMailboxController(props: MailboxControllerProps) {
     currentTab,
     data,
     detailsOpen,
+    draftFullscreen,
+    draftFullscreenActive,
+    toggleDraftFullscreen,
+    setDraftParam,
     exitHeadSelection,
     folderOnlyHint,
     hasSelection,
@@ -3622,6 +3664,11 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                     onReconcile={controller().reconcileWorkspace}
                     onReconcileAfterWrite={controller().requireWorkspaceReconcile}
                     onClose={controller().closeConversation}
+                    currentUserEmail={props.currentUserEmail}
+                    liveDictation={props.liveDictation}
+                    draftFullscreen={controller().draftFullscreen()}
+                    onToggleDraftFullscreen={controller().toggleDraftFullscreen}
+                    onDraftChange={controller().setDraftParam}
                   />
                 </Show>
               </>
@@ -3681,7 +3728,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
         <AppWorkspace.Detail
           id={MAIL_CONTEXT_DETAIL_ID}
           openOnChoice={false}
-          open={controller().detailsOpen() && controller().canShowDetails()}
+          open={controller().detailsOpen() && controller().canShowDetails() && !controller().draftFullscreenActive()}
           available={controller().canShowDetails()}
           onOpen={() => controller().setDetailsVisible(true, false)}
           onClose={() => controller().setDetailsVisible(false)}

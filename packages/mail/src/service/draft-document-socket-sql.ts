@@ -25,8 +25,9 @@ export const awaitDraftDocumentQuery = async <T>(
 /**
  * Socket callers can cancel pool acquisition and row-lock reads. Bound every
  * other statement too, including downstream projection queries, without
- * extending a shorter operator timeout. Await rollback before releasing the
- * reservation; a close never leaves a transaction behind a contested row.
+ * extending a shorter operator timeout. The transaction always ends with its
+ * own COMMIT or ROLLBACK before the reservation is released, so a stopped
+ * socket never leaves a transaction behind a contested row.
  */
 export const withDraftDocumentTransaction = async <T>(
   signal: AbortSignal | undefined,
@@ -37,13 +38,18 @@ export const withDraftDocumentTransaction = async <T>(
   const reserved = await sql.reserve({ signal });
   // A closed client socket does not wake a backend waiting on a row lock: it
   // notices only when it next writes. Cancel that backend's statement through
-  // the pool first, then close the reservation without closing the pool.
+  // the pool. The cancelled statement fails the transaction, and an explicit
+  // ROLLBACK ends it before the reservation goes back to the pool. Never close
+  // the reservation while the transaction runs: a close racing the driver's
+  // rollback left the backend open in an aborted transaction (#3039).
   let pid: number | undefined;
-  let closing: Promise<void> | undefined;
+  let cancelling: Promise<void> | undefined;
   const abort = () => {
-    const cancel = pid === undefined ? Promise.resolve() : sql`SELECT pg_cancel_backend(${pid})`.then(() => undefined);
-    // Ending the backend is the intent: "Connection closed" rejections are expected; the query reports the abort.
-    closing ??= cancel.catch(() => undefined).then(() => reserved.close({ timeout: 0 }).catch(() => undefined));
+    if (pid === undefined) return;
+    cancelling ??= sql`SELECT pg_cancel_backend(${pid})`.then(
+      () => undefined,
+      () => undefined,
+    );
   };
   signal.addEventListener("abort", abort, { once: true });
   try {
@@ -72,10 +78,12 @@ export const withDraftDocumentTransaction = async <T>(
     });
   } finally {
     signal.removeEventListener("abort", abort);
-    try {
-      await closing;
-    } finally {
-      reserved.release();
-    }
+    // A cancel still on its way could otherwise hit the next user of this connection.
+    await cancelling;
+    // After an abort the driver does not reliably end the failed transaction
+    // itself. End it here, so the pool never gets back a connection inside an
+    // open or aborted transaction; one that cannot even roll back is closed.
+    if (signal.aborted) await reserved`ROLLBACK`.catch(() => reserved.close({ timeout: 0 }).catch(() => undefined));
+    reserved.release();
   }
 };

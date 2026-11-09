@@ -796,6 +796,46 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     }
   });
 
+  test("a cursor flood waits as one message, keeps the socket open and lets the edit through", async () => {
+    const created = await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const sourceDoc = new Y.Doc();
+    sourceDoc.clientID = 555;
+    const source = new Awareness(sourceDoc);
+    try {
+      const cursorMessage = () => {
+        // Each state change raises the awareness clock, like every pointer move of a selection drag.
+        source.setLocalState({ cursor: null });
+        return {
+          type: "awarenessPublish",
+          payload: { docId: created.short_id, generation: base.generation, payload: toBase64(encodeAwarenessUpdate(source, [555])) },
+        };
+      };
+      // Far more than the 200 queued messages a socket accepts, sent at once with one edit in the middle.
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const bytes = await createDraftRevisionUpdate(
+        base.fresh.state,
+        { ...created.content, body: "Typed during a drag" },
+        { deadline: Date.now() + 5000 },
+      );
+      client.send({
+        type: "syncPublish",
+        payload: { docId: created.short_id, generation: base.generation, baseCursor: base.fresh.cursor, payload: toBase64(bytes) },
+      });
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const echo = await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
+      expect(echo.type === "syncPush" && echo.payload.updates[0]?.payload).toBe(toBase64(bytes));
+      await persistedBody(client, "Typed during a drag");
+      expect(client.messages.some((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE")).toBe(false);
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      source.destroy();
+      sourceDoc.destroy();
+    }
+  });
+
   test("app-session cookie uses the same trusted session and replay contract", async () => {
     await draft();
     const previous = activeSession;
