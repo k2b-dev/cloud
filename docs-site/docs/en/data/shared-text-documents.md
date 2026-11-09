@@ -363,7 +363,10 @@ A populated document or `initialCursor` also requires `initialGeneration`,
 the opaque token belonging to that snapshot, including historical deletes.
 
 The transport supplies an absolute WebSocket `url`, `encode(request)`,
-`decode(packet)`, and `closeError(code, reason)`. Encoding maps normalized
+`decode(packet)`, and `closeError(code, reason)`. A busy server or proxy is
+never terminal: close code 1013 (try again later) and a `BACKPRESSURE` error
+message reconnect with `reconnectDelayMs`, keep unsent input, and resend it
+after replay; `closeError` never sees 1013. Encoding maps normalized
 `replayRequest`, `syncPublish`, `awarenessPublish`, and optional event-stream
 `subscribe` requests to the application's protocol. Decoding validates unknown
 JSON and maps it to `SharedTextProviderMessage`, or returns null to ignore it.
@@ -641,6 +644,8 @@ only against the editor's existing text root. Invalid input throws
 publish its returned bytes when non-null.
 
 The browser publishes only its local awareness state, including on reconnect.
+It sends a changed cursor at once and then at most one frame with the latest
+state per 100 ms, so a selection drag cannot flood the server.
 Return the connection's peer ID in the replay-ready response and include it
 as the origin of cursor updates, so the browser can skip its own rewritten
 echo. Remote timeout removals stay local. A new connection receives a fresh

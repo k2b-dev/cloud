@@ -482,7 +482,7 @@ export async function openMailDraftDocumentClient(options: {
         encode: (packet) => packet,
         decode: (packet) => decodeMailDraftDocumentMessage(packet, options.draft.id),
         closeError: (code, reason) =>
-          [1008, 1009, 1013, 4401, 4403].includes(code) ? { code: "ACCESS_DENIED", message: reason || t().permission } : null,
+          [1008, 1009, 4401, 4403].includes(code) ? { code: "ACCESS_DENIED", message: reason || t().permission } : null,
       },
       reconnectDelayMs: (attempt) => Math.min(1_000 * 2 ** Math.min(attempt, 5), 30_000),
       generationMessages: { changed: t().generation, restored: t().frozen },

@@ -1,0 +1,6 @@
+### A busy server ended shared editing with "Connection closed"
+
+- **What happened:** Notebooks often stopped editing with "Not saved. Connection closed" and offered only the device copy, although a reconnect would have saved every edit.
+- **Root cause:** The browser sent one cursor frame per selection change, about 60 per second while dragging a selection, and the Notebooks socket checks access and publishes to the broker for each frame. When 200 frames waited, the server closed with `BACKPRESSURE` and code 1013, as the gateway does when its buffer fills. The shared text provider and both adapters treated that overload as terminal, so the editor stopped instead of reconnecting. Production logs did not show which overload fired; the Notebooks socket now logs every shed connection.
+- **Error class:** A transient "try again later" signal was mapped to a terminal session error, and an unthrottled client stream created the overload.
+- **Guard:** `shared-text-provider.test.ts` proves that `BACKPRESSURE` and close 1013 reconnect and resend unsent input even when an adapter lists them as terminal, and that a burst of cursor moves sends one frame per interval. The Notebooks provider test covers the server and gateway close.
