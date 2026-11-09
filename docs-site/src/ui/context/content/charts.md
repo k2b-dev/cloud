@@ -127,6 +127,11 @@ data, semantic tones, and explicit threshold colors stay intact. Existing
 renderer calls retain their historical bytes, including the old embedded
 palette, until you opt into the conversion.
 
+Notebooks applies this conversion to its PDF figures and separate browser
+print copy. Notes share images also use the UI palette before rasterization.
+Interactive charts and snapshots in hosts that load the chart stylesheet keep
+their existing SVG bytes.
+
 ```ts
 import { chartSvgWithUiPalette, toSvg } from "@k2b/ui/charts/core";
 
