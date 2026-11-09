@@ -272,3 +272,55 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("typed and pasted lists split into one recipient each and leave only the invalid part as marked text", async () => {
+    const dom = createDomTestHarness();
+    const { default: MailRecipientInput } = await import("./MailRecipientInput");
+    const { MailContactDirectoryProvider } = await import("./mail-contact-directory-context");
+    let recipients: string[] = [];
+    delegateEvents(["input", "keydown", "paste"]);
+    const dispose = render(() => {
+      const [value, setValue] = createSignal<string[]>([]);
+      return (
+        <MailContactDirectoryProvider value={{ ...DEFAULT_MAIL_CONTACT_DIRECTORY, suggest: null }}>
+          <MailRecipientInput
+            placeholder="To"
+            value={value}
+            onChange={(next) => {
+              recipients = next;
+              setValue(next);
+            }}
+          />
+        </MailContactDirectoryProvider>
+      );
+    }, dom.root);
+    const input = () => dom.root.querySelector<HTMLInputElement>("input")!;
+    try {
+      input().value = 'a@x.de; "Kolb, Bernd" <B@Y.de>, bernd@firma';
+      input().dispatchEvent(new Event("input", { bubbles: true }));
+      input().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(recipients).toEqual(["a@x.de", "Kolb, Bernd <b@y.de>"]);
+      expect(input().value).toBe("bernd@firma");
+      expect(input().getAttribute("aria-invalid")).toBe("true");
+      expect(dom.root.textContent).toContain("Enter a valid email address.");
+
+      input().value = "";
+      input().dispatchEvent(new Event("input", { bubbles: true }));
+      const paste = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, "clipboardData", { value: { getData: () => "c@x.de\nDora <d@x.de>\r\ne@x.de" } });
+      input().dispatchEvent(paste);
+      expect(paste.defaultPrevented).toBe(true);
+      expect(recipients).toEqual(["a@x.de", "Kolb, Bernd <b@y.de>", "c@x.de", "Dora <d@x.de>", "e@x.de"]);
+      expect(input().value).toBe("");
+
+      // A single pasted address stays ordinary text input.
+      const single = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(single, "clipboardData", { value: { getData: () => "f@x.de" } });
+      input().dispatchEvent(single);
+      expect(single.defaultPrevented).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });

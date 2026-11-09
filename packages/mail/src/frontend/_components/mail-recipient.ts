@@ -28,17 +28,49 @@ export const parseMailRecipients = (values: string[]): MailAddress[] => {
   return [...recipients.values()];
 };
 
-export const commitMailRecipient = (values: string[], raw: string, index: number | null = null): string[] | null => {
-  const recipient = parseMailRecipient(raw);
-  if (!recipient) return null;
-  const formatted = formatMailRecipient(recipient);
+/**
+ * Splits pasted or typed text at commas, semicolons, and line breaks. A comma inside a quoted name
+ * (`"Kolb, Bernd" <b@example.test>`) or inside angle brackets stays part of its address.
+ */
+export const splitMailRecipients = (raw: string): string[] => {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  let angled = false;
+  for (const character of raw) {
+    if (character === '"' && !angled) quoted = !quoted;
+    else if (character === "<" && !quoted) angled = true;
+    else if (character === ">" && !quoted) angled = false;
+    if (!quoted && !angled && (character === "," || character === ";" || character === "\n" || character === "\r")) {
+      if (current.trim()) parts.push(current.trim());
+      current = "";
+    } else current += character;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+};
+
+/**
+ * Adds every valid address in `raw`, or replaces the pill at `index` with the first one. Text that is not an
+ * address comes back as `rest`, so the field keeps it for correction instead of dropping it.
+ */
+export const commitMailRecipients = (values: string[], raw: string, index: number | null = null): { values: string[]; rest: string } => {
+  const parts = splitMailRecipients(raw);
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const part of parts) {
+    const recipient = parseMailRecipient(part);
+    if (recipient) valid.push(formatMailRecipient(recipient));
+    else invalid.push(part);
+  }
+  if (valid.length === 0) return { values, rest: invalid.join(", ") };
   const candidates =
-    index === null ? [...values, formatted] : values.map((value, candidateIndex) => (candidateIndex === index ? formatted : value));
-  return parseMailRecipients(candidates).map(formatMailRecipient);
+    index === null ? [...values, ...valid] : values.flatMap((value, candidateIndex) => (candidateIndex === index ? valid : [value]));
+  return { values: parseMailRecipients(candidates).map(formatMailRecipient), rest: invalid.join(", ") };
 };
 
 export const shouldCommitMailRecipient = (value: string, key: string): boolean => {
   if (!value.trim()) return false;
-  if (key === "Enter" || key === ",") return true;
+  if (key === "Enter" || key === "," || key === ";") return true;
   return key === " " && parseMailRecipient(value) !== null;
 };

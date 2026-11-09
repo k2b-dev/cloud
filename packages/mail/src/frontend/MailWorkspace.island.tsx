@@ -1361,6 +1361,12 @@ function createMailboxController(props: MailboxControllerProps) {
     setNewMessageSummary({ subject: "", to: [] });
     setDraftParam(null, options);
   };
+  /** Another draft takes the new message's place in the reader and in the URL, such as the rest of a shared draft. */
+  const openNewMessageDraft = (draftId: string) => {
+    setNewMessage({ draftId, fresh: false });
+    setNewMessageSummary({ subject: "", to: [] });
+    setDraftParam(draftId);
+  };
   // Back, Forward, and every other committed route decide: `?draft=` without a conversation is the new message.
   createEffect(
     on(
@@ -3145,6 +3151,7 @@ function createMailboxController(props: MailboxControllerProps) {
     newMessageSummary,
     setNewMessageSummary,
     closeNewMessage,
+    openNewMessageDraft,
     exitHeadSelection,
     folderOnlyHint,
     hasSelection,
@@ -3725,6 +3732,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                     newMessage={controller().newMessage()}
                     onNewMessageSummary={controller().setNewMessageSummary}
                     onNewMessageClose={() => controller().closeNewMessage()}
+                    onNewMessageOpenDraft={(draftId) => controller().openNewMessageDraft(draftId)}
                   />
                 </Show>
               </>

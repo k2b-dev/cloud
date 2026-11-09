@@ -16,7 +16,9 @@ import {
   isPanesItemVisible,
   NoticeCard,
   type PanesLayout,
+  Placeholder,
   prompts,
+  formatShortcut,
   ScrollArea,
   Select,
   SplitButton,
@@ -55,7 +57,8 @@ import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
 import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
 import MailInlineSignature from "./MailInlineSignature";
-import MailRecipientInput from "./MailRecipientInput";
+import MailRecipientInput, { type MailRecipientField } from "./MailRecipientInput";
+import type { MailTextEditorActions } from "./MailTextEditor";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
@@ -78,6 +81,8 @@ import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 class ComposeSafetyCancelled extends Error {}
 class ComposeSafetyAttachmentRequested extends Error {}
+/** A recipient field still holds text that is no address; the field itself marks it and holds the focus. */
+class ComposeRecipientPending extends Error {}
 
 const intentIcon = (intent: DraftIntent): string =>
   intent === "reply"
@@ -170,8 +175,13 @@ export default function MailComposer(props: {
   const [identityId, setIdentityId] = createSignal(initialContent.senderIdentityId);
   const [quoteSource, setQuoteSource] = createSignal(initialContent.quoteSource ?? null);
   const [signatureTemplateId, setSignatureTemplateId] = createSignal(initialContent.signatureTemplateId ?? null);
-  // Keep the button's presence fixed from the initial snapshot, including an unavailable shared signature.
-  const signatureChoiceVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);
+  // Once shown, the button stays, including for an unavailable shared signature, so "No signature" never moves it away.
+  // A signature that arrives later (shared input, a recovered copy) shows it too, so the person can remove it.
+  const [signatureChoiceSeen, setSignatureChoiceSeen] = createSignal(Boolean(initialContent.signatureTemplateId));
+  createEffect(() => {
+    if (signatureTemplateId()) setSignatureChoiceSeen(true);
+  });
+  const signatureChoiceVisible = () => props.signatures.templates.length > 0 || signatureChoiceSeen();
   const senderDefaultSignatureId = () => defaultSignatureTemplateId(props.signatures, props.identities, identityId());
   const selectedIdentity = () => verifiedIdentities().find((identity) => identity.id === identityId()) ?? null;
   const identityMenuItems = createMemo<DropdownItem[]>(() =>
@@ -321,8 +331,19 @@ export default function MailComposer(props: {
     draftSession.allowNavigation();
     navigateTo(href);
   };
+  /** A popout that sent, discarded, or saved its draft closes; a browser that keeps it open shows why it stays. */
+  const [popoutDone, setPopoutDone] = createSignal<Exclude<Parameters<MailComposerHost["leave"]>[0], "moved"> | null>(null);
+  const closePopout = (outcome: Exclude<Parameters<MailComposerHost["leave"]>[0], "moved">) => {
+    draftSession.allowNavigation();
+    window.close();
+    // Only a window that a script opened may close itself; any other one stays and says so.
+    setTimeout(() => {
+      if (!window.closed && !disposed) setPopoutDone(outcome);
+    }, 100);
+  };
   /** Back where the person came from: the conversation that holds the draft, or the compose page's return place. */
   const leaveBack = (outcome: Parameters<MailComposerHost["leave"]>[0]) => {
+    if (!props.host && props.popout && outcome !== "moved") return closePopout(outcome);
     if (!props.host) return leaveTo(props.returnHref);
     draftSession.allowNavigation();
     props.host.leave(outcome);
@@ -468,7 +489,17 @@ export default function MailComposer(props: {
       (isShared() ? Boolean(shared() && !sharedState()?.terminal) : Boolean(lease()) || !draft() || materializedLeasePending()),
   );
   const editable = createMemo(() => canEditDraft() && composerTransition.active() === null);
+  /**
+   * A short pause, not a read-only draft: the draft opens, sends, or waits for a dialog. Text and fields keep the
+   * caret, the focus, a phone keyboard, and their toolbar; only input waits.
+   */
+  const paused = createMemo(
+    () => !editable() && verifiedIdentities().length > 0 && (canEditDraft() || (status() === "preparing" && !sharedState()?.terminal)),
+  );
+  /** The draft cannot be edited here at all: read-only, without a sender, or ended. */
+  const fieldsDisabled = () => !editable() && !paused();
   let editorController: TextEditorController | undefined;
+  let editorActions: MailTextEditorActions | undefined;
   /** A click into the draft's empty room below the text puts the caret at the end of the text. */
   const focusEditorAtEnd = () => {
     const view = editorController?.view;
@@ -476,13 +507,25 @@ export default function MailComposer(props: {
     view.dispatch({ selection: { anchor: view.state.doc.length } });
     view.focus();
   };
-  const focusFreshEditorAtStart = (element: TextEditorController) => {
+  const [readyEditor, setReadyEditor] = createSignal<TextEditorController>();
+  const editorReady = (element: TextEditorController, actions: MailTextEditorActions) => {
     editorController = element;
-    // A new draft, and a draft someone opened inside its conversation, start with the caret in the text.
-    if ((!props.initialSeed && !props.host) || initialEditorFocusApplied) return;
+    editorActions = actions;
+    setReadyEditor(element);
+  };
+  // What had the focus when the draft appeared, usually the Reply or Compose button that opened it.
+  const focusAtOpen = typeof document === "undefined" ? null : document.activeElement;
+  // A new draft, and a draft someone opened inside its conversation, start with the caret in the text once the
+  // editor is ready AND the draft takes input; an opening lease can arrive after the editor.
+  createEffect(() => {
+    const element = readyEditor();
+    if (!element || initialEditorFocusApplied || !editable() || (!props.initialSeed && !props.host)) return;
+    initialEditorFocusApplied = true;
     queueMicrotask(() => {
-      if (initialEditorFocusApplied || disposed || !editable() || !element.view.dom.isConnected) return;
-      initialEditorFocusApplied = true;
+      if (disposed || !element.view.dom.isConnected) return;
+      // A place the person chose meanwhile keeps the focus.
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== focusAtOpen && active.isConnected) return;
       // A new message inside the flow starts where it begins: with its recipients.
       const recipients =
         props.host && composerIntent() === "new" && to().length === 0
@@ -491,7 +534,7 @@ export default function MailComposer(props: {
       if (recipients) recipients.focus();
       else focusMailComposerEditorAtStart(element);
     });
-  };
+  });
   const attachments = createMailComposerAttachmentManager({
     mailboxId: props.mailboxId,
     draft,
@@ -503,7 +546,10 @@ export default function MailComposer(props: {
     serializeDraftMutation,
     transition: composerTransition,
     format,
-    setBody,
+    insertText: (text) => {
+      if (editorActions) editorActions.appendText(text);
+      else setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${text}`);
+    },
     isDisposed: () => disposed,
     locale,
   });
@@ -533,6 +579,23 @@ export default function MailComposer(props: {
     if (files.length > 0 && editable() && !disposed) void attachments.addFiles(files);
   };
   const [surface, setSurface] = createSignal<HTMLElement>();
+  /** Ctrl+Enter (⌘+Enter on Apple) sends from every field of the draft, with the same checks as the Send button. */
+  const sendShortcutLabel = () => formatShortcut("mod+enter", { locale: locale() }).label;
+  createEffect(() => {
+    const element = surface();
+    if (!element) return;
+    const sendOnShortcut = (event: KeyboardEvent) => {
+      // A composing IME owns Enter; Safari reports the key that ends a composition as keyCode 229.
+      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void sendDraft({});
+    };
+    // Capture runs before the editor's own Mod-Enter binding and before a field's Enter handling.
+    element.addEventListener("keydown", sendOnShortcut, true);
+    onCleanup(() => element.removeEventListener("keydown", sendOnShortcut, true));
+  });
 
   const addCalendarInvitation = async () => {
     if (!editable() || !props.calendarIntegrationAvailable)
@@ -784,7 +847,18 @@ export default function MailComposer(props: {
     }
   });
 
+  /** Recipient fields in screen order; Send first takes what each one still holds as typed text. */
+  const recipientFields = new Set<MailRecipientField>();
+  const registerRecipientField = (field: MailRecipientField) => {
+    recipientFields.add(field);
+    return () => recipientFields.delete(field);
+  };
+  const commitRecipientFields = () => {
+    for (const field of recipientFields) if (!field.commitPending()) throw new ComposeRecipientPending();
+  };
+
   const validateDelivery = () => {
+    commitRecipientFields();
     if (uploads().length > 0) throw new Error(t().finishUploadsBeforeSend);
     if (to().length + cc().length + bcc().length === 0) throw new Error(t().addRecipient);
     if (!body().trim() && !(draft()?.attachments.length ?? props.initialSeed?.attachments.length ?? 0)) {
@@ -911,7 +985,7 @@ export default function MailComposer(props: {
         shared()?.freeze();
         return;
       }
-      if (props.host) return leaveBack("sent");
+      if (props.host || props.popout) return leaveBack("sent");
       const pendingConversationId = command.result.conversationId;
       leaveTo(
         !scheduled && attempt.request.undoSeconds > 0 && typeof pendingConversationId === "string"
@@ -997,6 +1071,8 @@ export default function MailComposer(props: {
     const preparation = new AbortController();
     deliveryPreparationController = preparation;
     try {
+      // Before the retry check: a recipient typed since the failed attempt changes the message.
+      commitRecipientFields();
       const previousAttempt = lastDeliveryAttempt;
       const reusable =
         Boolean(send.error()) &&
@@ -1012,7 +1088,7 @@ export default function MailComposer(props: {
       }
     } catch (error) {
       if (error instanceof ComposeSafetyAttachmentRequested) attachAfterDeliveryReview = true;
-      else if (!(error instanceof ComposeSafetyCancelled)) {
+      else if (!(error instanceof ComposeSafetyCancelled) && !(error instanceof ComposeRecipientPending)) {
         await prompts.error(error instanceof Error ? error.message : t().messageNotReadySend);
       }
     } finally {
@@ -1164,6 +1240,17 @@ export default function MailComposer(props: {
     mutation: async ({ quiet }, { abortSignal }) => {
       if (uploadsInProgress()) throw new Error(t().cancelUploadsBeforeDiscard);
       if (!draft()) {
+        // A new message that never reached the server lives only on this device: typed input goes for good.
+        const changed = serializeMailDraftContent(content()) !== initialSerializedContent;
+        const confirmed =
+          quiet ||
+          !changed ||
+          (await prompts.confirm(t().discardUnsavedDescription, {
+            title: t().discardDraftQuestion,
+            confirmText: t().discardDraft,
+            variant: "danger",
+          }));
+        if (!confirmed || abortSignal.aborted) return false;
         clearInitialSeed();
         return true;
       }
@@ -1567,7 +1654,8 @@ export default function MailComposer(props: {
     ];
     // Esc leaves full screen first, then collapses the draft. A menu, a completion list, or a dialog takes Esc first.
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      // Safari ends an IME composition with Escape and reports that key as keyCode 229, not as composing.
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       if (host.fullscreen()) host.toggleFullscreen();
       else void collapse();
@@ -1610,11 +1698,13 @@ export default function MailComposer(props: {
           <span class="mail-inline-draft-field-label">{t().to}</span>
           <div class="mail-inline-draft-recipients">
             <MailRecipientInput
+              register={registerRecipientField}
               mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
               placeholder={t().recipients}
               value={to}
               onChange={setTo}
-              disabled={!editable()}
+              disabled={fieldsDisabled()}
+              readOnly={paused()}
             />
           </div>
           <Show when={!showCc()}>
@@ -1686,7 +1776,8 @@ export default function MailComposer(props: {
               value={subject}
               onValueChange={setSubject}
               maxLength={998}
-              disabled={!editable()}
+              disabled={fieldsDisabled()}
+              readOnly={paused()}
             />
           </span>
         </div>
@@ -1694,19 +1785,23 @@ export default function MailComposer(props: {
           <div class="mail-inline-draft-rows">
             <span class="mail-inline-draft-field-label">Cc</span>
             <MailRecipientInput
+              register={registerRecipientField}
               mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
               placeholder={t().ccRecipients}
               value={cc}
               onChange={setCc}
-              disabled={!editable()}
+              disabled={fieldsDisabled()}
+              readOnly={paused()}
             />
             <span class="mail-inline-draft-field-label">Bcc</span>
             <MailRecipientInput
+              register={registerRecipientField}
               mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
               placeholder={t().bccRecipients}
               value={bcc}
               onChange={setBcc}
-              disabled={!editable()}
+              disabled={fieldsDisabled()}
+              readOnly={paused()}
             />
           </div>
         </Show>
@@ -1817,6 +1912,7 @@ export default function MailComposer(props: {
           body={body}
           onBodyInput={setBody}
           editable={editable}
+          paused={paused}
           completions={slashCompletion}
           panes={currentComposerPanes}
           onPanesChange={updateComposerPanes}
@@ -1824,7 +1920,7 @@ export default function MailComposer(props: {
           previewError={previewError}
           previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
           onRetryPreview={retryPreview}
-          onEditorReady={focusFreshEditorAtStart}
+          onEditorReady={editorReady}
           liveDictation={props.liveDictation}
           onAttachImages={() => void chooseAttachments()}
           onDroppedImages={(files) => {
@@ -1958,6 +2054,7 @@ export default function MailComposer(props: {
             loading={send.loading()}
             disabled={!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0}
             menuLabel={t().moreSendOptions}
+            tooltip={`${t().send} (${sendShortcutLabel()})`}
             items={[
               { label: t().saveAsDraft, icon: "ti ti-device-floppy", action: () => void leaveComposer() },
               { label: t().sendLater, icon: "ti ti-clock", action: () => void schedule() },
@@ -2174,11 +2271,13 @@ export default function MailComposer(props: {
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
                 <MailRecipientInput
+                  register={registerRecipientField}
                   mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
                   placeholder={t().recipients}
                   value={to}
                   onChange={setTo}
-                  disabled={!editable()}
+                  disabled={fieldsDisabled()}
+                  readOnly={paused()}
                 />
               </div>
               <Show when={!showCc()}>
@@ -2192,27 +2291,38 @@ export default function MailComposer(props: {
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Cc</span>
               <MailRecipientInput
+                register={registerRecipientField}
                 mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
                 placeholder={t().ccRecipients}
                 value={cc}
                 onChange={setCc}
-                disabled={!editable()}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
               />
             </div>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Bcc</span>
               <MailRecipientInput
+                register={registerRecipientField}
                 mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
                 placeholder={t().bccRecipients}
                 value={bcc}
                 onChange={setBcc}
-                disabled={!editable()}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
               />
             </div>
           </Show>
           <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2 lg:col-span-2">
             <span class="text-dimmed">{t().subject}</span>
-            <TextInput aria-label={t().subject} value={subject} onValueChange={setSubject} maxLength={998} disabled={!editable()} />
+            <TextInput
+              aria-label={t().subject}
+              value={subject}
+              onValueChange={setSubject}
+              maxLength={998}
+              disabled={fieldsDisabled()}
+              readOnly={paused()}
+            />
           </div>
         </div>
 
@@ -2224,6 +2334,7 @@ export default function MailComposer(props: {
           body={body}
           onBodyInput={setBody}
           editable={editable}
+          paused={paused}
           completions={slashCompletion}
           panes={currentComposerPanes}
           onPanesChange={updateComposerPanes}
@@ -2231,7 +2342,7 @@ export default function MailComposer(props: {
           previewError={previewError}
           previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
           onRetryPreview={retryPreview}
-          onEditorReady={focusFreshEditorAtStart}
+          onEditorReady={editorReady}
           liveDictation={props.liveDictation}
           onAttachImages={() => void chooseAttachments()}
           onDroppedImages={(files) => {
@@ -2293,6 +2404,7 @@ export default function MailComposer(props: {
           loading={send.loading()}
           disabled={!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0}
           menuLabel={t().moreSendOptions}
+          tooltip={`${t().send} (${sendShortcutLabel()})`}
           items={[
             { label: t().saveAsDraft, icon: "ti ti-device-floppy", action: () => void leaveComposer() },
             { label: t().sendLater, icon: "ti ti-clock", action: () => void schedule() },
@@ -2374,6 +2486,23 @@ export default function MailComposer(props: {
           </IconButton>
         </Tooltip.Anchor>
       </footer>
+      {/* A popout that the browser keeps open after Send or Discard says what happened instead of loading the mailbox. */}
+      <Show when={popoutDone()}>
+        {(outcome) => (
+          <div class="absolute inset-0 z-40 flex items-center justify-center bg-[var(--ui-surface)] p-6">
+            <Placeholder
+              icon={outcome() === "sent" ? "ti ti-send" : outcome() === "discarded" ? "ti ti-trash" : "ti ti-device-floppy"}
+              title={outcome() === "sent" ? t().messageQueued : outcome() === "discarded" ? t().popoutDiscarded : t().popoutSaved}
+              description={t().popoutCloseHint}
+              action={
+                <Button variant="secondary" type="button" onClick={() => window.close()}>
+                  {t().closeWindow}
+                </Button>
+              }
+            />
+          </div>
+        )}
+      </Show>
     </div>
   );
 }

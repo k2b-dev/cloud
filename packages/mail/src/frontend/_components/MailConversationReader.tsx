@@ -214,6 +214,8 @@ export default function MailConversationReader(props: {
   newMessage?: { draftId: string; initialDraft?: MailDraft; fresh: boolean } | null;
   onNewMessageSummary?: (value: { subject: string; to: string[] }) => void;
   onNewMessageClose?: () => void;
+  /** Another draft takes the new message's place, such as the saved rest of a shared draft. */
+  onNewMessageOpenDraft?: (draftId: string) => void;
 }) {
   const locale = useLocale();
   let seedStorage: Storage | undefined;
@@ -1733,7 +1735,7 @@ export default function MailConversationReader(props: {
                             // The sent message arrives as a conversation; a discarded draft leaves Drafts.
                             if (outcome !== "closed") void props.onReconcileAfterWrite().catch(() => undefined);
                           },
-                          openDraft: () => props.onNewMessageClose?.(),
+                          openDraft: (draftId) => props.onNewMessageOpenDraft?.(draftId),
                         }}
                       />
                     </div>

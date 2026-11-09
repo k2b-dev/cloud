@@ -58,6 +58,11 @@ export type TextEditorProps = {
   mode?: TextEditorMode;
   onModeChange?: (mode: TextEditorMode) => void;
   readOnly?: boolean;
+  /**
+   * A short pause in editing, such as while the host sends or saves: input waits, while the caret, the focus, a phone
+   * keyboard, and the toolbar (disabled) stay in place. Use `readOnly` for text that cannot be edited.
+   */
+  locked?: boolean;
   loading?: boolean;
   placeholder?: string;
   extensions?: Extension;
@@ -392,7 +397,8 @@ export function TextEditor(props: TextEditorProps) {
   let mount!: HTMLDivElement;
   let editor: TextEditorController | undefined;
   // The view is read-only while it loads or recovers, too; dictation only runs where words can land.
-  const dictationWritable = () => !props.readOnly && !props.loading && ready() && recovery() === undefined && mode() !== "plain";
+  const dictationWritable = () =>
+    !props.readOnly && !props.locked && !props.loading && ready() && recovery() === undefined && mode() !== "plain";
   const dictation = createDictation({
     source: {
       start: (options) => props.dictation!.source.start(options),
@@ -410,7 +416,7 @@ export function TextEditor(props: TextEditorProps) {
   createEffect(on(dictationScope, () => dictation.end(), { defer: true }));
   const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
   const menuBlocked = () => !!props.loading || !ready() || recovery() !== undefined;
-  const blocked = () => !!props.readOnly || menuBlocked();
+  const blocked = () => !!props.readOnly || !!props.locked || menuBlocked();
   const updateCheck = () => {
     const issue =
       mode() === "plain"
@@ -1075,7 +1081,8 @@ export function TextEditor(props: TextEditorProps) {
   });
   createEffect(() => {
     const readOnly = !!props.readOnly || !!props.loading || recovery() !== undefined;
-    if (ready()) untrack(() => editor?.setReadOnly(readOnly));
+    const locked = !!props.locked;
+    if (ready()) untrack(() => editor?.setReadOnly(readOnly, locked));
   });
   createEffect(() => {
     documentRevision();

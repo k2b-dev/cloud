@@ -2,9 +2,10 @@ import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { Button, type Completion, Panes, type PanesItem, type PanesLayout, Placeholder, useLocale } from "@k2b/ui";
 import type { TextEditorController } from "@k2b/ui/text-editor";
 import type { Accessor, JSX } from "solid-js";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import type { ComposePreview } from "../../contracts";
 import type { MailDraftDocumentClient, MailSharedDraftState } from "../../lib/draft-document-client";
+import type { MailTextEditorActions } from "./MailTextEditor";
 import MailFormattingWarnings from "./MailFormattingWarnings";
 import { mailComposerMessages } from "./mail-composer-messages";
 
@@ -20,6 +21,8 @@ export default function MailComposerEditor(props: {
   body: Accessor<string>;
   onBodyInput: (value: string) => void;
   editable: Accessor<boolean>;
+  /** Input waits for a moment; the text keeps its caret, focus, and toolbar. */
+  paused?: Accessor<boolean>;
   completions: Accessor<Completion[]>;
   panes: Accessor<PanesLayout>;
   onPanesChange: (value: PanesLayout) => void;
@@ -27,7 +30,7 @@ export default function MailComposerEditor(props: {
   previewError: Accessor<string | undefined>;
   previewPending: Accessor<boolean>;
   onRetryPreview: () => void;
-  onEditorReady: (editor: TextEditorController) => void;
+  onEditorReady: (editor: TextEditorController, actions: MailTextEditorActions) => void;
   onAttachImages?: () => void;
   onDroppedImages?: (files: File[]) => void;
   history?: () => JSX.Element;
@@ -83,6 +86,7 @@ export default function MailComposerEditor(props: {
                 body={props.body}
                 onBodyInput={props.onBodyInput}
                 editable={props.editable}
+                paused={props.paused}
                 completions={props.completions}
                 liveDictation={props.liveDictation}
                 toolbar={props.inline ? props.inline.formatting : undefined}
@@ -139,16 +143,6 @@ export default function MailComposerEditor(props: {
       </Show>
     </div>
   );
-  const items = createMemo<PanesItem[]>(() => [
-    {
-      id: "editor",
-      title: t().write,
-      icon: "ti ti-pencil",
-      render: () => <div class="h-full min-h-0 overflow-hidden">{writeSurface()}</div>,
-    },
-    ...(props.format() === "markdown" ? [{ id: "preview", title: t().preview, icon: "ti ti-eye", render: previewSurface }] : []),
-    ...(props.history ? [{ id: "history", title: t().history, icon: "ti ti-history", render: props.history }] : []),
-  ]);
 
   if (props.inline) {
     const inline = props.inline;
@@ -165,9 +159,40 @@ export default function MailComposerEditor(props: {
     );
   }
 
+  // Panes show only for Markdown or a history. Switching the format moves this one element between both layouts, so
+  // the editor keeps its text, caret, and undo history instead of starting over.
+  const [layoutPanes, setLayoutPanes] = createSignal(usesPanes());
+  let write!: HTMLDivElement;
+  const writeElement = (
+    <div ref={write} class="h-full overflow-hidden" classList={{ "min-h-0": layoutPanes(), "min-h-72": !layoutPanes() }}>
+      {writeSurface()}
+    </div>
+  );
+  createEffect(
+    on(
+      usesPanes,
+      (next) => {
+        // Moving an element drops its focus; the text that had it gets it back in the new place.
+        const focused = write.contains(document.activeElement);
+        setLayoutPanes(next);
+        if (focused) queueMicrotask(() => write.querySelector<HTMLElement>(".cm-content")?.focus());
+      },
+      { defer: true },
+    ),
+  );
+  const items = createMemo<PanesItem[]>(() => [
+    {
+      id: "editor",
+      title: t().write,
+      icon: "ti ti-pencil",
+      render: () => writeElement,
+    },
+    ...(props.format() === "markdown" ? [{ id: "preview", title: t().preview, icon: "ti ti-eye", render: previewSurface }] : []),
+    ...(props.history ? [{ id: "history", title: t().history, icon: "ti ti-history", render: props.history }] : []),
+  ]);
   return (
     <div class="min-h-72 flex-1 pb-2">
-      <Show when={usesPanes()} fallback={<div class="h-full min-h-72 overflow-hidden">{writeSurface()}</div>}>
+      <Show when={layoutPanes()} fallback={writeElement}>
         <Panes
           layout={props.panes()}
           onLayoutChange={props.onPanesChange}

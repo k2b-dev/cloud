@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { commitMailRecipient, formatMailRecipients, parseMailRecipients, shouldCommitMailRecipient } from "./mail-recipient";
+import { commitMailRecipients, formatMailRecipients, parseMailRecipients, shouldCommitMailRecipient } from "./mail-recipient";
 
 describe("mail recipient tokens", () => {
   test("round-trips display names", () => {
@@ -18,15 +18,26 @@ describe("mail recipient tokens", () => {
   });
 
   test("adds and replaces formatted recipient tokens", () => {
-    expect(commitMailRecipient(["one@example.test"], "Ada Lovelace <ADA@example.test>")).toEqual([
-      "one@example.test",
-      "Ada Lovelace <ada@example.test>",
-    ]);
-    expect(commitMailRecipient(["one@example.test", "two@example.test"], "updated@example.test", 0)).toEqual([
-      "updated@example.test",
-      "two@example.test",
-    ]);
-    expect(commitMailRecipient(["one@example.test"], "not an address")).toBeNull();
+    expect(commitMailRecipients(["one@example.test"], "Ada Lovelace <ADA@example.test>")).toEqual({
+      values: ["one@example.test", "Ada Lovelace <ada@example.test>"],
+      rest: "",
+    });
+    expect(commitMailRecipients(["one@example.test", "two@example.test"], "updated@example.test", 0)).toEqual({
+      values: ["updated@example.test", "two@example.test"],
+      rest: "",
+    });
+    expect(commitMailRecipients(["one@example.test"], "not an address")).toEqual({ values: ["one@example.test"], rest: "not an address" });
+  });
+
+  test("splits lists at commas, semicolons and line breaks, but not inside a quoted name", () => {
+    expect(commitMailRecipients([], 'a@x.de; "Kolb, Bernd" <B@y.de>,\nc@z.de\r\nbernd@firma, bernd')).toEqual({
+      values: ["a@x.de", "Kolb, Bernd <b@y.de>", "c@z.de"],
+      rest: "bernd@firma, bernd",
+    });
+    expect(commitMailRecipients(["one@example.test", "two@example.test"], "a@x.de; b@y.de", 0)).toEqual({
+      values: ["a@x.de", "b@y.de", "two@example.test"],
+      rest: "",
+    });
   });
 
   test("accepts space as a separator only after a complete address", () => {
@@ -34,6 +45,7 @@ describe("mail recipient tokens", () => {
     expect(shouldCommitMailRecipient("Ada Lovelace", " ")).toBeFalse();
     expect(shouldCommitMailRecipient("Ada Lovelace <ada@example.test>", " ")).toBeTrue();
     expect(shouldCommitMailRecipient("ada@example.test", ",")).toBeTrue();
+    expect(shouldCommitMailRecipient("ada@example.test", ";")).toBeTrue();
     expect(shouldCommitMailRecipient("", "Enter")).toBeFalse();
   });
 });
