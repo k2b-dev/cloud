@@ -3742,6 +3742,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: color-mix(in srgb, var(--k2b-section-tone) 12%, var(--k2b-surface));
 }
 
+/* A heading with an action keeps its title whole. When the row is too narrow
+   for the title, its count, and the action, the action moves to a second line
+   at the trailing edge before the title truncates. Only a title longer than
+   the row beside the icon still ends in an ellipsis. */
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: 0px;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.k2b-ui .k2b-section[data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: calc(1.25rem + 0.625rem);
+}
+
+.k2b-ui .k2b-section[data-size="md"][data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: calc(1.75rem + 0.75rem);
+}
+
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__copy {
+  flex: 1 0 auto;
+  max-width: calc(100% - var(--k2b-section-lead));
+}
+
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__actions {
+  margin-inline-start: auto;
+}
+
 /* A count is a quiet chip right after its title; zero reads as words. */
 .k2b-ui .k2b-count-chip {
   display: inline-grid;

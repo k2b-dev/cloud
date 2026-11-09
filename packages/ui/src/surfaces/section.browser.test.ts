@@ -15,6 +15,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Section } = await import("./Section");
+const { Button } = await import("../actions/Button");
+const { LocaleProvider } = await import("../intl/locale");
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 
 let browser: Browser;
@@ -105,6 +107,61 @@ describe("Section in a real engine", () => {
       // Engines report sub-pixel layout (WebKit: 27.99999), so compare to the half pixel.
       expect(Math.abs(sizes.row - 28)).toBeLessThan(0.5);
       expect(sizes.row - sizes.top - sizes.bottom).toBeGreaterThanOrEqual(43.5);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("on a phone a heading action moves under the title before the title truncates; an overlong title still truncates", async () => {
+    const action = (label: string) =>
+      createComponent(Button, {
+        variant: "ghost",
+        size: "xs",
+        get children() {
+          return label;
+        },
+      });
+    const section = (id: string, title: string, count: number, label: string) =>
+      createComponent(Section, { id, size: "md", icon: "ti ti-message-circle", title, count, actions: action(label), children: "…" });
+    // Contacts on a phone: a 350 px card with "Notizen", "Noch keine", and "Kommentar hinzufügen" cut the title to "Not…".
+    const sections = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return [
+            section("fits", "Kommentare", 12, "Neu"),
+            section("short", "Notizen", 0, "Kommentar hinzufügen"),
+            section("long", "Kommentare aus dem Kundengespräch zur Lieferung im November", 12, "Kommentar hinzufügen"),
+          ];
+        },
+      }),
+    );
+    const page = await browser.newPage({ viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true });
+    try {
+      await page.setContent(
+        `<!doctype html><html lang="de"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:1rem"><div style="width:350px">${sections}</div></body></html>`,
+      );
+      await settled(page);
+      const read = (id: string) =>
+        page.evaluate((id) => {
+          const section = document.getElementById(id)!;
+          const title = section.querySelector<HTMLElement>(".k2b-section__title")!;
+          const button = section.querySelector<HTMLElement>(".k2b-section__actions .k2b-button")!;
+          const box = section.getBoundingClientRect();
+          const buttonBox = button.getBoundingClientRect();
+          return {
+            truncated: title.scrollWidth > title.clientWidth + 0.5,
+            actionInside: buttonBox.left >= box.left - 0.5 && buttonBox.right <= box.right + 0.5,
+            actionBelowTitle: buttonBox.top >= title.getBoundingClientRect().bottom - 0.5,
+            titleInside: title.getBoundingClientRect().right <= box.right + 0.5,
+          };
+        }, id);
+      // Where everything fits, the action stays on the title's line.
+      expect(await read("fits")).toEqual({ truncated: false, actionInside: true, actionBelowTitle: false, titleInside: true });
+      // The title reads whole; the action keeps its full label inside the card on the line below.
+      expect(await read("short")).toEqual({ truncated: false, actionInside: true, actionBelowTitle: true, titleInside: true });
+      // A title longer than the card still ends in an ellipsis inside the card.
+      expect(await read("long")).toEqual({ truncated: true, actionInside: true, actionBelowTitle: true, titleInside: true });
     } finally {
       await page.close();
     }
