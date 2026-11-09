@@ -893,6 +893,36 @@ must be true before using that response for a complete `draft.update` replacemen
 Both mutations require the current revision; sending still requires the existing
 send-safety review and approval.
 
+### Draft suggestions from Gustav
+
+A service account creates a real draft through `draft.create`. People can open
+it in the conversation and send it through the usual review and Send flow.
+The draft and conversation draft summary report `suggestion: true` until a
+person changes its content, recipients, sender, signature, format or attachments.
+Opening it, acquiring a lease and sending it do not count as edits.
+
+After that first edit, the suggestion stays adopted. Service-account updates,
+patches and attachment changes to an adopted suggestion return `DRAFT_ADOPTED`
+(409), so Gustav never replaces what a person took over. A person can still
+change it directly or through a credential that acts for them
+(`delegatedUser`). Their first edit adopts the suggestion in either editing mode,
+including attachment changes. Drafts that a person wrote are adopted from creation and
+stay open to service accounts as before.
+
+A changed copy saved in another mail client's Drafts folder also adopts the
+suggestion when Mail applies the edit. Reconciling an identical copy and
+retrying an export do not adopt it.
+
+Each conversation has at most one untouched suggestion. Another `draft.create`
+returns the existing suggestion without changing its content or adding the new
+request's inline attachments. This also applies while its send is pending, so
+Undo can restore it. Update it explicitly with its current revision to
+revise it. Every creation key keeps returning its original draft after adoption,
+so retrying an earlier request cannot create another suggestion. Merging two
+conversations with untouched suggestions returns `DRAFT_SUGGESTION_CONFLICT`
+(409) and preserves both conversations. Edit or discard one suggestion before
+merging them.
+
 ## Check failed synchronization
 
 For delayed message content, see [Diagnose delayed Mail content](/en/docs/operations/mail-body-hydration)

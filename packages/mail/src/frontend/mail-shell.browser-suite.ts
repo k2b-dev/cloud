@@ -455,7 +455,7 @@ const pressEscapeForWorkspace = async (page: Page) => {
 };
 
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
-export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events";
+export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts";
 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
@@ -3564,7 +3564,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("phone: the reply pill above the newest message offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
+        test("phone: the reply pill at the bottom, in thumb reach, offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
             const bar = page.locator("[data-mail-reply-pill] .k2b-toolbar");
@@ -3594,12 +3594,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const reachable = new Set([...names.filter((name) => name !== "More actions"), ...inMore]);
             for (const name of ["Reply", "Reply all", "Forward", "Mark as done"]) expect(reachable.has(name), name).toBe(true);
             expect([...reachable].every((name) => ["Reply", "Reply all", "Forward", "Mark as done", "Assign"].includes(name))).toBe(true);
-            // The pill sits inside the reader, above the newest message, and never below the screen.
+            // F1: on a phone the pill waits at the bottom of the reader, below the newest message, never below the screen.
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
             const strip = (await bar.boundingBox())!;
             const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").first().boundingBox())!;
-            expect(strip.y).toBeGreaterThanOrEqual(scroller.y - 0.5);
-            expect(strip.y + strip.height).toBeLessThanOrEqual(newest.y + 0.5);
+            expect(strip.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
+            expect(strip.y + strip.height).toBeLessThanOrEqual(scroller.y + scroller.height + 0.5);
+            expect(strip.y + strip.height).toBeGreaterThan(scroller.y + scroller.height * 0.8);
             // A floating pill on layer 3 carries the toolbar shadow.
             expect(await bar.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
             // The top row keeps the way back, … and the details; the actions live below.
@@ -3942,21 +3943,24 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
 
         test("Reply from a row's menu opens the conversation and starts the reply there", async () => {
-          const page = await open(boxPath);
+          const page = await open(`${boxPath}?identity=1`);
           try {
             const row = page.locator('.mail-workspace [data-conversation-id="Conv01"]');
-            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            // The reply starts as a draft in the conversation: Mail creates it before anyone types.
+            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
             await row.locator("a.mail-list-row").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
             await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-            await drafts;
+            expect((await seed).postDataJSON()).toMatchObject({
+              origin: { kind: "compose", input: { intent: "reply", conversationId: "Conv01" } },
+            });
           } finally {
             await close(page);
           }
         });
 
         test("only the pill shows Reply; a message's right-click and … still reply to that message", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01`);
+          const page = await open(`${boxPath}?conversation=Conv01&identity=1`);
           try {
             await page.waitForFunction(
               () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
@@ -3974,11 +3978,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             for (const name of ["Reply", "Forward"])
               expect(await page.locator(dropdown).getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBe(1);
             await dismiss(page, dropdown);
-            // Right-click on the message: Reply starts the reply flow from this message's own menu.
-            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            // Right-click on the message: Reply starts the draft in the conversation from this message's own menu.
+            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
             await message.locator("[data-mail-message-header]").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
-            await drafts;
+            expect((await seed).postDataJSON()).toMatchObject({
+              origin: { kind: "compose", input: { intent: "reply", sourceMessageId: "Msg001" } },
+            });
           } finally {
             await close(page);
           }
@@ -4481,6 +4487,368 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await close(page);
         }
       });
+    });
+
+    section("drafts", () => {
+      /** A small Mail draft API: what the reader and the composer call around one draft, with what they sent. */
+      const draftApi = async (page: Page) => {
+        const calls: string[] = [];
+        const drafts = new Map<string, Record<string, unknown>>();
+        const stamp = MAIL_SHELL_NOW;
+        const makeDraft = (id: string, content: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+          id,
+          mailboxId: "Box001",
+          conversationId: "Conv01",
+          intent: "reply",
+          sourceMessageId: null,
+          derivedFromMessageId: null,
+          derivationKind: null,
+          senderIdentityId: "00000000-0000-4000-8000-0000000000a1",
+          signatureTemplateId: null,
+          to: [{ name: "Example sender", address: "sender@example.test" }],
+          cc: [],
+          bcc: [],
+          subject: "Re: Example request 1",
+          body: "",
+          format: "markdown",
+          priority: "normal",
+          requestDeliveryReceipt: false,
+          requestReadReceipt: false,
+          ...content,
+          attachments: [],
+          createdBy: { kind: "user", userId: "Usr001" },
+          lastEditedBy: { kind: "user", userId: "Usr001" },
+          lastEditedByDisplayName: "Ada Example",
+          recoveryCopyCount: 0,
+          revision: 1,
+          state: "draft",
+          deliveryClass: "normal",
+          createdAt: stamp,
+          updatedAt: stamp,
+          ...extra,
+        });
+        drafts.set(
+          "Drf001",
+          makeDraft(
+            "Drf001",
+            { subject: "Fwd: Example request 1", body: "Hello Tom, here are the pickup details for Saturday." },
+            {
+              intent: "forward",
+            },
+          ),
+        );
+        const lease = {
+          holder: { kind: "user", id: "00000000-0000-4000-8000-0000000000b1", displayName: "Ada Example", avatarHash: null },
+          acquiredAt: stamp,
+          expiresAt: "2026-10-14T10:10:00.000Z",
+          token: "00000000-0000-4000-8000-0000000000c1",
+        };
+        await page.route("**/api/mail/mailboxes/Box001/**", async (route) => {
+          const request = route.request();
+          const path = new URL(request.url()).pathname.replace("/api/mail/mailboxes/Box001", "");
+          const method = request.method();
+          const draftPath = /^\/drafts\/(\w+)(\/.*)?$/.exec(path);
+          calls.push(`${method} ${path}`);
+          if (method === "POST" && path === "/draft-seeds") {
+            const body = request.postDataJSON();
+            const input = body.origin.input;
+            return route.fulfill({
+              json: {
+                id: "00000000-0000-4000-8000-0000000000d1",
+                mailboxId: "Box001",
+                conversationId: input.conversationId,
+                intent: input.intent,
+                sourceMessageId: input.sourceMessageId,
+                derivedFromMessageId: null,
+                derivationKind: null,
+                content: {
+                  senderIdentityId: input.senderIdentityId,
+                  signatureTemplateId: null,
+                  to: [{ name: "Example sender", address: "sender@example.test" }],
+                  cc: [],
+                  bcc: [],
+                  subject: input.subject,
+                  body: input.body,
+                  format: "markdown",
+                  priority: "normal",
+                  requestDeliveryReceipt: false,
+                  requestReadReceipt: false,
+                },
+                attachments: [],
+                origin: body.origin,
+                createdAt: stamp,
+              },
+            });
+          }
+          if (method === "POST" && path === "/draft-seeds/materialize") {
+            const body = request.postDataJSON();
+            const created = makeDraft("DrfNew", body.draft, { intent: body.origin.input.intent });
+            drafts.set("DrfNew", created);
+            return route.fulfill({ json: created });
+          }
+          if (path === "/compose-templates" || path === "/compose-signature-defaults") return route.fulfill({ json: [] });
+          if (method === "POST" && path === "/compose-preview")
+            return route.fulfill({ json: { html: "<p>Preview of the mail as it arrives.</p>", text: "", formattingWarnings: [] } });
+          if (draftPath) {
+            const [, id, rest = ""] = draftPath;
+            const draft = drafts.get(id!);
+            if (!draft) return route.fulfill({ status: 404, json: { error: "Not found" } });
+            if (rest === "/attachment-uploads") return route.fulfill({ json: [] });
+            if (rest === "/lease" && (method === "POST" || method === "PUT")) return route.fulfill({ json: lease });
+            if (rest === "/lease" && method === "DELETE") return route.fulfill({ status: 204, body: "" });
+            if (rest === "/lease") return route.fulfill({ json: null });
+            if (rest === "/discard") {
+              drafts.set(id!, { ...draft, state: "discarded" });
+              return route.fulfill({ json: { ...draft, state: "discarded" } });
+            }
+            if (rest === "" && method === "PUT") {
+              const body = request.postDataJSON();
+              const saved = { ...draft, ...body.draft, revision: Number(draft.revision) + 1 };
+              drafts.set(id!, saved);
+              return route.fulfill({ json: saved });
+            }
+            if (rest === "" && method === "GET") return route.fulfill({ json: draft });
+          }
+          return route.fallback();
+        });
+        return { calls, drafts };
+      };
+      const draftBox = (page: Page) => page.locator("[data-mail-inline-draft]:not([data-mail-inline-draft-pending])");
+      const readyDraft = async (page: Page) => {
+        await draftBox(page).waitFor();
+        await page.locator("[data-mail-inline-draft] .cm-content").waitFor();
+      };
+      const readerReplies = (page: Page) => page.locator(".mail-reader").getByRole("button", { name: "Reply", exact: true });
+      /** Polls a condition that settles after a request the page sends on its own, within a deadline. */
+      const eventually = async <T>(read: () => Promise<T> | T, expected: Awaited<T>, label: string, deadline = 6000) => {
+        const end = performance.now() + deadline;
+        for (;;) {
+          const value = await read();
+          if (Object.is(value, expected) || performance.now() > end) return expect(value, label).toBe(expected);
+          await Bun.sleep(50);
+        }
+      };
+
+      for (const width of [1440, 390])
+        test(`${width}: Reply grows into the draft in place of the pill; Escape on an unchanged draft brings the pill back`, async () => {
+          let api!: Awaited<ReturnType<typeof draftApi>>;
+          const page = await open(`${boxPath}?conversation=Conv01&identity=1`, width, undefined, "reduce", async (next) => {
+            api = await draftApi(next);
+          });
+          try {
+            await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+            await readyDraft(page);
+            // The pill became the draft: no second Reply anywhere in the reader, the caret is in the text.
+            expect(await page.locator("[data-mail-reply-pill]").count()).toBe(0);
+            expect(await readerReplies(page).count()).toBe(0);
+            await page.waitForFunction(() => document.activeElement?.closest(".cm-content") !== null);
+            expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
+            expect(api.calls).toContain("POST /draft-seeds/materialize");
+            // Reduced motion: the state changes at once, nothing glides.
+            expect(await page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getAnimations().length)).toBe(0);
+            // The draft stands above the newest message.
+            const order = await page.evaluate(() => {
+              const draft = document.querySelector("[data-mail-inline-draft]")!.getBoundingClientRect();
+              const message = document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect();
+              return { draftBottom: draft.bottom, messageTop: message.top };
+            });
+            expect(order.draftBottom).toBeLessThanOrEqual(order.messageTop);
+            await page.keyboard.press("Escape");
+            await page.locator("[data-mail-reply-pill]").waitFor();
+            expect(await draftBox(page).count()).toBe(0);
+            await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
+            expect(api.calls).toContain("POST /drafts/DrfNew/discard");
+          } finally {
+            await close(page);
+          }
+        });
+
+      test("the pill grows into the draft: the messages glide monotonically to their layout place in 280 ms", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          const messagesTop = () =>
+            page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
+          const before = await messagesTop();
+          // Pause the glide the moment it starts, before a frame passes, then step through it.
+          await page.evaluate(() => {
+            const state = window as unknown as { mailGlide?: Promise<void> };
+            state.mailGlide = new Promise<void>((resolve) => {
+              const observer = new MutationObserver(() => {
+                const glide = document.querySelector("[data-mail-conversation-messages]")?.getAnimations()[0];
+                if (!glide) return;
+                glide.pause();
+                observer.disconnect();
+                resolve();
+              });
+              observer.observe(document.body, { subtree: true, childList: true });
+            });
+          });
+          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          // settled: the paused animation itself is the subject; each step sets its time before reading.
+          const samples = await page.evaluate(async () => {
+            await (window as unknown as { mailGlide: Promise<void> }).mailGlide;
+            const messages = document.querySelector("[data-mail-conversation-messages]")!;
+            const glide = messages.getAnimations()[0]!;
+            const total = Number(glide.effect!.getComputedTiming().duration);
+            const tops = [0, total / 2, total - 1].map((at) => {
+              glide.currentTime = at;
+              return messages.getBoundingClientRect().top;
+            });
+            glide.finish();
+            return { total, tops, final: messages.getBoundingClientRect().top };
+          });
+          expect(samples.total).toBe(280);
+          expect(Math.abs(samples.tops[0]! - before)).toBeLessThanOrEqual(0.5);
+          expect(samples.tops[1]!).toBeGreaterThanOrEqual(samples.tops[0]!);
+          expect(samples.tops[2]!).toBeGreaterThanOrEqual(samples.tops[1]!);
+          expect(Math.abs(samples.tops[2]! - samples.final)).toBeLessThanOrEqual(1);
+          expect(samples.final).toBeGreaterThan(before);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("typing saves the draft, and collapsing keeps it: no discard, the lease is released", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          await readyDraft(page);
+          await page.keyboard.type("Saturday at 11 works.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Saturday at 11 works.", "autosave");
+          await page.waitForFunction(() => document.querySelector(".mail-inline-draft-status")?.textContent?.includes("Saved"));
+          await page.locator("[data-mail-draft-collapse]").click();
+          await page.locator("[data-mail-reply-pill]").waitFor();
+          expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
+          expect(api.calls).toContain("DELETE /drafts/DrfNew/lease");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("switching to another conversation saves typing the autosave had not sent yet", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          await readyDraft(page);
+          await page.keyboard.type("Not lost");
+          // Leave before the 700 ms autosave: the closing session saves, then releases the lease.
+          await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
+          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]"));
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Not lost", "saved on leave");
+          await eventually(() => api.calls.includes("DELETE /drafts/DrfNew/lease"), true, "lease released after the save");
+          const saveIndex = api.calls.lastIndexOf("PUT /drafts/DrfNew");
+          expect(saveIndex, "the save comes before the release").toBeLessThan(api.calls.indexOf("DELETE /drafts/DrfNew/lease"));
+          expect(new URL(page.url()).searchParams.has("draft")).toBe(false);
+          // Back returns to the first conversation with its draft open again, as the person left it.
+          await page.goBack();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+          expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
+          await readyDraft(page);
+          expect(await page.locator("[data-mail-inline-draft] .cm-content").textContent()).toContain("Not lost");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a colleague's draft is a row; it opens in place, and a reload keeps it open", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1&drafts=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          const row = page.locator('[data-mail-draft-row="Drf001"]');
+          await row.waitFor();
+          expect(await row.textContent()).toContain("Jonas Example");
+          await row.click();
+          await readyDraft(page);
+          expect(api.calls).toContain("GET /drafts/Drf001");
+          expect(await page.locator('[data-mail-draft-row="Drf001"]').count()).toBe(0);
+          expect(new URL(page.url()).searchParams.get("draft")).toBe("Drf001");
+          await page.reload();
+          await ready(page);
+          await readyDraft(page);
+          expect(await page.locator("[data-mail-inline-draft]").getAttribute("data-intent")).toBe("forward");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("full screen moves the list aside, is remembered, and Escape leaves it before collapsing", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          await readyDraft(page);
+          const listVisible = () =>
+            page.evaluate(() => {
+              const pane = document.querySelector(".mail-workspace .k2b-app-workspace__main-pane");
+              return Boolean(pane && pane.getClientRects().length > 0 && pane.getBoundingClientRect().width > 0);
+            });
+          expect(await listVisible()).toBe(true);
+          await page.locator("[data-mail-draft-fullscreen]").click();
+          await page.waitForFunction(() => document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-fullscreen"));
+          await eventually(listVisible, false, "list aside in full screen");
+          expect(decodeURIComponent((await storedCookie(page, "cloud_mail_workspace"))?.value ?? "")).toContain('"draftFullscreen":true');
+          await page.locator("[data-mail-inline-draft] .cm-content").click();
+          await page.keyboard.press("Escape");
+          await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-fullscreen"));
+          expect(await draftBox(page).count()).toBe(1);
+          await eventually(listVisible, true, "list back after full screen");
+        } finally {
+          await close(page);
+        }
+      });
+
+      if (screenshots)
+        test("draft review screenshots", async () => {
+          const directory = resolve(screenshots);
+          mkdirSync(directory, { recursive: true });
+          const shoot = async (name: string, theme: "light" | "dark", width: number, path: string, act?: (page: Page) => Promise<void>) => {
+            const page = await open(`${path}&theme=${theme}`, width, undefined, "reduce", async (next) => {
+              await draftApi(next);
+            });
+            try {
+              await act?.(page);
+              await settled(page);
+              await page.screenshot({ path: join(directory, `${name}-${theme}-${width}.png`) });
+            } finally {
+              await close(page);
+            }
+          };
+          const reply = async (page: Page) => {
+            await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+            await readyDraft(page);
+            await page.keyboard.type("Saturday at 11 works well. The chairs are ready in hall A.");
+          };
+          const thread = `${boxPath}?conversation=Conv01&identity=1`;
+          for (const theme of ["light", "dark"] as const)
+            for (const width of [1440, 390]) {
+              await shoot("01-thread-pill", theme, width, thread);
+              await shoot("02-draft-open", theme, width, thread, reply);
+            }
+          for (const width of [1440, 1920])
+            await shoot("03-draft-fullscreen", "light", width, thread, async (page) => {
+              await reply(page);
+              await page.locator("[data-mail-draft-fullscreen]").click();
+            });
+          await shoot("04-draft-preview", "light", 1440, thread, async (page) => {
+            await reply(page);
+            await page.locator("[data-mail-draft-preview]").click();
+            await page.locator(".mail-inline-draft-preview iframe").waitFor();
+          });
+          await shoot("05-draft-rows", "light", 1440, `${thread}&drafts=1`);
+          await shoot("05-draft-rows", "light", 390, `${thread}&drafts=1`);
+        }, 180_000);
     });
 
     if (screenshots && part === "reader")

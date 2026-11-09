@@ -82,6 +82,12 @@ export default ssr<AuthContext>(async (c) => {
   });
   const returnHref = mailDraftReturnHref(c.req.query("return") ?? "", mailboxShortId);
   const popout = c.req.query("window") === "1";
+  // F5: a reply is written in its conversation now. An old link opens the conversation with the draft open; its own
+  // window and a draft with an open approval keep this page, so nothing that waits here disappears.
+  if (!popout && approvals.count === 0 && publicData.draft?.conversationId && publicData.draft.state === "draft") {
+    const target = new URLSearchParams({ conversation: publicData.draft.conversationId, draft: publicData.draft.id });
+    return c.redirect(`/app/mail/${encodeURIComponent(mailboxShortId)}?${target}`, 302);
+  }
   const initialPanes = reconcileMailComposerPanes(
     readMailComposerPanesFromCookieHeader(c.req.header("cookie")),
     draft.data.format,
