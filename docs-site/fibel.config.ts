@@ -1,6 +1,7 @@
 import { defaultPlugins, defineFibel } from "@k2b/fibel";
 import { agentSkillsPlugin, assistantPlugin, imprintPlugin, mcpPlugin, providerFromEnv } from "@k2b/fibel/plugins";
 import { cloudSitePlugin } from "./plugins/cloud-site";
+import { codeBlocksPlugin } from "./plugins/code-blocks";
 import { lessonsPlugin } from "./plugins/lessons";
 import { docsPages } from "./src/docs/pages";
 import { siteFooterLinks, siteHeader, siteLocales, siteTheme, siteUrl } from "./src/site-config";
@@ -37,6 +38,14 @@ export default defineFibel({
       description: "Cloud applications and companion apps, their product boundaries, and their integration.",
       content: "apps-content",
       path: "/apps",
+    },
+    {
+      id: "code",
+      label: "feat/code",
+      description:
+        "feat/code: small checked TypeScript projects that automate work, use AI and add pages to Cloud under administrator control.",
+      content: "code-content",
+      path: "/code",
     },
     {
       id: "docs",
@@ -76,6 +85,9 @@ export default defineFibel({
     agentSkillsPlugin({ directory: "agent-skills" }),
     ...assistantPlugins,
     imprintPlugin({ url: "https://impressum.k2b.dev" }),
-    cloudSitePlugin(["homepage.css", "docs-overview.css", "generated/cloud-ui.css", "ui-catalog.css"], { preloadDisplayFont: true }),
+    codeBlocksPlugin(),
+    cloudSitePlugin(["homepage.css", "docs-overview.css", "generated/cloud-ui.css", "ui-catalog.css", "code-area.css"], {
+      preloadDisplayFont: true,
+    }),
   ],
 });
