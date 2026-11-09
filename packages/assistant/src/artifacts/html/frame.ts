@@ -12,7 +12,16 @@ import { createBridge } from "../runtime/bridge";
 import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { createCloud } from "../runtime/cloud";
 import { CloudError } from "../runtime/errors";
-import { chartLoading, chartMarkup, chartOptions, chartSvg, isAppChartKind, pendingChartOptions, pendingChartWidth } from "../runtime/lib";
+import {
+  chartLoading,
+  chartMarkup,
+  chartOptions,
+  chartRendererKind,
+  chartSvg,
+  isAppChartKind,
+  pendingChartOptions,
+  pendingChartWidth,
+} from "../runtime/lib";
 import { ensureRandomUuid } from "../runtime/random-uuid";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
@@ -362,7 +371,7 @@ async function paintChart(element: HTMLElement) {
       element.style.aspectRatio = `${reservedWidth}/${height}`;
       element.style.setProperty("--k2b-chart-width", `${reservedWidth}px`);
     }
-    await loadChartRenderer(options.input.kind).catch((error) => {
+    await loadChartRenderer(chartRendererKind(options.input)).catch((error) => {
       loadFailed = true;
       throw error;
     });

@@ -49,7 +49,10 @@ type Variants<N> =
       x?: string[];
       series?: { label: string; data: (number | null)[] }[];
       /** Rows accept signed values. Ordered categories and legacy drawing options retain the original row renderer. */
-      layout?: "columns" | "rows" | "grouped" | "stacked";
+      layout?: "columns" | "rows" | "grouped" | "stacked" | "nested";
+      marks?: "bars" | "dots";
+      total?: number;
+      dots?: number;
       normalize?: boolean;
       share?: boolean;
       limit?: number;

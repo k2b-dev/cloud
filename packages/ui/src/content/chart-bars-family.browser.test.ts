@@ -5,8 +5,8 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { barFamilyFixtures } from "../../test/chart-bars-family-fixtures";
+import { renderBarChartSvg } from "../charts/core/bar-render";
 import { renderHbarSvg } from "../charts/core/hbar";
-import { renderBarChartSvg } from "./chart-bar";
 import { selectedChartSvg } from "./chart-svg";
 
 const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });

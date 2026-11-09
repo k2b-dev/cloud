@@ -55,15 +55,19 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // Main includes the line, calendar and distribution parts; Sankey adds one part.
+  // Main includes the line, calendar, distribution and Sankey parts; dots adds one part (7,167 B).
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  // New Sankey part: exactly +8,112 B; keep main's existing host headroom.
-  expect(total).toBeLessThan(89_376);
+  // Main's 89,376 B ceiling plus exactly the dots part.
+  expect(total).toBeLessThan(96_543);
+  expect(parts.kinds.dots!.code).not.toContain("k2b-chart-ranked");
+  expect(parts.kinds.dots!.code).not.toContain("Bar series must have the same length as x");
+  expect(parts.kinds.dots!.code).not.toContain("stdlib-chart-empty-text");
   const markers = {
     line: "k2b-line-forecast-band",
     area: "k2b-area-layer",
+    dots: "k2b-chart-dot",
     waterfall: "k2b-waterfall-bar",
     heatmap: "data-calendar-weekdays",
     bubble: "k2b-chart-bubble-label",
@@ -102,6 +106,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(normal).not.toContain(".stdlib-chart-series-0 {");
   expect(normal).toContain("Funnel values must be finite and nonnegative, or null");
   expect(rare).not.toContain("Funnel values must be finite and nonnegative, or null");
+  expect(normal).not.toContain("k2b-chart-dot");
+  expect(rare).toContain("k2b-chart-dot");
   // Reference cells need only identity validation, not capability registration.
   expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).

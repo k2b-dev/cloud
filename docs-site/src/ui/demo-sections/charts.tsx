@@ -601,6 +601,21 @@ const euro = new Intl.NumberFormat("en", { style: "currency", currency: "EUR", m
 /** Bar labels in every state: few short labels as columns, rows for long labels, negative values, many categories. */
 const barStates = [
   {
+    title: "Nested dot matrix: clicks are part of opens",
+    chart: {
+      kind: "bar",
+      layout: "nested",
+      marks: "dots",
+      total: 1000,
+      dots: 100,
+      x: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      series: [
+        { label: "Opened", data: [780, 620, 810, 690, 570] },
+        { label: "Clicked", data: [320, 210, 420, 290, 190] },
+      ],
+    },
+  },
+  {
     title: "Few short labels stand below columns with their values",
     chart: {
       kind: "bar",

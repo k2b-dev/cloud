@@ -7,6 +7,7 @@ import { area } from "./chart-kind-area";
 import { barGauge } from "./chart-kind-barGauge";
 import { boxplot } from "./chart-kind-boxplot";
 import { bubble } from "./chart-kind-bubble";
+import { dots } from "./chart-kind-dots";
 import { funnel } from "./chart-kind-funnel";
 import { gauge } from "./chart-kind-gauge";
 import { hbar } from "./chart-kind-hbar";
@@ -26,6 +27,7 @@ export {
   barGauge,
   boxplot,
   bubble,
+  dots,
   funnel,
   gauge,
   hbar,
@@ -42,6 +44,8 @@ export {
 
 export const rareChartSvg: RareChartRenderer = (mapped, common, locale) => {
   switch (mapped.kind) {
+    case "dots":
+      return dots(mapped, common);
     case "line":
       return line(mapped, common, locale);
     case "funnel":

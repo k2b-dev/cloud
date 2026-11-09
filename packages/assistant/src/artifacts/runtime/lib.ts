@@ -24,9 +24,10 @@ import {
   lineBase,
   lineDetailsEnabled,
   pie,
-  renderBarChartSvg,
+  renderBarBaseSvg,
   sankeyFrame,
   sankeyWidth,
+  seriesBarLayout,
   sparkline,
   stat,
   waterfallLayout,
@@ -84,6 +85,10 @@ for (const option of ChartSchema.options) {
     for (const value of "options" in kind ? kind.options : kind.values) appChartKinds.add(value);
   }
 }
+/** Dot matrices share the portable bar kind but load only their own drawing part. */
+export const chartRendererKind = (input: CloudAiChartInput): string =>
+  input.kind === "bar" && input.marks === "dots" ? "dots" : input.kind;
+
 /** Inspection accepts exactly the same kinds as the app's portable chart schema. */
 export const isAppChartKind = (value: string | null): value is CloudAiChartInput["kind"] => value !== null && appChartKinds.has(value);
 
@@ -124,7 +129,11 @@ function drawChart(
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);
-        svg = renderBarChartSvg({ ...mapped, ...common, height: layout.layout === "rows" ? layout.height : (options.height ?? height) });
+        const drawing = { ...common, height: layout.layout === "rows" ? layout.height : (options.height ?? height) };
+        svg =
+          mapped.marks === "dots"
+            ? rareChartSvg({ ...mapped, kind: "dots" }, { ...drawing, dotLayout: seriesBarLayout({ ...mapped, ...drawing }, drawing) })
+            : renderBarBaseSvg({ ...mapped, ...drawing });
         break;
       }
       case "line":
@@ -294,11 +303,15 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
 
 /** Reserve horizontal rows before the offline renderer arrives. */
 export function pendingChartHeight(prepared: StoredChart, locale: string, width: number, height: number): number {
-  if (prepared.input.kind !== "hbar") return height;
+  if (prepared.input.kind !== "hbar" && prepared.input.kind !== "bar") return height;
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, {
     width,
     formats: { x: prepared.xFormat, y: prepared.yFormat, value: prepared.format },
   });
+  if (mapped.kind === "bar") {
+    const layout = barChartLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, width);
+    return layout.layout === "rows" ? layout.height : height;
+  }
   return mapped.kind === "hbar"
     ? hbarLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, { width, height }).height
     : height;
@@ -332,7 +345,7 @@ export async function resolveChartHtml(content: string, locale: string): Promise
     ids.map((id) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
-      return loadChartRenderer(options.input.kind);
+      return loadChartRenderer(chartRendererKind(options.input));
     }),
   );
   return content.replace(pendingMarkup, (markup, id: string) => {
