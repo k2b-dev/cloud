@@ -6,6 +6,8 @@ export const railMessages = i18n.define({
     en: {
       managed: "Provided by the administration",
       customize: "Customize app bar",
+      showNames: "Show names in the app bar",
+      showNamesHint: "On large screens, each name appears beside its icon.",
       apps: "Visible apps",
       shortcuts: "App bar shortcuts",
       description: "Choose the apps in your app bar. Shortcuts appear above them and are separate from your dashboard shortcuts.",
@@ -38,6 +40,8 @@ export const railMessages = i18n.define({
     de: {
       managed: "Von der Administration bereitgestellt",
       customize: "App-Leiste anpassen",
+      showNames: "Namen in der App-Leiste zeigen",
+      showNamesHint: "Auf großen Bildschirmen steht der Name neben jedem Symbol.",
       apps: "Sichtbare Apps",
       shortcuts: "Shortcuts der App-Leiste",
       description: "Wähle die Apps für deine App-Leiste. Shortcuts stehen darüber und sind unabhängig von deinen Dashboard-Shortcuts.",

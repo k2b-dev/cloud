@@ -405,7 +405,10 @@ describe("Cloud layouts SSR", () => {
     // Home stays in the rail. Phones have no bottom dock: their title row holds search, help and the app menu, which
     // leads with Start, and no panel button; help opens the panel there.
     const chrome = withoutIslands(html);
-    expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);
+    // The saved names setting is on by default; the installation's name beside the logo is part of Home's name.
+    expect(chrome).toMatch(
+      /<aside class="layout-rail[^"]*" data-rail-names=""><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Cloud, Home">/,
+    );
     const header = html.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
     expect(withoutIslands(header)).not.toContain('href="/"');
     expect(html).not.toContain("cloud-tab-bar");

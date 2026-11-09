@@ -537,7 +537,8 @@ describe("App access through real browser controls and same-origin transport", (
         expect(geometry.width).toBeLessThanOrEqual(460);
         expect(geometry.iconWidth).toBe(48);
         expect(geometry.iconHeight).toBe(48);
-        await page.getByText("Anna Muster", { exact: true }).waitFor();
+        // The signed-in person's name is also the profile entry's label in the app bar.
+        await page.getByRole("main").getByText("Anna Muster", { exact: true }).waitFor();
         expect(await page.getByText("Buchhaltung", { exact: true }).count()).toBe(0);
         expect(await page.getByRole("button", { name: /anfrag|request|zugang|access/i }).count()).toBe(0);
         expect(await page.locator("main input, main textarea, main table").count()).toBe(0);
@@ -724,7 +725,7 @@ for (const [mode, heading, explanation] of [
       if (mode === "denied-fixed") {
         // The sentence already names the Cloud administration; no second contact repeats it.
         expect(await page.getByText("Cloud-Verwaltung", { exact: true }).count()).toBe(0);
-        expect(await page.getByText("Anna Muster", { exact: true }).count()).toBe(0);
+        expect(await page.getByRole("main").getByText("Anna Muster", { exact: true }).count()).toBe(0);
       } else await page.getByText("Eva Beispiel", { exact: true }).waitFor();
       const denial = page.getByRole("heading", { name: heading, exact: true }).locator("..");
       expect(await denial.locator("button, input, textarea, table").count()).toBe(0);

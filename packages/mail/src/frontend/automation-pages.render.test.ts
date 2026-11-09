@@ -41,7 +41,15 @@ beforeEach(() => {
       data: { userId, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
     }),
   );
-  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
+  spies.push(
+    spyOn(rail, "readRailSnapshot").mockResolvedValue({
+      revision: 0,
+      visibility: {},
+      shortcuts: [],
+      showNames: true,
+      managedShortcuts: [],
+    }),
+  );
   spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
 });
 
