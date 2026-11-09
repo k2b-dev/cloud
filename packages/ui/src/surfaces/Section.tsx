@@ -1,9 +1,8 @@
 import { children, createContext, createEffect, createSignal, createUniqueId, For, type JSX, Show, splitProps, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { Button } from "../actions/Button";
-import { CopyButton } from "../actions/CopyButton";
 import { useUiMessages } from "../intl/messages";
-import { useSectionMessages } from "./section-messages";
+import { useDetailPanelMessages } from "../layout/detail-panel-messages";
 
 /** Named after the status tokens; a tone colours the frame, the title, and the icon, never the fill. */
 export type SectionTone = "neutral" | "success" | "warning" | "danger" | "info" | "ai";
@@ -76,21 +75,6 @@ export type SectionPartProps = {
   class?: string;
 };
 
-/** Props of `Field`, a shown value; input fields share `FieldProps`. */
-export type FieldRowProps = {
-  label: string;
-  /** The value; pass `children` instead for rich content. */
-  value?: JSX.Element;
-  children?: JSX.Element;
-  /** `true` copies a text `value`; a string copies that string, such as the full form of a shortened value. */
-  copy?: boolean | string;
-  /** `email` links a text value and breaks it only after the `@`. */
-  kind?: "text" | "email";
-  /** `row` puts the value beside its label and moves it below when it does not fit; `stack` always below. */
-  layout?: "row" | "stack";
-  class?: string;
-};
-
 type SectionComponent = ((props: SectionProps) => JSX.Element) & {
   Part: (props: SectionPartProps) => JSX.Element;
 };
@@ -103,40 +87,11 @@ const SectionLevel = createContext<number>(2);
  */
 export const SectionFrameDefault = createContext<SectionFrame>("line");
 
-const classNames = (base: string, extra?: string): string => (extra ? `${base} ${extra}` : base);
-
-/** A count chip, or "None yet" for zero. */
-const SectionCount = (props: { count: number }): JSX.Element => {
-  const messages = useSectionMessages();
-  return (
-    <Show when={props.count > 0} fallback={<span class="k2b-section__none">{messages().noneYet}</span>}>
-      <span class="k2b-count-chip">{props.count}</span>
-    </Show>
-  );
-};
-
-const SkeletonRows = (props: { rows: number }): JSX.Element => {
-  const messages = useSectionMessages();
-  const widths = [
-    [54, 96],
-    [40, 72],
-    [63, 112],
-    [47, 84],
-  ];
-  return (
-    <div role="status">
-      <span class="k2b-sr-only">{messages().loading}</span>
-      <For each={Array.from({ length: Math.max(1, props.rows) }, (_, index) => widths[index % widths.length])}>
-        {(width) => (
-          <div class="k2b-section__skeleton-row" aria-hidden="true">
-            <span style={{ width: `${width?.[0] ?? 54}px` }} />
-            <span style={{ width: `${width?.[1] ?? 96}px` }} />
-          </div>
-        )}
-      </For>
-    </div>
-  );
-};
+const Heading = (props: { level: number; id?: string; class: string; children: JSX.Element }): JSX.Element => (
+  <Dynamic component={`h${props.level}`} id={props.id} class={props.class}>
+    {props.children}
+  </Dynamic>
+);
 
 const SectionRoot = (props: SectionProps): JSX.Element => {
   const [local, rest] = splitProps(props, [
@@ -166,7 +121,7 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
     "disabled",
   ]);
   const ui = useUiMessages();
-  const messages = useSectionMessages();
+  const counts = useDetailPanelMessages();
   const frameDefault = useContext(SectionFrameDefault);
   const id = `k2b-section-${createUniqueId()}`;
   const titleId = `${id}-title`;
@@ -197,46 +152,50 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
   // Resolve once and only while ready: reading `children` twice would build the body twice.
   const resolved = children(() => (state() === "ready" ? local.children : undefined));
   const hasBody = () => local.collapsible || state() !== "ready" || Boolean(resolved.toArray().length) || Boolean(local.footer);
-  const tone = () => (local.tone && local.tone !== "neutral" ? local.tone : undefined);
 
-  const icon = () => (
-    <Show when={local.icon}>
-      {(name) => (
-        <span class="k2b-section__icon" aria-hidden="true">
-          <i class={name()} />
-        </span>
-      )}
-    </Show>
-  );
-  const titleMeta = () => (
+  /** Icon, then the title with its count, state, and restricted marker in one row, then the description. */
+  const headingRow = (title: JSX.Element, summary?: JSX.Element) => (
     <>
-      <Show when={local.count !== undefined}>
-        <SectionCount count={local.count ?? 0} />
+      <Show when={local.icon}>
+        {(name) => (
+          <span class="k2b-section__icon" aria-hidden="true">
+            <i class={name()} />
+          </span>
+        )}
       </Show>
-      <Show when={local.meta}>
-        <span class="k2b-section__meta">{local.meta}</span>
-      </Show>
-      <Show when={local.restricted}>
-        <span class="k2b-section__restricted" id={restrictedId}>
-          <i class="ti ti-lock" aria-hidden="true" />
-          {local.restricted}
+      <span class="k2b-section__copy">
+        <span class="k2b-section__heading">
+          {title}
+          <Show when={local.count !== undefined}>
+            <Show when={local.count! > 0} fallback={<span class="k2b-section__none">{counts().noneYet}</span>}>
+              <span class="k2b-count-chip">{local.count}</span>
+            </Show>
+          </Show>
+          <Show when={local.meta}>
+            <span class="k2b-section__meta">{local.meta}</span>
+          </Show>
+          <Show when={local.restricted}>
+            <span class="k2b-section__restricted" id={restrictedId}>
+              <i class="ti ti-lock" aria-hidden="true" />
+              {local.restricted}
+            </span>
+          </Show>
+          {summary}
         </span>
-      </Show>
+        <Show when={local.description}>
+          <span class="k2b-section__description">{local.description}</span>
+        </Show>
+      </span>
     </>
-  );
-  const description = () => (
-    <Show when={local.description}>
-      <span class="k2b-section__description">{local.description}</span>
-    </Show>
   );
 
   return (
     <section
       {...rest}
-      class={classNames("k2b-section", local.class)}
+      class={local.class ? `k2b-section ${local.class}` : "k2b-section"}
       data-size={local.size ?? "sm"}
       data-frame={local.frame ?? frameDefault}
-      data-tone={tone()}
+      data-tone={local.tone && local.tone !== "neutral" ? local.tone : undefined}
       data-icon={local.icon ? "true" : undefined}
       data-collapsible={local.collapsible ? "true" : undefined}
       data-open={local.collapsible ? String(open()) : undefined}
@@ -248,16 +207,11 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
         when={local.collapsible}
         fallback={
           <header class="k2b-section__header">
-            {icon()}
-            <span class="k2b-section__copy">
-              <span class="k2b-section__heading">
-                <Dynamic component={`h${level()}`} id={titleId} class="k2b-section__title">
-                  {local.title}
-                </Dynamic>
-                {titleMeta()}
-              </span>
-              {description()}
-            </span>
+            {headingRow(
+              <Heading level={level()} id={titleId} class="k2b-section__title">
+                {local.title}
+              </Heading>,
+            )}
             <Show when={local.actions}>
               <div class="k2b-section__actions">{local.actions}</div>
             </Show>
@@ -265,7 +219,7 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
         }
       >
         {/* The whole heading row is one disclosure button inside the heading, so the region keeps its name. */}
-        <Dynamic component={`h${level()}`} class="k2b-section__header">
+        <Heading level={level()} class="k2b-section__header">
           <button
             ref={toggleButton}
             type="button"
@@ -278,34 +232,40 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
             // never toggle. The shared Button registers its delegation at render time and has no such gap.
             on:click={toggle}
           >
-            {icon()}
-            <span class="k2b-section__copy">
-              <span class="k2b-section__heading">
-                <span id={titleId} class="k2b-section__title">
-                  {local.title}
-                </span>
-                {titleMeta()}
-                <Show when={local.summary}>
-                  <span class="k2b-section__summary k2b-truncate-fade">{local.summary}</span>
-                </Show>
-              </span>
-              {description()}
-            </span>
+            {headingRow(
+              <span id={titleId} class="k2b-section__title">
+                {local.title}
+              </span>,
+              <Show when={local.summary}>
+                <span class="k2b-section__summary k2b-truncate-fade">{local.summary}</span>
+              </Show>,
+            )}
             <span class="k2b-section__chevron" aria-hidden="true">
               <i class="ti ti-chevron-down" />
             </span>
           </button>
-        </Dynamic>
+        </Heading>
       </Show>
       <Show when={hasBody()}>
         <div ref={body} id={bodyId} class="k2b-section__body" hidden={!open()}>
           <Show when={state() === "loading"}>
-            <SkeletonRows rows={local.loadingRows ?? 3} />
+            {/* Placeholder rows at the height of loaded rows; their widths vary in CSS. */}
+            <div role="status">
+              <span class="k2b-sr-only">{ui().loading}</span>
+              <For each={Array.from({ length: Math.max(1, local.loadingRows ?? 3) })}>
+                {() => (
+                  <div class="k2b-section__skeleton-row" aria-hidden="true">
+                    <span />
+                    <span />
+                  </div>
+                )}
+              </For>
+            </div>
           </Show>
           <Show when={state() === "error"}>
             <div class="k2b-section__error" role="alert">
               <i class="ti ti-alert-circle" aria-hidden="true" />
-              <span>{local.errorMessage ?? messages().couldNotLoad}</span>
+              <span>{local.errorMessage ?? ui().couldNotLoadData}</span>
             </div>
             <Show when={local.onRetry}>
               {(retry) => (
@@ -333,64 +293,14 @@ const SectionPart = (props: SectionPartProps): JSX.Element => {
   const level = useContext(SectionLevel);
   const id = `k2b-section-part-${createUniqueId()}`;
   return (
-    <div class={classNames("k2b-section__part", props.class)} role="group" aria-labelledby={id}>
-      <Dynamic component={`h${Math.min(level + 1, 6)}`} id={id} class="k2b-section__part-title">
+    <div class={props.class ? `k2b-section__part ${props.class}` : "k2b-section__part"} role="group" aria-labelledby={id}>
+      <Heading level={Math.min(level + 1, 6)} id={id} class="k2b-section__part-title">
         {props.title}
-      </Dynamic>
+      </Heading>
       {props.children}
     </div>
   );
 };
-
-/** Splits an address after its `@`, so it only breaks there. */
-const emailParts = (address: string): JSX.Element => {
-  const at = address.indexOf("@");
-  if (at < 0) return address;
-  return (
-    <>
-      <span class="k2b-field-row__nowrap">{address.slice(0, at + 1)}</span>
-      <wbr />
-      <span class="k2b-field-row__nowrap">{address.slice(at + 1)}</span>
-    </>
-  );
-};
-
-/** A label on the left and its value on the right, with an optional copy button that always keeps its place. */
-export function Field(props: FieldRowProps): JSX.Element {
-  const messages = useSectionMessages();
-  const text = () => (typeof props.value === "string" ? props.value : undefined);
-  const copyValue = () => (typeof props.copy === "string" ? props.copy : props.copy ? text() : undefined);
-  const content = () => {
-    const value = text();
-    if (props.kind === "email" && value) return <a href={`mailto:${value}`}>{emailParts(value)}</a>;
-    return props.value ?? props.children;
-  };
-  return (
-    <div class={classNames("k2b-field-row", props.class)} data-layout={props.layout ?? "row"} data-kind={props.kind}>
-      <span class="k2b-field-row__label">{props.label}</span>
-      <span class="k2b-field-row__value">
-        <span
-          class="k2b-field-row__text"
-          title={props.layout !== "stack" ? (typeof props.copy === "string" ? props.copy : text()) : undefined}
-        >
-          {content()}
-        </span>
-        {/* Without a copy button the slot stays, so every value of a section ends on one edge. */}
-        <Show when={copyValue()} fallback={<span class="k2b-field-row__slot" aria-hidden="true" />}>
-          {(value) => (
-            <CopyButton
-              class="k2b-field-row__copy"
-              value={value()}
-              size="xs"
-              iconOnly
-              label={messages().copyField({ label: props.label })}
-            />
-          )}
-        </Show>
-      </span>
-    </div>
-  );
-}
 
 /**
  * One topic, in a detail panel or on a page: an icon, a title with its count, at most one control, and its

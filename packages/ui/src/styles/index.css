@@ -3971,9 +3971,39 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section__skeleton-row > span {
+  width: 3.375rem;
   height: 0.75rem;
   border-radius: 999px;
   background: var(--k2b-surface-muted);
+}
+
+/* A label and a value of varying lengths, in a cycle of four rows. */
+.k2b-ui .k2b-section__skeleton-row > span:last-child {
+  width: 6rem;
+}
+
+.k2b-ui .k2b-section__skeleton-row:nth-of-type(4n + 2) > span:first-child {
+  width: 2.5rem;
+}
+
+.k2b-ui .k2b-section__skeleton-row:nth-of-type(4n + 2) > span:last-child {
+  width: 4.5rem;
+}
+
+.k2b-ui .k2b-section__skeleton-row:nth-of-type(4n + 3) > span:first-child {
+  width: 3.9375rem;
+}
+
+.k2b-ui .k2b-section__skeleton-row:nth-of-type(4n + 3) > span:last-child {
+  width: 7rem;
+}
+
+.k2b-ui .k2b-section__skeleton-row:nth-of-type(4n) > span:first-child {
+  width: 2.9375rem;
+}
+
+.k2b-ui .k2b-section__skeleton-row:nth-of-type(4n) > span:last-child {
+  width: 5.25rem;
 }
 
 .k2b-ui .k2b-section__error {

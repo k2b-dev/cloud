@@ -11,7 +11,8 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { Field, Section } = await import("./Section");
+const { Section } = await import("./Section");
+const { Field } = await import("./Field");
 const { LocaleProvider } = await import("../intl/locale");
 
 const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
