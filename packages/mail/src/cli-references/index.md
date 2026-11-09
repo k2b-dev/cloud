@@ -469,7 +469,7 @@ Mail Capability when an agent or script needs the current durable status or a
 bounded page of already persisted Markdown:
 
 ```bash
-cld capabilities query mail attachment.read-content \
+cld capabilities query mail attachment.text.read \
   --input '{"id":"<attachment-id>","offset":0,"length":16384}' \
   --json
 ```

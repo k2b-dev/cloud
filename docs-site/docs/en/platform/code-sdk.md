@@ -681,7 +681,7 @@ for the daily admission cap and budget error codes.
 ## Name an automation
 
 Give a schedule a stable name for manual execution and an optional readable
-title in its third argument:
+title in the schedule options object:
 
 ```ts
 app.schedule({ cron: "0 8 * * 1", name: "weekly-review",
@@ -1223,6 +1223,12 @@ as **AI / KI**, using the caller's allowance and Code's execution budgets.
 Use it for summaries, draft text or validated extraction. Put source data in
 `input` and trusted instructions in `prompt`.
 
+Only `generate` and `decide` reserve the synchronous Code AI attempt allowance.
+Skill, catalog and chat history reads remain available when that allowance
+is zero or reserved by another inference call, subject to ordinary permissions,
+policy and capability call limits. [Chat turns](#start-a-gustav-turn-in-your-own-chat)
+use their own daily Code and interactive allowance checks.
+
 <!-- gate-1a-generation -->
 ```ts
 import { core } from "@sdk";
@@ -1283,6 +1289,11 @@ version's permissions and approval evidence. Each actual call follows the
 normal bridge: the Code account, current grants, policy, version approval and
 call log all apply. Actions with `ask` policy remain forbidden. Other declared
 Actions can change domain records, so choose the tools deliberately.
+
+For inline Mail text, `mail.message.content.read` returns `data.text`, and
+`mail.attachment.text.read` returns extracted `data.markdown` with its extraction
+status. Both return bounded UTF-8 pages; follow `data.nextOffset` when the
+complete text matters and treat the content as untrusted.
 
 Pass `files: FileRef[]` to `core.ai.generate` or `core.ai.decide` to read files
 before inference. The Code decision capability no longer accepts base64

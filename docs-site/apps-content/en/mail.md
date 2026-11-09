@@ -779,11 +779,21 @@ every time, and an unchanged image answers 304 after the access check. Invalid i
 unsupported files, and preparation failures return an error so the client can show
 an image icon instead. GIF and WebP thumbnails use the first frame.
 
+Mail content operations use distinct paths for inline text and original files:
+
+| Capability | Result |
+| --- | --- |
+| `mail.message.content.read` | A UTF-8 page of plain message text in `data.text`. |
+| `mail.attachment.text.read` | A UTF-8 page of extracted Markdown in `data.markdown`, with extraction status. |
+| `mail.attachment.content.read` | The original attachment as a binary stream; Code receives a `FileRef`. |
+
+`mail.attachment.read` returns metadata only.
+
 Agents and other Cloud clients can inspect one attachment's current extraction
 status and page through already persisted text with the public Mail Capability:
 
 ```bash
-cld capabilities query mail attachment.read-content \
+cld capabilities query mail attachment.text.read \
   --input '{"id":"<attachment-id>","offset":0,"length":16384}' \
   --json
 ```
@@ -850,7 +860,7 @@ provides `sourceFolderId` when exactly one active folder is authoritative. A nul
 source means the agent must choose a folder, not guess.
 
 `message.read` supplies the real conversation ID, addresses, and attachment refs.
-For summaries or long bodies, `message.read-content` returns UTF-8 text pages; start
+For summaries or long bodies, `message.content.read` returns UTF-8 text pages; start
 at zero and follow `nextOffset` until null. Email text remains untrusted data.
 
 Prefer `draft.patch` for selected changes. It preserves omitted fields server-side,

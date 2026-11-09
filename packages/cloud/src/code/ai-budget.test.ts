@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
-import { codeAiBudgetRemainder, codeAiReferenceCost } from "../../../core/src/code/ai-budget";
+import { codeAiBudgetRemainder, codeAiReferenceCost, codeAiReservesAttemptBudget } from "../../../core/src/code/ai-budget";
 import { aiModelFixture } from "../ai/model-fixture";
 
 const profiles = [aiModelFixture({ id: "clef", pricing: { inputPerMillion: 1, outputPerMillion: 2 } })];
@@ -87,4 +87,15 @@ test("loop settlement sums every model and failed fallback without freeing unkno
       codeAiReferenceCost(capability, { ok: false, error: { code: "quota_exhausted", details: { aiUsageUnknown: true } } }, models, "1"),
     ).toBe("1");
   }
+});
+
+test.each(["core.ai.skills.list", "core.ai.skill.read", "core.ai.chats.search", "core.ai.skill.reference.read", "core.ai.chat.read"])(
+  "%s does not enter inference reservation",
+  (capability) => expect(codeAiReservesAttemptBudget(capability)).toBe(false),
+);
+
+test("synchronous inference keeps attempt admission while chat turns use their own daily and interactive admission", () => {
+  for (const capability of ["core.ai.generate", "core.ai.decide"]) expect(codeAiReservesAttemptBudget(capability)).toBe(true);
+  for (const capability of ["core.ai.chat.run", "core.ai.chat.run.read", "core.ai.chat.deliver", "mail.message.read"])
+    expect(codeAiReservesAttemptBudget(capability)).toBe(false);
 });
