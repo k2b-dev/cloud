@@ -2116,16 +2116,16 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await resetFixture({ entry: true });
     expect(await invoke("example.write")).toEqual(await (await send()).json());
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
-    expect(await invoke("example.read")).toMatchObject({ ok: false, error: { code: "code_approval_required" } });
+    expect(await invoke("example.read")).toMatchObject({ ok: false, error: { code: "code_approval_required", status: 403 } });
     expect(await (await send({ operation: "example.read" })).json()).toMatchObject({
       ok: false,
-      error: { code: "code_approval_required" },
+      error: { code: "code_approval_required", status: 403 },
     });
     await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
       SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read')`;
     expect(await invoke("example.read")).toEqual(await (await send({ operation: "example.read" })).json());
-    expect(await invoke("example.asks")).toMatchObject({ ok: false, error: { code: "code_unattended_forbidden" } });
+    expect(await invoke("example.asks")).toMatchObject({ ok: false, error: { code: "code_unattended_forbidden", status: 403 } });
     await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
     expect(await invoke("example.write")).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
     const [logged] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${claims.runId}::uuid`;
