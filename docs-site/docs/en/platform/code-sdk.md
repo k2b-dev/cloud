@@ -1136,6 +1136,8 @@ application capability performs that effect under its own permissions.
 See [Text and JSON capabilities](/en/docs/ai/structured-and-background-ai#generate-text-and-extract-json-through-capabilities)
 for schemas, size limits, model selection and stable errors.
 
+Signed-in page requests share a limit of 20 requests per minute per visitor,
+across Code pages. Public routes retain their per-IP and per-Code limits.
 
 ## Run a model loop with SDK tools and files
 
