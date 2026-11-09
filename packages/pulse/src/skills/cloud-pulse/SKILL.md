@@ -213,7 +213,11 @@ it. Public views expose results and presentation only. Read
 `cld pulse reference dashboards.md` before writing a definition.
 
 Choose number, line, bar, table, funnel, map, pie, donut, scatter, histogram,
-boxplot, heatmap, gauge, barGauge, sparkline, area, areaPercent, budget, or balance. Follow the reference
+boxplot, heatmap, gauge, barGauge, sparkline, area, areaPercent, budget, or balance.
+The catalog also supports barGrouped, barStacked, barPercent, barCompare,
+barRows (signed), barList (ranked shares), hbar, dots, funnelStages, waterfall,
+calendarHeatmap, sankey, treemap, pareto, bubble, radar, and lineForecast.
+Follow the reference
 for `x`/`series` and money aliases; money blocks require a currency in `unit`. Map `x` holds ISO 3166-1 alpha-2 country codes. Keep SQL
 nulls as gaps; never invent zero observations. Aggregate charts to at most eight series and
 480 points per series (3,840 produced marks). A dashboard supplies referenced
@@ -221,6 +225,15 @@ nulls as gaps; never invent zero observations. Aggregate charts to at most eight
 result: excessive or truncated SQL produces a panel error. Panels share the
 SQL profile and admission limits and have their own 60-second refresh receipts;
 cache eviction and repeated retries do not refund work.
+
+Keep current and previous columns in their intended order for barCompare and
+pareto. For a flow use `source`, `target`, `value` with kind sankey; for a
+forecast use time `x`, `value`, `forecast` (0 then 1) and optional paired
+`low`/`high`. Select `twoThirds` for four of the six desktop columns. Existing
+funnel panels keep their bar-gauge appearance; funnelStages uses the catalog
+funnel. Saved bar panels keep flattened source labels and duplicate rows;
+choose barGrouped, barStacked or barPercent to align categories and series.
+New stored kinds require a Pulse version that recognizes them.
 
 
 ## Create a base or send agent-owned telemetry
