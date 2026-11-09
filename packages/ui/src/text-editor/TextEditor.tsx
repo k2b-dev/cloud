@@ -1185,6 +1185,7 @@ export function TextEditor(props: TextEditorProps) {
               <SegmentedControl
                 class="k2b-ste-views"
                 size="sm"
+                disabled={blocked()}
                 ariaLabel={t().view}
                 value="source"
                 options={[

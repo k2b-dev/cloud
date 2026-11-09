@@ -5,7 +5,13 @@ import { mailRecipientSuggestionsSchema } from "../../contracts";
 import { suggestContacts } from "./contact-capabilities";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
-import { commitMailRecipients, parseMailRecipient, shouldCommitMailRecipient, splitMailRecipients } from "./mail-recipient";
+import {
+  commitMailRecipients,
+  formatMailRecipient,
+  parseMailRecipient,
+  shouldCommitMailRecipient,
+  splitMailRecipients,
+} from "./mail-recipient";
 
 type RecipientSuggestion = { label: string; address: string; context: string | null; source: "contacts" | "mailbox" };
 
@@ -16,6 +22,8 @@ export type MailRecipientField = {
    * the field then keeps it, marks it, and takes the focus, so nothing typed goes missing from the message.
    */
   commitPending: () => boolean;
+  /** Whether the field holds typed text that is not a recipient yet. */
+  pending: () => boolean;
 };
 
 export default function MailRecipientInput(props: {
@@ -85,7 +93,11 @@ export default function MailRecipientInput(props: {
     const text = event.clipboardData?.getData("text") ?? "";
     if (props.readOnly || splitMailRecipients(text).length < 2) return;
     event.preventDefault();
-    add(`${query()}${query().trim() ? ", " : ""}${text}`);
+    // The list takes the place of a selection, as ordinary pasting would; text around it stays.
+    const value = input?.value ?? query();
+    const start = input?.selectionStart ?? value.length;
+    const end = input?.selectionEnd ?? value.length;
+    add(`${value.slice(0, start)}\n${text}\n${value.slice(end)}`);
     focusInput();
   };
 
@@ -98,11 +110,13 @@ export default function MailRecipientInput(props: {
         focusInput(true);
         return false;
       },
+      pending: () => Boolean(query().trim()),
     }) ?? (() => undefined),
   );
 
+  // Formatting quotes a name with a comma ("Kolb, Bernd"), so the list splitter keeps it whole.
   const pick = (suggestion: RecipientSuggestion) =>
-    add(suggestion.label === suggestion.address ? suggestion.address : `${suggestion.label} <${suggestion.address}>`);
+    add(formatMailRecipient({ name: suggestion.label === suggestion.address ? null : suggestion.label, address: suggestion.address }));
 
   /** Closes the list and ends a pending lookup, so its answer cannot reopen the list without new input. */
   const dismissSuggestions = () => {

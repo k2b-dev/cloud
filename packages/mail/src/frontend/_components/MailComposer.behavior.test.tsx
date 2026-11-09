@@ -1119,6 +1119,20 @@ describe("MailComposer robustness", () => {
     }
   });
 
+  test("discarding a new message asks first when only a recipient field holds typed text", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
+    try {
+      await mount({ seed: initialSeed, ready: false });
+      type(recipientInput(), "Bernd");
+      dom.root.querySelector<HTMLButtonElement>('footer button[aria-label="Discard draft"]')!.click();
+      await waitFor(() => Boolean(dom.document.body.textContent?.includes("Discard draft?")));
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      navigate.mockRestore();
+    }
+  });
+
   test("a popout closes its window after Send instead of loading the mailbox into it", async () => {
     const nav = await import("@k2b/ssr/nav");
     const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
@@ -1131,6 +1145,9 @@ describe("MailComposer robustness", () => {
       expect(navigate).not.toHaveBeenCalled();
       // A browser that keeps the window open shows a short confirmation in place.
       await waitFor(() => Boolean(dom.root.textContent?.includes("You can close this window")));
+      // The covered composer leaves the keyboard and screen readers; the confirmation takes the focus.
+      expect(dom.root.querySelector<HTMLElement>("footer")!.closest("[inert]")).not.toBeNull();
+      expect(dom.document.activeElement?.textContent).toContain("Close window");
     } finally {
       navigate.mockRestore();
       close.mockRestore();

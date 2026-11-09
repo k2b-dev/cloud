@@ -2,8 +2,9 @@ import { type MailAddress, type MailDraft, mailAddressSchema } from "../../contr
 
 const angleAddressPattern = /^(.*?)\s*<([^<>]+)>$/;
 
+/** A name with a list separator keeps its quotes, so the pill can be edited and committed again unchanged. */
 export const formatMailRecipient = (recipient: MailAddress): string =>
-  recipient.name ? `${recipient.name} <${recipient.address}>` : recipient.address;
+  recipient.name ? `${/[,;]/.test(recipient.name) ? `"${recipient.name}"` : recipient.name} <${recipient.address}>` : recipient.address;
 
 export const formatMailRecipients = (recipients: MailDraft["to"]): string[] => recipients.map(formatMailRecipient);
 
@@ -26,6 +27,18 @@ export const parseMailRecipients = (values: string[]): MailAddress[] => {
     recipients.set(recipient.address, existing?.name && !recipient.name ? existing : recipient);
   }
   return [...recipients.values()];
+};
+
+/** True while a quote or an angle bracket in `value` is still open. */
+const opensGroup = (value: string): boolean => {
+  let quoted = false;
+  let angled = false;
+  for (const character of value) {
+    if (character === '"' && !angled) quoted = !quoted;
+    else if (character === "<" && !quoted) angled = true;
+    else if (character === ">" && !quoted) angled = false;
+  }
+  return quoted || angled;
 };
 
 /**
@@ -71,6 +84,8 @@ export const commitMailRecipients = (values: string[], raw: string, index: numbe
 
 export const shouldCommitMailRecipient = (value: string, key: string): boolean => {
   if (!value.trim()) return false;
-  if (key === "Enter" || key === "," || key === ";") return true;
+  if (key === "Enter") return true;
+  // Inside a quoted name ("Kolb, Bernd") or an address in brackets, a separator is text.
+  if (key === "," || key === ";") return !opensGroup(value);
   return key === " " && parseMailRecipient(value) !== null;
 };

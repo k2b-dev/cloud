@@ -590,7 +590,8 @@ export default function MailComposer(props: {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
       event.preventDefault();
       event.stopPropagation();
-      void sendDraft({});
+      // A held key repeats; one press sends once.
+      if (!event.repeat) void sendDraft({});
     };
     // Capture runs before the editor's own Mod-Enter binding and before a field's Enter handling.
     element.addEventListener("keydown", sendOnShortcut, true);
@@ -1241,7 +1242,8 @@ export default function MailComposer(props: {
       if (uploadsInProgress()) throw new Error(t().cancelUploadsBeforeDiscard);
       if (!draft()) {
         // A new message that never reached the server lives only on this device: typed input goes for good.
-        const changed = serializeMailDraftContent(content()) !== initialSerializedContent;
+        const changed =
+          serializeMailDraftContent(content()) !== initialSerializedContent || [...recipientFields].some((field) => field.pending());
         const confirmed =
           quiet ||
           !changed ||
@@ -2489,7 +2491,17 @@ export default function MailComposer(props: {
       {/* A popout that the browser keeps open after Send or Discard says what happened instead of loading the mailbox. */}
       <Show when={popoutDone()}>
         {(outcome) => (
-          <div class="absolute inset-0 z-40 flex items-center justify-center bg-[var(--ui-surface)] p-6">
+          <div
+            ref={(overlay) => {
+              // The covered composer leaves the keyboard and screen readers; the confirmation takes the focus.
+              queueMicrotask(() => {
+                for (const child of overlay.parentElement?.children ?? []) if (child !== overlay) child.setAttribute("inert", "");
+                overlay.querySelector<HTMLElement>("button")?.focus();
+              });
+            }}
+            role="status"
+            class="absolute inset-0 z-40 flex items-center justify-center bg-[var(--ui-surface)] p-6"
+          >
             <Placeholder
               icon={outcome() === "sent" ? "ti ti-send" : outcome() === "discarded" ? "ti ti-trash" : "ti ti-device-floppy"}
               title={outcome() === "sent" ? t().messageQueued : outcome() === "discarded" ? t().popoutDiscarded : t().popoutSaved}
