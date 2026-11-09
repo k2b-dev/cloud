@@ -594,21 +594,10 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
   const expectTransactionEnded = async (holder: typeof sql, pid: number) => {
     // Inspect from the holder, so the pool cannot reuse the cancelled backend
     // for this observation and make our own SELECT look like unfinished work.
-    const inspect = async () =>
-      (
-        await holder<{ state: string; xact_start: Date | null; blocked: boolean }[]>`
-          SELECT state, xact_start, cardinality(pg_blocking_pids(pid)) > 0 AS blocked
-          FROM pg_stat_activity WHERE pid = ${pid}
-        `
-      )[0];
-    // A closed reservation ends its backend asynchronously: until the server
-    // processes the disconnect it still shows the aborted transaction.
-    let backend = await inspect();
-    const deadline = Date.now() + 1000;
-    while (backend?.state === "idle in transaction (aborted)" && Date.now() < deadline) {
-      await Bun.sleep(10);
-      backend = await inspect();
-    }
+    const [backend] = await holder<{ state: string; xact_start: Date | null; blocked: boolean }[]>`
+      SELECT state, xact_start, cardinality(pg_blocking_pids(pid)) > 0 AS blocked
+      FROM pg_stat_activity WHERE pid = ${pid}
+    `;
     // The pool may have closed the connection or returned it idle after ROLLBACK.
     if (backend) {
       expect(backend.blocked).toBe(false);
@@ -870,6 +859,46 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       target.destroy();
       sourceDoc.destroy();
       targetDoc.destroy();
+    }
+  });
+
+  test("a cursor flood waits as one message, keeps the socket open and lets the edit through", async () => {
+    const created = await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const sourceDoc = new Y.Doc();
+    sourceDoc.clientID = 555;
+    const source = new Awareness(sourceDoc);
+    try {
+      const cursorMessage = () => {
+        // Each state change raises the awareness clock, like every pointer move of a selection drag.
+        source.setLocalState({ cursor: null });
+        return {
+          type: "awarenessPublish",
+          payload: { docId: created.short_id, generation: base.generation, payload: toBase64(encodeAwarenessUpdate(source, [555])) },
+        };
+      };
+      // Far more than the 200 queued messages a socket accepts, sent at once with one edit in the middle.
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const bytes = await createDraftRevisionUpdate(
+        base.fresh.state,
+        { ...created.content, body: "Typed during a drag" },
+        { deadline: Date.now() + 5000 },
+      );
+      client.send({
+        type: "syncPublish",
+        payload: { docId: created.short_id, generation: base.generation, baseCursor: base.fresh.cursor, payload: toBase64(bytes) },
+      });
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const echo = await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
+      expect(echo.type === "syncPush" && echo.payload.updates[0]?.payload).toBe(toBase64(bytes));
+      await persistedBody(client, "Typed during a drag");
+      expect(client.messages.some((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE")).toBe(false);
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      source.destroy();
+      sourceDoc.destroy();
     }
   });
 

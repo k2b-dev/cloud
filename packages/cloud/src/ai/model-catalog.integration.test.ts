@@ -2,6 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { ConfigConflict } from "../services/config-conflict";
+import { AiModelSchema as LegacyAiModelSchema } from "./catalog-v0.70.test-fixture";
 import { getAiCredential, setAiCredential } from "./credentials";
 import { migrateAiModelClassesInTransaction, migrateCloudAi } from "./migrate";
 import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
@@ -41,6 +42,15 @@ suite("AI model catalog migration and revisions", () => {
       );
       expect(model?.id).toBe(id);
       expect(model?.outputTokenLimit).toBe(65_536);
+      const [legacyRow] = await sql<{ data: Record<string, unknown> }[]>`SELECT to_jsonb(t) AS data FROM ai.models t WHERE id=${id}`;
+      if (!legacyRow) throw new Error("Missing stored model");
+      const decoded = Object.fromEntries(
+        Object.entries(legacyRow.data).map(([key, value]) => [key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()), value]),
+      );
+      expect(LegacyAiModelSchema.parse(decoded).id).toBe(id);
+      expect(
+        await sql<{ output_token_limit: number }[]>`SELECT output_token_limit FROM ai.model_output_limits WHERE model_id=${id}`,
+      ).toEqual([{ output_token_limit: 65_536 }]);
       expect((await readAiModelProfiles()).find((profile) => profile.id === id)?.outputTokenLimit).toBe(65_536);
       const access = (await aiModelCatalog.modelDetail(id)).access;
       await expect(
@@ -54,8 +64,13 @@ suite("AI model catalog migration and revisions", () => {
       expect(await getAiRequestHeaders(id)).toEqual({ "X-Test": "fixture-header" });
       expect(await aiModelCatalog.variant(id)).toMatchObject({ id, modelId: id, slug: "standard" });
       if (!model) throw new Error("Missing test model");
-      const cleared = await aiModelCatalog.updateModel(id, { outputTokenLimit: null }, model.revision, user.id);
+      const updated = await aiModelCatalog.updateModel(id, { outputTokenLimit: 32_768 }, model.revision, user.id);
+      expect(updated.outputTokenLimit).toBe(32_768);
+      const renamed = await aiModelCatalog.updateModel(id, { label: "Renamed" }, updated.revision, user.id);
+      expect(renamed.outputTokenLimit).toBe(32_768);
+      const cleared = await aiModelCatalog.updateModel(id, { outputTokenLimit: null }, renamed.revision, user.id);
       expect(cleared.outputTokenLimit).toBeNull();
+      expect(await sql<unknown[]>`SELECT * FROM ai.model_output_limits WHERE model_id=${id}`).toEqual([]);
       await aiModelCatalog.updateProvider(id, { label: "Changed" }, provider.revision, user.id);
       await expect(aiModelCatalog.updateProvider(id, { label: "Stale" }, provider.revision, user.id)).rejects.toBeInstanceOf(
         ConfigConflict,

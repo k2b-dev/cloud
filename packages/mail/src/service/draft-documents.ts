@@ -13,8 +13,9 @@ import {
   readDraftDocument as projectDocument,
 } from "../lib/draft-document";
 import { requireDraftAccess } from "./access";
-import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
+import { refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
 import {
   draftDocumentSnapshotWritten,
   draftDocumentStreamFull,
@@ -160,6 +161,8 @@ export const lockDraftDocumentInTransaction = async (
         ? { kind: "service_account" as const, id: actorRef.serviceAccountId }
         : null;
   if (!actor) return fail(err.forbidden("Draft editor is invalid"));
+  // Retain the represented person in the log even if SQL projection rolls back.
+  const documentActor = personalPrincipal(context);
 
   const loadRow = async (): Promise<DraftRow | null> => {
     const [row] = await awaitDraftDocumentQuery(
@@ -367,6 +370,7 @@ export const lockDraftDocumentInTransaction = async (
       if (docId !== draftId) throw new Error("Transaction-bound draft store cannot access another draft");
       const ready = await assertWritable(input.restoreRevision);
       if (!ready.ok) throw new Error(ready.error.message);
+      await refreshDraftAdoption({ db, draftId, signal: params.signal });
       const sequence = mailDraftDocumentLog.topic().cursorSequence(input.cursor);
       if (row.doc_cursor && mailDraftDocumentLog.topic().cursorSequence(row.doc_cursor) !== Number(row.doc_seq))
         throw new Error("Stored draft cursor and sequence disagree");
@@ -433,7 +437,7 @@ export const lockDraftDocumentInTransaction = async (
         text: decode(state).body,
         restoreRevision: generation,
         requestedAt: Date.now(),
-        actor,
+        actor: documentActor,
         contributors: [],
       },
       undefined,
@@ -443,6 +447,8 @@ export const lockDraftDocumentInTransaction = async (
   const acceptUpdate = async (input: AcceptInput, revisionBase?: number): Promise<Result<DraftDocumentAdmission>> => {
     const ready = await assertWritable(input.generation);
     if (!ready.ok) return ready;
+    const writable = await requireDraftContentWrite({ db, context, draftId, signal: input.signal ?? params.signal });
+    if (!writable.ok) return writable;
     if (input.generation !== generation) return recovery("Draft generation changed; retain the submitted content for recovery");
     // Raw bytes larger than the entire event budget cannot possibly fit.
     // Reject them before Yjs allocates decoded structures; Sync checks the
@@ -451,7 +457,7 @@ export const lockDraftDocumentInTransaction = async (
     let invalid: string | null = null;
     const admitted = await bound
       .accept(draftId, {
-        actor,
+        actor: documentActor,
         update: input.update,
         baseCursor: input.baseCursor,
         restoreRevision: input.generation,
@@ -486,6 +492,7 @@ export const lockDraftDocumentInTransaction = async (
     if (admitted.status !== "accepted") return recovery(invalid ?? "Draft update requires recovery; retain the submitted content");
     publishedCursor = admitted.cursor;
     try {
+      await refreshDraftAdoption({ db, draftId, signal: input.signal ?? params.signal });
       // Read all types, not only the body. The row lock prevents another Mail
       // admission/freeze from publishing before this snapshot is committed.
       const fresh = await bound.read(draftId, { signal: input.signal ?? params.signal });
@@ -583,6 +590,8 @@ export const lockDraftDocumentInTransaction = async (
     },
     accept: (input) => acceptUpdate(input),
     async writeRevision(input) {
+      const writable = await requireDraftContentWrite({ db, context, draftId, signal: input.signal ?? params.signal });
+      if (!writable.ok) return writable;
       const ready = await assertWritable(input.generation);
       if (!ready.ok) return ready;
       if (input.generation !== generation || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1)
@@ -607,7 +616,7 @@ export const lockDraftDocumentInTransaction = async (
         receipt = await findDraftRevisionOperation({
           base: base.state,
           content,
-          actor,
+          actor: documentActor,
           generation: input.generation,
           expectedRevision: input.expectedRevision,
           events: replayDraftDocument({
@@ -655,7 +664,7 @@ export const lockDraftDocumentInTransaction = async (
       if (input.generation !== generation) return conflict("Draft generation changed before freeze");
       const frozen = await bound
         .freeze(draftId, {
-          actor,
+          actor: documentActor,
           restoreRevision: input.generation,
           signal: input.signal ?? params.signal,
           validate: async (state) => {

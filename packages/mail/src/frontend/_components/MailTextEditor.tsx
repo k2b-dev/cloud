@@ -29,6 +29,10 @@ export default function MailTextEditor(props: {
   onDroppedImages?: (files: File[]) => void;
   /** Live dictation into the body, from the editor toolbar. */
   liveDictation?: boolean;
+  /** Whether the formatting bar shows; the draft inside a conversation toggles it from its own tools. */
+  toolbar?: Accessor<boolean>;
+  /** Inside a conversation the text grows with its content and the conversation scrolls, not the editor. */
+  inline?: boolean;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -183,11 +187,12 @@ export default function MailTextEditor(props: {
     if (binding) void binding.retry().catch((error: unknown) => controls?.notify(error instanceof Error ? error.message : st().pending));
   };
   return (
-    <div class="relative h-full min-h-72">
+    <div class={props.inline ? "mail-inline-text-editor relative" : "relative h-full min-h-72"}>
       {/* The message scrolls here, under the editor's toolbar; the notice below stays at the bottom of the pane. */}
-      <div class="h-full min-h-72 overflow-y-auto overscroll-contain">
+      <div class={props.inline ? undefined : "h-full min-h-72 overflow-y-auto overscroll-contain"}>
         <TextEditor
-          class="min-h-full"
+          class={props.inline ? undefined : "min-h-full"}
+          toolbar={props.toolbar ? props.toolbar() : undefined}
           label={t().messageBody}
           placeholder={t().writeMessage}
           initialValue={binding ? binding.doc.getText("codemirror").toString() : untrack(props.body)}

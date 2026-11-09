@@ -11,7 +11,8 @@ import {
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ConflictError } from "@k2b/sync";
 import * as Y from "yjs";
-import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { type MailRequestContext, personalPrincipal } from "./auth";
+import { requireDraftContentWrite } from "./draft-adoption";
 import { draftDocumentStreamFull, isDraftDocumentStreamFull, withDraftDocumentCommit } from "./draft-document-log";
 import { type DraftDocumentSave, lockDraftDocumentInTransaction, mailDraftDocumentLog } from "./draft-documents";
 
@@ -36,19 +37,14 @@ export const applyDraftTableAction = async (params: {
   caret?: { row: number; column: number };
   signal?: AbortSignal;
 }): Promise<Result<DraftTableActionResponse>> => {
-  const reference = actorRefFromRequest(params.context);
-  const actor =
-    reference.kind === "user"
-      ? { kind: "user" as const, id: reference.userId }
-      : reference.kind === "service_account"
-        ? { kind: "service_account" as const, id: reference.serviceAccountId }
-        : null;
-  if (!actor) return fail(err.forbidden("Draft editor is invalid"));
+  const actor = personalPrincipal(params.context);
   const outcome: { receipt: DraftTableActionResponse | null } = { receipt: null };
   try {
     return await withDraftDocumentCommit(async (db) => {
       const locked = await lockDraftDocumentInTransaction({ ...params, db });
       if (!locked.ok) return locked;
+      const writable = await requireDraftContentWrite({ db, context: params.context, draftId: params.draftId, signal: params.signal });
+      if (!writable.ok) return writable;
       if (locked.data.generation !== params.generation)
         return fail(err.conflict("Draft generation changed; reopen before editing the table"));
       const current = await locked.data.read();

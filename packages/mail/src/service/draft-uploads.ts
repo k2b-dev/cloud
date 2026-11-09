@@ -12,6 +12,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
+import { humanDraftEditor, requireDraftContentWrite } from "./draft-adoption";
 import { withDraftDocumentCommit } from "./draft-document-log";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { requireDraftLeaseAvailable } from "./draft-leases";
@@ -111,9 +112,11 @@ export const createDraftAttachmentUpload = async (params: {
       const [draft] = await tx<{ id: string; state: string }[]>`
         SELECT id, state FROM mail.drafts
         WHERE id = ${draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid AND origin = 'user'
-        FOR SHARE
+        FOR UPDATE
       `;
       if (!draft) return fail(err.notFound("Draft"));
+      const writable = await requireDraftContentWrite({ db: tx, context: params.context, draftId });
+      if (!writable.ok) return writable;
       if (draft.state !== "draft") return fail(err.badInput("Draft can no longer accept attachments"));
 
       const temporaryHash = sha256Text(`pending-upload:${crypto.randomUUID()}`);
@@ -348,6 +351,8 @@ export const finalizeDraftAttachmentUpload = async (params: {
       `;
       if (!upload) return fail(err.notFound("Draft attachment upload"));
       if (upload.state === "attached") return ok();
+      const writable = await requireDraftContentWrite({ db: tx, context: params.context, draftId });
+      if (!writable.ok) return writable;
       if (upload.state !== "uploaded") return conflict("Attachment upload is not complete");
       if (!upload.blob_id) return fail(err.internal("Attachment upload has no blob to finalize"));
       if (upload.draft_state !== "draft") return fail(err.badInput("Draft can no longer accept attachments"));
@@ -418,6 +423,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
         UPDATE mail.drafts
         SET
           revision = revision + 1,
+          adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(adopted_at, now()) ELSE adopted_at END,
           last_editor_kind = ${actor.kind},
           last_editor_id = ${actor.id}::uuid
         WHERE id = ${draftId}::uuid AND origin = 'user'

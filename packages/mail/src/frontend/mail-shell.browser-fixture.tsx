@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
-import type { ConversationView, MailActivityKind } from "../contracts";
+import type { ConversationDraftSummary, ConversationView, MailActivityKind, SenderIdentity } from "../contracts";
 import { mailFolderNames } from "../folder-names";
 import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
@@ -17,6 +17,61 @@ import { readMailWorkspacePreferences } from "./_components/mail-workspace-prefe
 import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
+/** `?identity=1`: the mailbox can send as its support address, so Reply opens a draft without asking for a sender. */
+const fixtureIdentity = (name: string): SenderIdentity => ({
+  id: "00000000-0000-4000-8000-0000000000a1",
+  mailboxId: "Box001",
+  label: name,
+  displayName: name,
+  fromAddress: "support@example.test",
+  replyTo: null,
+  defaultCc: [],
+  defaultBcc: [],
+  defaultFormat: "markdown",
+  defaultPriority: "normal",
+  defaultDeliveryReceipt: false,
+  defaultReadReceipt: false,
+  vcard: null,
+  envelopeSender: null,
+  defaultSignatureTemplateId: null,
+  transport: {
+    mode: "mailbox",
+    host: null,
+    port: null,
+    tlsMode: null,
+    username: null,
+    secret: { kind: null, isSet: false },
+    revision: 0,
+    status: "active",
+    capabilities: { dsn: false, size: false, maxMessageBytes: null },
+    lastVerifiedAt: null,
+    lastError: null,
+  },
+  authenticationPolicy: { automation: "mailbox" },
+  sentFolderId: null,
+  draftsFolderId: null,
+  isDefault: true,
+  status: "verified",
+  statusReason: null,
+  pendingVerificationCommandId: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
+/** `?drafts=1`: the open conversation already has a colleague's forward draft (invented). */
+const conversationDraftsFixture = (url: URL, selectedConversationId: string | null): ConversationDraftSummary[] =>
+  selectedConversationId && url.searchParams.has("drafts")
+    ? [
+        {
+          id: "Drf001",
+          intent: "forward",
+          subject: "Fwd: Example request 1",
+          updatedAt: "2026-10-14T09:55:00.000Z",
+          bodyPreview: "Hello Tom, here are the pickup details for Saturday.",
+          createdByDisplayName: "Jonas Example",
+          suggestion: false,
+        },
+      ]
+    : [];
 /** `?trace=` picks what rules did with the open conversation (fictional, from the approved mockup). */
 const traceFixture = (kind: string | null) => {
   const [sortUncertain, sortNora, sortAngebote, skippedCan, , , , manual] = [
@@ -428,7 +483,7 @@ export function mailboxData(url: URL): MailboxPageData {
     access: { scope: variant === "assigned-only" ? "assigned" : "mailbox", permission },
     initialLiveCursor: "s6t.mail.4",
     folders,
-    identities: [],
+    identities: url.searchParams.has("identity") ? [fixtureIdentity(selectedMailbox.name)] : [],
     scheduledMode,
     scheduledCount: 2,
     scheduledPage: scheduledMode ? { items: [], nextCursor: null, total: 0 } : null,
@@ -449,6 +504,7 @@ export function mailboxData(url: URL): MailboxPageData {
                 revision: 3,
                 attachmentCount: index === 1 ? 1 : 0,
                 bodyPreview: "Invented draft text for the compact mailbox view.",
+                suggestion: false,
                 createdByDisplayName: "Example writer",
                 // Keep relative wording stable while the browser clock advances through hydration.
                 updatedAt: "2026-10-13T04:00:00.000Z",
@@ -587,7 +643,7 @@ export function mailboxData(url: URL): MailboxPageData {
           ]
       : [],
     conversationSummary: selectedConversationId ? summaryFixture(url.searchParams.get("summary")) : null,
-    conversationDrafts: [],
+    conversationDrafts: conversationDraftsFixture(url, selectedConversationId),
     automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId

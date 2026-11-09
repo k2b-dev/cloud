@@ -40,6 +40,7 @@ const draft = (generation: string): MailDraft => ({
   derivedFromMessageId: null,
   derivationKind: null,
   attachments: [],
+  suggestion: false,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada",
@@ -326,6 +327,26 @@ test("an expired socket session also requests sign-in while retaining unsaved in
     expect(f.authenticationRequests()).toBe(1);
     expect(client.state()).toMatchObject({ terminal: true, dirty: true });
     expect(client.content().body).toBe("Pending input");
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a busy server reconnects, sends pending input again and clears its error once replay succeeds", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    client.edit({ ...client.content(), body: "Typed while busy" });
+    const busy = f.sockets[0]!;
+    busy.receive("error", { docId: "Draft1", code: "BACKPRESSURE", message: "The server is busy." });
+    busy.onclose?.({ code: 1013, reason: "BACKPRESSURE" });
+    expect(client.state()).toMatchObject({ terminal: false, error: true, message: "The server is busy." });
+    client.provider.reconnectNow();
+    await Bun.sleep(10);
+    expect(f.sockets).toHaveLength(2);
+    expect(client.state()).toMatchObject({ terminal: false, connected: true, ready: true, error: false });
+    expect(client.provider.hasUnsentChanges()).toBe(false);
+    expect(client.content().body).toBe("Typed while busy");
   } finally {
     await f.cleanup();
   }
