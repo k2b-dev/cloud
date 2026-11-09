@@ -806,6 +806,9 @@ export default function AssistantWorkspace(props: Props) {
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
   };
+  // The draft's own save creates its chat in the background. The person keeps typing and choosing meanwhile: the
+  // field stays editable, and an app command chosen during it continues in that chat.
+  const [draftCreation, setDraftCreation] = createSignal<Promise<AiConversation | null>>();
   type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
   let confirmedUnknownExit: UnknownExit | undefined;
   const unknownExitSnapshot = (): UnknownExit => ({
@@ -982,7 +985,9 @@ export default function AssistantWorkspace(props: Props) {
       if (composerSessionKey() !== key || session(key).conflict) return;
       let conversationId = target;
       if (!conversationId) {
-        const created = await createConversation(false);
+        const creation = createConversation(false);
+        setDraftCreation(() => creation);
+        const created = await creation.finally(() => setDraftCreation(undefined));
         if (!created) return;
         conversationId = created.id;
       }
@@ -1918,9 +1923,11 @@ export default function AssistantWorkspace(props: Props) {
           const attachments = composerAttachmentsFor(key);
           setCommandCreating(true);
           if (!projectId) follow();
-          const created = await createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted).finally(
-            () => setCommandCreating(false),
-          );
+          // The draft's own save may be creating this chat already; the opening then continues in that one.
+          const creation =
+            (!projectId && draftCreation()) ||
+            createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted);
+          const created = await creation.finally(() => setCommandCreating(false));
           if (!created) throw new Error("Chat not created");
           target = created.id;
           if (projectId) {
@@ -2372,7 +2379,7 @@ export default function AssistantWorkspace(props: Props) {
             !canUseComposer() ||
             panelStorageFailed() ||
             submissionUnknown(sessionKey()) ||
-            (newConversation.loading() && !commandCreating()) ||
+            (newConversation.loading() && !commandCreating() && !draftCreation()) ||
             chat.loadingConversation()
           }
           state={
