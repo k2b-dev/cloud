@@ -15,12 +15,17 @@ const budgets = [
   { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 230 },
   // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure; KaTeX
   // loads only for math. Measured 2026-11-05 with these roots: 2,155,527 B (with KaTeX 2,258,365 B and fewer roots).
-  // Measured 2026-11-07 after combining first-use table controls and Code chat results: 2,236,218 B.
-  { file: "packages/assistant/src/pwa/AssistantPwa.island.tsx", kib: 2200 },
+  // Measured 2026-11-07 with first-use table controls: 2,210,862 B; original 2160 KiB cap restored.
+  // Measured 2026-11-07 with the model trigger's level indicator and its load-error card: 2,215,053 B.
+  // Measured 2026-11-09 on fbbe964a50 with the toast stack (#2979) and the sheet motion (#2981): 2,220,367 B; about
+  // 10 % headroom, rounded up to the next KiB (Valentin go 09.11.).
+  { file: "packages/assistant/src/pwa/AssistantPwa.island.tsx", kib: 2386 },
   // The web Assistant renders chat Markdown; KaTeX loads only for math, so it stays out of the static closure.
-  // Measured 2026-11-07 with first-use table controls and Code chat controls: 3,101,243 B.
-  // Code destinations and KaTeX remain on demand; the cap leaves less than 1% headroom.
-  { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 3040 },
+  // Measured 2026-11-07 with first-use table controls: 3,058,884 B (KaTeX remains on demand).
+  // Measured 2026-11-07 with the model trigger's level indicator and its load-error card: 3,062,712 B.
+  // Measured 2026-11-09 on fbbe964a50 with the toast stack (#2979) and the sheet motion (#2981): 3,078,988 B; about
+  // 10 % headroom, rounded up to the next KiB (Valentin go 09.11.).
+  { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 3308 },
   // The Spaces part: "My tasks", a Space as a list per status, one task with its pickers (status, due date, people),
   // and the shared "+" menu of Spaces with its catalog; the quick add field loads when it opens.
   // Measured 2026-11-05: 1,079,170 B.

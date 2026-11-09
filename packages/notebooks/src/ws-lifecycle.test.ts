@@ -51,7 +51,10 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   mock.module("@k2b/cloud/services", () => ({
     logger: () => ({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }),
   }));
+  // Keep adapter exports used by transitive platform imports; replace only the socket transport.
+  const bunAdapter = { ...(await import("hono/bun")) };
   mock.module("hono/bun", () => ({
+    ...bunAdapter,
     upgradeWebSocket: (factory: (context: Context) => Promise<WSEvents>) => async (context: Context) => {
       events = await factory(context);
       return new Response("fixture");

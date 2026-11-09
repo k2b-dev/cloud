@@ -78,6 +78,26 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'drafts' AND column_name = 'adopted_at') THEN
+      -- Earlier editor attribution cannot prove that a draft has never been edited by a person.
+      -- A temporary default marks existing rows without rewriting content or firing edit triggers.
+      ALTER TABLE mail.drafts ADD COLUMN adopted_at timestamptz DEFAULT now();
+      ALTER TABLE mail.drafts ALTER COLUMN adopted_at DROP DEFAULT;
+    END IF;
+  END $$`.simple();
+  await tx`CREATE UNIQUE INDEX IF NOT EXISTS drafts_untouched_suggestion_idx
+    ON mail.drafts (mailbox_id, conversation_id)
+    WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_suggestion_requests (
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    service_account_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    request_hash text NOT NULL,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
+  )`.simple();
   // Scheduling state and the latest timing sample stay bounded to one row per mailbox.
   await tx`
     CREATE TABLE IF NOT EXISTS mail.hydration_work (

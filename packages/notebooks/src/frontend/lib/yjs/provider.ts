@@ -151,13 +151,6 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       };
     }
 
-    if (code === 1013) {
-      return {
-        code: notebooksYjs.errorCode.backpressure,
-        message: "Websocket backpressure",
-      };
-    }
-
     return null;
   };
 

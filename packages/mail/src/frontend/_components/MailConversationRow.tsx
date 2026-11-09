@@ -27,8 +27,21 @@ const mailRowShowsParticipants = (item: Pick<MailListItem, "selectionKind" | "pa
  * A row has a fourth line only for its tags, for "Waiting", or for the faces of others who wrote; every other row has
  * the same three-line height.
  */
-export const mailRowHasFourthLine = (item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants">): boolean =>
-  item.localTags.length > 0 || item.workStatus === "waiting" || mailRowShowsParticipants(item);
+export const mailRowHasFourthLine = (
+  item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants" | "drafts">,
+): boolean => item.localTags.length > 0 || item.workStatus === "waiting" || item.drafts.count > 0 || mailRowShowsParticipants(item);
+
+/** A single draft only Gustav has written is his suggestion; it shows in plum until a person takes it over. */
+export const mailRowDraftIsSuggestion = (drafts: MailListItem["drafts"]): boolean =>
+  drafts.count === 1 && drafts.editors.length > 0 && drafts.editors.every((editor) => editor.kind === "service_account");
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
 
 type MailConversationRowState = {
   selectedConversationId: string | null;
@@ -462,6 +475,36 @@ export default function MailConversationRow(props: {
                       +{props.item.localTags.length - MAX_ROW_TAGS}
                     </span>
                   </Tooltip.Anchor>
+                </Show>
+                <Show when={props.item.drafts.count > 0}>
+                  {(() => {
+                    const suggestion = () => mailRowDraftIsSuggestion(props.item.drafts);
+                    const names = () => props.item.drafts.editors.map((editor) => editor.displayName).join(", ");
+                    const label = () =>
+                      suggestion()
+                        ? t().gustavSuggestion
+                        : props.item.drafts.count === 1
+                          ? t().draftOne
+                          : t().draftMany({ count: props.item.drafts.count });
+                    return (
+                      <span
+                        class="mail-row-draft"
+                        data-suggestion={suggestion() ? "" : undefined}
+                        data-mail-row-draft
+                        role="img"
+                        aria-label={names() ? `${label()}: ${names()}` : label()}
+                        title={names() || undefined}
+                      >
+                        <i class={`ti ${suggestion() ? "ti-sparkles" : "ti-pencil"}`} aria-hidden="true" />
+                        {label()}
+                        <Show when={!suggestion()}>
+                          <For each={props.item.drafts.editors.slice(0, 2)}>
+                            {(editor) => <span class="mail-row-draft-editor">{initials(editor.displayName)}</span>}
+                          </For>
+                        </Show>
+                      </span>
+                    );
+                  })()}
                 </Show>
                 <Show when={props.item.workStatus === "waiting"}>
                   <span class="mail-row-waiting">

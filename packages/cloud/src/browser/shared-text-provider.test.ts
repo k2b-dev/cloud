@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
-import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import {
   createSharedTextProvider,
@@ -294,6 +294,64 @@ test("trusted awareness sends only local state and suppresses its rewritten serv
   const publications = socket.sent.filter((request) => request.type === "awarenessPublish");
   expect(publications).toHaveLength(1);
   expect(awareness.getStates().has(local.clientID)).toBe(true);
+});
+
+test("a burst of cursor moves sends the first and then only the latest state per interval", () => {
+  const timers: { run: () => void; delay: number }[] = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  Object.assign(globalThis, { setTimeout: (run: () => void, delay: number) => timers.push({ run, delay }) });
+  cleanups.push(() => Object.assign(globalThis, { setTimeout: originalSetTimeout }));
+  const { awareness, socket } = fixture();
+  socket.ready();
+  const frames = () => socket.sent.filter((request) => request.type === "awarenessPublish");
+  const before = frames().length;
+  // A selection drag reports every pointer move; each frame would cost the server an access check and a publish.
+  for (let head = 0; head < 60; head++) awareness.setLocalStateField("cursor", { anchor: 0, head });
+  expect(frames()).toHaveLength(before + 1);
+  expect(timers.map((timer) => timer.delay)).toEqual([100]);
+  timers.shift()!.run();
+  expect(frames()).toHaveLength(before + 2);
+  const latest = new Awareness(doc(303));
+  cleanups.push(() => latest.destroy());
+  applyAwarenessUpdate(latest, encoding.fromBase64(frames().at(-1)!.payload.payload), "remote");
+  expect([...latest.getStates().values()].at(-1)?.cursor).toEqual({ anchor: 0, head: 59 });
+  // The trailing frame opens one more interval; without new moves it sends nothing.
+  timers.shift()!.run();
+  expect(frames()).toHaveLength(before + 2);
+  expect(timers).toHaveLength(0);
+});
+
+test("a busy server or proxy reconnects with backoff and keeps unsent input instead of stopping", () => {
+  const timers: (() => void)[] = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  Object.assign(globalThis, { setTimeout: (run: () => void) => timers.push(run) });
+  cleanups.push(() => Object.assign(globalThis, { setTimeout: originalSetTimeout }));
+  const fatal: string[] = [];
+  // Even an adapter that maps 1013 or BACKPRESSURE to a terminal error cannot end the session for an overload.
+  const { provider, socket, local } = fixture({
+    onFatal: (error) => fatal.push(error.code),
+    terminalErrorCodes: ["ACCESS_REVOKED", "BACKPRESSURE"],
+    transport: {
+      url: "wss://example.invalid/api/drafts/ws",
+      encode: (request) => request,
+      decode: (packet) => packet as SharedTextProviderMessage<string, { name: string }>,
+      closeError: () => ({ code: "ACCESS_REVOKED", message: "Access revoked" }),
+    },
+  });
+  socket.ready();
+  local.getText("codemirror").insert(0, "busy");
+  const [unsent] = publishes(socket);
+  socket.message({ type: "error", payload: { code: "BACKPRESSURE", message: "Too many messages" } });
+  expect(socket.readyState).toBe(3);
+  socket.onclose?.({ code: 1013, reason: "BACKPRESSURE" });
+  expect(fatal).toEqual([]);
+  expect(provider.hasUnsentChanges()).toBe(true);
+  timers.shift()!();
+  const next = Socket.instances.at(-1)!;
+  expect(next).not.toBe(socket);
+  next.open();
+  next.ready();
+  expect(publishes(next).map((request) => request.payload.payload)).toEqual([unsent!.payload.payload]);
 });
 
 test("an application-specific closed-generation error keeps input recoverable and cannot be resumed", () => {

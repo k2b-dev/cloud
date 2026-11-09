@@ -69,6 +69,7 @@ const draft = (revision: number, editable: DraftEditableContent): MailDraft => (
   ...editable,
   signatureTemplateId: editable.signatureTemplateId ?? null,
   attachments: [],
+  suggestion: false,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada Example",
@@ -137,6 +138,15 @@ const lease: DraftLease = {
   expiresAt: "2026-10-04T10:00:30.000Z",
 };
 
+/** Waits for a condition the session reaches on its own, within a deadline. */
+const waitFor = async (check: () => boolean, deadline = 3_000) => {
+  const end = performance.now() + deadline;
+  while (!check()) {
+    if (performance.now() > end) throw new Error("Condition not reached in time");
+    await Bun.sleep(5);
+  }
+};
+
 describe("Mail draft session", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
@@ -159,8 +169,16 @@ describe("Mail draft session", () => {
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     dispose();
+    // A disposed session still saves the typing it held before it releases its lease. Let that finish against this
+    // test's server, so it never reaches the next test's.
+    const end = performance.now() + 1_000;
+    for (let quiet = 0, seen = requests.length; quiet < 3 && performance.now() < end; ) {
+      await Bun.sleep(5);
+      quiet = requests.length === seen ? quiet + 1 : 0;
+      seen = requests.length;
+    }
     globalThis.fetch = originalFetch;
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
     if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
@@ -403,6 +421,59 @@ describe("Mail draft session", () => {
       offline.mockRestore();
       generations.mockRestore();
     }
+  });
+
+  test("a draft that closes inside the page saves typing newer than a save in flight before it releases the lease", async () => {
+    const firstSave = Promise.withResolvers<void>();
+    let saves = 0;
+    respondWith(async (method, url, body) => {
+      if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "POST") return Response.json({ ...lease, token: crypto.randomUUID() });
+      if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "DELETE") return new Response(null, { status: 204 });
+      if (url.endsWith(`/drafts/${DRAFT_ID}`) && method === "PUT") {
+        saves += 1;
+        if (saves === 1) await firstSave.promise;
+        const next = body as { expectedRevision: number; draft: DraftEditableContent };
+        return Response.json(draft(next.expectedRevision + 1, next.draft));
+      }
+      return Response.json({ code: "NOT_FOUND", message: `Unexpected ${method} ${url}` }, { status: 404 });
+    });
+    const { createMailDraftSession } = await import("./mail-draft-session");
+    const [current, setCurrent] = createSignal(content("", "first@example.test"));
+    let disposed = false;
+    const session = createRoot((disposeRoot) => {
+      dispose = () => {
+        disposed = true;
+        disposeRoot();
+      };
+      return createMailDraftSession({
+        mailboxId: MAILBOX_ID,
+        currentActor: { kind: "user", id: "Usr001" },
+        initialDraft: draft(1, content("", "first@example.test")),
+        hasVerifiedIdentity: () => true,
+        content: current,
+        applyDraftContent: setCurrent,
+        isDisposed: () => disposed,
+        onRecovered: () => undefined,
+        onMaterialized: () => undefined,
+        locale: () => "en",
+      });
+    });
+    await waitFor(() => session.lease() !== null);
+    setCurrent(content("First", "first@example.test"));
+    void session.persist();
+    await waitFor(() => saves === 1);
+    // The person types on and the conversation changes while the first save is still on its way.
+    setCurrent(content("LATEST", "first@example.test"));
+    dispose();
+    firstSave.resolve();
+    await waitFor(() => requests.some((request) => request.method === "DELETE"));
+
+    const puts = requests
+      .filter((request) => request.method === "PUT")
+      .map((request) => (request.body as { draft: DraftEditableContent }).draft.body);
+    expect(puts).toEqual(["First", "LATEST"]);
+    const order = requests.map((request) => request.method);
+    expect(order.lastIndexOf("PUT")).toBeLessThan(order.indexOf("DELETE"));
   });
 
   test("a send after a lost save response stores the current recipients and text before it uses the draft", async () => {

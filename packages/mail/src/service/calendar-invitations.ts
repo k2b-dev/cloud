@@ -22,6 +22,7 @@ import {
   previewCalendarInvitation,
 } from "./app-integrations";
 import type { MailRequestContext } from "./auth";
+import { humanDraftEditor, requireDraftContentWrite } from "./draft-adoption";
 import { enqueueDraftProjection } from "./draft-provider-projection";
 import * as draftUploads from "./draft-uploads";
 import * as drafts from "./drafts";
@@ -70,6 +71,8 @@ const chooseVerifiedIdentity = (
 };
 
 const attachCalendar = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
   draftId: string;
   filename: string;
   method: "REQUEST" | "REPLY" | "CANCEL";
@@ -78,7 +81,13 @@ const attachCalendar = async (params: {
   const bytes = Buffer.from(params.calendar, "utf8");
   const blob = await storeReadableBlob(Readable.from(bytes), bytes.byteLength);
   try {
-    await sql.begin(async (tx) => {
+    const attached = await sql.begin(async (tx): Promise<Result<void>> => {
+      const access = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
+      if (!access.ok) return access;
+      const writable = await requireDraftContentWrite({ db: tx, context: params.context, draftId: params.draftId });
+      if (!writable.ok) return writable;
+      const [draft] = await tx<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${params.draftId}::uuid FOR UPDATE`;
+      if (draft?.state !== "draft") return fail(err.conflict("Draft can no longer accept attachments"));
       const rows = await withShortIdDb(
         tx,
         "draftAttachment",
@@ -92,8 +101,13 @@ const attachCalendar = async (params: {
         RETURNING id
       `,
       );
-      if (rows.length > 0) await tx`UPDATE mail.drafts SET revision = revision + 1 WHERE id = ${params.draftId}::uuid`;
+      if (rows.length > 0)
+        await tx`UPDATE mail.drafts SET revision = revision + 1,
+        adopted_at = CASE WHEN ${humanDraftEditor(params.context)} THEN COALESCE(adopted_at, now()) ELSE adopted_at END
+        WHERE id = ${params.draftId}::uuid`;
+      return ok();
     });
+    if (!attached.ok) return attached;
   } catch {
     // Blobs are content addressed, so this one may already back other attachments or messages.
     // deleteOrphanedBlobs sweeps it if nothing references it.

@@ -81,6 +81,46 @@ suite("mail baseline schema", () => {
     }
   });
 
+  test("adopts legacy drafts once, keeps their content and timestamps, and allows new untouched suggestions", async () => {
+    const [mailbox] = await sql<{ id: string }[]>`INSERT INTO mail.mailboxes (short_id, name)
+      VALUES (${newShortId()}, 'Suggestion adoption upgrade') RETURNING id`;
+    const mailboxId = mailbox!.id;
+    try {
+      const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
+        (short_id, mailbox_id, label, from_address, automation_policy, status)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, 'Sender', 'upgrade@example.test', 'disabled', 'verified') RETURNING id`;
+      await sql`ALTER TABLE mail.drafts DROP COLUMN adopted_at CASCADE`.simple();
+      const ids: string[] = [];
+      for (const author of ["user", "service_account"]) {
+        const [draft] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
+          (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id,
+            subject, body_markdown, created_at, updated_at)
+          VALUES (${newShortId()}, ${mailboxId}::uuid, ${sender!.id}::uuid, ${author}, ${crypto.randomUUID()}::uuid,
+            'service_account', ${crypto.randomUUID()}::uuid, 'Legacy draft', 'Keep this content',
+            '2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z') RETURNING id`;
+        ids.push(draft!.id);
+      }
+      const before = await sql`SELECT id, subject, body_markdown, author_kind, author_id, updated_at
+        FROM mail.drafts WHERE id = ANY(${ids}::uuid[]) ORDER BY id`;
+      await migrate();
+      expect(
+        await sql`SELECT id, subject, body_markdown, author_kind, author_id, updated_at
+        FROM mail.drafts WHERE id = ANY(${ids}::uuid[]) ORDER BY id`,
+      ).toEqual(before);
+      expect((await sql`SELECT id FROM mail.drafts WHERE id = ANY(${ids}::uuid[]) AND adopted_at IS NOT NULL`).length).toBe(2);
+      const [fresh] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
+        (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${sender!.id}::uuid, 'service_account', ${crypto.randomUUID()}::uuid,
+          'service_account', ${crypto.randomUUID()}::uuid) RETURNING id`;
+      await migrate();
+      const [unchanged] = await sql<{ adopted_at: Date | null }[]>`SELECT adopted_at FROM mail.drafts WHERE id = ${fresh!.id}::uuid`;
+      expect(unchanged!.adopted_at).toBeNull();
+    } finally {
+      await migrate();
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    }
+  });
+
   test("serializes concurrent runs behind a transaction-scoped guard", async () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations ORDER BY version`;

@@ -20,7 +20,10 @@ export const projectDashboardPanel = (panel: DashboardPanel, result: SqlRows): D
   }
   if (!["number", "table", "map"].includes(panel.kind)) {
     const x = columns.findIndex((column) => column.name === panel.x);
-    if (panel.kind === "line" && (x < 0 || !/^(?:Nullable\()?Date(?:Time(?:64)?(?:\(|$)|\)?$)/.test(columns[x]!.type)))
+    if (
+      (panel.kind === "line" || panel.kind === "lineForecast") &&
+      (x < 0 || !/^(?:Nullable\()?Date(?:Time(?:64)?(?:\(|$)|\)?$)/.test(columns[x]!.type))
+    )
       throw new Error("A line panel needs a Date, DateTime or DateTime64 time column");
     if (rows.length) dashboardChartRenderOptions(panel, { columns, rows }, { locale: "en", timeZone: "UTC" });
     return { columns, rows };

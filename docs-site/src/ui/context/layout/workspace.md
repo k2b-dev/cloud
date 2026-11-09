@@ -753,6 +753,10 @@ gets its radius and frame, flat or not, so every app shows the same rounded
 card. Cloud does this from 1024 px for signed-in people and from 768 px on
 anonymous pages.
 
+Set `layer="quiet"` on a workspace for settings or administration. Islands in
+it stand flat, and only charts, dashboard frames and panels, and key figures
+keep the island shadow ([Layers and shadows](/en/ui/surfaces/elevation)).
+
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
 history through `onNavigate`. The enhanced helper does not run server loaders
@@ -1207,7 +1211,7 @@ function parkWorkspaceDetailDrawers(root?: ParentNode): void;
 
 ```ts
 type AppWorkspaceProps = {
-  mobileSurface?: "contained" | "flush"; flat?: boolean;
+  mobileSurface?: "contained" | "flush"; flat?: boolean; layer?: "quiet";
   children: JSX.Element; class?: string; resizable?: boolean;
   layoutState?: () => AppWorkspaceLayoutState | null | undefined;
   onLayoutChange?: (state: AppWorkspaceLayoutState) => void; controller?: false;

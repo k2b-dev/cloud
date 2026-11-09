@@ -111,6 +111,13 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   let deliveryTail = Promise.resolve();
   let pendingMessages = 0;
   let pendingBytes = 0;
+  /**
+   * The newest state of a queued cursor message that has not started and is still the queue's last entry. A later
+   * cursor message replaces it instead of queueing, so a selection drag waits as one message and never counts
+   * against the message limit; any other message closes the slot, so a cursor never overtakes the edit before it.
+   * Each processed cursor message still refreshes access.
+   */
+  let awarenessSlot: { packet: unknown; size: number } | null = null;
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   let cleanup: Promise<void> | undefined;
   const tasks = new Set<Promise<void>>();
@@ -525,25 +532,45 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
         close("INVALID_PAYLOAD", t.invalid, 1009);
         return;
       }
-      const raw = event.data;
-      const size = new TextEncoder().encode(raw).byteLength;
-      if (pendingMessages >= MAX_PENDING_MESSAGES || pendingBytes + size > MAX_BUFFER_BYTES) {
+      const size = new TextEncoder().encode(event.data).byteLength;
+      // Parsed once on arrival, so a cursor message is recognised before it waits; undefined marks invalid JSON.
+      let packet: unknown;
+      try {
+        packet = JSON.parse(event.data);
+      } catch {
+        packet = undefined;
+      }
+      const cursor = typeof packet === "object" && packet !== null && (packet as { type?: unknown }).type === "awarenessPublish";
+      if (cursor && awarenessSlot) {
+        if (pendingBytes - awarenessSlot.size + size > MAX_BUFFER_BYTES) {
+          close("BACKPRESSURE", t.busy, 1013);
+          return;
+        }
+        pendingBytes += size - awarenessSlot.size;
+        awarenessSlot.packet = packet;
+        awarenessSlot.size = size;
+        return;
+      }
+      if ((!cursor && pendingMessages >= MAX_PENDING_MESSAGES) || pendingBytes + size > MAX_BUFFER_BYTES) {
         close("BACKPRESSURE", t.busy, 1013);
         return;
       }
-      pendingMessages++;
+      const slot = { packet, size };
+      if (cursor) awarenessSlot = slot;
+      else {
+        awarenessSlot = null;
+        pendingMessages++;
+      }
       pendingBytes += size;
       messageTail = messageTail
         .then(async () => {
+          if (awarenessSlot === slot) awarenessSlot = null;
           if (closed) return;
-          let packet: unknown;
-          try {
-            packet = JSON.parse(raw);
-          } catch {
+          if (slot.packet === undefined) {
             close("INVALID_PAYLOAD", t.invalid);
             return;
           }
-          const parsed = mailDraftDocumentRequestSchema.safeParse(packet);
+          const parsed = mailDraftDocumentRequestSchema.safeParse(slot.packet);
           if (!parsed.success) {
             close("INVALID_PAYLOAD", t.invalid);
             return;
@@ -552,8 +579,8 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
         })
         .catch(failure)
         .finally(() => {
-          pendingMessages--;
-          pendingBytes -= size;
+          if (!cursor) pendingMessages--;
+          pendingBytes -= slot.size;
         });
     },
     onClose: () => {

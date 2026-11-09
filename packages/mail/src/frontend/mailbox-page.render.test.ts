@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as ai from "@k2b/cloud/ai";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import { type AuthContext, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
@@ -68,6 +69,8 @@ beforeEach(() => {
   spies.push(spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null));
   spies.push(spyOn(services.coreSettings, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
+  // The inline draft offers dictation; its availability reads AI settings, which these renders do not start.
+  spies.push(spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false, reason: "not_configured" }));
 });
 
 const request = (query = "", landingPage = false, env?: { timeout(request: Request, seconds: number): void }, codePage = false) => {

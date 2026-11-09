@@ -1,4 +1,4 @@
-import { type SharedTextStore, sharedText, sharedTextNodeId } from "@k2b/cloud/shared-text";
+import { type SharedTextStore, sharedTextNodeId } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ConflictError, StoreFullError } from "@k2b/sync";
 import { inspectTableStructure } from "@k2b/ui/text-editor/model";
@@ -14,29 +14,17 @@ import {
 } from "../lib/draft-document";
 import { mailDraftDocumentMessages } from "../lib/draft-document-protocol";
 import { requireDraftAccess } from "./access";
-import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
+import { refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
+import { MAX_LOG_ENVELOPE_BYTES, mailDraftDocumentLog } from "./draft-document-log";
+
+export { mailDraftDocumentLog } from "./draft-document-log";
+
 import { DRAFT_REVISION_OPERATION_ORIGIN, draftRevisionOperationContent, findDraftRevisionOperation } from "./draft-document-operation";
 import { awaitDraftDocumentQuery, withDraftDocumentTransaction } from "./draft-document-socket-sql";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { resolveDraftSignature, validateIdentity } from "./draft-validation";
-
-const MAX_LOG_ENVELOPE_BYTES = 8_100_000 + 4096;
-
-/**
- * Preparation only: lock remains the default. Sync #4 (reject-full, no expiry
- * before snapshot coverage, watermark pruning) blocks activation. These are
- * supported Sync 7 settings, using the existing Notebooks budget: 1 GiB holds
- * about 149 KiB/s for a two-hour stalled projection window, or 132 maximum
- * updates. The unused dead-letter stream has room for two maximum envelopes.
- * Merely importing this declaration does not provision or activate a log.
- */
-export const mailDraftDocumentLog = sharedText.define({
-  id: "cloud:mail:draft-documents",
-  retention: { maxAgeMs: 7 * 24 * 60 * 60 * 1000, maxBytes: 1024 ** 3 },
-  deadLetterRetention: { maxBytes: 16 * 1024 * 1024 },
-  maxPayloadBytes: MAX_LOG_ENVELOPE_BYTES,
-});
 
 /** Enable only after checking the installed retention contract AND the actual stream configuration. */
 export const sharedDraftsSupported = async (): Promise<boolean> => {
@@ -173,6 +161,8 @@ export const lockDraftDocumentInTransaction = async (
         ? { kind: "service_account" as const, id: actorRef.serviceAccountId }
         : null;
   if (!actor) return fail(err.forbidden("Draft editor is invalid"));
+  // Retain the represented person in the log even if SQL projection rolls back.
+  const documentActor = personalPrincipal(context);
 
   const loadRow = async (): Promise<DraftRow | null> => {
     const [row] = await awaitDraftDocumentQuery(
@@ -350,6 +340,7 @@ export const lockDraftDocumentInTransaction = async (
       if (docId !== draftId) throw new Error("Transaction-bound draft store cannot access another draft");
       const ready = await assertWritable(input.restoreRevision);
       if (!ready.ok) throw new Error(ready.error.message);
+      await refreshDraftAdoption({ db, draftId, signal: params.signal });
       const sequence = mailDraftDocumentLog.topic().cursorSequence(input.cursor);
       if (row.doc_cursor && mailDraftDocumentLog.topic().cursorSequence(row.doc_cursor) !== Number(row.doc_seq))
         throw new Error("Stored draft cursor and sequence disagree");
@@ -415,7 +406,7 @@ export const lockDraftDocumentInTransaction = async (
         text: decode(state).body,
         restoreRevision: generation,
         requestedAt: Date.now(),
-        actor,
+        actor: documentActor,
         contributors: [],
       },
       undefined,
@@ -425,6 +416,8 @@ export const lockDraftDocumentInTransaction = async (
   const acceptUpdate = async (input: AcceptInput, revisionBase?: number): Promise<Result<DraftDocumentAdmission>> => {
     const ready = await assertWritable(input.generation);
     if (!ready.ok) return ready;
+    const writable = await requireDraftContentWrite({ db, context, draftId, signal: input.signal ?? params.signal });
+    if (!writable.ok) return writable;
     if (input.generation !== generation) return recovery("Draft generation changed; retain the submitted content for recovery");
     // Raw bytes larger than the entire event budget cannot possibly fit.
     // Reject them before Yjs allocates decoded structures; Sync checks the
@@ -433,7 +426,7 @@ export const lockDraftDocumentInTransaction = async (
     let invalid: string | null = null;
     const admitted = await bound
       .accept(draftId, {
-        actor,
+        actor: documentActor,
         update: input.update,
         baseCursor: input.baseCursor,
         restoreRevision: input.generation,
@@ -469,6 +462,7 @@ export const lockDraftDocumentInTransaction = async (
     if (admitted.status !== "accepted") return recovery(invalid ?? "Draft update requires recovery; retain the submitted content");
     publishedCursor = admitted.cursor;
     try {
+      await refreshDraftAdoption({ db, draftId, signal: input.signal ?? params.signal });
       // Read all types, not only the body. The row lock prevents another Mail
       // admission/freeze from publishing before this snapshot is committed.
       const fresh = await bound.read(draftId, { signal: input.signal ?? params.signal });
@@ -565,6 +559,8 @@ export const lockDraftDocumentInTransaction = async (
     },
     accept: (input) => acceptUpdate(input),
     async writeRevision(input) {
+      const writable = await requireDraftContentWrite({ db, context, draftId, signal: input.signal ?? params.signal });
+      if (!writable.ok) return writable;
       const ready = await assertWritable(input.generation);
       if (!ready.ok) return ready;
       if (input.generation !== generation || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1)
@@ -589,7 +585,7 @@ export const lockDraftDocumentInTransaction = async (
         receipt = await findDraftRevisionOperation({
           base: base.state,
           content,
-          actor,
+          actor: documentActor,
           generation: input.generation,
           expectedRevision: input.expectedRevision,
           events: topic.replay({ tenantId: draftId, after: base.cursor ?? topic.cursorAt(0), until, signal: requestSignal }),
@@ -629,7 +625,7 @@ export const lockDraftDocumentInTransaction = async (
       if (!ready.ok) return ready;
       if (input.generation !== generation) return conflict("Draft generation changed before freeze");
       const frozen = await bound.freeze(draftId, {
-        actor,
+        actor: documentActor,
         restoreRevision: input.generation,
         signal: input.signal ?? params.signal,
         validate: async (state) => {

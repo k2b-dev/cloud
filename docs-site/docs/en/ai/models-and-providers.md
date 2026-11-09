@@ -224,8 +224,10 @@ output limit always takes precedence over this automatic rule.
 Discovery preserves `max_output_tokens` (or OpenRouter's
 `top_provider.max_completion_tokens`) as `outputTokenLimit` when adding a model
 through administration. An existing model can set this catalog field through
-the model update API or CLI; `null` clears it. For older thinking-capable catalog
-entries without either output setting, Cloud tries the provider's model listing
+the model update API or CLI; `null` clears it. Services using `@k2b/cloud` 0.63
+keep reading the catalog after the 0.71 upgrade without a library update.
+For older thinking-capable catalog entries without either output setting,
+Cloud tries the provider's model listing
 when resolving the model. This lookup is bounded to ten seconds; unavailable
 listings do not block generation. Saving the reported limit in the catalog
 avoids that extra lookup. Set the model's `contextWindow` to its documented

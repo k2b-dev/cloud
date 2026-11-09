@@ -1,7 +1,7 @@
 {
   "name": "@k2b/cloud-workspace",
   "private": true,
-  "version": "0.70.0",
+  "version": "0.71.0",
   "type": "module",
   "packageManager": "bun@1.4.4",
   "workspaces": {
@@ -45,7 +45,7 @@
     ],
     "catalog": {
       "@firecrawl/anydoc": "0.2.4",
-      "@k2b/stdlib": "0.31.1",
+      "@k2b/stdlib": "0.32.0",
       "@k2b/sync": "7.1.0",
       "@nats-io/jetstream": "3.4.0",
       "@nats-io/transport-node": "3.4.0",
@@ -119,7 +119,7 @@
     "release:preflight": "bun scripts/prod-upgrade-preflight.ts"
   },
   "devDependencies": {
-    "@k2b/stdlib": "0.31.1",
+    "@k2b/stdlib": "0.32.0",
     "@nats-io/transport-node": "3.4.0",
     "hono": "4.13.9",
     "jose": "6.2.12",

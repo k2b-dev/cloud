@@ -110,7 +110,7 @@ Ein gemeinsamer Entwurf erlaubt eine aktive Bearbeitungssitzung. Sind die Angabe
 - Meldet Mail Wiederherstellungskopien, prüfe sie, bevor du Inhalte verwirfst oder überschreibst.
 - Lädt der Browser nach ungespeicherter Eingabe neu, nimm die wiederhergestellte Browserfassung an, wenn sie deiner Arbeit entspricht.
 
-Eine weitere Antwort zu beginnen, blendet vorhandene Arbeit nicht aus. Der Dialog **Entwurf fortsetzen?** zeigt Person, Änderungszeit und eine Inhaltsvorschau. Du setzt den richtigen Entwurf fort oder erstellst bewusst einen weiteren.
+Eine weitere Antwort zu beginnen, blendet vorhandene Arbeit nicht aus. Die Unterhaltung zeigt jeden Entwurf mit Person, Änderungszeit und Inhaltsvorschau, und **Antworten** öffnet den vorhandenen Antwort-Entwurf statt eines zweiten.
 
 ## Eine gesendete Nachricht fehlt in Gesendet {icon="send"}
 
