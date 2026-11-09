@@ -11,7 +11,6 @@ import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
 import {
   createNotebookTablePresentation,
   fadeScrollMarginsExtension,
-  fadeScrollPadding,
   listCommandsExtension,
   notebookSourceFormulasExtension,
   pressMissedEditor,
@@ -92,7 +91,7 @@ import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace
 import { openAttachmentPicker } from "./AttachmentPicker";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
-import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import EditorToolbar, { formattingKeymap, pillScrollPadding } from "./EditorToolbar";
 import { EmptyNoteTemplates } from "./EmptyNoteTemplates";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
@@ -1440,7 +1439,11 @@ function EditorInstance(
   });
 
   return (
-    <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+    // While the note is writable, the formatting and page pills float over its bottom edge (layers and shadows).
+    <div
+      class="notebook-editor-frame relative flex-1 min-w-0 flex flex-col overflow-hidden"
+      data-notebook-pills={props.readOnly ? undefined : ""}
+    >
       <article ref={printArticle} class="notebook-book-content notebook-note-print" />
       {/* Once retries stop, the sync-ended bar owns the message; this notice promises retries. */}
       <Show when={storageExhausted() && !syncEnded.ended()}>
@@ -1466,7 +1469,7 @@ function EditorInstance(
       </Show>
       <ScrollArea
         ref={scrollPort}
-        style={{ "scroll-padding-block": fadeScrollPadding }}
+        style={{ "scroll-padding-block": pillScrollPadding }}
         class="relative min-h-0 flex-1 cursor-text"
         onMouseDown={(event) => {
           if (props.readOnly || !pressMissedEditor(event)) return;
@@ -1530,6 +1533,8 @@ function EditorInstance(
             setCommentsExtent,
           )}
         </div>
+        {/* Room for the floating pills, so the end of the note always scrolls above them. */}
+        <div class="notebook-editor-endgap" aria-hidden="true" />
       </ScrollArea>
       {comments.toolbar(() => scrollPort)}
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}

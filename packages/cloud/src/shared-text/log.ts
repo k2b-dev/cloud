@@ -7,7 +7,7 @@ import { applySharedTextEvent, MalformedSharedTextEventError } from "./events";
 import { snapshots } from "./snapshots";
 import type { SharedTextContributor, SharedTextStore, SharedTextSyncEvent } from "./types";
 
-const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "deadLetterRetention" | "maxPayloadBytes">>) => {
+const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "whenFull" | "deadLetterRetention" | "maxPayloadBytes">>) => {
   const topic = () => getProcessSync().topic<SharedTextSyncEvent>(topicConfig);
   const replay = async (config: {
     docId: string;
