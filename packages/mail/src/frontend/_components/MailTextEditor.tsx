@@ -283,7 +283,7 @@ export default function MailTextEditor(props: {
       </div>
       <Show when={binding && (!props.sharedState?.()?.remembering || props.sharedState?.()?.error || unknownAction())}>
         <div
-          class="absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 text-xs text-primary shadow-sm"
+          class="absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 text-xs text-primary shadow-[var(--k2b-shadow-toolbar)]"
           role="status"
         >
           <span class="min-w-0 flex-1">

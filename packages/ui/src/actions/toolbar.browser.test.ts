@@ -328,6 +328,42 @@ for (const [viewport, width] of [
   });
 }
 
+test("ToolbarDock keeps two pills at the edges and brings moved actions back when the row widens", async () => {
+  const page = await open();
+  const moved = (name: string) =>
+    page
+      .getByRole("toolbar", { name })
+      .locator('.k2b-toolbar__action[data-overflow="hidden"]')
+      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!));
+  // A ResizeObserver cycle decides each pill's layout: wait until no pill is pending, then two frames.
+  const frame = async () => {
+    await page.waitForFunction(() => !document.querySelector(".k2b-toolbar[data-overflow-pending]"));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  };
+  try {
+    await page.evaluate(() => window.toolbarFixture.mountDock(720));
+    await frame();
+    expect([...(await moved("Formatting")), ...(await moved("Page"))]).toEqual([]);
+    const edges = await page.evaluate(() => {
+      const column = document.getElementById("dock-column")!.getBoundingClientRect();
+      const [start, end] = Array.from(document.querySelectorAll<HTMLElement>('.k2b-toolbar[data-variant="floating"]')).map((pill) =>
+        pill.getBoundingClientRect(),
+      );
+      return { start: start!.left - column.left, end: column.right - end!.right };
+    });
+    // Both pills sit at the dock's inner edge, 1rem from the column edge.
+    expect(edges).toEqual({ start: 16, end: 16 });
+    await page.evaluate(() => window.toolbarFixture.resizeDock(360));
+    await frame();
+    expect((await moved("Formatting")).length).toBeGreaterThan(0);
+    await page.evaluate(() => window.toolbarFixture.resizeDock(720));
+    await frame();
+    expect([...(await moved("Formatting")), ...(await moved("Page"))]).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
 test("narrowing moves a superset of the least important actions and widening restores the original layout", async () => {
   const page = await openFloating();
   try {
