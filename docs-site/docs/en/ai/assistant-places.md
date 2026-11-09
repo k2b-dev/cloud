@@ -137,6 +137,9 @@ envelopes, targets, and Action policies.
 | `skills` | Required array, at most 8 names from `assistant.skills`. |
 | `starters` | Optional array, at most 3 `{ label, prompt }` objects; labels have at most 80 characters and prompts at most 500. |
 
+The place title keeps its full snapshot. A new chat's ordinary title uses its
+first 120 characters to fit the chat read and search contracts.
+
 The declaration supplies the allowed set; the Query chooses a subset for the
 current person and state. For example, return no tools when the person can read
 but cannot write. Cloud drops and logs IDs outside the declared set. Invalid or
@@ -276,3 +279,14 @@ A person's saved Action outcome check remains available in the chat even when
 that Action is no longer offered as a place tool. The check uses the application's
 read-only outcome Query under the person's current authority; it never repeats
 the Action.
+
+## Recover interrupted chat creation
+
+If another tab creates your chat at a place first, Gustav opens that chat and
+keeps your message in the composer for review. It does not send the message
+automatically. Retrying a creation whose outcome is unknown keeps the original
+place; a message at a different place uses a separate request. The recovery
+notice keeps the original place message visible while you retry.
+
+When you stop sharing page context, the empty panel hides the place's suggestions
+and offers **Share context …** to ask for consent again.

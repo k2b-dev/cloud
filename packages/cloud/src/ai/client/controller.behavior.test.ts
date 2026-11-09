@@ -81,6 +81,46 @@ describe("AI controller draft submission", () => {
     dispose();
   });
 
+  test("recovering a creation in the background preserves a foreground chat open", async () => {
+    let resolveDetail!: (response: Response) => void;
+    const detail = new Promise<Response>((resolve) => {
+      resolveDetail = resolve;
+    });
+    const current = conversation("Current");
+    const next = conversation("Next02");
+    const recovered = conversation("Replay");
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path === "/api/ai/conversations" && init?.method === "POST") return Response.json(recovered, { status: 201 });
+        if (path === "/api/ai/conversations/Next02") return detail;
+        if (init?.headers && new Headers(init.headers).get("Accept") === "text/event-stream") return new Response(new ReadableStream());
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+      });
+    });
+    try {
+      const opening = controller.openConversation(next.id);
+      expect((await controller.createConversation({}, { activate: false }))?.id).toBe(recovered.id);
+      expect(controller.activeConversationId()).toBe(next.id);
+      resolveDetail(Response.json({ conversation: next, messages: [], activeTurn: null }));
+      expect(await opening).toBe("opened");
+      expect(controller.conversation()?.id).toBe(next.id);
+      expect(controller.loadingConversation()).toBe(false);
+    } finally {
+      dispose();
+    }
+  });
+
   test("tells a revision conflict, which sets no chat error, apart from another failed draft save", async () => {
     const answers = [
       () => Response.json({ message: "The conversation draft changed in another session." }, { status: 409 }),
