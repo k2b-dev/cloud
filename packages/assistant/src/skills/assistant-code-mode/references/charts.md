@@ -1,30 +1,13 @@
 # Charts
 
-`cloud.chart(options)` returns chart markup in Cloud colors. Use it as
-`innerHTML`, inside `cloud.html`, or in the HTML of `cloud.pdf.render`. It needs
-no DOM in scripts and PDFs. In an app, cartesian
-charts redraw at their real width, so axes and labels fit phones. App charts show
-tooltips by default on hover, keyboard focus and tap. Tab to a chart, use arrow
-keys or Home/End to inspect values, and press Escape to close the tooltip;
-tapping outside the chart also closes it. Printed pages and PDFs show every
-`cloud.chart()` with a table of its values below it, hidden on screen, in the
-same text as the tooltips. The markup carries every value for the tooltips
-and for that table, so a dense chart is large: 8 series × 480 points is about
-3.1 MB. Aggregate dense data before charting it.
-Draw dense charts in the app that shows them instead of returning their markup
-from an action or storing it in KV.
+`cloud.chart(options)` returns chart markup in Cloud colors. Use it inside
+`cloud.html` or in the HTML of `cloud.pdf.render`. It needs no DOM and draws
+every kind synchronously in scripts and PDFs, including forecast annotations.
 
-`cloud.chart()` remains synchronous. In HTML apps, ordinary line, bar, pie, donut,
-stat and sparkline draw immediately. Other kinds initially return a loading
-placeholder; insert the markup into the document and the frame fills it at the
-same size. Their renderer ships with the frame and loads without any network
-request, including offline first use. A load failure shows **Try again**.
-A line with forecast annotations uses the same loading path. A rendering error (including a throwing format callback) shows its message
-without retry and is reported to the host.
-Formats, tooltips and print value tables work after loading. Frame readiness,
-snapshots and `cloud.pdf.render({html})` wait for pending chart rendering; do
-not extract SVG from the initial placeholder yourself. Scripts and PDF markup
-created in script runs still draw every kind synchronously.
+Printed pages and PDFs show every chart with a table of its values below it,
+hidden on screen. The markup carries every value for that table, so a dense
+chart is large: 8 series × 480 points is about 3.1 MB. Aggregate dense data
+before charting it.
 
 For computed values in the chat, call `cloud.view.chart`, `cloud.view.group`,
 `cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or `cloud.view.explorer`

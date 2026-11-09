@@ -228,7 +228,7 @@ type ViewDetailsSpec = ViewBase & { items: {
   label: string; value?: string | number | Date | null | ViewReference;
   type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat;
 }[] };
-/** Script runs only; HTML apps draw with cloud.chart(). Server validates every saved spec. */
+/** Script runs only. Server validates every saved spec. */
 interface CloudView {
   chart(spec: ViewChartSpec): Promise<ViewRef>;
   /** 2..6 related charts under one heading. */

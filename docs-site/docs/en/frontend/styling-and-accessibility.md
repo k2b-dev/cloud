@@ -269,7 +269,7 @@ On Safari, diagrams need Safari 17.4 or later.
   dialogs, and toasts float with the float shadow. Lists, grids, rows,
   columns, panels, and controls are flat, and the inside of an island is flat
   too. Shared components choose their layer themselves; app code never adds a
-  shadow of its own (UI-29, `bun scripts/check.ts shadow-tokens`).
+  shadow of its own (UI-30, `bun scripts/check.ts shadow-tokens`).
 - Keep one visible dialog frame. With `PanelDialog`, the header and footer stay
   fixed while `PanelDialog.Body` owns scrolling.
 - Inputs are quiet wells with a clear focus state, not permanently emphasized
