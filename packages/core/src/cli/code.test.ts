@@ -598,6 +598,19 @@ const serverCode = {
   createdBy: uuid,
   createdAt: "2026-10-31T12:00:00.000Z",
 } satisfies Code;
+test.each(["text", "json", "jsonl"] as const)("show reports Code database storage in %s", async (output) => {
+  const data = {
+    version: 1,
+    code: { ...serverCode, database: { bytes: 1048576, limit: 104857600, state: "ready" } },
+    permission: "editor",
+  };
+  const invocation = context(["show", "c_1234"], {}, output, () => Response.json(data));
+  expect(await code.run(invocation.ctx)).toBe(0);
+  expect(invocation.requests).toEqual([{ path: "/api/code/authoring/show", input: { codeId: "c_1234" } }]);
+  if (output === "text") expect(invocation.printed.join("\n")).toContain("Datenbank: 1,00 MB von 100,00 MB");
+  else expect(invocation.printed).toEqual([data]);
+});
+
 const runMetadata = {
   id: uuid,
   codeId: config.codeId,

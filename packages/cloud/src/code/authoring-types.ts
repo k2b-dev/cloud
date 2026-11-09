@@ -94,3 +94,13 @@ export type CodeHttp = {
     },
   ): Promise<CodeHttpResult>;
 };
+
+/** SQLite scalar parameters are sent as bound values, never interpolated into SQL. */
+export type CodeDatabaseValue = string | number | boolean | null;
+export type CodeDatabaseStatement = { sql: string; params?: readonly CodeDatabaseValue[] };
+/** Persistent database owned by this Code, shared across its versions. */
+export type CodeDatabase = {
+  query<Row = Record<string, CodeDatabaseValue>>(sql: string, params?: readonly CodeDatabaseValue[]): Promise<Row[]>;
+  exec(sql: string, params?: readonly CodeDatabaseValue[]): Promise<{ changes: number }>;
+  batch(statements: readonly CodeDatabaseStatement[]): Promise<{ changes: number }[]>;
+};

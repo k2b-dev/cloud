@@ -671,6 +671,13 @@ to Chromium. Scheduled chat routines are retired, and Studio RSQL
 `database` grants are unavailable in runner chat scripts. Use application
 capabilities for data access.
 
+Lasting Code can use its own lazy database. Configure RSQL 1.1.0 through Core's
+`core.code.rsql_url`, secret `core.code.rsql_api_token` and
+`core.code.rsql_allowed_targets` settings. No environment variable is needed.
+`core.code.database_bytes` limits each Code's storage. Keep the original RSQL
+server reachable for execution and deletion; changing the URL does not migrate
+databases. Code without database calls continues to run without RSQL.
+
 Chat jobs share runner admission and execution budgets. Their fixed wall-clock
 budget includes queue and approval time; the JSON bridge also limits each file
 or capability transfer, including base64 overhead. See
@@ -773,7 +780,7 @@ the Filegate 7.1.0 root and lease API; see [Files](/en/apps/filesv2) and the
 [Filegate upgrade procedure](#upgrade-filegate-to-710).
 
 Cloud refuses person- and administrator-chosen outbound requests from the Webhook Tester,
-workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, Notebook PDF external images, health webhooks, Geo city search, Assistant rsql, and outgoing mail SMTP and bounce IMAP connections to
+workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, Notebook PDF external images, health webhooks, Geo city search, Core Code RSQL, and outgoing mail SMTP and bounce IMAP connections to
 loopback, private, link-local, shared, and other reserved addresses, including
 names that resolve there. A failed DNS lookup also refuses the request. An
 address in the well-known NAT64 prefix `64:ff9b::/96` is judged by the IPv4
@@ -784,7 +791,8 @@ server.
 Administrators can allow internal administrator-configured endpoints with the settings
 `gateway.webhook_allowed_targets` owned by Gateway operations (default empty,
 public targets only),
-and
+`core.code.rsql_allowed_targets` owned by Core (default `rsql`, for the
+Code database URL; edit under **Administration → Code → Limits**), and
 `outgoing_mail.allowed_targets` owned by the platform (default empty, covering both SMTP
 and bounce IMAP). Administrators edit them under **Observability → Health
 check** and under

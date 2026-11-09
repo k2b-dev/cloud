@@ -457,6 +457,16 @@ export type CodeHttp = {
   ): Promise<CodeHttpResult>;
 };
 
+/** SQLite scalar parameters are sent as bound values, never interpolated into SQL. */
+export type CodeDatabaseValue = string | number | boolean | null;
+export type CodeDatabaseStatement = { sql: string; params?: readonly CodeDatabaseValue[] };
+/** Persistent database owned by this Code, shared across its versions. */
+export type CodeDatabase = {
+  query<Row = Record<string, CodeDatabaseValue>>(sql: string, params?: readonly CodeDatabaseValue[]): Promise<Row[]>;
+  exec(sql: string, params?: readonly CodeDatabaseValue[]): Promise<{ changes: number }>;
+  batch(statements: readonly CodeDatabaseStatement[]): Promise<{ changes: number }[]>;
+};
+
 type Input0 = (Record<string, never>);
 
 type Data0 = (Array<(string)>);
@@ -612,13 +622,15 @@ export declare namespace jsx {
 export declare const secrets: Readonly<Record<string, CodeSecret>>;
 
 export declare const http: CodeHttp;
+
+export declare const db: CodeDatabase;
 "
 `;
 
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
 "// Generated from Cloud capability manifests. Do not edit.
 const __codeSdk = (() => {
-const manifest = {"appMethods":{"all":1,"delete":1,"get":1,"on":1,"post":1,"put":1,"schedule":1},"apps":[{"exportName":"work_shop"}],"events":[{"place":null,"type":"work-shop.changed","version":1}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":[],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.export","idempotency":"none","kind":"query","methodPath":["stock","export"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}},"pageLimits":{"bytes":65536,"columns":20,"depth":12,"details":100,"fields":40,"follow":8,"nodes":256,"rows":200,"stats":6,"trend":60}};
+const manifest = {"appMethods":{"all":1,"delete":1,"get":1,"on":1,"post":1,"put":1,"schedule":1},"apps":[{"exportName":"work_shop"}],"databaseMessages":{"code_db_busy":"A Code database is being initialized or deleted. Try again shortly.","code_db_full":"This Code has reached its database storage limit. Remove data or ask an administrator to raise the limit.","code_db_invalid":"Use a database statement with bound scalar parameters, or a nonempty atomic batch.","code_db_limit":"The database result exceeds the bridge size limit. Select fewer rows or columns.","code_db_sql":"The database statement failed. Check the SQL and its bound parameters.","code_db_timeout":"The database call exceeded its time limit. A write may already have committed; check its outcome before retrying.","code_db_unavailable":"The Code database service is unavailable. Ask an administrator to configure RSQL in Core settings.","code_db_undeclared":"This version has no checked database evidence. Import db from @sdk and check and submit the Code again."},"events":[{"place":null,"type":"work-shop.changed","version":1}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":[],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.export","idempotency":"none","kind":"query","methodPath":["stock","export"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}},"pageLimits":{"bytes":65536,"columns":20,"depth":12,"details":100,"fields":40,"follow":8,"nodes":256,"rows":200,"stats":6,"trend":60}};
 const RESOURCE_ID_MAX = 512;
 
 class CodeError extends Error {
@@ -635,9 +647,14 @@ async function invoke(operation, input) {
   catch (error) {
     if (error instanceof CodeError) throw error;
     const code = typeof error?.code === "string" ? error.code : "code_bridge_unavailable";
-    throw new CodeError(code, error?.status ?? 503, error?.message ?? "The Code call failed.", error?.details ?? (error?.origin ? { origin: error.origin } : null));
+    throw new CodeError(code, error?.status ?? 503, manifest.databaseMessages[code] ?? error?.message ?? "The Code call failed.", error?.details ?? (error?.origin ? { origin: error.origin } : null));
   }
 }
+const db = Object.freeze({
+  query: (sql, params = []) => invoke("db.query", { sql, params }),
+  exec: (sql, params = []) => invoke("db.exec", { sql, params }),
+  batch: statements => invoke("db.batch", { statements: statements.map(({ sql, params = [] }) => ({ sql, params })) }),
+});
 const handles = new WeakMap();
 const aiTools = new WeakMap();
 let bridge;
@@ -809,7 +826,7 @@ const http = Object.freeze({
 const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
   markPage: page => { builtPages.add(page); return page; },
-  namespaces, owner, app, secrets, http, CodeError,
+  namespaces, owner, app, secrets, http, db, CodeError,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new CodeError("code_sdk_invalid_bridge");
     bridge = cloud;
@@ -919,6 +936,7 @@ export const CodeError = __codeSdk.CodeError;
 export const work_shop = __codeSdk.namespaces["work_shop"];
 export const owner = __codeSdk.owner;
 export const app = __codeSdk.app;
+export const db = __codeSdk.db;
 
 const __codePage = (() => {
   const components = new Set();

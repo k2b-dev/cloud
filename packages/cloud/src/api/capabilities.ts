@@ -38,6 +38,7 @@ import {
   codeBridgeDispatchRefusalKind,
   codeBridgeLocalRefusalKind,
 } from "../code/bridge-contract";
+import { type CodeDatabaseRequest, CodeDatabaseRequestSchema } from "../code/database-contract";
 import { CodeFileRefSchema, codeFileBinding, hasFileInput } from "../code/file-ref";
 import type { CodeRunTokenClaims } from "../code/run-token";
 import { type CodeRunTokenVerifyOptions, verifyCodeRunToken } from "../code/run-token";
@@ -1436,6 +1437,7 @@ export type CapabilityApiType = ReturnType<typeof createCapabilityRoutes>;
 /** Dependencies for the private runner bridge. Production uses the shared signed-app transport seam. */
 export type CodeRunnerDispatchDependencies = {
   host: CodeBridgeHost;
+  database?: (input: { claims: CodeRunTokenClaims; request: CodeDatabaseRequest; signal: AbortSignal }) => Promise<Response>;
   /** Core-only HTTP dispatcher; it must use the admitted mandate wrapper before any effect or secret insertion. */
   http?: (input: {
     claims: CodeRunTokenClaims;
@@ -1509,6 +1511,28 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
       if (claims.runId !== request.runId || claims.generation !== request.generation) return codeBridgeError("runner_lease_lost", 409);
       // Execution is bounded by the caller/run signal; the bootstrap transport budget must not truncate inference.
       setRequestTimeout(c, 240);
+      if (["db.query", "db.exec", "db.batch"].includes(request.operation)) {
+        return await dependencies.host.withCall(
+          {
+            claims,
+            kind: "database",
+            call: {
+              capability: request.operation,
+              target: null,
+              refs: {},
+              input: request.input,
+            },
+          },
+          async () => {
+            const input = request.input && typeof request.input === "object" && !Array.isArray(request.input) ? request.input : {};
+            const parsed = CodeDatabaseRequestSchema.safeParse({ ...input, operation: request.operation });
+            if (!parsed.success) return codeBridgeError("code_db_invalid");
+            return dependencies.database
+              ? dependencies.database({ claims, request: parsed.data, signal: c.req.raw.signal })
+              : codeBridgeError("code_db_unavailable", 503);
+          },
+        );
+      }
       // HTTP retains the same fencing and observations; only the admitted Core dispatcher may inject secrets.
       if (request.operation === "http.fetch") {
         return await dependencies.host.withCall(

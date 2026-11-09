@@ -5,7 +5,7 @@ section: Platform services
 order: 969
 description: Pull, check, test and submit Code from local ID-based project folders.
 tags: [code, cli, sdk, versions]
-updated: 2026-11-06
+updated: 2026-11-09
 ---
 
 # Develop Code with cld
@@ -66,8 +66,12 @@ It reads no target manager list. Dynamic handles are allowed; the list grants
 no access and does not bind runtime calls. The target checks the subject’s
 current rights per call.
 
-Routes, TSX pages, named schedules and hand starts are supported. Webhook and
-database registrations remain unavailable.
+Routes, TSX pages, named schedules and hand starts are supported. Webhook
+registrations remain unavailable. Lasting Code can use its own lazy
+[database](/en/docs/platform/code-sdk#database) through `db` from `@sdk`.
+Check output records database use. `cld code show <code>` shows storage used
+and its current limit, without creating the database. SQLite export through
+`cld` is not available yet.
 
 Human check and run output uses each automation's reviewed title followed by
 its identifier in parentheses. Without a title, it shows the identifier. JSON

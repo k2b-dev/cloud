@@ -180,6 +180,7 @@ export const codeAuthoringContracts = {
     input: z.object({ title: z.string().min(1).max(200), owner: CodeOwnerSchema.optional() }).strict(),
     data: pulled,
   },
+  show: { input: codeQueryContracts.read.input, data: codeQueryContracts.read.data.extend({ version: z.literal(1) }) },
   pull: { input: z.object({ codeId: CodeIdSchema }).strict(), data: pulled },
   pullAll: {
     input: z.object({ cursor: CodeIdSchema.optional() }).strict(),

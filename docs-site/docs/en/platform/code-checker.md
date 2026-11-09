@@ -118,6 +118,10 @@ contract, shared with the version service, contains:
   automation from it ("for “weekly”") and leave the line out when it is absent;
   it never affects authorization;
 - `ai`: whether the detected calls use AI;
+- `database: true` when the Code imports or calls `db`; omitted otherwise. Core
+  records the same use in submission evidence and requires both before allowing
+  a database call. `code_run` reports `code_db_temporary` because it has no lasting
+  Code to own a database;
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk`, and `bundle`.
 
 The source hash covers `JSON.stringify({ entry, files })`, with `files` holding

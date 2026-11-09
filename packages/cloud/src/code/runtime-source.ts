@@ -14,9 +14,14 @@ async function invoke(operation, input) {
   catch (error) {
     if (error instanceof CodeError) throw error;
     const code = typeof error?.code === "string" ? error.code : "code_bridge_unavailable";
-    throw new CodeError(code, error?.status ?? 503, error?.message ?? "The Code call failed.", error?.details ?? (error?.origin ? { origin: error.origin } : null));
+    throw new CodeError(code, error?.status ?? 503, manifest.databaseMessages[code] ?? error?.message ?? "The Code call failed.", error?.details ?? (error?.origin ? { origin: error.origin } : null));
   }
 }
+const db = Object.freeze({
+  query: (sql, params = []) => invoke("db.query", { sql, params }),
+  exec: (sql, params = []) => invoke("db.exec", { sql, params }),
+  batch: statements => invoke("db.batch", { statements: statements.map(({ sql, params = [] }) => ({ sql, params })) }),
+});
 const handles = new WeakMap();
 const aiTools = new WeakMap();
 let bridge;
@@ -188,7 +193,7 @@ const http = Object.freeze({
 const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
   markPage: page => { builtPages.add(page); return page; },
-  namespaces, owner, app, secrets, http, CodeError,
+  namespaces, owner, app, secrets, http, db, CodeError,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new CodeError("code_sdk_invalid_bridge");
     bridge = cloud;

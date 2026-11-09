@@ -143,6 +143,7 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     .optional()
     .describe("Exact secret bindings reviewed with this version; absent means no secret access."),
   internet: CodeInternetOriginsSchema.optional().describe("Every exact HTTPS origin declared by this version, with or without secrets."),
+  database: z.boolean().optional().describe("Whether the checked Code uses its own persistent database; absent means no database access."),
   ai: z.boolean().describe("Whether detected operations use AI."),
   hashes: z
     .object({ source: hash, sdk: hash, bundle: hash })

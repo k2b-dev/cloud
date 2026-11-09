@@ -17,6 +17,8 @@ export class CodeBridgeRefusal extends Error {
   }
   get errorStatus(): number {
     if (this.status !== 200) return this.status;
+    if (this.code === "code_db_full") return 413;
+    if (this.code === "code_db_timeout") return 504;
     if (this.code === "code_operation_not_found") return 404;
     if (
       [
@@ -42,9 +44,12 @@ export class CodeBridgeRefusal extends Error {
       ].includes(this.code)
     )
       return 409;
-    if (["code_bridge_unavailable", "code_file_unavailable"].includes(this.code)) return 503;
+    if (["code_bridge_unavailable", "code_file_unavailable", "code_db_unavailable"].includes(this.code)) return 503;
     if (
       [
+        "code_db_invalid",
+        "code_db_sql",
+        "code_db_limit",
         "code_invalid_call",
         "code_http_invalid_call",
         "code_file_invalid",
@@ -66,13 +71,14 @@ export class CodeBridgeRefusal extends Error {
 export type CodeBridgeCall = {
   claims: CodeRunTokenClaims;
   call: NormalizedCapabilityCall;
-  kind: "query" | "action" | "internet";
+  kind: "query" | "action" | "internet" | "database";
   policy?: CapabilityActionPolicy;
 };
 /** Local policy/approval refusals must never be mistaken for a target application's 403. */
 export const codeBridgeLocalRefusalKind = (code: string): CodeBridgeRefusalKind => {
   if (["code_approval_required", "code_approval_revoked", "code_hash_mismatch"].includes(code)) return "approval";
   return [
+    "code_db_undeclared",
     "code_access_forbidden",
     "code_stream_forbidden",
     "code_disabled",

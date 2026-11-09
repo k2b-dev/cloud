@@ -202,8 +202,15 @@ replacement with fictional tests; see
 
 Gustav checks, tests and submits a version; it never switches Code on. No
 export, grant or enabled flag carries authority into Code. Old routine HTTP
-grants and Studio database grants do not transfer; Code has no replacement
-database.
+grants and Studio database grants do not transfer. Studio RSQL is removed.
+Each lasting Code now has its own lazy database, created on its first `db` call.
+Nothing is carried over: export Studio databases before upgrading (step 1).
+Configure the new Core-owned RSQL URL, secret token and allowed targets in
+**Administration → Code → Limits**; the old `assistant.rsql_*` settings are deleted.
+RSQL 1.1.0 is required for bound writes and atomic batches.
+`core.code.database_bytes` now enforces each Code database's storage limit.
+Keep the configured RSQL server available while Code databases exist, including
+for deletion. Changing the URL does not move existing databases.
 
 ## 7. Review and switch on
 

@@ -60,6 +60,15 @@ jobs:
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      rsql:
+        image: ghcr.io/k2b-dev/rsql:1.1.0
+        env:
+          RSQL_LISTEN: 0.0.0.0:8080
+          RSQL_API_TOKEN: cloud-code-test-token
+        ports: ["8080:8080"]
+        options: >-
+          --health-cmd "wget -q -O - http://127.0.0.1:8080/healthz"
+          --health-interval 2s --health-timeout 2s --health-retries 30
       gotenberg:
         image: &gotenberg-image ghcr.io/k2b-dev/mirror/gotenberg/gotenberg:8.36.0@sha256:87c16b9f364279d321bc9772d31fa58aa6abe036423c270698bd636c3a8e9466
         ports: ["3001:3000"]
@@ -68,6 +77,8 @@ jobs:
       CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_nightly_test
       CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
       CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
+      CLOUD_TEST_RSQL_URL: http://127.0.0.1:8080
+      RSQL_API_TOKEN: cloud-code-test-token
       CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
       CLOUD_TEST_S3_ENDPOINT: http://127.0.0.1:3900
       CLOUD_TEST_S3_BUCKET: cloud-test
@@ -93,7 +104,7 @@ jobs:
       - run: |
           set -euo pipefail
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0 dxflrs/garage:v2.3.0
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.1.0 dxflrs/garage:v2.3.0
           docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           docker compose -f compose.test-s3.yml up -d --wait
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
