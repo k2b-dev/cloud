@@ -80,6 +80,7 @@ import { mandates } from "../services/mandates";
 import { loadCodeRunCalls } from "../ssr/code-page/calls";
 import type { CodePageInvoke } from "../ssr/code-page/data";
 import { createCodeAiTools } from "./ai-tools";
+import { bridgeSkillReadQuery } from "./bridge.test-fixture";
 import { CodeFileRefSchema } from "./file-ref";
 import { CodeRunTokenClaimsSchema, type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest, type RunnerJsonValue } from "./runner-protocol";
@@ -152,7 +153,7 @@ const decisionCompiled = compileCapabilities("core", {
     "ai.decide": aiDecisionQuery,
     "ai.generate": aiGenerationQuery,
     "ai.skills.list": op,
-    "ai.skill.read": { ...op, input: z.object({ id: z.string() }).strict() },
+    "ai.skill.read": bridgeSkillReadQuery,
   },
 });
 const baseEntry: CapabilityRegistryEntry = {
