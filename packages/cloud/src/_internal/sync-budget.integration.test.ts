@@ -466,6 +466,57 @@ integration(
 );
 
 integration(
+  "a topic whose dead letters hold more than their new limit keeps its old event stream",
+  async () => {
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const namespace = testSyncNamespace("budget-topic-retain-full");
+    const maxBytes = 4 * 1024 * 1024;
+    const legacy = openSync(connection, namespace, false);
+    const current = openSync(connection, namespace);
+    try {
+      const legacyTopic = legacy.topic<{ pad: string }>({
+        id: "documents",
+        retention: { maxAgeMs: WEEK_MS, maxBytes },
+        deadLetterRetention: { maxAgeMs: WEEK_MS, maxBytes: 1024 * 1024 },
+        maxPayloadBytes: 16_000,
+      });
+      const worker = await legacyTopic.process({ consumer: "fails", start: "earliest", delivery: { maxAttempts: 1 } }, async () => {
+        throw new Error("dead-letter this event");
+      });
+      for (let n = 0; n < 8; n++) await legacyTopic.publish({ data: { pad: "x".repeat(10_000) } });
+      const deadline = Date.now() + 10_000;
+      while ((await legacyTopic.deadLetters.list({ limit: 8 })).length < 8 && Date.now() < deadline) await Bun.sleep(50);
+      await worker.drain();
+
+      const topic = current.topic<{ pad: string }>({
+        id: "documents",
+        whenFull: "reject",
+        retention: { maxBytes },
+        deadLetterRetention: { maxAgeMs: WEEK_MS, maxBytes: 32 * 1024 },
+        maxPayloadBytes: 16_000,
+      });
+      await expect(topic.publish({ data: { pad: "y" } })).rejects.toThrow("discard");
+      const manager = await jetstreamManager(connection);
+      const streams: Record<string, [string, number, number]> = {};
+      for await (const info of manager.streams.list()) {
+        if (info.config.metadata?.["sync.namespace"] !== namespace) continue;
+        const kind = info.config.subjects.some((subject) => subject.endsWith(".dlq.>")) ? "dlq" : "events";
+        streams[kind] = [info.config.discard, info.config.max_age, info.config.max_bytes];
+      }
+      expect(streams).toEqual({
+        events: [DiscardPolicy.Old, WEEK_MS * 1_000_000, maxBytes],
+        dlq: [DiscardPolicy.Old, WEEK_MS * 1_000_000, 1024 * 1024],
+      });
+    } finally {
+      await legacy.drain({ timeoutMs: 5_000 });
+      await current.drain({ timeoutMs: 5_000 });
+      await connection.drain();
+    }
+  },
+  30_000,
+);
+
+integration(
   "processes that start together change an old event stream once and lose no concurrent event",
   async () => {
     const namespace = testSyncNamespace("budget-topic-race");

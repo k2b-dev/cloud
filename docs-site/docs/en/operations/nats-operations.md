@@ -188,7 +188,8 @@ and removes the age limit. The stream keeps its name, byte limit, events and
 sequences, so cursors that applications store stay valid. The application
 logs `Changed a Sync topic to keep its events until the application prunes
 them`. Any other difference still fails with `ResourceDriftError` and changes
-nothing.
+nothing. That includes a dead-letter stream that would still differ
+afterwards, for example one that holds more than its new byte limit.
 
 This is a runtime contract change. After the change, a process of an older
 release that still declares the old policy reports `ResourceDriftError` for
