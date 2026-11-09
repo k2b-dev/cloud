@@ -17,6 +17,7 @@ import {
   IconButton,
   InlineGuidance,
   Placeholder,
+  Section,
   Tag,
   Tooltip,
   useLocale,
@@ -625,7 +626,7 @@ export default function ContactDetailPanel(props: Props) {
                     />
 
                     <DetailPanel.Body scrollPreserveKey="contacts-detail">
-                      <DetailPanel.Section
+                      <Section
                         title={t().properties}
                         icon="ti ti-list-details"
                         actions={
@@ -654,10 +655,10 @@ export default function ContactDetailPanel(props: Props) {
                             }}
                           />
                         </Show>
-                      </DetailPanel.Section>
+                      </Section>
 
                       <Show when={hasReach()}>
-                        <DetailPanel.Section title={t().reach} icon="ti ti-address-book">
+                        <Section title={t().reach} icon="ti ti-address-book">
                           <div class="flex flex-col gap-1">
                             <For each={c().emails}>
                               {(email) => (
@@ -708,7 +709,7 @@ export default function ContactDetailPanel(props: Props) {
                               )}
                             </For>
                           </div>
-                        </DetailPanel.Section>
+                        </Section>
                       </Show>
 
                       {/* Order of use (UI-27): fields, then the comments, then the contact's place in its organization. */}
@@ -727,7 +728,7 @@ export default function ContactDetailPanel(props: Props) {
                       </Show>
 
                       <Show when={hasOrganization()}>
-                        <DetailPanel.Section
+                        <Section
                           title={t().organization}
                           icon="ti ti-sitemap"
                           actions={
@@ -821,7 +822,7 @@ export default function ContactDetailPanel(props: Props) {
                               <p class="py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
                             </Show>
                           </div>
-                        </DetailPanel.Section>
+                        </Section>
                       </Show>
 
                       <Show when={hasMoreAbout()}>
@@ -844,7 +845,7 @@ export default function ContactDetailPanel(props: Props) {
                             />
                           </Show>
                           <Show when={c().addresses.length > 0}>
-                            <DetailPanel.Section
+                            <Section
                               title={t().addresses}
                               icon="ti ti-map-pin"
                               collapsible
@@ -879,10 +880,10 @@ export default function ContactDetailPanel(props: Props) {
                                   )}
                                 </For>
                               </div>
-                            </DetailPanel.Section>
+                            </Section>
                           </Show>
                           <Show when={c().bankAccounts.length > 0}>
-                            <DetailPanel.Section title={t().bankDetails} icon="ti ti-building-bank" collapsible summary={bankSummary()}>
+                            <Section title={t().bankDetails} icon="ti ti-building-bank" collapsible summary={bankSummary()}>
                               <div class="flex flex-col gap-3">
                                 <For each={c().bankAccounts}>
                                   {(account) => (
@@ -907,11 +908,11 @@ export default function ContactDetailPanel(props: Props) {
                                   )}
                                 </For>
                               </div>
-                            </DetailPanel.Section>
+                            </Section>
                           </Show>
 
                           <Show when={hasPersonal()}>
-                            <DetailPanel.Section title={t().personal} icon="ti ti-user" collapsible summary={personalSummary()}>
+                            <Section title={t().personal} icon="ti ti-user" collapsible summary={personalSummary()}>
                               <DescriptionList
                                 layout="rows"
                                 size="sm"
@@ -931,11 +932,11 @@ export default function ContactDetailPanel(props: Props) {
                                   ...(c().preferredLanguage ? [{ term: t().language, description: c().preferredLanguage }] : []),
                                 ]}
                               />
-                            </DetailPanel.Section>
+                            </Section>
                           </Show>
 
                           <Show when={hasWork()}>
-                            <DetailPanel.Section title={t().work} icon="ti ti-briefcase" collapsible summary={workSummary()}>
+                            <Section title={t().work} icon="ti ti-briefcase" collapsible summary={workSummary()}>
                               <DescriptionList
                                 layout="rows"
                                 size="sm"
@@ -953,7 +954,7 @@ export default function ContactDetailPanel(props: Props) {
                                     : []),
                                 ]}
                               />
-                            </DetailPanel.Section>
+                            </Section>
                           </Show>
                         </DetailPanel.Group>
                       </Show>

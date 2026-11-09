@@ -46,7 +46,7 @@ test("dead-letter detail renders complete identifiers and escaped, selectable bo
   expect(kind).toContain("Dead letter");
   expect(kind).toContain("Failed");
   expect(html).toContain("<h2>handler_error</h2>");
-  expect(html).not.toContain("k2b-detail-panel__section-icon");
+  expect(html).not.toContain("k2b-section__icon");
   const properties = html.indexOf(">Properties<");
   const error = html.indexOf("full error message");
   const more = html.indexOf("More about this message");

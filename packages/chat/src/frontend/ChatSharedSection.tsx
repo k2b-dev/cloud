@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, DetailPanel, FilterToggle, InlineGuidance, Select, Skeleton, useLocale } from "@k2b/ui";
+import { Button, FilterToggle, InlineGuidance, Section, Select, Skeleton, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
@@ -153,7 +153,7 @@ export default function ChatSharedSection(props: {
   };
 
   return (
-    <DetailPanel.Section title={t().shared}>
+    <Section title={t().shared}>
       <div class="chat-shared">
         <div class="chat-shared__kinds" role="group" aria-label={t().sharedKinds}>
           <For each={KINDS}>
@@ -254,7 +254,7 @@ export default function ChatSharedSection(props: {
           </Match>
         </Switch>
       </div>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 

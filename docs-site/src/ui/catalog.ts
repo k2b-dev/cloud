@@ -286,6 +286,12 @@ const portableSections = [
         "Classless styles that make a plain HTML page look like the components in light and dark.",
       ),
       page("paper", "Paper", "ti ti-square", "Neutral semantic grouping for application-owned content."),
+      page(
+        "section",
+        "Section and Field",
+        "ti ti-layout-rows",
+        "One topic per card on a page, flat in a panel: named tones, a restricted marker, parts, states, and label-value fields.",
+      ),
       page("empty-states", "Empty states", "ti ti-box-off", "Compact and panel placeholders plus route-level not-found states."),
       page(
         "cards",
