@@ -132,7 +132,7 @@ export type StubState = {
   holdSave: boolean;
 };
 
-const { default: ContactDetailPanel } = await import("./ContactDetailPanel.island.tsx");
+const { default: ContactDetailPanel } = await import("./ContactDetailPanel.tsx");
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: ContactAddressWorkspace } = await import("./ContactAddressWorkspace.browser-fixture.tsx");
 const detailProps = (scenario: Scenario) => ({
@@ -176,7 +176,7 @@ const entrySource = `
   import { createComponent } from "solid-js";
   import { render } from "solid-js/web";
   import { LocaleProvider } from "@k2b/ui";
-  import ContactDetailPanel from "./ContactDetailPanel.island";
+  import ContactDetailPanel from "./ContactDetailPanel";
   import ContactUpsertForm from "./ContactUpsertForm";
   import ContactAddressWorkspace from "./ContactAddressWorkspace.browser-fixture";
   const root = document.querySelector("#root");

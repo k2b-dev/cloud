@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
 
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
@@ -109,7 +109,7 @@ test("rating line and ratings bars name the day, the rating and the count on key
     await page.keyboard.press("Escape");
 
     const bar = '[data-chart-kind="bar"]';
-    await page.locator(`${bar} .stdlib-chart-bar`).last().hover();
+    await hoverInPlace(page.locator(`${bar} .stdlib-chart-bar`).last());
     text = await tooltipText(page, bar);
     expect(text).toContain("28. Sept.");
     expect(text).toContain("Bewertungen: 4");

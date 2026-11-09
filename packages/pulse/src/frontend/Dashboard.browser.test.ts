@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { sqlCatalogData, sqlCatalogFixtures, sqlCatalogPanel } from "../dashboard-catalog.test-fixture";
 import { type Dashboard, DashboardPanelSchema } from "../dashboard-contracts";
 import type { DashboardPanelData } from "../dashboard-result";
@@ -797,7 +797,7 @@ test("a map panel shades countries, names them, and answers a tap on a phone in 
       const box = await panel.boundingBox();
       expect(box!.x + box!.width).toBeLessThanOrEqual(options.width);
       const before = await panel.locator(".k2b-country-map").boundingBox();
-      await panel.locator('path[data-country="DE"]').hover();
+      await hoverInPlace(panel.locator('path[data-country="DE"]'));
       await panel.locator(".k2b-country-map__readout", { hasText: "Deutschland" }).waitFor();
       expect((await panel.locator(".k2b-country-map").boundingBox())!.height).toBe(before!.height);
       // DB-IP Lite (CC BY 4.0) needs its link beside the results; panels without countries carry none.
