@@ -49,9 +49,18 @@ log. A missing snapshot contributes sequence zero. The application owns this
 watermark and must serialize it with restores and lifecycle changes; the
 snapshot pipeline does not prune automatically. A stalled snapshot holds back
 pruning and can block writes. Keep rejected input available for retry, and
-keep snapshot work independent of new writes. This opt-in changes an existing
-stream's retention contract and raises `ResourceDriftError` until it is safely
-migrated. Existing log declarations retain their current policies.
+keep snapshot work independent of new writes. Existing log declarations
+retain their current policies.
+
+When a log opts in later, Cloud changes its existing event stream in place on
+first use: it stops discarding the oldest events and removes the age limit.
+The stream keeps its name and sequences, so persisted cursors stay valid. Any
+other difference still raises `ResourceDriftError`. Updates that the old
+policy already expired stay gone. Before the application prunes or tolerates
+a retention gap, it must send every document whose snapshot is older than the
+retained window, and that has newer events, to recovery. Use
+`log.firstSequence()` to find that window. Run this step once, and record its
+completion durably.
 
 `log.id` identifies the resource. `log.topicConfig` exposes the exact readonly
 Sync declaration, passed through unchanged. `log.topic()` returns a fresh

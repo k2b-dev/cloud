@@ -1,6 +1,6 @@
 import { expect, spyOn } from "bun:test";
 import { createSync, type JobConfig, type QueueConfig, type Sync } from "@k2b/sync";
-import { jetstreamManager, RetentionPolicy } from "@nats-io/jetstream";
+import { DiscardPolicy, jetstreamManager, RetentionPolicy } from "@nats-io/jetstream";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { syncDefaultMaxBytes, withSyncBudgets } from "./sync-budget";
@@ -342,6 +342,57 @@ integration(
       const topic = current.topic<{ n: number }>({ id: "log", retention: retention(2 * 1024 * 1024), maxPayloadBytes: 16_000 });
       await expect(topic.publish({ data: { n: 1 } })).rejects.toThrow("max_bytes");
       expect(await limitsOf(connection, namespace, "log")).toEqual([4 * 1024 * 1024, 4 * 1024 * 1024]);
+    } finally {
+      await legacy.drain({ timeoutMs: 5_000 });
+      await current.drain({ timeoutMs: 5_000 });
+      await connection.drain();
+    }
+  },
+  30_000,
+);
+
+integration(
+  "a topic that now keeps its events until pruned changes its event stream in place and keeps every sequence",
+  async () => {
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const namespace = testSyncNamespace("budget-topic-retain");
+    const maxBytes = 4 * 1024 * 1024;
+    const deadLetterRetention = { maxAgeMs: WEEK_MS, maxBytes: 64 * 1024 };
+    const legacy = openSync(connection, namespace, false);
+    const current = openSync(connection, namespace);
+    try {
+      const legacyTopic = legacy.topic<{ n: number }>({
+        id: "documents",
+        retention: { maxAgeMs: WEEK_MS, maxBytes },
+        deadLetterRetention,
+        maxPayloadBytes: 16_000,
+      });
+      const first = await legacyTopic.publish({ tenantId: "doc", data: { n: 1 } });
+
+      const topic = current.topic<{ n: number }>({
+        id: "documents",
+        whenFull: "reject",
+        retention: { maxBytes },
+        deadLetterRetention,
+        maxPayloadBytes: 16_000,
+      });
+      const second = await topic.publish({ tenantId: "doc", data: { n: 2 } });
+      expect(topic.cursorSequence(second.cursor)).toBe(topic.cursorSequence(first.cursor) + 1);
+      const replayed: number[] = [];
+      for await (const event of topic.replay({ tenantId: "doc", after: topic.cursorAt(0), until: second.cursor }))
+        replayed.push(event.data.n);
+      expect(replayed).toEqual([1, 2]);
+
+      const manager = await jetstreamManager(connection);
+      const events = [];
+      for await (const info of manager.streams.list()) {
+        const metadata = info.config.metadata;
+        if (metadata?.["sync.namespace"] === namespace && !info.config.subjects.some((subject) => subject.endsWith(".dlq.>")))
+          events.push(info);
+      }
+      expect(events.map((info) => [info.config.discard, info.config.max_age, info.config.max_bytes])).toEqual([
+        [DiscardPolicy.New, 0, maxBytes],
+      ]);
     } finally {
       await legacy.drain({ timeoutMs: 5_000 });
       await current.drain({ timeoutMs: 5_000 });

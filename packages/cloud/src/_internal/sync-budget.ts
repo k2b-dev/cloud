@@ -19,6 +19,13 @@
  *   stays usable, and a later start applies the new limit;
  * - a topic is declared synchronously, before its streams can be inspected,
  *   so its declaration keeps reporting the drift until the stream holds less.
+ *
+ * A topic declared with `whenFull: "reject"` and no `maxAgeMs` keeps every
+ * event until its application prunes them. An existing event stream that
+ * still discards old events or ages them out is changed to that policy in
+ * place. This only keeps more, and the stream keeps its sequences. Events that
+ * the old policy already removed stay removed; the application decides what
+ * that means for the documents it had stored.
  */
 import {
   type DeadLetterStore,
@@ -31,7 +38,7 @@ import {
   type Topic,
   type TopicConfig,
 } from "@k2b/sync";
-import { jetstreamManager, RetentionPolicy, type StreamInfo } from "@nats-io/jetstream";
+import { DiscardPolicy, jetstreamManager, RetentionPolicy, type StreamInfo } from "@nats-io/jetstream";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { logger } from "../services/logging";
 
@@ -65,6 +72,21 @@ const byteLimitDrift = (error: unknown): { stream: string; maxBytes: number } | 
   const [difference] = error.differences;
   if (difference?.field !== "max_bytes" || typeof difference.declared !== "number") return undefined;
   return { stream: error.resource, maxBytes: difference.declared };
+};
+
+/**
+ * The stream when Sync refused a topic only because its existing event stream
+ * discards or ages out events that the declaration keeps: `whenFull: "reject"`
+ * without `maxAgeMs`. Keeping more never deletes an accepted event.
+ */
+const retentionWidening = (error: unknown): string | undefined => {
+  if (!(error instanceof ResourceDriftError) || error.differences.length === 0) return undefined;
+  const widening = error.differences.every(
+    (difference) =>
+      (difference.field === "discard" && difference.declared === DiscardPolicy.New) ||
+      (difference.field === "max_age" && difference.declared === 0),
+  );
+  return widening ? error.resource : undefined;
 };
 
 /** Byte limits a job or queue declares for its work and dead-letter streams. */
@@ -158,6 +180,21 @@ const createStreamLimits = (connection: NatsConnection, namespace: string) => {
       try {
         return await ready();
       } catch (error) {
+        const widened = kind === "topic" ? retentionWidening(error) : undefined;
+        if (widened && !changed.has(widened)) {
+          changed.add(widened);
+          const jsm = await manager();
+          const info = await jsm.streams.info(widened);
+          if (info.config.subjects.some((subject) => subject.endsWith(".dlq.>"))) throw error;
+          // In place: the stream keeps every sequence, so persisted cursors stay valid.
+          await jsm.streams.update(widened, { discard: DiscardPolicy.New, max_age: 0 });
+          log.info("Changed a Sync topic to keep its events until the application prunes them", {
+            id,
+            stream: widened,
+            from: { discard: info.config.discard, maxAge: info.config.max_age },
+          });
+          continue;
+        }
         const drift = byteLimitDrift(error);
         if (!drift || changed.has(drift.stream)) throw error;
         changed.add(drift.stream);
