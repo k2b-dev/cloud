@@ -6,7 +6,6 @@ export const railMessages = i18n.define({
     en: {
       customize: "Customize app bar",
       description: "Choose what your app bar shows and what comes first.",
-      shortcuts: "App bar shortcuts",
       showNames: "Show names in the app bar",
       showNamesHint: "On large screens, each name appears beside its icon.",
       order: "Pinned entries come first, in your order. The other apps follow by name.",
@@ -52,7 +51,6 @@ export const railMessages = i18n.define({
     de: {
       customize: "App-Leiste anpassen",
       description: "Wähle, was in deiner App-Leiste steht und was zuerst kommt.",
-      shortcuts: "Shortcuts der App-Leiste",
       showNames: "Namen in der App-Leiste zeigen",
       showNamesHint: "Auf großen Bildschirmen steht der Name neben jedem Symbol.",
       order: "Angeheftete Einträge stehen zuerst, in deiner Reihenfolge. Die übrigen Apps folgen nach Namen.",

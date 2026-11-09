@@ -999,13 +999,20 @@
 }
 
 /* The save state is the body's first line, one line high whatever it says, so
-   nothing below it moves while it changes. */
+   nothing below it moves while it changes. It stays at the top while the list
+   scrolls, so a change far down still shows whether it was saved. */
 .rail-editor-state {
+  position: sticky;
+  z-index: 1;
+  top: 0;
   display: flex;
-  height: 1.25rem;
+  height: 2rem;
+  box-sizing: border-box;
   align-items: center;
   gap: 0.3rem;
-  margin-bottom: 0.5rem;
+  margin-top: -0.25rem;
+  padding-block: 0.25rem 0.5rem;
+  background: var(--k2b-surface);
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
   white-space: nowrap;

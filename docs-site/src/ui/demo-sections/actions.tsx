@@ -761,7 +761,12 @@ const SortableListDemo = () => {
           </div>
         )}
       </SortableList>
-      <p class="ui-dnd-demo__status">Order: {entries().map((entry) => entry.title).join(", ")}</p>
+      <p class="ui-dnd-demo__status">
+        Order:{" "}
+        {entries()
+          .map((entry) => entry.title)
+          .join(", ")}
+      </p>
     </DemoCard>
   );
 };

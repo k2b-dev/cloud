@@ -3,7 +3,14 @@ import { defaultRailPreferences, type RailPreferences } from "../contracts/rail-
 import { applyRailEdit, createRailSaver, type RailEdit, type RailSaveResult } from "./rail-editor-model";
 import type { RailApp } from "./rail-navigation";
 
-const app = (id: string, defaultVisible = true): RailApp => ({ id, label: id, href: `/app/${id}`, match: `/app/${id}`, iconClass: "ti ti-box", defaultVisible });
+const app = (id: string, defaultVisible = true): RailApp => ({
+  id,
+  label: id,
+  href: `/app/${id}`,
+  match: `/app/${id}`,
+  iconClass: "ti ti-box",
+  defaultVisible,
+});
 const apps = [app("mail"), app("chat"), app("spaces", false)];
 const base = (): RailPreferences => ({ ...defaultRailPreferences(), revision: 1 });
 const link = { id: "l1", kind: "link" as const, title: "Intranet", href: "https://intranet.example", icon: "ti ti-world" };
@@ -28,7 +35,10 @@ test("every change states its result, so applying it twice or on a newer state c
     ...base(),
     showNames: false,
     visibility: { mail: false, spaces: true },
-    shortcuts: [{ ...link, title: "Wiki" }, { id: "p1", kind: "app", appId: "chat" }],
+    shortcuts: [
+      { ...link, title: "Wiki" },
+      { id: "p1", kind: "app", appId: "chat" },
+    ],
   });
   // A pin shows the app; a visible default app leaves no entry behind.
   expect(applyRailEdit({ ...base(), visibility: { mail: false } }, { kind: "pin", id: "p2", appId: "mail" }, apps).visibility).toEqual({});
@@ -81,7 +91,13 @@ const server = (initial: RailPreferences) => {
 test("changes save one after another, each on the result of the one before", async () => {
   const core = server(base());
   const published: number[] = [];
-  const saver = createRailSaver({ initial: base(), apps: () => apps, load: core.load, save: core.save, saved: (s) => published.push(s.revision) });
+  const saver = createRailSaver({
+    initial: base(),
+    apps: () => apps,
+    load: core.load,
+    save: core.save,
+    saved: (s) => published.push(s.revision),
+  });
   saver.apply({ kind: "pin", id: "p1", appId: "chat" });
   saver.apply({ kind: "visible", appId: "mail", visible: false });
   // The editor shows both at once, while only the first is on its way.

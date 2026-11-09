@@ -17,9 +17,9 @@ import {
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { coreClient } from "../clients/core";
 import { isRailShortcutHref, type RailPreferences, RailPreferencesSchema, type RailShortcut } from "../contracts/rail-preferences";
-import { appIconStyle } from "./AppLaunchpadPanel";
+import { appIconStyle } from "./app-icon-style";
 import { publishRailPreferences, readRailContext } from "./rail-context";
-import { createRailSaver, type RailSaver, type RailSaveResult, railEditRow } from "./rail-editor-model";
+import { createRailSaver, type RailSaveResult, type RailSaver, railEditRow } from "./rail-editor-model";
 import { railMessages } from "./rail-messages";
 import { projectRailNavigation, type RailApp, sortRailApps } from "./rail-navigation";
 
@@ -384,12 +384,7 @@ function RailEditor(props: { apps: RailApp[]; close: () => void }) {
   });
   return (
     <>
-      <BottomSheet.Header
-        title={t().customize}
-        subtitle={t().description}
-        icon="ti ti-layout-sidebar"
-        close={props.close}
-      />
+      <BottomSheet.Header title={t().customize} subtitle={t().description} icon="ti ti-layout-sidebar" close={props.close} />
       <BottomSheet.Body>
         <Show
           when={loaded.data()}

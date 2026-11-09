@@ -9,7 +9,14 @@ const settle = async (done: () => boolean) => {
   for (let attempt = 0; !done() && attempt < 300; attempt += 1) await Bun.sleep(5);
   return done();
 };
-const app = (id: string, label: string): RailApp => ({ id, label, href: `/app/${id}`, match: `/app/${id}`, iconClass: "ti ti-box", defaultVisible: true });
+const app = (id: string, label: string): RailApp => ({
+  id,
+  label,
+  href: `/app/${id}`,
+  match: `/app/${id}`,
+  iconClass: "ti ti-box",
+  defaultVisible: true,
+});
 const apps = [app("chat", "Chat"), app("files", "Files"), app("mail", "Mail")];
 
 let dom: ReturnType<typeof createDomTestHarness>;
@@ -116,7 +123,9 @@ test("a step that fails goes back alone, marks its row, and Try again saves it",
   expect(rows(".rail-editor-pinned")).toEqual([]);
   const files = [...dialog().querySelectorAll(".rail-editor-apps .rail-editor-row")].find((row) => row.textContent?.includes("Files"))!;
   expect(files.querySelector(".rail-editor-row__failed")?.getAttribute("aria-label")).toBe("The last change to “Files” was not saved.");
-  [...dialog().querySelectorAll<HTMLButtonElement>(".rail-editor-failure button")].find((element) => element.textContent === "Try again")!.click();
+  [...dialog().querySelectorAll<HTMLButtonElement>(".rail-editor-failure button")]
+    .find((element) => element.textContent === "Try again")!
+    .click();
   await settle(() => stored.shortcuts.length === 1);
   await idle();
   expect(dialog().querySelector(".rail-editor-failure")).toBeNull();

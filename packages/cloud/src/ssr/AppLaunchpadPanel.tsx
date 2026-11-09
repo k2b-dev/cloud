@@ -5,6 +5,7 @@ import { Dynamic } from "solid-js/web";
 import { importOnDemand } from "../browser/reload";
 import type { CloudThemePreference } from "../shared/theme";
 import { AppBadge, useAppBadgeDescription } from "./AppBadge";
+import { appIconStyle } from "./app-icon-style";
 import { MobileProfileActions } from "./MobileProfileActions";
 import { platformMessages } from "./platform-messages";
 import { readRailContext } from "./rail-context";
@@ -35,30 +36,6 @@ export type AppLaunchpadContext = {
 };
 
 type LaunchpadTile = AppLaunchpadApp & { appId?: string; start?: boolean };
-
-type AppIconPaletteEntry = { from: string };
-
-const appIconPalette: readonly [AppIconPaletteEntry, ...AppIconPaletteEntry[]] = [
-  { from: "#2563eb" },
-  { from: "#059669" },
-  { from: "#7c3aed" },
-  { from: "#d97706" },
-  { from: "#e11d48" },
-  { from: "#0891b2" },
-  { from: "#52525b" },
-];
-
-const paletteForId = (id: string) => {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % appIconPalette.length;
-  return appIconPalette[hash] ?? appIconPalette[0];
-};
-
-/** An app's tile colour: its accent, or a palette tone from its ID. The app bar editor's tiles share it. */
-export const appIconStyle = (app: Pick<AppLaunchpadApp, "id" | "accent">) => {
-  const tone = /^#[0-9a-f]{6}$/i.test(app.accent ?? "") ? app.accent! : paletteForId(app.id).from;
-  return `--app-icon-color:${tone}`;
-};
 
 export const AppLaunchpadPanel = (
   props: AppLaunchpadContext & { close: () => void; beforeSelect?: () => Promise<boolean>; surface?: "panel" | "sheet" },

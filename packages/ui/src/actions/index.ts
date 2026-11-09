@@ -11,8 +11,6 @@ export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
 export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";
 export { activeDrag, DragSource, DropTarget, useKeyboardDrag } from "./DragAndDrop";
-export type { SortableListProps } from "./SortableList";
-export { SortableList } from "./SortableList";
 export type {
   DropdownAction,
   DropdownActionBase,
@@ -37,6 +35,8 @@ export type { SegmentedControlProps, SegmentOption } from "./SegmentedControl";
 export { SegmentedControl } from "./SegmentedControl";
 export type { SelectionToolbarProps } from "./SelectionToolbar";
 export { SelectionToolbar } from "./SelectionToolbar";
+export type { SortableListProps } from "./SortableList";
+export { SortableList } from "./SortableList";
 export type { SplitButtonProps } from "./SplitButton";
 export { SplitButton } from "./SplitButton";
 export type {

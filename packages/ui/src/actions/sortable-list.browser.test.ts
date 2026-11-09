@@ -39,7 +39,13 @@ render(() => createComponent(LocaleProvider, { locale: "en", get children() {
   });
 } }), document.getElementById("app"));
 `;
-const build = await Bun.build({ entrypoints: [entry], files: { [entry]: source }, target: "browser", conditions: ["browser"], format: "iife" });
+const build = await Bun.build({
+  entrypoints: [entry],
+  files: { [entry]: source },
+  target: "browser",
+  conditions: ["browser"],
+  format: "iife",
+});
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the sortable list fixture.");
 const script = await build.outputs[0]!.text();
 
@@ -63,7 +69,9 @@ const open = async () => {
 };
 const order = (page: Page) => page.evaluate(() => (window as unknown as { order: () => string[] }).order());
 const boxes = (page: Page) =>
-  page.evaluate(() => [...document.querySelectorAll(".k2b-sortable-list__item")].map((item) => JSON.stringify(item.getBoundingClientRect())));
+  page.evaluate(() =>
+    [...document.querySelectorAll(".k2b-sortable-list__item")].map((item) => JSON.stringify(item.getBoundingClientRect())),
+  );
 const center = async (page: Page, selector: string) => {
   const box = (await page.locator(selector).boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -126,6 +134,7 @@ describe(`sortable list in ${browserName}`, () => {
       await page.waitForFunction(() => document.querySelector(".k2b-drag-announcer")?.textContent?.includes("Delta, position 1 of 4."));
       await page.keyboard.press("End");
       expect(await order(page)).toEqual(["alpha", "beta", "gamma", "delta"]);
+      await settled(page);
       const handle = await page.locator('[data-sortable-handle="delta"]').evaluate((element) => ({
         name: element.getAttribute("aria-label"),
         hint: document.getElementById(element.getAttribute("aria-describedby")!)?.textContent,
