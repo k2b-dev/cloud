@@ -220,7 +220,7 @@ describe("Capability v2 Assistant discovery", () => {
     ["find contact by name", "contacts", "contacts.contact.search"],
     ["list address books", "contacts", "contacts.book.list"],
     ["create a contact", "contacts", "contacts.contact.create"],
-    ["read message plain text", undefined, "mail.message.read-content"],
+    ["read message plain text", undefined, "mail.message.content.read"],
     ["mark email unread", "mail", "mail.conversation.mark"],
     ["send draft email", "mail", "mail.draft.send"],
     ["search messages", "mail", "mail.search"],

@@ -19,6 +19,7 @@ import { mailCapabilities } from "../../../mail/src/capabilities";
 import { capabilityHash } from "../_internal/capability-schemas";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CloudCliContext } from "../cli";
+import { requireCodeCapabilityDeclared } from "./capability-set";
 import { type CodeCheckHost, checkCode } from "./checker";
 import { CODE_CHECK_LIMITS, type CodeCheckRequest, CodeVersionManifestSchema } from "./checker-contract";
 import { fileImportManifest } from "./file-ref.test-fixture";
@@ -103,6 +104,52 @@ const check = (source: string, extra: Partial<CodeCheckRequest> = {}) =>
   checkCode({ ...base, entry: "code.ts", files: { "code.ts": source }, ...extra }, host);
 const schedule = (body: string) =>
   `import { app, owner, work_shop } from "@sdk";\napp.schedule({ cron: "0 8 * * 1", name: "weekly" }, async () => {\n${body}\n});\nexport default app;`;
+
+test("Mail content names typecheck, retain distinct results and produce matching runtime evidence", async () => {
+  const sdk = generateCodeSdk([compileCapabilityManifest("mail", mailCapabilities)], { mode: "personal" });
+  const result = await check(
+    `import { app, mail, type FileRef } from "@sdk";
+app.get("/", async c => {
+  const message = await mail.message.content.read({ id: "Msg001" });
+  const attachment = await mail.attachment.text.read({ id: "Att001" });
+  const file: FileRef = await mail.attachment.content.read({ id: "Att001" });
+  const text: string | null = message.data.text;
+  const markdown: string | null = attachment.data.markdown;
+  return c.json({ text, markdown, size: file.size });
+});
+export default app;`,
+    { sdk },
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const expected = ["mail.message.content.read", "mail.attachment.text.read", "mail.attachment.content.read"];
+  expect(result.permissions.map(({ operation }) => operation)).toEqual(expected);
+  const calls: string[] = [];
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  const response = await module["route:GET:/"](
+    { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    {
+      call: async (_operation: string, invocation: CodeSdkInvocation) => {
+        requireCodeCapabilityDeclared(invocation.call, result.permissions);
+        calls.push(invocation.call.capability);
+        if (invocation.call.capability === "mail.message.content.read") return { data: { text: "Message" } };
+        if (invocation.call.capability === "mail.attachment.text.read") return { data: { markdown: "# Attachment" } };
+        return { id: "file-ref", mediaType: "application/pdf", size: 42 };
+      },
+    },
+  );
+  expect(calls).toEqual(expected);
+  expect(JSON.parse(response.body)).toEqual({ text: "Message", markdown: "# Attachment", size: 42 });
+  for (const path of ["message.read_content", "attachment.read_content"]) {
+    const old = await check(
+      `import { app, mail } from "@sdk";
+app.get("/", async c => c.json(await mail.${path}({ id: "Msg001" })));
+export default app;`,
+      { sdk },
+    );
+    expect(old.ok).toBe(false);
+    expect(old.diagnostics).toContainEqual(expect.objectContaining({ code: "code_unresolved_call" }));
+  }
+}, 30_000);
 
 test("the unchanged init template passes the real checker with default Core job limits", async () => {
   const settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);

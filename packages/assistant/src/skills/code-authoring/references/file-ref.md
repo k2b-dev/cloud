@@ -27,7 +27,7 @@ through Cloud while Code still holds no bytes. The generate loop offers
 
 | Direction | Operation | Notes |
 | --- | --- | --- |
-| Read | `mail.attachment.content.read({ id })` | A mail attachment, up to Mail's 100 MiB limit. `mail.attachment.read` stays metadata only; `mail.attachment.read-content` returns extracted text. |
+| Read | `mail.attachment.content.read({ id })` | A mail attachment, up to Mail's 100 MiB limit. `mail.attachment.read` stays metadata only; `mail.attachment.text.read` returns extracted text. |
 | Read | `filesv2.content.read({ id })` | A file in Files, up to 50 MiB. |
 | Write | An Action with a write stream and a `file` input | The SDK types `file` as `FileRef` and returns the Action's ordinary data after the transfer. Find these in `code_sdk`; the example below uses a fictional `imports` app. |
 

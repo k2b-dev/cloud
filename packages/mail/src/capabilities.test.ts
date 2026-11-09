@@ -815,7 +815,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: { plainText: text, forwardText: null, subject: "Reply here" },
     } as never);
-    const query = mailCapabilities.queries["message.read-content"];
+    const query = mailCapabilities.queries["message.content.read"];
     let offset = 0;
     let collected = "";
     do {
@@ -978,7 +978,7 @@ describe("mail capabilities", () => {
     expect(mailCapabilities.queries.search.description).toContain("direct cross-mailbox entry");
     expect(mailCapabilities.queries["conversation.search"].description).toContain("use search instead when no mailbox is known");
     expect(mailCapabilities.queries["conversation.read"].description).toContain("call message.read");
-    expect(mailCapabilities.queries["message.read"].description).toContain("attachment.read-content");
+    expect(mailCapabilities.queries["message.read"].description).toContain("attachment.text.read");
     expect(mailCapabilities.queries["draft.send.review"].description).toContain("immediately before draft.send");
   });
 
@@ -1032,7 +1032,7 @@ describe("mail capabilities", () => {
     expect(Object.keys(mailCapabilities.queries).sort()).toEqual([
       "attachment.content.read",
       "attachment.read",
-      "attachment.read-content",
+      "attachment.text.read",
       "comment.read",
       "conversation.activity.list",
       "conversation.comment.list",
@@ -1058,11 +1058,11 @@ describe("mail capabilities", () => {
       "mailing-list.subscription.get",
       "mailing-list.subscription.list",
       "message.catchup",
+      "message.content.read",
       "message.event",
       "message.event-preview",
       "message.list",
       "message.read",
-      "message.read-content",
       "reminder.read",
       "search",
     ]);
@@ -3341,7 +3341,7 @@ describe("mail capabilities", () => {
       updatedAt: "2026-08-19T00:00:00.000Z",
     });
 
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
     if (!result.ok) throw new Error("Expected attachment content success");
     expect(AttachmentContentReadDataSchema.parse(result.data.data)).toMatchObject({
       id: attachmentId,
@@ -3482,7 +3482,7 @@ describe("mail capabilities", () => {
     spyOn(messages, "openAttachment").mockResolvedValue({ ok: true, data: { blobId: "blob-id" } } as never);
     const enqueue = spyOn(attachmentExtraction, "enqueueAttachmentExtraction").mockResolvedValue({ id: "job-id" } as never);
 
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
 
     if (!result.ok) throw new Error("Expected pending attachment content result");
     expect(AttachmentContentReadDataSchema.parse(result.data.data)).toMatchObject({
@@ -3504,7 +3504,7 @@ describe("mail capabilities", () => {
       error: { code: "FORBIDDEN", message: "Forbidden", status: 403 },
     });
     const load = spyOn(attachmentExtraction, "loadAttachmentExtraction");
-    const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset: 0, length: 256 }, context);
+    const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset: 0, length: 256 }, context);
     expect(result).toEqual({ ok: false, error: { code: "FORBIDDEN", message: "Forbidden", status: 403 } });
     expect(load).not.toHaveBeenCalled();
   });
@@ -3531,7 +3531,7 @@ describe("mail capabilities", () => {
     });
 
     for (const offset of [2, 7]) {
-      const result = await mailCapabilities.queries["attachment.read-content"].run({ id: attachmentId, offset, length: 256 }, context);
+      const result = await mailCapabilities.queries["attachment.text.read"].run({ id: attachmentId, offset, length: 256 }, context);
       expect(result.ok).toBeFalse();
       if (!result.ok) expect(result.error).toMatchObject({ code: "BAD_INPUT", status: 400 });
     }

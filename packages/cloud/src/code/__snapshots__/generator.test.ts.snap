@@ -1,5 +1,364 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
+exports[`Code SDK generation Mail content paths distinguish inline text from original attachment FileRefs without aliases: Mail content operations 1`] = `
+[
+  {
+    "capability": "mail.attachment.content.read",
+    "dataSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "File metadata; send its bytes through the capability's write stream.",
+      "properties": {
+        "mediaType": {
+          "description": "Content media type.",
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[\\x20-\\x7e]+$",
+          "type": "string",
+        },
+        "name": {
+          "description": "File name, without a path.",
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string",
+        },
+        "size": {
+          "description": "Exact body length in bytes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+      },
+      "required": [
+        "mediaType",
+        "size",
+      ],
+      "type": "object",
+    },
+    "methodPath": [
+      "attachment",
+      "content",
+      "read",
+    ],
+    "stream": {
+      "direction": "read",
+      "maxBytes": 104857600,
+    },
+  },
+  {
+    "capability": "mail.attachment.text.read",
+    "dataSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "contentType": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string",
+        },
+        "downloadHref": {
+          "format": "starts_with",
+          "pattern": "^\\/api\\/mail\\/.*",
+          "type": "string",
+        },
+        "extraction": {
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "type": "boolean",
+            },
+            "errorCode": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "extractorVersion": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string",
+            },
+            "format": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "inputBytes": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "outputBytes": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "complete",
+                "unsupported",
+                "encrypted",
+                "ocr_required",
+                "resource_limit",
+                "malformed",
+                "failed",
+              ],
+              "type": "string",
+            },
+            "truncated": {
+              "type": "boolean",
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                  "type": "string",
+                },
+                {
+                  "type": "null",
+                },
+              ],
+            },
+          },
+          "required": [
+            "status",
+            "extractorVersion",
+            "available",
+            "format",
+            "inputBytes",
+            "outputBytes",
+            "truncated",
+            "errorCode",
+            "updatedAt",
+          ],
+          "type": "object",
+        },
+        "filename": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "id": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "length": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "markdown": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "messageId": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "offset": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "sizeBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "totalBytes": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "trust": {
+          "const": "untrusted",
+          "type": "string",
+        },
+      },
+      "required": [
+        "id",
+        "filename",
+        "contentType",
+        "sizeBytes",
+        "downloadHref",
+        "extraction",
+        "messageId",
+        "markdown",
+        "offset",
+        "length",
+        "totalBytes",
+        "nextOffset",
+        "trust",
+      ],
+      "type": "object",
+    },
+    "methodPath": [
+      "attachment",
+      "text",
+      "read",
+    ],
+    "stream": undefined,
+  },
+  {
+    "capability": "mail.message.content.read",
+    "dataSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "conversationId": {
+          "anyOf": [
+            {
+              "description": "Stable 6-character resource ID",
+              "pattern": "^[0-9A-Za-z]{6}$",
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "id": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "length": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "mailboxId": {
+          "description": "Stable 6-character resource ID",
+          "pattern": "^[0-9A-Za-z]{6}$",
+          "type": "string",
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "offset": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "subject": {
+          "maxLength": 998,
+          "type": "string",
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string",
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "totalBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "trust": {
+          "const": "untrusted",
+          "type": "string",
+        },
+      },
+      "required": [
+        "id",
+        "mailboxId",
+        "conversationId",
+        "subject",
+        "text",
+        "offset",
+        "length",
+        "totalBytes",
+        "nextOffset",
+        "trust",
+      ],
+      "type": "object",
+    },
+    "methodPath": [
+      "message",
+      "content",
+      "read",
+    ],
+    "stream": undefined,
+  },
+]
+`;
+
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: declarations 1`] = `
 "// Generated from Cloud capability manifests. Do not edit.
 
