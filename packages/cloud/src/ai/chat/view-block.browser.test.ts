@@ -87,6 +87,7 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
           "/charts/core/balance-flow.js",
           "/charts/core/calendar.js",
           "/content/ChartBalanceFlow.js",
+          "/content/chart-balance-flow-controller.js",
           "/content/chart-inspection-mount.js",
         ].some((kind) => path.endsWith(kind)) &&
         input.bytesInOutput > 0

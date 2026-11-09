@@ -94,6 +94,16 @@ export async function buildChartParts(): Promise<ChartParts> {
       return [kind, part(code)] as const;
     }),
   );
+  // BalanceFlow's controller is independent of paint and reuses the frame's inspector.
+  // It crosses the same hash-pinned bridge only when that kind is first drawn.
+  const interaction = await Bun.build({
+    entrypoints: [join(import.meta.dir, "../runtime/chart-interaction-balanceFlow.ts")],
+    target: "browser",
+    format: "esm",
+    minify: true,
+  });
+  if (!interaction.success) throw new AggregateError(interaction.logs, "The chart interaction did not build");
+  entries.push(["balanceFlow:interaction", part(await interaction.outputs[0]!.text())]);
   return { shared: part(await shared[0]!.text()), kinds: Object.fromEntries(entries) };
 }
 

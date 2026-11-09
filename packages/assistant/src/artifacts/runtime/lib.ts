@@ -7,8 +7,8 @@ import {
   type CloudAiFormat,
   type CloudAiNumberFormat,
   cloudAiAppChartSchema,
-  cloudAiChartRenderOptions,
-  cloudAiChartRows,
+  cloudAiBaseChartRenderOptions as cloudAiChartRenderOptions,
+  cloudAiBaseChartRows as cloudAiChartRows,
   cloudAiChartTooltip,
 } from "@k2b/cloud/ai/app-frame";
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
@@ -112,8 +112,19 @@ function drawChart(
 ): { svg: string | undefined; table: CloudAiChartTable } {
   try {
     const formats = { x: options.xFormat, y: options.yFormat, value: options.format };
-    const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
     const common: ChartDrawing = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
+    if (options.input.kind === "balanceFlow") {
+      const { periods, currency } = options.input;
+      return {
+        svg: rareChartSvg(
+          { kind: "balanceFlow", periods, currency },
+          { ...common, balanceFlow: { input: options.input, formats } },
+          locale,
+        ),
+        table: { columns: [], rows: [] },
+      };
+    }
+    const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
     if (mapped.kind === "hbar") {
       common.hbar = hbarLayout({ ...mapped, ...common }, { width, height });
       common.height = common.hbar.height;
@@ -146,7 +157,7 @@ function drawChart(
       default:
         svg = rareChartSvg(mapped, common, locale);
     }
-    if (svg === undefined || mapped.kind === "balanceFlow") return { svg, table: { columns: [], rows: [] } };
+    if (svg === undefined) return { svg, table: { columns: [], rows: [] } };
     // Walk marks in emitted order, exactly as the chat builds its table and tooltips.
     const rows = cloudAiChartRows(options.input, locale, { formats });
     svg = svg.replace(
@@ -322,6 +333,7 @@ export function pendingChartWidth(prepared: StoredChart, width: number): number 
 
 /** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
 function pendingCalendarSize(prepared: StoredChart, locale: string, width: number, height: number) {
+  if (prepared.input.kind !== "heatmap" || prepared.input.layout !== "calendar") return;
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, { width });
   return mapped.kind === "heatmap" && mapped.layout === "calendar"
     ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle })

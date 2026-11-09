@@ -44,6 +44,7 @@ export { lineBase } from "./line-base";
 export { renderLineDetailsSvg } from "./line-details";
 export { lineDetailsEnabled, lineForecastLayout } from "./line-options";
 export { map } from "./map";
+export { balanceFlowRenderOptions, type ChartRenderSettings, chartNumberFormatters } from "./number-format";
 export * from "./pareto";
 
 export * from "./radar";

@@ -6,10 +6,10 @@ import "./no-eval";
 import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
 import { type ChartInspection, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
-import { calendarInspectionNavigation, mountBalanceFlow, mountCalendarScroll, sankeyInspectionNavigation } from "@k2b/ui/charts";
+import { calendarInspectionNavigation, mountCalendarScroll, sankeyInspectionNavigation } from "@k2b/ui/charts";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
-import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
+import { chartInteraction, configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { createCloud } from "../runtime/cloud";
 import { CloudError } from "../runtime/errors";
 import { chartLoading, chartMarkup, chartOptions, chartSvg, isAppChartKind, pendingChartOptions, pendingChartWidth } from "../runtime/lib";
@@ -451,7 +451,9 @@ new MutationObserver((records) => {
   for (const root of document.querySelectorAll<HTMLElement>("[data-balance-flow]:not([data-balance-mounted])")) {
     const chart = root.querySelector<HTMLElement>(".k2b-chart");
     if (!chart) continue;
-    const dispose = mountBalanceFlow(root, { locale: config.context.locale });
+    const mount = chartInteraction("balanceFlow");
+    if (!mount) continue;
+    const dispose = mount(root, { locale: config.context.locale }, inspectChart);
     inspections.set(chart, { invalidate() {}, close() {}, destroy: dispose });
   }
   for (const chart of document.querySelectorAll<HTMLElement>(".k2b-chart")) {

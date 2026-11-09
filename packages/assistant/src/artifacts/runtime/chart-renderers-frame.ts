@@ -1,10 +1,11 @@
 import { CHART_SHARED_IMPORT, type ChartHashes } from "../html/chart-parts";
-import type { RareChartRenderer } from "./chart-renderer-types";
+import type { ChartInteraction, RareChartRenderer } from "./chart-renderer-types";
 
 let hashes: ChartHashes;
 let request: (kind: string) => Promise<unknown>;
 let track = (task: Promise<void>) => task;
 const renderers = new Map<string, RareChartRenderer>();
+const interactions = new Map<string, ChartInteraction>();
 const loading = new Map<string, Promise<void>>();
 let shared: Promise<string> | undefined;
 
@@ -17,6 +18,7 @@ export function configureChartModule(manifest: ChartHashes, source: typeof reque
 
 export const deferChartDrawing = true;
 export const rareChartSvg = (...args: Parameters<RareChartRenderer>): string | undefined => renderers.get(args[0].kind)?.(...args);
+export const chartInteraction = (kind: string): ChartInteraction | undefined => interactions.get(kind);
 
 async function source(kind: string): Promise<string> {
   const expected = kind === "shared" ? hashes.shared : hashes.kinds[kind];
@@ -65,7 +67,30 @@ export function loadChartRenderer(kind: string): Promise<void> {
         try {
           const module = await import(/* @vite-ignore */ url);
           if (typeof module.render !== "function") throw new Error("The chart module did not provide its renderer.");
-          renderers.set(kind, module.render);
+          if (kind === "balanceFlow") {
+            const interactionUrl = blob(await source(`${kind}:interaction`));
+            try {
+              const interaction = await import(/* @vite-ignore */ interactionUrl);
+              if (typeof interaction.mount !== "function") throw new Error("The chart module did not provide its interaction.");
+              if (typeof interaction.map !== "function") throw new Error("The chart module did not provide its mapper.");
+              interactions.set(kind, interaction.mount);
+              renderers.set(kind, (mapped, common, locale) =>
+                module.render(
+                  common.balanceFlow
+                    ? interaction.map(common.balanceFlow.input, locale ?? "en", {
+                        width: common.width,
+                        formats: common.balanceFlow.formats,
+                      })
+                    : mapped,
+                  common,
+                  locale,
+                ),
+              );
+            } finally {
+              URL.revokeObjectURL(interactionUrl);
+            }
+          }
+          if (kind !== "balanceFlow") renderers.set(kind, module.render);
         } finally {
           URL.revokeObjectURL(url);
         }

@@ -1360,7 +1360,12 @@ notice occupies the subtitle line. Changing period, view, hover or state keeps t
 frame height. `view`/`onViewChange` optionally control the Diagram/Table switch.
 The JSON form carries the data, currency and optional validated
 BCP 47 `locale`; it uses the inherited UI locale by default. Assistant frames load
-the renderer in their existing offline chart module.
+paint and interaction from separate cached offline assets when this kind is first
+drawn. Other app frames retain only validation, initial sizing and lazy loading.
+Hosts with an existing inspector can call `mountBalanceFlowController(root, options,
+inspectChart)` from `@k2b/ui/charts`; `mountBalanceFlow` supplies that dependency
+for ordinary hosts. `chartNumberFormatters` in `@k2b/ui/charts/core` also serves
+the portable table adapter, preserving one number-formatting contract.
 
 In Notebook chart directives, use `type: balanceFlow`, `currency: EUR` and
 `periods: [...]` with the period array as one line of JSON. The note reserves the

@@ -61,7 +61,13 @@ const draw = `document.querySelector("#draw").addEventListener("click",()=>{
   document.querySelector("#charts").innerHTML=cloud.html\`<section class="card">\${cloud.chart(${histogram})}</section><section class="card">\${cloud.chart({kind:"gauge",title:"On time",value:75})}</section>\`;
   document.querySelector('[data-chart-kind="histogram"]').addEventListener("click",()=>{document.querySelector("#result").textContent="Chart selected";});
 });`;
-async function open(width: number, source = assets.chartParts.shared.code, theme: "light" | "dark" = "light", script = draw) {
+async function open(
+  width: number,
+  source = assets.chartParts.shared.code,
+  theme: "light" | "dark" = "light",
+  script = draw,
+  kindSource?: { kind: string; code: string },
+) {
   const context = await browser.newContext({ viewport: { width, height: 1000 } });
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${server.port}/`);
@@ -71,11 +77,15 @@ async function open(width: number, source = assets.chartParts.shared.code, theme
   page.on("request", (request) => {
     if (/^https?:/.test(request.url())) requests.push(request.url());
   });
-  await page.evaluate(({ files, source, theme }) => globalThis.lazyChartHarness.mount(files, { sharedSource: source, theme }), {
-    files: files(script),
-    source,
-    theme,
-  });
+  await page.evaluate(
+    ({ files, source, theme, kindSource }) => globalThis.lazyChartHarness.mount(files, { sharedSource: source, theme, kindSource }),
+    {
+      files: files(script),
+      source,
+      theme,
+      kindSource,
+    },
+  );
   await ready(page);
   return { page, context, requests };
 }
@@ -718,9 +728,19 @@ for (const width of [1200, 390])
       ],
     };
     const script = `document.querySelector('#draw').onclick=()=>document.querySelector('#charts').innerHTML=cloud.html\`<section class="card">\${cloud.chart(${JSON.stringify(spec)})}</section>\`;`;
-    const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, "dark", script);
+    const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, "dark", script, {
+      kind: "balanceFlow:interaction",
+      code:
+        "globalThis.__balanceInteractionLoads=(globalThis.__balanceInteractionLoads??0)+1;" +
+        assets.chartParts.kinds["balanceFlow:interaction"]!.code,
+    });
     try {
       const errors = pageErrors(page);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__balanceInteractionLoads") ?? 0),
+      ).toBe(0);
       await app(page).locator("#draw").click();
       await app(page).locator("html[data-chart-module-loading]").waitFor();
       await settled(page);
@@ -728,6 +748,11 @@ for (const width of [1200, 390])
       await release(page);
       await app(page).locator("[data-balance-mounted]").waitFor();
       await settled(page);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__balanceInteractionLoads")),
+      ).toBe(1);
       expect(await boxes(page)).toEqual(loading);
       expect(await app(page).locator("[data-balance-label]").textContent()).toBe("November");
       await app(page).locator('[data-balance-step="-1"]').click();
@@ -744,9 +769,58 @@ for (const width of [1200, 390])
       await settled(page);
       expect(await app(page).locator("[data-balance-table]").innerText()).toContain("€25.00");
       expect(await boxes(page)).toEqual(loading);
+      // Drawing another instance reuses the already verified controller asset.
+      await app(page).locator("#draw").click();
+      await app(page).locator("[data-balance-mounted]").waitFor();
+      await settled(page);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__balanceInteractionLoads")),
+      ).toBe(1);
       expect(requests).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
     }
   }, 30000);
+
+test("a failed balance controller leaves a fixed retry state and maps formats after retry", async () => {
+  const script = `document.querySelector('#draw').onclick=()=>document.querySelector('#charts').innerHTML=cloud.chart({
+    kind:'balanceFlow',title:'Settlements',currency:'EUR',locale:'de-DE',tooltip:{label:'Betrag',format:{style:'currency',currency:'EUR',decimals:0}},
+    periods:[{label:'October',opening:10,inflows:[{label:'Orders',value:20}],outflows:[{label:'Fees',value:5}],closing:25}]
+  });`;
+  const { page, context, requests } = await open(390, assets.chartParts.shared.code, "light", script, {
+    kind: "balanceFlow:interaction",
+    code:
+      "globalThis.__balanceAttempts=(globalThis.__balanceAttempts??0)+1;if(globalThis.__balanceAttempts===1)throw new Error('controller fixture failure');" +
+      assets.chartParts.kinds["balanceFlow:interaction"]!.code,
+  });
+  const errors = pageErrors(page);
+  try {
+    await app(page).locator("#draw").click();
+    await app(page).getByRole("button", { name: "Try again" }).waitFor();
+    await settled(page);
+    expect(await app(page).getByRole("alert").innerText()).toBe("The chart could not be loaded.");
+    const failed = await boxes(page);
+    await app(page).getByRole("button", { name: "Try again" }).click();
+    await app(page).locator("[data-balance-mounted]").waitFor();
+    await settled(page);
+    expect(await boxes(page)).toEqual(failed);
+    expect(
+      await app(page)
+        .locator('[data-balance-key="in-0"]')
+        .evaluate((element) => element.closest("[data-chart-datum]")?.getAttribute("aria-label")),
+    ).toContain("Betrag: ↙ 20 €");
+    expect(await app(page).locator("[data-balance-table]").innerText()).toContain("↙ 20 €");
+    expect(
+      await app(page)
+        .locator("body")
+        .evaluate(() => Reflect.get(globalThis, "__balanceAttempts")),
+    ).toBe(2);
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
