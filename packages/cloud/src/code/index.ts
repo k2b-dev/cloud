@@ -11,6 +11,7 @@ export type {
   CodeUser,
   CodeWebhookContext,
 } from "./authoring-types";
+export { requireCodeCapabilityDeclared } from "./capability-set";
 export type { CodeCheckHost } from "./checker";
 export { checkCode } from "./checker";
 export type {

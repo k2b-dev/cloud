@@ -389,6 +389,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       invalidEntrypoint?: boolean;
       entry?: boolean;
       policyRows?: CodeCheckedVersionManifest["policyRows"];
+      permissions?: CodeCheckedVersionManifest["permissions"];
+      entrypointKind?: "schedule" | "route";
       event?: AppEventEnvelope;
     } = {},
   ) {
@@ -415,7 +417,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       ? `event:${options.event.type}@${options.event.version}`
       : options.invalidEntrypoint
         ? "different"
-        : "weekly";
+        : options.entrypointKind === "route"
+          ? "route:GET:/"
+          : "weekly";
+    const trigger = options.event ? "event" : options.entrypointKind === "route" ? "path" : (options.entrypointKind ?? "manual");
+    const runEntrypoint = options.invalidEntrypoint ? "weekly" : entrypoint;
     const checked: CodeCheckedVersionManifest = {
       version: 1,
       entry: "code.ts",
@@ -429,10 +435,31 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               line: 1,
               event: { type: options.event.type, version: options.event.version, place: options.event.place! },
             }
-          : { kind: "manual", entrypoint, cron: null, file: "code.ts", line: 1 },
+          : options.entrypointKind === "route"
+            ? { kind: "route", entrypoint, route: { method: "GET", path: "/", public: false }, cron: null, file: "code.ts", line: 1 }
+            : {
+                kind: options.entrypointKind ?? "manual",
+                entrypoint,
+                cron: options.entrypointKind === "schedule" ? "0 8 * * 1" : null,
+                file: "code.ts",
+                line: 1,
+              },
       ],
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      permissions: [{ operation: "example.write", target: item, file: "code.ts", line: 1 }],
+      permissions: options.permissions ?? [
+        ...[...manifest.queries, ...manifest.actions].map((operation) => ({
+          operation: `example.${operation.localId}`,
+          target: item,
+          file: "code.ts",
+          line: 1,
+        })),
+        ...[...decisionCompiled.manifest.queries, ...decisionCompiled.manifest.actions].map((operation) => ({
+          operation: `core.${operation.localId}`,
+          target: null,
+          file: "code.ts",
+          line: 1,
+        })),
+      ],
       ai: options.policyRows?.includes("ai") ?? false,
       policyRows: options.policyRows ?? ["silent_shared"],
     };
@@ -457,7 +484,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(stored).toMatchObject({ source_kind: "object", manifest_kind: "object", binding_kind: "object" });
     const [run] = await sql<
       { id: string }[]
-    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,input,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit) VALUES(${codeId},${version!.id}::uuid,${options.event ? "event" : "manual"},${options.event ? entrypoint : "weekly"},${JSON.stringify(options.event ?? null)}::text::jsonb,'running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
+    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,input,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit) VALUES(${codeId},${version!.id}::uuid,${trigger},${runEntrypoint},${JSON.stringify(options.event ?? null)}::text::jsonb,'running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
     const created = await mandates.create({
       authority: { kind: "admin", userId },
       subject: { type: "service_account", id: account!.id },
@@ -482,7 +509,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       codeId,
       versionId: version!.id,
       runId: run!.id,
-      entrypoint: options.event ? entrypoint : "weekly",
+      entrypoint: runEntrypoint,
       generation: 1,
       mandateId: created.data.id,
       mandateRevision: created.data.revision,
@@ -520,7 +547,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       body: text,
     });
   }
-  test("the actual decision call applies the KI policy even without checker AI evidence", async () => {
+  test("the actual decision call applies the KI policy even without checker AI classification", async () => {
     await resetFixture({ entry: true, policyRows: ["read"] });
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='ai' AND group_id IS NULL`;
     const entry = { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest };
@@ -1133,7 +1160,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   });
   for (const row of ["ai", "internet"] as const)
     test(`${row}: the bridge requires version approval before admitting the call`, async () => {
-      await resetFixture({ entry: true, policyRows: [row] });
+      await resetFixture({
+        entry: true,
+        policyRows: [row],
+        permissions: [{ operation: "example.read", target: null, file: "code.ts", line: 1 }],
+      });
       await sql`UPDATE code.policy_rules SET value='admin' WHERE row=${row} AND group_id IS NULL`;
       // AI is a checked-manifest flag in this release; there is no runtime AI bridge kind.
       // Internet additionally classifies the actual HTTP call and requires that row's coverage.
@@ -1157,6 +1188,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
                   ownerAppId: "runner",
                   targetAppId: row === "ai" ? "example" : "core",
                   operation: row === "ai" ? "capability.query:read" : "runtime.http",
+                  ...(row === "ai" ? { call: { capability: "example.read", target: null, refs: {}, input: {} } } : {}),
                   actionApproval: "none",
                   input: {},
                 },
@@ -1212,12 +1244,160 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   });
   test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden", 200, 403));
   test("the same operation at another target is refused", async () =>
-    error({ target: { ...item, id: "b" } }, "mandate_forbidden", 200, 403));
-  test("new entries allow actual operations and targets absent from the checker list", async () => {
+    error({ target: { ...item, id: "b" } }, "code_capability_undeclared", 403));
+  test.each(["core.code.file.read", "core.code.file.view"] as const)(
+    "%s observations are trusted accounting only, while SDK calls remain constrained",
+    async (operation) => {
+      await resetFixture({ entry: true, permissions: [] });
+      const token = await signCodeRunToken(claims, { issuer, signer, now, deadlineAt: now.getTime() + 300_000 });
+      const verified = await verifyCodeRunToken(token, { issuer, key, now });
+      if (!verified) throw new Error("Fixture token invalid");
+      const host = createCodeBridgeHost({ checkRate: async () => ({ limited: false }) });
+      let executed = 0;
+      const execute = async (...args: unknown[]) => {
+        expect(args).toEqual([]);
+        executed++;
+        return new Response("private file bytes", { headers: { "Content-Type": "application/octet-stream" } });
+      };
+      const response = await host.withFileObservation({ claims: verified, operation, input: { name: "image.png" } }, execute);
+      expect(await response.text()).toBe("private file bytes");
+      expect(executed).toBe(1);
+      const [observed] = await sql<{ result: unknown }[]>`SELECT result FROM code.calls WHERE run_id=${claims.runId}::uuid`;
+      expect(observed?.result).toEqual({ ok: true, data: null });
+      const external = await host.withCall(
+        { claims: verified, kind: "query", call: { capability: operation, target: null, refs: {}, input: {} } },
+        async () => {
+          executed++;
+          return Response.json({ ok: true, data: null });
+        },
+      );
+      expect(external.status).toBe(403);
+      expect(await external.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+      expect(executed).toBe(1);
+      expect(await sql<{ state: string }[]>`SELECT state FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`).toEqual([
+        { state: "succeeded" },
+        { state: "failed" },
+      ]);
+      await sql`UPDATE code.runs SET calls_limit=2 WHERE id=${claims.runId}::uuid`;
+      await expect(host.withFileObservation({ claims: verified, operation, input: {} }, execute)).rejects.toMatchObject({
+        code: "code_call_limit",
+      });
+      await sql`UPDATE code.runs SET generation=generation+1 WHERE id=${claims.runId}::uuid`;
+      await expect(host.withFileObservation({ claims: verified, operation, input: {} }, execute)).rejects.toMatchObject({
+        code: "runner_lease_lost",
+      });
+      expect(executed).toBe(1);
+    },
+  );
+  test("issuance cannot reuse an admitted call for another operation or coordinate", async () => {
     await resetFixture({ entry: true });
-    expect(await (await send({ operation: "example.other" })).json()).toEqual({ ok: true, data: { value: "a" } });
-    expect(await (await send({ target: { ...item, id: "b" } })).json()).toEqual({ ok: true, data: { value: "b" } });
+    const token = await signCodeRunToken(claims, { issuer, signer, now, deadlineAt: now.getTime() + 300_000 });
+    const verified = await verifyCodeRunToken(token, { issuer, key, now });
+    if (!verified) throw new Error("Fixture token invalid");
+    const admitted = { capability: "example.read", target: item, refs: {}, input: {} };
+    for (const issued of [
+      { ...admitted, capability: "example.other" },
+      { ...admitted, target: { ...item, id: "b" } },
+      { ...admitted, refs: { hidden: item } },
+    ]) {
+      let executed = false;
+      const response = await createCodeBridgeHost({ checkRate: async () => ({ limited: false }) }).withCall(
+        { claims: verified, kind: "query", call: admitted },
+        async (authority) => {
+          await sql.begin((db) =>
+            authority.withMandateIssueAuthority(
+              {
+                mandateId: authority.mandateId,
+                expectedRevision: authority.mandateRevision,
+                ownerAppId: "core",
+                targetAppId: "example",
+                operation: "capability.query:read",
+                call: issued,
+              },
+              async () => {
+                executed = true;
+                return null;
+              },
+              { db },
+            ),
+          );
+          return Response.json({ ok: true, data: null });
+        },
+      );
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+      expect(executed).toBe(false);
+    }
   });
+  test.each([false, true])("dynamic evidence retains Type constraints with personal=%s", async (personal) => {
+    await resetFixture({
+      entry: true,
+      personal,
+      permissions: [{ operation: "example.read", target: { type: item.type, id: null }, file: "code.ts", line: 1 }],
+    });
+    if (personal) {
+      await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+      const [access] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'write') RETURNING id`;
+      targetAccess = access!.id;
+    }
+    expect(await (await send({ operation: "example.read" })).json()).toEqual({ ok: true, data: { data: { value: "a" } } });
+  });
+  test("policy-free entries refuse operations and targets absent from version evidence and log the refusal", async () => {
+    await resetFixture({ entry: true, permissions: [{ operation: "example.write", target: item, file: "code.ts", line: 1 }] });
+    await error({ operation: "example.other" }, "code_capability_undeclared", 403);
+    await error({ target: { ...item, id: "b" } }, "code_capability_undeclared", 403);
+    await error(
+      { input: { call: { capability: "example.write", target: item, refs: { hidden: { ...item, id: "b" } }, input: {} }, metadata: {} } },
+      "code_capability_undeclared",
+      403,
+    );
+    await expectPolicyRefusal();
+    const rows = await sql`SELECT state,result FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`;
+    expect(rows).toEqual([
+      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared" } } },
+      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared" } } },
+      { state: "failed", result: { ok: false, error: { code: "code_capability_undeclared" } } },
+    ]);
+    expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
+  });
+  test.each(["schedule", "route", "event"] as const)(
+    "%s runs refuse a mis-attributed AI call independently of the checker",
+    async (kind) => {
+      const event =
+        kind === "event"
+          ? appEventFixture(
+              mailCapabilities,
+              "message.received",
+              {
+                subject: "Ms4g00",
+                place: "Mb4g00",
+                data: { receiptId: "44444444-4444-4444-8444-444444444444" },
+              },
+              { appId: "mail", id: "55555555-5555-4555-8555-555555555555", time: now.toISOString() },
+            )
+          : undefined;
+      await resetFixture({
+        entry: true,
+        ...(kind === "event" ? { event } : { entrypointKind: kind }),
+        policyRows: ["read"],
+        permissions: [{ operation: "core.catalog.list", target: null, file: "code.ts", line: 1 }],
+      });
+      const before = fetched;
+      const response = await send({
+        entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+        operation: "core.ai.generate",
+        input: { call: { capability: "core.ai.generate", target: null, refs: {}, input: {} }, metadata: {} },
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+      expect(fetched).toBe(before);
+      await expectPolicyRefusal();
+      const [run] = await sql`SELECT ai_reserved_cost::text AS reserved FROM code.runs WHERE id=${claims.runId}::uuid`;
+      expect(run?.reserved).toBe("0");
+    },
+  );
   test("personal Code also uses its active policy-free entry and current person rights", async () => {
     await resetFixture({ entry: true, personal: true });
     await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
@@ -1272,8 +1452,22 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
     await error({}, "code_call_limit", 200);
   });
-  async function fileFixture(sourceAction = false, event?: AppEventEnvelope) {
-    await resetFixture({ entry: true, policyRows: ["read", "silent_shared"], event });
+  async function fileFixture(sourceAction = false, event?: AppEventEnvelope, permissions?: CodeCheckedVersionManifest["permissions"]) {
+    const mailManifest = compileCapabilityManifest("mail", mailCapabilities);
+    await resetFixture({
+      entry: true,
+      policyRows: ["read", "silent_shared"],
+      event,
+      permissions: permissions ?? [
+        ...[...mailManifest.queries, ...mailManifest.actions].map((operation) => ({
+          operation: `mail.${operation.localId}`,
+          target: operation.target ? { type: `mail.${operation.target}`, id: "Mb4g00" } : null,
+          file: "code.ts",
+          line: 1,
+        })),
+        { operation: "imports.import", target: null, file: "code.ts", line: 1 },
+      ],
+    });
     if (!mailMigrated) {
       await installLiveOutbox(sql);
       await migrateLogging();
@@ -1684,11 +1878,43 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   test("4g foreign account cannot obtain a Mail file, and another Code with its own valid mandate cannot redeem it", async () => {
     const fixture = await fileFixture();
     const opened = await fixture.read();
-    await resetFixture({ entry: true, policyRows: ["read", "silent_shared"] });
+    await resetFixture({
+      entry: true,
+      policyRows: ["read", "silent_shared"],
+      permissions: [
+        { operation: "mail.attachment.content.read", target: null, file: "code.ts", line: 1 },
+        { operation: "imports.import", target: null, file: "code.ts", line: 1 },
+      ],
+    });
     expect(await fixture.read()).toMatchObject({ ok: false, error: { code: "forbidden" } });
     expect(await (await fixture.write(opened.data)).json()).toEqual({ ok: false, error: { code: "code_file_invalid" } });
     expect(fixture.received()).toBeUndefined();
   }, 30_000);
+  test.each(["read", "write"] as const)(
+    "stream %s calls must belong to the declared version set before bytes move",
+    async (direction) => {
+      const fixture = await fileFixture(false, undefined, [
+        {
+          operation: direction === "read" ? "imports.import" : "mail.attachment.content.read",
+          target: null,
+          file: "code.ts",
+          line: 1,
+        },
+      ]);
+      const opened = await fixture.read();
+      if (direction === "read") expect(opened).toMatchObject({ ok: false, error: { code: "code_capability_undeclared" } });
+      else {
+        expect(opened.ok).toBe(true);
+        const response = await fixture.write(opened.data);
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ ok: false, error: { code: "code_capability_undeclared" } });
+      }
+      expect(fixture.sourceBytes()).toBe(0);
+      expect(fixture.received()).toBeUndefined();
+      await expectPolicyRefusal();
+    },
+    30_000,
+  );
   test("4g a read-stream Action uses its actual Action policy again when Core redeems its reference", async () => {
     const fixture = await fileFixture(true);
     const opened = await fixture.read();
@@ -1868,6 +2094,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await expectPolicyRefusal();
   });
   test("code.access.* is refused even when present in a catalog", async () => {
+    await resetFixture({ permissions: [{ operation: "example.code.access.set", target: item, file: "code.ts", line: 1 }] });
     const entry = structuredClone(baseEntry);
     entry.manifest.actions[0]!.localId = "code.access.set";
     await error({ operation: "example.code.access.set", entry }, "code_access_forbidden");
