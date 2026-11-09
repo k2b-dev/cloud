@@ -89,7 +89,7 @@ describe("RunDetailPanel", () => {
     expect(kind).toContain("Healthy");
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('data-size="sm"');
     const properties = html.indexOf(">Properties<");

@@ -19,7 +19,7 @@ const entry = resolve(import.meta.dir, "property-rows.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { DateTimePicker, DescriptionList, DetailPanel, MultiSelectInput, NumberInput, Select } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { DateTimePicker, DescriptionList, DetailPanel, MultiSelectInput, NumberInput, Section, Select } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const priorities = [
   { id: "urgent", label: "Urgent", color: "#ef4444" },
@@ -57,9 +57,9 @@ render(
                 label: "Note context",
                 get children() {
                   return [
-                    createComponent(DetailPanel.Section, { title: "Online", icon: "ti ti-users", meta: "1", children: "Robin Example" }),
-                    createComponent(DetailPanel.Section, { title: "Recent activity", icon: "ti ti-history", meta: "2", collapsible: true, children: "Edited twice" }),
-                    createComponent(DetailPanel.Section, { title: "Information", icon: "ti ti-info-circle", collapsible: true, defaultOpen: true, children: "Created yesterday" }),
+                    createComponent(Section, { title: "Online", icon: "ti ti-users", meta: "1", children: "Robin Example" }),
+                    createComponent(Section, { title: "Recent activity", icon: "ti ti-history", meta: "2", collapsible: true, children: "Edited twice" }),
+                    createComponent(Section, { title: "Information", icon: "ti ti-info-circle", collapsible: true, defaultOpen: true, children: "Created yesterday" }),
                   ];
                 },
               }),
@@ -229,10 +229,8 @@ describe("@k2b/ui property rows and DetailPanel sections", () => {
         try {
           const geometry = (title: string) =>
             page.evaluate((title) => {
-              const section = Array.from(document.querySelectorAll(".k2b-detail-panel__section")).find((element) =>
-                Array.from(element.querySelectorAll("h3, .k2b-detail-panel__section-title")).some(
-                  (heading) => heading.textContent === title && !heading.closest("[hidden]"),
-                ),
+              const section = Array.from(document.querySelectorAll(".k2b-section")).find((element) =>
+                Array.from(element.querySelectorAll(".k2b-section__title")).some((heading) => heading.textContent === title),
               )!;
               const visible = (selector: string) =>
                 Array.from(section.querySelectorAll<HTMLElement>(selector)).find((element) => !element.closest("[hidden]"));
@@ -245,15 +243,16 @@ describe("@k2b/ui property rows and DetailPanel sections", () => {
                   height: Math.round(rect.height),
                 };
               };
-              const row = visible(".k2b-detail-panel__section-header, .k2b-detail-panel__section-summary");
-              const chevron = visible(".k2b-detail-panel__section-toggle i");
+              const row = visible(".k2b-section__header");
+              const toggle = visible(".k2b-section__toggle");
+              const chevron = visible(".k2b-section__chevron");
               return {
                 row: box(row),
-                icon: box(visible(".k2b-detail-panel__section-icon")),
-                title: box(visible("h3, .k2b-detail-panel__section-title")),
-                meta: section.querySelector(".k2b-detail-panel__section-meta") ? box(visible(".k2b-detail-panel__section-meta")) : null,
+                icon: box(visible(".k2b-section__icon")),
+                title: box(visible(".k2b-section__title")),
+                meta: section.querySelector(".k2b-section__meta") ? box(visible(".k2b-section__meta")) : null,
                 chevron: chevron ? box(chevron) : null,
-                fill: getComputedStyle(row!).backgroundColor,
+                fill: getComputedStyle(toggle ?? row!).backgroundColor,
               };
             }, title);
 

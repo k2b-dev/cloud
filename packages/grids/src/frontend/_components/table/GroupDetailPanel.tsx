@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, timed } from "@k2b/stdlib/solid";
-import { DescriptionList, DetailPanel, IconButton, Placeholder, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import { DescriptionList, DetailPanel, IconButton, Placeholder, Section, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord, PublicTableQueryResult } from "../../../api/public-dto";
 import type { AggregationSpec, FilterTree, GroupBySpec, RecordQuery } from "../../../contracts";
@@ -208,11 +208,11 @@ export default function GroupDetailPanel(props: Props) {
       />
 
       <DetailPanel.Body scrollPreserveKey={`grids-group-detail-${props.tableId}-${bucketKey()}`}>
-        <DetailPanel.Section title={t().summary}>
+        <Section title={t().summary}>
           <DescriptionList layout="rows" size="sm" items={summaryItems()} />
-        </DetailPanel.Section>
+        </Section>
 
-        <DetailPanel.Section title={t().records}>
+        <Section title={t().records}>
           <div class="flex min-h-[18rem] flex-col gap-3">
             <TextInput
               aria-label={t().searchGroupRecords}
@@ -271,7 +271,7 @@ export default function GroupDetailPanel(props: Props) {
               </Show>
             </div>
           </div>
-        </DetailPanel.Section>
+        </Section>
       </DetailPanel.Body>
     </DetailPanel>
   );

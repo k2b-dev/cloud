@@ -111,6 +111,7 @@ import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" 
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
 import surfacePaper from "./surfaces/paper.md" with { type: "text" };
 import surfaceProgress from "./surfaces/progress.md" with { type: "text" };
+import surfaceSection from "./surfaces/section.md" with { type: "text" };
 import surfaceStats from "./surfaces/stats.md" with { type: "text" };
 import surfaceUtilities from "./surfaces/utilities.md" with { type: "text" };
 import inputTextEditor from "./text-editor.md" with { type: "text" };
@@ -187,6 +188,7 @@ const catalogContextSources = {
   "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
+  "surfaces/section": { file: "surfaces/section.md", content: surfaceSection },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },
   "surfaces/details": { file: "surfaces/details.md", content: surfaceDetails },
   "surfaces/avatar-stack": { file: "surfaces/avatar-stack.md", content: surfaceAvatarStack },
