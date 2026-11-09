@@ -13,6 +13,10 @@ export type FileRef = {
   readonly size: number;
 };
 
+/** A generated SDK method bound to its application and optional resource. Only accepted in AI tools arrays. */
+declare const __codeAiTool: unique symbol;
+export type CodeAiTool = { readonly [__codeAiTool]: true };
+
 /** A target identity created by a generated factory, never an authorization grant. */
 declare const __codeHandle: unique symbol;
 export type CodeHandle<Type extends string, Id extends string = string> = {
@@ -122,11 +126,11 @@ type Input6 = ({ "itemId": (string); "destination": CodeHandle<"work-shop.worksh
 
 type Data6 = ({ "moved": (boolean) });
 
-type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((input: Input0) => Promise<CodeQueryResult<Data0>>) }; readonly "workshop": { readonly "read": ((input: Input3) => Promise<CodeQueryResult<Data3>>) } };
+type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": (((input: Input0) => Promise<CodeQueryResult<Data0>>) & CodeAiTool) }; readonly "workshop": { readonly "read": (((input: Input3) => Promise<CodeQueryResult<Data3>>) & CodeAiTool) } };
 
-type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "inspect": ((input: Input5) => Promise<Data5>) };
+type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "inspect": (((input: Input5) => Promise<Data5>) & CodeAiTool) };
 
-type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input4) => Promise<Data4>); readonly "move": ((input: Input6) => Promise<Data6>) }; readonly "stock": { readonly "export": ((input: Input1) => Promise<FileRef>); readonly "list": ((input: Input2) => Promise<CodeQueryResult<Data2>>) } };
+type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": (((input: Input4) => Promise<Data4>) & CodeAiTool); readonly "move": ((input: Input6) => Promise<Data6>) }; readonly "stock": { readonly "export": (((input: Input1) => Promise<FileRef>) & CodeAiTool); readonly "list": (((input: Input2) => Promise<CodeQueryResult<Data2>>) & CodeAiTool) } };
 
 export declare const work_shop: Handle0<"work-shop"> & { readonly "item": (<const Id extends string>(id: Id) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: Id) => Handle2<Id>) };
 
@@ -276,6 +280,7 @@ async function invoke(operation, input) {
   }
 }
 const handles = new WeakMap();
+const aiTools = new WeakMap();
 let bridge;
 const schedules = [];
 const routes = [];
@@ -309,10 +314,20 @@ function handle(appId, type, id) {
   handles.set(result, ref);
   Object.defineProperties(result, { type: { value: ref.type, enumerable: true }, id: { value: ref.id, enumerable: true } });
   for (const op of manifest.operations.filter(op => op.appId === appId && op.target === type)) {
-    setPath(result, op.methodPath, async (args) => {
+    const method = async (args) => {
       if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
       if (!args || typeof args !== "object" || Array.isArray(args)) throw new CodeError("code_sdk_invalid_input");
       const input = { ...args };
+      if (op.capability === "core.ai.generate" || op.capability === "core.ai.decide") {
+        if (input.tools !== undefined) {
+          if (!Array.isArray(input.tools)) throw new CodeError("code_ai_tool_invalid");
+          input.tools = input.tools.map(tool => {
+            const binding = aiTools.get(tool);
+            if (!binding) throw new CodeError("code_ai_tool_invalid");
+            return binding;
+          });
+        }
+      }
       const refs = {};
       for (const [field, refType] of Object.entries(op.refs)) {
         refs[field] = coordinate(input[field], refType);
@@ -329,7 +344,10 @@ function handle(appId, type, id) {
       }
       const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
       return invoke(op.capability, { call, metadata });
-    });
+    };
+    if (Object.keys(op.refs).length === 0) aiTools.set(method, Object.freeze({ capability: op.capability,
+      target: type === null ? null : Object.freeze(coordinate(result, type)) }));
+    setPath(result, op.methodPath, method);
   }
   return result;
 }

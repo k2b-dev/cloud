@@ -44,7 +44,14 @@ export class CodeBridgeRefusal extends Error {
       return 409;
     if (["code_bridge_unavailable", "code_file_unavailable"].includes(this.code)) return 503;
     if (
-      ["code_invalid_call", "code_http_invalid_call", "code_file_invalid", "code_input_limit", "code_file_size_limit"].includes(this.code)
+      [
+        "code_invalid_call",
+        "code_http_invalid_call",
+        "code_file_invalid",
+        "code_input_limit",
+        "code_file_size_limit",
+        "code_file_size_mismatch",
+      ].includes(this.code)
     )
       return 400;
     if (

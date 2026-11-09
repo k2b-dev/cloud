@@ -5,7 +5,7 @@ import { capabilityActionReceiptIssues } from "../_internal/capability-reviews";
 import { getCapability } from "../_internal/registry";
 import { capabilityCallDigest } from "../capabilities/calls";
 import { recordCapabilityExecution } from "../capabilities/executions";
-import { exactStream } from "../capabilities/stream-body";
+import { CapabilityStreamSizeError, exactStream } from "../capabilities/stream-body";
 import type { CapabilityStream } from "../contracts/capabilities";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -318,9 +318,9 @@ export async function dispatchCapabilityStream(
                 await record(200);
                 controller.close();
               } else controller.enqueue(chunk.value);
-            } catch {
+            } catch (error) {
               await record(502, "STREAM_FAILED");
-              controller.error(new Error("Incomplete capability stream"));
+              controller.error(error instanceof CapabilityStreamSizeError ? error : new Error("Incomplete capability stream"));
             }
           },
           async cancel(reason) {

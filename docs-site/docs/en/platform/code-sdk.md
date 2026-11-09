@@ -807,6 +807,9 @@ There is no platform audience or implicit access to underlying resources.
 SDK calls retain the Code's execution principal and its existing grants;
 the visitor's grants never become data authority.
 
+Signed-in page requests share a limit of 20 requests per minute per visitor,
+across Code pages. Public routes retain their per-IP and per-Code limits.
+
 Non-public POST, PUT, PATCH and DELETE routes need a session-bound CSRF token.
 Read `X-Code-CSRF` from a preceding GET response and send it as the same header,
 retaining the session cookie. URL-encoded forms may submit it as `_csrf`; Core
@@ -1151,14 +1154,14 @@ For lasting Code, save this function in a helper module and call it from a
 schedule. Schedule callbacks return `void`; use the flag inside the callback
 when deciding whether a separate authorized action is appropriate.
 
-Optional images and `model: { id }`, provider-dependent image support, quota
+Optional `files: FileRef[]` and `model: { id }`, image support, quota
 failures and byte limits follow
 [Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
 
 
 ## Generate text and extract fields
 
-Discover `core.ai.generate` in the live SDK. It is a read-only query classified
+Discover `core.ai.generate` in the live SDK. It is a query classified
 as **AI / KI**, using the caller's allowance and Code's execution budgets.
 Use it for summaries, draft text or validated extraction. Put source data in
 `input` and trusted instructions in `prompt`.
@@ -1208,8 +1211,56 @@ application capability performs that effect under its own permissions.
 See [Text and JSON capabilities](/en/docs/ai/structured-and-background-ai#generate-text-and-extract-json-through-capabilities)
 for schemas, size limits, model selection and stable errors.
 
-Signed-in page requests share a limit of 20 requests per minute per visitor,
-across Code pages. Public routes retain their per-IP and per-Code limits.
+## Run a model loop with SDK tools and files
+
+`core.ai.generate` accepts `tools` containing generated SDK methods. Use a
+literal list such as `tools: [mail.attachment.read,
+mail.mailbox("Mbx001").conversation.search]`. The first tool takes business
+input from the model; the second stays bound to that mailbox. Only genuine
+SDK methods work. Method aliases, wrapper functions, strings and manually
+constructed descriptors are rejected. Methods requiring additional resource
+handles are unavailable as tools.
+
+The checker includes every possible tool capability and bound target in the
+version's permissions and approval evidence. Each actual call follows the
+normal bridge: the Code account, current grants, policy, version approval and
+call log all apply. Actions with `ask` policy remain forbidden. Other declared
+Actions can change domain records, so choose the tools deliberately.
+
+Pass `files: FileRef[]` to `core.ai.generate` or `core.ai.decide` to read files
+before inference. The Code decision capability no longer accepts base64
+`images`. Obtain refs from ordinary read-stream operations, for example
+`const file = await mail.attachment.content.read({ id: "Att001" })`. Bytes stay
+outside Code and its bridge payload. Obtain a fresh ref for another AI call;
+redemption is single-use and the byte cache lasts for one call only.
+
+A generate loop automatically offers `view_image` and `read_file` once refs
+appear in `files`, `input` or SDK tool results. They accept only those exact
+refs. Set `fileTools: false` to disable viewer tools; initial `files` still
+load. The owning app reads as the run's account and can refuse with a visible
+403 or 404. A refusal while attaching initial files rejects the SDK call as
+`CodeError` with that status. Viewer refusals are shown to the model. Both
+initial files and viewers use one reader.
+If a source sends more bytes than its FileRef declares, the reader refuses
+with `code_file_size_limit` (400). An incomplete file produces
+`code_file_size_mismatch` (400).
+
+Models with vision receive image pixels and rendered PDF pages directly.
+Text-only models use a separately charged vision description. Each PDF look
+defaults to the first 20 pages, reduced to fit the model context and rendered byte budget. Explicit
+selections accept at most 20 distinct one-based pages. An AI call loads at
+most 16 files: images and PDFs up to 10 MiB each, other documents up to 20 MiB,
+with 40 MiB source and visual byte budgets. `read_file` returns UTF-8 chunks
+of at most 64 KiB. Viewer calls and source reads consume the existing Code
+call budget; all model turns and fallback descriptions share the Code AI
+reservation and deadline, including the ordinary 45-second capability query
+window. File contents and tool results are untrusted data.
+
+JSON output supports lists with a required `maxItems`, bounded by the
+100,000-byte output limit. Items may be scalars or strict objects of scalar
+fields; nested lists are rejected. A schema can therefore return invoice
+lines or totals per tax rate while retaining `additionalProperties: false`
+and the existing string bounds.
 
 ## Webhooks (R1: ohne Secret)
 

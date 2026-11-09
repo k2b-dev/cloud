@@ -12,6 +12,14 @@ export class Cloud extends WorkerEntrypoint {
       });
       if (!response.ok) throw new Error("runner_bridge_unavailable");
       result = await response.json();
+      if (
+        result === null ||
+        typeof result !== "object" ||
+        typeof result.ok !== "boolean" ||
+        (!result.ok && (result.error === null || typeof result.error !== "object" || typeof result.error.code !== "string"))
+      ) {
+        throw new Error("runner_bridge_unavailable");
+      }
     } catch {
       // The supervisor may close an oversized upload before workerd reads its 413.
       // Code sees one stable code, never transport details.

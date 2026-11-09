@@ -81,6 +81,7 @@ const InvocationPayloadBaseSchema = z
     workload_type: BoundedIdentifierSchema.optional(),
     workload_id: BoundedIdentifierSchema.optional(),
     workload_run: BoundedIdentifierSchema.optional(),
+    workload_generation: z.number().int().positive().safe().optional(),
     workload_event: z.uuid().optional(),
     workload_trigger: WorkloadTriggerSchema.nullable().optional(),
     parent_invocation_id: z.uuid().optional(),
@@ -143,6 +144,11 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
     (claims.credential_kind !== "mandate" || claims.workload_type !== "code.version" || !claims.workload_run || claims.workload_event)
   )
     context.addIssue({ code: "custom", message: "A workload trigger requires a Code run" });
+  if (
+    claims.workload_generation !== undefined &&
+    (claims.credential_kind !== "mandate" || claims.workload_type !== "code.version" || !claims.workload_run || claims.parent_invocation_id)
+  )
+    context.addIssue({ code: "custom", message: "A generation requires a direct Code run invocation" });
   const mandateFields = [claims.mandate_id, claims.mandate_revision, claims.workload_type, claims.workload_id];
   const mandateFieldCount = mandateFields.filter((value) => value !== undefined).length;
   if (
@@ -185,6 +191,7 @@ export type InvocationAuthority = Pick<
   | "workload_type"
   | "workload_id"
   | "workload_run"
+  | "workload_generation"
   | "workload_event"
   | "workload_trigger"
 >;
