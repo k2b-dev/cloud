@@ -194,9 +194,27 @@ function CodeField(props: { field: CodePageField; changed: () => void }) {
       // A camera failure replaces the Code's message until the next page arrives; typing always remains possible.
       const [cameraError, setCameraError] = createSignal<string>();
       let input: HTMLDivElement | undefined;
+      // The scan's outcome reaches the field when the scanner reports it. The dialog's promise settles only after its
+      // history entry is gone, a moment after the dialog has left the page; the field must not show the old value then.
+      const apply = (result: ScanResult) => {
+        const messages = t();
+        if ("text" in result) {
+          setCameraError(undefined);
+          setValue(result.text);
+          props.changed();
+        } else
+          setCameraError(
+            {
+              denied: messages.cameraDenied,
+              "no-camera": messages.cameraMissing,
+              "in-use": messages.cameraInUse,
+              unavailable: messages.cameraUnavailable,
+            }[result.error],
+          );
+      };
       const scan = async () => {
         const messages = t();
-        const result = await dialogCore.open<ScanResult>(
+        await dialogCore.open<void>(
           (close) => (
             <PanelDialog>
               <PanelDialog.Header title={messages.scanTitle} close={() => close()} closeLabel={messages.closeScanner} />
@@ -204,11 +222,15 @@ function CodeField(props: { field: CodePageField; changed: () => void }) {
                 <QrScanner
                   instructions={messages.scanInstructions}
                   onResult={(text) => {
-                    close({ text });
+                    apply({ text });
+                    close();
                     return true;
                   }}
                   onStop={() => close()}
-                  onError={(reason) => close({ error: reason })}
+                  onError={(reason) => {
+                    apply({ error: reason });
+                    close();
+                  }}
                 />
               </PanelDialog.Body>
             </PanelDialog>
@@ -221,19 +243,6 @@ function CodeField(props: { field: CodePageField; changed: () => void }) {
             history: true,
           },
         );
-        if (result && "text" in result) {
-          setCameraError(undefined);
-          setValue(result.text);
-          props.changed();
-        } else if (result)
-          setCameraError(
-            {
-              denied: messages.cameraDenied,
-              "no-camera": messages.cameraMissing,
-              "in-use": messages.cameraInUse,
-              unavailable: messages.cameraUnavailable,
-            }[result.error],
-          );
         input?.querySelector("input")?.focus();
       };
       return (
