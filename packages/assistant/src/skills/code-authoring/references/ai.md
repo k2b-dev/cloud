@@ -254,7 +254,7 @@ rechecks access as the Code account; a source 403 is a visible refusal.
 
 Images and rendered PDF pages go directly to models with vision. Text-only
 models use a separately charged vision description. A PDF look defaults to its
-first 20 pages, reduced to fit the model context; explicit selections allow at
+first 20 pages, reduced to fit the model context and rendered byte budget; explicit selections allow at
 most 20 distinct pages. Limits per AI call: 16 loaded files, 10 MiB per image or
 PDF, 20 MiB per document and 40 MiB of source bytes and visual content. Document
 chunks are at most 64 KiB of UTF-8. A viewer call and each source read count in

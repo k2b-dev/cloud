@@ -165,6 +165,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   // Bind calls to declarations from this generated SDK, including namespace aliases and
   // callable factory/method intersections. Spelling alone must never identify a factory.
   const appOperations = new Map<ts.Node, CodeSdkOperation>();
+  const operationDeclarations = new Set<ts.Node>();
   const sdkNamespaces = new Set<ts.Type>();
   const factoryDeclarations = new Set<ts.Node>();
   const sdkSource = program.getSourceFile(root + "sdk.d.ts")!;
@@ -186,6 +187,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           if (namespace) sdkNamespaces.add(namespace);
           namespace = namespace && propertyType(namespace, segment, sdkSource);
         }
+        for (const method of namespace?.getCallSignatures() ?? []) if (method.declaration) operationDeclarations.add(method.declaration);
       }
     }
   }
@@ -201,7 +203,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       }
     }
     for (const signature of sdkMemberType(app.exportName, op.methodPath)?.getCallSignatures() ?? [])
-      if (signature.declaration) appOperations.set(signature.declaration, op);
+      if (signature.declaration) {
+        appOperations.set(signature.declaration, op);
+        operationDeclarations.add(signature.declaration);
+      }
   }
   const sdkMemberAccess = (node: ts.Node, receiver: ts.Expression): boolean => {
     if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
@@ -477,7 +482,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       checker
         .getTypeAtLocation(node.name)
         .getCallSignatures()
-        .some((signature) => signature.declaration?.getSourceFile().fileName === root + "sdk.d.ts")
+        .some((signature) => signature.declaration && operationDeclarations.has(signature.declaration))
     )
       report(node, "code_detached_sdk_method", "SDK-Methoden dürfen nicht durch Destrukturierung abgelöst werden.");
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {

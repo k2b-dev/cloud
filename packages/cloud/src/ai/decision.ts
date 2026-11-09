@@ -204,7 +204,7 @@ const validateInput = (input: RunAiDecisionInput<DecisionQuestions>) => {
     throw invalidInput();
   }
   const images = input.images ?? [];
-  if (!Array.isArray(images) || images.length > Math.max(AI_TURN_ATTACHMENT_MAX_ITEMS, PDF_MAX_PAGES)) throw invalidInput();
+  if (!Array.isArray(images) || images.length > AI_TURN_ATTACHMENT_MAX_ITEMS * PDF_MAX_PAGES) throw invalidInput();
   let totalBytes = 0;
   for (const image of images) {
     if (

@@ -525,7 +525,8 @@ with base64 data without a data-URL prefix, and require `vision`. Image support
 depends on both the provider and model. Cloud trusts the administrator’s
 configured `vision` capability; it does not probe whether images are processed.
 As of 2026-11-04, cortecs ignores images on `/v1/systemone`, so use text-only
-decisions there. Existing AI byte limits apply: at most 20 images (including rendered PDF pages), 10 MiB per image and
+decisions there. Existing AI byte limits apply: at most 320 images
+(16 files × 20 rendered PDF pages), 10 MiB per image and
 40 MiB total.
 
 Each call has a 60-second deadline and honors `signal`. There is no automatic

@@ -70,10 +70,39 @@ test("a public AI request cannot attach a file or bind tools without direct sign
   const { geoTestContext } = await import("../services/geo/geo.test-fixture");
   const { aiGenerationQuery } = await import("../../../core/src/ai-generation-capability");
   const { aiDecisionQuery } = await import("../../../core/src/ai-decision-capability");
-  const context = { ...geoTestContext, actor: geoTestContext.actor!, accessSubject: geoTestContext.accessSubject!, user: null,
-    locale: "en", requestId: "file-fence", origin: "http" as const, signal: new AbortController().signal };
-  expect(await aiGenerationQuery.run(aiGenerationInput.parse({ ...request, files: [file] }), context))
-    .toMatchObject({ ok: false, error: { code: "code_ai_run_required", status: 403 } });
-  expect(await aiDecisionQuery.run(aiDecisionInput.parse({ task: "classify", state: {}, questions: { valid: { type: "noul", instructions: "Invoice?" } }, files: [file] }), context))
-    .toMatchObject({ ok: false, error: { code: "code_ai_run_required", status: 403 } });
+  const context = {
+    ...geoTestContext,
+    actor: geoTestContext.actor!,
+    accessSubject: geoTestContext.accessSubject!,
+    user: null,
+    locale: "en",
+    requestId: "file-fence",
+    origin: "http" as const,
+    signal: new AbortController().signal,
+  };
+  expect(await aiGenerationQuery.run(aiGenerationInput.parse({ ...request, files: [file] }), context)).toMatchObject({
+    ok: false,
+    error: { code: "code_ai_run_required", status: 403 },
+  });
+  expect(
+    await aiDecisionQuery.run(
+      aiDecisionInput.parse({
+        task: "classify",
+        state: {},
+        questions: { valid: { type: "noul", instructions: "Invoice?" } },
+        files: [file],
+      }),
+      context,
+    ),
+  ).toMatchObject({ ok: false, error: { code: "code_ai_run_required", status: 403 } });
+});
+
+test("viewer call IDs satisfy the same normalized-call contract as direct SDK calls", async () => {
+  const { codeAiFileToolOperation } = await import("../../../core/src/code/ai-loop");
+  const { NormalizedCapabilityCallSchema } = await import("../contracts/capabilities");
+  for (const name of ["view_image", "read_file"] as const) {
+    const capability = codeAiFileToolOperation(name);
+    expect(NormalizedCapabilityCallSchema.safeParse({ capability, target: null, refs: {}, input: {} }).success).toBe(true);
+    expect(capability.startsWith("core.ai.")).toBe(false);
+  }
 });

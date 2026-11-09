@@ -26,6 +26,7 @@ export async function createCodeAiTools(options: {
   requestId: string;
   getCapability?: typeof getCapability;
 }): Promise<ServerTool[]> {
+  let sequence = 0;
   return Promise.all(
     options.bindings.map(async (binding, index) => {
       if (!codeAiToolCovered(binding, options.permissions)) throw new Error("code_ai_tool_not_checked");
@@ -48,10 +49,10 @@ export async function createCodeAiTools(options: {
         description: `${binding.capability}: ${operation.description}`,
         inputSchema: input,
         timeoutMs: false,
-      }).server(async (args, ctx) => {
+      }).server(async (args) => {
         const metadata =
           "idempotency" in operation && operation.idempotency === "required"
-            ? { idempotencyKey: `ai:${options.requestId}:${ctx.callId ?? crypto.randomUUID()}` }
+            ? { idempotencyKey: `ai:${options.requestId}:${++sequence}` }
             : {};
         const result = await options.invoke({
           call: { capability: binding.capability, target: binding.target, refs: {}, input: args },

@@ -129,8 +129,6 @@ export class CoreBridge implements RunnerBridge {
   async call(request: Parameters<RunnerBridge["call"]>[0], signal: AbortSignal) {
     const config = this.#settings();
     if (Buffer.byteLength(JSON.stringify(request)) > config.bridgeBytes) throw new Error("runner_call_too_large");
-    return RunnerCallResponseSchema.parse(
-      JSON.parse(await this.#post(RUNNER_PATHS.call, request, signal, config.bridgeBytes, 240_000)),
-    );
+    return RunnerCallResponseSchema.parse(JSON.parse(await this.#post(RUNNER_PATHS.call, request, signal, config.bridgeBytes, 240_000)));
   }
 }

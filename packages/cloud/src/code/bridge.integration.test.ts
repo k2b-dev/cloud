@@ -10,6 +10,7 @@ import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "../../../core/src/code/ai-budget";
+import { codeAiFileTool } from "../../../core/src/code/ai-loop";
 import { createCodeBridgeHost, readCodeOwnOrigins } from "../../../core/src/code/bridge";
 import { createCodeRunnerRoutes } from "../../../core/src/code/runner-routes";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
@@ -1572,6 +1573,24 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
     await expect(aiRead(denied.data)).rejects.toMatchObject({ code: "code_file_source_refused", status: 403 });
   }, 30_000);
+  test("AI viewers share the real durable call observer and make a source refusal visible", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    expect(await codeAiFileTool(aiClaims(), "read_file", { ref: opened.data }, () => aiRead(opened.data), dependencies().host)).toEqual(
+      fixture.payload,
+    );
+    const denied = await fixture.read();
+    await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
+    await expect(
+      codeAiFileTool(aiClaims(), "view_image", { ref: denied.data }, () => aiRead(denied.data), dependencies().host),
+    ).rejects.toMatchObject({ code: "code_file_source_refused", status: 403 });
+    const rows = await sql<{ state: string; call: { capability: string } }[]>`SELECT state,call FROM code.calls
+      WHERE run_id=${claims.runId}::uuid AND call->>'capability' IN ('core.code.file.read','core.code.file.view') ORDER BY ordinal`;
+    expect(rows.map((row) => [row.call.capability, row.state])).toEqual([
+      ["core.code.file.read", "succeeded"],
+      ["core.code.file.view", "failed"],
+    ]);
+  }, 30_000);
   test("AI file reader rejects changed metadata, another run, byte overflow and the durable call limit", async () => {
     const fixture = await fileFixture();
     const opened = await fixture.read();
@@ -1627,11 +1646,15 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       ok: false,
       error: { code: "code_approval_required" },
     });
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read')`;
+    expect(await invoke("example.read")).toEqual(await (await send({ operation: "example.read" })).json());
     expect(await invoke("example.asks")).toMatchObject({ ok: false, error: { code: "code_unattended_forbidden" } });
     await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
     expect(await invoke("example.write")).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
     const [logged] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${claims.runId}::uuid`;
-    expect(logged!.count).toBe(6);
+    expect(logged!.count).toBe(8);
   });
   test("Mail event work changes use the stored trigger across the real signed bridge and provider", async () => {
     const event = appEventFixture(

@@ -50,7 +50,10 @@ try {
         await page.render({ canvas: canvas as unknown as HTMLCanvasElement, viewport }).promise;
         const png: Uint8Array = canvas.toBuffer("image/png");
         outputBytes += png.byteLength;
-        if (outputBytes > MAX_BYTES) throw new Error("Rendered PDF exceeds the 10 MiB image budget.");
+        if (outputBytes > MAX_BYTES) {
+          if (!input.pages && pages.length) break;
+          throw new Error("Rendered PDF exceeds the 10 MiB image budget.");
+        }
         pages.push({ page: number, png: Buffer.from(png).toString("base64") });
       } finally {
         canvas.width = 0;

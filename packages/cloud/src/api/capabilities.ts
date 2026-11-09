@@ -41,7 +41,6 @@ import {
 import { CodeFileRefSchema, codeFileBinding, hasFileInput } from "../code/file-ref";
 import type { CodeRunTokenClaims } from "../code/run-token";
 import { type CodeRunTokenVerifyOptions, verifyCodeRunToken } from "../code/run-token";
-import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { RUNNER_PATHS, RunnerCallRequestSchema } from "../code/runner-protocol";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -84,6 +83,7 @@ import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { ratelimit } from "../server/ratelimit";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../services/app-access";
 import { bootstrapRateLimit } from "../services/app-bootstrap";
 import { discoverableApps } from "../services/app-discovery";

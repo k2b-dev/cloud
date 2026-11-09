@@ -44,7 +44,15 @@ export function createAiRunFiles(options: {
     throw Object.assign(new Error(code), { code });
   };
   let totalBytes = 0;
-  const imageTokens = estimateTokens([{ role: "user", content: [{ type: "text", text: "Untrusted PDF page 9007199254740991 of 9007199254740991." }, { type: "file", mediaType: "image/png", data: "" }] }]);
+  const imageTokens = estimateTokens([
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Untrusted PDF page 9007199254740991 of 9007199254740991." },
+        { type: "file", mediaType: "image/png", data: "" },
+      ],
+    },
+  ]);
   const add = (value: unknown): void => {
     const ref = CodeFileRefSchema.safeParse(value);
     if (ref.success) {
@@ -125,6 +133,7 @@ export function createAiRunFiles(options: {
         },
         ...parts,
       ]);
+    mediaBytes += size;
     const result = {
       ref,
       ...(description ? { description } : { description: "The image content is supplied directly to the model." }),

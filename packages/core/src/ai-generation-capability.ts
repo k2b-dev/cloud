@@ -247,7 +247,7 @@ export const aiGenerationQuery = {
         CodeFileRefSchema.safeParse(value).success ||
         (Array.isArray(value) ? value.some(hasRef) : !!value && typeof value === "object" && Object.values(value).some(hasRef));
       const extended = Boolean(input.tools?.length || input.files?.length || hasRef(input.input));
-      const loop = extended ? await prepareCodeAiLoop(input, context) : null;
+      const loop = extended ? await prepareCodeAiLoop(input, context, "core.ai.generate") : null;
       const budget = loop ? codeAiModelBudget(loop.run.reserved, loop.check) : null;
       const selected = loop
         ? budget!(
@@ -257,6 +257,7 @@ export const aiGenerationQuery = {
             ),
           )
         : null;
+      if (selected) modelRef = selected.model;
       const maxOutputTokens = input.output.type === "text" ? Math.min(8_192, Math.max(64, Math.ceil(input.output.maxChars / 2))) : 4_096;
       const untrusted = JSON.stringify({ untrusted_source_data: input.input });
       const fileBudget = selected

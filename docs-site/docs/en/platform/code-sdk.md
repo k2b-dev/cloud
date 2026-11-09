@@ -1061,7 +1061,7 @@ load. The owning app reads as the run's account and can refuse with a visible
 
 Models with vision receive image pixels and rendered PDF pages directly.
 Text-only models use a separately charged vision description. Each PDF look
-defaults to the first 20 pages, reduced to fit the model context. Explicit
+defaults to the first 20 pages, reduced to fit the model context and rendered byte budget. Explicit
 selections accept at most 20 distinct one-based pages. An AI call loads at
 most 16 files: images and PDFs up to 10 MiB each, other documents up to 20 MiB,
 with 40 MiB source and visual byte budgets. `read_file` returns UTF-8 chunks

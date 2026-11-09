@@ -183,20 +183,21 @@ export const aiDecisionQuery = {
     const byModel: Array<{ model: { id: string }; input: number; output: number }> = [];
     let unknownUsage = false;
     let started = false;
+    let selectedModel: { id: string } | undefined;
     const onUsage = (call: { model: { id: string }; usage: { input: number; output: number } | undefined }) => {
       started = true;
       if (call.usage) byModel.push({ model: call.model, ...call.usage });
       else unknownUsage = true;
     };
     const details = () =>
-      started && !unknownUsage && byModel.length
+      !unknownUsage && selectedModel
         ? {
             aiUsage: {
-              model: byModel[0]!.model,
+              model: selectedModel,
               usage: {
                 input: byModel.reduce((sum, call) => sum + call.input, 0),
                 output: byModel.reduce((sum, call) => sum + call.output, 0),
-                byModel,
+                ...(byModel.length ? { byModel } : {}),
               },
             },
           }
@@ -204,9 +205,10 @@ export const aiDecisionQuery = {
     try {
       if (!input.files?.length)
         return ok({ data: await runAiDecision({ ...input, usageSubject: context.accessSubject, appId: "core", signal: context.signal }) });
-      const loop = await prepareCodeAiLoop({ input: input.state, files: input.files }, context);
+      const loop = await prepareCodeAiLoop({ input: input.state, files: input.files }, context, "core.ai.decide");
       const budget = codeAiModelBudget(loop.run.reserved, loop.check);
       const selected = await resolveAiDecisionModel({ model: input.model, usageSubject: context.accessSubject, signal: loop.signal });
+      selectedModel = { id: selected.profile.id };
       const files = loop.reader(
         selected,
         Math.max(

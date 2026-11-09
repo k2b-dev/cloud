@@ -74,6 +74,7 @@ export async function prepareCodeAiLoop(
     fileTools?: boolean;
   },
   context: CapabilityExecutionContext,
+  operation: "core.ai.generate" | "core.ai.decide",
 ) {
   const run = await codeAiRun(context);
   const signal = AbortSignal.any([context.signal, AbortSignal.timeout(Math.max(1, run.claims.exp * 1000 - Date.now()))]);
@@ -89,44 +90,15 @@ export async function prepareCodeAiLoop(
     });
   const check = () =>
     sql.begin((tx) =>
-      authorizeCodeCall(
-        { claims: run.claims, kind: "query", call: { capability: "core.ai.generate", target: null, refs: {}, input: {} } },
-        tx,
-      ),
+      authorizeCodeCall({ claims: run.claims, kind: "query", call: { capability: operation, target: null, refs: {}, input: {} } }, tx),
     );
   return {
     run,
     signal,
     reader,
     check,
-    async fileTool<T>(name: string, input: unknown, execute: () => Promise<T>): Promise<T> {
-      let value: T | undefined;
-      let failure: unknown;
-      const call = { claims: run.claims, kind: "query" as const, call: { capability: name, target: null, refs: {}, input } };
-      const response = await dependencies.host.withCall(call, async () => {
-        await sql.begin((tx) => authorizeCodeCall(call, tx));
-        try {
-          value = await execute();
-          return Response.json({ ok: true, data: null });
-        } catch (cause) {
-          failure = cause;
-          const parsed = z.object({ code: z.string().optional(), status: z.number().optional() }).safeParse(cause);
-          return Response.json({
-            ok: false,
-            error: {
-              code: parsed.success && parsed.data.code ? parsed.data.code : "code_file_unavailable",
-              ...(parsed.success && parsed.data.status ? { status: parsed.data.status } : {}),
-            },
-          });
-        }
-      });
-      if (failure) throw failure;
-      if (value === undefined) {
-        const failure = z.object({ error: z.object({ code: z.string() }) }).parse(await response.json());
-        throw new Error(failure.error.code);
-      }
-      return value;
-    },
+    fileTool: <T>(name: "view_image" | "read_file", input: unknown, execute: () => Promise<T>) =>
+      codeAiFileTool(run.claims, name, input, execute, dependencies.host),
     async tools(files: ReturnType<typeof createAiRunFiles>) {
       return createCodeAiTools({
         bindings: input.tools ?? [],
@@ -195,4 +167,43 @@ export function codeAiModelBudget(reserved: string, check?: () => Promise<unknow
     return { ...model, provider };
   };
   return Object.assign(wrap, { reserve });
+}
+
+export const codeAiFileToolOperation = (name: "view_image" | "read_file") =>
+  name === "view_image" ? "core.code.file.view" : "core.code.file.read";
+
+/** Internal viewers use the same durable observer and policy fence without reserving AI a second time. */
+export async function codeAiFileTool<T>(
+  claims: Parameters<typeof readCodeAiFile>[0]["claims"],
+  name: "view_image" | "read_file",
+  input: unknown,
+  execute: () => Promise<T>,
+  host: CodeRunnerDispatchDependencies["host"],
+): Promise<T> {
+  let value: T | undefined;
+  let failure: unknown;
+  const call = { claims, kind: "query" as const, call: { capability: codeAiFileToolOperation(name), target: null, refs: {}, input } };
+  const response = await host.withCall(call, async () => {
+    await sql.begin((tx) => authorizeCodeCall(call, tx));
+    try {
+      value = await execute();
+      return Response.json({ ok: true, data: null });
+    } catch (cause) {
+      failure = cause;
+      const parsed = z.object({ code: z.string().optional(), status: z.number().optional() }).safeParse(cause);
+      return Response.json({
+        ok: false,
+        error: {
+          code: parsed.success && parsed.data.code ? parsed.data.code : "code_file_unavailable",
+          ...(parsed.success && parsed.data.status ? { status: parsed.data.status } : {}),
+        },
+      });
+    }
+  });
+  if (failure) throw failure;
+  if (value === undefined) {
+    const failure = z.object({ error: z.object({ code: z.string() }) }).parse(await response.json());
+    throw new Error(failure.error.code);
+  }
+  return value;
 }
