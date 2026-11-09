@@ -98,7 +98,7 @@ export const cleanPaste = (onDroppedImages?: (count: number, files: File[]) => v
         const trail = to === doc.length || after === "\n\n" ? "" : after.startsWith("\n") ? "\n" : "\n\n";
         insert = `${lead}${insert}${trail}`;
       }
-      view.dispatch(view.state.replaceSelection(insert), { userEvent: "input.paste" });
+      view.dispatch(view.state.replaceSelection(insert), { userEvent: "input.paste", scrollIntoView: true });
       return true;
     },
   });

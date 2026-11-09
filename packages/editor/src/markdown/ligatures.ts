@@ -15,7 +15,7 @@ import { type Text as DocText, type EditorSelection, type Extension, Prec, type 
 import { Decoration, type DecorationSet, type EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { holdsDecorations, pointerSelectionHeld, refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
 import type { MarkdownRangeOptions } from "./_lib/list-structure";
-import { blockMathPattern, inlineMathPattern } from "./_lib/math-syntax";
+import { blockMathPattern, hasMathMarker, inlineMathPattern } from "./_lib/math-syntax";
 import { findLigatures, frontMatterLength, type LigatureMatch } from "./lib/ligatures";
 
 type Span = { from: number; to: number };
@@ -57,7 +57,7 @@ const notebookSyntax = (doc: DocText, options: MarkdownRangeOptions, cache: Weak
   const spans: Span[] = [];
   const frontMatter = frontMatterLength(markdown);
   if (frontMatter) spans.push({ from: 0, to: frontMatter });
-  if (markdown.includes("$") || markdown.includes("\\")) {
+  if (hasMathMarker(markdown)) {
     for (const pattern of [blockMathPattern(), inlineMathPattern()]) {
       for (const match of markdown.matchAll(pattern)) spans.push({ from: match.index, to: match.index + match[0].length });
     }

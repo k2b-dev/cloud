@@ -3,13 +3,14 @@ import type { EditorState, Extension, Range, Transaction } from "@codemirror/sta
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import katex from "katex";
+import { intersectsMarkdownSpans, mergeMarkdownSpans } from "./_lib/changed-blocks";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
-import { blockMathPattern, inlineMathPattern } from "./_lib/math-syntax";
+import { blockMathPattern, hasMathMarker, inlineMathPattern } from "./_lib/math-syntax";
 import { codeFenceLanguage } from "./lib/markdown-fences";
 
 // =============================================================================
@@ -147,11 +148,9 @@ class BlockMathWidget extends WidgetType {
   }
 }
 
-const hasMathMarker = (text: string): boolean => text.includes("$") || text.includes("\\");
-
 /** Predicate for the incremental cursor-zone mode. Cheap O(insert + 4)
  *  scan to decide whether a doc change might introduce or remove a
- *  math marker — `$` or `\` in the inserted text or the ±2 char
+ *  math marker — `$` or a backslash delimiter in the inserted text or the ±2 char
  *  window around it. False positives (e.g. typing `$` inside code)
  *  fall back to a baseline rebuild; false negatives would leave
  *  stale decorations, so the predicate is intentionally generous. */
@@ -169,11 +168,6 @@ const changesMightAffectMath = (tr: Transaction): boolean => {
   });
   return might;
 };
-
-const intersectsAnyRange = (ranges: { from: number; to: number }[], from: number, to: number): boolean =>
-  ranges.some(
-    (range) => (from >= range.from && from < range.to) || (to > range.from && to <= range.to) || (from <= range.from && to >= range.to),
-  );
 
 const buildKatexDecorations = (state: EditorState): CursorZoneState => {
   const decorations: Range<Decoration>[] = [];
@@ -209,11 +203,13 @@ const buildKatexDecorations = (state: EditorState): CursorZoneState => {
           atomicDecorations.push(blockDecoration);
         }
       }
-      if (node.type.name === "InlineCode") {
+      if (node.type.name === "InlineCode" || node.type.name === "CodeBlock") {
         codeRanges.push({ from: node.from, to: node.to });
       }
     },
   });
+
+  const code = mergeMarkdownSpans(codeRanges);
 
   /**
    * Walk a global regex over the doc, push a decoration per match
@@ -251,7 +247,7 @@ const buildKatexDecorations = (state: EditorState): CursorZoneState => {
         ranges.push({ from, to });
       }
       const cursorInside = selectionIntersectsRange(cursor, sourceVisibleFrom, sourceVisibleTo);
-      const skip = intersectsAnyRange(codeRanges, from, to) || cursorInside;
+      const skip = intersectsMarkdownSpans(code, from, to) || cursorInside;
       match = re.exec(doc);
       if (skip) continue;
       const decoration = Decoration.replace(

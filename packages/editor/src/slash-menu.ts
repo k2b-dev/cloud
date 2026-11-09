@@ -6,10 +6,12 @@ import {
   type CompletionSource,
   pickedCompletion,
 } from "@codemirror/autocomplete";
+import { syntaxTree } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { type EditorView, ViewPlugin } from "@codemirror/view";
 import { fuzzy } from "@k2b/stdlib";
 import type { EditorAction } from "./editor-state";
+import { isInsideFencedCode } from "./markdown/editor-scope";
 import { caretIntoTableCell, tableCellCompletions } from "./table-cells";
 
 /** One entry of the slash menu: an editor action reached by typing `/` and its name. */
@@ -120,6 +122,12 @@ export const slashCompletionSource = (actions: SlashAction[]) => {
     const line = context.state.doc.lineAt(context.pos);
     const match = trigger.exec(line.text.slice(0, context.pos - line.from));
     if (!match) return null;
+    if (isInsideFencedCode(context)) return null;
+    for (let node = syntaxTree(context.state).resolveInner(context.pos, -1); ; ) {
+      if (node.name === "InlineCode") return null;
+      if (!node.parent) break;
+      node = node.parent;
+    }
     const typed = match[2] ?? "";
     const from = line.from + match.index + (match[1] ?? "").length;
     const enabled = actions.filter((action) => action.isEnabled?.(context.state) !== false);
