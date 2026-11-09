@@ -1,0 +1,6 @@
+### An embedded editor got a second title and back link above its own
+
+- **What happened:** In Files, an office document opened in Collabora showed a row above the editor with "‹ Folder" and the file name, although Collabora's own bar already names the file and offers a close (X). Valentin reported it on 2026-10-31.
+- **Root cause:** Files gave the shell a title array with the document's folder as a level above it, so the shared page-trail rule drew the way up and the title in the workspace head. Opening a document also recorded no departure scroll position, because the editor had already replaced the listing when the history entry was pushed, and the close pushed a new entry instead of going back.
+- **Error class:** Shell chrome repeats what an embedded tool already shows, and a close that leads "up" instead of back loses the place the person left.
+- **Guard:** `snapshotTitle` names an open document as one level (`trail.test.ts`), and `Editor.browser.test.ts` checks in Chromium, on desktop and phone, that no head, back link, or title row stands above the editor frame and that Collabora's close and browser Back return to the same folder address, selected row, and scroll position. The layout guide now names embedded tools with their own close as pages that pass only the app root and their title.

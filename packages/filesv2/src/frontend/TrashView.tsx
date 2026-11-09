@@ -109,7 +109,15 @@ export default function TrashView(props: {
             <Button size="sm" variant="secondary" loading={page.loading} onClick={refresh}>
               {text().retry}
             </Button>
-            <ButtonLink size="sm" variant="secondary" href={filesUrl(props.base.id)} navigation="enhanced" onNavigate={props.onNavigate}>
+            {/* Beside the visible sidebar its storage leads back; without it, this is the direct way. */}
+            <ButtonLink
+              class="filesv2-compact-back"
+              size="sm"
+              variant="secondary"
+              href={filesUrl(props.base.id)}
+              navigation="enhanced"
+              onNavigate={props.onNavigate}
+            >
               <i class="ti ti-arrow-left" aria-hidden="true" />
               {b().backToFiles}
             </ButtonLink>
