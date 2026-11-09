@@ -1,6 +1,7 @@
 ### Keep panel navigation and creation recovery scoped to their origin
 
 - **What happened:** A cancelled place-chat opening left following enabled. Unknown creation retries could reuse a different place's request, and concurrent creation or withdrawn consent left the panel stuck.
-- **Root cause:** Navigation cleanup belonged only to the winning request, creation identity was keyed only by the empty composer, and the rendered place snapshot outlived consent.
+- **Root cause:** Navigation cleanup belonged only to the winning request, creation identity was keyed only by the empty composer, and the rendered place snapshot outlived consent. Treating an ordinary replay as background after opening its result also skipped moving the original draft and created another chat.
 - **Error class:** Async state and identity reused beyond their original scope.
 - **Guard:** Assistant's place browser tests cancel an in-flight chat open, switch after both ordinary and place creation failures, recover a concurrent creation without sending the local draft, and withdraw context with unsaved text. Same-place refresh and background recovery guards keep their original request and visible chat. The controller behavior test checks that background reconciliation cannot invalidate a foreground chat load. The starters render from a keyed place snapshot so removing it cannot dereference null.
+  ChatPanel's two same-workspace replay cases open the creation result, edit a second draft, and require conflict resolution with both drafts intact and exactly one conversation, including edits during save.

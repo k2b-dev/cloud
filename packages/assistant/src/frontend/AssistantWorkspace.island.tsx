@@ -1035,9 +1035,13 @@ export default function AssistantWorkspace(props: Props) {
       }
       for (const request of [...creationRequests.values()]) {
         const place = request.place && request.draft ? { ref: request.place, draft: request.draft.content } : undefined;
+        // Opening an ordinary creation's result does not detach its pending empty composer. Replay must still
+        // migrate that draft and resolve any saved-draft conflict; only a switch to a place separates it.
         const current = request.projectId
           ? activeProject()?.id === request.projectId
-          : !chat.activeConversationId() && (place ? samePlace(place.ref, emptyPlace()?.ref) : !emptyPlace());
+          : place
+            ? !chat.activeConversationId() && samePlace(place.ref, emptyPlace()?.ref)
+            : !emptyAt();
         if (!(await createConversation(false, request.projectId, false, place, !current))) return;
       }
       for (const [original, local] of [...sessions]) {
