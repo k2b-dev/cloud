@@ -12,6 +12,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
+import { withDraftDocumentCommit } from "./draft-document-log";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { requireDraftLeaseAvailable } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
@@ -330,7 +331,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
   if (!contentHash.ok) return contentHash;
 
   try {
-    const result = await sql.begin(async (tx): Promise<Result<void>> => {
+    const result = await withDraftDocumentCommit(async (tx): Promise<Result<void>> => {
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const [upload] = await tx<

@@ -1,4 +1,3 @@
-import { sql } from "@k2b/cloud";
 import { encodeTableFocus, type TextTableIntent } from "@k2b/cloud/browser/shared-text";
 import {
   planTableAction,
@@ -13,6 +12,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ConflictError } from "@k2b/sync";
 import * as Y from "yjs";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { draftDocumentStreamFull, isDraftDocumentStreamFull, withDraftDocumentCommit } from "./draft-document-log";
 import { type DraftDocumentSave, lockDraftDocumentInTransaction, mailDraftDocumentLog } from "./draft-documents";
 
 export type DraftTableActionResponse = {
@@ -46,7 +46,7 @@ export const applyDraftTableAction = async (params: {
   if (!actor) return fail(err.forbidden("Draft editor is invalid"));
   const outcome: { receipt: DraftTableActionResponse | null } = { receipt: null };
   try {
-    return await sql.begin(async (db) => {
+    return await withDraftDocumentCommit(async (db) => {
       const locked = await lockDraftDocumentInTransaction({ ...params, db });
       if (!locked.ok) return locked;
       if (locked.data.generation !== params.generation)
@@ -112,6 +112,7 @@ export const applyDraftTableAction = async (params: {
     });
   } catch (error) {
     if (outcome.receipt) return ok({ ...outcome.receipt, persisted: false });
+    if (isDraftDocumentStreamFull(error)) return draftDocumentStreamFull();
     if (error instanceof TableActionRejectedError || error instanceof ConflictError)
       return fail(err.conflict("Table changed; inspect the current table before another action"));
     // A lost broker acknowledgement is not proof of rejection. Reconcile first;

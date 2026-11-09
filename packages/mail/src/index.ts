@@ -20,6 +20,8 @@ import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 
 import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
+import { stopDraftDocumentPruning } from "./service/draft-document-log";
+import { migrateDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
 
 const mailNotifications = createMailNotificationService(app.notifications);
@@ -27,6 +29,7 @@ const mailNotifications = createMailNotificationService(app.notifications);
 const stopMailRuntimes = (): Promise<void> =>
   stopRuntimeResources([
     stopMailDraftConnections,
+    stopDraftDocumentPruning,
     stopConversationViewCountCache,
     () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
@@ -44,6 +47,7 @@ const result = await app.start({
   lifecycle: {
     setup: async () => {
       await migrate();
+      await migrateDraftDocumentLogPolicy();
       // Startup waits for none of these builds. A busy predecessor defers the rest until
       // the next start: concurrent expression builds can wait on each other's snapshots.
       void (async () => {

@@ -1,4 +1,4 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, type sql } from "@k2b/cloud";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import {
@@ -25,12 +25,19 @@ import {
 } from "../lib/draft-document-protocol";
 import { requireDraftAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { lockDraftDocumentCoverage, replayDraftDocument } from "../service/draft-document-log";
 import {
   awaitDraftDocumentQuery,
   DRAFT_DOCUMENT_ACCESS_REFRESH_MS,
   withDraftDocumentTransaction,
 } from "../service/draft-document-socket-sql";
-import { acceptDraftDocumentUpdate, type DraftDocumentSnapshot, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
+import {
+  acceptDraftDocumentUpdate,
+  type DraftDocumentSnapshot,
+  lockDraftDocumentInTransaction,
+  mailDraftDocumentLog,
+  readDraftDocument,
+} from "../service/draft-documents";
 import { draftDocumentAccountRejection } from "./draft-document-identity";
 import type { MailApiContext } from "./public-resource-boundary";
 
@@ -214,10 +221,11 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   };
 
   /** No await between checking the locked row and sending bytes. The send/send-cancel transaction uses this same row. */
-  const deliver = (emit: () => void | Promise<void>): Promise<void> => {
+  const deliver = (emit: (db: typeof sql) => void | Promise<void>): Promise<void> => {
     const work = deliveryTail.then(async () => {
       if (closed || signal.aborted) return;
       await withDraftDocumentTransaction(signal, async (db) => {
+        await lockDraftDocumentCoverage(db);
         const [row] = await awaitDraftDocumentQuery(
           db<FenceRow[]>`
           SELECT state, edit_mode, author_kind, doc_generation, doc_history_complete, doc_frozen_cursor
@@ -247,7 +255,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           reopen();
           return;
         }
-        await emit();
+        await emit(db);
       });
     });
     deliveryTail = work.catch(failure);
@@ -277,73 +285,111 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       committedSnapshot = null;
     }
   };
-  const deliverEvent = async (event: TopicEvent<SharedTextSyncEvent>): Promise<void> => {
-    await deliver(() => {
-      // Rolled-back sends may leave a retained marker. Only the locked row's
-      // committed frozen metadata above closes the connection; an orphan is inert.
-      if (event.data.kind === "freeze") {
-        deliveredCursor = event.cursor;
-        flushCommittedSnapshot();
-        return;
-      }
-      if (event.data.restoreRevision !== generation) {
-        if (event.data.restoreRevision && generation && BigInt(event.data.restoreRevision) < BigInt(generation)) return;
-        reopen();
-        return;
-      }
-      if (!isValidSharedTextUpdate(event.data.payload) || !generation) {
-        close("INVALID_PAYLOAD", t.invalid);
-        return;
-      }
-      send({
-        type: "syncPush",
-        payload: {
-          docId,
-          generation,
-          updates: [
-            {
-              payload: event.data.payload,
-              cursor: event.cursor,
-              generation,
-              originPeerId: event.data.originPeerId,
-              ...(event.data.actionId ? { actionId: event.data.actionId } : {}),
-              ...(event.data.history?.retained ? { retainedColumn: true } : {}),
-            },
-          ],
-        },
-      });
+  const emitEvent = (event: TopicEvent<SharedTextSyncEvent>): void => {
+    // Rolled-back sends may leave a retained marker. Only the locked row's
+    // committed frozen metadata above closes the connection; an orphan is inert.
+    if (event.data.kind === "freeze") {
       deliveredCursor = event.cursor;
       flushCommittedSnapshot();
+      return;
+    }
+    if (event.data.restoreRevision !== generation) {
+      if (event.data.restoreRevision && generation && BigInt(event.data.restoreRevision) < BigInt(generation)) return;
+      reopen();
+      return;
+    }
+    if (!isValidSharedTextUpdate(event.data.payload) || !generation) {
+      close("INVALID_PAYLOAD", t.invalid);
+      return;
+    }
+    send({
+      type: "syncPush",
+      payload: {
+        docId,
+        generation,
+        updates: [
+          {
+            payload: event.data.payload,
+            cursor: event.cursor,
+            generation,
+            originPeerId: event.data.originPeerId,
+            ...(event.data.actionId ? { actionId: event.data.actionId } : {}),
+            ...(event.data.history?.retained ? { retainedColumn: true } : {}),
+          },
+        ],
+      },
     });
+    deliveredCursor = event.cursor;
+    flushCommittedSnapshot();
   };
-  const runDocumentStream = async (after: string | null): Promise<void> => {
-    try {
-      const topic = mailDraftDocumentLog.topic();
-      const head = await topic.latestCursor({ tenantId: draftId });
-      if (head && compareStreamCursor(after ?? topic.cursorAt(0), head) > 0) {
-        close("RESYNC_REQUIRED", t.network, 1012);
-        return;
-      }
-      if (head)
-        for await (const event of topic.replay({ tenantId: draftId, after: after ?? topic.cursorAt(0), until: head, signal })) {
+  const deliverEvent = (event: TopicEvent<SharedTextSyncEvent>): Promise<void> => deliver(() => emitEvent(event));
+  const runDocumentStream = async (requestedAfter: string | null): Promise<void> => {
+    const topic = mailDraftDocumentLog.topic();
+    let after = requestedAfter;
+    while (!closed) {
+      try {
+        let cursor = topic.cursorAt(0);
+        await deliver(async (db) => {
+          const locked = await lockDraftDocumentInTransaction({ db, context, mailboxId, draftId, permission: "read", signal });
+          if (!locked.ok) throw new Error(locked.error.message);
+          const loaded = await locked.data.read();
+          if (!loaded.ok) throw new Error(loaded.error.message);
+          const state = loaded.data;
+          if (state.generation !== generation || !state.historyComplete) {
+            reopen();
+            return;
+          }
+          const durable = state.durable.cursor ?? topic.cursorAt(0);
+          if (after === null || compareStreamCursor(after, durable) < 0) {
+            sendSnapshot(state.durable);
+            after = durable;
+          }
+          const head = await topic.latestCursor({ tenantId: draftId });
+          const globalHead = await topic.head();
+          if (compareStreamCursor(after, globalHead) > 0) throw new CursorMismatchError("Draft replay cursor is beyond the log head");
+          if (head && compareStreamCursor(after, head) < 0) {
+            try {
+              for await (const event of topic.replay({ tenantId: draftId, after, until: head, signal })) emitEvent(event);
+            } catch (error) {
+              if (!(error instanceof RetentionGapError)) throw error;
+              sendSnapshot(state.durable);
+              for await (const event of replayDraftDocument({
+                draftId,
+                after: state.durable.cursor,
+                docSeq: state.docSeq,
+                historyComplete: state.historyComplete,
+                until: head,
+                signal,
+              }))
+                emitEvent(event);
+            }
+          }
+          // A tenant can be completely pruned. Its old durable cursor is
+          // still valid coverage, but only the captured global head is a safe
+          // starting point for the shared live tail.
+          cursor = globalHead;
+          if (!generation || closed) return;
+          joined = true;
+          deliveredCursor = cursor;
+          flushCommittedSnapshot();
+          send({ type: "replayReady", payload: { docId, generation, cursor, peerId } });
+        });
+        if (closed) return;
+        for await (const event of topic
+          .hub({ tenantId: draftId })
+          .subscribe({ after: cursor, signal, bufferLimit: MAX_PENDING_MESSAGES })) {
           await deliverEvent(event);
           if (closed) return;
         }
-      const cursor = head ?? after ?? topic.cursorAt(0);
-      await deliver(() => {
-        if (!generation) return;
-        joined = true;
-        deliveredCursor = cursor;
-        send({ type: "replayReady", payload: { docId, generation, cursor, peerId } });
-      });
-      if (closed) return;
-      for await (const event of topic.hub({ tenantId: draftId }).subscribe({ after: cursor, signal, bufferLimit: MAX_PENDING_MESSAGES })) {
-        await deliverEvent(event);
-        if (closed) return;
+        if (!closed) close("STREAM_FAILED", t.network, 1012);
+      } catch (error) {
+        if (error instanceof RetentionGapError && !closed && !signal.aborted) {
+          after = null;
+          continue;
+        }
+        failure(error);
+        return;
       }
-      if (!closed) close("STREAM_FAILED", t.network, 1012);
-    } catch (error) {
-      failure(error);
     }
   };
   const runAwarenessStream = async (): Promise<void> => {
@@ -399,11 +445,8 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       }
       generation = state.generation;
       const after = message.payload.fromCursor;
-      // A null base always starts from the SQL snapshot. Fresh replay bytes are never marked durable.
-      if (after === null) await deliver(() => sendSnapshot(state.durable));
-      if (closed) return;
       track(runAwarenessStream());
-      track(runDocumentStream(after ?? state.durable.cursor));
+      track(runDocumentStream(after));
       return;
     }
     if (!joined || generation === null) {
