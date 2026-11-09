@@ -25,6 +25,7 @@ import {
   SegmentedControl,
   SelectionToolbar,
   SlashCommands,
+  SortableList,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
@@ -702,6 +703,68 @@ const DragAndDropDemo = () => {
   );
 };
 
+const sortableListExample = `import { SortableList } from "@k2b/ui";
+import { createSignal } from "solid-js";
+
+function PinnedEntries() {
+  const [entries, setEntries] = createSignal([
+    { id: "projects", title: "Projects" },
+    { id: "orders", title: "Orders" },
+    { id: "stock", title: "Stock" },
+  ]);
+  const move = (id: string, index: number) => {
+    const next = entries().filter((entry) => entry.id !== id);
+    next.splice(index, 0, entries().find((entry) => entry.id === id)!);
+    setEntries(next);
+  };
+  return (
+    <SortableList items={entries()} itemKey={(entry) => entry.id} itemLabel={(entry) => entry.title} label="Pinned entries" onMove={move}>
+      {(entry, handle) => <div class="row">{handle}<span>{entry().title}</span></div>}
+    </SortableList>
+  );
+}
+`;
+
+const SortableListDemo = () => {
+  const [entries, setEntries] = createSignal([
+    { id: "projects", title: "Projects", icon: "ti ti-briefcase" },
+    { id: "orders", title: "Orders", icon: "ti ti-clipboard-list" },
+    { id: "stock", title: "Stock", icon: "ti ti-building-warehouse" },
+    { id: "invoices", title: "Invoices", icon: "ti ti-file-invoice" },
+  ]);
+  const move = (id: string, index: number) => {
+    const next = entries().filter((entry) => entry.id !== id);
+    next.splice(index, 0, entries().find((entry) => entry.id === id)!);
+    setEntries(next);
+  };
+  return (
+    <DemoCard
+      id="sortable-list"
+      chip={[{ kind: "component", name: "SortableList", from: "@k2b/ui" }]}
+      description="Drag a row by its grip, or focus the grip and use the arrow keys, Home, or End. The line shows where the row lands."
+      code={sortableListExample}
+    >
+      <SortableList
+        items={entries()}
+        itemKey={(entry) => entry.id}
+        itemLabel={(entry) => entry.title}
+        itemIcon={(entry) => entry.icon}
+        label="Pinned entries"
+        onMove={move}
+      >
+        {(entry, handle) => (
+          <div class="ui-sortable-demo__row">
+            {handle}
+            <i class={entry().icon} aria-hidden="true" />
+            <span>{entry().title}</span>
+          </div>
+        )}
+      </SortableList>
+      <p class="ui-dnd-demo__status">Order: {entries().map((entry) => entry.title).join(", ")}</p>
+    </DemoCard>
+  );
+};
+
 const gestureMessages = [
   { id: "nora", author: "Nora Weber", text: "Can you check the draft before noon?", time: "10:42" },
   { id: "tobias", author: "Tobias Brandt", text: "Sure, I will look at it right after the call.", time: "10:44" },
@@ -1298,6 +1361,11 @@ const demos: DemoSection = {
   "drag-and-drop": () => (
     <DemoGrid columns="one">
       <DragAndDropDemo />
+    </DemoGrid>
+  ),
+  "sortable-list": () => (
+    <DemoGrid columns="one">
+      <SortableListDemo />
     </DemoGrid>
   ),
   gestures: () => (

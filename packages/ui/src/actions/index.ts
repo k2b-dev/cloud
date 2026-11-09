@@ -11,6 +11,8 @@ export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
 export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";
 export { activeDrag, DragSource, DropTarget, useKeyboardDrag } from "./DragAndDrop";
+export type { SortableListProps } from "./SortableList";
+export { SortableList } from "./SortableList";
 export type {
   DropdownAction,
   DropdownActionBase,

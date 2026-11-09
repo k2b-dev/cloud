@@ -52,7 +52,8 @@ const paletteForId = (id: string) => {
   return appIconPalette[hash] ?? appIconPalette[0];
 };
 
-const appIconStyle = (app: AppLaunchpadApp) => {
+/** An app's tile colour: its accent, or a palette tone from its ID. The app bar editor's tiles share it. */
+export const appIconStyle = (app: Pick<AppLaunchpadApp, "id" | "accent">) => {
   const tone = /^#[0-9a-f]{6}$/i.test(app.accent ?? "") ? app.accent! : paletteForId(app.id).from;
   return `--app-icon-color:${tone}`;
 };

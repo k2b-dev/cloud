@@ -16912,6 +16912,84 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: #ffffff;
 }
 
+/* SortableList: rows keep their own look while a row moves. The dragged row
+   dims in place; the row under the pointer shows a line on the side the row
+   would land on. Nothing changes size. */
+.k2b-ui .k2b-sortable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-sortable-list__item {
+  position: relative;
+}
+
+.k2b-ui .k2b-sortable-list__item[data-sortable-dragging] {
+  opacity: 0.45;
+}
+
+.k2b-ui .k2b-sortable-list__target:is([data-drop="ok"], [data-drop="over"]) {
+  background: transparent;
+  color: inherit;
+}
+
+.k2b-ui .k2b-sortable-list__item[data-sortable-side]:has(> .k2b-sortable-list__target[data-drop="over"])::before {
+  position: absolute;
+  z-index: 1;
+  inset-inline: 0.5rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--k2b-action-solid);
+  content: "";
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-sortable-list__item[data-sortable-side="before"]::before {
+  top: -0.125rem;
+}
+
+.k2b-ui .k2b-sortable-list__item[data-sortable-side="after"]::before {
+  bottom: -0.125rem;
+}
+
+.k2b-ui .k2b-sortable-list__grip {
+  display: flex;
+  flex: none;
+}
+
+.k2b-ui .k2b-sortable-list__handle {
+  display: grid;
+  width: 1.75rem;
+  height: 2.25rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+  cursor: grab;
+}
+
+.k2b-ui .k2b-sortable-list__handle:not(:disabled):hover {
+  background: var(--k2b-hover);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-sortable-list__handle:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-sortable-list__handle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 /* The preview rides above the pointer, so neither a finger nor the preview
    hides the target and its "over" state. */
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) {

@@ -6,6 +6,7 @@ import actionDragAndDrop from "./actions/drag-and-drop.md" with { type: "text" }
 import actionGestures from "./actions/gestures.md" with { type: "text" };
 import actionMenus from "./actions/menus.md" with { type: "text" };
 import actionSegmentedControl from "./actions/segmented-control.md" with { type: "text" };
+import actionSortableList from "./actions/sortable-list.md" with { type: "text" };
 import actionSpotlight from "./actions/spotlight.md" with { type: "text" };
 import actionTabs from "./actions/tabs.md" with { type: "text" };
 import actionToolbar from "./actions/toolbar.md" with { type: "text" };
@@ -158,6 +159,7 @@ const catalogContextSources = {
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
   "actions/command-menu": { file: "actions/command-menu.md", content: actionCommandMenu },
   "actions/drag-and-drop": { file: "actions/drag-and-drop.md", content: actionDragAndDrop },
+  "actions/sortable-list": { file: "actions/sortable-list.md", content: actionSortableList },
   "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },
   "actions/segmented-control": { file: "actions/segmented-control.md", content: actionSegmentedControl },

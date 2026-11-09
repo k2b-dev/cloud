@@ -587,22 +587,37 @@ at the top right of the launcher opens the editor. Newly installed apps follow
 their declared defaults.
 
 App bar shortcuts form a separate, ordered list above the ordinary apps, with
-a divider between the two groups. Users can pin an app or add a link with a
-title and icon, edit it, move it up or down, or remove it. Pinning an app removes
-its duplicate from the ordinary list. Links to individual pages can coexist
-with their application. Dashboard shortcuts remain independent.
+a divider between the two groups. Pinning an app removes its duplicate from
+the ordinary list. Links to individual pages can coexist with their
+application. Dashboard shortcuts remain independent.
 
-The editor starts with **Show names in the app bar**, on by default, which
-allows the app bar with names on windows from 1680 px. Phones have no app bar,
-so the editor shows this switch from 768 px. Below it, the editor groups apps
-and shortcuts into separate sections. Its fixed footer places **Reset app bar**
-on the left and **Save** on the right.
+The editor is one list in the app bar's order, a sheet on phones and a dialog
+from 48 rem. It starts with **Show names in the app bar**, on by default,
+which allows the app bar with names on windows from 1680 px; phones have no
+app bar, so the switch shows from 768 px. Then come:
 
-**Save** applies the changes across Cloud, and the open page's app bar follows
-at once. Closing with unsaved edits asks before discarding them;
-**Reset app bar** prepares the default app selection, an empty shortcut list,
-and names turned on for saving. If another editor has saved in the meantime, the save is rejected
-so that those changes are not overwritten. Close and reopen to load them.
+1. the administration's entries, with a lock and "From the administration,
+   always there", which a person cannot change;
+2. the person's pinned entries, each with a grip that reorders them by
+   dragging or with the arrow keys (see `SortableList`). A pinned app has an
+   active pin that unpins it; a link has **Edit** and **Remove**, and its form
+   opens in the list;
+3. **Add link**, directly below the pinned entries;
+4. after a gap, every other app by name, with a pin and a switch. A hidden
+   app stays in its place, paler, so nothing moves under the pointer;
+5. **Reset app bar**.
+
+Every change saves at once, one after another, and the app bar beside the
+editor shows each saved change: it is the preview. There is no save button,
+and closing never asks; changes still waiting keep saving. The header says
+**Saves instantly**, **Saving…**, **Saved**, or **Not saved**. When a change
+meets settings that another tab saved, the editor loads them and applies the
+change again, so that tab's changes stay. Any other failure takes back only
+that change: a notice above the list names it with **Try again**, and its row
+carries a red dot. A failure after the editor closed shows a toast whose
+**Open** reopens the editor with that notice. **Reset app bar** saves the
+default app selection and an empty shortcut list at once and offers
+**Undo** in a toast; the names setting stays as it is.
 
 App and shortcut hints open immediately to the right on hover or keyboard
 focus. The app list scrolls when space is limited, keeping the launcher and
