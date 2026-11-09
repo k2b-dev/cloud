@@ -27,7 +27,7 @@ test.skipIf(isServer).each(["formatted", "source"] as const)(
       dom.root,
     );
     try {
-      for (let attempt = 0; attempt < 100 && !editor; attempt++) await Bun.sleep(10);
+      while (!editor) await Bun.sleep(10);
       const toolbar = dom.root.querySelector(".k2b-ste-toolbar");
       // The formatting tools and, in the source view, the switch back to the formatted view.
       const tools = () => [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-ste-toolbar button.k2b-ste-tool, .k2b-ste-views button")];

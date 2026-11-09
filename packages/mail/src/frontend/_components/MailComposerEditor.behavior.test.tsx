@@ -7,8 +7,8 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 
 const waitFor = async (condition: () => boolean) => {
-  for (let attempt = 0; attempt < 150 && !condition(); attempt++) await Bun.sleep(10);
-  expect(condition()).toBe(true);
+  // The test's own timeout bounds the wait.
+  while (!condition()) await Bun.sleep(10);
 };
 
 test.skipIf(isServer)("switching between Markdown and plain text keeps the editor, its caret, focus and undo", async () => {

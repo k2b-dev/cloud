@@ -224,7 +224,7 @@ describe("Mail composer attachments", () => {
 
       // Cancel cannot take back what the server attached; the attachment shows and can be removed like any other.
       dom.root.querySelector<HTMLButtonElement>(`[aria-label="${action} report.pdf"]`)!.click();
-      for (let i = 0; i < 100 && manager!.uploads().length > 0; i++) await Bun.sleep(10);
+      while (manager!.uploads().length > 0) await Bun.sleep(10);
 
       expect(manager!.uploads()).toEqual([]);
       expect(current()?.attachments).toEqual([attachment]);

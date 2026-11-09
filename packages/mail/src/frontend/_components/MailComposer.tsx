@@ -12,13 +12,13 @@ import {
   Dropdown,
   type DropdownItem,
   FileDropTarget,
+  formatShortcut,
   IconButton,
   isPanesItemVisible,
   NoticeCard,
   type PanesLayout,
   Placeholder,
   prompts,
-  formatShortcut,
   ScrollArea,
   Select,
   SplitButton,
@@ -58,10 +58,10 @@ import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
 import MailInlineSignature from "./MailInlineSignature";
 import MailRecipientInput, { type MailRecipientField } from "./MailRecipientInput";
-import type { MailTextEditorActions } from "./MailTextEditor";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
+import type { MailTextEditorActions } from "./MailTextEditor";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";

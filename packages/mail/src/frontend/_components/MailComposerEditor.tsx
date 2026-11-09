@@ -5,8 +5,8 @@ import type { Accessor, JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import type { ComposePreview } from "../../contracts";
 import type { MailDraftDocumentClient, MailSharedDraftState } from "../../lib/draft-document-client";
-import type { MailTextEditorActions } from "./MailTextEditor";
 import MailFormattingWarnings from "./MailFormattingWarnings";
+import type { MailTextEditorActions } from "./MailTextEditor";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
 

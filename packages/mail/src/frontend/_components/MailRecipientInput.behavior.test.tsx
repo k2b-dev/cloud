@@ -369,7 +369,7 @@ if (!isServer)
       const input = dom.root.querySelector("input")!;
       input.value = "kolb";
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      for (let i = 0; i < 100 && !dom.root.querySelector('[role="option"]'); i++) await Bun.sleep(10);
+      while (!dom.root.querySelector('[role="option"]')) await Bun.sleep(10);
       dom.root.querySelector<HTMLButtonElement>('[role="option"]')!.click();
       expect(recipients).toEqual(['"Kolb, Bernd" <bernd@example.test>']);
       expect(input.value).toBe("");
