@@ -9,7 +9,10 @@ export function codeAiBudgetRemainder(limit: number, spent: string): bigint {
   return remaining > 0n ? remaining : 0n;
 }
 
-const usageData = z.object({ model: z.object({ id: z.string() }), usage: z.object({ input: z.number(), output: z.number() }) });
+const usageData = z.object({
+  model: z.object({ id: z.string() }),
+  usage: z.object({ input: z.number(), output: z.number() }).passthrough(),
+});
 const usageResult = z.object({ ok: z.literal(true), data: z.object({ data: usageData }) });
 
 const unstartedCode = z.object({ ok: z.literal(false), error: z.object({ code: z.string() }) });
@@ -34,12 +37,12 @@ const beforeModelCodes = new Set([
 ]);
 /** Unknown outcomes or model identities keep the reservation spent; known pre-model refusals release it. */
 export function codeAiReferenceCost(capability: string, result: unknown, profiles: readonly AiModelProfile[], reserved: string): string {
-  const failureUsage =
-    capability === "core.ai.generate"
-      ? z.object({ ok: z.literal(false), error: z.object({ details: z.object({ aiUsage: usageData }) }) }).safeParse(result)
-      : null;
+  const failureUsage = ["core.ai.generate", "core.ai.decide"].includes(capability)
+    ? z.object({ ok: z.literal(false), error: z.object({ details: z.object({ aiUsage: usageData }) }) }).safeParse(result)
+    : null;
   if (failureUsage?.success)
     return codeAiReferenceCost(capability, { ok: true, data: { data: failureUsage.data.error.details.aiUsage } }, profiles, reserved);
+  if (z.object({ error: z.object({ details: z.object({ aiUsageUnknown: z.literal(true) }) }) }).safeParse(result).success) return reserved;
   const refusal = unstartedCode.safeParse(result);
   // Structured output may spend one attempt before a repair hits quota. Its terminal
   // quota refusal cannot prove that no inference ran, so retain that reservation.
@@ -55,6 +58,36 @@ export function codeAiReferenceCost(capability: string, result: unknown, profile
     if (!["core.ai.decide", "core.ai.generate"].includes(capability) && z.object({ ok: z.literal(true) }).safeParse(result).success)
       return "0";
     return reserved;
+  }
+  // The base parser strips unknown fields; read the verified Core result for per-model vision/loop usage.
+  const detailed = z
+    .object({
+      ok: z.literal(true),
+      data: z.object({
+        data: z.object({
+          usage: z.object({
+            byModel: z
+              .array(z.object({ model: z.object({ id: z.string() }), input: z.number().nonnegative(), output: z.number().nonnegative() }))
+              .min(1),
+          }),
+        }),
+      }),
+    })
+    .safeParse(result);
+  if (detailed.success) {
+    let total = 0n;
+    for (const call of detailed.data.data.data.usage.byModel) {
+      const profile = profiles.find((profile) => profile.id === call.model.id);
+      if (!profile) return reserved;
+      if (profile.pricing) {
+        try {
+          total += aiCostUnits(profile.pricing, call.input, call.output);
+        } catch {
+          return reserved;
+        }
+      }
+    }
+    return aiCostDecimal(total);
   }
   const { model, usage } = parsed.data.data.data;
   const profile = profiles.find((profile) => profile.id === model.id);

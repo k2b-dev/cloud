@@ -92,7 +92,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
   if (!budget?.valid) denied("code_wall_clock_limit");
   return { code, version, manifest: manifest.data };
 }
-async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
+export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
   if (call.kind !== "internet") requireCodeCapabilityDeclared(call.call, manifest.permissions);
   const row = codePolicyRow(
@@ -220,7 +220,7 @@ export function createCodeBridgeHost(
           aiProfiles = (await readAiSettingsState()).profiles;
           aiReservation = await sql.begin(async (tx) => {
             // Resolve current group policy before reserving; issuance rechecks it before the model is called.
-            await authorizeCall(call, tx);
+            await authorizeCodeCall(call, tx);
             const reservation = await reserveCodeAiBudget(call.claims, ordinal, await codeSettings.get("core.code.ai_budget_usd"), tx, {
               code: await codeSettings.get("core.code.ai_daily_budget_usd"),
               owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd"),
@@ -246,7 +246,7 @@ export function createCodeBridgeHost(
               )
                 denied("code_capability_undeclared", 403);
             }
-            const ownerAppId = await authorizeCall(call, options.db);
+            const ownerAppId = await authorizeCodeCall(call, options.db);
             input = { ...input, ownerAppId, codeRun: true };
             if (input.mandateId !== call.claims.mandateId || input.expectedRevision !== call.claims.mandateRevision)
               denied("code_mandate_mismatch");
@@ -265,7 +265,7 @@ export function createCodeBridgeHost(
         response = await execution.capability({
           consumeFileRef: (digest) =>
             sql.begin(async (tx) => {
-              await authorizeCall(call, tx);
+              await authorizeCodeCall(call, tx);
               const rows = await tx`INSERT INTO code.file_redemptions(run_id,digest)
               VALUES(${call.claims.runId}::uuid,${digest}) ON CONFLICT DO NOTHING RETURNING digest`;
               return rows.length === 1;

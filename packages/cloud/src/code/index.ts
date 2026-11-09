@@ -1,4 +1,5 @@
 export { type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "../contracts/code-routes";
+export { codeAiToolCovered, createCodeAiTools } from "./ai-tools";
 export type {
   CodeContext,
   CodeError,
@@ -31,6 +32,7 @@ export {
   CodeVersionManifestSchema,
 } from "./checker-contract";
 export * from "./event-tools";
+export { type CodeAiToolBinding, CodeAiToolBindingSchema, CodeFileRefSchema } from "./file-ref";
 export { generateCodeSdk } from "./generator";
 export {
   assertCodePageData,

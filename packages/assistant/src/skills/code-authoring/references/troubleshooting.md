@@ -57,7 +57,7 @@ text. `status === 403` means forbidden, while `status === 404` means missing.
 | `code_ai_budget_limit`, `code_ai_budget_reserved`, `code_ai_daily_budget_limit`, `code_ai_owner_daily_budget_limit` | An AI budget is spent or busy | Wait for the next day or fewer AI calls; a rerun does not reset the daily budget ([AI](ai.md)) |
 | `code_http_origin_undeclared`, `code_http_redirect_limit` | An undeclared origin or more than 20 redirects | Declare the origin; use the final URL |
 | `code_page_data_only`, `code_page_limit` | A page holds a function, an accessor or a hole in a list, or is too large | Pass plain data; stay within the page limits ([Pages](pages.md)) |
-| `code_file_invalid`, `code_file_size_limit`, `code_file_spent` | A FileRef from another run, expired, changed, too large or already used | Read a fresh reference in this run right before the import ([FileRef](file-ref.md)) |
+| `code_file_invalid`, `code_file_size_limit`, `code_file_size_mismatch`, `code_file_spent` | A FileRef from another run, expired, changed, too large, incomplete or already used | Read a fresh reference in this run right before the import or AI call ([FileRef](file-ref.md)) |
 | `code_result_unknown` | A call's outcome is unknown after a lost attempt | Inspect the target before running again |
 | `idempotency_conflict` | The same key with different input | Derive the key from all of the effect's input |
 | `chat_busy` | The Gustav chat is in another turn | Try at a later schedule |

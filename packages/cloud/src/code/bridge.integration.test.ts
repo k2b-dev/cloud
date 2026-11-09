@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import * as decision from "@k2b/cloud/ai";
+import type { Provider } from "@k2b/nessi";
 import { err } from "@k2b/stdlib";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
@@ -10,6 +11,7 @@ import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "../../../core/src/code/ai-budget";
+import { codeAiFileTool, codeAiRun } from "../../../core/src/code/ai-loop";
 import { createCodeBridgeHost, readCodeOwnOrigins } from "../../../core/src/code/bridge";
 import { createCodeRunnerRoutes } from "../../../core/src/code/runner-routes";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
@@ -36,15 +38,19 @@ import * as mailMessages from "../../../mail/src/service/messages";
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
 import { invokeCapabilityStream } from "../_internal/capability-streams";
 import * as registry from "../_internal/registry";
+import { streamAnswer } from "../ai/answer-stream.test-fixture";
 import { aiModelFixture, aiSettingsFixture } from "../ai/model-fixture";
 import { migrateAiQuotas } from "../ai/quotas-migrate";
+import { runStructuredTools } from "../ai/structured-tools";
 import {
   type CapabilityDispatchDependencies,
   codeHttpOriginAllowed,
   createCodeRunnerCallRoutes,
   dispatchCapability,
+  dispatchCodeSdkCall,
 } from "../api/capabilities";
 import { dispatchCapabilityStream } from "../api/capability-streams";
+import { readCodeAiFile } from "../api/code-file-reader";
 import type { AppKey } from "../app-key";
 import { signAppProof } from "../app-proof";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
@@ -69,11 +75,13 @@ import { approvalArgsDigest } from "../services/approvals";
 import { resolveInvocationAuthority } from "../services/identity/invocation-actor";
 import { type CloudInvocationClaims, verifyInvocationToken } from "../services/identity/invocation-token";
 import { issueInvocationToken } from "../services/identity/issue-invocation";
+import * as identityKeys from "../services/identity/key-ring";
 import { mandates } from "../services/mandates";
 import { loadCodeRunCalls } from "../ssr/code-page/calls";
 import type { CodePageInvoke } from "../ssr/code-page/data";
+import { createCodeAiTools } from "./ai-tools";
 import { CodeFileRefSchema } from "./file-ref";
-import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
+import { CodeRunTokenClaimsSchema, type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest, type RunnerJsonValue } from "./runner-protocol";
 
 // real clock: Postgres fences use its own clock, so the frozen JS clock starts from the real time of this run.
@@ -168,6 +176,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let providerRequestsConfirmation = false;
   let queryCursor: string | undefined;
   let callLimit = 200;
+  let callRate = 1;
   let aiBudget = 1;
   let rateLimited = false;
   let realRate = false;
@@ -360,7 +369,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       name === "core.code.calls_per_run"
         ? callLimit
         : name === "core.code.calls_per_second"
-          ? 1
+          ? callRate
           : name === "core.code.ai_budget_usd"
             ? aiBudget
             : CODE_SETTINGS[name].default,
@@ -396,6 +405,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   ) {
     currentEntry = structuredClone(baseEntry);
     callLimit = 200;
+    callRate = 1;
     queryCursor = undefined;
     aiBudget = 1;
     rateLimited = false;
@@ -626,6 +636,65 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       run.mockRestore();
     }
   });
+
+  test.each([false, true])(
+    "signed Core AI initializes a file loop from the real run, version and mandate schema (personal=%s)",
+    async (personal) => {
+      await resetFixture({ personal, entry: true, policyRows: ["ai"] });
+      if (personal)
+        await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+      await sql`UPDATE code.runs SET deadline_at=clock_timestamp()+interval '5 minutes' WHERE id=${claims.runId}::uuid`;
+      const selected = spyOn(decision, "selectAssistantAiModel").mockResolvedValue({ id: "clef" });
+      const resolved = spyOn(decision, "resolveAiModel").mockResolvedValue({
+        model: decisionResultFixture.model,
+        profile: aiModelFixture({ id: "clef", contextWindow: 32_768 }),
+        provider: {
+          name: "fixture",
+          family: "openai-compatible",
+          model: "fixture",
+          capabilities: { streaming: true, tools: true, images: true, thinking: false, usage: true },
+          async *stream() {},
+        },
+      });
+      const run = spyOn(decision, "runAiStructured").mockResolvedValue({
+        output: { text: "Summary" },
+        model: decisionResultFixture.model,
+        usage: decisionResultFixture.usage,
+        structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+      });
+      try {
+        const response = await send({
+          entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+          operation: "core.ai.generate",
+          input: {
+            call: {
+              capability: "core.ai.generate",
+              target: null,
+              refs: {},
+              input: {
+                task: "mail.summary",
+                prompt: "Summarize.",
+                // A ref in input starts the loop but does not read bytes until a viewer asks.
+                input: { file: { id: "not-yet-opened", mediaType: "text/plain", size: 12 } },
+                fileTools: false,
+                output: { type: "text", maxChars: 500 },
+              },
+            },
+            metadata: {},
+          },
+        });
+        expect(await response.json()).toMatchObject({ ok: true, data: { data: { output: "Summary" } } });
+        expect(run).toHaveBeenCalledTimes(1);
+        expect(run.mock.calls[0]![0].signal).toBeInstanceOf(AbortSignal);
+        expect(run.mock.calls[0]![0].tools).toBeUndefined();
+        expect(resolved).toHaveBeenCalledTimes(1);
+      } finally {
+        selected.mockRestore();
+        resolved.mockRestore();
+        run.mockRestore();
+      }
+    },
+  );
 
   test.each([false, true])("generation failures settle known usage before payload-free runner projection (unknown=%s)", async (unknown) => {
     await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
@@ -1481,11 +1550,16 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
     await error({}, "code_call_limit", 429);
   });
-  async function fileFixture(sourceAction = false, event?: AppEventEnvelope, permissions?: CodeCheckedVersionManifest["permissions"]) {
+  async function fileFixture(
+    sourceAction = false,
+    event?: AppEventEnvelope,
+    permissions?: CodeCheckedVersionManifest["permissions"],
+    ai = false,
+  ) {
     const mailManifest = compileCapabilityManifest("mail", mailCapabilities);
     await resetFixture({
       entry: true,
-      policyRows: ["read", "silent_shared"],
+      policyRows: ai ? ["read", "silent_shared", "ai"] : ["read", "silent_shared"],
       event,
       permissions: permissions ?? [
         ...[...mailManifest.queries, ...mailManifest.actions].map((operation) => ({
@@ -1547,6 +1621,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     let targetBytes = 0;
     let offerSize = payload.length;
     let sourceExtraByte = false;
+    let sourceMissingByte = false;
     let revokeAtWrite = false;
     let sourceLifetimeMs = 240_000;
     const published = new Set<string>();
@@ -1620,7 +1695,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     fileTransport = async (url, init) => {
       const request = new Request(url, init);
       const appId = new URL(request.url).hostname.split(".")[0]!;
-      const compiled = appId === "mail" ? source : target;
+      const compiled = appId === "core" ? decisionCompiled : appId === "mail" ? source : target;
       const segments = new URL(request.url).pathname.split("/");
       const streamVerb = request.headers.has("x-cloud-stream-offer") ? segments.at(-1) : null;
       const localId = streamVerb ? segments.at(-2)! : segments.at(-1)!;
@@ -1664,7 +1739,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               new TransformStream({
                 transform(chunk, controller) {
                   sourceBytes += chunk.byteLength;
-                  controller.enqueue(chunk);
+                  if (sourceMissingByte && chunk.byteLength > 0) {
+                    sourceMissingByte = false;
+                    controller.enqueue(chunk.subarray(1));
+                  } else controller.enqueue(chunk);
                 },
                 flush(controller) {
                   if (sourceExtraByte) controller.enqueue(new Uint8Array([1]));
@@ -1750,6 +1828,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       extraByte: () => {
         sourceExtraByte = true;
       },
+      missingByte: () => {
+        sourceMissingByte = true;
+      },
       revokeAtWrite: () => {
         revokeAtWrite = true;
       },
@@ -1761,6 +1842,349 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       },
     };
   }
+  const aiClaims = () =>
+    CodeRunTokenClaimsSchema.parse({
+      ...claims,
+      ver: 1,
+      token_use: "code_run",
+      iss: issuer,
+      aud: "cloud-code-bridge",
+      iat: Math.floor(now.getTime() / 1000),
+      nbf: Math.floor(now.getTime() / 1000),
+      exp: Math.floor(now.getTime() / 1000) + 300,
+    });
+  const aiRead = (ref: unknown, maximum = 20 * 1024 * 1024) =>
+    readCodeAiFile({
+      ref: CodeFileRefSchema.parse(ref),
+      claims: aiClaims(),
+      request: new Request(issuer),
+      maxBytes: maximum,
+      dependencies: dependencies(),
+    });
+  test("AI file reader reuses the owning Mail authorization and logs its read, including a visible 403", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    expect(await aiRead(opened.data)).toEqual(fixture.payload);
+    const [logged] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${claims.runId}::uuid AND call->>'capability'='mail.attachment.content.read'`;
+    expect(logged!.count).toBe(2);
+    const denied = await fixture.read();
+    await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
+    await expect(aiRead(denied.data)).rejects.toMatchObject({ code: "code_file_source_refused", status: 403 });
+  }, 30_000);
+  test("AI reads redeem each ref once, including competing AI reads and later imports", async () => {
+    const fixture = await fileFixture();
+    const first = await fixture.read();
+    await aiRead(first.data);
+    await expect(aiRead(first.data)).rejects.toMatchObject({ code: "code_file_spent", status: 409 });
+    expect(await (await fixture.write(first.data)).json()).toMatchObject({ ok: false, error: { code: "code_file_spent" } });
+    const next = await fixture.read();
+    const concurrent = await Promise.allSettled([aiRead(next.data), aiRead(next.data)]);
+    expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(concurrent.find((result) => result.status === "rejected")).toMatchObject({
+      status: "rejected",
+      reason: { code: "code_file_spent" },
+    });
+  }, 30_000);
+  test("AI file reads retain the owning Mail app's 404 after an attachment is deleted", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    await sql`DELETE FROM mail.attachments WHERE short_id='At4g00'`;
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_source_refused", status: 404 });
+  }, 30_000);
+  test("AI initialization rejects changed signed run coordinates, mandate bindings, account and deadline", async () => {
+    const fixture = await fileFixture();
+    await fixture.read();
+    await sql`UPDATE code.runs SET deadline_at=clock_timestamp()+interval '5 minutes' WHERE id=${claims.runId}::uuid`;
+    const invocation = fixture.lastInvocation();
+    if (!invocation) throw new Error("Expected a signed invocation");
+    const authority = await resolveInvocationAuthority(invocation, sql, []);
+    if (!authority?.actor.delegation) throw new Error("Expected signed Code delegation");
+    const context: CapabilityExecutionContext = {
+      authority,
+      actor: authority.actor,
+      accessSubject: authority.accessSubject,
+      user: null,
+      locale: "en",
+      requestId: "ai-provenance",
+      origin: "app",
+      signal: new AbortController().signal,
+    };
+    expect((await codeAiRun(context)).claims).toMatchObject(claims);
+    const proof = authority.actor.delegation;
+    const changed: Array<Partial<typeof proof>> = [
+      { workloadRun: crypto.randomUUID() },
+      { workloadId: crypto.randomUUID() },
+      { workloadGeneration: claims.generation + 1 },
+      { mandateId: crypto.randomUUID() },
+      { mandateRevision: claims.mandateRevision + 1 },
+    ];
+    for (const change of changed)
+      await expect(codeAiRun({ ...context, actor: { ...context.actor, delegation: { ...proof, ...change } } })).rejects.toMatchObject({
+        code: "runner_lease_lost",
+      });
+    await expect(
+      codeAiRun({ ...context, accessSubject: { type: "service_account", serviceAccountId: crypto.randomUUID() } }),
+    ).rejects.toMatchObject({ code: "runner_lease_lost" });
+    await sql`UPDATE auth.mandates SET workload_id=${crypto.randomUUID()} WHERE id=${claims.mandateId}::uuid`;
+    await expect(codeAiRun(context)).rejects.toMatchObject({ code: "runner_lease_lost" });
+    await sql`UPDATE auth.mandates SET workload_id=${claims.versionId} WHERE id=${claims.mandateId}::uuid`;
+    await sql`UPDATE code.runs SET deadline_at=clock_timestamp()-interval '1 second' WHERE id=${claims.runId}::uuid`;
+    await expect(codeAiRun(context)).rejects.toMatchObject({ code: "runner_lease_lost" });
+  }, 30_000);
+  test("a signed model loop discovers a tool FileRef, reads it as the Code account and submits output", async () => {
+    const fixture = await fileFixture(
+      false,
+      undefined,
+      [
+        { operation: "core.ai.generate", target: null, file: "code.ts", line: 1 },
+        { operation: "mail.attachment.content.read", target: null, file: "code.ts", line: 1 },
+      ],
+      true,
+    );
+    callRate = 1_000;
+    await sql`UPDATE code.runs SET deadline_at=clock_timestamp()+interval '5 minutes' WHERE id=${claims.runId}::uuid`;
+    await sql`UPDATE mail.message_parts SET content_type='text/plain' WHERE message_id=${fixture.messageId}::uuid`;
+    await sql`UPDATE mail.attachments SET content_type='text/plain' WHERE message_id=${fixture.messageId}::uuid`;
+    let turns = 0;
+    const provider: Provider = {
+      name: "scripted",
+      family: "openai-compatible",
+      model: "fixture",
+      contextWindow: 32_768,
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      async *stream(request) {
+        const step = turns++;
+        const names = request.tools?.map((tool) => tool.name) ?? [];
+        let call: { name: string; args: Record<string, unknown> };
+        if (step === 0) {
+          expect(names).not.toContain("read_file");
+          call = { name: "sdk_0", args: { id: "At4g00" } };
+        } else if (step === 1) {
+          expect(names).toContain("read_file");
+          const result = request.messages.find((message) => message.role === "tool_result" && message.name === "sdk_0");
+          if (result?.role !== "tool_result") throw new Error("Missing SDK tool result");
+          const ref = z.object({ untrusted_tool_result: CodeFileRefSchema }).parse(result.result).untrusted_tool_result;
+          call = { name: "read_file", args: { ref, length: 4_096 } };
+        } else {
+          expect(JSON.stringify(request.messages)).toContain("%PDF-invoice-xml-private-");
+          call = { name: "submit_result", args: { text: "Read" } };
+        }
+        yield* streamAnswer({
+          message: { role: "assistant", content: [{ type: "tool_call", id: `step-${step}`, ...call }] },
+          usage: { input: 10, output: 2, total: 12 },
+          finishReason: "tool_use",
+        });
+      },
+    };
+    const selected = spyOn(decision, "selectAssistantAiModel").mockResolvedValue({ id: "clef" });
+    const resolved = spyOn(decision, "resolveAiModel").mockResolvedValue({
+      model: decisionResultFixture.model,
+      profile: aiModelFixture({ id: "clef", contextWindow: 32_768, pricing: { inputPerMillion: 1, outputPerMillion: 2 } }),
+      provider,
+    });
+    // Keep the real model loop/budget guard and bridge. Only the external model
+    // accounting wrapper is replaced; its separate tests cover quota persistence.
+    const model = spyOn(decision, "runAiStructured").mockImplementation(async (request) => {
+      const selected = await request.resolveModel!(request.model);
+      const result = await runStructuredTools({
+        ...request,
+        provider: selected.provider,
+        tools: request.tools!,
+        maxTurns: request.maxTurns!,
+      });
+      request.onUsage?.({ model: selected.model, usage: result.usage });
+      return { ...result, model: selected.model };
+    });
+    const signerSpy = spyOn(identityKeys, "withActiveIdentitySigner").mockImplementation(withSigner);
+    const transport = fileTransport!;
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(Object.assign(transport, { preconnect: globalThis.fetch.preconnect }));
+    try {
+      const response = await send({
+        entry: {
+          ...baseEntry,
+          appId: "core",
+          manifest: decisionCompiled.manifest,
+          endpoint: "http://core.test/api/_internal/capabilities/v1",
+        },
+        operation: "core.ai.generate",
+        input: {
+          call: {
+            capability: "core.ai.generate",
+            target: null,
+            refs: {},
+            input: {
+              task: "file.loop",
+              prompt: "Read the attachment and report completion.",
+              input: {},
+              tools: [{ capability: "mail.attachment.content.read", target: null }],
+              output: { type: "text", maxChars: 100 },
+            },
+          },
+          metadata: {},
+        },
+      });
+      expect(await response.json()).toMatchObject({ ok: true, data: { data: { output: "Read" } } });
+      expect(turns).toBe(3);
+      const rows = await sql<{ state: string; call: { capability: string }; result: unknown }[]>`SELECT state,call,result
+        FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`;
+      expect(rows.map((row) => [row.call.capability, row.state])).toEqual([
+        ["core.ai.generate", "succeeded"],
+        ["mail.attachment.content.read", "succeeded"],
+        ["core.code.file.read", "succeeded"],
+        ["mail.attachment.content.read", "succeeded"],
+      ]);
+      expect(JSON.stringify(rows)).not.toContain("%PDF-invoice-xml-private-");
+      expect(fixture.sourceBytes()).toBe(fixture.payload.length);
+    } finally {
+      selected.mockRestore();
+      resolved.mockRestore();
+      model.mockRestore();
+      signerSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  }, 30_000);
+  test("AI viewers share the real durable call observer and make a source refusal visible", async () => {
+    const fixture = await fileFixture(false, undefined, [
+      { operation: "mail.attachment.content.read", target: null, file: "code.ts", line: 1 },
+      { operation: "core.ai.generate", target: null, file: "code.ts", line: 1 },
+    ]);
+    const opened = await fixture.read();
+    expect(
+      await codeAiFileTool(
+        aiClaims(),
+        "core.ai.generate",
+        "read_file",
+        { ref: opened.data },
+        () => aiRead(opened.data),
+        dependencies().host,
+      ),
+    ).toEqual(fixture.payload);
+    const denied = await fixture.read();
+    await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
+    await expect(
+      codeAiFileTool(
+        aiClaims(),
+        "core.ai.generate",
+        "view_image",
+        { ref: denied.data, prompt: "private file text must not enter observations" },
+        () => aiRead(denied.data),
+        dependencies().host,
+      ),
+    ).rejects.toMatchObject({ code: "code_file_source_refused", status: 403 });
+    await sql`UPDATE code.policy_rules SET value='never' WHERE row='ai' AND group_id IS NULL`;
+    let cachedReads = 0;
+    await expect(
+      codeAiFileTool(
+        aiClaims(),
+        "core.ai.generate",
+        "read_file",
+        { ref: opened.data },
+        async () => {
+          cachedReads++;
+          return fixture.payload;
+        },
+        dependencies().host,
+      ),
+    ).rejects.toThrow("code_policy_never");
+    expect(cachedReads).toBe(0);
+    const rows = await sql<{ state: string; call: { capability: string; input: unknown } }[]>`SELECT state,call FROM code.calls
+      WHERE run_id=${claims.runId}::uuid AND call->>'capability' IN ('core.code.file.read','core.code.file.view') ORDER BY ordinal`;
+    expect(rows.map((row) => [row.call.capability, row.state])).toEqual([
+      ["core.code.file.read", "succeeded"],
+      ["core.code.file.view", "failed"],
+      ["core.code.file.read", "failed"],
+    ]);
+    expect(rows[1]!.call.input).toEqual({
+      ref: { mediaType: denied.data.mediaType, size: denied.data.size, name: denied.data.name },
+    });
+  }, 30_000);
+  test("AI file reader rejects changed metadata, another run, byte overflow and the durable call limit", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    await expect(aiRead({ ...opened.data, size: 1 })).rejects.toMatchObject({ code: "code_file_invalid" });
+    await expect(aiRead(opened.data, fixture.payload.length - 1)).rejects.toMatchObject({ code: "code_file_size_limit" });
+    const original = { ...claims };
+    claims = { ...claims, runId: crypto.randomUUID() };
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_invalid" });
+    claims = original;
+    fixture.extraByte();
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_size_limit", status: 400 });
+    const fresh = await fixture.read();
+    callLimit = 1;
+    await expect(aiRead(fresh.data)).rejects.toMatchObject({ code: "code_call_limit" });
+  }, 30_000);
+  test("AI file reader rejects an incomplete owning-app stream with a visible size error", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    fixture.missingByte();
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_size_mismatch", status: 400 });
+  }, 30_000);
+  test("AI SDK tools use the exact direct-call policy, approval, target, account and durable call log", async () => {
+    const invoke = async (capability: string) => {
+      const tools = await createCodeAiTools({
+        bindings: [{ capability, target: item }],
+        permissions: [{ operation: capability, target: item, file: "code.ts", line: 1 }],
+        requestId: "ai-loop",
+        registerFiles: () => {},
+        getCapability: dependencies().dispatch.getCapability,
+        invoke: async (invocation) =>
+          (
+            await dispatchCodeSdkCall({
+              claims: aiClaims(),
+              invocation,
+              operationId: capability,
+              request: new Request(issuer),
+              dependencies: dependencies(),
+            })
+          ).json(),
+      });
+      const result = await tools[0]!.execute(
+        {},
+        {
+          signal: new AbortController().signal,
+          requestApproval: async () => {
+            throw new Error("No independent tool approval");
+          },
+          requestClientTool: async () => {
+            throw new Error("No client tools");
+          },
+        },
+      );
+      return z.object({ untrusted_tool_result: z.unknown() }).parse(result).untrusted_tool_result;
+    };
+    await resetFixture({ entry: true });
+    expect(await invoke("example.write")).toEqual(await (await send()).json());
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
+    expect(await invoke("example.read")).toMatchObject({ ok: false, error: { code: "code_approval_required", status: 403 } });
+    expect(await (await send({ operation: "example.read" })).json()).toMatchObject({
+      ok: false,
+      error: { code: "code_approval_required", status: 403 },
+    });
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read')`;
+    expect(await invoke("example.read")).toEqual(await (await send({ operation: "example.read" })).json());
+    expect(await invoke("example.asks")).toMatchObject({ ok: false, error: { code: "code_unattended_forbidden", status: 403 } });
+    await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
+    expect(await invoke("example.write")).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
+    const [logged] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.calls WHERE run_id=${claims.runId}::uuid`;
+    expect(logged!.count).toBe(8);
+
+    // Even forged tool-side evidence cannot expand the actual saved version's set.
+    await resetFixture({ entry: true, permissions: [{ operation: "example.write", target: item, file: "code.ts", line: 1 }] });
+    const before = fetched;
+    expect(await invoke("example.read")).toEqual({ ok: false, error: { code: "code_capability_undeclared", status: 403 } });
+    expect(fetched).toBe(before);
+    const [refused] = await sql<{ state: string; refusal_kind: string; result: unknown }[]>`SELECT state,refusal_kind,result
+      FROM code.calls WHERE run_id=${claims.runId}::uuid`;
+    expect(refused).toEqual({
+      state: "failed",
+      refusal_kind: "policy",
+      result: { ok: false, error: { code: "code_capability_undeclared", status: 403 } },
+    });
+  });
   test("Mail event work changes use the stored trigger across the real signed bridge and provider", async () => {
     const event = appEventFixture(
       mailCapabilities,

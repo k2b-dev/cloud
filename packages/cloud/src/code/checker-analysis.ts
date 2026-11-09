@@ -127,11 +127,45 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     }
     return { base, path };
   }
+  function sdkOperation(expression: ts.Expression) {
+    for (const signature of checker.getTypeAtLocation(expression).getCallSignatures()) {
+      const op = signature.declaration && appOperations.get(signature.declaration);
+      if (op) return { op, target: null };
+    }
+    const { base, path } = member(expression);
+    const target = handle(base);
+    if (!target) return null;
+    const appId = target.type === "cloud.app" ? target.ids?.[0] : target.type.split(".")[0];
+    const op = request.sdk.manifest.operations.find(
+      (op) => op.appId === appId && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === path.join("."),
+    );
+    return op ? { op, target: op.target ? target : null } : null;
+  }
+  /** The sole detached position is a literal tools element of a real generated AI call. */
+  function aiToolElement(node: ts.Expression) {
+    let value = node;
+    while (ts.isParenthesizedExpression(value.parent)) value = value.parent;
+    const array = value.parent;
+    if (!ts.isArrayLiteralExpression(array) || !array.elements.includes(value)) return null;
+    const property = array.parent;
+    if (
+      !ts.isPropertyAssignment(property) ||
+      property.initializer !== array ||
+      !((ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === "tools")
+    )
+      return null;
+    const object = property.parent;
+    if (!ts.isObjectLiteralExpression(object) || !ts.isCallExpression(object.parent) || object.parent.arguments[0] !== object) return null;
+    const call = sdkOperation(object.parent.expression);
+    if (!call || !["core.ai.generate", "core.ai.decide"].includes(call.op.capability)) return null;
+    return sdkOperation(node);
+  }
   const signatureInSdk = (node: ts.CallExpression) =>
     checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
   // Bind calls to declarations from this generated SDK, including namespace aliases and
   // callable factory/method intersections. Spelling alone must never identify a factory.
   const appOperations = new Map<ts.Node, CodeSdkOperation>();
+  const operationDeclarations = new Set<ts.Node>();
   const sdkNamespaces = new Set<ts.Type>();
   const factoryDeclarations = new Set<ts.Node>();
   const sdkSource = program.getSourceFile(root + "sdk.d.ts")!;
@@ -153,6 +187,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           if (namespace) sdkNamespaces.add(namespace);
           namespace = namespace && propertyType(namespace, segment, sdkSource);
         }
+        for (const method of namespace?.getCallSignatures() ?? []) if (method.declaration) operationDeclarations.add(method.declaration);
       }
     }
   }
@@ -168,7 +203,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       }
     }
     for (const signature of sdkMemberType(app.exportName, op.methodPath)?.getCallSignatures() ?? [])
-      if (signature.declaration) appOperations.set(signature.declaration, op);
+      if (signature.declaration) {
+        appOperations.set(signature.declaration, op);
+        operationDeclarations.add(signature.declaration);
+      }
   }
   const sdkMemberAccess = (node: ts.Node, receiver: ts.Expression): boolean => {
     if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
@@ -189,6 +227,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
     const use = wrapped.parent;
     return (
+      aiToolElement(node) !== null ||
       sdkMemberAccess(use, wrapped) ||
       (ts.isCallExpression(use) && use.expression === wrapped) ||
       (allowJsx &&
@@ -461,9 +500,25 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           report(node, "code_reserved_sdk", "Importiere benannte SDK-Exporte.");
       }
     }
+    if (
+      ts.isBindingElement(node) &&
+      ts.isIdentifier(node.name) &&
+      checker
+        .getTypeAtLocation(node.name)
+        .getCallSignatures()
+        .some((signature) => signature.declaration && operationDeclarations.has(signature.declaration))
+    )
+      report(node, "code_detached_sdk_method", "SDK-Methoden dürfen nicht durch Destrukturierung abgelöst werden.");
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const signatures = checker.getTypeAtLocation(node).getCallSignatures();
+      const tool = aiToolElement(node);
+      if (tool) {
+        if (Object.keys(tool.op.refs).length)
+          report(node, "code_unresolved_ref", "Ein KI-Werkzeug darf keine ungebundenen zusätzlichen Ziele haben.");
+        else permission(node, tool.op.capability, tool.target);
+      }
       if (
+        !tool &&
         signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts" && !factoryDeclarations.has(s.declaration)) &&
         !isAllowedSdkReference(node, true)
       )

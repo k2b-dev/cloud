@@ -1,4 +1,4 @@
-import type { Input, LoopAggregate, StructuredMeta, Usage } from "@k2b/nessi";
+import type { ContentPart, Input, LoopAggregate, ServerTool, StructuredMeta, Usage } from "@k2b/nessi";
 import { nessi, StructuredOutputError } from "@k2b/nessi";
 import { ProviderError } from "@k2b/nessi/ai";
 import type { z } from "zod";
@@ -11,6 +11,7 @@ import { AiProviderError } from "./provider-errors";
 import { inferenceProvider } from "./quota-provider";
 import { resolveAiModel } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
+import { runStructuredTools } from "./structured-tools";
 import type { AiResolvedModel } from "./types";
 
 /** Application server path: an explicit `{ id }` may name a `restricted` model; classes never resolve to one. */
@@ -26,6 +27,12 @@ export type RunAiStructuredInput<TOutput extends z.ZodType> = {
   input: Input;
   output: TOutput;
   outputName?: string;
+  /** Trusted, bounded server tools. Code supplies its permission-aware dispatcher, never model-supplied authority. */
+  tools?: ServerTool[];
+  resolveTools?: () => ServerTool[];
+  maxTurns?: number;
+  /** Media acquired by viewer tools; supplied directly to the provider, outside JSON tool results. */
+  additionalInput?: () => ContentPart[];
   systemPrompt?: string;
   model?: AiModelRequest;
   temperature?: number;
@@ -99,7 +106,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
         });
 
         const modelRef = resolved.model;
-        const result = await nessi.structured({
+        const structuredInput = {
           provider: inferenceProvider(resolved.provider, resolved.profile, {
             kind: input.usageSubject ? "chat" : "background",
             subject: input.usageSubject,
@@ -118,7 +125,15 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           maxOutputTokens: input.maxOutputTokens ?? resolved.profile.maxOutputTokens,
           reasoningEffort: taskReasoningEffort(resolved.profile.provider),
           signal: input.signal,
-        });
+        };
+        const result = input.tools?.length
+          ? await runStructuredTools({
+              ...input,
+              ...structuredInput,
+              tools: input.tools,
+              maxTurns: input.maxTurns ?? resolved.profile.maxToolRounds ?? 1,
+            })
+          : await nessi.structured(structuredInput);
         const durationMs = Date.now() - startedAt;
 
         await trace.record({

@@ -246,7 +246,8 @@ test("an unknown provider attempt keeps failure usage unknown even after measure
   const response = await aiGenerationQuery.run(input, context);
   expect(response).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
   if (response.ok) throw new Error("Expected refusal");
-  expect(response.error).not.toHaveProperty("details");
+  expect(response.error).toMatchObject({ details: { aiUsageUnknown: true } });
+  expect(response.error).not.toHaveProperty("details.aiUsage");
 });
 
 test("a successful repair includes previous attempt usage instead of only the last answer", async () => {

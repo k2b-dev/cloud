@@ -18,6 +18,7 @@ async function invoke(operation, input) {
   }
 }
 const handles = new WeakMap();
+const aiTools = new WeakMap();
 let bridge;
 const schedules = [];
 const routes = [];
@@ -50,10 +51,20 @@ function handle(appId, type, id) {
   handles.set(result, ref);
   Object.defineProperties(result, { type: { value: ref.type, enumerable: true }, id: { value: ref.id, enumerable: true } });
   for (const op of manifest.operations.filter(op => op.appId === appId && op.target === type)) {
-    setPath(result, op.methodPath, async (args) => {
+    const method = async (args) => {
       if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
       if (!args || typeof args !== "object" || Array.isArray(args)) throw new CodeError("code_sdk_invalid_input");
       const input = { ...args };
+      if (op.capability === "core.ai.generate" || op.capability === "core.ai.decide") {
+        if (input.tools !== undefined) {
+          if (!Array.isArray(input.tools)) throw new CodeError("code_ai_tool_invalid");
+          input.tools = input.tools.map(tool => {
+            const binding = aiTools.get(tool);
+            if (!binding) throw new CodeError("code_ai_tool_invalid");
+            return binding;
+          });
+        }
+      }
       const refs = {};
       for (const [field, refType] of Object.entries(op.refs)) {
         refs[field] = coordinate(input[field], refType);
@@ -70,7 +81,10 @@ function handle(appId, type, id) {
       }
       const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
       return invoke(op.capability, { call, metadata });
-    });
+    };
+    if (Object.keys(op.refs).length === 0) aiTools.set(method, Object.freeze({ capability: op.capability,
+      target: type === null ? null : Object.freeze(coordinate(result, type)) }));
+    setPath(result, op.methodPath, method);
   }
   return result;
 }

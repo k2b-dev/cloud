@@ -65,3 +65,26 @@ test("failed generation settles measured repairs and known zero but keeps unknow
   for (const usage of [null, { input: -1, output: 0 }, { input: 2 }])
     expect(codeAiReferenceCost("core.ai.generate", failed(usage), profiles, "1")).toBe("1");
 });
+
+test("loop settlement sums every model and failed fallback without freeing unknown usage", () => {
+  const models = [aiModelFixture({ id: "vision", pricing: { inputPerMillion: 2, outputPerMillion: 4 } }), ...profiles];
+  const usage = {
+    input: 30,
+    output: 10,
+    byModel: [
+      { model: { id: "vision" }, input: 10, output: 5 },
+      { model: { id: "clef" }, input: 20, output: 5 },
+    ],
+  };
+  const value = { model: { id: "clef" }, usage };
+  const success = { ok: true, data: { data: value } };
+  for (const capability of ["core.ai.generate", "core.ai.decide"]) {
+    expect(codeAiReferenceCost(capability, success, models, "1")).toBe("0.000070000000");
+    expect(
+      codeAiReferenceCost(capability, { ok: false, error: { code: "quota_exhausted", details: { aiUsage: value } } }, models, "1"),
+    ).toBe("0.000070000000");
+    expect(
+      codeAiReferenceCost(capability, { ok: false, error: { code: "quota_exhausted", details: { aiUsageUnknown: true } } }, models, "1"),
+    ).toBe("1");
+  }
+});

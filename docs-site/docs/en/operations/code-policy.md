@@ -5,7 +5,7 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # Code policy operations
@@ -143,3 +143,33 @@ checking and submitting a corrected version. Current grants or a broader
 automatic policy do not expand that declared set. Source reads during file
 transfers pass through the same check. No database migration or new setting
 is required.
+
+## Model loops and file inspection
+
+Deploy Core and Runner together when enabling SDK `tools` and `files` on Code
+AI calls. Direct Code invocations now carry their fenced attempt generation;
+nested capability invocations cannot start another Code model loop. No new
+setting or database migration is required.
+
+SDK tools use the same per-call authorization, approval and durable call log as
+direct Code. File viewer calls and owning-app source reads consume the existing
+call limit. Model steps and vision fallback reserve their worst-case priced
+cost from the admitted AI reservation before contacting a provider; the final
+settlement includes every model used. Unknown usage keeps the reservation
+spent. The existing run deadline bounds the entire loop. Policy changes and
+version approvals are checked before subsequent model steps. Owning applications
+recheck resource grants on actual tool and source-file calls.
+
+
+SDK execution calls use the existing 240-second long-call transport window,
+separate from the runner's short bootstrap and heartbeat timeout. The run's
+abort signal still cancels the request, and ordinary capability deadlines
+continue to apply (45 seconds per query). A model loop must fit that query
+window as well as its remaining run time; use a faster model, fewer steps or
+separate explicit Code calls when it cannot.
+
+Model loops reserve each priced provider step against the model's full configured
+context window and bounded output. Token estimates, especially image estimates,
+are not spending ceilings. Choose a priced model with a configured context window
+and a Code allowance that covers that worst case. Settlement uses actual usage;
+unknown usage keeps the reservation spent.
