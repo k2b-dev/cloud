@@ -528,22 +528,10 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
   const expectTransactionEnded = async (holder: typeof sql, pid: number) => {
     // Inspect from the holder, so the pool cannot reuse the cancelled backend
     // for this observation and make our own SELECT look like unfinished work.
-    const inspect = async () =>
-      (
-        await holder<{ state: string; xact_start: Date | null; blocked: boolean }[]>`
-          SELECT state, xact_start, cardinality(pg_blocking_pids(pid)) > 0 AS blocked
-          FROM pg_stat_activity WHERE pid = ${pid}
-        `
-      )[0];
-    // Stop cancels the statement and closes the reservation; Postgres ends that
-    // backend asynchronously, so it can still show "active" or an aborted
-    // transaction for a moment. Wait until it is gone or idle, then assert.
-    let backend = await inspect();
-    const deadline = Date.now() + 1000;
-    while (backend && backend.state !== "idle" && Date.now() < deadline) {
-      await Bun.sleep(10);
-      backend = await inspect();
-    }
+    const [backend] = await holder<{ state: string; xact_start: Date | null; blocked: boolean }[]>`
+      SELECT state, xact_start, cardinality(pg_blocking_pids(pid)) > 0 AS blocked
+      FROM pg_stat_activity WHERE pid = ${pid}
+    `;
     // The pool may have closed the connection or returned it idle after ROLLBACK.
     if (backend) {
       expect(backend.blocked).toBe(false);

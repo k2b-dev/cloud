@@ -1,6 +1,6 @@
-### Wait for Postgres to end a cancelled backend before asserting its state
+### A stopped document socket ends its database transaction itself
 
-- **What happened:** The Mail socket stop test failed at random on main and in unrelated PRs (#3039): right after the socket stopped, the cancelled backend still showed `active` or `idle in transaction (aborted)` instead of `idle`.
-- **Root cause:** The socket cancels the waiting statement and closes its reserved connection without waiting. Postgres ends that backend asynchronously, and the test read `pg_stat_activity` once, immediately.
-- **Error class:** A test asserts on server-side state that another process changes asynchronously, with a single read.
-- **Guard:** `expectTransactionEnded` in `draft-document-socket.integration.test.ts` (used by the delivery and the admission case) waits with a one-second deadline until the backend is gone or idle, then asserts as before. A backend that really stays in a transaction still fails the test.
+- **What happened:** Stopping a Mail draft document socket while its SQL waited on a locked row sometimes left that backend open in an aborted transaction (`idle in transaction (aborted)` for more than a second), or handed a connection with an aborted transaction back to the pool, so later queries failed with `current transaction is aborted` (#3039). The socket stop integration test failed at random on main and in unrelated PRs.
+- **Root cause:** `withDraftDocumentTransaction` cancelled the statement and then closed the reserved connection while the driver was still ending the transaction. Depending on Bun version and timing, the driver neither rolled back nor really closed the connection.
+- **Error class:** Relying on the database driver to clean up a transaction after an asynchronous cancel, instead of ending it explicitly before the connection is reused.
+- **Guard:** After an abort, `withDraftDocumentTransaction` waits for its cancel, sends `ROLLBACK` on the reserved connection itself and only then releases it (closing it if even the rollback fails). The strict single-read check in `draft-document-socket.integration.test.ts` (`expectTransactionEnded`, delivery, admission and the initial read) stays the guard; it passed 65 of 65 stress runs on Bun 1.4.2 and 1.4.4, where it had failed about one run in twelve before.
