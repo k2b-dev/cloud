@@ -24,8 +24,10 @@ test("Chat publishes a localized, non-mutating command owned by its workspace", 
     "notifications.set",
     "thread.follow",
   ]);
+  expect(manifest.queries.find((query) => query.localId === "conversation.readable")).toMatchObject({ appOnly: true });
   expect(manifest.queries.map((query) => query.localId)).toEqual([
     "conversation.read",
+    "conversation.readable",
     "discussion.list",
     "message.read",
     "notifications.read",

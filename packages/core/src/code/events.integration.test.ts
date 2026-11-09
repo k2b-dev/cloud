@@ -170,10 +170,12 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     });
     const [row] = await sql<{ id: string; resource_binding: ResourceEventBinding; cutoff: string }[]>`
       SELECT id,resource_binding,to_char(first_seen_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cutoff
-      FROM events.app_subscriptions WHERE state='active' AND resource_binding->>'key'=${codeId}`;
+      FROM events.app_subscriptions WHERE state='active' AND resource_binding->>'key'=${codeId}
+      ORDER BY first_seen_at DESC,id LIMIT 1`;
     if (!row) throw new Error("Missing subscription");
     subscriptionId = row.id;
     binding = row.resource_binding;
+    // Occurrences follow activation of every handler, including the last subscription cutoff.
     time = row.cutoff;
   }
   async function version(eventType = "fixture.changed", eventPlace = place, ai = false, includeSecond = false) {
@@ -202,10 +204,11 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       VALUES(${codeId},${number},${JSON.stringify(files)}::text::jsonb,${bundle},${manifest.hashes.source},${manifest.hashes.bundle},${JSON.stringify(manifest)}::text::jsonb,16,18,${owner}::uuid) RETURNING id`;
     versionId = row!.id;
     await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${versionId}::uuid,${codeId},'{}'::jsonb)`;
+    const executing = codeEventPrincipal((await findCode(codeId))!);
     const [mandate] = await sql<
       { id: string }[]
-    >`INSERT INTO auth.mandates(subject_kind,subject_service_account_id,owner_app_id,workload_type,workload_id,policy)
-      VALUES('service_account',${principal}::uuid,'runner','code.version',${versionId},'{"version":1,"apps":[],"operations":[],"actions":"deny"}'::jsonb) RETURNING id`;
+    >`INSERT INTO auth.mandates(subject_kind,subject_user_id,subject_service_account_id,owner_app_id,workload_type,workload_id,policy)
+      VALUES(${executing.type},${executing.type === "user" ? executing.userId : null}::uuid,${executing.type === "service_account" ? executing.serviceAccountId : null}::uuid,'runner','code.version',${versionId},'{"version":1,"apps":[],"operations":[],"actions":"deny"}'::jsonb) RETURNING id`;
     mandateId = mandate!.id;
   }
   const event = (n: number, subject = "item-a"): AppEventEnvelope<{ id: string }> => ({
@@ -258,27 +261,36 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     );
     setSystemTime(new Date("2026-11-06T12:00:00Z"));
   });
-  async function createOwnedCode(ownerPlace = place) {
-    await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${principal}::uuid,${`code:${ownerPlace.type}:${ownerPlace.id}`},'code',${owner}::uuid)`;
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,state,created_by)
-      VALUES(${codeId},'resource',${ownerPlace.type},${ownerPlace.id},${principal}::uuid,'Events','draft',${owner}::uuid)`;
+  async function createOwnedCode(ownerPlace = place, kind: "resource" | "person" = "resource") {
+    if (kind === "person") {
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,state,created_by)
+        VALUES(${codeId},'person',${owner}::uuid,'Events','draft',${owner}::uuid)`;
+    } else {
+      await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${principal}::uuid,${`code:${ownerPlace.type}:${ownerPlace.id}`},'code',${owner}::uuid)`;
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,state,created_by)
+        VALUES(${codeId},'resource',${ownerPlace.type},${ownerPlace.id},${principal}::uuid,'Events','draft',${owner}::uuid)`;
+    }
     await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${id(3)}::uuid,${owner}::uuid,'write')`;
     await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${codeId},${id(3)}::uuid)`;
+  }
+  async function resetCode(ownerPlace = place, kind: "resource" | "person" = "resource") {
+    await cancelResourceEventSubscriptions(sql, CODE_EVENT_CONSUMER, codeId);
+    await sql`DELETE FROM code.codes`;
+    await sql`DELETE FROM auth.mandates`;
+    await createOwnedCode(ownerPlace, kind);
+    await version();
+    await activate();
   }
   beforeEach(async () => {
     stopConsumer?.();
     stopConsumer = startCodeEventConsumer();
     await sql`TRUNCATE events.app_deliveries,events.app_subscriptions,events.app_events,events.app_declarations,events.app_manifests RESTART IDENTITY CASCADE`.simple();
-    await sql`DELETE FROM code.codes`;
-    await sql`DELETE FROM auth.mandates`;
-    await createOwnedCode();
     readable = true;
     backlog = 100;
     sequence = 0;
     number = 0;
     broker = makeBroker();
-    await version();
-    await activate();
+    await resetCode();
   });
   afterAll(async () => {
     stopConsumer?.();
@@ -501,13 +513,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     };
   }
   test.each(["resource", "person"] as const)("%s Code receives foreign-place events with the executing identity", async (kind) => {
-    if (kind === "resource") {
-      await sql`UPDATE code.codes SET owner_id='other-owner' WHERE id=${codeId}`;
-    } else {
-      await sql`UPDATE code.codes SET owner_kind='person',owner_type=NULL,owner_id=NULL,owner_user_id=${owner}::uuid,service_account_id=NULL WHERE id=${codeId}`;
-      await sql`UPDATE auth.mandates SET subject_kind='user',subject_service_account_id=NULL,subject_user_id=${owner}::uuid WHERE id=${mandateId}::uuid`;
-    }
-    await activate();
+    await resetCode({ ...place, id: "other-owner" }, kind);
     await publish(90);
     await broker.work();
     expect(await runs()).toHaveLength(1);
@@ -515,7 +521,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
   });
 
   test("activation refuses a foreign place without read access and registration budgets use the existing event limit", async () => {
-    await sql`UPDATE code.codes SET owner_id='other-owner' WHERE id=${codeId}`;
+    await resetCode({ ...place, id: "other-owner" });
     const reader = spyOn(catalogProvider, "readResourcePrincipals").mockResolvedValue({ state: "checked", readable: [] });
     try {
       await expect(requireCodeEventAccess((await findCode(codeId))!, versionId)).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -531,8 +537,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
   });
 
   test("read access is checked after admission on every attempt; a withdrawal is visible and no token is signed", async () => {
-    await sql`UPDATE code.codes SET owner_id='other-owner' WHERE id=${codeId}`;
-    await activate();
+    await resetCode({ ...place, id: "other-owner" });
     await publish(92);
     await broker.work();
     const reader = spyOn(catalogProvider, "readResourcePrincipals").mockImplementation(async (input) => ({
@@ -566,9 +571,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
   });
 
   test("personal Code loses queued event access when its source app grant is withdrawn", async () => {
-    await sql`UPDATE code.codes SET owner_kind='person',owner_type=NULL,owner_id=NULL,owner_user_id=${owner}::uuid,service_account_id=NULL WHERE id=${codeId}`;
-    await sql`UPDATE auth.mandates SET subject_kind='user',subject_service_account_id=NULL,subject_user_id=${owner}::uuid WHERE id=${mandateId}::uuid`;
-    await activate();
+    await resetCode(place, "person");
     await publish(96);
     await broker.work();
     const [run] = await claimCodeRuns(1, limits);
@@ -630,6 +633,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     const first = await publish(94);
     const second = { ...event(95, "other-subject"), type: "fixture.renamed" };
     await broker.accept(second, ++sequence);
+    expect(await sql`SELECT event_id FROM events.app_deliveries WHERE state='pending'`).toHaveLength(2);
     const pending = await broker.claim();
     expect(pending).toHaveLength(1);
     for (const row of pending) await broker.deliver(row);

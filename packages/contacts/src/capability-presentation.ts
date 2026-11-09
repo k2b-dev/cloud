@@ -39,6 +39,17 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
         },
+        "book.readable": {
+          title: "Leser für Adressbuch prüfen",
+          description: "Prüfen, welche aktuellen Konten diese Ressource lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
         "book.read": {
           title: "Adressbuch lesen",
           description: "Liest ein von book.list zurückgegebenes contacts.book-Ref oder eine Adressbuch-ID.",
