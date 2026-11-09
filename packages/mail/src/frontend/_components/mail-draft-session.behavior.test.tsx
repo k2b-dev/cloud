@@ -69,6 +69,7 @@ const draft = (revision: number, editable: DraftEditableContent): MailDraft => (
   ...editable,
   signatureTemplateId: editable.signatureTemplateId ?? null,
   attachments: [],
+  suggestion: false,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada Example",
