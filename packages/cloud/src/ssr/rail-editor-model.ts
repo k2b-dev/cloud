@@ -102,18 +102,36 @@ export const createRailSaver = (options: {
   let running = false;
   let stale = false;
 
+  /**
+   * A failed change that the saved settings already contain needs no retry and no mark. A move whose entry is not
+   * there (its pin failed too) is not done: it stays for "Try again", after that pin.
+   */
+  const satisfied = (settings: RailPreferences, edit: RailEdit) => {
+    if (edit.kind === "move" && !settings.shortcuts.some((entry) => railEditTargets(entry, edit.target))) return false;
+    return sameSettings(applyRailEdit(settings, edit, options.apps()), settings);
+  };
   const adopt = (settings: RailPreferences) => {
     setConfirmed(settings);
     options.saved(settings);
-    // A failed change that the saved settings already contain needs no retry and no mark.
-    setFailures((items) => items.filter((edit) => !sameSettings(applyRailEdit(settings, edit, options.apps()), settings)));
+    setFailures((items) => items.filter((edit) => !satisfied(settings, edit)));
   };
+
+  /** A move of an entry whose pin or link failed waits with it, instead of passing as a change with no effect. */
+  const waitsForFailure = (edit: RailEdit) =>
+    edit.kind === "move" &&
+    !confirmed().shortcuts.some((entry) => railEditTargets(entry, edit.target)) &&
+    failures().some((failed) =>
+      "appId" in edit.target
+        ? failed.kind === "pin" && failed.appId === edit.target.appId
+        : failed.kind === "addLink" && failed.link.id === edit.target.id,
+    );
 
   const step = async (edit: RailEdit) => {
     if (stale) {
       adopt(await options.load());
       stale = false;
     }
+    if (waitsForFailure(edit)) return false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const base = confirmed();
       const next = applyRailEdit(base, edit, options.apps());
@@ -165,9 +183,12 @@ export const createRailSaver = (options: {
       setFailures([]);
       for (const edit of edits) apply(edit);
     },
-    /** Takes the stored settings when nothing waits, as after reopening the editor, and shows them in the app bar. */
+    /**
+     * Takes stored settings read when the editor opened, when nothing waits and they are not older than what this
+     * saver already saved, and shows them in the app bar.
+     */
     refresh: (settings: RailPreferences) => {
-      if (!queue().length) adopt(settings);
+      if (!queue().length && settings.revision >= confirmed().revision) adopt(settings);
     },
   };
 };

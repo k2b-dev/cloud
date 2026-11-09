@@ -53,19 +53,26 @@ const railSaver = (initial: RailPreferences, locale: string) => {
     existing.refresh(initial);
     return existing;
   }
+  // A save that answers after the document changed to another person reaches neither their app bar nor a toast.
+  const userId = shellUser();
+  const ownPage = () => shellUser() === userId;
   const saver = createRailSaver({
     initial,
     apps: () => readRailContext()?.apps ?? [],
     load: () => readRailPreferences(new AbortController().signal, railMessages.resolve([locale]).t.loadFailed),
     save: saveRailPreferences,
-    saved: publishRailPreferences,
+    saved: (settings) => {
+      if (ownPage()) publishRailPreferences(settings);
+    },
     failed: () => {
-      if (editorOpen) return;
+      if (editorOpen || !ownPage()) return;
       const t = railMessages.resolve([locale]).t;
       toast.error(t.failedClosed, { action: { label: t.open, onClick: () => openRailEditor(locale) } });
     },
   });
-  current = { userId: shellUser(), saver };
+  current = { userId, saver };
+  // The app bar shows what the editor read, also when another tab changed it since the page loaded.
+  saver.refresh(initial);
   return saver;
 };
 

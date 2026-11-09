@@ -232,6 +232,34 @@ test("a failed change alone goes back, the next ones still save, and Try again s
   expect(saver.state()).toBe("saved");
 });
 
+test("a move whose pin failed stays failed with it, and Try again puts both back in order", async () => {
+  const core = server({ ...base(), shortcuts: [{ id: "p-chat", kind: "app", appId: "chat" }] });
+  const saver = createRailSaver({ initial: core.stored(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });
+  core.failNext();
+  saver.apply({ kind: "pin", id: "p-mail", appId: "mail" });
+  saver.apply({ kind: "move", target: { appId: "mail" }, index: 0 });
+  saver.apply({ kind: "names", showNames: false });
+  for (let turn = 0; turn < 2; turn += 1) await core.release();
+  // The move had nothing to move once the pin went back; it is not done, so it waits beside the pin.
+  expect(saver.failures().map((edit) => edit.kind)).toEqual(["pin", "move"]);
+  saver.retry();
+  for (let turn = 0; turn < 2; turn += 1) await core.release();
+  expect(core.stored().shortcuts.map((entry) => (entry.kind === "app" ? entry.appId : entry.id))).toEqual(["mail", "chat"]);
+  expect([saver.failures(), saver.state()]).toEqual([[], "saved"]);
+});
+
+test("settings read before newer saves never replace them", () => {
+  const saver = createRailSaver({
+    initial: { ...base(), revision: 5, showNames: false },
+    apps: () => apps,
+    load: async () => base(),
+    save: async () => ({ ok: false, conflict: false }),
+    saved: () => {},
+  });
+  saver.refresh({ ...base(), revision: 3 });
+  expect(saver.settings()).toMatchObject({ revision: 5, showNames: false });
+});
+
 test("a change with no effect sends nothing", async () => {
   const core = server(base());
   const saver = createRailSaver({ initial: base(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });

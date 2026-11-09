@@ -27,6 +27,8 @@ let dom: ReturnType<typeof createDomTestHarness>;
 let stored: RailPreferences;
 let writes: RailPreferences[];
 let failNext: boolean;
+/** While set, a write waits for it, as a slow answer does. */
+let gate: Promise<void> | undefined;
 let dispose: () => void;
 let fetchSpy: { mockRestore(): void };
 let canvas: HTMLElement;
@@ -41,6 +43,7 @@ beforeEach(async () => {
   stored = { revision: 2, visibility: {}, shortcuts: [], showNames: true };
   writes = [];
   failNext = false;
+  gate = undefined;
   document.body.insertAdjacentHTML(
     "afterbegin",
     `<script id="cloud-shell-data" type="application/json">${shellData(crypto.randomUUID())}</script>`,
@@ -56,6 +59,7 @@ beforeEach(async () => {
         if (new URL(request.url).pathname !== "/api/me/rail") throw new Error(`Unexpected request ${request.url}`);
         if (request.method !== "PUT") return Response.json(stored);
         const body: RailPreferences = await request.json();
+        await gate;
         writes.push(body);
         if (failNext) {
           failNext = false;
@@ -178,6 +182,21 @@ test("another person in the same document never sees, or retries, the previous p
   await idle();
   expect(dialog().querySelector(".rail-editor-failure")).toBeNull();
   expect(dialog().querySelector(".rail-editor-state")?.textContent).toBe("Saves instantly");
+});
+
+test("a save that answers after another person took over the document leaves their app bar alone", async () => {
+  const slow = Promise.withResolvers<void>();
+  gate = slow.promise;
+  button("Pin Chat")!.click();
+  await settle(() => writes.length === 1);
+  button("Close")!.click();
+  await settle(() => !document.querySelector("dialog[open] .rail-editor"));
+  document.getElementById("cloud-shell-data")!.textContent = shellData("someone-else");
+  slow.resolve();
+  await settle(() => stored.shortcuts.length === 1);
+  await Bun.sleep(20);
+  const shell = JSON.parse(document.getElementById("cloud-shell-data")!.textContent!);
+  expect([shell.profile.userId, shell.rail.shortcuts]).toEqual(["someone-else", []]);
 });
 
 test("Reset saves at once and its Undo brings the earlier entries back", async () => {
