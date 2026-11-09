@@ -11,7 +11,8 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { Field, Section } = await import("./Section");
+const { Section } = await import("./Section");
+const { Field } = await import("./Field");
 const { LocaleProvider } = await import("../intl/locale");
 
 const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
@@ -86,7 +87,7 @@ describe("Section", () => {
 
     expect(page).toContain('data-frame="line"');
     expect(panel).toContain('data-frame="none"');
-    // The card is Paper's light frame and an island like Paper: the layer hook decides its shadow.
+    // The card is Paper's light frame and an island: shadow and surface come only from the layer hooks.
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain(paperBorder!);
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: var(--k2b-island-shadow)");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-island-surface)");

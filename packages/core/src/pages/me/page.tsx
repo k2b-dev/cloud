@@ -232,9 +232,9 @@ export default ssr<AuthContext>(async (c) => {
             }
           >
             {activityPage.items.length > 0 ? (
-              <ul class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
+              <ul class="flex flex-col divide-y divide-(--ui-data-row-divider)">
                 {activityPage.items.slice(0, 3).map((entry) => (
-                  <li class="grid gap-1 rounded-[var(--ui-radius-control)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <li class="grid gap-1 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div class="min-w-0">
                       <p class="truncate text-sm font-medium text-primary">{entry.label}</p>
                       <p class="mt-0.5 truncate text-xs text-dimmed">{entry.context || t.accountContext}</p>

@@ -47,7 +47,7 @@ Avoid for: Long continuous time series; use a line chart. Parts of one whole; us
 - `data` ({ label, value }[]): One value per category; a missing value is null. Views and the chart tool need a number here.
 - `x` (string[]): The categories several series share.
 - `series` ({ label, data }[]): One value per category in each series; pairs with x.
-- `layout` ("columns" | "rows" | "grouped" | "stacked"): Columns by default, rows for long labels; with several series grouped side by side or stacked to a total.
+- `layout` ("columns" | "rows" | "grouped" | "stacked" | "nested"): Columns by default, rows for long labels; with several series grouped side by side or stacked to a total.
 - `xAxis` ({ label? }): Names the categories.
 - `yAxis` ({ label?, domain?, ticks?, scale?, format? }): Vertical axis: label, exact [min, max], tick count, "log" scale and a number or date format.
 - `showValues` (boolean): Prints each value at its bar.
@@ -64,7 +64,7 @@ Use for: Several series with matching categories
 
 Avoid for: Unaligned observations
 
-- `layout` ("columns" | "rows" | "grouped" | "stacked"): Place series next to each other or accumulate positive segments.
+- `layout` ("columns" | "rows" | "grouped" | "stacked" | "nested"): Place series next to each other or accumulate positive segments.
 
 ```json
 {"kind":"bar","title":"Orders by channel","x":["Q1","Q2","Q3"],"series":[{"label":"Store","data":[350,420,510]},{"label":"Web","data":[240,310,420]},{"label":"Fair","data":[90,120,180]}],"layout":"grouped"}
@@ -72,13 +72,29 @@ Avoid for: Unaligned observations
 
 ## bar (layout "rows")
 
-Use for: Category values with readable row labels
+Use for: Signed or positive category values
 
 Avoid for: A continuous time axis
 
+- `layout` ("columns" | "rows" | "grouped" | "stacked" | "nested"): Signed rows diverge around zero. Ordered categories, references, colorByBar, showValues and axis settings keep the original row drawing; otherwise nonnegative rows rank descending. Share, limit and tone require nonnegative values.
 
 ```json
 {"kind":"bar","title":"Orders by collection","layout":"rows","data":[{"label":"Furniture","value":84},{"label":"Lighting","value":62},{"label":"Pictures","value":39}]}
+```
+
+## bar (layout "nested")
+
+Use for: Counts nested inside a known capacity
+
+Avoid for: Independent series or exact small differences
+
+- `marks` ("bars" | "dots"): Draw two columns of dots.
+- `layout` ("columns" | "rows" | "grouped" | "stacked" | "nested"): Each later series must be a subset of the previous one.
+- `total` (positive number): Capacity per category; defaults to the largest observed count, at least one.
+- `dots` (even positive integer): Dots per category; defaults to 100. Every dot counts toward a host's mark budget.
+
+```json
+{"kind":"bar","title":"Campaign engagement","layout":"nested","marks":"dots","total":1000,"dots":100,"x":["Mon","Tue","Wed"],"series":[{"label":"Opened","data":[780,620,810]},{"label":"Clicked","data":[320,210,420]}]}
 ```
 
 ## bar (layout "stacked")
@@ -119,7 +135,7 @@ Avoid for: Negative values
 
 ## line
 
-Use for: A value that changes continuously, such as visitors, revenue or response time. Up to four series on one scale, such as this year against last year. Many points: a line stays readable where columns would turn into stripes.
+Use for: A value that changes continuously, such as visitors, revenue or response time. Forecasts add forecast, threshold, marker, zero, step and legendValues. Up to four series on one scale, such as this year against last year. Many points: a line stays readable where columns would turn into stripes.
 
 Avoid for: Categories without an order, such as products or countries; use a bar chart. Two values with different units; draw two charts instead of a second axis. A single number; use a key figure.
 
@@ -130,6 +146,12 @@ Avoid for: Categories without an order, such as products or countries; use a bar
 - `area` (boolean): Fills the area under the first series.
 - `references` ({ value, axis?, label? }[]): Labelled reference lines, such as a target.
 - `legend` (boolean): Names the series; on by default with more than one series.
+- `legendValues` (boolean): Opt in to cursor values without annotations; existing specs retain their legends.
+- `forecast` ({from:number|ISO,band?:[number,number][]}): Dash from an existing X. Bounds match the first series suffix ordered by X, with lower ≤ upper.
+- `zero` (boolean): Include zero and tint the area below it red.
+- `threshold` ({value:number,label:string}): A labelled dashed warning line.
+- `marker` ({at:number|ISO,label:string}): A labelled vertical marker, for example Today.
+- `step` ("after" | "before" | "middle"): Draw horizontal steps rather than interpolated segments.
 
 ```json
 {"kind":"line","title":"Visitors per day","subtitle":"Website · October · invented data","series":[{"label":"This year","data":[{"x":"2026-10-01","y":1180},{"x":"2026-10-02","y":1224},{"x":"2026-10-03","y":1009}]},{"label":"Last year","role":"reference","data":[{"x":"2026-10-01","y":1020},{"x":"2026-10-02","y":1056},{"x":"2026-10-03","y":869}]}],"yAxis":{"format":{"style":"number","compact":true}},"xAxis":{"format":{"date":"day"}},"legend":true,"smooth":true}
@@ -347,4 +369,18 @@ Avoid for: Combining unrelated units or independently scaled axes.
 
 ```json
 {"kind":"radar","title":"Plan scores","axes":["Quality","Speed","Cost"],"max":5,"unit":"points","series":[{"label":"Plan A","data":[4,3,2]},{"label":"Plan B","data":[2,4,4]}]}
+```
+
+## sankey
+
+Use for: Converging and diverging flows with a common unit.
+
+Avoid for: Cycles or unrelated measures; use bars for unrelated categories.
+
+- `nodes` ({id,label,tone?}[]): Unique ids; tone colors outgoing flows. Each node shows the larger of incoming and outgoing totals, keeping imbalances visible.
+- `links` ({source,target,value}[]): Positive values and existing endpoints; no cycles.
+- `legend` ({tone,label}[]): Explicit color meanings; wraps within the plot width.
+
+```json
+{"kind":"sankey","title":"Paths after the click","nodes":[{"id":"click","label":"Clicked","tone":"blue"},{"id":"article","label":"Article","tone":"green"},{"id":"offer","label":"Offer","tone":"violet"},{"id":"signup","label":"Signed up","tone":"in"}],"links":[{"source":"click","target":"article","value":520},{"source":"click","target":"offer","value":280},{"source":"article","target":"signup","value":140}]}
 ```

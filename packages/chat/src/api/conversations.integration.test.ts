@@ -1673,13 +1673,66 @@ suite("chat conversations, people, and directory groups", () => {
       new Error("Ordinary chats must not call system readers"),
     );
     try {
+      const started = performance.now();
+      const timings: string[] = [];
+      // Bun stops waiting at 30 s but not the test body; its later requests then met cleanup and failed as 401
+      // between tests. Fail inside the body first, naming where the time went.
+      const budget = 25_000;
+      const within = async <T>(phase: string, work: T | PromiseLike<T>): Promise<T> => {
+        const begin = performance.now();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const left = budget - (begin - started);
+        try {
+          return await Promise.race([
+            Promise.resolve(work),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error(`300-chat sidebar ${phase} passed the ${budget} ms budget after ${timings.join(", ")}`)),
+                Math.max(0, left),
+              );
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+          timings.push(`${phase} ${Math.round(performance.now() - begin)} ms`);
+        }
+      };
       const owner = await user();
       const headers = await cookie(owner);
-      for (let offset = 0; offset < 300; offset += 10) await Promise.all(Array.from({ length: 10 }, () => fixture(owner)));
+      // Four set-based inserts instead of about 900 round trips, so runner load cannot spend the deadline on setup.
+      const fixtures = Array.from({ length: 300 }, () => ({
+        id: crypto.randomUUID(),
+        shortId: testShortId(),
+        access: crypto.randomUUID(),
+      }));
+      trackedConversations.push(...fixtures.map((row) => row.shortId));
+      const conversationIds = toPgUuidArray(fixtures.map((row) => row.id));
+      await within(
+        "setup",
+        sql.begin(async (db) => {
+          await db`INSERT INTO chat.conversations (id, short_id, created_by_type, created_by_id, member_count)
+            SELECT id, short_id, 'user', ${owner}::uuid, 1
+            FROM unnest(${conversationIds}::uuid[], ${toPgTextArray(fixtures.map((row) => row.shortId))}::text[]) AS f(id, short_id)`;
+          await db`INSERT INTO auth.access (id, user_id, permission)
+            SELECT id, ${owner}::uuid, 'admin' FROM unnest(${toPgUuidArray(fixtures.map((row) => row.access))}::uuid[]) AS f(id)`;
+          await db`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+            SELECT conversation_id, access_id, 'member', 'user', ${owner}::uuid
+            FROM unnest(${conversationIds}::uuid[], ${toPgUuidArray(fixtures.map((row) => row.access))}::uuid[]) AS f(conversation_id, access_id)`;
+          await db`INSERT INTO chat.participants (principal_type, principal_id, conversation_id, origin, joined_seq)
+            SELECT 'user', ${owner}::uuid, id, 'direct', 0 FROM unnest(${conversationIds}::uuid[]) AS f(id)`;
+        }),
+      );
+      // Bulk-loading outruns auto-analyze on a fresh CI database; with stale statistics the sidebar query picked a
+      // plan that ran for about a second per page (run 42526165208: active, unblocked). Read with current statistics,
+      // as the large-channel test does.
+      await within(
+        "analyze",
+        sql`ANALYZE auth.users, auth.groups, auth.user_groups_v2, auth.group_groups_v2, auth.service_accounts, auth.access, chat.conversations, chat.conversation_access, chat.participants`,
+      );
       const ids = new Set<string>();
       let cursor: string | null = null;
       do {
-        const response = await request(headers, cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+        const response = await within(`page ${ids.size / 50 + 1}`, request(headers, cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""));
         expect(response.status).toBe(200);
         const page = ConversationPageSchema.parse(await response.json());
         expect(page.items.length).toBeLessThanOrEqual(50);
@@ -1693,7 +1746,7 @@ suite("chat conversations, people, and directory groups", () => {
       const elapsed: number[] = [];
       for (let sample = 0; sample < 20; sample++) {
         const start = performance.now();
-        const response = await request(headers);
+        const response = await within(`read ${sample + 1}`, request(headers));
         expect(response.status).toBe(200);
         expect(ConversationPageSchema.parse(await response.json()).items).toHaveLength(50);
         elapsed.push(performance.now() - start);

@@ -78,6 +78,17 @@ Draw the ring with `outline`, or with an inset `box-shadow` sized by
 container. Never change `border-width`, `padding`, `margin`, or the size of a
 control on focus.
 
+## Landing points draw no ring
+
+After a page swap, or when a panel closes without its opener, code moves focus
+to the page's `main` region, its swapped root (`data-scroll-page`), or its
+first heading. These get `tabindex="-1"`, so screen readers start there.
+They are not controls and are outside the tab order, so they draw no ring.
+Without this rule, the browser's default ring would draw a dark edge around
+the whole page card, which is easy to see on a phone. A roving item with
+`tabindex="-1"`, such as an option or a grid cell, is a control and keeps
+its ring.
+
 ## Focus after an overlay closes
 
 When a dialog, prompt, menu, context menu, select list, date picker, sidebar

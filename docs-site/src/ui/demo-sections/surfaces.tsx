@@ -1,4 +1,5 @@
 import {
+  AppOverview,
   AppWorkspace,
   Avatar,
   AvatarFaces,
@@ -543,7 +544,7 @@ const SectionPageDemo = () => (
       { kind: "component", name: "Section", from: "@k2b/ui" },
       { kind: "component", name: "Field", from: "@k2b/ui" },
     ]}
-    description="A full page gives every topic its own card with the light 1 px frame, on white ground and without a shadow. The icon sits in a neutral tile; parts divide a topic without a second frame."
+    description="A full page gives every topic its own card with the light 1 px frame; as an island it takes the soft island shadow from the layer model. The icon sits in a neutral tile; parts divide a topic without a second frame."
     code={`<Section size="md" icon="ti ti-id" title="Details" footer={<Button size="sm" variant="secondary">Edit all</Button>}>
   <Section.Part title="Contact">
     <Field label="Mobile" value="+49 151 2345 6789" copy />
@@ -856,13 +857,18 @@ const CardsDemo = () => (
     id="cards"
     chip={[
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
+      { kind: "component", name: "AppOverview", from: "@k2b/ui" },
       { kind: "component", name: "Avatar", from: "@k2b/ui" },
     ]}
-    description="LinkCard puts its icon in a soft chip of an explicit color or the app accent and can carry one trailing count. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
-    code={`import { Avatar, LinkCard } from "@k2b/ui";
+    description="LinkCard puts its icon in a soft chip of an explicit color or the app accent and can carry one trailing count. A plain LinkCard is a flat entry for a quiet overview, in AppOverview.Cards with the plain surface; media replaces the tile, for example with a file type. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
+    code={`import { AppOverview, Avatar, FileTypeIcon, LinkCard } from "@k2b/ui";
 
 <LinkCard href="/runtime" title="Runtime" description="Open details" icon="ti ti-server" color="cyan" />
 <LinkCard href="/apps/pulse" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
+<AppOverview.Cards surface="plain">
+  <LinkCard surface="plain" href="/storage/marketing" title="Team Marketing" description="Group · Cloud" icon="ti ti-users" />
+  <LinkCard surface="plain" href="/file/budget" title="Budget_2027.xlsx" description="Projects / Planning" media={<FileTypeIcon name="Budget_2027.xlsx" />} />
+</AppOverview.Cards>
 <Avatar name="Ada Lovelace" src="/avatars/ada.webp" size="lg" />
 <Avatar name="Grace Hopper" fallback="GH" size="md" />
 <Avatar name="Grace Hopper" size="sm" ring="success" alt="Grace Hopper is working on it" />
@@ -872,6 +878,16 @@ const CardsDemo = () => (
     <div class="ui-demo-form-grid">
       <LinkCard href="#cards" title="Runtime" description="Open runtime details" icon="ti ti-server" color="cyan" />
       <LinkCard href="#cards" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
+      <AppOverview.Cards surface="plain">
+        <LinkCard surface="plain" href="#cards" title="Team Marketing" description="Group · Cloud" icon="ti ti-users" />
+        <LinkCard
+          surface="plain"
+          href="#cards"
+          title="Budget_2027.xlsx"
+          description="Projects / Planning"
+          media={<FileTypeIcon name="Budget_2027.xlsx" />}
+        />
+      </AppOverview.Cards>
       <div class="ui-demo-row">
         <Avatar name="Ada Lovelace" src="/assets/logo.svg" size="lg" />
         <Avatar name="Grace Hopper" fallback="GH" size="md" />

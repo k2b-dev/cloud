@@ -34,8 +34,14 @@ suite("AI model catalog migration and revisions", () => {
       const shown = await aiModelCatalog.provider(id);
       expect(shown.credentialSet).toBe(true);
       expect(JSON.stringify(shown)).not.toContain("fixture-provider-key");
-      const [model] = await aiModelCatalog.createModels(id, [{ id, label: "Test", providerModel: "test" }], user.id);
+      const [model] = await aiModelCatalog.createModels(
+        id,
+        [{ id, label: "Test", providerModel: "test", outputTokenLimit: 65_536 }],
+        user.id,
+      );
       expect(model?.id).toBe(id);
+      expect(model?.outputTokenLimit).toBe(65_536);
+      expect((await readAiModelProfiles()).find((profile) => profile.id === id)?.outputTokenLimit).toBe(65_536);
       const access = (await aiModelCatalog.modelDetail(id)).access;
       await expect(
         aiModelCatalog.updateModel(id, { label: "Must roll back" }, 1, user.id, {
@@ -47,6 +53,9 @@ suite("AI model catalog migration and revisions", () => {
       expect(await getAiCredential(id)).toBe("fixture-provider-key");
       expect(await getAiRequestHeaders(id)).toEqual({ "X-Test": "fixture-header" });
       expect(await aiModelCatalog.variant(id)).toMatchObject({ id, modelId: id, slug: "standard" });
+      if (!model) throw new Error("Missing test model");
+      const cleared = await aiModelCatalog.updateModel(id, { outputTokenLimit: null }, model.revision, user.id);
+      expect(cleared.outputTokenLimit).toBeNull();
       await aiModelCatalog.updateProvider(id, { label: "Changed" }, provider.revision, user.id);
       await expect(aiModelCatalog.updateProvider(id, { label: "Stale" }, provider.revision, user.id)).rejects.toBeInstanceOf(
         ConfigConflict,

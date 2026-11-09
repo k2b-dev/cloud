@@ -1,20 +1,14 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-/** Counts, states, and copy labels shared by every `Section` and `Field`. */
+/** The copy label of `Field`; only `Field` reads it, so a section without fields does not carry it. */
 const sectionMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      noneYet: "None yet",
-      loading: "Loading",
-      couldNotLoad: "Could not load this.",
       copyField: ({ label }: { label: string }) => `Copy ${label}`,
     },
     de: {
-      noneYet: "Noch keine",
-      loading: "Lädt",
-      couldNotLoad: "Konnte nicht geladen werden.",
       copyField: ({ label }) => `${label} kopieren`,
     },
   },

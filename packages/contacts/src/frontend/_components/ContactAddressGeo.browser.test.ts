@@ -1,6 +1,10 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { availability, found, jana, type Scenario, startContactsGeoHarness } from "./ContactAddressGeo.browser-fixture";
+
+// Every case loads its own page and runs a flow, some with a reload; in WebKit the
+// reload case alone took 4.4–4.7 s on an idle machine (#2892). Each step keeps 5 s in open().
+setDefaultTimeout(30_000);
 
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
@@ -36,6 +40,7 @@ beforeEach(() => {
 
 const open = async (name: string, scenario: Scenario, width = 1440, query = "", theme: "light" | "dark" = "light"): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin", reducedMotion: "reduce" });
+  page.setDefaultTimeout(5_000);
   const url = harness.url(name, scenario);
   await page.context().addCookies([{ name: "theme", value: theme, url: new URL(url).origin }]);
   await page.bringToFront();
@@ -766,6 +771,7 @@ test.each([false, true])("focused desktop editing keeps book navigation keyboard
 
 test("a narrow desktop host keeps the address deep link visible before and after hydration", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  page.setDefaultTimeout(5_000);
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;

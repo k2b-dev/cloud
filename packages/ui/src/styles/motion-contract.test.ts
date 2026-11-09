@@ -9,12 +9,14 @@ const durations = {
   "--k2b-motion-fast": "120ms",
   "--k2b-motion-base": "180ms",
   "--k2b-motion-sheet": "220ms",
+  "--k2b-motion-morph": "280ms",
   "--k2b-motion-celebrate": "600ms",
   "--k2b-fresh-fade": "1600ms",
 };
 const curves = {
   "--k2b-ease-out": "cubic-bezier(0.23, 1, 0.32, 1)",
   "--k2b-ease-spring": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+  "--k2b-ease-morph": "cubic-bezier(0.2, 0, 0, 1)",
 };
 /** Declarations of every rule with this selector in this context, in source order. */
 const declarations = (selector: string, context = "") => {

@@ -111,8 +111,14 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
 export function chartDrawingIssue(input: CloudAiChartInput): string | undefined {
   try {
     const options = cloudAiChartRenderOptions(input, "en");
-    if (options.kind === "bar" && options.series && seriesBarLayout(options).barWidthPx < 0.5)
-      return "The bars are narrower than half a pixel on a phone; aggregate categories or use fewer series.";
+    if (options.kind === "bar" && options.series) {
+      const layout = seriesBarLayout(options);
+      if (layout.dot) {
+        const radius = (Math.min((layout.bottom - layout.top) / (layout.dot.count / 2), layout.slot * 0.4) * 0.36) / layout.units;
+        if (radius < 0.5) return "Dots are smaller than one pixel on a phone; reduce the dot count or aggregate categories.";
+      } else if (layout.barWidthPx < 0.5)
+        return "The bars are narrower than half a pixel on a phone; aggregate categories or use fewer series.";
+    }
     if (options.kind === "funnel" && funnelLayout(options).pitch < 30)
       return "The funnel steps leave less than 30 pixels for their two value lines; combine steps or use fewer steps.";
     const svg = draw(options);

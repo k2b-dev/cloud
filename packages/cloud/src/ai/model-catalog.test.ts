@@ -38,6 +38,7 @@ const model = {
     label: "Chat",
     capabilities: ["tools", "vision"],
     extraBody: { custom: 1 },
+    outputTokenLimit: 65_536,
   }),
   providerId: provider.id,
   ...metadata,
@@ -63,6 +64,7 @@ test("variants flatten connection, model and overrides into one runtime shape", 
     extraBody: { custom: 2 },
     maxOutputTokens: 300,
   });
+  expect(flattenAiModelVariant(provider, model, variant).outputTokenLimit).toBe(65_536);
 });
 test("deletion replacements preserve boundary, kind and capabilities", () => {
   expect(() => validateAiReplacement(provider, provider, model, model)).not.toThrow();
@@ -78,6 +80,7 @@ test("deletion replacements preserve boundary, kind and capabilities", () => {
 test("patch schemas keep omitted defaults absent and reject old connection fields", () => {
   expect(AiProviderPatchSchema.parse({ label: "Renamed" })).toEqual({ label: "Renamed" });
   expect(AiModelPatchSchema.parse({ label: "Renamed" })).toEqual({ label: "Renamed" });
+  expect(AiModelPatchSchema.parse({ outputTokenLimit: null })).toEqual({ outputTokenLimit: null });
   expect(AiVariantPatchSchema.parse({ label: "Renamed" })).toEqual({ label: "Renamed" });
   expect(AiModelInputSchema.safeParse({ id: "old", provider: "ollama", model: "old", label: "Old" }).success).toBe(false);
 });
