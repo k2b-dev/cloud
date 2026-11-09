@@ -38,7 +38,9 @@ page of figures in an app:
 - `DashboardPanel` is one framed cell: a light 1 px frame with a 12 px radius
   and 14 px by 16 px padding. Panels in one row share the height of the
   tallest. The panel is the only frame: its content, such as a table, adds no
-  second frame and runs to the edges where it needs to.
+  second frame and runs to the edges where it needs to. Like `DashboardFrame`,
+  it is an island (layers and shadows): lifted in the main content, flat in a
+  column, panel, or dialog, and everything inside it is flat.
 
 `width` is the panel's share of six columns:
 

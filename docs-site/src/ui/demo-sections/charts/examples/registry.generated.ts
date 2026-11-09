@@ -10,6 +10,7 @@ import * as bubbleExamples from "./bubble";
 import * as budgetExamples from "./budget";
 import * as calendarExamples from "./calendar";
 import * as donutExamples from "./donut";
+import * as dotsExamples from "./dots";
 import * as flowExamples from "./flow";
 import * as funnelExamples from "./funnel";
 import * as gaugeExamples from "./gauge";
@@ -21,6 +22,7 @@ import * as mapExamples from "./map";
 import * as paretoExamples from "./pareto";
 import * as pieExamples from "./pie";
 import * as radarExamples from "./radar";
+import * as sankeyExamples from "./sankey";
 import * as scatterExamples from "./scatter";
 import * as sparklineExamples from "./sparkline";
 import * as statExamples from "./stat";
@@ -41,6 +43,7 @@ export const exampleModules: Record<string, unknown>[] = [
   budgetExamples,
   calendarExamples,
   donutExamples,
+  dotsExamples,
   flowExamples,
   funnelExamples,
   gaugeExamples,
@@ -52,6 +55,7 @@ export const exampleModules: Record<string, unknown>[] = [
   paretoExamples,
   pieExamples,
   radarExamples,
+  sankeyExamples,
   scatterExamples,
   sparklineExamples,
   statExamples,

@@ -965,20 +965,7 @@
     margin-inline-start: 0.375rem;
   }
 
-  .mail-reader-respond {
-    position: relative;
-    flex: none;
-  }
-
-  .mail-reader-draft-label {
-    flex: none;
-    margin-inline: 0.25rem 0.125rem;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    color: var(--k2b-text-muted);
-  }
-
-  /* The dot stands in for the "Draft" label once the label leaves the bar. */
+  /* A saved draft shows as a dot on the pill's Reply. */
   .mail-reader-draft-dot {
     display: none;
     position: absolute;
@@ -1042,45 +1029,11 @@
     flex: none;
   }
 
-  .mail-reader-reply-box {
-    display: flex;
-    width: 100%;
-    height: 3rem;
-    flex: none;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0 0.75rem;
-    border-radius: 0.875rem;
-    background: var(--k2b-surface-muted);
-    color: var(--k2b-text-muted);
-    font-size: 0.875rem;
-    text-align: start;
-    cursor: pointer;
-  }
-
   /* Paint only, and none under reduced motion. */
   @media (prefers-reduced-motion: no-preference) {
     .mail-row-time {
       transition: opacity 120ms ease;
     }
-
-    .mail-reader-reply-box {
-      transition: background-color 120ms ease;
-    }
-  }
-
-  .mail-reader-reply-box:hover {
-    background: color-mix(in srgb, var(--k2b-text) 8%, var(--k2b-surface-muted));
-  }
-
-  .mail-reader-reply-box:focus-visible {
-    outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-    outline-offset: 2px;
-  }
-
-  .mail-reader-reply-box:disabled {
-    cursor: default;
-    opacity: 0.6;
   }
 
   .mail-reader-older {
@@ -1488,21 +1441,8 @@
   display: none;
 }
 
-/* The subject keeps room first; all configured actions remain in the overflow menu. */
-.k2b-ui .mail-reader-toolbar .mail-reader-draft-label {
-  display: none;
-}
-.k2b-ui .mail-reader-toolbar .mail-reader-draft-dot {
-  display: block;
-}
-.k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) {
-  width: 2.25rem;
-  padding-inline: 0;
-}
-.k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) .mail-reader-respond-label {
-  display: none;
-}
-/* The person's other actions are icons until the bar has room for their short names. */
+/* The subject keeps room first; all configured actions remain in the overflow menu.
+   The person's actions are icons until the bar has room for their short names. */
 .k2b-ui .mail-reader-toolbar .mail-reader-toolbar-action {
   width: 2rem;
   min-height: 2rem;
@@ -1511,15 +1451,8 @@
 .k2b-ui .mail-reader-toolbar .mail-reader-action-label {
   display: none;
 }
-/* With the subject in its own row, a wide bar names its actions: the replies, and up to three other actions. */
+/* With the subject in its own row, a wide bar names up to three of its actions. */
 @container mail-reader-toolbar (width >= 48rem) {
-  .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) {
-    width: auto;
-    padding-inline: 0.625rem;
-  }
-  .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) .mail-reader-respond-label {
-    display: inline;
-  }
   .k2b-ui .mail-reader-toolbar-actions:not(:has(> :nth-child(4))) .mail-reader-toolbar-action {
     width: auto;
     padding-inline: 0.625rem;
@@ -1536,24 +1469,35 @@
     display: none;
   }
 }
-@container mail-reader-toolbar (width < 40rem) {
-  .k2b-ui .mail-reader-respond .mail-reader-respond-label {
-    display: none;
-  }
-}
 @container mail-reader-toolbar (width < 36rem) {
-  .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]),
   .k2b-ui .mail-reader-toolbar-actions > :nth-child(n + 2) {
     display: none;
   }
 }
 
-/* Phones: the reader's actions sit in the bottom bar, so its toolbar keeps the
-   way back, "…" and the details; the reply box gives way to the bar's Reply. */
-@media (min-width: 48rem) {
-  .k2b-ui .mail-reader-phone-bar {
-    display: none;
-  }
+/* The reply pill (layers and shadows, layer 3): a floating toolbar above the
+   newest message that sticks to the top of the reader while the messages
+   scroll. It replaces the reply box and the phone's bottom bar. */
+.k2b-ui .mail-reader-reply-pill {
+  display: contents;
+}
+/* The floating toolbar with `edge="top"` sticks itself; its strip spans the
+   reading column, so the toolbar measures that row: as it narrows, labels give
+   way to icons, then actions move into More. The pill never reaches past the row. */
+.k2b-ui .mail-reader-reply-pill > .k2b-toolbar-float {
+  z-index: 5;
+  min-width: 0;
+  margin-block-end: 0.875rem;
+  padding: 0.25rem 0;
+  justify-content: flex-start;
+}
+.k2b-ui .mail-reader-reply-pill .mail-reader-pill-reply {
+  position: relative;
+  flex: none;
+  padding-inline: 0.75rem;
+}
+.k2b-ui .mail-reader-reply-pill .mail-reader-draft-dot {
+  display: block;
 }
 
 /* From tablets on, the actions take their own row above the subject, which then has the toolbar's full width to wrap. */
@@ -1575,11 +1519,7 @@
   .k2b-ui .mail-reader-count { display: none; }
   .mail-reader-toolbar .mail-reader-marks { top: 1.125rem; }
 
-  .k2b-ui .mail-reader-toolbar :is(.mail-reader-respond, .mail-reader-draft-label, .mail-reader-toolbar-actions) {
-    display: none;
-  }
-
-  .k2b-ui .mail-reader:has(.mail-reader-phone-bar) .mail-reader-reply-box {
+  .k2b-ui .mail-reader-toolbar .mail-reader-toolbar-actions {
     display: none;
   }
 }
@@ -2167,7 +2107,7 @@
 }
 /* A desktop reader can be narrower than a phone beside the global side panel. */
 @container mail-reader-toolbar (width < 20rem) {
-  .k2b-ui .mail-reader-controls :is(.mail-reader-respond, .mail-reader-toolbar-actions) { display: none; }
+  .k2b-ui .mail-reader-controls .mail-reader-toolbar-actions { display: none; }
   .mail-reader-subject { flex-wrap: wrap; row-gap: 0.125rem; }
   .mail-reader-title-line { flex-basis: 100%; }
 }

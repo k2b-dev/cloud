@@ -1,10 +1,11 @@
-import { type BarChartOptions, renderBarChartSvg } from "../../content/chart-bar";
+import type { BarChartOptions } from "../../content/chart-bar";
 import { lineGapsSvg } from "../../content/chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../content/chart-map-viewport";
 import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimelineDomain } from "../../content/chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
+import { renderBarChartSvg } from "./bar-render";
 import { calendarLayout } from "./calendar";
 import { type FunnelOptions, renderFunnelSvg } from "./funnel";
 import { type HorizontalBarOptions, renderHbarSvg } from "./hbar";
@@ -60,6 +61,8 @@ export const renderChartSvg = (
         ? chartRenderers.treemap({ ...props, width, height, inspect: true })
         : chartRenderers.pareto({ ...props, width, height, inspect: true }),
     );
+
+  if (props.kind === "sankey") return responsiveChartSvg(chartRenderers.sankey({ ...props, width, height, inspect: true }));
   if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,

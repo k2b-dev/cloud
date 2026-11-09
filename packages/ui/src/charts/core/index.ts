@@ -5,7 +5,7 @@ export {
   type BarChartOptions,
   barChartLayout,
   rankedBarLayout,
-  renderBarChartSvg,
+  type SeriesBarLayout,
   seriesBarLayout,
 } from "../../content/chart-bar";
 export {
@@ -18,10 +18,15 @@ export {
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { calendarTimeLabel, calendarTimeTicks, chartTimeStep } from "../../content/chart-time-calendar";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
+export { renderBarBaseSvg } from "./bar-base-render";
+export { renderBarChartSvg } from "./bar-render";
 export * from "./bubble";
 export * from "./calendar";
+export { nestedDotOptions } from "./dot-options";
+export { renderDotMatrixLayoutSvg } from "./dots";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
-export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
+export { renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
+export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout } from "./hbar-layout";
 export * from "./inspection";
 export { lineBase } from "./line-base";
 export { renderLineDetailsSvg } from "./line-details";
@@ -32,6 +37,8 @@ export * from "./pareto";
 export * from "./radar";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
+export { renderSankeySvg, type SankeyLink, type SankeyNode, type SankeyOptions, sankeyColor, sankeyLayout } from "./sankey";
+export { sankeyFrame, sankeyGraph, sankeyWidth } from "./sankey-size";
 export * from "./snapshot";
 export { charts } from "./svg";
 export {

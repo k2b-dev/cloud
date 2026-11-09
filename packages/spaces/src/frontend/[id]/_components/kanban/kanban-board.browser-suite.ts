@@ -1775,6 +1775,28 @@ describe("Spaces Kanban board in a browser", () => {
     }, 30_000);
   }
 
+  test("the drag preview of a card floats with the float shadow token", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      const handle = await cardHandle(page, "Hang the signs");
+      await drag(page, handle, { x: handle.x + 30, y: handle.y + 60 });
+      await page.waitForFunction(() => document.querySelector('body > .spaces-kanban-card[aria-hidden="true"]') !== null);
+      const shadows = await page.evaluate(() => {
+        const ghost = document.querySelector<HTMLElement>('body > .spaces-kanban-card[aria-hidden="true"]');
+        const probe = document.body.appendChild(document.createElement("div"));
+        probe.style.boxShadow = "var(--k2b-shadow-float)";
+        const float = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        return { ghost: ghost ? getComputedStyle(ghost).boxShadow : null, float };
+      });
+      await page.mouse.up();
+      expect(shadows.ghost).not.toBeNull();
+      expect(shadows.ghost).toBe(shadows.float);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("a card picked up in an automatic column is not refused there and has no target over the status it has", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
     try {

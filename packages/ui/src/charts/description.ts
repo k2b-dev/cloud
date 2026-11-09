@@ -49,7 +49,10 @@ type Variants<N> =
       x?: string[];
       series?: { label: string; data: (number | null)[] }[];
       /** Rows accept signed values. Ordered categories and legacy drawing options retain the original row renderer. */
-      layout?: "columns" | "rows" | "grouped" | "stacked";
+      layout?: "columns" | "rows" | "grouped" | "stacked" | "nested";
+      marks?: "bars" | "dots";
+      total?: number;
+      dots?: number;
       normalize?: boolean;
       share?: boolean;
       limit?: number;
@@ -149,6 +152,14 @@ type Variants<N> =
       kind: "pareto";
       labels: [string, string];
       data: { label: string; value: number; prev: number; rest?: boolean }[];
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "sankey";
+      nodes: { id: string; label: string; tone?: "in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax" }[];
+      links: { source: string; target: string; value: number }[];
+      legend?: { tone: "in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax"; label: string }[];
       format?: ChartNumberFormat;
       locale?: string;
     }

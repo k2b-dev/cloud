@@ -1221,9 +1221,10 @@ test.skipIf(isServer)("the reply box names whom Reply writes to, also when this 
     dom.root,
   );
   try {
-    const box = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-box]");
-    await waitFor(() => box() !== null);
-    expect(box()!.textContent?.trim()).toBe("Reply to Grace Hopper…");
+    // The reply pill's Reply names the recipients in its tooltip.
+    const reply = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-pill] .mail-reader-pill-reply");
+    await waitFor(() => reply() !== null);
+    expect(reply()!.title).toBe("Reply to Grace Hopper…");
   } finally {
     dispose();
     dom.cleanup();

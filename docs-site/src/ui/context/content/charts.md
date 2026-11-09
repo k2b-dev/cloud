@@ -1183,6 +1183,24 @@ inspector. Hover outlines one treemap cell or adds a quiet Pareto row band.
 Keep the host's fixed content height across loading, empty, error/retry and
 stale-subtitle states. The live chart catalog demonstrates both kinds.
 
+## Sankey flows
+
+`Chart.Sankey` and `kind="sankey"` accept `nodes: {id,label,tone?}[]` and
+`links: {source,target,value}[]`. IDs are unique, endpoints exist, values are
+positive and the graph has no cycles. Invalid JSON is rejected before drawing.
+Stages follow the longest path from a source. A node's value is the larger of
+incoming and outgoing totals; unused capacity remains visible. Each band uses
+its source node's color; a muted source uses the target color. An explicit
+`legend: {tone,label}[]` names color meanings and wraps. Optional `format`, `locale` and
+`displayWidth` control presentation. Explicit locale takes precedence.
+
+The plot keeps at least 620 px, starts at the sources and scrolls horizontally on narrow screens.
+Small flows stay visible; colliding node labels are available in the tooltip. Long node names wrap at word boundaries to two lines when the node has enough height. Names that still do not fit end in an ellipsis; the tooltip and accessible SVG title retain the complete name.
+Hover strengthens one band without dimming others. Arrows inspect nodes and
+links, Home/End jump, Enter pins and Escape dismisses; tap shares this behavior.
+Use the host's fixed-height loading, empty, error/retry and stale-subtitle states.
+Plain SVG hosts pass `nav: sankeyInspectionNavigation` (from `@k2b/ui/charts`) to `inspectChart` for node-first keyboard traversal and scroll reveal. The newsletter showcase includes converging and diverging flows.
+
 ## Named scatter points and bubbles
 
 Use `Chart.Bubble` (`kind: "bubble"`) to compare two numeric measures for named observations. Set `groups`,
@@ -1277,6 +1295,8 @@ legend uses a dash when its final column is a gap.
 
 Pareto axis endpoints align inward so full formatted values remain visible in small cards. Treemap text uses one name/value block with fixed line spacing; cells without room for both lines leave the text to inspection.
 
+Small Sankey cards start at their source nodes. Labels stay within the scrollable drawing; scroll horizontally to follow later stages.
+
 Waterfall labels and printed amounts follow the drawn container width. Amounts appear when bars are at least 46 CSS pixels wide and the text fits its slot; shrinking to a phone hides them without a hydration redraw.
 
 Deferred drawing hosts can also prepare `waterfallLayout(spec, size)` and pass that geometry to `renderWaterfallLayoutSvg(spec, geometry)`. The prepared and direct renderers produce identical SVG.
@@ -1294,3 +1314,15 @@ Use `kind="bar" layout="rows"` for category values, including negative values. I
 Unordered nonnegative values without those drawing options use a ranked list. Rows sort descending, with stable order for ties. `share` prints each row's share of the entire input. `limit` shows that many rows and a final “n more · total” summary; the data table retains every source row. `tone="in" | "out"` records flow direction and uses the theme’s incoming or outgoing flow color, falling back to the neutral chart palette. The portable schema rejects `share`, `limit` or `tone` on signed data with “Share, limit and tone need nonnegative values.” Automatic rows in existing data-only bars retain their original layout.
 
 Both descriptions accept `format: NumberFormat` for source values. Percentage calculations keep their own format. The inherited locale formats shares and the remainder label. They use the same category band, keyboard inspection, touch guard and fixed host states as other category charts.
+
+### Nested dot matrix
+
+Use `kind="bar" marks="dots" layout="nested"` for counts inside a shared capacity. Each later series must be a subset of the previous series: clicks are part of opens, so both measure from zero. Counts must be nonnegative and no larger than `total`.
+
+Each category is two dots wide. The smallest nested subset uses the strongest color, the larger set's remainder is lighter, and unused capacity is grey. `total` defaults to the largest observed count (at least one); `dots` defaults to 100 and must be an even positive integer. Values round to the nearest dot; tooltips, live legend values and the data table retain the exact counts. Every dot counts toward the host's mark budget before rendering.
+
+A missing nested observation leaves the category drawing as a gap. Zero counts retain a fully grey matrix. The full category is one hover, keyboard and tap target, and the tooltip stays at the top of the plot when moving between its dots. Comparisons, logarithmic scales and normalization are unavailable for nested matrices.
+
+The DOM-free `nestedDotOptions` helper from `@k2b/ui/charts/core` shares these checks with the portable schema and returns the resolved capacity and dot count. Direct calls throw on invalid options; schema hosts can pass an issue callback as the second argument to collect validation errors.
+
+Percentage bar and dot-matrix descriptions show the latest category in their legend until inspection shows the category at the cursor. They never sum percentages across periods. For direct `Chart.Bar` calls with a custom percentage formatter, set `legendValues="latest"`; count series keep summed totals by default.
