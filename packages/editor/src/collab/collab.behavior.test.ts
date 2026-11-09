@@ -104,5 +104,14 @@ describe("@k2b/editor/collab", () => {
     page.view.focus();
     await Bun.sleep(30);
     expect(head()).toBe(5);
+
+    // Focus in a control inside the editor, such as a table cell that publishes its own cursor, keeps the cursor.
+    const cell = document.createElement("button");
+    page.view.dom.append(cell);
+    cell.focus();
+    await Bun.sleep(30);
+    page.view.dispatch({ changes: { from: 0, insert: "a" } });
+    expect(page.view.hasFocus).toBe(false);
+    expect(page.awareness.getLocalState()?.cursor).not.toBeNull();
   });
 });

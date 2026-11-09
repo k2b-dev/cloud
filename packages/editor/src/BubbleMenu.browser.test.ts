@@ -115,6 +115,13 @@ test("Escape keeps the menu closed while a collaborator types, and a new selecti
 
     await page.evaluate(() => window.bubble.select(4, 10));
     expect(await isOpen(page)).toBe(true);
+
+    // Escape on a selection, a move elsewhere, and the same text selected again: the menu opens for it.
+    await page.keyboard.press("Escape");
+    expect(await isOpen(page)).toBe(false);
+    await page.evaluate(() => window.bubble.select(0, 0));
+    await page.evaluate(() => window.bubble.select(4, 10));
+    expect(await isOpen(page)).toBe(true);
   } finally {
     await page.close();
   }

@@ -65,8 +65,13 @@ export function BubbleMenu(props: BubbleMenuProps) {
     }),
     EditorView.updateListener.of((update) => {
       if (update.geometryChanged || update.viewportChanged) setGeometry((value) => value + 1);
-      // An edit elsewhere, such as a collaborator typing, moves the dismissed selection along: it stays dismissed.
-      if (update.docChanged) setDismissed((range) => range?.map(update.changes));
+      // An edit elsewhere, such as a collaborator typing, moves the dismissed selection along: it stays dismissed. A
+      // selection of the person's own ends the dismissal, also when they later select the same text again.
+      if (update.docChanged || update.selectionSet)
+        setDismissed((range) => {
+          const mapped = update.docChanged ? range?.map(update.changes) : range;
+          return mapped?.eq(update.state.selection.main) ? mapped : undefined;
+        });
     }),
     // Escape in the text closes an open menu first; with no menu, the key keeps its other meanings.
     Prec.high(

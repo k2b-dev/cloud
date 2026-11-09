@@ -269,8 +269,9 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
             ) {
               awareness.setLocalStateField("cursor", { anchor, head });
             }
-          } else if (cursor != null) {
-            // Focus left the editor: the others no longer see a caret here until it returns.
+          } else if (cursor != null && !update.view.dom.contains(update.view.dom.ownerDocument.activeElement)) {
+            // Focus moved to another field: the others no longer see a caret here until it returns. A table cell inside
+            // the editor keeps the cursor it publishes itself, and another window keeps the last place.
             awareness.setLocalStateField("cursor", null);
           }
         }

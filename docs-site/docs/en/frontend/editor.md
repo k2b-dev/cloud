@@ -177,8 +177,8 @@ const undoManager = new Y.UndoManager(text);
 draws the other writers' cursors. Every action run through `editor.run` stays
 one undo step. The editor writes its own cursor into the awareness state as
 `cursor: { anchor, head }`, relative positions from
-`Y.relativePositionToJSON`, sets it to `null` while focus is elsewhere, and
-writes the current selection again when focus returns. It reads `user.name`
+`Y.relativePositionToJSON`, sets it to `null` while focus is in a field outside
+the editor, and writes the current selection again when focus returns. It reads `user.name`
 and `user.color` of the others. An application that checks presence on its server keeps exactly these
 fields.
 
