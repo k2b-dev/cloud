@@ -9,7 +9,7 @@ import { LIMITS } from "./contracts";
 import { HttpRequest, HttpResult, HttpReview } from "./http-contracts";
 import { encodePdfRequest } from "./pdf-contracts";
 import type { CapabilityDecision, CodeApproval } from "./runtime/capabilities";
-import { codeRunSdk, usesCodeRunSdk } from "./runtime/code-run-sdk";
+import { codeRunSdk, requireCodeRunCapability, usesCodeRunSdk } from "./runtime/code-run-sdk";
 import { CloudError, cloudError } from "./runtime/errors";
 import type { RuntimeHooks } from "./runtime/host";
 import { WorkerMessage } from "./runtime/protocol";
@@ -165,6 +165,7 @@ export function createRunnerCodeHost(options: Options) {
 
       const source = { entry: "main.ts", files: [{ path: "main.ts", content: input.code }] };
       const sdk = usesCodeRunSdk(source.files) ? await codeRunSdk(context.authority ?? null, context.locale, lifetime.signal) : undefined;
+      let admittedSdk = sdk ? Promise.resolve(sdk) : undefined;
       const compiled = await compileRunnerScript(source, sdk);
       const list = input.inputPaths.length
         ? z
@@ -201,6 +202,11 @@ export function createRunnerCodeHost(options: Options) {
             const { context, turnId } = options.current();
             if (context.actor.kind !== "user") throw new Error("User required");
             await authorizeCodeExecution(conversationId, turnId, context.actor.user.id);
+            admittedSdk ??= codeRunSdk(context.authority ?? null, context.locale, lifetime.signal).catch((error) => {
+              admittedSdk = undefined;
+              throw error;
+            });
+            const declared = requireCodeRunCapability((await admittedSdk).manifest, name, input, coordinates);
             const caller = {
               transport: async (request: Request) => {
                 await assertActive();
@@ -215,8 +221,10 @@ export function createRunnerCodeHost(options: Options) {
               {
                 id: callId,
                 name,
-                input: z.json().parse(input),
+                input: z.json().parse(declared.input),
                 ...coordinates,
+                ...(declared.target ? { target: declared.target } : {}),
+                refs: declared.refs,
                 conversationId,
               },
               context,

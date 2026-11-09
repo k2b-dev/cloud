@@ -890,6 +890,10 @@ with `mode: "code_run"` and executes it in the Code runner's isolated workerd
 runtime. It binds normalized targets, refs and idempotency metadata to the
 current person's Assistant turn, preserving capability access checks and
 approvals. It does not create a lasting Code, version or version mandate.
+The host admits only operations and target/ref Types from the authorized
+catalog captured for that run. Calls outside it fail with
+`code_capability_undeclared`; actual Actions still follow the turn's approval
+flow. This also applies to raw `cloud.capabilities.run` calls.
 SDK Queries return `{data, page?}`; read fields from `data` and follow the
 returned cursor when `page.hasMore`. Streaming reads return `FileRef`, and
 Actions return domain data directly. The older `cloud.capabilities.run` keeps

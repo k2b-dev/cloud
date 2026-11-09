@@ -149,6 +149,7 @@ export {
   type CodeBridgeHost,
   CodeBridgeRefusal,
   type CodeBridgeRefusalKind,
+  type CodeFileObservationHost,
   codeBridgeLocalRefusalKind,
 } from "../code/bridge-contract";
 export { createAdminAppDomainRoutes } from "./admin-app-domains";

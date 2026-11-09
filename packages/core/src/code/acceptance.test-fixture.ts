@@ -180,7 +180,7 @@ export async function acceptanceRunners(input: {
 }) {
   const logs: string[] = [],
     responses: unknown[] = [];
-  const foreignRuns = new Map<string, CloudResourceRef>();
+  const foreignRuns = new Map<string, { target: CloudResourceRef; status: 200 | 403 }>();
   let arrivals = 0;
   let release: (() => void) | undefined;
   let pair: Promise<void> | undefined;
@@ -243,8 +243,8 @@ export async function acceptanceRunners(input: {
           ...request,
           input: z.json().parse({
             ...invocation,
-            call: { ...invocation.call, target: foreign },
-            // Reach the provider's current-rights check rather than conflicting with the original successful call.
+            call: { ...invocation.call, target: foreign.target },
+            // Keep the injected attempt independent of the original successful call's receipt.
             metadata: {
               ...invocation.metadata,
               ...(invocation.metadata.idempotencyKey ? { idempotencyKey: `foreign:${request.runId}` } : {}),
@@ -262,7 +262,7 @@ export async function acceptanceRunners(input: {
       });
       const value: unknown = await response.json();
       responses.push(value);
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(foreign?.status ?? 200);
       return RunnerCallResponseSchema.parse(value);
     },
   };

@@ -101,9 +101,14 @@ Source hashing matches the checker: SHA-256 over UTF-8
 `JSON.stringify({ entry, files })`, where `files` contains sorted `[path, content]`
 pairs. SDK hashing covers recursively key-sorted SDK JSON. Bundle hashing covers
 the exact UTF-8 bundle. The manifest is saved at version creation and cannot be
-replaced later. A manifest never grants permission to make a call. Dispatch
-checks each actual operation against current policy, version approval, mandate
-and resource access.
+replaced later. Every runtime capability call must match this version's
+`permissions`, including its target Type, literal IDs and ref coordinates.
+A dynamic ID covers only its declared Type in every Code mode. Target and ref
+rows form a set per operation; the evidence does not bind ref names or tuples.
+An undeclared call fails with `code_capability_undeclared` (403) and
+appears as a failed policy call in the run. This applies to pages, events,
+schedules and calls made through SDK tools. Declared calls still need current
+policy, version approval, mandate and resource access.
 
 Automation titles use `CodeAutomationTitleSchema`: trimmed, 1–200 characters,
 one line of plain text without HTML markup or control/format characters.
