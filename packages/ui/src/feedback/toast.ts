@@ -70,12 +70,6 @@ const STACK_SCALE_STEP = 0.05;
 const STACK_GAP_PX = 10;
 /** A toast arrives from, and leaves towards, the rail's edge by this distance. */
 const STACK_TRAVEL_PX = 18;
-/** A swipe locks its axis after this distance, and dismisses past the distance or above the speed (px/ms). */
-const SWIPE_AXIS_PX = 4;
-const SWIPE_DISMISS_PX = 45;
-const SWIPE_DISMISS_SPEED = 0.11;
-/** After a swipe, the click that ends it does not reach the toast's controls. */
-const SWIPE_CLICK_GUARD_MS = 350;
 /** Focuses the stack from anywhere on the page. */
 const STACK_SHORTCUT = "Alt+T";
 /** Option+T types "†" on Apple keyboards. Read inline: the shortcut formatter's catalog would grow every island with a toast. */
@@ -116,8 +110,16 @@ const defaultDuration = (variant: ToastVariant, text: string, hasAction: boolean
  * Links in a toast go to web pages, mail, and phone numbers only. A caller's `javascript:` or `data:` URL never runs
  * from a toast: the link is left out, and an action with such a URL becomes a button that only closes the toast.
  */
-const SAFE_HREF = /^(?:https?:|mailto:|tel:|[/?#.]|[^:/?#]*(?:[/?#]|$))/i;
-const safeHref = (href: string): string | null => (SAFE_HREF.test(href.trim()) ? href.trim() : null);
+const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+const safeHref = (href: string): string | null => {
+  try {
+    // Resolved like the browser resolves it, so a relative link keeps working and a disguised scheme shows.
+    const url = new URL(href, document.baseURI);
+    return SAFE_PROTOCOLS.has(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+};
 
 const normalizedIconClass = (iconClass: string): string => {
   const tokens = iconClass
@@ -581,97 +583,44 @@ const railItem = (card: HTMLElement): RailItem => {
   };
 };
 
-/** A click that only ends a swipe or a tap does not press the control under the finger. */
-const swallowNextClick = (card: HTMLElement): void => {
-  const stop = (event: Event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  card.addEventListener("click", stop, { capture: true, once: true });
-  setTimeout(() => card.removeEventListener("click", stop, { capture: true }), SWIPE_CLICK_GUARD_MS);
-};
-
-/** Wrong-direction travel follows the finger less and less, so the toast resists instead of moving away. */
-const resisted = (distance: number): number => distance / (1.5 + Math.abs(distance) / 20);
+/** The gesture code loads with the first press on any toast, so an island whose toasts are never pressed carries none of it. */
+let gestureModule: Promise<typeof import("./toast-gestures")> | null = null;
+const gestureEvents = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerleave"] as const;
 
 /**
- * Swiping towards the nearest screen edge dismisses a toast: down or right at the bottom edge, up or sideways at the
- * top. A tap on a touch screen fans the stack out or folds it. Swiping is a shortcut; the close button stays.
+ * Swipe and tap for one card. Until the module arrives, the card keeps its pointer events and hands them over in order,
+ * so the press that loaded it still starts its gesture. A card that closes before then never gets one.
  */
 const attachGestures = (item: RailItem, card: HTMLElement, dismiss: (swiped: boolean) => void): (() => void) => {
-  let gesture: { id: number; x: number; y: number; at: number; axis: "x" | "y" | null; dx: number; dy: number } | null = null;
-  const slot = item.slot;
-  const rail = () => slot.parentElement;
-  const allowed = (direction: "left" | "right" | "up" | "down") =>
-    rail()?.dataset.edge === "top" ? direction !== "down" : direction === "right" || direction === "down";
-
-  card.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || card.dataset.closing) return;
-    const target = event.target instanceof Element ? event.target : null;
-    // A mouse selects the message and presses the controls; a finger can start a swipe anywhere.
-    if (event.pointerType === "mouse" && target?.closest("a, button, .k2b-toast__content")) return;
-    gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, at: event.timeStamp, axis: null, dx: 0, dy: 0 };
-    setHold(gestureHolds, card, true);
-  });
-  card.addEventListener("pointermove", (event) => {
-    if (!gesture || event.pointerId !== gesture.id) return;
-    const dx = event.clientX - gesture.x;
-    const dy = event.clientY - gesture.y;
-    if (!gesture.axis) {
-      if (Math.abs(dx) < SWIPE_AXIS_PX && Math.abs(dy) < SWIPE_AXIS_PX) return;
-      gesture.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
-      card.setPointerCapture?.(event.pointerId);
-      slot.dataset.swiping = "true";
-    }
-    gesture.dx = dx;
-    gesture.dy = dy;
-    const x = gesture.axis === "x" ? (allowed(dx > 0 ? "right" : "left") ? dx : resisted(dx)) : 0;
-    const y = gesture.axis === "y" ? (allowed(dy > 0 ? "down" : "up") ? dy : resisted(dy)) : 0;
-    slot.style.setProperty("--k2b-toast-swipe-x", `${x}px`);
-    slot.style.setProperty("--k2b-toast-swipe-y", `${y}px`);
-    slot.style.setProperty("--k2b-toast-fade", String(Math.max(0.35, 1 - Math.hypot(x, y) / 220)));
-  });
-  const release = () => {
-    gesture = null;
-    delete slot.dataset.swiping;
-    slot.style.setProperty("--k2b-toast-fade", "1");
-    setHold(gestureHolds, card, false);
-  };
-  const end = (event: PointerEvent, cancelled: boolean) => {
-    if (!gesture || event.pointerId !== gesture.id) return;
-    const ended = gesture;
-    release();
-    const owner = rail();
-    if (ended.axis && !cancelled) {
-      swallowNextClick(card);
-      const distance = ended.axis === "x" ? ended.dx : ended.dy;
-      const direction = ended.axis === "x" ? (distance > 0 ? "right" : "left") : distance > 0 ? "down" : "up";
-      const speed = Math.abs(distance) / Math.max(1, event.timeStamp - ended.at);
-      if (allowed(direction) && (Math.abs(distance) >= SWIPE_DISMISS_PX || speed > SWIPE_DISMISS_SPEED)) {
-        slot.style.setProperty(
-          ended.axis === "x" ? "--k2b-toast-swipe-x" : "--k2b-toast-swipe-y",
-          `${Math.sign(distance) * (ended.axis === "x" ? 110 : 140)}%`,
-        );
-        dismiss(true);
-        return;
-      }
-    } else if (!ended.axis && !cancelled && event.pointerType !== "mouse" && owner) {
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target?.closest("a, button")) setHold(tapHolds, owner, !tapHolds.has(owner));
-    }
-    slot.style.setProperty("--k2b-toast-swipe-x", "0px");
-    slot.style.setProperty("--k2b-toast-swipe-y", "0px");
-  };
-  card.addEventListener("pointerup", (event) => end(event, false));
-  card.addEventListener("pointercancel", (event) => end(event, true));
-  card.addEventListener("lostpointercapture", (event) => end(event, true));
-  // Before its axis locks, a gesture has no pointer capture: a pointer that leaves the card ends it, so it never pauses the timers for good.
-  card.addEventListener("pointerleave", (event) => {
-    if (gesture && !gesture.axis) end(event, true);
-  });
-  // A toast that closes in the middle of a gesture, by its timer's neighbour, an update, or the rail limit, lets go.
+  let closed = false;
+  let early: PointerEvent[] | null = [];
+  let gestures: { release: () => void } | null = null;
+  const record = (event: Event) => early?.push(event as PointerEvent);
+  for (const type of gestureEvents) card.addEventListener(type, record);
+  card.addEventListener(
+    "pointerdown",
+    () => {
+      gestureModule ??= import("./toast-gestures");
+      void gestureModule.then(({ attachToastGestures }) => {
+        const pending = early ?? [];
+        early = null;
+        for (const type of gestureEvents) card.removeEventListener(type, record);
+        if (closed) return;
+        const attached = attachToastGestures(card, {
+          slot: item.slot,
+          dismiss,
+          hold: (held) => setHold(gestureHolds, card, held),
+          tap: (rail) => setHold(tapHolds, rail, !tapHolds.has(rail)),
+        });
+        gestures = attached;
+        for (const event of pending) attached.replay(event);
+      });
+    },
+    { once: true },
+  );
   return () => {
-    if (gesture) release();
+    closed = true;
+    gestures?.release();
   };
 };
 
