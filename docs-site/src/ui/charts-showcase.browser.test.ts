@@ -153,6 +153,27 @@ test("the overview hydrates its live cards without a console error", async () =>
   const { page, errors } = await open("/en/ui/charts", 1280);
   try {
     expect(await page.locator(".ui-charts-card").count()).toBe(chartShowcaseKinds.length);
+    // Each card is an island with the island shadow; nothing inside it casts a second one.
+    expect(
+      await page.evaluate(() => {
+        // The tokens live on `.k2b-ui`, so the probe takes the class, as each card does.
+        const probe = document
+          .querySelector(".ui-charts-cards")!
+          .appendChild(Object.assign(document.createElement("div"), { className: "k2b-ui" }));
+        probe.style.boxShadow = "var(--k2b-shadow-raised)";
+        const raised = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        const cards = Array.from(document.querySelectorAll(".ui-charts-card"));
+        const lifted = cards.filter((card) => getComputedStyle(card).boxShadow === raised).length;
+        const nested = cards
+          .flatMap((card) => Array.from(card.querySelectorAll("*")))
+          .filter((element) => {
+            const shadow = getComputedStyle(element).boxShadow;
+            return shadow === raised;
+          }).length;
+        return { raised: raised !== "none", lifted: lifted === cards.length, nested };
+      }),
+    ).toEqual({ raised: true, lifted: true, nested: 0 });
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -363,6 +384,39 @@ for (const width of [390, 1440]) {
         }),
       );
       expect(fits).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
+  test(`small Sankey card keeps its source label inside the initial viewport at ${width}px`, async () => {
+    const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
+    const errors = pageErrors(page);
+    try {
+      const card = page.locator(".ui-charts-card").filter({ has: page.getByRole("heading", { name: "Sankey", exact: true }) });
+      const scroller = card.locator(".ui-charts-card__chart");
+      expect(await scroller.evaluate((e) => e.scrollLeft)).toBe(0);
+      const source = card
+        .locator("[data-chart-datum]")
+        .filter({ has: page.locator("rect") })
+        .first()
+        .locator("text");
+      expect(await source.textContent()).toContain("Clicked");
+      const viewport = await scroller.boundingBox(),
+        label = await source.boundingBox();
+      expect(label!.x).toBeGreaterThanOrEqual(viewport!.x);
+      expect(label!.x + label!.width).toBeLessThanOrEqual(viewport!.x + viewport!.width);
+      const inside = await card.locator("[data-chart-datum] text").evaluateAll((nodes) =>
+        nodes.every((e) => {
+          const b = (e as SVGGraphicsElement).getBBox(),
+            svg = e.closest("svg") as SVGSVGElement;
+          return b.x >= 0 && b.x + b.width <= svg.viewBox.baseVal.width;
+        }),
+      );
+      expect(inside).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

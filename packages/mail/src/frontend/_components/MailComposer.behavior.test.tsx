@@ -68,6 +68,7 @@ const initialDraft: MailDraft = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: "Sign02",
   to: [{ name: null, address: "recipient@example.test" }],
@@ -104,6 +105,7 @@ const initialSeed: MailDraftSeed = {
   origin: {
     kind: "compose",
     input: {
+      quoteSource: null,
       senderIdentityId: "Send01",
       to: [],
       cc: [],
@@ -794,6 +796,7 @@ describe("MailComposer signature choice", () => {
       JSON.stringify({
         revision: 1,
         content: {
+          quoteSource: null,
           senderIdentityId: "Send01",
           signatureTemplateId: null,
           to: initialDraft.to,
@@ -820,6 +823,7 @@ describe("MailComposer signature choice", () => {
       JSON.stringify({
         revision: 1,
         content: {
+          quoteSource: null,
           senderIdentityId: "Send01",
           to: initialDraft.to,
           cc: [],

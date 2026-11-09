@@ -1,5 +1,5 @@
 import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
-import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled } from "@k2b/ui/charts/core";
+import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled, nestedDotOptions, sankeyGraph } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { chartLocaleSchema } from "./chart-locale";
 
@@ -51,6 +51,7 @@ export const chartKindSchema = () =>
     "pareto",
     "bubble",
     "radar",
+    "sankey",
   ]);
 
 export const chartParts = (limits?: ChartLimits) => {
@@ -238,8 +239,11 @@ export const chartKinds = (limits?: ChartLimits) => {
           1,
           limits?.maxSeries,
         ).optional(),
-        layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
+        layout: z.enum(["columns", "rows", "grouped", "stacked", "nested"]).optional(),
         normalize: z.boolean().optional(),
+        marks: z.enum(["bars", "dots"]).optional(),
+        total: z.number().positive().optional(),
+        dots: z.number().int().min(2).optional(),
         share: z.boolean().optional(),
         limit: z.number().int().positive().optional(),
         tone: z.enum(["in", "out"]).optional(),
@@ -267,13 +271,17 @@ export const chartKinds = (limits?: ChartLimits) => {
           if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
           if (bar.data.length) issue("Use data or aligned series, not both.");
           if (bar.layout === "rows" || bar.layout === "columns") issue("Series bars use grouped or stacked layout.");
-        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked")
+        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked" || bar.layout === "nested")
           issue("This layout needs aligned x and series.");
         if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
         if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
+        nestedDotOptions(bar, issue);
         if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
           issue("Stacked bars require nonnegative values.");
-        if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
+        if (
+          bar.compare &&
+          (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked" || bar.layout === "nested")
+        )
           issue("Comparison needs one current series and aligned previous values.");
       }),
     z.object({
@@ -521,6 +529,35 @@ export const chartKinds = (limits?: ChartLimits) => {
       .superRefine((spec, ctx) => {
         if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
           ctx.addIssue({ code: "custom", message: "Pareto total must be finite." });
+      }),
+    z
+      .object({
+        kind: z.literal("sankey"),
+        ...ChartKindCommon,
+        nodes: list(
+          z.object({
+            id: z.string().min(1),
+            label: ChartLabel,
+            tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        links: list(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }), 1, limits?.maxMarks),
+        legend: list(
+          z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }),
+          0,
+          limits?.maxSeries,
+        ).optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        try {
+          sankeyGraph(spec);
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid Sankey graph." });
+        }
       }),
     z
       .object({

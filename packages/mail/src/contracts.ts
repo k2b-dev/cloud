@@ -3442,6 +3442,39 @@ export type DraftDeliveryClass = z.infer<typeof draftDeliveryClassSchema>;
 
 const draftActorRefSchema = actorRefSchema;
 
+/** A quote captures the enabling person's presentation context for later delivery. */
+export const draftQuoteSourceSchema = z
+  .object({
+    locale: z
+      .string()
+      .refine(
+        (value) => {
+          try {
+            return Intl.getCanonicalLocales(value).length === 1;
+          } catch {
+            return false;
+          }
+        },
+        { message: "Invalid BCP-47 locale", abort: true },
+      )
+      .overwrite((value) => (new Intl.Locale(value).language === "de" ? "de" : "en"))
+      .describe("BCP-47 locale of the person enabling the quote; resolves to shipped de or en, with en fallback."),
+    timeZone: z
+      .string()
+      .refine((value) => {
+        try {
+          if (!value || /^[+-]/.test(value)) return false;
+          new Intl.DateTimeFormat("en", { timeZone: value });
+          return true;
+        } catch {
+          return false;
+        }
+      }, "Invalid IANA time zone")
+      .describe("IANA time zone of the person enabling the quote, validated by Intl."),
+  })
+  .strict();
+export type DraftQuoteSource = z.output<typeof draftQuoteSourceSchema>;
+
 export const draftSchema = z.object({
   id: ResourceShortIdSchema,
   mailboxId: ResourceShortIdSchema,
@@ -3476,12 +3509,31 @@ export const draftSchema = z.object({
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
   signatureTemplateId: ResourceShortIdSchema.nullable(),
+  quoteSource: draftQuoteSourceSchema.nullable().default(null),
   /** Returned by create and update only. */
   formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 export type MailDraft = z.infer<typeof draftSchema>;
+
+export const conversationListDraftsSchema = z
+  .object({
+    count: z.number().int().nonnegative(),
+    editors: z
+      .array(
+        z
+          .object({
+            kind: z.enum(["user", "service_account"]),
+            id: z.string().uuid(),
+            displayName: z.string().min(1),
+          })
+          .strict(),
+      )
+      .max(3),
+  })
+  .strict();
+export type ConversationListDrafts = z.infer<typeof conversationListDraftsSchema>;
 
 export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subject" | "updatedAt"> & {
   bodyPreview: string;
@@ -3553,6 +3605,10 @@ export const draftEditableContentInputSchema = z
       .describe(
         "Signature template shown after the body, or null for none. On create, omit it to use the sender's default signature; on update, omit it to keep the current choice.",
       ),
+    quoteSource: draftQuoteSourceSchema
+      .nullable()
+      .default(null)
+      .describe("Append the readable source message after the signature using this saved locale and time zone; null disables quoting."),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -3681,10 +3737,23 @@ export type ComposeSafetyReview = z.infer<typeof composeSafetyReviewSchema>;
 export const draftSendReviewSchema = composeSafetyReviewSchema.extend({ contentHash: z.string().regex(/^[a-f0-9]{64}$/) });
 export type DraftSendReview = z.infer<typeof draftSendReviewSchema>;
 
+export const composeSignatureInputSchema = z
+  .object({
+    senderIdentityId: ResourceShortIdSchema,
+    signatureTemplateId: ResourceShortIdSchema.nullable(),
+    format: mailComposeFormatSchema,
+  })
+  .strict();
+export type ComposeSignatureInput = z.infer<typeof composeSignatureInputSchema>;
+
+export const composeSignatureSchema = z.object({ html: z.string().nullable(), text: z.string() }).strict();
+export type ComposeSignature = z.infer<typeof composeSignatureSchema>;
+
 export const composePreviewInputSchema = z
   .object({
     draft: draftEditableContentInputSchema,
     conversationId: ResourceShortIdSchema.nullable().default(null),
+    sourceMessageId: ResourceShortIdSchema.nullable().optional(),
   })
   .strict();
 export type ComposePreviewInput = z.input<typeof composePreviewInputSchema>;

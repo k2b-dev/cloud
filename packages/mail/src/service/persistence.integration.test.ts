@@ -225,6 +225,7 @@ suite("mail PostgreSQL foundation", () => {
       origin: {
         kind: "compose",
         input: {
+          quoteSource: null,
           senderIdentityId: identity!.id,
           to: [],
           cc: [],
@@ -541,6 +542,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Customer", address: "customer@example.com" }],
         cc: [],
@@ -584,6 +586,7 @@ suite("mail PostgreSQL foundation", () => {
       draftId: safetyDraft.data.id,
       expectedRevision: safetyDraft.data.revision,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: safetyDraft.data.to,
         cc: safetyDraft.data.cc,
@@ -993,6 +996,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         conversationId: orderedConversation!.id,
         intent: "reply",
         sourceMessageId: latestInboundId,
@@ -1016,6 +1020,7 @@ suite("mail PostgreSQL foundation", () => {
       draftId: replyDraft.data.id,
       expectedRevision: replyDraft.data.revision,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1215,6 +1220,7 @@ suite("mail PostgreSQL foundation", () => {
       draftId: replyDraft.data.id,
       expectedRevision: editedReplyDraft.data.revision,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1302,6 +1308,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [],
         cc: [],
@@ -1371,6 +1378,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1388,6 +1396,7 @@ suite("mail PostgreSQL foundation", () => {
       draftId: invalidIdentityDraft.data.id,
       expectedRevision: invalidIdentityDraft.data.revision,
       input: {
+        quoteSource: null,
         senderIdentityId: crypto.randomUUID(),
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1463,6 +1472,7 @@ suite("mail PostgreSQL foundation", () => {
       draftId: emptyDraft.data.id,
       expectedRevision: emptyDraft.data.revision,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1487,6 +1497,7 @@ suite("mail PostgreSQL foundation", () => {
       draftId: draft.data.id,
       expectedRevision: emptyDraft.data.revision,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1764,6 +1775,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1805,6 +1817,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -1869,6 +1882,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ name: "Recipient", address: "recipient@example.com" }],
         cc: [],
@@ -2769,6 +2783,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         conversationId: attachmentConversation!.id,
         intent: "forward",
         sourceMessageId: message!.id,
@@ -2802,6 +2817,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         conversationId: attachmentConversation!.id,
         intent: "forward",
         sourceMessageId: message!.id,
@@ -2820,6 +2836,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         conversationId: attachmentConversation!.id,
         intent: "reply",
         sourceMessageId: message!.id,
@@ -3011,6 +3028,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         intent: "new",
         senderIdentityId: identity!.id,
         to: [],
@@ -3120,6 +3138,7 @@ suite("mail PostgreSQL foundation", () => {
       context: collaboratorContext,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ address: "recipient@example.com" }],
         cc: [],
@@ -3188,6 +3207,7 @@ suite("mail PostgreSQL foundation", () => {
           draftId: collaboratorDraft.data.id,
           expectedRevision: collaboratorDraft.data.revision,
           input: {
+            quoteSource: null,
             senderIdentityId: identity!.id,
             to: [{ address: "recipient@example.com" }],
             cc: [],
@@ -3431,6 +3451,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       input: {
+        quoteSource: null,
         senderIdentityId: identity!.id,
         to: [{ address: "recipient@example.com" }],
         cc: [{ address: "remaining@example.com" }],

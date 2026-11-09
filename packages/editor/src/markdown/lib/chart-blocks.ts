@@ -1,7 +1,7 @@
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
 import { barChartLayout, calendarLayout, calendarViewportHeight, hbarLayout } from "@k2b/ui/charts";
-import { paretoLayout } from "@k2b/ui/charts/core";
+import { chartSvgWithUiPalette, paretoLayout, sankeyFrame } from "@k2b/ui/charts/core";
 import { Lexer, type Tokens } from "marked";
 import type { z } from "zod";
 import {
@@ -460,7 +460,7 @@ export const notebookChartHeight = (input: ChartInput, locale: string): number |
   const options = chartRenderOptions(input, locale, { legend: "outside" });
   if (options.kind === "treemap") return 280;
   if (options.kind === "pareto") return paretoLayout(options).height;
-
+  if (options.kind === "sankey") return sankeyFrame(options).height;
   if (options.kind === "bubble" || options.kind === "radar") return 280;
   if (options.kind === "hbar") return hbarLayout(options).height;
   if (options.kind === "heatmap" && options.layout === "calendar") return calendarViewportHeight(calendarLayout(options));
@@ -526,7 +526,8 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
     const legendHtml = legend.length
       ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry, index) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}${(input.kind === "line" && snapshot.svg.includes("data-line-details")) || input.kind === "area" ? `<b data-chart-legend-value data-series-index="${entry.seriesIndex ?? index}" data-field="${valueField}" data-default="${escape(legendValue(entry.seriesIndex ?? index))}">${escape(legendValue(entry.seriesIndex ?? index))}</b>` : ""}</li>`).join("")}</ul>`
       : "";
-    const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="${snapshot.minWidth ? `min-width:${options.print ? "0" : `${snapshot.minWidth}px`};max-width:${snapshot.maxWidth}px;aspect-ratio:${snapshot.width}/${snapshot.height};` : ""}--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
+    const svg = options.print ? chartSvgWithUiPalette(snapshot.svg) : snapshot.svg;
+    const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="${snapshot.minWidth ? `min-width:${options.print ? "0" : `${snapshot.minWidth}px`};max-width:${snapshot.maxWidth}px;aspect-ratio:${snapshot.width}/${snapshot.height};` : ""}--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${svg}</div></div>${legendHtml}`;
     const height =
       options.print && snapshot.maxWidth
         ? `calc(min(100cqw, ${snapshot.maxWidth}px) * ${snapshot.height / snapshot.width})`

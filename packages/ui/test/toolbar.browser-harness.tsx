@@ -162,7 +162,7 @@ const mountDock = (width = 720) => {
           </Toolbar>
           <Toolbar label="Page" variant="floating">
             {["Comments", "Read", "Details"].map((label, index) => (
-              <Toolbar.Action label={label} icon="ti ti-info-circle" priority={index + 1} />
+              <Toolbar.Action label={label} icon="ti ti-info-circle" priority={index + 1} text={index < 2} />
             ))}
           </Toolbar>
         </ToolbarDock>

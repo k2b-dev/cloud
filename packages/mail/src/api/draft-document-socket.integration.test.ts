@@ -161,6 +161,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
 
   const draft = async () => {
     const content = draftEditableContentInputSchema.parse({
+      quoteSource: null,
       senderIdentityId: identity.short_id,
       signatureTemplateId: null,
       to: [{ address: "recipient@example.test", name: null }],

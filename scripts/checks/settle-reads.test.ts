@@ -60,6 +60,11 @@ await boundingBox(); }`),
   ).toEqual([2, 3, 4]);
 });
 
+test("treats hoverInPlace() as the hover it replaces, unless a local helper has that name", () => {
+  expect(check(`async () => {\nawait hoverInPlace(page.locator('p'));\n${read}\n}`)).toEqual([3]);
+  expect(check(`const hoverInPlace = async () => {};\nasync () => {\nawait hoverInPlace();\n${read}\n}`)).toEqual([]);
+});
+
 test("flags boundingBox after hover and every read until the next settle", () => {
   expect(check(`async () => {\nawait page.hover('p');\nawait page.locator('p').boundingBox();\n${read}\n${read}\n}`)).toEqual([3, 4, 5]);
 });

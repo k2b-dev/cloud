@@ -13,6 +13,7 @@ import { mailDraftDocumentMessages, mailDraftDocumentRequestSchema } from "../..
 import type {} from "./mail-draft-document.browser-harness";
 
 const base: DraftEditableContent = {
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: null,
   to: [{ name: "Ada", address: "ada@example.test" }],

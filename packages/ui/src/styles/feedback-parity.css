@@ -32,6 +32,24 @@
 
 /* ---------------------------------------------------------------- dialog */
 
+/* A dialog is the frame: a `Section` inside it stands flat, as in index.css
+   for sections inside Paper, a panel dialog, or another section. */
+.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  outline-offset: var(--k2b-focus-offset);
+}
+
 .k2b-ui .k2b-dialog {
   position: fixed;
   top: 50%;

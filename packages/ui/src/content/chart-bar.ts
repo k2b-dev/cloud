@@ -1,4 +1,7 @@
-import { barPercent } from "../charts/core/bar-labels";
+import { chartTextWidth, fmt, headerHeight, renderHeader, tickFormat, wrapLabel } from "../charts/core/bar-common";
+import { barPercent, visibleCategoryLabels } from "../charts/core/bar-labels";
+import { nestedDotOptions } from "../charts/core/dot-options";
+
 import {
   type AxisOptions,
   type BarItem,
@@ -17,6 +20,8 @@ import {
 } from "../charts/core/svg-renderers";
 import { chartMessages } from "./chart-message-catalog";
 
+export { chartTextWidth, headerHeight, renderHeader, wrapLabel } from "../charts/core/bar-common";
+
 /**
  * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.
  * The wrapper owns size and inspection.
@@ -26,8 +31,14 @@ export type BarChartOptions = {
   /** Aligned categories and series. Null observations are gaps. */
   x?: string[];
   series?: { label: string; data: (number | null)[] }[];
-  layout?: "columns" | "rows" | "grouped" | "stacked";
+  layout?: "columns" | "rows" | "grouped" | "stacked" | "nested";
   normalize?: boolean;
+  /** Initial/restored legend: sum counts, or show the last category for rates and shares. */
+  legendValues?: "total" | "latest";
+  marks?: "bars" | "dots";
+  /** Dot matrix capacity in source units and an even mark budget (default 100). */
+  total?: number;
+  dots?: number;
   /** Unordered nonnegative rows without legacy drawing options form a ranked list. */
   share?: boolean;
   limit?: number;
@@ -71,8 +82,6 @@ export type BarChartLayout = "columns" | "rows";
  * laid out for the narrowest chart, a 320px phone column, so they fit in every wider one.
  */
 const NARROW_PX = 296;
-/** Tick, category and value labels are 11px (see the `.k2b-chart` rules). */
-const FONT_PX = 11;
 /** A label column takes at most this share of the narrowest chart; longer labels wrap to a second line. */
 const LABEL_SHARE = 0.4;
 const ROW_MIN = 22;
@@ -103,53 +112,6 @@ const rankedRows = (opts: BarChartOptions) =>
   opts.yAxis?.domain === undefined &&
   opts.yAxis?.scale === undefined &&
   opts.yAxis?.ticks === undefined;
-const fmt = (value: number) => (Number.isFinite(value) ? `${Math.round(value * 100) / 100}` : "0");
-
-/** Estimated width of `text` at `size` pixels in the UI sans font with tabular figures; a little wide on purpose. */
-export const chartTextWidth = (text: string, size = FONT_PX): number => {
-  let em = 0;
-  for (const char of text) {
-    if (/[\s.,:;!|'’ilIjft()[\]-]/.test(char)) em += 0.34;
-    else if (/[MWmw@%]/.test(char)) em += 0.86;
-    else if (/[A-Z0-9#$€&]/.test(char)) em += 0.66;
-    else if (char.codePointAt(0)! > 0x2e80) em += 1;
-    else em += 0.56;
-  }
-  return em * size;
-};
-
-/** Split a label into at most `lines` lines of `maxPx`; the last line ends with an ellipsis when the label is longer. */
-export const wrapLabel = (label: string, maxPx: number, lines: number): { lines: string[]; truncated: boolean } => {
-  const words = label.trim().split(/\s+/);
-  const result: string[] = [];
-  let current = "";
-  const breakWord = (word: string) => {
-    // A word wider than a line breaks inside the word.
-    let part = "";
-    for (const char of word) {
-      if (part && chartTextWidth(part + char) > maxPx) {
-        result.push(part);
-        part = "";
-      }
-      part += char;
-    }
-    return part;
-  };
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (chartTextWidth(candidate) <= maxPx) current = candidate;
-    else {
-      if (current) result.push(current);
-      current = chartTextWidth(word) > maxPx ? breakWord(word) : word;
-    }
-  }
-  if (current) result.push(current);
-  if (result.length <= lines) return { lines: result, truncated: false };
-  let last = result[lines - 1]!;
-  while (last && chartTextWidth(`${last}…`) > maxPx) last = last.slice(0, -1).trimEnd();
-  return { lines: [...result.slice(0, lines - 1), `${last}…`], truncated: true };
-};
-
 type Scale = { domain: [number, number]; ticks: number[]; log: boolean };
 
 /** The value scale of stdlib's bar chart: nice linear ticks including zero, or decades on a log axis. */
@@ -194,10 +156,7 @@ type Plan = {
 };
 
 const finiteItems = (data: BarItem[]) => data.flatMap((item, index) => (Number.isFinite(item.value) ? [{ item, index }] : []));
-export const headerHeight = (opts: Pick<BarChartOptions, "title" | "subtitle">) =>
-  opts.title || opts.subtitle ? (opts.title ? 14 : 0) + (opts.subtitle ? 6 : 0) + 16 : 0;
 const valueFormat = (opts: BarChartOptions) => opts.valueFormat ?? opts.yAxis?.format ?? ((value: number) => String(value));
-const tickFormat = (opts: BarChartOptions) => opts.yAxis?.format ?? ((value: number) => String(value));
 
 /** Columns, when every category label fits below its column on the narrowest chart; rows otherwise. */
 const columnsFit = (opts: BarChartOptions, finite: Plan["finite"], width: number) => {
@@ -306,20 +265,6 @@ const colorIndex = (item: BarItem, fallback: number) => {
   const index = item.colorIndex ?? fallback;
   if (!Number.isInteger(index) || index < 0) throw new RangeError("Chart colorIndex must be a nonnegative integer");
   return index % 8;
-};
-
-export const renderHeader = (opts: Pick<BarChartOptions, "title" | "subtitle">, width: number) => {
-  const parts: string[] = [];
-  let y = 16;
-  if (opts.title) {
-    parts.push(`<text class="stdlib-chart-title" x="${fmt(width / 2)}" y="${y}" text-anchor="middle">${escapeXml(opts.title)}</text>`);
-    y += 14;
-  }
-  if (opts.subtitle)
-    parts.push(
-      `<text class="stdlib-chart-subtitle" x="${fmt(width / 2)}" y="${y}" text-anchor="middle">${escapeXml(opts.subtitle)}</text>`,
-    );
-  return parts.join("");
 };
 
 const datum = (item: BarItem, index: number, anchor: [number, number], format: (value: number) => string) => ({
@@ -508,13 +453,8 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
   return parts.join("");
 };
 
-/**
- * Render a bar chart in which every category has its label. Few short labels stand below vertical columns; otherwise
- * each category becomes a horizontal row with its label left of the bar and its value at the bar's end. Rows grow the
- * drawing instead of dropping labels: use {@link barChartLayout} for its logical height.
- */
-export const renderBarChartSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
-  if (opts.series) return renderSeriesBars(opts);
+/** Internal legacy/category drawing; the series drawing entry loads separately from frame sizing. */
+export const renderBarDataSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
   if (rankedRows(opts)) return renderRankedBars(opts);
   const plan = barChartPlan(opts, opts.width);
   // The empty drawing of stdlib's bar chart, written here so bundles leave out stdlib's whole bar renderer.
@@ -540,17 +480,23 @@ export function barSeriesLegend(
   width = 480,
   displayWidth = 296,
   maxHeight = Infinity,
+  summary: "total" | "latest" = "total",
 ) {
   const unit = width / displayWidth;
   let x = 0,
     row = 0;
   const items = entries.map((entry) => {
     const finite = entry.data.filter((v): v is number => v !== null && Number.isFinite(v));
-    const total = finite.length ? finite.reduce((sum, v) => sum + v, 0) : null;
-    const valueWidth = Math.max(
-      chartTextWidth(total === null ? "–" : format(total)),
-      ...entry.data.filter((v): v is number => v !== null && Number.isFinite(v)).map((v) => chartTextWidth(format(v))),
-    );
+    const latest = entry.data.at(-1);
+    const total =
+      summary === "latest"
+        ? latest != null && Number.isFinite(latest)
+          ? latest
+          : null
+        : finite.length
+          ? finite.reduce((sum, v) => sum + v, 0)
+          : null;
+    const valueWidth = Math.max(chartTextWidth(total === null ? "–" : format(total)), ...finite.map((v) => chartTextWidth(format(v))));
     const labelWidth = Math.max(8, Math.min(96, displayWidth - valueWidth - 32, chartTextWidth(entry.label)));
     const slot = Math.min(width, (14 + labelWidth + 6 + valueWidth + 16) * unit);
     if (x && x + slot > width) {
@@ -575,6 +521,7 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
     throw new RangeError("Bar series must have the same length as x");
   if (opts.compare && series.length !== 1) throw new RangeError("Bar comparison needs exactly one current series");
   if (opts.normalize && opts.layout !== "stacked") throw new RangeError("Normalized bars must be stacked");
+  const dot = nestedDotOptions(opts);
   if (opts.layout === "stacked" && opts.yAxis?.scale === "log") throw new RangeError("Stacked bars need a linear axis");
   if (opts.layout === "stacked" && series.some((s) => s.data.some((v) => v !== null && v < 0)))
     throw new RangeError("Stacked bars require nonnegative values");
@@ -587,17 +534,21 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
     opts.layout === "stacked"
       ? totals.filter((v): v is number => v !== null)
       : series.flatMap((s) => s.data.filter((v): v is number => v !== null));
-  const scale = valueScale(
-    opts.normalize ? [0, 1] : [...values, ...(opts.compare?.data.filter((v): v is number => v !== null) ?? [])],
-    opts.yAxis,
-    true,
-  );
+  const scale: Scale = dot
+    ? { domain: [0, dot.total], ticks: [0, 0.25, 0.5, 0.75, 1].map((v) => v * dot.total), log: false }
+    : valueScale(
+        opts.normalize ? [0, 1] : [...values, ...(opts.compare?.data.filter((v): v is number => v !== null) ?? [])],
+        opts.yAxis,
+        true,
+      );
   const format = valueFormat(opts);
   const units = size.width / narrow(opts);
+  const messages = chartMessages.resolve([opts.locale ?? "en"]).t;
+  const labels = { delta: messages.chartFields({ key: "delta" }), total: messages.chartFields({ key: "total" }) };
   const legend = opts.legend !== false;
   // Keep the legend within one quarter of the frame, leaving room for the plot.
   const entries = [...series, ...(opts.compare ? [opts.compare] : [])];
-  const legendLayout = barSeriesLegend(entries, format, size.width, narrow(opts), size.height * 0.25);
+  const legendLayout = barSeriesLegend(entries, format, size.width, narrow(opts), size.height * 0.25, opts.legendValues);
   const top = headerHeight(opts) + 8 + (legend ? legendLayout.height : 0) + (opts.yAxis?.label ? 16 : 0);
   const left = Math.max(
     40,
@@ -622,168 +573,51 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
       if (value !== null && opts.layout === "stacked") acc += value;
       return { seriesIndex, raw, value, base };
     });
-    return { label, index, center, current, total: totals[index]!, previous: opts.compare?.data[index] };
+    const matrix =
+      dot && current.every((v) => v.raw !== null && Number.isFinite(v.raw))
+        ? Array.from({ length: dot.count }, (_, k) => {
+            const rowHeight = Math.max(0, bottom - top) / (dot.count / 2),
+              cell = Math.min(rowHeight, (slot * 0.8) / 2);
+            const matched = current.findLastIndex((v) => k < Math.round((v.raw! / dot.total) * dot.count));
+            const seriesIndex = matched < 0 ? null : matched;
+            return {
+              x: center + ((k % 2) - 0.5) * cell * 1.05,
+              y: bottom - (Math.floor(k / 2) + 0.5) * rowHeight,
+              radius: Math.min(cell, rowHeight) * 0.36,
+              seriesIndex,
+            };
+          })
+        : [];
+    return { label, index, center, current, total: totals[index]!, previous: opts.compare?.data[index], matrix };
   });
   const barWidthPx =
     (opts.compare
       ? Math.min(slot * 0.32, 26)
       : Math.min(slot * (opts.layout === "stacked" ? 0.56 : 0.8 / Math.max(1, entries.length)), opts.layout === "stacked" ? 40 : 22)) /
     units;
-  return { ...size, columns, totals, scale, left, right, top, bottom, slot, y, format, units, entries, legend, legendLayout, barWidthPx };
+  return {
+    ...size,
+    columns,
+    totals,
+    scale,
+    left,
+    right,
+    top,
+    bottom,
+    slot,
+    y,
+    format,
+    labels,
+    units,
+    entries,
+    legend,
+    legendLayout,
+    barWidthPx,
+    dot,
+  };
 }
 
-const renderSeriesBars = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }) => {
-  const g = seriesBarLayout(opts, opts);
-  const parts = [renderHeader(opts, opts.width)];
-  const labels = chartMessages.resolve([opts.locale ?? "en"]).t;
-  const change = new Intl.NumberFormat(opts.locale ?? "en", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
-  const text = (x: number, y: number, value: string, cls = "stdlib-chart-tick-label", anchor = "start", extra = "") =>
-    `<text class="${cls}" x="${fmt(x)}" y="${fmt(y)}" text-anchor="${anchor}" ${extra}>${escapeXml(value)}</text>`;
-  if (g.legend)
-    g.legendLayout.items.forEach((entry, i) => {
-      const y = headerHeight(opts) + entry.y;
-      const x = entry.x;
-      parts.push(
-        `<rect class="stdlib-chart-series-${i < (opts.series?.length ?? 0) ? i % 8 : 0}" x="${x}" y="${y - 8}" width="${8 * g.units}" height="8" ${i >= (opts.series?.length ?? 0) ? 'style="fill:none;stroke:var(--stdlib-chart-c1);"' : ""}/>`,
-      );
-      if (i >= (opts.series?.length ?? 0))
-        parts.push(
-          `<path d="M ${x} ${y - 4} l ${4 * g.units} -4 M ${x + 2 * g.units} ${y} l ${6 * g.units} -6 M ${x + 6 * g.units} ${y} l ${2 * g.units} -2" fill="none" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1"/>`,
-        );
-      const label = wrapLabel(entry.label, Math.max(8, entry.labelWidth), 1).lines[0] ?? entry.label;
-      const value = escapeXml(entry.total === null ? "–" : g.format(entry.total));
-      // One text run keeps the value six CSS pixels after its label even when the SVG stretches.
-      parts.push(
-        `<text x="${fmt(x + 14 * g.units)}" y="${fmt(y)}"><tspan class="stdlib-chart-tick-label">${escapeXml(label)}</tspan><tspan class="stdlib-chart-bar-value" dx="6" data-chart-legend-value data-field="${i < (opts.series?.length ?? 0) ? `series:${i}` : "previous"}" data-default="${value}">${value}</tspan></text>`,
-      );
-    });
-  if (g.legend && g.legendLayout.hidden)
-    parts.push(text(0, headerHeight(opts) + g.legendLayout.height - 8, `+${g.legendLayout.hidden}`, "stdlib-chart-tick-label"));
-  if (opts.yAxis?.label) parts.push(text(0, g.top - 6, opts.yAxis.label, "stdlib-chart-axis-label"));
-  for (const tick of g.scale.ticks) {
-    parts.push(`<line class="stdlib-chart-grid" x1="${g.left}" x2="${g.right}" y1="${g.y(tick)}" y2="${g.y(tick)}"/>`);
-    parts.push(
-      text(g.left - 6 * g.units, g.y(tick) + 4, opts.normalize ? `${Math.round(tick * 100)}%` : tickFormat(opts)(tick), undefined, "end"),
-    );
-  }
-  parts.push(`<line class="stdlib-chart-axis" x1="${g.left}" x2="${g.right}" y1="${g.bottom}" y2="${g.bottom}"/>`);
-  const visibleLabels = visibleCategoryLabels(
-    g.columns.map((c) => c.label),
-    g.left,
-    g.slot,
-    opts.width,
-    g.units,
-  );
-  for (const column of g.columns) {
-    const fields = column.current.map((v, i) => ({
-      key: `series:${i}`,
-      value: v.raw === null || !Number.isFinite(v.raw) ? "–" : v.raw!,
-      formatted: v.raw === null || !Number.isFinite(v.raw) ? "–" : g.format(v.raw!),
-    }));
-    if (opts.compare) {
-      const previous = column.previous;
-      fields.push({
-        key: "previous",
-        value: previous ?? "–",
-        formatted: previous === null || !Number.isFinite(previous) ? "–" : g.format(previous!),
-      });
-      const current = column.current[0]?.raw;
-      const delta =
-        current == null || previous == null || !Number.isFinite(current) || !Number.isFinite(previous) ? null : current - previous;
-      fields.push({
-        key: "delta",
-        value: delta ?? "–",
-        formatted: delta === null || previous === 0 ? "–" : change.format(delta / Math.abs(previous!)),
-      });
-    } else if (opts.layout === "stacked") {
-      fields.reverse();
-      fields.push({ key: "total", value: column.total ?? "–", formatted: column.total === null ? "–" : g.format(column.total) });
-    }
-    let marks = `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="${column.center - g.slot / 2}" y="${g.top}" width="${g.slot}" height="${Math.max(0, g.bottom - g.top)}" rx="6"/>`;
-    const bar = (value: number, base: number, x: number, width: number, color: number, previous = false) => {
-      const y0 = g.y(g.scale.log ? g.scale.domain[0] : base),
-        y1 = g.y(base + value);
-      const rect = `<rect class="stdlib-chart-bar stdlib-chart-series-${color % 8}" x="${fmt(x)}" y="${fmt(Math.min(y0, y1))}" width="${fmt(Math.max(0, width))}" height="${fmt(Math.abs(y0 - y1))}" rx="3"/>`;
-      if (!previous) return rect;
-      // Inline strokes avoid document-global SVG pattern IDs, including duplicate charts during SSR.
-      const lines: string[] = [];
-      for (let d = -Math.abs(y0 - y1); d < width; d += 6) {
-        const lo = Math.max(0, -d),
-          hi = Math.min(Math.abs(y0 - y1), width - d);
-        if (hi > lo)
-          lines.push(
-            `<line x1="${x + d + lo}" y1="${Math.max(y0, y1) - lo}" x2="${x + d + hi}" y2="${Math.max(y0, y1) - hi}" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1.5"/>`,
-          );
-      }
-      return `<g class="k2b-chart-previous">${rect.replace("/>", ' style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:.14" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1"/>')}${lines.join("")}</g>`;
-    };
-    if (opts.compare) {
-      const bw = Math.min(g.slot * 0.32, 26);
-      const gap = Math.min(1.5, g.slot * 0.08);
-      if (column.previous !== null && Number.isFinite(column.previous) && (!g.scale.log || column.previous! > 0))
-        marks += bar(column.previous!, 0, column.center - bw - gap, bw, 0, true);
-      const value = column.current[0]?.value;
-      if (value != null && (!g.scale.log || value > 0)) marks += bar(value, 0, column.center + gap, bw, 0);
-    } else
-      column.current.forEach((v) => {
-        if (v.value === null || (g.scale.log && v.value <= 0)) return;
-        const stacked = opts.layout === "stacked";
-        const bw = stacked ? Math.min(g.slot * 0.56, 40) : Math.min((g.slot * 0.8) / g.entries.length, 22);
-        const gap = bw / g.units > 4 ? 2 : 0;
-        const x = stacked ? column.center - bw / 2 : column.center - (g.entries.length * bw) / 2 + v.seriesIndex * bw + gap / 2;
-        const segment = bar(v.value, v.base, x, stacked ? bw : bw - gap, v.seriesIndex);
-        if (
-          stacked &&
-          v.value > 0 &&
-          column.current.some((next) => next.seriesIndex > v.seriesIndex && next.value !== null && next.value > 0)
-        ) {
-          const fullHeight = Math.abs(g.y(v.base) - g.y(v.base + v.value));
-          const gap = Math.min(1.5, fullHeight / 2);
-          marks += segment
-            .replace(/y="[^"]*"/, `y="${g.y(v.base + v.value) + gap}"`)
-            .replace(/height="[^"]*"/, `height="${fullHeight - gap}"`);
-        } else marks += segment;
-      });
-    parts.push(
-      chartDatumSvg(
-        marks,
-        { role: "item", index: column.index, label: column.label, anchor: [column.center, g.top], values: fields },
-        opts.inspect ?? false,
-        [
-          column.label,
-          ...fields.map(
-            (field) =>
-              `${field.key.startsWith("series:") ? opts.series![Number(field.key.slice(7))]!.label : field.key === "previous" ? opts.compare!.label : field.key === "delta" ? labels.chartFields({ key: "delta" }) : labels.chartFields({ key: "total" })}: ${field.formatted}`,
-          ),
-        ].join(" · "),
-      ),
-    );
-    if (visibleLabels.has(column.index))
-      parts.push(text(column.center, g.bottom, column.label, "stdlib-chart-tick-label stdlib-chart-category-label", "middle", 'dy="16"'));
-  }
-  for (const ref of opts.references ?? [])
-    if ((ref.axis ?? "y") === "y" && Number.isFinite(ref.value) && ref.value >= g.scale.domain[0] && ref.value <= g.scale.domain[1]) {
-      parts.push(`<line class="stdlib-chart-reference" x1="${g.left}" x2="${g.right}" y1="${g.y(ref.value)}" y2="${g.y(ref.value)}"/>`);
-      if (ref.label) parts.push(text(g.right, g.y(ref.value) - 4, ref.label, "stdlib-chart-reference-label", "end"));
-    }
-  if (opts.xAxis?.label) parts.push(text((g.left + g.right) / 2, opts.height - 2, opts.xAxis.label, "stdlib-chart-axis-label", "middle"));
-  return svgRoot(opts, parts.join("")).replace("<svg ", '<svg data-bar-layout="columns" ');
-};
-
-const visibleCategoryLabels = (labels: string[], left: number, slot: number, width: number, units: number) => {
-  const labelPx = Math.max(0, ...labels.map((label) => chartTextWidth(label))) + GAP_PX;
-  const step = Math.max(1, Math.ceil(labelPx / (slot / units)));
-  const inside = (i: number) => {
-    const half = (chartTextWidth(labels[i]!) * units) / 2,
-      center = left + slot * (i + 0.5);
-    return center - half >= 0 && center + half <= width;
-  };
-  const first = Math.max(
-    0,
-    labels.findIndex((_, i) => inside(i)),
-  );
-  return new Set(labels.flatMap((_, i) => (i >= first && (i - first) % step === 0 && inside(i) ? [i] : [])));
-};
+export type SeriesBarLayout = ReturnType<typeof seriesBarLayout>;
 
 /** Ranked rows retain original indices. A limit changes the drawing, never the denominator or source data. */
 export function rankedBarLayout(opts: BarChartOptions, size = { width: 480, height: 280 }) {
