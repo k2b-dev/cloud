@@ -374,6 +374,52 @@ test("ToolbarDock keeps two pills at the edges and brings moved actions back whe
   }
 });
 
+test("a danger toolbar is one red pill across the row that announces its message and keeps its first action", async () => {
+  const page = await open();
+  const frame = async () => {
+    await page.waitForFunction(() => !document.querySelector(".k2b-toolbar[data-overflow-pending]"));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  };
+  const pill = page.getByRole("toolbar", { name: "Saving stopped" });
+  const moved = () =>
+    pill
+      .locator('.k2b-toolbar__action[data-overflow="hidden"]')
+      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!));
+  try {
+    await page.evaluate(() => window.toolbarFixture.mountAlert(720));
+    await frame();
+    const layout = await page.evaluate(() => {
+      const column = document.getElementById("dock-column")!.getBoundingClientRect();
+      const toolbar = document.querySelector<HTMLElement>('.k2b-toolbar[data-tone="danger"]')!;
+      const box = toolbar.getBoundingClientRect();
+      return {
+        start: box.left - column.left,
+        end: column.right - box.right,
+        height: box.height,
+        surface: getComputedStyle(toolbar).backgroundColor,
+        compact: toolbar.hasAttribute("data-compact"),
+      };
+    });
+    // The pill spans the dock between its 1rem insets, at the floating height, on the danger surface. The spacer
+    // between message and actions counts with its minimum only, so the labels stay.
+    expect(layout).toEqual({ start: 16, end: 16, height: 54, surface: "rgb(254, 242, 242)", compact: false });
+    expect(await moved()).toEqual([]);
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[data-k2b-live] [data-politeness="assertive"]')
+        ?.textContent?.includes("Changes not saved. Connection closed"),
+    );
+    await page.evaluate(() => window.toolbarFixture.resizeDock(300));
+    await frame();
+    // Labels go first, then the lower-priority actions; Copy text has no priority and stays.
+    expect(await pill.evaluate((toolbar) => toolbar.hasAttribute("data-compact"))).toBe(true);
+    expect(await moved()).toEqual(["Keep", "Discard"]);
+    expect(await pill.getByRole("button", { name: "Copy text" }).isVisible()).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
 test("narrowing moves a superset of the least important actions and widening restores the original layout", async () => {
   const page = await openFloating();
   try {

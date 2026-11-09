@@ -840,19 +840,36 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
             for (const dimension of ["x", "y", "width", "height"] as const)
               expect(Math.abs(actual[surface][dimension] - original[surface][dimension])).toBeLessThanOrEqual(0.5);
         };
-        for (const code of ["STORAGE_EXHAUSTED", "SESSION_EXPIRED"]) {
-          await page.evaluate(async (code) => {
-            window.toolbarHarness.endSync(code, true);
-            await window.toolbarHarness.settle();
-          }, code);
+        for (const [code, recovery] of [
+          ["STORAGE_EXHAUSTED", false],
+          ["SESSION_EXPIRED", false],
+          ["RESYNC_REQUIRED", true],
+        ] as const) {
+          await page.evaluate(
+            async ([code, recovery]) => {
+              window.toolbarHarness.endSync(code, true, recovery);
+              await window.toolbarHarness.settle();
+            },
+            [code, recovery] as const,
+          );
           same(await bounds());
           const fit = await page.locator("[data-sync-ended]").evaluate((row) => {
             const box = row.getBoundingClientRect();
+            const pill = row.querySelector<HTMLElement>('.k2b-toolbar[data-tone="danger"]')!;
+            const pillBox = pill.getBoundingClientRect();
+            const first = pill.querySelector<HTMLElement>(".k2b-toolbar__action")!;
+            const style = getComputedStyle(row);
+            const content = box.width - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
             return {
+              // One red pill spans the row and keeps the floating height; its first action (copy or sign in) stays.
+              spansRow: Math.abs(pillBox.width - content) <= 1 && pillBox.height === 54,
+              red: getComputedStyle(pill).backgroundColor === "rgb(254, 242, 242)",
+              firstShown: first.getClientRects().length > 0,
               pageFits: document.documentElement.scrollWidth <= innerWidth,
               // Phones hide the navigation button (the header's menu takes its place); every shown control fits.
               controlsFit: Array.from(row.querySelectorAll("button"))
-                .filter((button) => button.getClientRects().length > 0)
+                // An idle More keeps its box out of the flow, hidden.
+                .filter((button) => button.getClientRects().length > 0 && !button.closest('[data-overflow="hidden"]'))
                 .every((button) => {
                   const control = button.getBoundingClientRect();
                   return (
@@ -865,7 +882,7 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
                 }),
             };
           });
-          expect(fit).toEqual({ pageFits: true, controlsFit: true });
+          expect(fit).toEqual({ spansRow: true, red: true, firstShown: true, pageFits: true, controlsFit: true });
           await page.evaluate(async () => {
             window.toolbarHarness.resumeSync();
             await window.toolbarHarness.settle();

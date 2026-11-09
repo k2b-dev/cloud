@@ -17707,6 +17707,35 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-inline-size: 2.75rem;
   block-size: 2.75rem;
 }
+/* `tone="danger"`: the one red pill of a stopped state takes the place of the
+   row's pills and spans it. Shape, height, and the toolbar shadow stay; only
+   surface, edge, and ink turn to the danger tokens, so nothing moves when it
+   appears. Its label is the message: it keeps its full width until actions
+   have moved into More, and only then truncates. */
+.k2b-ui .k2b-toolbar-float[data-tone="danger"] > .k2b-toolbar {
+  flex: 1 1 auto;
+}
+.k2b-ui .k2b-toolbar[data-variant="floating"][data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--k2b-danger-text) 40%, transparent);
+  background: var(--k2b-danger-surface);
+  color: var(--k2b-danger-text);
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label {
+  max-inline-size: none;
+  padding-inline: 0.75rem 0.25rem;
+  font-size: 0.875rem;
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label > i {
+  margin-inline-end: 0.375rem;
+  font-size: 1.125rem;
+  vertical-align: -0.15em;
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-button {
+  color: var(--k2b-danger-text);
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-button:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-danger-text) 10%, transparent);
+}
 /* The hint fills the space below the centred 1.25rem icon, so neither the
    icon nor the button moves when hints appear. Flex boxes keep the hint
    exactly one line of its small font tall. */

@@ -30,6 +30,7 @@ import {
   type SpotlightSearchResolver,
   Tabs,
   Toolbar,
+  ToolbarDock,
   useKeyboardDrag,
 } from "@k2b/ui";
 import { createSignal, For } from "solid-js";
@@ -1005,6 +1006,69 @@ const actions = [
   );
 };
 
+const DangerToolbarDemo = () => {
+  const [lastAction, setLastAction] = createSignal("Select an action");
+  return (
+    <DemoCard
+      id="toolbar-danger"
+      chip={{ kind: "component", name: "Toolbar", from: "@k2b/ui" }}
+      description="When an editor can no longer save, one red pill takes the place of its toolbars: the message first, then the way out. Narrow the column to see the labels go first and the lower-priority actions move into More."
+      code={`<ToolbarDock>
+  <Toolbar label="Saving stopped" variant="floating" tone="danger">
+    <Toolbar.Label>
+      <i class="ti ti-alert-triangle" aria-hidden="true" />
+      Changes not saved. Connection closed
+    </Toolbar.Label>
+    <Toolbar.Spacer />
+    <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={copy} />
+    <Toolbar.Action label="Keep on this device" icon="ti ti-device-floppy" text priority={2} onClick={keep} />
+    <Toolbar.Action label="Discard device changes" icon="ti ti-trash" text priority={3} onClick={discard} />
+  </Toolbar>
+</ToolbarDock>`}
+    >
+      <div
+        style={{
+          display: "flex",
+          "flex-direction": "column",
+          "max-width": "100%",
+          height: "220px",
+          resize: "horizontal",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ flex: "1", "min-height": "0", overflow: "auto", padding: "0.75rem" }}>
+          Wareneingang am Montag: 14 Paletten, zwei davon mit Temperaturlogger.
+        </div>
+        <ToolbarDock>
+          <Toolbar label="Saving stopped" variant="floating" tone="danger">
+            <Toolbar.Label>
+              <i class="ti ti-alert-triangle" aria-hidden="true" />
+              Changes not saved. Connection closed
+            </Toolbar.Label>
+            <Toolbar.Spacer />
+            <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={() => setLastAction("Copy text")} />
+            <Toolbar.Action
+              label="Keep on this device"
+              icon="ti ti-device-floppy"
+              text
+              priority={2}
+              onClick={() => setLastAction("Keep on this device")}
+            />
+            <Toolbar.Action
+              label="Discard device changes"
+              icon="ti ti-trash"
+              text
+              priority={3}
+              onClick={() => setLastAction("Discard device changes")}
+            />
+          </Toolbar>
+        </ToolbarDock>
+      </div>
+      <output aria-live="polite">{lastAction()}</output>
+    </DemoCard>
+  );
+};
+
 const SelectionToolbarDemo = () => {
   // A new value for every completed selection, so the toolbar moves to it even when it was open already.
   const [anchor, setAnchor] = createSignal<{ at: number } | undefined>(undefined, { equals: false });
@@ -1329,6 +1393,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ToolbarDemo />
       <FloatingToolbarDemo />
+      <DangerToolbarDemo />
       <SelectionToolbarDemo />
     </DemoGrid>
   ),

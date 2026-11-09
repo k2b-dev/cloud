@@ -51,6 +51,29 @@ Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
 
+### Danger tone
+
+When the work behind a floating toolbar stops, such as an editor that can no longer save, set `tone="danger"` on one floating toolbar and render it in place of the row's usual pills. It stays a pill with the same height and toolbar shadow; only its surface, edge, and ink turn to the danger tokens, so nothing moves when it appears. Inside `ToolbarDock` or its own strip it spans the row.
+
+- Lead with a `Toolbar.Label` that says what happened, with the tone's icon first. In this tone the label keeps its full width until actions have moved into More, and it is announced to screen readers at once, again whenever its text changes. Add no `role="alert"` of your own.
+- Put a `Toolbar.Spacer` between the message and the actions; the spacer counts only its minimum when the toolbar measures.
+- Give the one way out that must always stay, such as Copy text or Sign in again, no `priority`. Other actions take a `priority` and move into More on a narrow row.
+- Keep the workspace controls the row had, such as navigation and detail toggles, inside the pill.
+
+```tsx
+<ToolbarDock>
+  <Toolbar label="Saving stopped" variant="floating" tone="danger">
+    <Toolbar.Label><i class="ti ti-alert-triangle" aria-hidden="true" />Changes not saved. Connection closed</Toolbar.Label>
+    <Toolbar.Spacer />
+    <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={copy} />
+    <Toolbar.Action label="Keep on this device" icon="ti ti-device-floppy" text priority={2} onClick={keep} />
+    <Toolbar.Action label="Discard device changes" icon="ti ti-trash" text priority={3} onClick={discard} />
+  </Toolbar>
+</ToolbarDock>
+```
+
+Use it only for a stopped state. A notice that work continues, such as reconnecting, stays a quiet status inside the usual pill.
+
 ## Selection toolbar
 
 Use `SelectionToolbar` for actions on selected text, such as formatting and
@@ -101,7 +124,7 @@ To hide an action, stop rendering it, for example with `<Show>`. A `Toolbar.Grou
 
 ## Toolbar.Label
 
-`Toolbar.Label` is non-interactive text for a selection count or event title. It never moves into More. It stays on one line, can shrink, and truncates with an ellipsis at about 10rem.
+`Toolbar.Label` is non-interactive text for a selection count or event title. It never moves into More. It stays on one line, can shrink, and truncates with an ellipsis at about 10rem. In a danger toolbar it carries the message, has no width cap, and is announced at once.
 
 ## Accessibility
 

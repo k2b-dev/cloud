@@ -1,6 +1,7 @@
 import { createContext, createEffect, createSignal, type JSX, onCleanup, onMount, Show, sharedConfig, useContext } from "solid-js";
 import { isServer } from "solid-js/web";
 import { Kbd } from "../content/Kbd";
+import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { formatShortcut, type KeyboardPlatform, keyboardPlatform } from "../intl/shortcut";
 import { IconButton } from "./Button";
@@ -16,6 +17,12 @@ export type ToolbarProps = {
   variant?: "inline" | "floating";
   /** The edge a floating toolbar sticks to while its column scrolls. Defaults to `bottom`. */
   edge?: "top" | "bottom";
+  /**
+   * `danger` makes a floating toolbar the one red pill of a stopped state, such as an editor that can no longer save.
+   * It spans its row in place of the usual pills, and screen readers announce its labels at once. Inline toolbars
+   * ignore it.
+   */
+  tone?: "danger";
   class?: string;
 };
 
@@ -58,6 +65,8 @@ type ToolbarOrientation = NonNullable<ToolbarProps["orientation"]>;
 
 const defaultToolbarOrientation: () => ToolbarOrientation = () => "horizontal";
 const ToolbarOrientationContext = createContext(defaultToolbarOrientation);
+/** True inside a floating `tone="danger"` toolbar, whose labels announce themselves. */
+const ToolbarDangerContext = createContext(false);
 /** False where actions are icon-sized, such as SelectionToolbar: no room below the icon for a hint. Package-internal. */
 export const ToolbarHintsContext = createContext(true);
 
@@ -156,9 +165,31 @@ const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
   );
 };
 
-const ToolbarLabel = (props: ToolbarLabelProps): JSX.Element => (
-  <span class={`k2b-toolbar__label ${props.class ?? ""}`}>{props.children}</span>
-);
+const ToolbarLabel = (props: ToolbarLabelProps): JSX.Element => {
+  const danger = useContext(ToolbarDangerContext);
+  let label!: HTMLSpanElement;
+  // The shared assertive live region exists before the text arrives, so the message is read reliably, also when the
+  // pill appears with it or its text changes later.
+  onMount(() => {
+    if (!danger) return;
+    let spoken = "";
+    const speak = () => {
+      const text = label.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      if (text === spoken) return;
+      spoken = text;
+      announce(text, { politeness: "assertive" });
+    };
+    speak();
+    const observer = new MutationObserver(speak);
+    observer.observe(label, { childList: true, subtree: true, characterData: true });
+    onCleanup(() => observer.disconnect());
+  });
+  return (
+    <span ref={label} class={`k2b-toolbar__label ${props.class ?? ""}`}>
+      {props.children}
+    </span>
+  );
+};
 
 const ToolbarGroup = (props: ToolbarGroupProps): JSX.Element => (
   <div class={`k2b-toolbar__group ${props.class ?? ""}`} role="group" aria-label={props.label}>
@@ -317,6 +348,8 @@ const measureOverflow = (
   const width = (child: HTMLElement) => {
     // Separators carry inline margins, which bounding boxes leave out.
     const childStyle = getComputedStyle(child);
+    // A spacer takes whatever room is left, so it needs only its minimum.
+    if (child.classList.contains("k2b-toolbar__spacer")) return Number.parseFloat(childStyle.minWidth) || 0;
     const box =
       child.getBoundingClientRect().width +
       (Number.parseFloat(childStyle.marginLeft) || 0) +
@@ -359,6 +392,7 @@ export const Toolbar = Object.assign(
   (props: ToolbarProps): JSX.Element => {
     // The variant decides the DOM shape, so it is read once.
     const floating = props.variant === "floating";
+    const danger = () => (floating && props.tone === "danger" ? "danger" : undefined);
     const orientation = () => (floating ? "horizontal" : (props.orientation ?? "horizontal"));
     const messages = useToolbarMessages();
     const actions = new Set<RegisteredAction>();
@@ -451,41 +485,44 @@ export const Toolbar = Object.assign(
     const menuItems = (): DropdownAction[] => moved().map((action) => action.item);
     const content = (
       <ToolbarOrientationContext.Provider value={orientation}>
-        <ToolbarActionsContext.Provider value={floating ? register : undefined}>
-          <div
-            ref={root}
-            onKeyDown={(event) => navigation?.keydown(event)}
-            class={`k2b-toolbar ${props.class ?? ""}`}
-            role="toolbar"
-            aria-label={props.label}
-            aria-orientation={orientation()}
-            data-orientation={orientation()}
-            data-variant={floating ? "floating" : undefined}
-            data-wrap={!floating && props.wrap ? "true" : undefined}
-            data-overflow-pending={floating ? "" : undefined}
-          >
-            {props.children}
-            <Show when={floating}>
-              <div ref={more} class="k2b-toolbar__more" data-overflow="hidden">
-                <Dropdown.Root
-                  items={menuItems()}
-                  position="top-left"
-                  label={messages().moreActions}
-                  // An open menu closes when its last row returns to the toolbar.
-                  disabled={moved().length === 0}
-                >
-                  <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </div>
-            </Show>
-          </div>
-        </ToolbarActionsContext.Provider>
+        <ToolbarDangerContext.Provider value={!!danger()}>
+          <ToolbarActionsContext.Provider value={floating ? register : undefined}>
+            <div
+              ref={root}
+              onKeyDown={(event) => navigation?.keydown(event)}
+              class={`k2b-toolbar ${props.class ?? ""}`}
+              role="toolbar"
+              aria-label={props.label}
+              aria-orientation={orientation()}
+              data-orientation={orientation()}
+              data-variant={floating ? "floating" : undefined}
+              data-tone={danger()}
+              data-wrap={!floating && props.wrap ? "true" : undefined}
+              data-overflow-pending={floating ? "" : undefined}
+            >
+              {props.children}
+              <Show when={floating}>
+                <div ref={more} class="k2b-toolbar__more" data-overflow="hidden">
+                  <Dropdown.Root
+                    items={menuItems()}
+                    position="top-left"
+                    label={messages().moreActions}
+                    // An open menu closes when its last row returns to the toolbar.
+                    disabled={moved().length === 0}
+                  >
+                    <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
+                      <i class="ti ti-dots" aria-hidden="true" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
+                </div>
+              </Show>
+            </div>
+          </ToolbarActionsContext.Provider>
+        </ToolbarDangerContext.Provider>
       </ToolbarOrientationContext.Provider>
     );
     return floating ? (
-      <div ref={strip} class="k2b-toolbar-float" data-edge={props.edge === "top" ? "top" : undefined}>
+      <div ref={strip} class="k2b-toolbar-float" data-edge={props.edge === "top" ? "top" : undefined} data-tone={danger()}>
         {content}
       </div>
     ) : (

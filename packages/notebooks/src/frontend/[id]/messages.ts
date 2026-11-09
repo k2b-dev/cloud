@@ -19,6 +19,8 @@ export const notebookWorkspaceMessages = i18n.define({
       deviceTabOnly: "Editing in this tab only. Closing this tab loses changes that have not reached the server.",
       deviceRetry: "Retry saving",
       deviceKeep: "Keep on this device",
+      deviceCopyShort: "Copy on this device",
+      deviceKeptShort: "Kept on this device",
       deviceDiscard: "Discard device changes",
       deviceDiscardConfirm: "Discard the pending text on this device? This cannot be undone.",
       failedCreateNote: "Failed to create note",
@@ -340,6 +342,7 @@ export const notebookWorkspaceMessages = i18n.define({
       documentReopen: "Reopen this note",
       liveUpdatesStopped: "Live updates stopped. Reload the page to see the latest changes.",
       reload: "Reload",
+      syncStopped: "Saving stopped",
       storageExhaustedTitle: "Live editing is unavailable",
       storageExhaustedDetail:
         "The server has run out of storage for collaborative editing, so changes cannot be saved right now. Keep this page open to retry automatically, and ask your administrator to raise the JetStream storage limit.",
@@ -588,6 +591,8 @@ export const notebookWorkspaceMessages = i18n.define({
         "Du bearbeitest nur in diesem Tab. Beim Schließen gehen Änderungen verloren, die den Server noch nicht erreicht haben.",
       deviceRetry: "Speichern erneut versuchen",
       deviceKeep: "Auf diesem Gerät behalten",
+      deviceCopyShort: "Kopie auf diesem Gerät",
+      deviceKeptShort: "Bleibt auf diesem Gerät",
       deviceDiscard: "Geräteänderungen verwerfen",
       deviceDiscardConfirm: "Den ausstehenden Text auf diesem Gerät verwerfen? Das kann nicht rückgängig gemacht werden.",
       failedCreateNote: "Die Notiz konnte nicht erstellt werden",
@@ -894,6 +899,7 @@ export const notebookWorkspaceMessages = i18n.define({
       documentReopen: "Notiz erneut öffnen",
       liveUpdatesStopped: "Live-Aktualisierungen wurden beendet. Lade die Seite neu, um die neuesten Änderungen zu sehen.",
       reload: "Neu laden",
+      syncStopped: "Speichern angehalten",
       storageExhaustedTitle: "Live-Bearbeitung nicht verfügbar",
       storageExhaustedDetail:
         "Auf dem Server ist kein Speicher für die gemeinsame Bearbeitung mehr frei, daher können Änderungen gerade nicht gespeichert werden. Lass diese Seite geöffnet, damit es automatisch erneut versucht wird, und bitte deine Administration, das JetStream-Speicherlimit zu erhöhen.",

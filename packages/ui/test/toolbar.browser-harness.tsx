@@ -172,10 +172,36 @@ const mountDock = (width = 720) => {
   );
 };
 
+// The one red pill of a stopped editor in place of the dock's pills.
+const mountAlert = (width = 720) => {
+  disposeDock?.();
+  disposeDock = render(
+    () => (
+      <div id="dock-column" style={{ display: "flex", "flex-direction": "column", width: `${width}px`, height: "400px" }}>
+        <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>Text</div>
+        <ToolbarDock>
+          <Toolbar label="Saving stopped" variant="floating" tone="danger">
+            <Toolbar.Label>
+              <i class="ti ti-alert-triangle" aria-hidden="true" />
+              Changes not saved. Connection closed
+            </Toolbar.Label>
+            <Toolbar.Spacer />
+            <Toolbar.Action label="Copy text" icon="ti ti-copy" text />
+            <Toolbar.Action label="Keep" icon="ti ti-device-floppy" text priority={2} />
+            <Toolbar.Action label="Discard" icon="ti ti-trash" text priority={3} />
+          </Toolbar>
+        </ToolbarDock>
+      </div>
+    ),
+    floatingHost,
+  );
+};
+
 declare global {
   interface Window {
     toolbarFixture: {
       mount: typeof mountFloating;
+      mountAlert: typeof mountAlert;
       mountDock: typeof mountDock;
       resizeDock: (width: number) => void;
       resize: (width: number) => void;
@@ -187,6 +213,12 @@ declare global {
 }
 window.toolbarFixture = {
   mount: mountFloating,
+  mountAlert: (width) => {
+    disposeFloating?.();
+    disposeFloating = undefined;
+    floatingHost.style.display = "block";
+    mountAlert(width);
+  },
   mountDock: (width) => {
     disposeFloating?.();
     disposeFloating = undefined;
