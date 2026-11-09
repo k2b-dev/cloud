@@ -812,9 +812,9 @@ function AiEnrichmentOverviewPanel(props: { overview: AiEnrichmentOverview; show
       </div>
 
       <Show when={props.overview.recentRuns.length > 0}>
-        <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
+        <div class="flex flex-col divide-y divide-(--ui-data-row-divider)">
           {props.overview.recentRuns.map((run) => (
-            <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-2 py-1.5 text-xs">
+            <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2 py-1.5 text-xs">
               <span class={`badge ${statusClass(run.status)}`}>{run.status}</span>
               <span class="min-w-0">
                 <span class="block truncate text-primary">{run.conversationTitle || run.conversationId}</span>
