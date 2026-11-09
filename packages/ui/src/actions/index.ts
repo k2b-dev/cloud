@@ -49,7 +49,14 @@ export {
 } from "./SpotlightSearch";
 export type { TabOption, TabsItemProps, TabsProps } from "./Tabs";
 export { Tabs } from "./Tabs";
-export type { ToolbarActionProps, ToolbarGroupProps, ToolbarLabelProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
-export { Toolbar } from "./Toolbar";
+export type {
+  ToolbarActionProps,
+  ToolbarDockProps,
+  ToolbarGroupProps,
+  ToolbarLabelProps,
+  ToolbarProps,
+  ToolbarSeparatorProps,
+} from "./Toolbar";
+export { Toolbar, ToolbarDock } from "./Toolbar";
 export type { ViewTab, ViewTabsProps } from "./ViewTabs";
 export { ViewTabs } from "./ViewTabs";

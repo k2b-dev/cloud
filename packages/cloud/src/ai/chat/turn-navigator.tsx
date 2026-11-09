@@ -121,7 +121,7 @@ export function TurnNavigator(props: TurnNavigatorProps) {
       <Show when={preview()}>
         {(entry) => (
           <div
-            class="pointer-events-none absolute left-10 z-30 w-80 max-w-[min(20rem,calc(100vw-6rem))] rounded-md border border-zinc-200 bg-white p-3 text-left shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+            class="pointer-events-none absolute left-10 z-30 w-80 max-w-[min(20rem,calc(100vw-6rem))] rounded-md border border-zinc-200 bg-white p-3 text-left shadow-[var(--k2b-shadow-float)] dark:border-zinc-700 dark:bg-zinc-900"
             style={{ top: `${previewTop()}px` }}
           >
             <p class="line-clamp-2 text-sm font-medium leading-5 text-primary">{entry().userPreview}</p>

@@ -248,6 +248,26 @@ for (const width of [1440, 390]) {
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
       expect(await page.locator('textarea:not([aria-hidden="true"])').inputValue()).toBe("Next unsent draft");
       expect(fixture.assistant.submitted()).toBe(1);
+      // After the way from the panel to the full chat, focus lands on the page's main region, the card on a phone.
+      // A landing point is not a control: no ink edge, no browser ring along the card.
+      await settled(page);
+      expect(
+        await page.locator("main.layout-content-main").evaluate((main: HTMLElement) => {
+          if (!main.hasAttribute("tabindex")) main.tabIndex = -1;
+          main.focus();
+          const probe = document.body.appendChild(document.createElement("i"));
+          probe.style.color = "var(--k2b-text)";
+          const ink = getComputedStyle(probe).color;
+          probe.remove();
+          const style = getComputedStyle(main);
+          const edge = Number.parseFloat(style.borderTopWidth);
+          return {
+            focused: document.activeElement === main,
+            edge: edge <= 1 && (edge === 0 || style.borderTopColor !== ink),
+            ring: style.outlineStyle === "none" || Number.parseFloat(style.outlineWidth) === 0,
+          };
+        }),
+      ).toEqual({ focused: true, edge: true, ring: true });
     } catch (error) {
       await page.screenshot({ path: resolve(tmpdir(), `assistant-panel-failure-${width}.png`) });
       console.error(JSON.stringify({ requests: fixture.assistant.requests, conversations: [...fixture.assistant.conversations.values()] }));
@@ -671,9 +691,11 @@ for (const provider of ["chat", "assistant"] as const) {
       if (provider === "assistant") await page.locator('[data-cloud-panel-provider="assistant"]').click();
       else await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
-      expect(await panel.locator('textarea:not([aria-hidden="true"])').isDisabled()).toBe(true);
       const notice = panel.getByText(provider === "chat" ? "Draft could not be kept in this tab" : "Draft not saved yet", { exact: true });
       await notice.waitFor();
+      // The composer locks once the draft store has failed, which can land after the fixture is ready.
+      await panel.locator('textarea:not([aria-hidden="true"]):disabled').waitFor();
+      expect(await panel.locator('textarea:not([aria-hidden="true"])').isDisabled()).toBe(true);
       const retry = panel.getByRole("button", { name: provider === "chat" ? "Try again" : "Save drafts", exact: true });
       await retry.click();
       expect(await retry.isEnabled()).toBe(true);
@@ -1086,6 +1108,101 @@ for (const width of [1440, 390]) {
   }, 30_000);
 }
 
+// The composer's "/" menu offers one app command, "Create task".
+const routeTaskCommand = (page: Page) =>
+  page.route("**/api/capabilities/v1/catalog?*", (route) =>
+    route.fulfill({
+      json: {
+        protocolVersion: 2,
+        apps: [
+          {
+            appId: "chat",
+            appName: "Chat",
+            appIcon: "ti ti-layout-kanban",
+            appDescription: "Tasks",
+            manifest: {
+              protocolVersion: 2,
+              appId: "chat",
+              manifestHash: "a".repeat(64),
+              types: [],
+              queries: [],
+              actions: [],
+              commands: [
+                {
+                  localId: "task.compose",
+                  title: "Create task",
+                  description: "Open a task",
+                  icon: "ti ti-checkbox",
+                  keywords: ["task"],
+                  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+                  path: "/app/chat",
+                },
+              ],
+            },
+          },
+        ],
+        page: { hasMore: false },
+      },
+    }),
+  );
+
+test.each(["command", "send"] as const)(
+  "Assistant keeps the field usable while the draft's own save creates the chat (%s)",
+  async (action) => {
+    fixture.assistant.reset();
+    const context = await newContext();
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await routeTaskCommand(page);
+    await page.route("**/api/capabilities/v1/commands/**", (route) => route.fulfill({ status: 503, json: { message: "Not opened here" } }));
+    await page.route("**/api/ai/conversations", async (route) => {
+      if (route.request().method() === "POST") await gate;
+      await route.continue();
+    });
+    try {
+      await page.goto(`${fixture.url}app/assistant`);
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      const composer = page.locator('textarea:not([aria-hidden="true"])');
+      const created = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/ai/conversations"));
+      await composer.fill(action === "command" ? "Plan /" : "Plan the trip");
+      await composer.click();
+      const command = page.getByRole("option").filter({ hasText: "Create task" });
+      if (action === "command") await command.waitFor();
+      // The person pauses; 2 s after the last edit, the draft's save creates the chat and is held.
+      await created;
+      const field = await composer.evaluate((element: HTMLTextAreaElement) => ({
+        disabled: element.disabled,
+        focused: element === document.activeElement,
+      }));
+      expect(field).toEqual({ disabled: false, focused: true });
+      if (action === "command") {
+        expect(await command.isVisible()).toBe(true);
+        // Chosen during the create, the command continues in that chat: it saves the draft there and asks for the app.
+        const resolved = page.waitForRequest("**/api/capabilities/v1/commands/**");
+        await command.click();
+        release();
+        await resolved;
+      } else {
+        // Sent during the create, the message goes to that chat once it exists.
+        const sent = page.waitForResponse((response) => response.url().endsWith("/turns") && response.ok());
+        await composer.press("Enter");
+        release();
+        await sent;
+      }
+      expect(fixture.assistant.conversations.size).toBe(1);
+      expect(fixture.assistant.submitted()).toBe(action === "send" ? 1 : 0);
+    } finally {
+      await context.close();
+      release();
+    }
+  },
+  30_000,
+);
+
 for (const width of [1440, 390]) {
   for (const pending of ["create", "save"] as const) {
     test(`Assistant full-view Command Escape restores editing during ${pending} at ${width}px`, async () => {
@@ -1104,54 +1221,27 @@ for (const width of [1440, 390]) {
         release = resolve;
       });
       let opened = 0;
-      await page.route("**/api/capabilities/v1/catalog?*", (route) =>
-        route.fulfill({
-          json: {
-            protocolVersion: 2,
-            apps: [
-              {
-                appId: "chat",
-                appName: "Chat",
-                appIcon: "ti ti-layout-kanban",
-                appDescription: "Tasks",
-                manifest: {
-                  protocolVersion: 2,
-                  appId: "chat",
-                  manifestHash: "a".repeat(64),
-                  types: [],
-                  queries: [],
-                  actions: [],
-                  commands: [
-                    {
-                      localId: "task.compose",
-                      title: "Create task",
-                      description: "Open a task",
-                      icon: "ti ti-checkbox",
-                      keywords: ["task"],
-                      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-                      path: "/app/chat",
-                    },
-                  ],
-                },
-              },
-            ],
-            page: { hasMore: false },
-          },
-        }),
-      );
+      await routeTaskCommand(page);
       await page.route("**/api/capabilities/v1/commands/**", async (route) => {
         opened++;
         await route.fulfill({ status: 503, json: { message: "Unexpected command navigation" } });
       });
-      // Only a create or save that starts with the command is held. The draft's own autosave of "Plan /" can start
-      // just before the command is chosen; held too, the opening would wait behind it and never begin.
+      // The draft saves itself 2 s after its last edit, which a slow runner reaches before the command is chosen
+      // (#2095). Every create is held: the opening continues in the chat the draft's save is creating, or creates it.
+      // A save is held only once the command is chosen; held too, the draft's earlier save of "Plan /" would keep the
+      // opening waiting behind it, and it would never begin.
       let chosen = false;
-      const openingRequest = (request: import("playwright").Request) =>
-        chosen &&
-        request.url().endsWith(pending === "create" ? "/conversations" : "/draft") &&
-        request.method() === (pending === "create" ? "POST" : "PUT");
+      let held!: () => void;
+      const holding = new Promise<void>((resolve) => {
+        held = resolve;
+      });
+      const holds = (request: import("playwright").Request) =>
+        pending === "create" ? request.method() === "POST" : chosen && request.method() === "PUT";
       await page.route(pending === "create" ? "**/api/ai/conversations" : "**/api/ai/conversations/*/draft", async (route) => {
-        if (openingRequest(route.request())) await gate;
+        if (holds(route.request())) {
+          held();
+          await gate;
+        }
         await route.continue();
       });
       try {
@@ -1170,10 +1260,9 @@ for (const width of [1440, 390]) {
         await composer.click();
         const command = page.getByRole("option").filter({ hasText: "Create task" });
         await command.waitFor();
-        const request = page.waitForRequest(openingRequest);
         chosen = true;
         await command.click();
-        await request;
+        await holding;
         // The field becomes read-only for the opening, which its held request does not order against: wait for that state.
         await page.waitForFunction(
           () => document.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.readOnly === true,

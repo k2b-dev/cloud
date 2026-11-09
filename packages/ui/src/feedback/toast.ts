@@ -133,8 +133,16 @@ const defaultDuration = (variant: ToastVariant, text: string, hasAction: boolean
  * Links in a toast go to web pages, mail, and phone numbers only. A caller's `javascript:` or `data:` URL never runs
  * from a toast: the link is left out, and an action with such a URL becomes a button that only closes the toast.
  */
-const SAFE_HREF = /^(?:https?:|mailto:|tel:|[/?#.]|[^:/?#]*(?:[/?#]|$))/i;
-const safeHref = (href: string): string | null => (SAFE_HREF.test(href.trim()) ? href.trim() : null);
+const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+const safeHref = (href: string): string | null => {
+  try {
+    // Resolved like the browser resolves it, so a relative link keeps working and a disguised scheme shows.
+    const url = new URL(href, document.baseURI);
+    return SAFE_PROTOCOLS.has(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+};
 
 const normalizedIconClass = (iconClass: string): string => {
   const tokens = iconClass

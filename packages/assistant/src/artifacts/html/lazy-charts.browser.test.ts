@@ -79,13 +79,15 @@ async function open(width: number, source = assets.chartParts.shared.code, theme
   await ready(page);
   return { page, context, requests };
 }
-const boxes = (page: Page) =>
-  app(page)
+const boxes = async (page: Page) => {
+  await settled(page);
+  return app(page)
     .locator("#charts")
     .evaluate((element) => ({
       height: element.getBoundingClientRect().height,
       after: document.querySelector("#after")!.getBoundingClientRect().top,
     }));
+};
 const release = (page: Page) =>
   app(page)
     .locator("body")
@@ -122,10 +124,10 @@ for (const width of [1200, 390])
           await page.screenshot({ path: `${process.env.CHART_LOADING_SHOTS}/charts-loading-light-${width}.png` });
         }
         await release(page);
-        await app(page).locator('[data-chart-kind="histogram"] svg').waitFor();
-        await app(page).locator('[data-chart-kind="gauge"] svg').waitFor();
+        // Keep both visibility conditions in the read's locator. Separate waits
+        // spend the cold frame's deadline on extra browser round trips.
         const rendered = await app(page)
-          .locator("#charts")
+          .locator('#charts:has([data-chart-kind="histogram"] svg:visible):has([data-chart-kind="gauge"] svg:visible)')
           .evaluate((element) => {
             const box = {
               height: element.getBoundingClientRect().height,
@@ -147,10 +149,9 @@ for (const width of [1200, 390])
           .locator("[data-chart-datum]")
           .first()
           .dispatchEvent("pointermove", { pointerType: "mouse", clientX: 100, clientY: 150 });
-        await chart.focus();
+        // locator.press focuses the chart before sending the real key event.
         await chart.press("ArrowRight");
-        const tooltip = chart.locator(".k2b-chart__tooltip");
-        await tooltip.waitFor();
+        const tooltip = chart.locator(".k2b-chart__tooltip:visible");
         expect(await tooltip.textContent()).toContain("Day ");
         await chart.press("Escape");
         await app(page).locator("#draw").click();
@@ -219,6 +220,64 @@ test("frames receive only drawn kinds and one shared part, never chart source in
     await context.close();
   }
 });
+
+for (const width of [1200, 390])
+  test(`dot matrices load only dots and shared offline, preserve boxes and resolve PDF markup, ${width}px`, async () => {
+    const script = `
+      globalThis.receivedParts=[];
+      addEventListener("message",event=>{
+        const part=event.data?.type==="result" && event.data.value;
+        if(part && typeof part.code==="string") globalThis.receivedParts.push(part.hash);
+      });
+      document.querySelector("#draw").addEventListener("click",async()=>{
+        const markup=cloud.chart({kind:"bar",title:"Newsletter",marks:"dots",layout:"nested",total:1,dots:20,x:["May","Jun"],format:{style:"percent"},series:[{label:"Opened",data:[0.5,0.6]},{label:"Clicked",data:[0.2,0.25]}]});
+        document.querySelector("#charts").innerHTML=markup;
+        await cloud.pdf.render({html:String(markup)});
+        document.querySelector("#result").textContent="PDF ready";
+      });`;
+    const source = delayed + assets.chartParts.shared.code;
+    const sharedHash = new Bun.CryptoHasher("sha256").update(source).digest("hex");
+    const { page, context, requests } = await open(width, source, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const pending = await boxes(page);
+      await release(page);
+      await app(page).getByText("PDF ready", { exact: true }).waitFor();
+      await app(page).locator(".k2b-chart-dot").last().waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(pending);
+      expect(await app(page).locator(".k2b-chart-dot").count()).toBe(40);
+      expect(await app(page).locator("[data-chart-legend-value]").allTextContents()).toEqual(["60%", "25%"]);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "receivedParts").sort()),
+      ).toEqual([sharedHash, assets.chartParts.kinds.dots!.hash].sort());
+      await app(page).locator(".k2b-chart").focus();
+      await app(page).locator(".k2b-chart").press("Home");
+      await app(page).locator('[role="tooltip"]:popover-open').waitFor();
+      expect(await app(page).locator("[data-chart-legend-value]").allTextContents()).toEqual(["50%", "20%"]);
+      await app(page).locator(".k2b-chart").press("Escape");
+      expect(await app(page).locator("[data-chart-legend-value]").allTextContents()).toEqual(["60%", "25%"]);
+      const pdf = await page.evaluate(() => globalThis.lazyChartHarness.pdfs[0]);
+      expect(pdf).toHaveProperty("html");
+      const html = pdf && typeof pdf === "object" && "html" in pdf && typeof pdf.html === "string" ? pdf.html : "";
+      expect(html.match(/class="k2b-chart-dot"/g)).toHaveLength(40);
+      expect(html).not.toContain("data-chart-pending");
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
+      expect(await page.evaluate(() => globalThis.lazyChartHarness.events.filter((event) => event.type === "error"))).toEqual([]);
+      if (process.env.CHART_DOTS_SHOTS) {
+        await mkdir(process.env.CHART_DOTS_SHOTS, { recursive: true });
+        await page.screenshot({ path: `${process.env.CHART_DOTS_SHOTS}/dots-offline-ready-light-${width}.png` });
+      }
+    } finally {
+      await context.close();
+    }
+  });
 
 test("a corrupt host-held kind is rejected before import and offers retry offline", async () => {
   const { page, context, requests } = await open(
@@ -351,8 +410,18 @@ document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"
       await app(page).locator("svg[data-calendar]").waitFor();
       expect(await boxes(page)).toEqual(loading);
       const chart = app(page).locator('[data-chart-kind="heatmap"]');
-      if (fixture.name === "year") expect(await chart.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-      else expect(await chart.evaluate((element) => element.scrollLeft)).toBe(0);
+      // The reversed scroll origin starts at zero. Test the visible observation,
+      // rather than assuming the engine's sign for a horizontal scroll offset.
+      expect(await chart.evaluate((element) => element.scrollLeft)).toBe(0);
+      if (fixture.name === "year") {
+        expect(await chart.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
+        const viewport = (await chart.boundingBox())!,
+          newest = (await chart.locator("[data-chart-datum] rect").last().boundingBox())!,
+          oldest = (await chart.locator("[data-chart-datum] rect").first().boundingBox())!;
+        expect(newest.x).toBeGreaterThanOrEqual(viewport.x);
+        expect(newest.x + newest.width).toBeLessThanOrEqual(viewport.x + viewport.width + 1);
+        expect(oldest.x + oldest.width).toBeLessThan(viewport.x);
+      }
       if (fixture.data.length) {
         await chart.focus();
         await chart.press("End");
@@ -587,11 +656,64 @@ for (const width of [1200, 390])
     }
   });
 
+for (const width of [1200, 390])
+  test(`line uses the offline plugin without moving its frame, ${width}px`, async () => {
+    const script = `const plain={kind:"line",title:"History",series:[{data:[{x:1,y:10},{x:2,y:20}]}]};
+    document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart(plain);
+      document.querySelector("#result").innerHTML='<button id="details">Forecast</button>';
+      document.querySelector("#details").addEventListener("click",()=>{document.querySelector("#charts").innerHTML=cloud.chart({kind:"line",title:"Liquidity",series:[{label:"Cash",data:[{x:1,y:100},{x:2,y:120},{x:3,y:110}]}],forecast:{from:2,band:[[100,140],[90,130]]},threshold:{value:95,label:"Reserve"},legendValues:true});});
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, "light", script);
+    try {
+      // An ordinary line draws eagerly and does not execute the offline plugin.
+      await app(page).locator("#draw").click();
+      await app(page).locator('[data-chart-kind="line"] svg').waitFor();
+      // Read each phase together; remote browser transport counts against the same case deadline.
+      const initial = await app(page)
+        .locator("body")
+        .evaluate(() => ({
+          pending: document.querySelectorAll("[data-chart-pending]").length,
+          loads: Reflect.get(globalThis, "__chartLoads") ?? 0,
+        }));
+      expect(initial.pending).toBe(0);
+      expect(initial.loads).toBe(0);
+      await app(page).locator("#details").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const pending = await app(page)
+        .locator("#charts")
+        .evaluate((element) => {
+          const box = {
+            height: element.getBoundingClientRect().height,
+            after: document.querySelector("#after")!.getBoundingClientRect().top,
+          };
+          delete document.documentElement.dataset.chartModuleLoading;
+          Reflect.get(globalThis, "__releaseCharts")();
+          return box;
+        });
+      await app(page).locator(".k2b-line-forecast-band").first().waitFor();
+      await settled(page);
+      const rendered = await app(page)
+        .locator("#charts")
+        .evaluate((element) => ({
+          box: { height: element.getBoundingClientRect().height, after: document.querySelector("#after")!.getBoundingClientRect().top },
+          pending: element.querySelectorAll("[data-chart-pending]").length,
+          loads: Reflect.get(globalThis, "__chartLoads"),
+        }));
+      expect(rendered.box).toEqual(pending);
+      expect(rendered.pending).toBe(0);
+      expect(rendered.loads).toBe(1);
+      expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
 // Each added renderer also crosses the real offline first-use boundary.
 const addedSpecs = [
   { kind: "treemap", groups: ["North"], data: [{ label: "A", group: "North", value: 42 }] },
   { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "A", value: 42, prev: 32 }] },
-
   {
     kind: "bubble",
     groups: ["North"],
@@ -601,7 +723,20 @@ const addedSpecs = [
     data: [{ label: "A", group: "North", x: 42, y: 32, size: 12 }],
   },
   { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Now", data: [3, 4, 2] }] },
+  {
+    kind: "sankey",
+    nodes: [
+      { id: "a", label: "Source" },
+      { id: "b", label: "Read" },
+    ],
+    links: [{ source: "a", target: "b", value: 42 }],
+  },
 ];
+addedSpecs.push({
+  kind: "sankey",
+  nodes: [...Array.from({ length: 100 }, (_, i) => ({ id: `source${i}`, label: `Source ${i}` })), { id: "sink", label: "Read" }],
+  links: Array.from({ length: 100 }, (_, i) => ({ source: `source${i}`, target: "sink", value: 1 })),
+});
 for (const width of [1200, 390])
   test(`added rare charts reserve their real frame boxes, ${width}px`, async () => {
     const script = `document.querySelector("#draw").addEventListener("click",()=>{
@@ -616,7 +751,7 @@ for (const width of [1200, 390])
       await settled(page);
       const loading = await boxes(page);
       await release(page);
-      for (const spec of addedSpecs) await app(page).locator(`[data-chart-kind="${spec.kind}"] svg`).waitFor();
+      for (const spec of addedSpecs) await app(page).locator(`[data-chart-kind="${spec.kind}"] svg`).first().waitFor();
       await settled(page);
       expect(await boxes(page)).toEqual(loading);
       expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);

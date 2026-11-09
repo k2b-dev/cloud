@@ -21,7 +21,9 @@ Color goes only where it means something.
   colored surface it is white. Only the one main action of a view is fully
   filled, so two accent fills never sit side by side.
 - **No fake depth.** No paper, stone, grooves, or decorative shadows. A
-  surface is flat; depth comes from inset space and the shared surface roles.
+  shadow appears only between layers, from the shared tokens: an island in the
+  main content casts a soft one, and everything else is flat
+  ([Layers and shadows](/en/ui/surfaces/elevation)).
 
 ## Contrast
 

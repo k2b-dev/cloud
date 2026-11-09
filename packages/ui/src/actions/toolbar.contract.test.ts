@@ -28,18 +28,25 @@ test("pressed toolbar buttons retain their state in forced colours", () => {
   ]);
 });
 
-test("floating Toolbar reserves height, uses the float shadow, and keeps hints out of layout", () => {
+test("floating Toolbar is a pill with the toolbar shadow, reserves height, and keeps hints out of layout", () => {
   const declarations = (selector: string) => {
     const rule = rules.find((rule) => rule.selector === selector && rule.context === "");
     expect(rule, selector).toBeDefined();
     return cssDeclarations(rule!.body);
   };
   const pill = declarations('.k2b-ui .k2b-toolbar[data-variant="floating"]');
-  expect(pill.get("box-shadow")).toEqual(["var(--k2b-shadow-float)"]);
-  expect(pill.get("block-size")).toEqual(["3.25rem"]);
+  expect(pill.get("box-shadow")).toEqual(["var(--k2b-shadow-toolbar)"]);
+  expect(pill.get("border-radius")).toEqual(["999px"]);
+  expect(pill.get("block-size")).toEqual(["calc(3.25rem + 2px)"]);
   const strip = declarations(".k2b-ui .k2b-toolbar-float");
   expect(strip.get("position")).toEqual(["sticky"]);
   expect(strip.get("margin-block-start")).toEqual(["auto"]);
+  // `edge="top"` sticks the strip to the top of its column in its place in the flow.
+  const top = declarations('.k2b-ui .k2b-toolbar-float[data-edge="top"]');
+  expect(top.get("inset-block")).toEqual(["0 auto"]);
+  expect(top.get("margin-block-start")).toEqual(["0"]);
+  // Compact: labels go before any action moves into More.
+  expect(declarations(".k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__text").get("display")).toEqual(["none"]);
   expect(strip.get("pointer-events")).toEqual(["none"]);
   expect(declarations(".k2b-ui .k2b-toolbar .k2b-toolbar__hint").get("position")).toEqual(["absolute"]);
   // Measuring never shows or hides More, which would drop focus from it: an idle More keeps its box out of the flow.

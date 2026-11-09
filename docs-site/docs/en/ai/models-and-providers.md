@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-11-04
+updated: 2026-11-08
 ---
 
 # Models and providers
@@ -197,6 +197,50 @@ Only supplied fields change. JSON `null` clears an optional value; clearing a
 variant's prices restores its model's prices. Use the model ID alone to update
 its standard variant. Commands also accept `--input <json>` or `--stdin` and
 read the current model or variant revision before writing.
+
+## Set the output budget
+
+Reasoning and the visible answer share the output-token budget. A small limit
+can leave no space for the answer after the model has reasoned. Set **Max output**
+on the model or variant when you need a fixed budget; a variant overrides its
+model, and an explicit per-request limit overrides both. Usage allowances can
+still reduce a request's budget.
+
+When no limit is configured, thinking-capable models use the provider-reported
+output maximum, bounded by the estimated context space left after the prompt,
+history, tools and response schema. Without a reported output maximum, they
+retain the provider's default: a context window alone does not establish how
+much output a provider accepts. Cloud does not take a fixed percentage of the
+context window. This is an estimate, not a guarantee of the provider's tokenizer
+or sufficient space for every answer.
+
+Thinking-capable means a non-`none` reasoning effort, an enabled thinking or
+reasoning parameter, or the adapter's thinking capability. Generic
+OpenAI-compatible endpoints advertise that capability by default, so they get
+this conservative budget even when no effort is configured. `reasoningEffort:
+"none"` and non-thinking endpoints retain the provider's default. An explicit
+output limit always takes precedence over this automatic rule.
+
+Discovery preserves `max_output_tokens` (or OpenRouter's
+`top_provider.max_completion_tokens`) as `outputTokenLimit` when adding a model
+through administration. An existing model can set this catalog field through
+the model update API or CLI; `null` clears it. For older thinking-capable catalog
+entries without either output setting, Cloud tries the provider's model listing
+when resolving the model. This lookup is bounded to ten seconds; unavailable
+listings do not block generation. Saving the reported limit in the catalog
+avoids that extra lookup. Set the model's `contextWindow` to its documented
+value too: without it, the adapter's context window is used (128,000 tokens for
+a generic compatible endpoint). Provider defaults and reported limits can
+change; verify them against the provider's model documentation.
+
+Nessi 1.2.0 has no typed separate reasoning-token budget. Cloud uses the shared
+output budget; provider-specific `extraBody` parameters remain an operator choice.
+
+An answer that reaches its output limit stays completed. Assistant and the
+shared Gustav chat renderer show a persistent notice below it, including when
+reasoning consumed at least 80% of its measured output tokens. **Continue
+writing** sends a follow-up request to finish the answer, using the chat's
+current model. The notice remains visible after reloading the chat.
 
 ## Set the thinking level
 

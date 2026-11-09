@@ -31,6 +31,10 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
       .join("\n");
   // Only requested kind assets and shared helpers enter a frame over its host channel.
   expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("k2b-line-forecast");
+  expect(normal).not.toContain("k2b-line-negative-zone");
+  expect(normal).not.toContain("k2b-line-threshold");
+  expect(rare).toContain("k2b-line-forecast-band");
   expect(normal).not.toContain("k2b-waterfall-bar");
   expect(rare).toContain("k2b-waterfall-bar");
   expect(normal).toContain("Waterfall balances must be finite");
@@ -51,14 +55,19 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // 8,040 B largest kind, 14,842 B shared, 68,369 B total measured.
+  // Main includes the line, calendar, distribution and Sankey parts; dots adds one part (7,167 B).
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  // Pareto +299 B and treemap +34 B; retain exactly main's host headroom.
-  expect(total).toBeLessThan(68_433);
+  // Main's 89,376 B ceiling plus exactly the dots part.
+  expect(total).toBeLessThan(96_543);
+  expect(parts.kinds.dots!.code).not.toContain("k2b-chart-ranked");
+  expect(parts.kinds.dots!.code).not.toContain("Bar series must have the same length as x");
+  expect(parts.kinds.dots!.code).not.toContain("stdlib-chart-empty-text");
   const markers = {
+    line: "k2b-line-forecast-band",
     area: "k2b-area-layer",
+    dots: "k2b-chart-dot",
     waterfall: "k2b-waterfall-bar",
     heatmap: "data-calendar-weekdays",
     bubble: "k2b-chart-bubble-label",
@@ -72,6 +81,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
     barGauge: "stdlib-chart-bar-gauge-track",
     boxplot: "stdlib-chart-box-whisker",
     scatter: "stdlib-chart-trendline",
+    sankey: "k2b-chart-sankey-link",
   } satisfies Record<RareChart["kind"], string>;
   expect(Object.keys(parts.kinds).sort()).toEqual(Object.keys(markers).sort());
   for (const [kind, marker] of Object.entries(markers)) {
@@ -96,6 +106,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(normal).not.toContain(".stdlib-chart-series-0 {");
   expect(normal).toContain("Funnel values must be finite and nonnegative, or null");
   expect(rare).not.toContain("Funnel values must be finite and nonnegative, or null");
+  expect(normal).not.toContain("k2b-chart-dot");
+  expect(rare).toContain("k2b-chart-dot");
   // Reference cells need only identity validation, not capability registration.
   expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).

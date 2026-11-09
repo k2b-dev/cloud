@@ -272,6 +272,18 @@ describe("k2b notes · Produktions-SPA", () => {
     );
     // The "Weiterschreiben" card stands in for the newest note's own card, as in mockup v4.
     expect(regularCount).toBe(8);
+    // A note card is an island: it carries the island shadow of @k2b/ui, like a note card in Notebooks.
+    expect(
+      await cards()
+        .first()
+        .evaluate((card) => {
+          const probe = document.body.appendChild(document.createElement("div"));
+          probe.style.boxShadow = "var(--k2b-shadow-raised)";
+          const raised = getComputedStyle(probe).boxShadow;
+          probe.remove();
+          return raised !== "none" && getComputedStyle(card).boxShadow === raised;
+        }),
+    ).toBe(true);
   }, 20_000);
 
   test("Control+K: Volltexttreffer öffnen und eine erfolglose Suche anbieten", async () => {

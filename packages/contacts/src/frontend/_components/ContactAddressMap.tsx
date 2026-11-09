@@ -159,7 +159,7 @@ export default function ContactAddressMap(props: Props) {
             {(content) => (
               <div class="pointer-events-none absolute inset-0 grid place-items-center p-4">
                 <span
-                  class="pointer-events-auto inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--k2b-surface)] px-3.5 py-1.5 text-[13px] text-secondary shadow-[0_1px_4px_rgb(0_0_0/0.12)]"
+                  class="pointer-events-auto inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--k2b-surface)] px-3.5 py-1.5 text-[13px] text-secondary shadow-[var(--k2b-shadow-toolbar)]"
                   role={view().kind === "failed" ? "alert" : "status"}
                 >
                   {content()}

@@ -261,15 +261,15 @@ On Safari, diagrams need Safari 17.4 or later.
 
 - Use one surface to group related content; do not stack papers to manufacture
   hierarchy.
-- Take depth from the shared surface. An in-flow surface gets its depth from
-  the surface step and inset shading of the shared component, such as the
-  quiet well of an input, never from an outer shadow, a nested border, or a
-  box inside a box. Floating layers, such as dialogs, popovers, menus, and
-  toasts, keep their soft outer shadow, because they sit above the page and
-  must read as separate from it. Shared components that own their frame,
-  shadow, or inner sections, such as the workspace card, an `elevated`
-  `Paper`, or a floating `PanelDialog`, keep them; app code does not add its
-  own.
+- Take depth from the shared layers
+  ([Layers and shadows](/en/ui/surfaces/elevation)). A shadow appears only
+  where one layer lies on another: an island in the main content (a framed
+  topic, a content card, a dashboard frame) casts the soft island shadow, an
+  overlaying drawer or sheet casts the side or sheet shadow, and menus,
+  dialogs, and toasts float with the float shadow. Lists, grids, rows,
+  columns, panels, and controls are flat, and the inside of an island is flat
+  too. Shared components choose their layer themselves; app code never adds a
+  shadow of its own (UI-29, `bun scripts/check.ts shadow-tokens`).
 - Keep one visible dialog frame. With `PanelDialog`, the header and footer stay
   fixed while `PanelDialog.Body` owns scrolling.
 - Inputs are quiet wells with a clear focus state, not permanently emphasized

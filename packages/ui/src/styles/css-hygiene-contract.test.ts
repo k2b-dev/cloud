@@ -131,9 +131,8 @@ describe("@k2b/ui stylesheet hygiene", () => {
     for (const selector of [
       sidebarSelector!,
       ".k2b-ui .k2b-detail-panel__summary-header h3",
-      ".k2b-ui .k2b-detail-panel__section-header h3",
-      ".k2b-ui .k2b-detail-panel__section-title",
-      ".k2b-ui .k2b-discussion__header :is(h2, h3)",
+      ".k2b-ui .k2b-section__title",
+      ".k2b-ui .k2b-section__part-title",
       ".k2b-ui .k2b-content-structured-data__title",
     ]) {
       const label = declarations(selector);

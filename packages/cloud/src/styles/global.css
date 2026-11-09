@@ -436,7 +436,7 @@ solid-island {
     border-top: 1px solid transparent;
     border-radius: 1.75rem 1.75rem 0 0;
     background: var(--k2b-surface);
-    box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+    box-shadow: var(--k2b-shadow-frame);
   }
   /* Dark: a faint top edge keeps the card apart from the dark gradient. */
   .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
@@ -484,7 +484,7 @@ solid-island {
         border-top: 1px solid transparent;
         border-radius: 1.75rem 1.75rem 0 0;
         background: var(--k2b-surface);
-        box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+        box-shadow: var(--k2b-shadow-frame);
       }
 
       & > .k2b-app-workspace__head {
@@ -603,9 +603,6 @@ solid-island {
     }
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item:hover {
       background: color-mix(in srgb, var(--k2b-surface) 45%, transparent);
-    }
-    .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active {
-      box-shadow: 0 1px 2px rgb(9 9 11 / 0.06);
     }
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active,
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active:hover {

@@ -1,6 +1,7 @@
 import { calendarLayout } from "./calendar";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
+import { sankeyWidth } from "./sankey-size";
 import { escapeXml } from "./svg-renderers";
 import type { ChartDatum, ChartKind } from "./types";
 
@@ -12,6 +13,8 @@ export type ChartSnapshot = {
   height: number;
   stretch: boolean;
   minWidth?: number;
+  /** Uniform calendar growth stops at 32px cells. */
+  maxWidth?: number;
   marks: readonly { key: string; rowKey: string; datum: ChartDatum; tooltip: ChartTooltip; reference?: boolean }[];
 };
 
@@ -37,7 +40,7 @@ export function prepareChartSnapshot(
   sizing: Parameters<typeof chartRenderHeight>[1] = {},
 ): ChartSnapshot {
   const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
-  const width = calendar?.width ?? 480;
+  const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : (calendar?.width ?? 480);
   const height = chartRenderHeight(options, sizing);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
@@ -82,7 +85,7 @@ export function prepareChartSnapshot(
     svg: formattedSvg,
     width,
     height,
-    ...(calendar ? { minWidth: calendar.minWidth } : {}),
+    ...(calendar ? { minWidth: calendar.minWidth, maxWidth: calendar.maxWidth } : {}),
     stretch: !calendar && !["map", "pie", "donut", "gauge", "radar"].includes(options.kind),
     marks,
   };

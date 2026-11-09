@@ -2,7 +2,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { Button } from "../src/actions/Button";
 import { Dropdown } from "../src/actions/Dropdown";
-import { Toolbar, type ToolbarActionProps, type ToolbarProps } from "../src/actions/Toolbar";
+import { Toolbar, type ToolbarActionProps, ToolbarDock, type ToolbarProps } from "../src/actions/Toolbar";
 
 render(
   () => (
@@ -146,10 +146,38 @@ const mountFloating = (width = 575, hidden = false, options: LayoutOptions = { v
   );
 };
 
+// Two pills in one dock: formatting at the start edge, page actions at the end edge.
+let disposeDock: (() => void) | undefined;
+const mountDock = (width = 720) => {
+  disposeDock?.();
+  disposeDock = render(
+    () => (
+      <div id="dock-column" style={{ display: "flex", "flex-direction": "column", width: `${width}px`, height: "400px" }}>
+        <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>Text</div>
+        <ToolbarDock>
+          <Toolbar label="Formatting" variant="floating">
+            {["Bold", "Italic", "Underline", "Strike", "Code", "List", "Quote"].map((label, index) => (
+              <Toolbar.Action label={label} icon="ti ti-bold" priority={index + 1} />
+            ))}
+          </Toolbar>
+          <Toolbar label="Page" variant="floating">
+            {["Comments", "Read", "Details"].map((label, index) => (
+              <Toolbar.Action label={label} icon="ti ti-info-circle" priority={index + 1} text={index < 2} />
+            ))}
+          </Toolbar>
+        </ToolbarDock>
+      </div>
+    ),
+    floatingHost,
+  );
+};
+
 declare global {
   interface Window {
     toolbarFixture: {
       mount: typeof mountFloating;
+      mountDock: typeof mountDock;
+      resizeDock: (width: number) => void;
       resize: (width: number) => void;
       show: () => void;
       clicked: string[];
@@ -159,6 +187,15 @@ declare global {
 }
 window.toolbarFixture = {
   mount: mountFloating,
+  mountDock: (width) => {
+    disposeFloating?.();
+    disposeFloating = undefined;
+    floatingHost.style.display = "block";
+    mountDock(width);
+  },
+  resizeDock: (width) => {
+    document.getElementById("dock-column")!.style.width = `${width}px`;
+  },
   resize: (width) => {
     document.getElementById("selection-column")!.style.width = `${width}px`;
   },
