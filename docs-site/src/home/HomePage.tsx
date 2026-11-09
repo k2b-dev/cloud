@@ -71,9 +71,12 @@ export default function HomePage(props: HomePageProps) {
               <a class="cloud-news" href="/en/code">
                 <FeatCodeIcon />
                 <span>
-                  <b>feat/code</b> Automations and pages, written with Gustav
+                  <b>feat/code</b>
+                  <span aria-hidden="true">·</span> Automate anything in plain TypeScript
                 </span>
-                <span aria-hidden="true">→</span>
+                <span class="cloud-news-arrow" aria-hidden="true">
+                  →
+                </span>
               </a>
               <h1>
                 The open-source
@@ -169,9 +172,12 @@ export default function HomePage(props: HomePageProps) {
                 <h2 id="cloud-feat-code-title">What if n8n, Workers, TypeScript, SQLite and Lovable were one thing?</h2>
               </div>
               <div class="cloud-feat-code-intro">
+                <p class="cloud-feat-code-lead">
+                  Automate anything in plain TypeScript, with native access to every app, even your own. Your apps finally work as one.
+                </p>
                 <p>
-                  Tell Gustav what should happen. It writes small TypeScript against your installation's apps, checks and tests it, and
-                  hands you a version to switch on. Every call runs as one account, within what an administrator approved.
+                  Gustav writes it, you approve it. Every call runs as one account, within what an administrator approved, and lands in the
+                  log.
                 </p>
                 <p class="cloud-formula">
                   <span>n8n</span>

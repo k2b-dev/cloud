@@ -3,7 +3,7 @@ title: feat/code
 navTitle: Overview
 section: Start
 order: 10
-description: Small TypeScript projects that automate work, use AI and add pages to Cloud. Checked, approved and run as exactly one account.
+description: Automate anything in plain TypeScript, with native access to every app, even your own. Your apps finally work as one.
 tags: [code, automation, ai, gustav]
 updated: 2026-11-09
 ---
@@ -12,16 +12,16 @@ updated: 2026-11-09
 
 What if n8n, Cloudflare Workers, TypeScript, SQLite and Lovable were one thing,
 inside the platform that already holds your mail, tasks, files and tables?
+That is feat/code. Code reacts to events, runs on a schedule, calls every
+Cloud app, asks AI for help and serves its own pages.
 
-That is feat/code: a small TypeScript project that reacts to events, runs on a
-schedule, calls every Cloud app, asks AI for help and serves its own pages.
-You describe it to Gustav or write it in your editor. Cloud checks it, an
-administrator approves what needs approval, a person switches it on, and every
-call it makes is checked and logged.
+Gustav writes it, you approve it. You can also write it in your editor. Cloud
+checks it, an administrator approves what needs approval, a person switches it
+on, and every call it makes is checked and logged.
 
 - **n8n:** automations start from an event or a schedule and call any app:
   tag a mail, create a task, post into a chat. As code, not boxes and arrows.
-- **Cloudflare Workers:** small sandboxed TypeScript with routes and pages
+- **Cloudflare Workers:** sandboxed TypeScript with routes and pages
   under `/code/<id>/`. No server, no deployment, no credentials in the source.
 - **TypeScript:** an SDK that your installation generates from its apps. Your
   editor and the checker know every operation, input and result.

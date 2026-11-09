@@ -43,7 +43,7 @@ export default defineFibel({
       id: "code",
       label: "feat/code",
       description:
-        "feat/code: small checked TypeScript projects that automate work, use AI and add pages to Cloud under administrator control.",
+        "feat/code: automate anything in plain TypeScript, with native access to every app, even your own, under administrator control.",
       content: "code-content",
       path: "/code",
     },

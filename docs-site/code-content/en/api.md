@@ -24,6 +24,7 @@ appear exactly like built-in ones.
 | `code_sdk` in a Gustav chat | The same declarations. Gustav reads them before it writes a line. |
 | `cld capabilities catalog` | Every app's capabilities; `--json` returns the complete manifests with inputs, results and policy. |
 | `cld events ls` | The events Code can react to. |
+| The Cloud [MCP server](/en/docs/platform/mcp) | Every live capability as a tool, and `cloud__events__list` for events. It does not hand out the Code SDK itself. |
 | The **API Docs** app | The live OpenAPI references of the apps' HTTP APIs, for integrations outside Code. |
 
 ```terminal ~/work/code/mail/Mbx001
@@ -38,6 +39,12 @@ $ cld events ls
 
 The checker uses the server's current SDK, even when your local `sdk/` folder
 is older. Pull again after an app update.
+
+An agent outside Gustav, such as Claude Code or Codex, works the same way: it
+runs `cld code sdk pull` and reads the typed `sdk/` folder, and it reads
+`cld capabilities catalog --json` for descriptions and policy. Connected to the
+Cloud MCP server, it can also look up capabilities and events there. To
+change Code, it uses the same `cld code` commands as a person.
 
 ## How calls work
 

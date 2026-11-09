@@ -201,6 +201,16 @@
   color: var(--c-muted) !important;
 }
 
+/* Fibel's round header buttons darken their border on hover; keep the edge
+   and let the surface change instead. */
+html:not(.dark) :where(.cloud-site, .fibel-app) .fibel-control-icon-button {
+  border-color: var(--c-line-2);
+}
+
+html:not(.dark) :where(.cloud-site, .fibel-app) .fibel-control-icon-button:hover {
+  background: var(--c-sunken);
+}
+
 /* The UI catalog also loads Cloud's generated utility CSS. Keep the Fibel
    brand's desktop position stable when both utility stylesheets are present. */
 @media (min-width: 48rem) {
@@ -507,9 +517,10 @@
   flex: 0 0 auto;
 }
 
+/* Hover never darkens an edge: the border keeps its line token, the surface
+   turns quietly sunken. */
 .cloud-home .cloud-btn:hover {
-  border-color: var(--c-faint);
-  background: var(--c-canvas);
+  background: var(--c-sunken);
 }
 
 .cloud-home .cloud-btn-primary {
@@ -1547,11 +1558,20 @@
   font-size: 0.84rem;
   line-height: 1.35;
   text-decoration: none;
-  transition: border-color 140ms ease;
+  transition: background 140ms ease;
 }
 
 .cloud-home .cloud-news:hover {
-  border-color: var(--c-faint);
+  background: var(--c-sunken);
+}
+
+.cloud-news-arrow {
+  display: inline-block;
+  transition: transform 140ms ease;
+}
+
+.cloud-news:hover .cloud-news-arrow {
+  transform: translateX(0.15rem);
 }
 
 .cloud-news svg {
@@ -1591,10 +1611,15 @@
   gap: 1.25rem;
 }
 
-.cloud-feat-code-intro > p:first-child {
+.cloud-feat-code-intro > p:not(.cloud-formula) {
   max-width: 58ch;
   color: var(--c-ink-2);
   line-height: 1.62;
+}
+
+.cloud-home .cloud-feat-code-lead {
+  color: var(--c-ink);
+  font-size: 1.08rem;
 }
 
 .cloud-home .cloud-formula {
