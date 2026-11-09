@@ -4,6 +4,7 @@ import { type AppEventDeliveryContext, type AppEventEnvelope, AppEventEnvelopeSc
 import { audit } from "@k2b/cloud/services";
 import { type ResourceEventBinding, registerResourceEventConsumer, replayResourceEventDelivery } from "@k2b/cloud/services/app-events";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
+import { codeEventEntry, codeEventPrincipal } from "./event-access";
 import { CODE_EVENT_CONSUMER } from "./event-subscriptions";
 import { codeSettings } from "./settings";
 import { findCode, insertCodeRun, listCodeRuns, readCode } from "./store";
@@ -23,23 +24,23 @@ export async function admitCodeEvent(
     const code = await findCode(binding.key, db);
     const [subscription] = await db`SELECT id FROM events.app_subscriptions WHERE id=${context.subscriptionId}
       AND state='active' AND resource_binding=${JSON.stringify(binding)}::text::jsonb FOR SHARE`;
-    const [account] = await db`SELECT id FROM auth.service_accounts WHERE id=${code?.serviceAccountId ?? null}::uuid
-      AND kind='code' AND status='active' FOR SHARE`;
+    if (!code) return { cancelled: true as const };
+    const principal = codeEventPrincipal(code);
+    const [account] =
+      principal.type === "user"
+        ? await db`SELECT id FROM auth.users WHERE id=${principal.userId}::uuid FOR SHARE`
+        : await db`SELECT id FROM auth.service_accounts WHERE id=${principal.serviceAccountId}::uuid AND kind='code' AND status='active' FOR SHARE`;
     const [currentMandate] = await db<{ workload_id: string }[]>`SELECT workload_id FROM auth.mandates
       WHERE id=${binding.mandateId}::uuid AND revision=${binding.mandateRevision} AND owner_app_id='runner'
         AND workload_type='code.version' AND state='active' AND confirmed_at IS NOT NULL
-        AND (expires_at IS NULL OR expires_at>clock_timestamp()) AND subject_kind='service_account'
-        AND subject_service_account_id=${code?.serviceAccountId ?? null}::uuid FOR SHARE`;
+        AND (expires_at IS NULL OR expires_at>clock_timestamp()) AND subject_kind=${principal.type}
+        AND COALESCE(subject_user_id,subject_service_account_id)=${principal.type === "user" ? principal.userId : principal.serviceAccountId}::uuid FOR SHARE`;
     if (
       !subscription ||
       !account ||
-      !code ||
       code.state !== "active" ||
-      code.owner.kind !== "resource" ||
       !code.activeVersionId ||
       currentMandate?.workload_id !== code.activeVersionId ||
-      code.owner.ref.type !== binding.place.type ||
-      code.owner.ref.id !== binding.place.id ||
       envelope.place?.type !== binding.place.type ||
       envelope.place.id !== binding.place.id
     )
@@ -70,9 +71,7 @@ export async function admitCodeEvent(
     if (!delivery) return { cancelled: true as const };
     const [version] = await db<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${code.activeVersionId}::uuid`;
     const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
-    const entry = manifest.entrypoints.find(
-      (entry) => entry.kind === "event" && entry.event?.type === envelope.type && entry.event.version === envelope.version,
-    );
+    const entry = codeEventEntry(manifest, envelope);
     if (!entry?.event || entry.event.place.type !== binding.place.type || entry.event.place.id !== binding.place.id)
       return { cancelled: true as const };
     await requireCodeVersionApproval(code, code.activeVersionId, db);
@@ -98,7 +97,7 @@ export async function admitCodeEvent(
         WHERE id=${runId}::uuid`;
       await db`INSERT INTO code.run_outbox(run_id) VALUES(${runId}::uuid) ON CONFLICT DO NOTHING`;
     } else await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${requestKey},${runId}::uuid)`;
-    await db`UPDATE code.runs SET event_subject_key=${`${envelope.type}@${envelope.version}:${binding.place.type}:${binding.place.id}`},event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
+    await db`UPDATE code.runs SET event_subject_key=${`${binding.place.type}:${binding.place.id}`},event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
     await db`INSERT INTO code.run_requests(code_id,request_key,run_id)
       VALUES(${code.id},${codeEventTargetKey(code.activeVersionId, envelope)},${runId}::uuid) ON CONFLICT DO NOTHING`;
     context.signal.throwIfAborted();

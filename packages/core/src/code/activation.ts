@@ -15,6 +15,7 @@ import {
   codeActivationContracts,
 } from "./activation-contracts";
 import type { Code } from "./contracts";
+import { requireCodeEventAccess } from "./event-access";
 import { syncCodeEventSubscriptions } from "./event-subscriptions";
 import { findCode } from "./store";
 import { CodeVersionError, recordCodeVersionBaseline, requireCodeVersionApproval } from "./versions";
@@ -336,12 +337,13 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
     }
     try {
       let { code, context } = await checkpoint(current, deps);
-      // Only the owner is checked. Target apps decide current rights on each actual call.
+      // The owner controls activation; event places must additionally be readable by the executing account.
       if (code.owner.kind !== "person" && !canRepairAppAccess(context.authority)) {
         const owner = await deps.readOwner(code.owner, context);
         if (!owner?.admin) refuse(null, "not_owner_manager", "Only someone who manages the Code owner can switch it on.");
       }
       ({ code, context } = await checkpoint(current, deps));
+      await requireCodeEventAccess(code, row.version_id);
       await sql.begin(async (tx) => {
         await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
         await tx`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;

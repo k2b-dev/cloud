@@ -52,7 +52,7 @@ export function printCodeCheck(ctx: CloudCliContext, data: CodeAuthoringData<"ch
     ctx.print(t("Automations", "Automationen"));
     for (const entry of data.result.manifest.entrypoints)
       ctx.print(
-        `  ${entry.title ? `${entry.title} (${entry.entrypoint})` : entry.entrypoint} · ${entry.at ? `${entry.at} (${entry.timeZone})` : (entry.cron ?? t("manual start", "Handstart"))}`,
+        `  ${entry.title ? `${entry.title} (${entry.entrypoint})` : entry.entrypoint} · ${entry.event ? `${entry.event.type}@${entry.event.version} · ${entry.event.place.type}:${entry.event.place.id}` : entry.at ? `${entry.at} (${entry.timeZone})` : (entry.cron ?? t("manual start", "Handstart"))}`,
       );
   }
   ctx.print(t("Permissions", "Erlaubnisse"));

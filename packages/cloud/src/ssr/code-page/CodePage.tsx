@@ -960,7 +960,7 @@ function EventDelivery(props: { delivery: z.infer<typeof EventDeliverySchema>; s
           </span>
           <span class="cloud-code__sub">
             {props.text.when(props.delivery.createdAt)}
-            {props.delivery.code ? ` · ${props.delivery.code}` : ""}
+            {props.delivery.code ? ` · ${props.text.t().outcome({ code: props.delivery.code })}` : ""}
           </span>
           <Show when={failed()}>
             <span role="alert" class="cloud-code__bad">

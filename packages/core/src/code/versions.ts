@@ -27,6 +27,7 @@ import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { createCodeCheckRequest, verifyCodeSubmission } from "./authoring-check";
 import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
+import { requireCodeEventAccess } from "./event-access";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
@@ -679,6 +680,13 @@ export async function setCodePaused(codeId: string, paused: boolean, context: Co
   const person = codePerson(context, true);
   if (isAppSessionActor(context.authority.actor))
     throw new CodeDataError("FORBIDDEN", "Phone sessions cannot change Code execution authority.");
+  let resumeVersionId: string | null = null;
+  if (!paused) {
+    const { code } = await readCode(codeId, context);
+    await requireExecutionEditor(code, context, sql);
+    resumeVersionId = code.activeVersionId;
+    if (resumeVersionId) await requireCodeEventAccess(code, resumeVersionId, context.signal);
+  }
   return sql.begin(async (tx) => {
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     await tx`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
@@ -690,7 +698,11 @@ export async function setCodePaused(codeId: string, paused: boolean, context: Co
     const state = paused ? ("paused" as const) : ("active" as const);
     if (code.state !== state) {
       if (paused) await cancelResourceEventSubscriptions(tx, CODE_EVENT_CONSUMER, codeId);
-      else await syncCodeEventSubscriptions(code, code.activeVersionId, tx);
+      else {
+        if (code.activeVersionId !== resumeVersionId)
+          throw new CodeDataError("CONFLICT", "The active version changed. Resume it again after checking its event places.");
+        await syncCodeEventSubscriptions(code, code.activeVersionId, tx);
+      }
       await tx`UPDATE code.codes SET state=${state},pause_reason=${paused ? "manual" : null},pause_rows='{}',pause_policy_revision=NULL WHERE id=${codeId}`;
       await audit.record(
         {

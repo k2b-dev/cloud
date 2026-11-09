@@ -661,14 +661,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             const spec = request.sdk.manifest.events.find((event) => event.type === name);
             if (!name || !place?.ids || place.ids.length !== 1)
               report(node, "code_dynamic_event", "Ereignis und Ort müssen als Konstanten erkennbar sein.");
-            else if (
-              !owner ||
-              owner.kind !== "resource" ||
-              spec?.place !== owner.ref.type ||
-              place.type !== owner.ref.type ||
-              place.ids[0] !== owner.ref.id
-            )
-              report(node, "code_event_owner", "Ereignisse sind nur am eigenen Ressourcen-Ort verfügbar.");
+            else if (!spec || spec.place !== place.type)
+              report(node, "code_event_owner", "Das Ereignis muss den Typ des angegebenen Ortes als place deklarieren.");
             else if (!ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
               report(node, "code_static_event", "Deklariere Ereignisse auf Modulebene.");
             else {
@@ -676,7 +670,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               if (events.has(key))
                 report(node, "code_duplicate_on", "Ein zweites app.on für dasselbe Ereignis am selben Ort ist nicht erlaubt.");
               events.add(key);
-              const entrypoint = `event:${name}@${spec.version}`;
+              const own = owner?.kind === "resource" && place.type === owner.ref.type && place.ids[0] === owner.ref.id;
+              const entrypoint = `event:${name}@${spec.version}${own ? "" : `:place:${result.entrypoints.filter((entry) => entry.kind === "event").length}`}`;
               if (entryNames.has(entrypoint)) report(node, "code_duplicate_on", "Der Ereignis-Name ist bereits vergeben.");
               entryNames.add(entrypoint);
               const handler = node.arguments[explicit ? 2 : 1];
@@ -686,7 +681,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 kind: "event",
                 entrypoint,
                 cron: null,
-                event: { type: name, version: spec.version, place: owner.ref },
+                event: { type: name, version: spec.version, place: { type: place.type!, id: place.ids[0]! } },
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
               });

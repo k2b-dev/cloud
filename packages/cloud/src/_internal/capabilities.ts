@@ -87,6 +87,7 @@ import {
   parseCapabilitySentence,
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
+import { eventPlaceReader } from "./event-place-reader";
 import { activeResourcePrincipals } from "./resource-principals";
 
 /** App-only queries never enter a person catalog. */
@@ -810,7 +811,7 @@ export const compileCapabilities = (
     if (Object.hasOwn(definition, "appOnly")) throw new Error(`Query ${localId}: appOnly is reserved for platform-generated reader checks`);
   const generated: Record<string, AppQueryDefinition> = {};
   for (const [localId, type] of Object.entries(definitions.types ?? {})) {
-    const readable = type.access?.readable;
+    const readable = type.access?.readable ?? eventPlaceReader(definitions, localId);
     if (!readable) continue;
     const queryId = `${localId}.readable`;
     if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
@@ -1108,7 +1109,7 @@ export const compileCapabilities = (
     const model: CapabilityResourceTypeModel = {
       type: type.localId,
       ...(declaration?.container ? { container: declaration.container } : {}),
-      ...(declaration?.access?.readable ? { readable: true } : {}),
+      ...(generated[`${type.localId}.readable`] ? { readable: true } : {}),
     };
     const reader = type.reader ? queries.get(type.reader) : undefined;
     if (

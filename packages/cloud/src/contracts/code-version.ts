@@ -34,14 +34,14 @@ export const CodeEventTriggerSchema = z
   .object({
     type: CapabilityQualifiedIdSchema.describe("Qualified event type from the capability catalog."),
     version: z.number().int().positive().describe("Exact declared event version."),
-    place: CloudResourceRefSchema.describe("Exact resource owner whose events this registration accepts."),
+    place: CloudResourceRefSchema.describe("Exact readable place whose events this registration accepts."),
   })
   .strict();
 
 export const CodeVersionEntrypointSchema = z
   .strictObject({
     kind: z.enum(["schedule", "manual", "event", "route"]).describe("Scheduled, manually invoked, event-triggered or HTTP entrypoint."),
-    event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),
+    event: CodeEventTriggerSchema.optional().describe("Exact event version and place for an event entrypoint."),
     route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
     entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
     title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
@@ -56,7 +56,13 @@ export const CodeVersionEntrypointSchema = z
   .superRefine((entry, context) => {
     if (
       entry.kind === "event"
-        ? !entry.event || entry.cron !== null || entry.entrypoint !== `event:${entry.event.type}@${entry.event.version}`
+        ? !entry.event ||
+          entry.cron !== null ||
+          (entry.entrypoint !== `event:${entry.event.type}@${entry.event.version}` &&
+            !(
+              entry.entrypoint.startsWith(`event:${entry.event.type}@${entry.event.version}:place:`) &&
+              /^(0|[1-9][0-9]*)$/.test(entry.entrypoint.slice(`event:${entry.event.type}@${entry.event.version}:place:`.length))
+            ))
         : !!entry.event
     )
       context.addIssue({ code: "custom", message: "Event metadata and stable entrypoint must match the registration kind" });
