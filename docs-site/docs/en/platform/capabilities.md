@@ -2719,7 +2719,9 @@ export default app;
 The Mail reader is `mail.attachment.content.read`, bounded to Mail's existing
 100 MiB attachment limit. It resolves current attachment access on issuance and
 again while reading the immutable blob. `attachment.read` remains metadata-only;
-`attachment.read-content` still reads extracted text. The bytes never enter
+`attachment.text.read` returns inline extracted Markdown pages in `data.markdown`,
+and `message.content.read` returns inline plain-text pages in `data.text`.
+Continue either text reader with `data.nextOffset`. The bytes never enter
 Code or its JSON bridge. See [Code SDK](/en/docs/platform/code-sdk#mail-invoices-to-an-app)
 for recovery and permissions.
 
