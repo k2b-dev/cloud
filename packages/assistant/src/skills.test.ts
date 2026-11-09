@@ -60,7 +60,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   for (const text of [
     "one lasting fact or preference, such as reports always as PDF: personalization memory",
     "a personalization workflow default",
-    "work that should run at a set time: reviewed personal Code using `app.schedule` with an explicit `timeZone`, then `core.ai.chat.run`",
+    "work that should run at a set time: reviewed personal Code using `app.schedule` (Cloud's default time zone unless `timeZone` is set), then `core.ai.chat(id).run`",
     "lasting Code, using the code-authoring Skill",
 
     "name the subject, such as the team or the report, not only the output format",

@@ -270,7 +270,10 @@ suiteFor(
   ] as const)
     test(`HTTP ${reply} response of ${resource ? "resource" : "personal"} Code reaches the runner and Core validates it before returning`, async () => {
       const code = await fixture(owner, resource, true, reply);
-      expect(await codeRequestVersion(code.codeId)).toMatchObject({ versionId: code.versionId, personalOwner: resource ? null : owner });
+      expect(await codeRequestVersion(code.codeId)).toMatchObject({
+        versionId: code.versionId,
+        manifest: { entrypoints: [{ kind: "route", entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } }] },
+      });
       const registry = spyOn(cloud, "getApp").mockResolvedValue({
         id: "example",
         name: "Example",
@@ -579,10 +582,11 @@ suiteFor(
     expect((await take()).input).toEqual(scheduled.input);
     await sql`UPDATE code.runs SET state='failed',ended_at=clock_timestamp() WHERE id=${scheduled.runId}::uuid`;
     await sql`DELETE FROM code.run_requests WHERE run_id=${scheduled.runId}::uuid`;
-    const rerun = await startCodeRun({ ...code, idempotencyKey: "context:rerun", rerunOf: scheduled.runId }, context());
+    const request = { codeId: code.codeId, entrypoint: code.entrypoint };
+    const rerun = await startCodeRun({ ...request, idempotencyKey: "context:rerun", rerunOf: scheduled.runId }, context());
     expect((await take()).input).toEqual({ runId: rerun.runId, scheduledAt: slot.toISOString(), input: null });
     await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${rerun.runId}::uuid`;
-    const manual = await startCodeRun({ ...code, idempotencyKey: "context", input: { invoice: "one" } }, context());
+    const manual = await startCodeRun({ ...request, idempotencyKey: "context", input: { invoice: "one" } }, context());
     expect((await take()).input).toEqual({ runId: manual.runId, scheduledAt: null, input: { invoice: "one" } });
   });
 
