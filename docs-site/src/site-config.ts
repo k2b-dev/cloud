@@ -39,6 +39,11 @@ export const siteHeader = {
       activeWhen: "/en/apps",
     },
     {
+      label: "feat/code",
+      href: ({ locale }) => `/${locale}/code`,
+      activeWhen: "/en/code",
+    },
+    {
       label: "Docs",
       href: ({ locale }) => `/${locale}/docs`,
       activeWhen: "/en/docs",

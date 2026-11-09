@@ -74,6 +74,12 @@
   --c-accent-soft: #e9f0fd;
   --c-live: #1c8256;
   --c-live-soft: #e3f2ea;
+  /* Plum means AI, as in @k2b/ui's --k2b-ai-* tokens. */
+  --c-ai: #8e1b6f;
+  --c-ai-ink: #701556;
+  --c-ai-on: #ffffff;
+  --c-ai-line: #e7c3dc;
+  --c-ai-soft: #fcf3f8;
   --c-bevel: inset 0 1px 0 rgb(255 255 255 / 0.9);
   --c-recess: inset 0 1px 2px rgb(24 24 27 / 0.05);
   --c-shell: 84rem;
@@ -108,6 +114,11 @@
   --c-accent-soft: #172c4b;
   --c-live: #4cc38a;
   --c-live-soft: #102019;
+  --c-ai: #f0abdc;
+  --c-ai-ink: #f0abdc;
+  --c-ai-on: #3a0f2e;
+  --c-ai-line: #5a1e48;
+  --c-ai-soft: #22101d;
   --c-bevel: inset 0 1px 0 rgb(255 255 255 / 0.045);
   --c-recess: inset 0 1px 2px rgb(0 0 0 / 0.3);
 }
@@ -188,6 +199,16 @@
 :where(.cloud-site, .fibel-app) .fibel-search-button .text-zinc-400,
 :where(.cloud-site, .fibel-app) .fibel-powered-by {
   color: var(--c-muted) !important;
+}
+
+/* Fibel's round header buttons darken their border on hover; keep the edge
+   and let the surface change instead. */
+html:not(.dark) :where(.cloud-site, .fibel-app) .fibel-control-icon-button {
+  border-color: var(--c-line-2);
+}
+
+html:not(.dark) :where(.cloud-site, .fibel-app) .fibel-control-icon-button:hover {
+  background: var(--c-sunken);
 }
 
 /* The UI catalog also loads Cloud's generated utility CSS. Keep the Fibel
@@ -496,9 +517,10 @@
   flex: 0 0 auto;
 }
 
+/* Hover never darkens an edge: the border keeps its line token, the surface
+   turns quietly sunken. */
 .cloud-home .cloud-btn:hover {
-  border-color: var(--c-faint);
-  background: var(--c-canvas);
+  background: var(--c-sunken);
 }
 
 .cloud-home .cloud-btn-primary {
@@ -1518,6 +1540,354 @@
 .cloud-home-footer a:focus-visible {
   outline: 2px solid var(--c-accent);
   outline-offset: 3px;
+}
+
+/* --- feat/code ----------------------------------------------------------- */
+
+.cloud-home .cloud-news {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 1.6rem;
+  border: 1px solid var(--c-line-2);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem 0.35rem 0.6rem;
+  background: var(--c-surface);
+  color: var(--c-ink-2);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  text-decoration: none;
+  transition: background 140ms ease;
+}
+
+.cloud-home .cloud-news:hover {
+  background: var(--c-sunken);
+}
+
+.cloud-news-arrow {
+  display: inline-block;
+  transition: transform 140ms ease;
+}
+
+.cloud-news:hover .cloud-news-arrow {
+  transform: translateX(0.15rem);
+}
+
+.cloud-news svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: 0 0 auto;
+  color: var(--c-accent);
+}
+
+.cloud-news b {
+  margin-right: 0.3rem;
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+.cloud-home .cloud-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+  color: var(--c-accent-ink);
+  font: 600 0.78rem var(--c-mono);
+  letter-spacing: 0.02em;
+}
+
+.cloud-eyebrow svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.cloud-feat-code {
+  border-top: 1px solid var(--c-line);
+}
+
+.cloud-feat-code-intro {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.cloud-feat-code-intro > p:not(.cloud-formula) {
+  max-width: 58ch;
+  color: var(--c-ink-2);
+  line-height: 1.62;
+}
+
+.cloud-home .cloud-feat-code-lead {
+  color: var(--c-ink);
+  font-size: 1.08rem;
+}
+
+.cloud-home .cloud-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  color: var(--c-muted);
+  font: 0.8rem var(--c-mono);
+}
+
+.cloud-formula span {
+  border: 1px solid var(--c-line);
+  border-radius: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  background: var(--c-sunken);
+  color: var(--c-ink-2);
+  white-space: nowrap;
+}
+
+.cloud-formula i {
+  font-style: normal;
+}
+
+/* "= feat/code" stays together on narrow screens. */
+.cloud-formula b {
+  color: var(--c-accent-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cloud-formula b i {
+  margin-right: 0.3rem;
+  color: var(--c-muted);
+  font-weight: 400;
+}
+
+.cloud-feat-code-grid {
+  display: grid;
+  margin-top: clamp(2.25rem, 4.5vw, 3.5rem);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (min-width: 62rem) {
+  .cloud-feat-code-grid {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 1.75rem;
+  }
+}
+
+/* Gustav's chat: plum because it is AI; inside Gustav plum is also primary. */
+.cloud-gustav {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--c-ai-line);
+  border-radius: 1rem;
+  background: var(--c-surface);
+}
+
+.cloud-gustav-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--c-line);
+  color: var(--c-muted);
+  font-size: 0.78rem;
+}
+
+.cloud-gustav-head b {
+  color: var(--c-ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.cloud-gustav-head > span:last-child {
+  margin-left: auto;
+}
+
+.cloud-gustav-mark {
+  display: inline-grid;
+  width: 1.65rem;
+  height: 1.65rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--c-ai-soft);
+  color: var(--c-ai);
+}
+
+.cloud-gustav-mark svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.cloud-gustav-thread {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.1rem 1rem 1.15rem;
+}
+
+.cloud-home .cloud-gustav-msg {
+  max-width: 34rem;
+  color: var(--c-ink);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.cloud-home .cloud-gustav-msg.is-person {
+  justify-self: end;
+  max-width: 85%;
+  border-radius: 0.9rem 0.9rem 0.25rem 0.9rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--c-sunken);
+}
+
+.cloud-version-card {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--c-ai-line);
+  border-radius: 0.7rem;
+  padding: 0.85rem 0.9rem 0.9rem;
+  background: var(--c-ai-soft);
+}
+
+.cloud-version-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+}
+
+.cloud-version-card-head svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  color: var(--c-ai);
+}
+
+.cloud-version-card-head b {
+  min-width: 0;
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+.cloud-version-card-head span {
+  margin-left: auto;
+  color: var(--c-live);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.cloud-version-card ul {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  gap: 0.35rem;
+  list-style: none;
+}
+
+.cloud-version-card li {
+  border: 1px solid var(--c-ai-line);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  background: var(--c-surface);
+  color: var(--c-ink-2);
+  font-size: 0.74rem;
+}
+
+.cloud-version-card-action {
+  justify-self: start;
+  border-radius: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  background: var(--c-ai);
+  color: var(--c-ai-on);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.cloud-feat-code-sample {
+  overflow: hidden;
+  border-radius: 1rem;
+  background: var(--c-surface);
+  box-shadow: var(--c-bevel);
+  font-size: clamp(0.7rem, 1vw, 0.78rem);
+}
+
+.cloud-check-rows {
+  display: grid;
+  margin: 0;
+  padding: 0.75rem 0.95rem 0.85rem;
+  gap: 0.35rem;
+  border-top: 1px solid var(--c-line);
+}
+
+.cloud-check-rows > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  justify-content: space-between;
+}
+
+.cloud-check-rows dt {
+  min-width: 0;
+  color: var(--c-ink);
+  overflow-wrap: anywhere;
+}
+
+.cloud-check-rows dd {
+  margin: 0;
+  color: var(--c-muted);
+}
+
+.cloud-check-rows dd.is-ai {
+  color: var(--c-ai-ink);
+}
+
+.cloud-feat-code-steps {
+  display: grid;
+  margin: clamp(2rem, 4vw, 3rem) 0 0;
+  padding: 0;
+  gap: 1rem;
+  list-style: none;
+  counter-reset: feat-code-step;
+}
+
+.cloud-feat-code-steps li {
+  display: grid;
+  gap: 0.3rem;
+  border-top: 1px solid var(--c-line);
+  padding-top: 0.9rem;
+  counter-increment: feat-code-step;
+}
+
+.cloud-feat-code-steps b {
+  color: var(--c-ink);
+  font-size: 0.88rem;
+}
+
+.cloud-feat-code-steps b::before {
+  margin-right: 0.5rem;
+  color: var(--c-faint);
+  font: 500 0.75rem var(--c-mono);
+  content: counter(feat-code-step, decimal-leading-zero);
+}
+
+.cloud-feat-code-steps span {
+  color: var(--c-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 42rem) {
+  .cloud-feat-code-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem 2rem;
+  }
+}
+
+@media (min-width: 62rem) {
+  .cloud-feat-code-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.cloud-feat-code .cloud-actions {
+  margin-top: clamp(2rem, 4vw, 2.75rem);
 }
 
 /* --- narrow -------------------------------------------------------------- */
