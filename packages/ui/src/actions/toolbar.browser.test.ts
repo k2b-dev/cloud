@@ -423,8 +423,30 @@ test("a danger toolbar is one red pill across the row that announces its message
         ?.textContent?.includes("Changes not saved. Connection closed"),
     );
     // A phone-wide row: the reason drops first, then the action labels, then the lower-priority actions. Copy text
-    // has no priority and stays, and the save state keeps its full width.
-    await page.evaluate(() => window.toolbarFixture.resizeDock(420));
+    // has no priority and stays, and the save state keeps its full width. The row width comes from this engine's own
+    // measurements, because the label's text width differs between engines and fonts: it holds the fixed controls,
+    // the whole save state and More, plus less room than one more icon action, so Keep and Discard cannot both stay.
+    const narrow = await page.evaluate(() => {
+      const dock = document.querySelector<HTMLElement>(".k2b-toolbar-dock")!;
+      const toolbar = dock.querySelector<HTMLElement>('.k2b-toolbar[data-tone="danger"]')!;
+      const px = (value: string) => Number.parseFloat(value) || 0;
+      const inline = (style: CSSStyleDeclaration) =>
+        px(style.paddingLeft) + px(style.paddingRight) + px(style.borderLeftWidth) + px(style.borderRightWidth);
+      const label = toolbar.querySelector<HTMLElement>(".k2b-toolbar__label")!;
+      const labelStyle = getComputedStyle(label);
+      const stateWidth =
+        label.querySelector<HTMLElement>(".k2b-toolbar__label-main")!.scrollWidth +
+        px(labelStyle.paddingLeft) +
+        px(labelStyle.paddingRight);
+      const width = (selector: string) => toolbar.querySelector<HTMLElement>(selector)!.getBoundingClientRect().width;
+      const action = px(getComputedStyle(toolbar.querySelector<HTMLElement>(".k2b-toolbar__action")!).minInlineSize);
+      const gap = px(getComputedStyle(toolbar).columnGap);
+      const spacer = px(getComputedStyle(toolbar.querySelector<HTMLElement>(".k2b-toolbar__spacer")!).minWidth);
+      // Navigation, state, spacer, Copy text and More, with the gaps between them.
+      const fixed = width(".app-toggle") + stateWidth + spacer + action + width(".k2b-toolbar__more") + 4 * gap;
+      return Math.ceil(inline(getComputedStyle(dock)) + inline(getComputedStyle(toolbar)) + fixed + (action + gap) / 2);
+    });
+    await page.evaluate((width) => window.toolbarFixture.resizeDock(width), narrow);
     await frame();
     expect(await pill.evaluate((toolbar) => toolbar.hasAttribute("data-compact"))).toBe(true);
     expect(await moved()).toContain("Discard");
