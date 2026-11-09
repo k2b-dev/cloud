@@ -1175,9 +1175,9 @@ test("personal scheduled Code generates a summary and posts it into the owner's 
   );
   const source = `import { app, core, chat } from "@sdk";
 app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, async () => {
-  const { data: result } = await core.app().ai.generate({ task: "daily.summary", prompt: "Summarize the supplied notes.", input: { notes: "Delivery received." }, output: { type: "text", maxChars: 1200 } });
+  const { data: result } = await core.ai.generate({ task: "daily.summary", prompt: "Summarize the supplied notes.", input: { notes: "Delivery received." }, output: { type: "text", maxChars: 1200 } });
   if (typeof result.output !== "object" || result.output === null || !("text" in result.output) || typeof result.output.text !== "string") throw new Error("Unexpected summary output");
-  await chat.app().message.post({ conversation: "Chat01", body: result.output.text, idempotencyKey: "summary-2026-12-01" });
+  await chat.message.post({ conversation: "Chat01", body: result.output.text, idempotencyKey: "summary-2026-12-01" });
 }, { name: "reminder", title: "Send summary" });
 export default app;`;
   const checked = await check(source, { sdk, aiOperations: ["core.ai.generate"], limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } });
@@ -1205,3 +1205,272 @@ export default app;`;
     metadata: { idempotencyKey: "summary-2026-12-01" },
   });
 }, 90_000);
+
+test("flat app methods retain permission and AI evidence through every supported call form", async () => {
+  const core = sdkFixture("core");
+  const rechnungen = sdkFixture("rechnungen");
+  const sdk = generateCodeSdk(
+    [
+      {
+        ...core,
+        types: [...core.types, { ...core.types[0]!, localId: "ai" }],
+        queries: core.queries.map((op) => (op.localId === "catalog.list" ? { ...op, localId: "ai.generate" } : op)),
+      },
+      {
+        ...rechnungen,
+        types: rechnungen.types.map((type) => (type.localId === "workshop" ? { ...type, localId: "incoming" } : type)),
+        queries: rechnungen.queries.map((op) => (op.target === "workshop" ? { ...op, target: "incoming" } : op)),
+        actions: rechnungen.actions.map((op) => ({
+          ...op,
+          ...(op.target === "workshop" ? { target: "incoming" } : {}),
+          refs: Object.fromEntries(Object.entries(op.refs ?? {}).map(([key, type]) => [key, type === "workshop" ? "incoming" : type])),
+        })),
+      },
+    ],
+    { mode: "personal" },
+  );
+  const forms = [
+    "core.ai.generate({});",
+    "await core.ai.generate({});",
+    "const x = core.ai; await x.generate({});",
+    "type Result = Awaited<ReturnType<typeof core.ai.generate>>; await core.ai.generate({});",
+    'await core["ai"].generate({});',
+    'await core.ai["generate"]({});',
+    "await core?.ai.generate({});",
+    "await core.ai.generate?.({});",
+    'const h = core.ai("resource"); await core.ai.generate({});',
+    'await rechnungen.incoming("Invoice001").stock.list({});',
+  ];
+  for (const body of forms) {
+    const checked = await check(
+      `import { app, core, rechnungen } from "@sdk";
+app.schedule("0 8 * * 1", async () => { ${body} }, { name: "weekly" });
+export default app;`,
+      { sdk, aiOperations: ["core.ai.generate"], limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } },
+    );
+    if (!checked.ok) throw new Error(`${body}: ${JSON.stringify(checked.diagnostics)}`);
+    const resource = body.includes("rechnungen");
+    expect(checked.manifest.ai).toBe(!resource);
+    expect(checked.manifest.permissions).toMatchObject([
+      {
+        operation: resource ? "rechnungen.stock.list" : "core.ai.generate",
+        target: resource ? { type: "rechnungen.incoming", id: "Invoice001" } : null,
+        entrypoints: ["weekly"],
+      },
+    ]);
+    expect(checked.manifest.permissions).toHaveLength(1);
+    const calls: CodeSdkInvocation[] = [];
+    const loaded = await import(`data:text/javascript;base64,${Buffer.from(`${checked.bundle}\n// ${body}`).toString("base64")}`);
+    await loaded.weekly(null, {
+      async call(_operation: string, invocation: CodeSdkInvocation) {
+        calls.push(invocation);
+        return { data: [] };
+      },
+    });
+    expect(calls.map((call) => ({ operation: call.call.capability, target: call.call.target }))).toEqual([
+      {
+        operation: checked.manifest.permissions[0]!.operation,
+        target: resource ? { type: "rechnungen.incoming", id: "Invoice001" } : null,
+      },
+    ]);
+  }
+}, 180_000);
+
+test("flat SDK methods cannot be detached or reached through the removed app factory", async () => {
+  const core = sdkFixture("core");
+  const sdk = generateCodeSdk(
+    [{ ...core, queries: core.queries.map((op) => (op.localId === "catalog.list" ? { ...op, localId: "ai.generate" } : op)) }],
+    { mode: "personal" },
+  );
+  for (const body of [
+    "const f = core.ai.generate; await f({});",
+    "await core.ai.generate.call(null, {});",
+    "await core.ai.generate.apply(null, [{}]);",
+    "const f = core.ai.generate.bind(null); await f({});",
+    "const { generate: f } = core.ai; await f({});",
+    'const f = core["ai"]["generate"]; await f({});',
+    "await core.app().ai.generate({});",
+  ]) {
+    const checked = await check(
+      `import { app, core } from "@sdk";
+app.schedule("0 8 * * 1", async () => { ${body} }); export default app;`,
+      { sdk, aiOperations: ["core.ai.generate"] },
+    );
+    expect(checked.ok).toBe(false);
+    if (!checked.ok)
+      expect(checked.diagnostics.some((d) => ["code_detached_sdk_method", "code_unresolved_call"].includes(d.code))).toBe(true);
+  }
+}, 60_000);
+
+test("flat namespaces retain SDK identity through inferred const aliases only", async () => {
+  const manifests = ["alpha", "beta"].map((id) => {
+    const fixture = sdkFixture(id);
+    return { ...fixture, queries: fixture.queries.map((op) => (op.localId === "catalog.list" ? { ...op, localId: "ai.generate" } : op)) };
+  });
+  const sdk = generateCodeSdk(manifests, { mode: "personal" });
+  for (const body of [
+    "const x = Date.now() > 0 ? alpha.ai : beta.ai; await x.generate({});",
+    "const x = Date.now() > 0 ? alpha : beta; await x.ai.generate({});",
+    "const x: { generate(input: {}): Promise<unknown> } = alpha.ai; await x.generate({});",
+    "const x = alpha.ai as { generate(input: {}): Promise<unknown> }; await x.generate({});",
+    "function invoke(x: { generate(input: {}): Promise<unknown> }) { return x.generate({}); } await invoke(alpha.ai);",
+    "const box = { x: alpha.ai }; await box.x.generate({});",
+  ]) {
+    const checked = await check(
+      `import { app, alpha, beta } from "@sdk";
+app.schedule("0 8 * * 1", async () => { ${body} }); export default app;`,
+      { sdk, aiOperations: ["beta.ai.generate"] },
+    );
+    expect(checked.ok).toBe(false);
+    if (!checked.ok) expect(checked.diagnostics.some((d) => d.code === "code_unresolved_call")).toBe(true);
+  }
+}, 60_000);
+
+test("app-owned Code attributes owner and export namespace aliases", async () => {
+  const core = sdkFixture("core");
+  const sdk = generateCodeSdk(
+    [
+      {
+        ...core,
+        types: [...core.types, { ...core.types[0]!, localId: "ai" }],
+        queries: core.queries.map((op) => (op.localId === "catalog.list" ? { ...op, localId: "ai.generate" } : op)),
+      },
+    ],
+    { mode: "resource", owner: { kind: "app", appId: "core" } },
+  );
+  for (const root of ["owner", "core"]) {
+    const body = `await ${root}.ai.generate({}); const namespace = ${root}; const x = namespace.ai; await x.generate({});`;
+    const checked = await check(
+      `import { app, core, owner } from "@sdk";
+app.schedule("0 8 * * 1", async () => { ${body} }, { name: "weekly" }); export default app;`,
+      { sdk, aiOperations: ["core.ai.generate"] },
+    );
+    if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+    expect(checked.manifest.ai).toBe(true);
+    expect(checked.manifest.permissions).toMatchObject([
+      { operation: "core.ai.generate", target: null, entrypoints: ["weekly"] },
+      { operation: "core.ai.generate", target: null, entrypoints: ["weekly"] },
+    ]);
+    expect(checked.manifest.permissions).toHaveLength(2);
+    const calls: CodeSdkInvocation[] = [];
+    const loaded = await import(`data:text/javascript;base64,${Buffer.from(checked.bundle).toString("base64")}`);
+    await loaded.weekly(null, {
+      async call(_operation: string, invocation: CodeSdkInvocation) {
+        calls.push(invocation);
+        return { data: [] };
+      },
+    });
+    expect(calls.map((call) => ({ operation: call.call.capability, target: call.call.target }))).toEqual([
+      { operation: "core.ai.generate", target: null },
+      { operation: "core.ai.generate", target: null },
+    ]);
+    for (const escape of [
+      `const x: { generate(input: {}): Promise<unknown> } = ${root}.ai; await x.generate({});`,
+      `const box = { x: ${root}.ai }; await box.x.generate({});`,
+    ]) {
+      const rejected = await check(
+        `import { app, core, owner } from "@sdk";
+app.schedule("0 8 * * 1", async () => { ${escape} }); export default app;`,
+        { sdk },
+      );
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.diagnostics.some((d) => d.code === "code_unresolved_call")).toBe(true);
+    }
+  }
+}, 90_000);
+
+test("typed app(id) stays a resource factory and app() is a checker type diagnostic", async () => {
+  const fixture = sdkFixture("capabilities");
+  const sdk = generateCodeSdk(
+    [
+      {
+        ...fixture,
+        types: [...fixture.types, { ...fixture.types[0]!, localId: "app" }],
+        queries: fixture.queries.map((op) => (op.localId === "catalog.list" ? { ...op, localId: "search" } : op)),
+      },
+    ],
+    { mode: "personal" },
+  );
+  const checked = await check(
+    `import { app, capabilities } from "@sdk";
+app.schedule("0 8 * * 1", async () => {
+  const h = capabilities.app("App001");
+  const type: "capabilities.app" = h.type;
+  const id: "App001" = h.id;
+  await capabilities.search({});
+}); export default app;`,
+    { sdk },
+  );
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.manifest.permissions.map((p) => p.operation)).toEqual(["capabilities.search"]);
+  const rejected = await check(
+    `import { app, capabilities } from "@sdk";
+app.schedule("0 8 * * 1", () => { capabilities.app(); }); export default app;`,
+    { sdk },
+  );
+  expect(rejected.ok).toBe(false);
+  if (!rejected.ok) expect(rejected.diagnostics.some((d) => d.code === "TS2554")).toBe(true);
+}, 60_000);
+
+test("SDK property keys and resource values preserve their declaration identity", async () => {
+  const core = sdkFixture("core");
+  const sdk = generateCodeSdk(
+    [
+      {
+        ...core,
+        queries: [
+          ...core.queries,
+          { ...core.queries.find((op) => op.localId === "catalog.list")!, localId: "ai.generate" },
+          { ...core.queries.find((op) => op.localId === "catalog.list")!, localId: "catalog.use", refs: { destination: "workshop" } },
+        ],
+      },
+      sdkFixture(),
+    ],
+    { mode: "resource", owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } } },
+  );
+  const accepted: string[] = [];
+  for (const body of [
+    `const ns: "catalog" = JSON.parse('"ai"'); const method: "list" = JSON.parse('"generate"'); await core[ns][method]({});`,
+    `const method: "list" = JSON.parse('"export"'); await owner.stock[method]({});`,
+    `function run(h: { stock: { list(input: {}): Promise<unknown> } }) { return h.stock.list({}); } await run(owner);`,
+    `function run(h: { stock: { list(input: {}): Promise<unknown> } }) { return h.stock.list({}); } await run(work_shop.workshop("one"));`,
+    `function run(f: (id: string) => { stock: { list(input: {}): Promise<unknown> } }) { return f("one").stock.list({}); } await run(work_shop.workshop);`,
+    `function run(f: (id: string) => { item: { inspect(input: {}): Promise<unknown> } }) { return f("one").item.inspect({}); } await run(work_shop.item);`,
+    `function run(input: { destination: { stock: { list(input: {}): Promise<unknown> } } }) { return input.destination.stock.list({}); }
+     const fake: { use: typeof core.catalog.use } = { use: async input => { await run(input); return { data: [] }; } };
+     await fake.use({ destination: core.workshop("one") });`,
+    `const h: { stock: { list(input: {}): Promise<unknown> } } = owner; await h.stock.list({});`,
+    `const stock: { list(input: {}): Promise<unknown> } = owner.stock; await stock.list({});`,
+  ]) {
+    const checked = await check(
+      `import { app, core, owner, work_shop } from "@sdk";
+app.schedule("0 8 * * 1", async () => { ${body} }); export default app;`,
+      { sdk, aiOperations: ["core.ai.generate"] },
+    );
+    if (checked.ok) accepted.push(body);
+    else expect(checked.diagnostics.some((d) => d.code === "code_unresolved_call")).toBe(true);
+  }
+  expect(accepted).toEqual([]);
+}, 90_000);
+
+test("resource aliases and SDK refs keep their complete evidence", async () => {
+  const checked = await check(
+    schedule(`
+    const factory = work_shop.workshop;
+    const destination = factory("one");
+    const h = owner;
+    type IdOnly = Pick<typeof owner, "id">;
+    const identity: IdOnly = { id: owner.id };
+    function label(value: IdOnly) { return value.id; }
+    label(identity);
+    await h.stock.list({});
+    await h.item.move({ itemId: "item-one", destination });
+  `),
+  );
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.manifest.permissions.map((p) => ({ operation: p.operation, target: p.target }))).toEqual([
+    { operation: "work-shop.stock.list", target: { type: "work-shop.workshop", id: "owner-shop" } },
+    { operation: "work-shop.item.move", target: { type: "work-shop.workshop", id: "owner-shop" } },
+    { operation: "work-shop.item.move", target: { type: "work-shop.workshop", id: "one" } },
+  ]);
+}, 30_000);

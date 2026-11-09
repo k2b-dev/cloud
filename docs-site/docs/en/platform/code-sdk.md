@@ -53,9 +53,9 @@ import { app, mail, owner, imports } from "@sdk";
 const importedTagId = "Tag123";
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (message.attachmentsTruncated) {
     throw new Error("Message attachments are not ready or complete");
@@ -65,12 +65,12 @@ app.on("mail.message.received", async event => {
   );
   if (!attachment || !message.conversationId) return;
 
-  const file = await mail.app().attachment.content.read({ id: attachment.id });
-  await imports.app().import({
+  const file = await mail.attachment.content.read({ id: attachment.id });
+  await imports.import({
     file,
     idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
   });
-  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
   await owner.conversation.tag.update({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,
@@ -411,10 +411,23 @@ underscores; reserved export names receive an underscore prefix, such as
 `default` → `_default`. The generation manifest records the mapping.
 
 A handle offers only operations whose `target` is its Type. An operation
-without a target belongs to `work_shop.app()`. Method paths preserve the
+without a target belongs directly to `work_shop`, such as
+`work_shop.catalog.list({})`. Method paths preserve the
 operation's local ID: `item.create` becomes `.item.create(...)`. A callable
 method can also have child methods, such as `.keep(...)` and `.keep.release(...)`.
-A Type named `app` uses `.app(id)`, alongside the app-wide `.app()` factory.
+A resource factory can share a namespace with app methods: `customers.customer(id)`
+returns a handle while `customers.customer.search(...)` calls an app Query.
+The callable node carries both contracts. Generation rejects an app method whose
+full path equals a factory and top-level `id` or `type` paths. A resource Type
+named `app` keeps its typed `.app(id)` factory beside direct app methods.
+The zero-argument `.app()` factory is removed.
+Use string literals for element access, such as `core["ai"].generate(...)`;
+computed keys are rejected. Keep app namespace aliases as inferred constants,
+such as `const ai = core.ai;` then `await ai.generate(...)`. Resource handles and
+factories can also use inferred `const` aliases. Pass handles as declared refs
+into SDK calls. SDK values cannot be structurally erased through unions, type
+annotations, casts or helper arguments; pass data to a helper and call the SDK
+inside it. Methods themselves must stay attached to their namespace.
 `owner` is the fixed resource or application handle supplied when generating
 resource-owned Code. A handle grants no access: the dispatcher and the owning
 application check permissions on every call.
@@ -936,7 +949,7 @@ import { core } from "@sdk";
 
 export default async function triage() {
   // Fictional mail; in real Code, read the mail through its authorized SDK first.
-  const { data: result } = await core.app().ai.decide({
+  const { data: result } = await core.ai.decide({
     task: "mail.triage",
     state: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
     questions: {
@@ -978,14 +991,14 @@ import { core } from "@sdk";
 export default async function summarize() {
   // Fictional source; read real mail through its authorized SDK first.
   const input = { body: "Please deliver three chairs by Friday." };
-  const { data: summary } = await core.app().ai.generate({
+  const { data: summary } = await core.ai.generate({
     task: "mail.summary",
     prompt: "Summarize the message in one sentence.",
     input,
     model: { class: "fast" },
     output: { type: "text", maxChars: 500 },
   });
-  const { data: extracted } = await core.app().ai.generate({
+  const { data: extracted } = await core.ai.generate({
     task: "mail.extract",
     prompt: "Extract the requested item and quantity from the message.",
     input,

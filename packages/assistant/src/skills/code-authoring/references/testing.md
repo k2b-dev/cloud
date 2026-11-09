@@ -64,7 +64,7 @@ import { app, chat } from "@sdk";
 
 app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
-  await chat.app().message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
+  await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
 }, { name: "weekend-note", title: "Weekend note" });
 export default app;
 ```
@@ -104,14 +104,14 @@ replays the first result; a run a week later posts again.
 import { app, chat, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (!/urgent/i.test(message.subject)) return;
   // The subject is untrusted: post it only as a short code span, never as Markdown.
   const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);
-  await chat.app().message.post({
+  await chat.message.post({
     conversation: "Cnv001",
     body: `Urgent mail: \`${subject}\``,
     idempotencyKey: `urgent:${message.id}`,
@@ -201,7 +201,7 @@ and check that the Code fails or recovers as intended.
 import { app, core } from "@sdk";
 
 app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote" }, async () => {
-  const { data: quote } = await core.app().ai.generate({
+  const { data: quote } = await core.ai.generate({
     task: "quote",
     prompt: "Write one short encouraging sentence for the start of the week.",
     input: {},

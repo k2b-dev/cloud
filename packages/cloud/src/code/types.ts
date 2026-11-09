@@ -28,7 +28,7 @@ export type CodeSdkBridge = {
 /** One named export and its originating manifest hash; export names replace hyphens with underscores. */
 export type CodeSdkApp = { appId: string; exportName: string; manifestHash: string };
 
-/** Factory and method paths are literal property segments, for the checker's handle/permission analysis. Null type means app-wide. */
+/** Factory and method paths are literal property segments, for the checker's handle/permission analysis. Null type means app-wide: an empty factoryPath binds methods directly to the export; only non-null types have factories. */
 export type CodeSdkHandle = { appId: string; exportName: string; type: string | null; factoryPath: string[] };
 
 /** An offered Query or Action. Types, refs and schema hashes come exclusively from the app's manifest. */

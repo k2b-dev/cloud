@@ -23,9 +23,9 @@ Register one handler for `mail.message.received`:
 import { app, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (message.keywordsTruncated) throw new Error("Incomplete provider keywords");
   // Read current conversation state, then call the authorized Mail Actions.

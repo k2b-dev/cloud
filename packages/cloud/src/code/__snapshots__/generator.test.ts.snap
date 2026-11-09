@@ -113,7 +113,7 @@ type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { 
 
 type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input4) => Promise<Data4>); readonly "move": ((input: Input6) => Promise<Data6>) }; readonly "stock": { readonly "export": ((input: Input1) => Promise<FileRef>); readonly "list": ((input: Input2) => Promise<CodeQueryResult<Data2>>) } };
 
-export declare const work_shop: { readonly "app": (() => Handle0<"work-shop">); readonly "item": (<const Id extends string>(id: Id) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: Id) => Handle2<Id>) };
+export declare const work_shop: Handle0<"work-shop"> & { readonly "item": (<const Id extends string>(id: Id) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: Id) => Handle2<Id>) };
 
 export declare const owner: Handle2<"owner-shop">;
 
@@ -243,7 +243,7 @@ export declare const http: CodeHttp;
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
 "// Generated from Cloud capability manifests. Do not edit.
 const __codeSdk = (() => {
-const manifest = {"appMethods":{"all":1,"delete":1,"fetch":2,"get":1,"nav":2,"on":1,"post":1,"put":1,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"events":[{"place":null,"type":"work-shop.changed","version":1}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.export","idempotency":"none","kind":"query","methodPath":["stock","export"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}},"pageLimits":{"bytes":65536,"columns":20,"depth":12,"details":100,"fields":40,"follow":8,"nodes":256,"rows":200,"stats":6,"trend":60}};
+const manifest = {"appMethods":{"all":1,"delete":1,"fetch":2,"get":1,"nav":2,"on":1,"post":1,"put":1,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"events":[{"place":null,"type":"work-shop.changed","version":1}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":[],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.export","idempotency":"none","kind":"query","methodPath":["stock","export"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}},"pageLimits":{"bytes":65536,"columns":20,"depth":12,"details":100,"fields":40,"follow":8,"nodes":256,"rows":200,"stats":6,"trend":60}};
 const RESOURCE_ID_MAX = 512;
 
 const handles = new WeakMap();
@@ -301,24 +301,23 @@ function handle(appId, type, id) {
       return bridge.call(op.capability, { call, metadata });
     });
   }
-  return Object.freeze(result);
+  return result;
 }
 const namespaces = node();
-for (const app of manifest.apps) namespaces[app.exportName] = node();
-for (const spec of manifest.handles) {
-  // The app-wide factory and a resource Type named "app" share one overloaded callable.
-  const peers = manifest.handles.filter(value => value.appId === spec.appId && JSON.stringify(value.factoryPath) === JSON.stringify(spec.factoryPath));
+for (const spec of manifest.handles.filter(value => value.type === null))
+  namespaces[spec.exportName] = handle(spec.appId, null, spec.appId);
+for (const spec of manifest.handles.filter(value => value.type !== null)) {
   setPath(namespaces[spec.exportName], spec.factoryPath, (...args) => {
-    const selected = peers.find(value => args.length === (value.type === null ? 0 : 1));
-    if (!selected) throw new Error("code_sdk_invalid_id");
-    return handle(selected.appId, selected.type, selected.type === null ? selected.appId : args[0]);
+    if (args.length !== 1) throw new Error("code_sdk_invalid_id");
+    return Object.freeze(handle(spec.appId, spec.type, args[0]));
   });
 }
+for (const app of manifest.apps) Object.freeze(namespaces[app.exportName]);
 let owner;
 if (manifest.owner) {
   const value = manifest.owner;
-  owner = value.kind === "app" ? handle(value.appId, null, value.appId)
-    : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id);
+  owner = Object.freeze(value.kind === "app" ? handle(value.appId, null, value.appId)
+    : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
 }
 const app = node();
 function unavailable(method) {
@@ -604,9 +603,7 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
     {
       "appId": "work-shop",
       "exportName": "work_shop",
-      "factoryPath": [
-        "app",
-      ],
+      "factoryPath": [],
       "type": null,
     },
     {
