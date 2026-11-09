@@ -48,7 +48,6 @@ export const NOTEBOOKS_YJS_TERMINAL_ERROR_CODES = [
   NOTEBOOKS_YJS_ERROR_CODE.accessRevoked,
   NOTEBOOKS_YJS_ERROR_CODE.noteNotFound,
   NOTEBOOKS_YJS_ERROR_CODE.noteLocked,
-  NOTEBOOKS_YJS_ERROR_CODE.backpressure,
 ] as const;
 
 export const notebooksYjs = {

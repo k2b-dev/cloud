@@ -525,9 +525,36 @@ stays in place. If your Cloud sign-in expires, the composer keeps your text and
 shows **Sign in again**. That action returns to the same draft after sign-in
 and restores unsaved changes kept in this browser.
 
+## Write in the conversation
+
+Replies, forwards, and new messages are written in the conversation, not on a
+separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
+above the newest message grow into the draft at that place; on a phone the bar
+waits at the bottom and the draft opens at the top over the full width. Mail
+creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
+An existing draft with the same purpose opens instead of a second one, and the
+conversation lists its other drafts as rows. **Compose** puts **New message**
+at the top of the list with an empty conversation beside it.
+
+- The URL carries the open draft as `?draft=`, so reload and Back open it
+  again. Old `/compose/:draftId` links open the conversation with the draft;
+  `?window=1` and drafts with an open approval keep the compose page.
+- Opening another conversation saves typing the autosave has not sent yet
+  before Mail releases the editing lease.
+- **Full screen** moves the list and details aside and is remembered per
+  browser; from 1500 px of reader width, the history stands beside the draft.
+- **Preview** shows the mail as it arrives, with the mailbox's design; the
+  editor keeps Cloud's calm style.
+- A reply offers **Attach quote** for its source message. The draft stores
+  `quoteSource: { locale, timeZone }`, and the quote goes out after the
+  signature with that person's date format.
+- A Gustav suggestion (`suggestion: true`) opens in plum until someone edits it.
+
 ## Write signatures and snippets
 
-The composer shows **Signature** below your text when a signature is available.
+The draft shows the chosen signature as a fixed block after your text, exactly
+as Mail inserts it at send (`POST /mailboxes/:id/compose-signature`). The
+signature button in the draft's tools switches it.
 New messages, replies, and forwards start with the sender's default; a personal
 default takes precedence over the mailbox default. Choose another signature or
 **No signature**. Switching the sender switches to that sender's default.
@@ -893,6 +920,36 @@ must be true before using that response for a complete `draft.update` replacemen
 Both mutations require the current revision; sending still requires the existing
 send-safety review and approval.
 
+### Draft suggestions from Gustav
+
+A service account creates a real draft through `draft.create`. People can open
+it in the conversation and send it through the usual review and Send flow.
+The draft and conversation draft summary report `suggestion: true` until a
+person changes its content, recipients, sender, signature, format or attachments.
+Opening it, acquiring a lease and sending it do not count as edits.
+
+After that first edit, the suggestion stays adopted. Service-account updates,
+patches and attachment changes to an adopted suggestion return `DRAFT_ADOPTED`
+(409), so Gustav never replaces what a person took over. A person can still
+change it directly or through a credential that acts for them
+(`delegatedUser`). Their first edit adopts the suggestion in either editing mode,
+including attachment changes. Drafts that a person wrote are adopted from creation and
+stay open to service accounts as before.
+
+A changed copy saved in another mail client's Drafts folder also adopts the
+suggestion when Mail applies the edit. Reconciling an identical copy and
+retrying an export do not adopt it.
+
+Each conversation has at most one untouched suggestion. Another `draft.create`
+returns the existing suggestion without changing its content or adding the new
+request's inline attachments. This also applies while its send is pending, so
+Undo can restore it. Update it explicitly with its current revision to
+revise it. Every creation key keeps returning its original draft after adoption,
+so retrying an earlier request cannot create another suggestion. Merging two
+conversations with untouched suggestions returns `DRAFT_SUGGESTION_CONFLICT`
+(409) and preserves both conversations. Edit or discard one suggestion before
+merging them.
+
 ## Check failed synchronization
 
 For delayed message content, see [Diagnose delayed Mail content](/en/docs/operations/mail-body-hydration)
@@ -1023,3 +1080,40 @@ Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Al
 When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.
 
 If the sending content changes after your check, Mail stops and queues no message. Open the draft, check it again and approve a new attempt. A signature that changes with the current time may need editing first. Mail does not retry or approve the new content automatically.
+
+## Compose signature fragments
+
+`POST /api/mail/mailboxes/:mailboxId/compose-signature` takes
+`{ senderIdentityId, signatureTemplateId, format }` and returns `{ html, text }`.
+It requires mailbox write access and a verified sender. Private signatures are
+available only to their owner. Use `null` for no signature. The filled signature
+uses the same template rules and render budget as sending, with sanitized
+Markdown HTML and plain text. It has no mailbox CSS or images; the mailbox
+logo becomes its alt text. With `format: "plain"`, `html` is `null`.
+
+Draft editable content includes `quoteSource`, defaulting to `null` (off). Set it
+to `{ locale, timeZone }` to append the readable `sourceMessageId` after the
+signature. The stored body stays editable without that history. Preview accepts
+`sourceMessageId` alongside `draft`; unreadable or missing sources add nothing. Server-generated
+attribution uses the locale and time zone saved when the person enables the quote,
+so preview, safety review and send stay identical across callers. Locale must be a
+valid BCP-47 tag: German variants resolve to `de`, English and unshipped languages
+to `en`. Time zones must be IANA names accepted by `Intl`. Source text never
+evaluates as a template. Oversized quotations fail with the existing compose
+render errors.
+
+REST, shared editing, recovery copies and draft capabilities retain this choice.
+`draft.patch` preserves it when omitted. Use `cld mail draft create|update --quote`
+or `--no-quote`; `--quote` saves the CLI locale and local time zone. Override the
+zone with `--quote-time-zone Europe/Berlin`. Compose preview accepts
+`--source-message`. Send review and queued or scheduled delivery include the
+quote in the frozen content. Turning quoting off retains the existing send hash format. IMAP draft copies include the
+chosen history; editing a copy externally makes that history ordinary body text
+and turns automatic quoting off to avoid appending it twice.
+
+Conversation workspace rows include `drafts: { count, editors }`. Counts cover
+visible open user drafts only; scheduled, sending and closed drafts are excluded.
+`editors` names at most three distinct creators or last editors, newest first,
+with their `kind`, principal `id` and `displayName`. Assigned-only access uses
+the same conversation and source-message visibility as the draft list. This is
+stored draft attribution; conversation presence remains a separate signal.

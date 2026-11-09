@@ -76,6 +76,26 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'drafts' AND column_name = 'adopted_at') THEN
+      -- Earlier editor attribution cannot prove that a draft has never been edited by a person.
+      -- A temporary default marks existing rows without rewriting content or firing edit triggers.
+      ALTER TABLE mail.drafts ADD COLUMN adopted_at timestamptz DEFAULT now();
+      ALTER TABLE mail.drafts ALTER COLUMN adopted_at DROP DEFAULT;
+    END IF;
+  END $$`.simple();
+  await tx`CREATE UNIQUE INDEX IF NOT EXISTS drafts_untouched_suggestion_idx
+    ON mail.drafts (mailbox_id, conversation_id)
+    WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_suggestion_requests (
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    service_account_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    request_hash text NOT NULL,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
+  )`.simple();
   // Scheduling state and the latest timing sample stay bounded to one row per mailbox.
   await tx`
     CREATE TABLE IF NOT EXISTS mail.hydration_work (
@@ -100,8 +120,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
     WHERE job_id IS NOT NULL AND published_at IS NULL
   `.simple();
-  // Release N understands both modes; existing and newly created drafts stay
-  // in lock mode until the subsequent activation release. No body is rewritten.
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'lock'
+    CHECK (draft_edit_mode IN ('lock', 'shared'))`.simple();
+  // Existing drafts retain their mode. Defaults stay lock until verified
+  // per-mailbox activation; no body or document history is rewritten.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
     CHECK (edit_mode IN ('lock', 'shared'))`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
@@ -109,6 +131,13 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_idle_through bigint`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS drafts_document_coverage_idx ON mail.drafts
+    (GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id)
+    WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_log_policy (
+    log_id text PRIMARY KEY, recovered_at timestamptz NOT NULL DEFAULT now()
+  )`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`.simple();
@@ -233,6 +262,12 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
   await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
   await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`.simple();
+  // List pages ask for the open drafts of a few conversations; this keeps that lookup independent of all other drafts.
+  await tx`CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
+    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`

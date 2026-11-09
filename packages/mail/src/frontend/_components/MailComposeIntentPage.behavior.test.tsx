@@ -269,6 +269,7 @@ const intentSeed = (mailboxId: string, senderIdentityId: string): MailDraftSeed 
   derivedFromMessageId: null,
   derivationKind: null,
   content: {
+    quoteSource: null,
     senderIdentityId,
     to: [{ name: null, address: "ada@example.test" }],
     cc: [],
@@ -281,7 +282,7 @@ const intentSeed = (mailboxId: string, senderIdentityId: string): MailDraftSeed 
     requestReadReceipt: false,
   },
   attachments: [],
-  origin: { kind: "compose", input: { senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" } },
+  origin: { kind: "compose", input: { quoteSource: null, senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" } },
   createdAt: "2026-11-06T10:00:00.000Z",
 });
 

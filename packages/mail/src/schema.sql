@@ -1102,6 +1102,11 @@ CREATE INDEX draft_recovery_copies_unresolved_idx ON mail.draft_recovery_copies 
 
 -- mail.drafts -------------------------------------------------------------
 
+CREATE TABLE mail.draft_document_log_policy (
+    log_id text PRIMARY KEY,
+    recovered_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE mail.drafts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     short_id text NOT NULL,
@@ -1110,12 +1115,14 @@ CREATE TABLE mail.drafts (
     sender_identity_id uuid NOT NULL,
     author_kind text NOT NULL,
     author_id uuid,
+    adopted_at timestamp with time zone,
     to_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     cc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     bcc_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     subject text DEFAULT ''::text NOT NULL,
     body_markdown text DEFAULT ''::text NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
+    doc_idle_through bigint,
     state text DEFAULT 'draft'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1135,6 +1142,9 @@ CREATE TABLE mail.drafts (
     derivation_request_hash text,
     materialization_key text,
     materialization_request_hash text,
+    quote_source boolean DEFAULT false NOT NULL,
+    quote_locale text DEFAULT 'en' NOT NULL,
+    quote_time_zone text DEFAULT 'UTC' NOT NULL,
     CONSTRAINT drafts_actor_shape_check CHECK ((((author_kind = 'system'::text) AND (author_id IS NULL)) OR ((author_kind <> 'system'::text) AND (author_id IS NOT NULL)))),
     CONSTRAINT drafts_author_kind_check CHECK ((author_kind = ANY (ARRAY['user'::text, 'service_account'::text, 'workflow'::text, 'system'::text]))),
     CONSTRAINT drafts_automatic_reply_origin_check CHECK (((delivery_class <> 'automatic_reply'::text) OR (origin = 'workflow'::text))),
@@ -1169,6 +1179,11 @@ CREATE INDEX drafts_derived_message_idx ON mail.drafts USING btree (mailbox_id, 
 CREATE INDEX drafts_mailbox_state_idx ON mail.drafts USING btree (mailbox_id, state, updated_at DESC);
 
 CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING btree (mailbox_id, author_kind, author_id, materialization_key) WHERE (materialization_key IS NOT NULL);
+
+CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
+
+CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
+WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL;
 
 CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, origin, state, updated_at DESC);
 
@@ -1421,9 +1436,11 @@ CREATE TABLE mail.mailboxes (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     automatic_reply_management_permission text DEFAULT 'admin'::text NOT NULL,
     compose_safety jsonb DEFAULT '{"internalDomains": [], "largeRecipientThreshold": 20}'::jsonb NOT NULL,
+    draft_edit_mode text DEFAULT 'lock'::text NOT NULL,
     calendar_space_id uuid,
     CONSTRAINT mailboxes_automatic_reply_management_permission_check CHECK ((automatic_reply_management_permission = ANY (ARRAY['write'::text, 'admin'::text]))),
     CONSTRAINT mailboxes_compose_safety_check CHECK ((jsonb_typeof(compose_safety) = 'object'::text)),
+    CONSTRAINT mailboxes_draft_edit_mode_check CHECK (draft_edit_mode IN ('lock', 'shared')),
     CONSTRAINT mailboxes_description_check CHECK (((description IS NULL) OR (char_length(description) <= 2000))),
     CONSTRAINT mailboxes_health_check CHECK ((health = ANY (ARRAY['disconnected'::text, 'verifying'::text, 'bootstrapping'::text, 'active'::text, 'auth_required'::text, 'degraded'::text, 'reconnecting'::text, 'connection_required'::text, 'paused'::text]))),
     CONSTRAINT mailboxes_health_reason_check CHECK (((health_reason IS NULL) OR (char_length(health_reason) <= 1000))),
@@ -2995,3 +3012,12 @@ CREATE OR REPLACE TRIGGER placements_invalidate_automation_state
 AFTER UPDATE OF flags, keywords, deleted_at ON mail.message_placements FOR EACH ROW
 WHEN (OLD.flags IS DISTINCT FROM NEW.flags OR OLD.keywords IS DISTINCT FROM NEW.keywords OR OLD.deleted_at IS DISTINCT FROM NEW.deleted_at)
 EXECUTE FUNCTION mail.invalidate_automation_observed_state();
+
+CREATE TABLE mail.draft_suggestion_requests (
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    service_account_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    request_hash text NOT NULL,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
+);

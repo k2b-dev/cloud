@@ -1,20 +1,25 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
 import { auth } from "@k2b/cloud/server";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
+import { StoreFullError, type TopicConfig } from "@k2b/sync";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
 import { draftEditableContentInputSchema } from "../contracts";
 import { createDraftRevisionUpdate, readDraftDocument as readModel } from "../lib/draft-document";
 import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from "../lib/draft-document-protocol";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { createActorCommand } from "../service/commands";
+import { reviewDraftComposeSafety } from "../service/compose-safety";
+import { pruneDraftDocumentLog } from "../service/draft-document-log";
 import * as draftDocumentService from "../service/draft-documents";
 import {
   acceptDraftDocumentUpdate,
@@ -22,6 +27,7 @@ import {
   mailDraftDocumentLog,
   readDraftDocument,
 } from "../service/draft-documents";
+import { recoverDraftDocumentRest } from "../service/drafts";
 import { createMailbox } from "../service/mailboxes";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import type { MailApiContext } from "./public-resource-boundary";
@@ -46,6 +52,10 @@ const decode = (bytes: Uint8Array) => {
 
 suite("Mail document socket with real SQL, retained topic and WebSockets", () => {
   let server: Server<unknown>;
+  let app: Hono<MailApiContext>;
+  const startServer = () => {
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, runtime) => app.fetch(request, runtime), websocket });
+  };
   let context: MailRequestContext;
   let otherContext: MailRequestContext;
   let requestContext: MailRequestContext;
@@ -118,7 +128,8 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     `;
     if (!sender) throw new Error("Missing socket sender");
     identity = sender;
-    const app = new Hono<MailApiContext>()
+    await prepareDraftSendBinding(mailboxId, identity.id);
+    app = new Hono<MailApiContext>()
       .use("*", async (c, next) => {
         c.set("actor", requestContext.actor);
         c.set("accessSubject", requestContext.accessSubject);
@@ -128,7 +139,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         await next();
       })
       .get("/mailboxes/:mailboxId/drafts/:draftId/document/socket", upgradeMailDraftDocumentSocket);
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, runtime) => app.fetch(request, runtime), websocket });
+    startServer();
   });
   afterEach(async () => {
     for (const socket of sockets) socket.close();
@@ -150,6 +161,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
 
   const draft = async () => {
     const content = draftEditableContentInputSchema.parse({
+      quoteSource: null,
       senderIdentityId: identity.short_id,
       signatureTemplateId: null,
       to: [{ address: "recipient@example.test", name: null }],
@@ -228,6 +240,290 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     };
     return { socket, messages, send, wait, ready };
   };
+
+  const publish = (client: Awaited<ReturnType<typeof connect>>, base: Awaited<ReturnType<typeof read>>, update: Uint8Array) => {
+    client.send({
+      type: "syncPublish",
+      payload: { docId: currentDraft.short_id, generation: base.generation, baseCursor: base.durable.cursor, payload: toBase64(update) },
+    });
+  };
+  const persistedBody = (client: Awaited<ReturnType<typeof connect>>, body: string) =>
+    client.wait(
+      (packet) =>
+        packet.type === "syncPush" &&
+        packet.payload.snapshot === true &&
+        decode(fromBase64(packet.payload.updates[0]!.payload)).body === body,
+    );
+
+  test("old reconnect cursors receive a covering SQL snapshot after startup pruning", async () => {
+    await draft();
+    const base = await read();
+    const local = new Y.Doc();
+    try {
+      Y.applyUpdate(local, base.durable.state);
+      local.getText("codemirror").insert(0, "Committed ");
+      value(
+        await acceptDraftDocumentUpdate({
+          context,
+          mailboxId,
+          draftId: currentDraft.id,
+          generation: base.generation,
+          baseCursor: base.durable.cursor,
+          update: Y.encodeStateAsUpdate(local),
+        }),
+      );
+      const current = await read();
+      if (!current.durable.cursor) throw new Error("Missing committed snapshot cursor");
+      expect((await pruneDraftDocumentLog())?.purged).toBeGreaterThan(0);
+      // Another draft moves the shared log past this draft's own cursor.
+      const unrelated = await draftDocumentService.mailDraftDocumentLog.topic().publish({
+        tenantId: crypto.randomUUID(),
+        data: { kind: "freeze", payload: "", restoreRevision: "1", originNodeId: "fixture", originPeerId: null },
+      });
+      await stopMailDraftConnections();
+      await server.stop(true);
+      startServer();
+      const client = await connect();
+      client.send({
+        type: "replayRequest",
+        payload: { docId: currentDraft.short_id, generation: base.generation, fromCursor: base.durable.cursor },
+      });
+      const ready = await client.wait((packet) => packet.type === "replayReady");
+      // The base is this draft's coverage, which admission accepts, not the log head.
+      if (ready.type !== "replayReady") throw new Error("Missing replay readiness");
+      expect(ready.payload.cursor).toBe(current.durable.cursor);
+      expect(ready.payload.cursor).not.toBe(unrelated.cursor);
+      local.getText("codemirror").insert(0, "Later ");
+      expect(
+        value(
+          await acceptDraftDocumentUpdate({
+            context,
+            mailboxId,
+            draftId: currentDraft.id,
+            generation: base.generation,
+            baseCursor: ready.payload.cursor,
+            update: Y.encodeStateAsUpdate(local),
+          }),
+        ).status,
+      ).toBe("accepted");
+      const snapshot = client.messages.find((packet) => packet.type === "syncPush" && packet.payload.snapshot);
+      expect(snapshot).toMatchObject({ type: "syncPush", payload: { snapshot: true } });
+      if (snapshot?.type !== "syncPush") throw new Error("Missing durable snapshot");
+      expect(decode(fromBase64(snapshot.payload.updates[0]!.payload)).body).toBe("Committed Original");
+      expect(snapshot.payload.updates[0]!.cursor).toBe(current.durable.cursor);
+      expect(client.messages.indexOf(snapshot)).toBeLessThan(client.messages.findIndex((packet) => packet.type === "replayReady"));
+      client.socket.close();
+      await stopMailDraftConnections();
+    } finally {
+      local.destroy();
+      await sql`UPDATE mail.drafts SET state='discarded' WHERE id=${currentDraft.id}::uuid`;
+    }
+  });
+
+  test("bounded reconnect storm preserves every admitted edit and replayed input is idempotent", async () => {
+    await draft();
+    const initial = await read();
+    const local = new Y.Doc();
+    local.clientID = 101;
+    Y.applyUpdate(local, initial.durable.state);
+    try {
+      let expected = "Original";
+      for (let index = 0; index < 8; index++) {
+        const client = await connect();
+        await client.ready();
+        const base = await read();
+        Y.applyUpdate(local, base.durable.state);
+        const text = ` [${index}]`;
+        local.getText("codemirror").insert(local.getText("codemirror").length, text);
+        expected += text;
+        const update = Y.encodeStateAsUpdate(local);
+        publish(client, base, update);
+        await persistedBody(client, expected);
+        // A lost response may make a tab resend the same admitted identities on reconnect.
+        client.socket.close();
+        await stopMailDraftConnections();
+        const retried = value(
+          await acceptDraftDocumentUpdate({
+            context,
+            mailboxId,
+            draftId: currentDraft.id,
+            generation: base.generation,
+            baseCursor: base.durable.cursor,
+            update,
+          }),
+        );
+        expect(retried.status).toBe("accepted");
+      }
+      const final = await read();
+      expect(final.durable.content.body).toBe(expected);
+      expect(Buffer.from(final.fresh.state)).toEqual(Buffer.from(final.durable.state));
+    } finally {
+      local.destroy();
+    }
+  }, 30_000);
+
+  test("full stream rejection exposes a stable retry error while the exact local input remains recoverable", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const local = new Y.Doc();
+    local.clientID = 103;
+    Y.applyUpdate(local, base.durable.state);
+    local.getText("codemirror").insert(0, "Unsent ");
+    const update = Y.encodeStateAsUpdate(local);
+    // Sync creates a new handle per topic() call, including inside withStore().
+    // Reject the real admission's publication, not an unused sibling handle.
+    const rejected = new StoreFullError("Fixture: reject full stream");
+    const sync = getProcessSync();
+    const topic = sync.topic.bind(sync);
+    let rejectedPublications = 0;
+    const publications: { mockRestore(): void }[] = [];
+    const handles = spyOn(sync, "topic").mockImplementation(<T>(config: TopicConfig) => {
+      const handle = topic<T>(config);
+      if (config.id === mailDraftDocumentLog.id) {
+        const publish = handle.publish.bind(handle);
+        publications.push(
+          spyOn(handle, "publish").mockImplementation((input) => {
+            if (input.tenantId === currentDraft.id && rejectedPublications === 0) {
+              rejectedPublications++;
+              return Promise.reject(rejected);
+            }
+            return publish(input);
+          }),
+        );
+      }
+      return handle;
+    });
+    try {
+      try {
+        publish(client, base, update);
+        const error = await client.wait((packet) => packet.type === "error");
+        expect(rejectedPublications).toBe(1);
+        expect(error).toMatchObject({ type: "error", payload: { code: "DRAFT_DOCUMENT_STREAM_FULL" } });
+        expect(error.type === "error" && error.payload.message).toContain("retry");
+        expect(decode(Y.encodeStateAsUpdate(local)).body).toBe("Unsent Original");
+        const unchanged = await read();
+        expect(unchanged.durable.content.body).toBe("Original");
+        expect(unchanged.durable.cursor).toBe(base.durable.cursor);
+        expect(unchanged.fresh.content.body).toBe("Original");
+        expect(client.messages.some((packet) => packet.type === "syncPush" && !packet.payload.snapshot)).toBe(false);
+      } finally {
+        handles.mockRestore();
+        for (const publication of publications) publication.mockRestore();
+      }
+      const retry = await connect();
+      await retry.ready();
+      publish(retry, base, update);
+      await persistedBody(retry, "Unsent Original");
+      expect((await read()).durable.content.body).toBe("Unsent Original");
+    } finally {
+      local.destroy();
+    }
+  }, 15_000);
+
+  test("socket server restart resynchronizes committed state and admits offline edits without loss", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const local = new Y.Doc();
+    local.clientID = 102;
+    Y.applyUpdate(local, base.durable.state);
+    try {
+      local.getText("codemirror").insert(8, " before");
+      publish(client, base, Y.encodeStateAsUpdate(local));
+      await persistedBody(client, "Original before");
+      await stopMailDraftConnections();
+      await server.stop(true);
+      // Document service handles are transaction-scoped; shutdown leaves no cached document to reuse.
+      local.getText("codemirror").insert(local.getText("codemirror").length, " offline");
+      startServer();
+      const restarted = await connect();
+      await restarted.ready();
+      const restored = await read();
+      expect(restored.durable.content.body).toBe("Original before");
+      Y.applyUpdate(local, restored.durable.state);
+      publish(restarted, restored, Y.encodeStateAsUpdate(local));
+      await persistedBody(restarted, "Original before offline");
+      expect((await read()).fresh.content.body).toBe("Original before offline");
+    } finally {
+      local.destroy();
+    }
+  }, 15_000);
+
+  test("sending while a socket types freezes only reviewed input and retains the late edit for recovery", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const checked = value(
+      await reviewDraftComposeSafety({ context, mailboxId, draftId: currentDraft.id, expectedRevision: base.revision }),
+    );
+    const local = new Y.Doc();
+    Y.applyUpdate(local, base.durable.state);
+    local.getText("codemirror").insert(8, " late");
+    const reached = Promise.withResolvers<void>();
+    const proceed = Promise.withResolvers<void>();
+    const original = draftDocumentService.acceptDraftDocumentUpdate;
+    const admission = spyOn(draftDocumentService, "acceptDraftDocumentUpdate").mockImplementation(async (params) => {
+      reached.resolve();
+      await proceed.promise;
+      return original(params);
+    });
+    // Bounded below the test timeout, so a socket that never reaches admission fails here and `finally` restores the spy.
+    let admissionDeadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      publish(client, base, Y.encodeStateAsUpdate(local));
+      await Promise.race([
+        reached.promise,
+        new Promise<never>((_, reject) => {
+          admissionDeadline = setTimeout(() => reject(new Error("The socket update never reached admission")), 10_000);
+        }),
+      ]);
+      clearTimeout(admissionDeadline);
+      const command = value(
+        await createActorCommand({
+          context,
+          mailboxId,
+          input: {
+            kind: "send",
+            draftId: currentDraft.id,
+            senderIdentityId: identity.id,
+            expectedDraftRevision: base.revision,
+            expectedContentHash: checked.contentHash,
+            undoSeconds: 60,
+            idempotencyKey: crypto.randomUUID(),
+            safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+          },
+        }),
+      );
+      proceed.resolve();
+      await client.wait((packet) => packet.type === "error" && packet.payload.code === "RESYNC_REQUIRED");
+      const recovered = value(
+        await recoverDraftDocumentRest({
+          context,
+          mailboxId,
+          draftId: currentDraft.id,
+          generation: base.generation,
+          clientId: crypto.randomUUID(),
+          state: Y.encodeStateAsUpdate(local),
+        }),
+      );
+      expect(recovered.status).toBe("recovered");
+      if (recovered.status !== "recovered") throw new Error("Missing late input recovery");
+      expect(recovered.draft.body).toBe("Original late");
+      const [outbox] = await sql<{ draft_snapshot: { body: string } }[]>`
+        SELECT draft_snapshot FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+      expect(outbox?.draft_snapshot.body).toBe("Original");
+      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${recovered.draft.id}::uuid`).toHaveLength(0);
+    } finally {
+      clearTimeout(admissionDeadline);
+      proceed.resolve();
+      admission.mockRestore();
+      local.destroy();
+    }
+  }, 15_000);
 
   // R48 source-only guard: cookie B also has real write permission to the same draft.
   test("reconnect after switching A to B refuses A's expected account before opening the document", async () => {
@@ -563,6 +859,46 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       target.destroy();
       sourceDoc.destroy();
       targetDoc.destroy();
+    }
+  });
+
+  test("a cursor flood waits as one message, keeps the socket open and lets the edit through", async () => {
+    const created = await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const sourceDoc = new Y.Doc();
+    sourceDoc.clientID = 555;
+    const source = new Awareness(sourceDoc);
+    try {
+      const cursorMessage = () => {
+        // Each state change raises the awareness clock, like every pointer move of a selection drag.
+        source.setLocalState({ cursor: null });
+        return {
+          type: "awarenessPublish",
+          payload: { docId: created.short_id, generation: base.generation, payload: toBase64(encodeAwarenessUpdate(source, [555])) },
+        };
+      };
+      // Far more than the 200 queued messages a socket accepts, sent at once with one edit in the middle.
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const bytes = await createDraftRevisionUpdate(
+        base.fresh.state,
+        { ...created.content, body: "Typed during a drag" },
+        { deadline: Date.now() + 5000 },
+      );
+      client.send({
+        type: "syncPublish",
+        payload: { docId: created.short_id, generation: base.generation, baseCursor: base.fresh.cursor, payload: toBase64(bytes) },
+      });
+      for (let index = 0; index < 300; index++) client.send(cursorMessage());
+      const echo = await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
+      expect(echo.type === "syncPush" && echo.payload.updates[0]?.payload).toBe(toBase64(bytes));
+      await persistedBody(client, "Typed during a drag");
+      expect(client.messages.some((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE")).toBe(false);
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      source.destroy();
+      sourceDoc.destroy();
     }
   });
 

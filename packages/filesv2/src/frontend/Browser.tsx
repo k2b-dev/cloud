@@ -612,7 +612,7 @@ export default function Browser(props: {
     }
     props.uploads.add(
       { baseId: base, root, folders: [...folders].sort(), policy, total: files.length },
-      { key: JSON.stringify([base, root]), label },
+      { key: JSON.stringify([base, root]), label, href: filesUrl(base, root) },
       files.map((file) => ({ file, path: relativeName(file) })),
     );
   };

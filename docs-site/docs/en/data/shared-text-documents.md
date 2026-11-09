@@ -49,9 +49,20 @@ log. A missing snapshot contributes sequence zero. The application owns this
 watermark and must serialize it with restores and lifecycle changes; the
 snapshot pipeline does not prune automatically. A stalled snapshot holds back
 pruning and can block writes. Keep rejected input available for retry, and
-keep snapshot work independent of new writes. This opt-in changes an existing
-stream's retention contract and raises `ResourceDriftError` until it is safely
-migrated. Existing log declarations retain their current policies.
+keep snapshot work independent of new writes. Existing log declarations
+retain their current policies.
+
+When a log opts in later, Cloud changes its existing event stream in place on
+first use: it stops discarding the oldest events and removes the age limit.
+The stream keeps its name and sequences, so persisted cursors stay valid. Any
+other difference still raises `ResourceDriftError`. Updates that the old
+policy already expired stay gone. Before the application prunes or tolerates
+a retention gap, it must send every document whose snapshot is older than the
+retained window to recovery, even when none of its events is retained any
+more. Use `log.firstSequence()` to find that window. Run this step once,
+after the application has started, and record its completion durably. Run it
+after startup because a declared log that Cloud cannot prepare would
+otherwise fail the readiness of the whole application.
 
 `log.id` identifies the resource. `log.topicConfig` exposes the exact readonly
 Sync declaration, passed through unchanged. `log.topic()` returns a fresh
@@ -363,7 +374,10 @@ A populated document or `initialCursor` also requires `initialGeneration`,
 the opaque token belonging to that snapshot, including historical deletes.
 
 The transport supplies an absolute WebSocket `url`, `encode(request)`,
-`decode(packet)`, and `closeError(code, reason)`. Encoding maps normalized
+`decode(packet)`, and `closeError(code, reason)`. A busy server or proxy is
+never terminal: close code 1013 (try again later) and a `BACKPRESSURE` error
+message reconnect with `reconnectDelayMs`, keep unsent input, and resend it
+after replay; `closeError` never sees 1013. Encoding maps normalized
 `replayRequest`, `syncPublish`, `awarenessPublish`, and optional event-stream
 `subscribe` requests to the application's protocol. Decoding validates unknown
 JSON and maps it to `SharedTextProviderMessage`, or returns null to ignore it.
@@ -641,6 +655,12 @@ only against the editor's existing text root. Invalid input throws
 publish its returned bytes when non-null.
 
 The browser publishes only its local awareness state, including on reconnect.
+It sends a changed cursor at once and then at most one frame with the latest
+state per 100 ms, so a selection drag cannot flood the server. On the server,
+keep at most one unprocessed awareness message per connection: a later one
+replaces it, it does not count against the connection's message limit, and any
+other message ends the replacement, so a cursor never overtakes an edit sent
+before it. Check access for every awareness message you process.
 Return the connection's peer ID in the replay-ready response and include it
 as the origin of cursor updates, so the browser can skip its own rewritten
 echo. Remote timeout removals stay local. A new connection receives a fresh

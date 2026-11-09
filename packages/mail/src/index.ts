@@ -20,6 +20,8 @@ import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 
 import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
+import { stopDraftDocumentPruning } from "./service/draft-document-log";
+import { startDraftDocumentLogPolicy, stopDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
 
 const mailNotifications = createMailNotificationService(app.notifications);
@@ -27,6 +29,8 @@ const mailNotifications = createMailNotificationService(app.notifications);
 const stopMailRuntimes = (): Promise<void> =>
   stopRuntimeResources([
     stopMailDraftConnections,
+    stopDraftDocumentLogPolicy,
+    stopDraftDocumentPruning,
     stopConversationViewCountCache,
     () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
@@ -75,6 +79,9 @@ const result = await app.start({
     stop: stopMailRuntimes,
   },
 });
+// After startup: the platform has provisioned every resource declared so far,
+// so a draft log it cannot prepare leaves only shared drafts unsupported.
+startDraftDocumentLogPolicy();
 export default { ...result, websocket };
 
 export type { ApiType } from "./api";

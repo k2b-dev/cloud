@@ -399,6 +399,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             expectedRevision: "Erwartete aktuelle Revision zum Schutz vor gleichzeitigen Änderungen.",
             patch: "Nur die zu ändernden Felder; nicht übergebene Felder bleiben erhalten.",
             "patch.senderIdentityId": "ID der gewünschten Absenderidentität.",
+            "patch.quoteSource": "Quellnachricht anhängen oder entfernen; weglassen behält die aktuelle Auswahl.",
             "patch.signatureTemplateId": "Signaturvorlage nach dem Text oder null für keine; weglassen behält die aktuelle Auswahl.",
             "patch.to": "Vollständige neue Empfängerliste; [] leert sie.",
             "patch.to[].name": "Optionaler Anzeigename des Empfängers.",
@@ -667,10 +668,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "draft.create": {
           title: "Entwurf erstellen",
-          description: "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang.",
+          description:
+            "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang. Für Gustav und andere Dienstkonten ist dies ein Vorschlag, den Personen in der Unterhaltung sehen. Nach der ersten Bearbeitung durch eine Person darf Gustav ihn nur noch auf deren Wunsch ändern. Pro Unterhaltung gibt es höchstens einen unberührten Vorschlag; ein weiterer Aufruf gibt ihn zurück.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
+            quoteSource: "Lesbare Quellnachricht nach der Signatur anhängen; standardmäßig aus.",
             signatureTemplateId:
               "Signaturvorlage nach dem Text oder null für keine; weglassen verwendet die Standardsignatur des Absenders.",
             to: "Hauptempfänger.",
@@ -734,6 +737,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             draft: "Vollständiger bearbeitbarer Entwurfsinhalt, der den aktuellen Inhalt ersetzt.",
             "draft.senderIdentityId": "Verifizierte Absenderidentität ID.",
+            "draft.quoteSource": "Lesbare Quellnachricht nach der Signatur anhängen; standardmäßig aus.",
             "draft.signatureTemplateId": "Signaturvorlage nach dem Text oder null für keine; weglassen behält die aktuelle Auswahl.",
             "draft.to": "Hauptempfänger.",
             "draft.to[].name": "Optionaler Anzeigename des Empfängers.",

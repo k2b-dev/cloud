@@ -1,4 +1,4 @@
-import { toast, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { shellMessages } from "../../messages";
 import { watchPairingLink } from "../phone";
@@ -13,7 +13,10 @@ export default function PairingNotice(props: { name?: string }) {
   onMount(() => {
     onCleanup(
       watchPairingLink(() => {
-        if (props.name) toast(t().alreadyConnected({ name: props.name }), { iconClass: "ti ti-info-circle" });
+        if (!props.name) return;
+        const text = t().alreadyConnected({ name: props.name });
+        // Rare on a page: the toast code loads only when a connected app sees a pairing link, so it stays out of the island.
+        void import("@k2b/ui").then(({ toast }) => toast(text, { iconClass: "ti ti-info-circle" }));
       }),
     );
   });

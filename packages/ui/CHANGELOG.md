@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.53.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.52.0...npm-ui-v0.53.0) (2026-11-09)
+
+
+### Features
+
+* **mail:** a floating reply pill above the newest message replaces the reply box ([#2976](https://github.com/k2b-dev/cloud/issues/2976)) ([bbac324](https://github.com/k2b-dev/cloud/commit/bbac3244e98b2031972471299ed0179f54cca3f7))
+* **mail:** external images notice as one steady row with load, always-allow, and revoke in place ([#2936](https://github.com/k2b-dev/cloud/issues/2936)) ([e238623](https://github.com/k2b-dev/cloud/commit/e238623052f8b1a01e430beaee62fe61b00b98f2))
+* **ui:** a morph motion token for large surfaces that grow or move ([#2985](https://github.com/k2b-dev/cloud/issues/2985)) ([a2b2193](https://github.com/k2b-dev/cloud/commit/a2b21931c7f8341b3110e2b4a0e3fa4e1d18ebc7))
+* **ui:** a plain LinkCard for quiet overviews ([#2926](https://github.com/k2b-dev/cloud/issues/2926)) ([fdb4f52](https://github.com/k2b-dev/cloud/commit/fdb4f52625de5aebaf841385fa8b0aa297a98fb7))
+* **ui:** busy scrollers show their scrollbar only on hover or focus ([#2963](https://github.com/k2b-dev/cloud/issues/2963)) ([7157c41](https://github.com/k2b-dev/cloud/commit/7157c41a9345d638e87cac57f4837f83103f9990))
+* **ui:** Cloud exports standalone and PDF charts with the UI palette ([#3018](https://github.com/k2b-dev/cloud/issues/3018)) ([95ad9d1](https://github.com/k2b-dev/cloud/commit/95ad9d1ac43b2dce1b2bfbc9997a32f66a052894))
+* **ui:** dot matrix bars for nested counts ([#2743](https://github.com/k2b-dev/cloud/issues/2743)) ([4afc36a](https://github.com/k2b-dev/cloud/commit/4afc36aed51747b16f6f472057dd83282255bd70))
+* **ui:** fields show an assistant's suggested value that only becomes the value when someone accepts it ([#2950](https://github.com/k2b-dev/cloud/issues/2950)) ([03b3ba2](https://github.com/k2b-dev/cloud/commit/03b3ba23ee851114ea452cd922bee7dbec68b16f))
+* **ui:** key-figure tiles and dashboard panels are islands ([#2987](https://github.com/k2b-dev/cloud/issues/2987)) ([79f637a](https://github.com/k2b-dev/cloud/commit/79f637afc7dbf014d46006228a14d3de19facd93))
+* **ui:** lines show forecasts, thresholds and today ([#2776](https://github.com/k2b-dev/cloud/issues/2776)) ([0a1b8c1](https://github.com/k2b-dev/cloud/commit/0a1b8c16df200c220abc88f6dda35a65b3b7e3b3))
+* **ui:** NoticeRow for one-line notices with a tile and an end action; split buttons open phone sheets ([#2925](https://github.com/k2b-dev/cloud/issues/2925)) ([7126f02](https://github.com/k2b-dev/cloud/commit/7126f027371dd5f04e87779456c9a9825d43a1c7))
+* **ui:** one Section for every topic, with Field rows, named tones, and a restricted marker ([#2962](https://github.com/k2b-dev/cloud/issues/2962)) ([1444360](https://github.com/k2b-dev/cloud/commit/1444360ab4f46cbc933f32943db566f581ccaf87))
+* **ui:** sankey charts ([#2772](https://github.com/k2b-dev/cloud/issues/2772)) ([088d8d7](https://github.com/k2b-dev/cloud/commit/088d8d72bfb61c0fe8c29142055964d51c1820fe))
+* **ui:** shadows follow one layer model in every app ([#2973](https://github.com/k2b-dev/cloud/issues/2973)) ([c32ab68](https://github.com/k2b-dev/cloud/commit/c32ab6810b6414a02be40fb651ad968ee0d78997))
+* **ui:** the feat/code sign joins the icon set as ti-feat-code ([#2943](https://github.com/k2b-dev/cloud/issues/2943)) ([3d3aacc](https://github.com/k2b-dev/cloud/commit/3d3aaccce857091e3f18d0677230aa96b629acde))
+
+
+### Bug Fixes
+
+* **ui:** a dismissed date range sheet never shows its unsaved day in the field ([#2988](https://github.com/k2b-dev/cloud/issues/2988)) ([de62e99](https://github.com/k2b-dev/cloud/commit/de62e990fd604a730bcb9a4b0a0b3340fae90784)), closes [#2986](https://github.com/k2b-dev/cloud/issues/2986)
+* **ui:** a landing point that code focuses draws no browser ring ([#3001](https://github.com/k2b-dev/cloud/issues/3001)) ([1369084](https://github.com/k2b-dev/cloud/commit/13690849faefb482b8d150d586fc733aa702cb9a))
+* **ui:** bar rows draw negative values again ([#2964](https://github.com/k2b-dev/cloud/issues/2964)) ([db822b5](https://github.com/k2b-dev/cloud/commit/db822b54bcc7ed94a5cbad4e859ebdbdf5c694c3))
+* **ui:** browser tests that measure around a hover use hoverInPlace ([#3020](https://github.com/k2b-dev/cloud/issues/3020)) ([7b5cf3c](https://github.com/k2b-dev/cloud/commit/7b5cf3ce897e2ffbedbfc5320475bb7fb2af2308))
+* **ui:** calendar heatmaps fill their panel ([#2794](https://github.com/k2b-dev/cloud/issues/2794)) ([757cf86](https://github.com/k2b-dev/cloud/commit/757cf86ea07a1cd4022f5a9b7be32ee4cfbab3ae))
+* **ui:** fit distribution labels and make remainders explicit ([#2784](https://github.com/k2b-dev/cloud/issues/2784)) ([7f2b4b2](https://github.com/k2b-dev/cloud/commit/7f2b4b2f033533df57d871c53d36ff1200ee04ee))
+* **ui:** the bars family test hovers without Playwright's retry scroll ([#3014](https://github.com/k2b-dev/cloud/issues/3014)) ([b5db37a](https://github.com/k2b-dev/cloud/commit/b5db37a8f17830e9c42454c4a5bab31ea3466741))
+* **ui:** the composer growth test samples every typed line in its own frame ([#2966](https://github.com/k2b-dev/cloud/issues/2966)) ([32259f6](https://github.com/k2b-dev/cloud/commit/32259f607976ceb07c54b4d0586ff820539953e6))
+* **ui:** the field markup guard pins the clock to the day its expectation was recorded ([#3006](https://github.com/k2b-dev/cloud/issues/3006)) ([238b3c7](https://github.com/k2b-dev/cloud/commit/238b3c7b3693c853111f31a37e1da37b4a8b2f7b))
+* **ui:** the icon preset builds and serves Tabler's split fonts ([#2965](https://github.com/k2b-dev/cloud/issues/2965)) ([2b89de7](https://github.com/k2b-dev/cloud/commit/2b89de7543ec1f0b4309f0aa32ebfafaed83baec))
+
 ## [0.52.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.51.0...npm-ui-v0.52.0) (2026-11-08)
 
 

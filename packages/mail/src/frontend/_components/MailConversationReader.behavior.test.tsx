@@ -734,142 +734,165 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
   }
 });
 
-test.skipIf(isServer)("changing the conversation during the seed-store import drops the stale reply", async () => {
-  const dom = createDomTestHarness();
-  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
-  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
-  const reload = await import("@k2b/cloud/browser/reload");
-  const nav = await import("@k2b/ssr/nav");
-  const store = await import("./mail-draft-seed-store");
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let imported = false;
-  const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
-    await pending;
-    const module = await loader();
-    imported = true;
-    return module;
-  });
-  const navigate = spyOn(nav, "documentNavigate").mockImplementation(() => {});
-  const storing = spyOn(store, "storeMailDraftSeed").mockImplementation(() => {});
-  const identity: SenderIdentity = {
-    id: "Send01",
-    mailboxId: "Box001",
-    label: "Support",
-    displayName: "Support",
-    fromAddress: "support@example.com",
-    replyTo: null,
-    defaultCc: [],
-    defaultBcc: [],
-    defaultFormat: "markdown",
-    defaultPriority: "normal",
-    defaultDeliveryReceipt: false,
-    defaultReadReceipt: false,
-    vcard: null,
-    envelopeSender: null,
-    defaultSignatureTemplateId: null,
-    transport: {
-      mode: "mailbox",
-      host: null,
-      port: null,
-      tlsMode: null,
-      username: null,
-      secret: { kind: null, isSet: false },
-      revision: 0,
-      status: "active",
-      capabilities: { dsn: false, size: false, maxMessageBytes: null },
-      lastVerifiedAt: null,
-      lastError: null,
-    },
-    authenticationPolicy: { automation: "mailbox" },
-    sentFolderId: null,
-    draftsFolderId: null,
-    isDefault: true,
-    status: "verified",
-    statusReason: null,
-    pendingVerificationCommandId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const seed: MailDraftSeed = {
-    id: "20000000-0000-4000-8000-000000000002",
-    mailboxId: "Box001",
-    conversationId: "Conv01",
-    intent: "reply",
-    sourceMessageId: "Msg001",
-    derivedFromMessageId: null,
-    derivationKind: null,
-    content: {
-      senderIdentityId: "Send01",
-      to: [],
-      cc: [],
-      bcc: [],
-      subject: "Re: Quarterly review",
-      body: "",
-      format: "markdown",
-      priority: "normal",
-      requestDeliveryReceipt: false,
-      requestReadReceipt: false,
-    },
-    attachments: [],
-    origin: { kind: "compose", input: { senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" } },
-    createdAt: now,
-  };
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = Object.assign(
-    async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === "POST" ? seed : []),
-    { preconnect: originalFetch.preconnect },
-  );
-  const [conversationId, setConversationId] = createSignal("Conv01");
-  const { MailConversationReader } = modules!;
-  const dispose = render(
-    () =>
-      createComponent(MailConversationReader, {
-        ...readerProps,
-        identities: [identity],
-        get selectionKey() {
-          return conversationId();
-        },
-        get selectedConversationId() {
-          return conversationId();
-        },
-        get messages() {
-          return [
-            { ...envelopeOnly, id: conversationId() === "Conv01" ? "Msg001" : "Msg002", hydrationStatus: "complete", plainText: "Hello" },
-          ];
-        },
-      }),
-    dom.root,
-  );
-  try {
-    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
-    const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
-    if (typeof action !== "function") throw new Error("The reader registers no Reply command");
-    await action();
-    await waitFor(() => load.mock.calls.length === 1);
-    expect(storing).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
-    setConversationId("Conv02");
-    release();
-    await waitFor(() => imported);
-    await Bun.sleep(0);
-    expect(storing).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
-  } finally {
-    release();
-    dispose();
-    globalThis.fetch = originalFetch;
-    load.mockRestore();
-    navigate.mockRestore();
-    storing.mockRestore();
-    if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
-    else Reflect.deleteProperty(globalThis, "localStorage");
-    dom.cleanup();
-  }
-});
+test.skipIf(isServer)(
+  "changing the conversation while its reply draft is created drops the stale reply and removes that draft",
+  async () => {
+    const dom = createDomTestHarness();
+    const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+    const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+    const nav = await import("@k2b/ssr/nav");
+    const seedAnswer = Promise.withResolvers<void>();
+    const navigate = spyOn(nav, "documentNavigate").mockImplementation(() => {});
+    const identity: SenderIdentity = {
+      id: "Send01",
+      mailboxId: "Box001",
+      label: "Support",
+      displayName: "Support",
+      fromAddress: "support@example.com",
+      replyTo: null,
+      defaultCc: [],
+      defaultBcc: [],
+      defaultFormat: "markdown",
+      defaultPriority: "normal",
+      defaultDeliveryReceipt: false,
+      defaultReadReceipt: false,
+      vcard: null,
+      envelopeSender: null,
+      defaultSignatureTemplateId: null,
+      transport: {
+        mode: "mailbox",
+        host: null,
+        port: null,
+        tlsMode: null,
+        username: null,
+        secret: { kind: null, isSet: false },
+        revision: 0,
+        status: "active",
+        capabilities: { dsn: false, size: false, maxMessageBytes: null },
+        lastVerifiedAt: null,
+        lastError: null,
+      },
+      authenticationPolicy: { automation: "mailbox" },
+      sentFolderId: null,
+      draftsFolderId: null,
+      isDefault: true,
+      status: "verified",
+      statusReason: null,
+      pendingVerificationCommandId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const seed: MailDraftSeed = {
+      id: "20000000-0000-4000-8000-000000000002",
+      mailboxId: "Box001",
+      conversationId: "Conv01",
+      intent: "reply",
+      sourceMessageId: "Msg001",
+      derivedFromMessageId: null,
+      derivationKind: null,
+      content: {
+        quoteSource: null,
+        senderIdentityId: "Send01",
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "Re: Quarterly review",
+        body: "",
+        format: "markdown",
+        priority: "normal",
+        requestDeliveryReceipt: false,
+        requestReadReceipt: false,
+      },
+      attachments: [],
+      origin: {
+        kind: "compose",
+        input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" },
+      },
+      createdAt: now,
+    };
+    const created = {
+      ...seed.content,
+      id: "DrfNew",
+      mailboxId: "Box001",
+      conversationId: "Conv01",
+      intent: "reply",
+      sourceMessageId: "Msg001",
+      derivedFromMessageId: null,
+      derivationKind: null,
+      signatureTemplateId: null,
+      attachments: [],
+      createdBy: { kind: "user", userId: "Usr001" },
+      lastEditedBy: { kind: "user", userId: "Usr001" },
+      lastEditedByDisplayName: "Ada",
+      recoveryCopyCount: 0,
+      revision: 1,
+      state: "draft",
+      deliveryClass: "normal",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const calls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(input instanceof Request ? input.url : input), "http://localhost").pathname;
+        const method = (input instanceof Request ? input.method : init?.method) ?? "GET";
+        calls.push(`${method} ${path}`);
+        if (path.endsWith("/draft-seeds")) {
+          await seedAnswer.promise;
+          return Response.json(seed);
+        }
+        if (path.endsWith("/draft-seeds/materialize")) return Response.json(created);
+        if (path.endsWith("/discard")) return Response.json({ ...created, state: "discarded" });
+        return Response.json([]);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const [conversationId, setConversationId] = createSignal("Conv01");
+    const { MailConversationReader } = modules!;
+    const dispose = render(
+      () =>
+        createComponent(MailConversationReader, {
+          ...readerProps,
+          identities: [identity],
+          get selectionKey() {
+            return conversationId();
+          },
+          get selectedConversationId() {
+            return conversationId();
+          },
+          get messages() {
+            return [
+              { ...envelopeOnly, id: conversationId() === "Conv01" ? "Msg001" : "Msg002", hydrationStatus: "complete", plainText: "Hello" },
+            ];
+          },
+        }),
+      dom.root,
+    );
+    try {
+      await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
+      const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
+      if (typeof action !== "function") throw new Error("The reader registers no Reply command");
+      await action();
+      await waitFor(() => calls.some((call) => call.endsWith("/draft-seeds")));
+      setConversationId("Conv02");
+      seedAnswer.resolve();
+      // The draft was created before the answer could stop it; it goes again instead of waiting in the other conversation.
+      await waitFor(() => calls.some((call) => call === "POST /api/mail/mailboxes/Box001/drafts/DrfNew/discard"));
+      expect(dom.root.querySelector("[data-mail-inline-draft], [data-mail-inline-draft-frame]")).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      seedAnswer.resolve();
+      dispose();
+      globalThis.fetch = originalFetch;
+      navigate.mockRestore();
+      if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+      dom.cleanup();
+    }
+  },
+);
 
 test.skipIf(isServer)("under Automatic the HTML frame stays mounted while the theme changes light to dark and back", async () => {
   const dom = createDomTestHarness();

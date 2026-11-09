@@ -1,11 +1,16 @@
+import { sql } from "@k2b/cloud";
 import { compareStreamCursor } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { sql } from "bun";
 import { z } from "zod";
+import type { DraftQuoteSource } from "../contracts";
 import { type ActorRef, draftEditableContentInputSchema } from "../contracts";
+import { getMailboxAccess } from "./access";
+import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { renderComposeContent, withoutSignatureSegments } from "./compose-renderer";
-import { mailDraftDocumentLog } from "./draft-documents";
+import { lockDraftDocumentCoverage, mailDraftDocumentLog, replayDraftDocument } from "./draft-document-log";
+import { draftDocumentHistoryChecked } from "./draft-document-log-policy";
+import { loadDraftSourceQuote } from "./draft-source-quote";
 import { mailboxLogoContentId } from "./mailbox-logos";
 import { type OutboundDraftSnapshot, outboundDraftSnapshotSchema } from "./outbound-mime";
 
@@ -16,6 +21,7 @@ const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.
 type SendSource = {
   edit_mode: "lock" | "shared";
   doc_cursor: string | null;
+  doc_seq: string | number | null;
   doc_history_complete: boolean;
   conversation_id: string | null;
   to_addresses: unknown;
@@ -34,6 +40,8 @@ type SendSource = {
   display_name: string;
   sender_identity_id: string;
   signature_template_id: string | null;
+  quote_source: DraftQuoteSource | null;
+  source_message_id: string | null;
   from_address: string;
   reply_to: string | null;
   envelope_sender: string | null;
@@ -71,6 +79,7 @@ export const loadSendContent = async (params: {
   expectedRevision: number;
   senderIdentityId?: string;
   actor: ActorRef;
+  context?: MailRequestContext;
   lock?: boolean;
 }): Promise<Result<{ snapshot: OutboundDraftSnapshot; contentHash: string; source: SendSource }>> => {
   const actorUserId =
@@ -78,7 +87,7 @@ export const loadSendContent = async (params: {
   const accountId = params.actor.kind === "service_account" ? params.actor.serviceAccountId : null;
   const [draft] = await params.db<SendSource[]>`
     SELECT
-      d.conversation_id, d.edit_mode, d.doc_cursor, d.doc_history_complete,
+      d.conversation_id, d.edit_mode, d.doc_cursor, d.doc_seq, d.doc_history_complete,
       signature.body_template AS signature, COALESCE(style.custom_css, '') AS custom_css,
       m.name AS mailbox_name, m.description AS mailbox_description,
       u.display_name AS actor_name, u.uid AS actor_uid, u.mail AS actor_mail, account.name AS account_name,
@@ -91,7 +100,7 @@ export const loadSendContent = async (params: {
       d.subject,
       d.body_markdown,
       d.body_format,
-      d.signature_template_id,
+      d.signature_template_id, CASE WHEN d.quote_source THEN jsonb_build_object('locale', d.quote_locale, 'timeZone', d.quote_time_zone) ELSE NULL END AS quote_source, d.source_message_id,
       d.priority,
       d.request_delivery_receipt,
       d.request_read_receipt,
@@ -151,6 +160,17 @@ export const loadSendContent = async (params: {
   if (!draft) return fail(err.badInput("Draft or sender identity is no longer available"));
   if (draft.edit_mode === "shared") {
     if (!draft.doc_history_complete) return fail(sendContentChanged());
+    // Pruning may not pass the SQL coverage this replay starts from. Lock-mode
+    // sends never replay and never wait for a prune.
+    if (params.db === sql) return sql.begin((db) => loadSendContent({ ...params, db }));
+    await lockDraftDocumentCoverage(params.db);
+    const [current] = await params.db<{ doc_seq: string | null; revision: string }[]>`
+      SELECT doc_seq, revision FROM mail.drafts WHERE id = ${params.draftId}::uuid
+    `;
+    if (!current || String(current.doc_seq) !== String(draft.doc_seq) || Number(current.revision) !== params.expectedRevision)
+      return fail(sendContentChanged());
+    // Until the recovery marking ran, SQL may lack events the old log expired.
+    if (!(await draftDocumentHistoryChecked(params.db))) return fail(sendContentChanged());
     try {
       const topic = mailDraftDocumentLog.topic();
       const head = await topic.latestCursor({ tenantId: params.draftId });
@@ -158,7 +178,13 @@ export const loadSendContent = async (params: {
         // A rolled-back send leaves an inert marker, not a changed review.
         // Real unprojected input still requires a new durable revision/review.
         let reached = draft.doc_cursor;
-        for await (const event of topic.replay({ tenantId: params.draftId, after: draft.doc_cursor ?? topic.cursorAt(0), until: head })) {
+        for await (const event of replayDraftDocument({
+          draftId: params.draftId,
+          after: draft.doc_cursor,
+          docSeq: draft.doc_seq,
+          historyComplete: draft.doc_history_complete,
+          until: head,
+        })) {
           if (event.data.kind !== "freeze") return fail(sendContentChanged());
           reached = event.cursor;
         }
@@ -172,6 +198,7 @@ export const loadSendContent = async (params: {
   const content = internalDraftEditableContentInputSchema.safeParse({
     senderIdentityId: draft.sender_identity_id,
     signatureTemplateId: draft.signature_template_id,
+    quoteSource: draft.quote_source,
     to: draft.to_addresses,
     cc: draft.cc_addresses,
     bcc: draft.bcc_addresses,
@@ -189,10 +216,22 @@ export const loadSendContent = async (params: {
   if (!content.data.to.length && !content.data.cc.length && !content.data.bcc.length)
     return fail(err.badInput("At least one recipient is required before sending"));
   const contentId = draft.logo_id ? mailboxLogoContentId(draft.logo_id, draft.from_address) : "";
+  const quote = draft.quote_source
+    ? await loadDraftSourceQuote({
+        quoteSource: draft.quote_source,
+        db: params.db,
+        mailboxId: params.mailboxId,
+        sourceMessageId: draft.source_message_id,
+        access: params.context ? await getMailboxAccess(params.context, params.mailboxId, params.db) : null,
+      })
+    : ok(null);
+  if (!quote.ok) return quote;
   const rendered = renderComposeContent({
     body: draft.signature ? withoutSignatureSegments(content.data.body, draft.signature) : content.data.body,
     format: content.data.format,
     signature: draft.signature,
+    quoteSource: draft.quote_source,
+    sourceQuote: quote.data,
     customCss: draft.custom_css,
     renderLiquid: draft.origin === "user",
     context: {
@@ -230,6 +269,7 @@ export const loadSendContent = async (params: {
     (value, index, values) => value && values.indexOf(value) === index,
   );
   const snapshot = outboundDraftSnapshotSchema.safeParse({
+    ...(draft.quote_source ? { quoteSource: draft.quote_source } : {}),
     revision: Number(draft.revision),
     from: { name: draft.display_name, address: draft.from_address },
     replyTo: draft.reply_to,

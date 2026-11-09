@@ -169,6 +169,9 @@ try {
     if (!core.chartDatumRoles.includes("interval") || "chartRenderers" in core || "chartKinds" in core) {
       throw new Error("packed chart core has the wrong portable runtime exports");
     }
+    if (!core.chartSvgWithUiPalette(core.charts.pie({ data: [{ label: "A", value: 1 }] })).includes("--stdlib-chart-c4: #8b5cf6;")) {
+      throw new Error("packed chart core did not apply the portable UI palette");
+    }
   `;
   run([process.execPath, "--no-install", "-e", chartCoreSmoke], consumer);
   run([process.execPath, "--no-install", "--conditions=browser", "-e", chartCoreSmoke], consumer, {

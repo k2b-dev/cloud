@@ -68,6 +68,7 @@ const initialDraft: MailDraft = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: "Sign02",
   to: [{ name: null, address: "recipient@example.test" }],
@@ -80,6 +81,7 @@ const initialDraft: MailDraft = {
   requestDeliveryReceipt: false,
   requestReadReceipt: false,
   attachments: [],
+  suggestion: false,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada",
@@ -104,6 +106,7 @@ const initialSeed: MailDraftSeed = {
   origin: {
     kind: "compose",
     input: {
+      quoteSource: null,
       senderIdentityId: "Send01",
       to: [],
       cc: [],
@@ -224,8 +227,21 @@ describe("MailComposer signature choice", () => {
       { preconnect: originalFetch.preconnect },
     );
   });
-  afterEach(() => {
+  afterEach(async () => {
+    // A disposed composer still saves the typing it held before it releases its lease. Let that finish against this
+    // test's server, so it never reaches the next test's.
+    const testFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = Object.assign((...args: Parameters<typeof fetch>) => (calls++, testFetch(...args)), {
+      preconnect: originalFetch.preconnect,
+    });
     dispose();
+    const end = performance.now() + 1_000;
+    for (let quiet = 0, seen = calls; quiet < 3 && performance.now() < end; ) {
+      await Bun.sleep(5);
+      quiet = calls === seen ? quiet + 1 : 0;
+      seen = calls;
+    }
     globalThis.fetch = originalFetch;
     for (const [key, descriptor] of [
       ["localStorage", originalStorage],
@@ -794,6 +810,7 @@ describe("MailComposer signature choice", () => {
       JSON.stringify({
         revision: 1,
         content: {
+          quoteSource: null,
           senderIdentityId: "Send01",
           signatureTemplateId: null,
           to: initialDraft.to,
@@ -820,6 +837,7 @@ describe("MailComposer signature choice", () => {
       JSON.stringify({
         revision: 1,
         content: {
+          quoteSource: null,
           senderIdentityId: "Send01",
           to: initialDraft.to,
           cc: [],

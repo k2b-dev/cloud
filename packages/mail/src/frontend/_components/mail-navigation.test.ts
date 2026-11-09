@@ -20,6 +20,7 @@ import {
 } from "./mail-navigation";
 
 const item: MailListItem = {
+  drafts: { count: 0, editors: [] },
   id: "Msg001",
   conversationId: "Conv01",
   selectionKind: "conversation",
@@ -189,6 +190,12 @@ describe("Mail workspace route ownership", () => {
   test("route helpers parse a path and never leak the placeholder origin", () => {
     const url = mailRouteUrl(`/app/mail/${mailboxId}?view=mine&conversation=Conv01`);
     expect(url.searchParams.get("conversation")).toBe("Conv01");
+    expect(buildMailListHref(url)).toBe(`/app/mail/${mailboxId}?view=mine`);
+    expect(buildMailSelectionHref(url, item)).toBe(`/app/mail/${mailboxId}?view=mine&conversation=Conv01`);
+  });
+
+  test("an open draft stays with its conversation: list and selection links leave it out", () => {
+    const url = mailRouteUrl(`/app/mail/${mailboxId}?view=mine&conversation=Conv02&draft=Drf001`);
     expect(buildMailListHref(url)).toBe(`/app/mail/${mailboxId}?view=mine`);
     expect(buildMailSelectionHref(url, item)).toBe(`/app/mail/${mailboxId}?view=mine&conversation=Conv01`);
   });

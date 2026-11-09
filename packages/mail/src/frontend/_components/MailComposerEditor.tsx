@@ -32,6 +32,11 @@ export default function MailComposerEditor(props: {
   onDroppedImages?: (files: File[]) => void;
   history?: () => JSX.Element;
   liveDictation?: boolean;
+  /**
+   * The draft inside its conversation: one surface without panes. `preview` shows the mail as it arrives in place of
+   * the text; `formatting` shows the editor's formatting bar.
+   */
+  inline?: { preview: Accessor<boolean>; formatting: Accessor<boolean> };
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -80,6 +85,8 @@ export default function MailComposerEditor(props: {
                 editable={props.editable}
                 completions={props.completions}
                 liveDictation={props.liveDictation}
+                toolbar={props.inline ? props.inline.formatting : undefined}
+                inline={Boolean(props.inline)}
                 onEditorReady={props.onEditorReady}
                 onAttachImages={props.onAttachImages}
                 onDroppedImages={props.onDroppedImages}
@@ -142,6 +149,21 @@ export default function MailComposerEditor(props: {
     ...(props.format() === "markdown" ? [{ id: "preview", title: t().preview, icon: "ti ti-eye", render: previewSurface }] : []),
     ...(props.history ? [{ id: "history", title: t().history, icon: "ti ti-history", render: props.history }] : []),
   ]);
+
+  if (props.inline) {
+    const inline = props.inline;
+    // The text stays mounted under the preview, so its caret, undo history, and shared binding survive the switch.
+    return (
+      <div class="mail-inline-draft-text">
+        <div class="mail-inline-draft-write" hidden={inline.preview()}>
+          {writeSurface()}
+        </div>
+        <Show when={inline.preview()}>
+          <div class="mail-inline-draft-preview">{previewSurface()}</div>
+        </Show>
+      </div>
+    );
+  }
 
   return (
     <div class="min-h-72 flex-1 pb-2">

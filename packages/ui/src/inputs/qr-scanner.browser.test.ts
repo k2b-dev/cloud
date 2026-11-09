@@ -186,6 +186,9 @@ function stubDevice({
       context.fill(modules);
     };
     const stream = canvas.captureStream(20);
+    // A canvas track names neither its facing nor itself: its label is random text, which the scanner would read as a
+    // front camera whenever it contains "user" or "face" (#3051). An empty label keeps the facing unknown every run.
+    Object.defineProperty(stream.getVideoTracks()[0]!, "label", { value: "" });
     // A canvas stream sends a frame after each paint.
     draw();
     setInterval(draw, 50);

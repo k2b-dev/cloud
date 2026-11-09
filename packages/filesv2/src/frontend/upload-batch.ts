@@ -30,11 +30,14 @@ export type UploadRow = {
   group: number;
 };
 
+/** The folder a batch goes to; `href` opens it, for "View" once the upload is done. */
+export type UploadTarget = { key: string; label: string; href?: string };
+
 export type UploadBatch = {
   rows: UploadRow[];
   phase: UploadPhase;
   /** Where every file goes, or null once files for different folders joined the batch. */
-  target: { key: string; label: string } | null;
+  target: UploadTarget | null;
   /** Counted rows: everything except skipped files, which were never meant to transfer. */
   count: number;
   totalBytes: number;
@@ -123,7 +126,7 @@ const milestone = (batch: UploadBatch): UploadAnnouncement | null => {
 /** Adds files to the batch. After the batch finished, the same batch runs again with the new files at the end. */
 export const appendFiles = (
   batch: UploadBatch,
-  target: { key: string; label: string },
+  target: UploadTarget,
   group: number,
   files: readonly { path: string; size: number }[],
 ): UploadAnnouncement | null => {

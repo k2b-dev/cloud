@@ -2,7 +2,7 @@
 
 `toast` shows transient feedback in a responsive stack. The application supplies the message and decides whether the result is informational, successful, or failed. `announce` tells screen readers about an outcome without showing anything, through the same live regions.
 
-A toast is one calm line: a tone glyph, the message, an optional text action, and a close button. Each tone has its own glyph shape (`ti-info-circle`, `ti-circle-check`, `ti-alert-circle`), so tones differ by more than colour. Like dialogs and the Files upload panel, a toast is a floating layer: it has a hairline border and the soft `--k2b-shadow-toast`, the one documented exception to inward-only depth.
+A toast is a small card: the tone's glyph in an icon tile, the message (with an optional title above it), and an optional action beside it. Each tone has its own glyph shape (`ti-info-circle`, `ti-check`, `ti-alert-triangle`, `ti-alert-circle`), so tones differ by more than colour. A message without a title reads as one line in the body size; with a title, the title is semibold and the message is the smaller, muted line under it. Like dialogs and the Files upload panel, a toast is a floating layer (layer 3): it has a hairline border and the soft `--k2b-shadow-toast`. Only the front toast of a folded stack casts it.
 
 ## Use toast
 
@@ -62,9 +62,12 @@ import {
   type AnnounceOptions,
   isPointInsideToast,
   toast,
+  type ToastAction,
   type ToastHandle,
+  type ToastLink,
   type ToastOptions,
   type ToastSlot,
+  type ToastSlotOptions,
 } from "@k2b/ui";
 ```
 
@@ -84,13 +87,17 @@ Text is never cut off, so it stays readable and can be selected and copied. Aim 
 
 | Property | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `variant` | `"default" \| "success" \| "error"` | `"default"` | Selects the semantic treatment. |
+| `variant` | `"default" \| "success" \| "warning" \| "error"` | `"default"` | Selects the semantic treatment. A warning is announced politely, like info and success. |
 | `title` | `string` | none | Adds a line of context above the message. |
 | `duration` | `number` | by variant, length, and action | Sets auto-dismiss time in milliseconds. `0` keeps the toast until it is closed. |
 | `iconClass` | `string` | variant icon | Overrides the Tabler icon class. |
-| `action` | `{ label: string } & ({ href: string } \| { onClick: () => void })`, or `null` | none | Adds one link or callback action; `null` removes it. |
-| `progress` | `number \| "indeterminate" \| null` | none | Progress from 0 to 1; `null` restores ordinary dismissal. |
-| `dismissLabel` | `string` | "Dismiss notification" / "Benachrichtigung schließen" from the document locale | Names the close button. |
+| `action` | `ToastAction`, or `null` | none | Adds one link or callback action beside the message; `null` removes it. |
+| `secondaryAction` | `ToastAction`, or `null` | none | Adds a second action. Both then sit in a row under the message, `action` first as the primary button. |
+| `link` | `{ label: string; href: string }`, or `null` | none | Adds a link at the end of the message, such as "Open settings". Following it closes the toast. |
+| `progress` | `number \| "indeterminate" \| null` | none | Progress from 0 to 1 with a bar, or a spinner in the icon tile for work of unknown length; `null` restores ordinary dismissal. |
+| `dismissLabel` | `string` | "Close: {title or message}" / "Schließen: {…}" from the document locale | Names the close button. |
+
+`ToastAction` is `{ label: string; variant?: "secondary" | "ghost" } & ({ href: string } | { onClick: () => void })`. A single action is a framed button (`secondary`); pass `variant: "ghost"` for a quiet text button, as for Undo. Next to a `secondaryAction`, the variants are fixed: primary, then secondary.
 
 ## Timing
 
@@ -100,11 +107,15 @@ Without a `duration`, a toast stays long enough to read and reach:
 - an error or any toast with an action: at least 8 seconds;
 - an error longer than 120 characters, and a toast with progress: until it is closed.
 
-An explicit `duration` wins. Every toast's timer pauses while the pointer is over any toast or custom slot in the rail, while one of them holds keyboard focus, and while the browser tab is hidden, so a toast never slides away from under the pointer or focus because a neighbour expired. The pause ends when the pointer moves elsewhere or focus leaves the rail, also when the hovered or focused control, or the whole rail, is removed from the page.
+An explicit `duration` wins. Every toast's timer pauses while the stack is fanned out (the pointer over a toast or custom slot, keyboard focus in the stack, or a tap on a touch screen), while a swipe is in progress, and while the browser tab is hidden, so a toast never slides away from under the pointer or focus because a neighbour expired. The pause ends when the pointer moves elsewhere, focus leaves the stack, or a tap beside it folds it, also when the hovered or focused control, or the whole rail, is removed from the page.
 
 ## Stacking
 
-At most three toasts are visible, two on a phone. When another arrives, older timed success and info toasts leave first, then older errors and toasts that stay until closed (`duration: 0`, or a long error). Running progress, the newest toast, and a toast under the pointer or with keyboard focus stay; while only such toasts remain, the rail shows more than the limit until the pointer or focus leaves. The limit applies again when an update ends a toast's progress or changes its duration. A closing toast collapses its space, so its neighbours glide instead of jumping; with reduced motion they move at once.
+The toasts lie on top of each other at the rail's edge, newest in front. Folded, the two toasts behind it show 10 px of their edge each, a little smaller and without a shadow; their content is hidden and out of reach (`inert`). The stack fans out while a mouse rests on it, while it holds keyboard focus, and after a tap on a touch screen: every toast then shows whole, 10 px apart, with its close button. It folds again when the pointer leaves, focus leaves, or a tap lands beside it. Only transform and opacity move, in `--k2b-motion-stack` (400 ms) with `--k2b-ease-out`; with reduced motion everything moves at once.
+
+At most three toasts are in the stack at every width. When another arrives, older timed success, info, and warning toasts leave first, then older errors and toasts that stay until closed (`duration: 0`, or a long error). Running progress, the newest toast, and a toast under the pointer or with keyboard focus stay; while only such toasts remain, the stack holds more than the limit until the pointer or focus leaves. The limit applies again when an update ends a toast's progress or changes its duration.
+
+A swipe towards the nearest screen edge dismisses a toast: right or down at the bottom edge, up or sideways at the top edge. It dismisses past 45 px or above 0.11 px/ms; a swipe the other way resists and springs back. With a mouse, a swipe starts on the icon tile or the card's padding, so the text stays selectable. Swiping is a shortcut; the close button stays.
 
 ## Update or dismiss
 
@@ -127,6 +138,22 @@ upload.dismiss();
 ```
 
 `update` always replaces the description. Only option keys that are present replace existing options; pass `title: undefined` to remove a title. Changing `variant` also changes the icon unless that update supplies `iconClass`. Updating resets the auto-dismiss timer.
+
+A loading toast turns into its result in place. Show work of unknown length with `progress: "indeterminate"`, a title, the message, and its Cancel action; when it ends, update the same handle with the result's variant, title, message, and action, and `progress: null`. The rows stay, so the toast keeps its height; only the tile and the text change, and the new text fades in.
+
+```ts
+const saving = toast("Budget 2027.grid", {
+  title: "Saving …",
+  progress: "indeterminate",
+  action: { label: "Cancel", onClick: cancel },
+});
+saving.update("Budget 2027.grid", {
+  variant: "success",
+  title: "Saved",
+  progress: null,
+  action: { label: "Open", href: "/grids/budget-2027" },
+});
+```
 
 Use `toast.dismissAll()` when navigation or a major context change would make existing messages stale.
 
@@ -152,19 +179,45 @@ The message is the app's own localized text and names the outcome ("Comment dele
 When feedback needs more than a description, a bar, and one action, such as a
 list of files in an upload, `toast.custom(element)` places an
 application-owned element in the same rail. It gets the toast chrome (border,
-radius, surface, shadow, 0.75rem padding) and the same enter and leave motion, and it
-stacks with ordinary toasts in the same corner instead of covering them.
+radius, surface, shadow, 0.75rem padding) and the same enter and leave motion.
+It is pinned at the rail's edge: ordinary toasts stack in front of it, 10 px
+away, and fold and fan out there, while the slot keeps its place. It cannot be
+swiped away.
 
 ```ts
-const slot = toast.custom(panelElement);
-// later, when the work is done or the user closes it
+const slot = toast.custom(panelElement, {
+  label: "Upload",
+  closable: false,
+  onClose: () => uploads.close(),
+});
+// once nothing runs any more
+slot.update({ closable: true });
+// when the owner closes it
 slot.dismiss();
 ```
 
-The application owns everything inside: layout, a close button, a live region
-for announcements, and when to dismiss. A custom slot has no timer, does not
-count toward the visible limit, and
-`toast.dismissAll()` leaves it in place. When a later toast arrives, the rail
+| Option | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `label` | `string` | "Notifications" | Names the close button: "Close: Upload". |
+| `closable` | `boolean` | `false` | Shows the round close button and allows a swipe and Escape to close it. |
+| `onClose` | `() => void` | dismisses the slot | Called by the close button, a swipe, or Escape; the owner closes the slot with `dismiss`. |
+
+Leave `closable` off while work runs, so running work never disappears
+silently: the slot then has no close button and cannot be swiped, and Escape
+folds the stack and returns focus. Turn it on with `slot.update` once nothing
+runs. The application owns everything inside: layout, a live region for
+announcements, and when to dismiss. A custom slot has no timer, does not count
+toward the visible limit, and `toast.dismissAll()` leaves it in place.
+
+Inside the slot, compose the toast's own parts: `k2b-toast__icon
+k2b-icon-tile` with a `data-tone`, `k2b-toast__title` and
+`k2b-toast__description`, and the bar `k2b-toast__bar` with one or more
+`k2b-toast__bar-fill` children. A fill moves by transform only:
+`--k2b-toast-bar-value` is its fraction from 0 to 1, `--k2b-toast-bar-start`
+where it begins, and `data-tone` (`success`, `danger`, `muted`) its colour.
+The Files upload is the reference: every file with its progress, the total,
+the remaining time of a long upload, Cancel all, collapsing to one line, a
+retry for failed files, and View when done. When a later toast arrives, the rail
 keeps the scroll offsets and the keyboard focus inside the slot, so a
 scrolled list or a focused control stays where it was. In Solid, create the element inside a
 component or effect so it keeps the locale and other context, and call
@@ -189,17 +242,17 @@ build their own light-dismiss surfaces. It returns `false` on the server.
 
 ## Actions
 
-Use `action.href` for navigation or `action.onClick` for an application callback, such as undo or cancellation. Supply exactly one behavior. The action is a text button at the end of the message line, before the close button; when the message needs the whole line, the action moves to the end of the next one. Keep its label short. Callback actions do not dismiss automatically and return `void`; the application handles any asynchronous work and its errors.
+Use `action.href` for navigation or `action.onClick` for an application callback, such as undo or cancellation. Supply exactly one behavior. One action is a small framed button beside the message, centred on its lines ("Open", "Try again", "Cancel"); Undo reads quieter as `variant: "ghost"`. A decision with two answers, such as "Share" and "Later", passes `secondaryAction`: both buttons then sit in a row under the message, the first one primary. Keep labels short. Callback actions do not dismiss automatically and return `void`; the application handles any asynchronous work and its errors. A `link` belongs to the message itself, such as "Open settings" after a sentence about a setting.
 
 Do not place a destructive action in a toast. Undo is not destructive: it puts back what the action changed. Offer it only when the server can really reverse the operation: the item still exists, for example in Trash, or the server holds the queued command and can still cancel it. For such an operation, Undo may also cancel a request the browser has not sent yet; holding a request in the browser never makes an operation eligible for Undo. A destructive action that cannot be reversed, such as a hard delete, asks for confirmation before it starts and offers no Undo. [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) holds the rule.
 
 ## Accessibility
 
-The rail is a region named "Notifications" ("Benachrichtigungen"). Two persistent, empty live regions outside it, shared with `announce`, announce toasts: default and success toasts politely, errors assertively with the localized word "Error:" ("Fehler:") before the message. The announcement holds the title and the message, never the action label. A progress toast is announced when it starts, when it passes half way, and when it ends, each time only if its message changed; it is not announced at every update. A change to the error variant is announced even when the text stays the same. The regions are not atomic, so each announcement is read once on its own.
+The rail is a region named "Notifications, Alt+T" ("Benachrichtigungen, Alt+T") with `aria-keyshortcuts="Alt+T"`. Alt+T focuses the stack from anywhere on the page and fans it out; Tab then reaches each toast's controls, and Escape on the stack folds it and returns focus to where it was. On Apple keyboards Option+T types a character, so there the shortcut leaves text fields alone. No browser, operating system, or Cloud shortcut uses Alt+T: Firefox's Tools menu on Alt+T yields to the page. Two persistent, empty live regions outside it, shared with `announce`, announce toasts: default and success toasts politely, errors assertively with the localized word "Error:" ("Fehler:") before the message. The announcement holds the title and the message, never the action label. A progress toast is announced when it starts, when it passes half way, and when it ends, each time only if its message changed; it is not announced at every update. A change to the error variant is announced even when the text stays the same. The regions are not atomic, so each announcement is read once on its own.
 
-A toast closes only through its close button, through Escape while it has focus, through its link action, or when its time runs out. Clicking the text does not close it, so an error message can be selected and copied. When a focused toast closes, focus moves to the next toast or back to where it was before the toast appeared. When an update replaces or removes the focused action, focus stays in the toast, on the new action or on the close button.
+A toast closes only through its close button, through Escape while it has focus, through a swipe, through its link or link action, or when its time runs out. Clicking the text does not close it, so an error message can be selected and copied. When a focused toast closes, focus moves to the next toast or back to where it was before the toast appeared. When an update replaces or removes the focused action, focus stays in the toast, on the new action or on the close button.
 
-On a coarse pointer, such as a phone, the close button and the action accept taps in an invisible area at least 44 px (2.75rem) tall and wide, the same touch target as buttons; neither reaches the other or a neighboring toast.
+The close button is the toast's first control: a 24 px round button over its top-left corner, named after the toast ("Close: Export finished"). It shows while the stack is fanned out or the toast holds focus, and always on touch screens. With a mouse it accepts clicks in a 32 px area. On a coarse pointer, such as a phone, the close button and the action accept taps in an invisible area at least 44 px (2.75rem) tall and wide, the same touch target as buttons; neither reaches the other or a neighbouring toast, and the screen's edge or the neighbouring toast's edge ends the close button's area.
 
 Messages must identify the affected operation. Do not write "Success" or "Error" as the message; the glyph and the announcement already state the tone.
 
@@ -209,12 +262,14 @@ Messages must identify the affected operation. Do not write "Success" or "Error"
 
 The toast rail uses the browser top layer when available so feedback remains visible above dialogs. A toast displayed over a modal is read-only until the modal closes because the browser makes content outside the modal inert. For the same reason, screen readers do not announce toasts that appear while a modal dialog is open; show a failure that belongs to a dialog in the dialog itself.
 
-The rail sits in the bottom-right corner, 22rem wide, newest toast at the
-bottom. Below a viewport width of 48rem or a viewport height of 30rem, as on a
-phone in portrait or landscape, it moves to the top edge with the newest toast
-on top, because there the bottom edge holds dialog footers, bottom sheets, and
-primary actions that a toast must not cover. Below 48rem it also spans the
-width with a 0.5rem edge.
+The rail sits in the bottom-right corner; its toasts are 23.5rem wide, 1rem
+from the edges, the stack in front at the bottom. Below a viewport width of
+48rem or a viewport height of 30rem, as on a phone in portrait or landscape,
+it moves to the top edge with the front toast on top, because there the bottom
+edge holds dialog footers, bottom sheets, and primary actions that a toast must
+not cover. Below 48rem it also spans the width with a 0.75rem edge, room for
+the close button over the corner. The rail clips nothing: its height is what
+the stack covers, and the shadows and close buttons reach past it.
 
 A host with a fixed header at the top sets `--k2b-toast-offset-top` to the
 header's height on an ancestor, such as `:root`, so toasts at the top edge
@@ -235,7 +290,7 @@ toast("Reload the page to use it.", {
 
 ## Progress and cancellation
 
-Pass `progress: 0` through `1` for a determinate bar, or `"indeterminate"` while the total is unknown. A progress toast shows a small ring instead of its glyph and the bar of the Files upload panel: a rounded track in the border colour with an action-coloured fill, green once the variant is `success`. With a title it follows the panel's order: the title, the bar, then the message as a summary line ("6 of 12 files") with the action at its end; without a title, the message and action keep the first line and the bar follows. The bar reaches under the close button. The message uses tabular digits, so a changing count does not move, and with a title the bar's accessible value is the message instead of a bare percentage. It does not time out. Update the existing handle instead of creating one toast per batch. Pass `progress: null` on completion; ordinary duration behavior resumes.
+Pass `progress: 0` through `1` for a determinate bar, or `"indeterminate"` while the total is unknown. A progress toast shows a small spinning ring in its icon tile instead of the glyph. A number adds the bar of the Files upload panel: a rounded track in the border colour with an action-coloured fill, green once the variant is `success`. With a title it follows the panel's order: the title, the bar, then the message as a summary line ("6 of 12 files"); without a title, the message comes first and the bar follows. The action stays beside them. `"indeterminate"` shows no bar, so the result that replaces it keeps the same rows. The message uses tabular digits, so a changing count does not move, and with a title the bar's accessible value is the message instead of a bare percentage. It does not time out. Update the existing handle instead of creating one toast per batch. Pass `progress: null` on completion; ordinary duration behavior resumes.
 
 ```ts
 const controller = new AbortController();
@@ -243,7 +298,7 @@ const notice = toast("Preparing import", {
   title: "Import",
   progress: "indeterminate",
   action: { label: "Cancel", onClick: () => controller.abort() },
-  dismissLabel: "Dismiss notification",
+  dismissLabel: "Close import notice",
 });
 notice.update("500 / 1000 records saved", { progress: 0.5 });
 notice.update("1000 records saved", {

@@ -183,6 +183,7 @@
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
   --k2b-motion-sheet: 220ms; /* panels, sheets, period changes */
+  --k2b-motion-stack: 400ms; /* a toast stack fans out, folds, and makes room */
   --k2b-motion-morph: 280ms; /* one large surface changes size or place: a pill grows into a draft */
   --k2b-motion-celebrate: 600ms; /* completion moments only */
   --k2b-fresh-fade: 1600ms; /* color only: a highlight fades out */
@@ -255,6 +256,7 @@
     --k2b-motion-fast: 0ms;
     --k2b-motion-base: 0ms;
     --k2b-motion-sheet: 0ms;
+    --k2b-motion-stack: 0ms;
     --k2b-motion-morph: 0ms;
     --k2b-motion-celebrate: 0ms;
     --k2b-fresh-fade: 0ms;
@@ -279,6 +281,7 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-fast: 0ms;
   --k2b-motion-base: 0ms;
   --k2b-motion-sheet: 0ms;
+  --k2b-motion-stack: 0ms;
   --k2b-motion-morph: 0ms;
   --k2b-motion-celebrate: 0ms;
   --k2b-fresh-fade: 0ms;
@@ -457,6 +460,45 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   /* A transparent no-op layer, not `none`, so an island may list it after a ring. */
   --k2b-island-shadow: 0 0 #0000;
   --k2b-island-surface: var(--k2b-surface);
+}
+
+/* A quiet area, such as settings and administration, is flat: forms, lists,
+   tables, and framed sections keep their frame without a shadow. Only data
+   surfaces lift there, because their depth carries meaning: a chart, a
+   dashboard frame or panel, and a key figure. They stay flat in a flat layer
+   and inside another island. */
+:is(.k2b-ui, .k2b-ui *)[data-k2b-layer="quiet"],
+[data-k2b-layer="quiet"] .k2b-ui {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-island-surface: var(--k2b-surface);
+}
+
+.k2b-ui [data-k2b-layer="quiet"]
+  :is(.k2b-dashboard-frame, .k2b-dashboard-panel, .k2b-stat-cell, .k2b-chart-explorer):not(
+    :is(
+        [data-k2b-layer="flat"],
+        dialog,
+        [popover],
+        .k2b-app-workspace__sidebar,
+        .k2b-app-workspace__detail,
+        .k2b-detail-panel,
+        .k2b-bottom-sheet,
+        .k2b-floating-window,
+        .k2b-paper,
+        .k2b-resource-card,
+        .k2b-section[data-frame="line"],
+        .k2b-dashboard-panel,
+        .k2b-stat-cell
+      )
+      *
+  ) {
+  --k2b-island-shadow: var(--k2b-shadow-raised);
+  --k2b-island-surface: var(--k2b-surface-raised);
+}
+
+/* What a chart holds, such as its table view, stays flat. */
+.k2b-ui [data-k2b-layer="quiet"] .k2b-chart-explorer > * {
+  --k2b-island-shadow: 0 0 #0000;
 }
 
 .k2b-ui::selection,
@@ -3740,6 +3782,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section[data-size="md"][data-tone] > .k2b-section__header .k2b-section__icon {
   background: color-mix(in srgb, var(--k2b-section-tone) 12%, var(--k2b-surface));
+}
+
+/* A heading with an action keeps its title whole. When the row is too narrow
+   for the title, its count, and the action, the action moves to a second line
+   at the trailing edge before the title truncates. Only a title longer than
+   the row beside the icon still ends in an ellipsis. */
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: 0px;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.k2b-ui .k2b-section[data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: calc(1.25rem + 0.625rem);
+}
+
+.k2b-ui .k2b-section[data-size="md"][data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: calc(1.75rem + 0.75rem);
+}
+
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__copy {
+  flex: 1 0 auto;
+  max-width: calc(100% - var(--k2b-section-lead));
+}
+
+.k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__actions {
+  margin-inline-start: auto;
 }
 
 /* A count is a quiet chip right after its title; zero reads as words. */
@@ -17508,12 +17577,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A floating toolbar is a pill on layer 3 that stays open: the toolbar shadow,
    softer than a menu's, and a light 1 px edge. It is solid, never glass, so
    text scrolling beneath it never shows through. */
+/* `--k2b-toolbar-control` sizes every control of a floating toolbar and so the
+   pill around it; a host whose own pills are lower sets it once, so its stopped
+   state (tone="danger") has exactly their height. */
 .k2b-ui .k2b-toolbar[data-variant="floating"] {
   position: relative;
   pointer-events: auto;
   max-inline-size: 100%;
   /* 44 px controls with room for their key hints, plus the 1 px edge on each side. */
-  block-size: calc(3.25rem + 2px);
+  block-size: calc(var(--k2b-toolbar-control, 2.75rem) + 0.5rem + 2px);
   padding: 0.25rem;
   gap: 0.125rem;
   border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
@@ -17521,11 +17593,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-toolbar);
 }
-.k2b-ui .k2b-toolbar[data-variant="floating"] > .k2b-button,
-.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__group .k2b-button,
+/* Every control in the pill has the same round size, also one an application
+   wraps (a tooltip anchor, its own toggle), so no small icon sits at the edge.
+   Buttons inside its menus and other popovers keep their own size. */
+.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button:not(:is([popover], [role="menu"], [role="dialog"]) .k2b-button),
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__more .k2b-dropdown__trigger {
-  min-inline-size: 2.75rem;
-  block-size: 2.75rem;
+  min-inline-size: var(--k2b-toolbar-control, 2.75rem);
+  block-size: var(--k2b-toolbar-control, 2.75rem);
   border-radius: 999px;
   flex: none;
 }
@@ -17640,6 +17714,57 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: relative;
   min-inline-size: 2.75rem;
   block-size: 2.75rem;
+}
+/* A label with `detail` keeps its main text and shows the detail beside it
+   while it fits. Without room the detail wraps onto a second line that the
+   label clips, so it disappears whole instead of truncating; the main text
+   truncates only after that. Screen readers keep both. */
+.k2b-ui .k2b-toolbar__label[data-detail] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  block-size: 1.25rem;
+  line-height: 1.25rem;
+}
+.k2b-ui .k2b-toolbar__label-main {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.k2b-ui .k2b-toolbar__label-detail {
+  flex: none;
+  white-space: nowrap;
+}
+/* `tone="danger"`: the one red pill of a stopped state takes the place of the
+   row's pills and spans it. Shape, height, and the toolbar shadow stay; only
+   surface, edge, and ink turn to the danger tokens, so nothing moves when it
+   appears. Its label is the message: it keeps its full width until actions
+   have moved into More, and only then truncates. */
+.k2b-ui .k2b-toolbar-float[data-tone="danger"] > .k2b-toolbar {
+  flex: 1 1 auto;
+}
+.k2b-ui .k2b-toolbar[data-variant="floating"][data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--k2b-danger-text) 40%, transparent);
+  background: var(--k2b-danger-surface);
+  color: var(--k2b-danger-text);
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label {
+  max-inline-size: none;
+  padding-inline: 0.75rem 0.25rem;
+  font-size: 0.875rem;
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label i {
+  margin-inline-end: 0.375rem;
+  font-size: 1.125rem;
+  vertical-align: -0.15em;
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-button {
+  color: var(--k2b-danger-text);
+}
+.k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-button:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-danger-text) 10%, transparent);
 }
 /* The hint fills the space below the centred 1.25rem icon, so neither the
    icon nor the button moves when hints appear. Flex boxes keep the hint
@@ -18501,13 +18626,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
-/* Bottom-edge modal presentation. PanelDialog owns the internal scroll layout. */
+/* Bottom-edge modal presentation. PanelDialog owns the internal scroll layout.
+ * `BottomSheet` moves the sheet itself (`data-sheet-motion`): its height is
+ * fixed while it is open, and it slides only by `--k2b-sheet-y`, a transform.
+ * `overflow: clip`, never `hidden`: a hidden box still scrolls, and focus
+ * scrolling it would cancel every downward slide. */
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame {
   top: auto;
   bottom: 0;
   left: 50%;
   margin: 0;
-  transform: translateX(-50%);
+  transform: translate3d(-50%, var(--k2b-sheet-y, 0px), 0);
   width: min(100%, 36rem);
   max-width: 100%;
   max-height: min(92dvh, var(--k2b-dialog-available-height));
@@ -18515,6 +18644,40 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
   overflow: clip;
   animation: k2b-bottom-sheet-enter 160ms ease-out;
+}
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
+  animation-name: none;
+}
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion][data-sheet-dragging] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* With detents the sheet has its full height from the first frame; half
+ * height only slides it down. The footer stays on the screen's edge. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-detents] {
+  height: min(92dvh, var(--k2b-dialog-available-height));
+}
+.k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport,
+.k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog {
+  height: 100%;
+}
+.k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+  position: relative;
+  z-index: 1;
+  background: var(--k2b-surface-elevated);
+  transform: translate3d(0, var(--k2b-sheet-footer-y, 0px), 0);
+}
+/* A sheet only dims what lies behind it, without blur, so a drag stays
+ * smooth; the dim follows the sheet below its lowest rest. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame:not(.is-adaptive)::backdrop {
+  backdrop-filter: none;
+  opacity: var(--k2b-sheet-dim, 1);
+}
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive::backdrop {
+    backdrop-filter: none;
+    opacity: var(--k2b-sheet-dim, 1);
+  }
 }
 .k2b-ui .k2b-bottom-sheet-viewport {
   max-height: min(92dvh, var(--k2b-dialog-available-height));
@@ -18583,6 +18746,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive .k2b-bottom-sheet__handle {
     display: none;
+  }
+  /* As a dialog, a sheet with detents takes its content's height and keeps its footer in place. */
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[data-sheet-detents] {
+    height: auto;
+  }
+  .k2b-ui .k2b-bottom-sheet-frame.is-adaptive[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+    transform: none;
   }
 }
 @keyframes k2b-sheet-dialog-enter {

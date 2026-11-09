@@ -58,6 +58,23 @@ const DashboardPanelFields = z
         "areaPercent",
         "budget",
         "balance",
+        "barGrouped",
+        "barStacked",
+        "barPercent",
+        "barCompare",
+        "barRows",
+        "barList",
+        "hbar",
+        "dots",
+        "funnelStages",
+        "waterfall",
+        "calendarHeatmap",
+        "sankey",
+        "treemap",
+        "pareto",
+        "bubble",
+        "radar",
+        "lineForecast",
       ])
       .describe("How to display the selected SQL columns."),
     sql: z.string().describe("Read-only SQL; :from, :to and :bucket follow the dashboard range."),
@@ -120,6 +137,59 @@ export const DashboardPanelSchema = DashboardPanelFields.superRefine((panel, con
     if (!/^[A-Z]{3}$/.test(panel.unit))
       context.addIssue({ code: "custom", path: ["unit"], message: "Money blocks require an uppercase ISO 4217 currency in unit" });
   }
+  const issue = (message: string) => context.addIssue({ code: "custom", path: ["columns"], message });
+  const categories = [
+    "barGrouped",
+    "barStacked",
+    "barPercent",
+    "barCompare",
+    "barRows",
+    "barList",
+    "hbar",
+    "dots",
+    "funnelStages",
+    "waterfall",
+    "calendarHeatmap",
+    "treemap",
+    "pareto",
+    "bubble",
+    "radar",
+    "lineForecast",
+  ];
+  if (categories.includes(panel.kind) && !panel.x) issue("Choose the time or category column");
+  if (categories.includes(panel.kind) && panel.series && panel.series === panel.x) issue("Choose different x and series columns");
+  if (["barRows", "barList", "funnelStages", "waterfall", "calendarHeatmap"].includes(panel.kind) && (values.length !== 1 || panel.series))
+    issue("Choose one category and one value column without series");
+  if (["barCompare", "pareto"].includes(panel.kind) && (values.length !== 2 || panel.series))
+    issue("Choose category, current and previous columns without series");
+  if (panel.kind === "treemap" && (!panel.series || panel.series === panel.x || values.length !== 1))
+    issue("Choose different label and group columns, and one value column");
+  if (
+    panel.kind === "sankey" &&
+    (panel.x || panel.series || panel.columns.length !== 3 || !["source", "target", "value"].every((name) => panel.columns.includes(name)))
+  )
+    issue("Sankey columns must be source, target, value without x or series");
+  if (panel.kind === "dots" && (!values.includes("total") || values.length < 2 || panel.x === "total" || panel.series === "total"))
+    issue("Dot matrices need a total column and at least one nested count column");
+  if (panel.kind === "radar" && (!values.includes("max") || values.length < 2 || panel.x === "max" || panel.series === "max"))
+    issue("Radar needs a max column and at least one measurement column");
+  if (
+    panel.kind === "bubble" &&
+    (!panel.series ||
+      panel.series === panel.x ||
+      [panel.x, panel.series].some((name) => ["label", "y", "size"].includes(name ?? "")) ||
+      !["label", "y"].every((name) => values.includes(name)) ||
+      values.some((name) => !["label", "y", "size"].includes(name)))
+  )
+    issue("Bubble needs numeric x, group in series, label, y and optional size columns");
+  if (
+    panel.kind === "lineForecast" &&
+    (panel.series ||
+      !["value", "forecast"].every((name) => values.includes(name)) ||
+      values.some((name) => !["value", "forecast", "low", "high"].includes(name)) ||
+      values.includes("low") !== values.includes("high"))
+  )
+    issue("Forecast needs time x, value, forecast (0 or 1), and optional low/high columns without series");
   try {
     const params = { ...panel.params };
     for (const name of sqlParameterNames(panel.sql)) {
