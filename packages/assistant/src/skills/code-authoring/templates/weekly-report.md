@@ -15,9 +15,9 @@ const CHAT_ID = "Chat23";
 app.schedule(
   { cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" },
   async () => {
-    const { data: open, page: openPage } = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", sort: "deadline", limit: 50 });
-    const { data: overdue, page: overduePage } = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", deadlineFilter: "overdue", limit: 50 });
-    const { data: unassigned, page: unassignedPage } = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", assignedTo: "unassigned", limit: 50 });
+    const { data: open, page: openPage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", sort: "deadline", limit: 50 });
+    const { data: overdue, page: overduePage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", deadlineFilter: "overdue", limit: 50 });
+    const { data: unassigned, page: unassignedPage } = await spaces.task.list({ spaceId: SPACE_ID, status: "active", assignedTo: "unassigned", limit: 50 });
     // This report deliberately reads one page per view; page.hasMore marks a capped count.
     const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length} or more` : String(items.length));
     const facts = {
@@ -31,7 +31,7 @@ app.schedule(
 
     let text = `Open tasks: ${facts.open}. Overdue: ${facts.overdue}. Unassigned: ${facts.unassigned}.`;
     if (overdue.length || unassigned.length) {
-      const { data: report } = await core.app().ai.generate({
+      const { data: report } = await core.ai.generate({
         task: "weekly.report",
         prompt:
           "Write a short weekly report in German for the owner of these tasks: one sentence on the overall state, " +

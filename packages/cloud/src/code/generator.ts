@@ -194,9 +194,10 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   for (const app of apps) {
     const name = exportName(app.appId);
     const ids = [...app.types, ...app.queries, ...app.actions, ...app.commands].map((entry) => entry.localId);
-    if (new Set(ids).size !== ids.length) throw new Error(`${app.appId}: duplicate capability local ID`);
+    const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
+    if (duplicate) throw new Error(`${app.appId}.${duplicate}: SDK path collision (duplicate capability local ID)`);
     manifest.apps.push({ appId: app.appId, exportName: name, manifestHash: app.manifestHash });
-    manifest.handles.push({ appId: app.appId, exportName: name, type: null, factoryPath: ["app"] });
+    manifest.handles.push({ appId: app.appId, exportName: name, type: null, factoryPath: [] });
     for (const type of byId(app.types))
       manifest.handles.push({ appId: app.appId, exportName: name, type: `${app.appId}.${type.localId}`, factoryPath: path(type.localId) });
     for (const [kind, entries] of [
@@ -308,21 +309,19 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     handleNames.set(handle.type ?? `app:${handle.appId}`, name);
     const body = tree();
     for (const op of manifest.operations.filter((op) => op.appId === handle.appId && op.target === handle.type)) {
-      if (["id", "type"].includes(op.methodPath[0] ?? "")) throw new Error(`${op.capability}: SDK path collides with handle identity`);
+      if (["id", "type"].includes(op.methodPath[0] ?? "")) throw new Error(`${op.capability}: SDK path collision with handle identity`);
       insert(body, op.methodPath, methods.get(op)!, op.capability);
     }
     declarations.push(`type ${name}<Id extends string = string> = CodeHandle<${quote(handle.type ?? "cloud.app")}, Id> & ${render(body)};`);
   }
   for (const app of manifest.apps) {
     const factories = tree();
-    for (const handle of manifest.handles.filter((handle) => handle.appId === app.appId)) {
-      const type = handleNames.get(handle.type ?? `app:${app.appId}`)!;
-      insert(
-        factories,
-        handle.factoryPath,
-        handle.type === null ? ["() => ", type, "<", quote(app.appId), ">"].join("") : `<const Id extends string>(id: Id) => ${type}<Id>`,
-        app.appId,
-      );
+    const appHandle = handleNames.get(`app:${app.appId}`)!;
+    factories.values.push(`${appHandle}<${quote(app.appId)}>`);
+    for (const handle of manifest.handles.filter((handle) => handle.appId === app.appId && handle.type !== null)) {
+      if (["id", "type"].includes(handle.factoryPath[0] ?? ""))
+        throw new Error(`${app.appId}.${handle.factoryPath.join(".")}: SDK path collision with app export`);
+      insert(factories, handle.factoryPath, `<const Id extends string>(id: Id) => ${handleNames.get(handle.type!)}<Id>`, app.appId);
     }
     declarations.push(`export declare const ${app.exportName}: ${render(factories)};`);
   }

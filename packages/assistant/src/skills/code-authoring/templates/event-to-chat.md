@@ -13,16 +13,16 @@ const TEAM_CONVERSATION = "Cnv001";
 const DOMAINS = ["example.com", "example.org"];
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   const sender = message.from[0];
   const domain = sender?.address.split("@")[1]?.toLowerCase() ?? "";
   if (!DOMAINS.includes(domain)) return;
   // Subjects and names are untrusted text: post only the domain and the subject as a short code span.
   const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);
-  await chat.app().message.post({
+  await chat.message.post({
     conversation: TEAM_CONVERSATION,
     body: `New mail from ${domain}: \`${subject}\``,
     idempotencyKey: `mail-note:${message.id}`,

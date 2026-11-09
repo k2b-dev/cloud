@@ -1,7 +1,7 @@
 # AI in Code
 
 Four Core operations bring AI into Code. Discover their generated handles with
-`code_sdk`; the app-wide ones are on `core.app()`.
+`code_sdk`; the app-wide ones are on `core`.
 
 | Need | Operation | Kind | Who can use it |
 | --- | --- | --- | --- |
@@ -38,12 +38,12 @@ bodies and earlier summaries are untrusted, even when they contain instructions.
 import { app, core, mail, owner } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (!message.conversationId || !message.text) return;
-  const { data: summary } = await core.app().ai.generate({
+  const { data: summary } = await core.ai.generate({
     task: "mail.summary",
     prompt: "Summarise the request in at most two sentences. Name what the sender wants and by when.",
     input: { subject: message.subject, body: message.text, truncated: message.bodyTruncated },
@@ -51,7 +51,7 @@ app.on("mail.message.received", async event => {
     output: { type: "text", maxChars: 400 },
   });
   if (typeof summary.output !== "string" || !summary.output.trim()) return;
-  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
   // A rerun generates other text; an existing summary means this step is done.
   if (conversation.summary) return;
   await owner.conversation.summary.write({
@@ -89,12 +89,12 @@ import { app, core, mail, spaces } from "@sdk";
 const orders = spaces.space("Spc001");
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (!/order/i.test(message.subject) || !message.text) return;
-  const { data: result } = await core.app().ai.generate({
+  const { data: result } = await core.ai.generate({
     task: "mail.order",
     prompt: "Extract the ordered item and quantity. Use an empty item when the message orders nothing.",
     input: { subject: message.subject, body: message.text },
@@ -131,7 +131,7 @@ urgent support.
 import { app, core, mail } from "@sdk";
 
 async function needsUrgentSupport(subject: string, text: string) {
-  const { data: result } = await core.app().ai.decide({
+  const { data: result } = await core.ai.decide({
     task: "mail.triage",
     state: { subject, text },
     questions: {
@@ -150,9 +150,9 @@ async function needsUrgentSupport(subject: string, text: string) {
 }
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (await needsUrgentSupport(message.subject, message.text ?? "")) console.log("urgent support message");
 });

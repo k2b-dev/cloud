@@ -13,11 +13,11 @@ type Category = "support" | "invoice" | "sales" | "spam" | "other";
 const TAGS: Record<Category, string | null> = { support: "Support", invoice: "Invoice", sales: "Sales", spam: null, other: null };
 const ASSIGN: Partial<Record<Category, string>> = { invoice: "accounting.lead", support: "support.lead" };
 
-type Message = Awaited<ReturnType<ReturnType<typeof mail.app>["message"]["read"]>>["data"];
-const conversation = async (id: string) => (await mail.app().conversation.read({ id })).data;
+type Message = Awaited<ReturnType<typeof mail.message.read>>["data"];
+const conversation = async (id: string) => (await mail.conversation.read({ id })).data;
 
 async function categorise(message: Message): Promise<Category> {
-  const { data: result } = await core.app().ai.decide({
+  const { data: result } = await core.ai.decide({
     task: "mail.category",
     state: { subject: message.subject, from: message.from[0]?.address ?? "", text: message.text?.slice(0, 4000) ?? "" },
     questions: {
@@ -81,7 +81,7 @@ async function summarise(conversationId: string, message: Message) {
   if (!message.text) return;
   // A rerun would generate other text under the same key; an existing summary means this step is done.
   if ((await conversation(conversationId)).summary) return;
-  const { data: summary } = await core.app().ai.generate({
+  const { data: summary } = await core.ai.generate({
     task: "mail.summary",
     prompt: "Summarise what the sender wants in at most two sentences, in the language of the message.",
     input: { subject: message.subject, body: message.text, truncated: message.bodyTruncated },
@@ -103,7 +103,7 @@ async function draftReply(conversationId: string, message: Message, category: Ca
   if (category !== "support" || !message.text) return;
   const { data: [identity] } = await owner.mailbox.identity.list({ limit: 1 });
   if (!identity) return;
-  const { data: reply } = await core.app().ai.generate({
+  const { data: reply } = await core.ai.generate({
     task: "mail.reply",
     prompt:
       "Draft a short, friendly reply that confirms we received the request and will answer within one working day. " +
@@ -124,9 +124,9 @@ async function draftReply(conversationId: string, message: Message, category: Ca
 }
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   // Throwing before the first Action lets Cloud retry; after it, failures stay visible.
   if (!message.conversationId) return;

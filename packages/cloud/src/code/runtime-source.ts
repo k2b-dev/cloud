@@ -69,24 +69,23 @@ function handle(appId, type, id) {
       target: type === null ? null : Object.freeze(coordinate(result, type)) }));
     setPath(result, op.methodPath, method);
   }
-  return Object.freeze(result);
+  return result;
 }
 const namespaces = node();
-for (const app of manifest.apps) namespaces[app.exportName] = node();
-for (const spec of manifest.handles) {
-  // The app-wide factory and a resource Type named "app" share one overloaded callable.
-  const peers = manifest.handles.filter(value => value.appId === spec.appId && JSON.stringify(value.factoryPath) === JSON.stringify(spec.factoryPath));
+for (const spec of manifest.handles.filter(value => value.type === null))
+  namespaces[spec.exportName] = handle(spec.appId, null, spec.appId);
+for (const spec of manifest.handles.filter(value => value.type !== null)) {
   setPath(namespaces[spec.exportName], spec.factoryPath, (...args) => {
-    const selected = peers.find(value => args.length === (value.type === null ? 0 : 1));
-    if (!selected) throw new Error("code_sdk_invalid_id");
-    return handle(selected.appId, selected.type, selected.type === null ? selected.appId : args[0]);
+    if (args.length !== 1) throw new Error("code_sdk_invalid_id");
+    return Object.freeze(handle(spec.appId, spec.type, args[0]));
   });
 }
+for (const app of manifest.apps) Object.freeze(namespaces[app.exportName]);
 let owner;
 if (manifest.owner) {
   const value = manifest.owner;
-  owner = value.kind === "app" ? handle(value.appId, null, value.appId)
-    : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id);
+  owner = Object.freeze(value.kind === "app" ? handle(value.appId, null, value.appId)
+    : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
 }
 const app = node();
 function unavailable(method) {

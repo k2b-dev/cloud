@@ -65,7 +65,7 @@ app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks"
   let tasks = 0;
   let complete = false;
   for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
-    const { data, page } = await spaces.app().task.list({ spaceId: "Spc001", status: "active", limit: 50, cursor });
+    const { data, page } = await spaces.task.list({ spaceId: "Spc001", status: "active", limit: 50, cursor });
     tasks += data.length;
     if (!page?.hasMore) { complete = true; break; }
     cursor = page.nextCursor;
@@ -86,7 +86,7 @@ import { app, filesv2 } from "@sdk";
 const MAX_PAGES = 5;
 
 app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files" }, async () => {
-  const [base] = (await filesv2.app().bases.list({})).data.items;
+  const [base] = (await filesv2.bases.list({})).data.items;
   if (!base) return;
   const folder = filesv2.entry(base.ref.id);
   let after: string | undefined;

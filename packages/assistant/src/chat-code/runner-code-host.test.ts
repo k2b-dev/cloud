@@ -581,9 +581,9 @@ test.each([
       const result = await f.execute("code_run", {
         code: `import {mail, imports} from "@sdk";
       export default async () => {
-        const file = await mail.app().attachment.content.read({id:"At4g00"});
+        const file = await mail.attachment.content.read({id:"At4g00"});
         if (!file.id || "direction" in file || "callId" in file) throw new Error("Expected an opaque FileRef");
-        const result = await imports.app().import({file, idempotencyKey:"invoice-import"});
+        const result = await imports.import({file, idempotencyKey:"invoice-import"});
         return {file, result};
       }`,
       });
