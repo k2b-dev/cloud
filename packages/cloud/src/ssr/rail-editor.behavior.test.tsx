@@ -19,6 +19,10 @@ const app = (id: string, label: string): RailApp => ({
 });
 const apps = [app("chat", "Chat"), app("files", "Files"), app("mail", "Mail")];
 
+/** Each test is another person, so no test meets the editor state of the one before. */
+const shellData = (userId: string) =>
+  JSON.stringify({ apps, rail: stored, legalLinks: [], theme: "light", searchLinks: {}, profile: { userId, name: "Mia Muster" } });
+
 let dom: ReturnType<typeof createDomTestHarness>;
 let stored: RailPreferences;
 let writes: RailPreferences[];
@@ -39,7 +43,7 @@ beforeEach(async () => {
   failNext = false;
   document.body.insertAdjacentHTML(
     "afterbegin",
-    `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ apps, rail: stored, legalLinks: [], theme: "light", searchLinks: {} })}</script>`,
+    `<script id="cloud-shell-data" type="application/json">${shellData(crypto.randomUUID())}</script>`,
   );
   canvas = document.createElement("div");
   canvas.className = "cloud-app-canvas";
@@ -159,6 +163,21 @@ test("closing never asks, saving goes on, and a step that fails later says so wi
   [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) => element.textContent === "Open")!.click();
   await settle(() => !!document.querySelector("dialog .rail-editor-failure"));
   expect(document.querySelector("dialog .rail-editor-failure")?.textContent).toContain("“Chat”");
+});
+
+test("another person in the same document never sees, or retries, the previous person's failed change", async () => {
+  failNext = true;
+  button("Pin Chat")!.click();
+  await settle(() => !!dialog().querySelector(".rail-editor-failure"));
+  button("Close")!.click();
+  await settle(() => !document.querySelector("dialog[open] .rail-editor"));
+  document.getElementById("cloud-shell-data")!.textContent = shellData("someone-else");
+  const { openRailEditor } = await import("./RailEditor");
+  openRailEditor("en");
+  await settle(() => !!document.querySelector("dialog .rail-editor"));
+  await idle();
+  expect(dialog().querySelector(".rail-editor-failure")).toBeNull();
+  expect(dialog().querySelector(".rail-editor-state")?.textContent).toBe("Saves instantly");
 });
 
 test("Reset saves at once and its Undo brings the earlier entries back", async () => {

@@ -6,14 +6,15 @@ type LinkShortcut = Extract<RailShortcut, { kind: "link" }>;
 
 /**
  * One change in the app bar editor, stated as the result it wants rather than a toggle, so applying it twice, or
- * again on a newer state after a conflict, gives the same settings.
+ * again on a newer state after a conflict, gives the same settings. A pinned app is named by its app, never by its
+ * shortcut ID, which another tab may have chosen differently.
  */
 export type RailEdit =
   | { kind: "names"; showNames: boolean }
   | { kind: "visible"; appId: string; visible: boolean }
   | { kind: "pin"; id: string; appId: string }
   | { kind: "unpin"; appId: string }
-  | { kind: "move"; id: string; index: number }
+  | { kind: "move"; target: { appId: string } | { id: string }; index: number }
   | { kind: "addLink"; link: LinkShortcut }
   | { kind: "updateLink"; link: LinkShortcut }
   | { kind: "remove"; id: string }
@@ -26,6 +27,10 @@ const setVisibility = (settings: RailPreferences, app: RailApp | undefined, appI
   else visibility[appId] = visible;
   return visibility;
 };
+
+/** Whether a shortcut is the one a move or a failure mark means. */
+export const railEditTargets = (entry: RailShortcut, target: { appId: string } | { id: string }) =>
+  "appId" in target ? entry.kind === "app" && entry.appId === target.appId : entry.id === target.id;
 
 export const applyRailEdit = (settings: RailPreferences, edit: RailEdit, apps: readonly RailApp[]): RailPreferences => {
   const app = (appId: string) => apps.find((entry) => entry.id === appId);
@@ -45,7 +50,7 @@ export const applyRailEdit = (settings: RailPreferences, edit: RailEdit, apps: r
     case "unpin":
       return { ...settings, shortcuts: settings.shortcuts.filter((entry) => !(entry.kind === "app" && entry.appId === edit.appId)) };
     case "move": {
-      const from = settings.shortcuts.findIndex((entry) => entry.id === edit.id);
+      const from = settings.shortcuts.findIndex((entry) => railEditTargets(entry, edit.target));
       if (from < 0) return settings;
       const shortcuts = [...settings.shortcuts];
       const [entry] = shortcuts.splice(from, 1);
@@ -66,24 +71,6 @@ export const applyRailEdit = (settings: RailPreferences, edit: RailEdit, apps: r
   }
 };
 
-/** The row a change belongs to, for the mark on a step that was not saved. */
-export const railEditRow = (edit: RailEdit): string | undefined => {
-  switch (edit.kind) {
-    case "visible":
-    case "pin":
-    case "unpin":
-      return edit.appId;
-    case "move":
-    case "remove":
-      return edit.id;
-    case "addLink":
-    case "updateLink":
-      return edit.link.id;
-    default:
-      return undefined;
-  }
-};
-
 const sameSettings = (a: RailPreferences, b: RailPreferences) =>
   a.showNames === b.showNames &&
   JSON.stringify(a.shortcuts) === JSON.stringify(b.shortcuts) &&
@@ -95,39 +82,49 @@ export type RailSaveState = "idle" | "saving" | "saved" | "failed";
 /**
  * Saves each change on its own, one after another. The editor shows the saved settings with every waiting change
  * applied. A change meets a newer state once (another tab saved): it reloads and applies again. Any other failure
- * drops only that change, keeps it for "Try again", and lets the waiting ones continue.
+ * takes back only that change and keeps it for "Try again"; the waiting ones continue. After a failure the next
+ * change starts from a fresh read, since the failed write may have reached the server.
  */
 export const createRailSaver = (options: {
   initial: RailPreferences;
   apps: () => readonly RailApp[];
   load: () => Promise<RailPreferences>;
   save: (settings: RailPreferences) => Promise<RailSaveResult>;
-  /** The saved settings after each successful step, for the app bar. */
+  /** The saved settings after each change on the server, for the app bar. */
   saved: (settings: RailPreferences) => void;
   /** A step failed; the editor may be closed by then. */
   failed?: (edit: RailEdit) => void;
 }) => {
   const [confirmed, setConfirmed] = createSignal(options.initial);
   const [queue, setQueue] = createSignal<readonly RailEdit[]>([]);
-  const [failure, setFailure] = createSignal<RailEdit | undefined>();
-  const [state, setState] = createSignal<RailSaveState>("idle");
+  const [failures, setFailures] = createSignal<readonly RailEdit[]>([]);
+  const [settled, setSettled] = createSignal(false);
   let running = false;
+  let stale = false;
+
+  const adopt = (settings: RailPreferences) => {
+    setConfirmed(settings);
+    options.saved(settings);
+    // A failed change that the saved settings already contain needs no retry and no mark.
+    setFailures((items) => items.filter((edit) => !sameSettings(applyRailEdit(settings, edit, options.apps()), settings)));
+  };
 
   const step = async (edit: RailEdit) => {
-    let base = confirmed();
+    if (stale) {
+      adopt(await options.load());
+      stale = false;
+    }
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const base = confirmed();
       const next = applyRailEdit(base, edit, options.apps());
       if (sameSettings(next, base)) return true;
       const result = await options.save(next);
       if (result.ok) {
-        setConfirmed(result.settings);
-        options.saved(result.settings);
+        adopt(result.settings);
         return true;
       }
       if (!result.conflict || attempt > 0) return false;
-      base = await options.load();
-      setConfirmed(base);
-      options.saved(base);
+      adopt(await options.load());
     }
     return false;
   };
@@ -135,46 +132,42 @@ export const createRailSaver = (options: {
   const drain = async () => {
     if (running) return;
     running = true;
-    setState("saving");
-    let ok = true;
     while (queue().length) {
       const edit = queue()[0]!;
       const saved = await step(edit).catch(() => false);
       setQueue((items) => items.slice(1));
       if (!saved) {
-        ok = false;
-        setFailure(edit);
+        stale = true;
+        setFailures((items) => [...items, edit]);
         options.failed?.(edit);
       }
     }
     running = false;
-    setState(ok && !failure() ? "saved" : "failed");
+    setSettled(true);
+  };
+
+  const apply = (edit: RailEdit) => {
+    setQueue((items) => [...items, edit]);
+    void drain();
   };
 
   return {
     /** What the editor shows: the saved settings with every waiting change applied. */
     settings: () => queue().reduce((settings, edit) => applyRailEdit(settings, edit, options.apps()), confirmed()),
-    state,
-    failure,
+    /** Saving while changes wait; failed while any change waits for "Try again"; saved once anything finished. */
+    state: (): RailSaveState => (queue().length ? "saving" : failures().length ? "failed" : settled() ? "saved" : "idle"),
+    failures,
     busy: () => queue().length > 0,
-    apply: (edit: RailEdit) => {
-      setQueue((items) => [...items, edit]);
-      void drain();
-    },
+    apply,
+    /** Saves every failed change again, in the order it was made. */
     retry: () => {
-      const edit = failure();
-      if (!edit) return;
-      setFailure(undefined);
-      setQueue((items) => [...items, edit]);
-      void drain();
+      const edits = failures();
+      setFailures([]);
+      for (const edit of edits) apply(edit);
     },
-    dismissFailure: () => {
-      setFailure(undefined);
-      if (!queue().length) setState("idle");
-    },
-    /** Replaces the saved settings when nothing waits, as after reopening the editor. */
+    /** Takes the stored settings when nothing waits, as after reopening the editor, and shows them in the app bar. */
     refresh: (settings: RailPreferences) => {
-      if (!queue().length) setConfirmed(settings);
+      if (!queue().length) adopt(settings);
     },
   };
 };

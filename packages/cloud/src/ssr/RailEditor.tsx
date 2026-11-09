@@ -19,9 +19,10 @@ import { coreClient } from "../clients/core";
 import { isRailShortcutHref, type RailPreferences, RailPreferencesSchema, type RailShortcut } from "../contracts/rail-preferences";
 import { appIconStyle } from "./app-icon-style";
 import { publishRailPreferences, readRailContext } from "./rail-context";
-import { createRailSaver, type RailSaveResult, type RailSaver, railEditRow } from "./rail-editor-model";
+import { createRailSaver, type RailEdit, type RailSaveResult, type RailSaver } from "./rail-editor-model";
 import { railMessages } from "./rail-messages";
 import { projectRailNavigation, type RailApp, sortRailApps } from "./rail-navigation";
+import { readShellData } from "./shell-data";
 
 type LinkShortcut = Extract<RailShortcut, { kind: "link" }>;
 
@@ -38,17 +39,21 @@ const saveRailPreferences = async (value: RailPreferences): Promise<RailSaveResu
 };
 
 /**
- * One saver per page: changes keep saving after the editor closes, and reopening it shows what still waits or failed.
+ * One saver per page and person: changes keep saving after the editor closes, and reopening it shows what still
+ * waits or failed. Another person in the same document starts with a saver of their own.
  */
-let saver: RailSaver | undefined;
+let current: { userId: string | undefined; saver: RailSaver } | undefined;
 let editorOpen = false;
+const shellUser = () => readShellData()?.profile?.userId;
+const pageSaver = () => (current && current.userId === shellUser() ? current.saver : undefined);
 
 const railSaver = (initial: RailPreferences, locale: string) => {
-  if (saver) {
-    saver.refresh(initial);
-    return saver;
+  const existing = pageSaver();
+  if (existing) {
+    existing.refresh(initial);
+    return existing;
   }
-  saver = createRailSaver({
+  const saver = createRailSaver({
     initial,
     apps: () => readRailContext()?.apps ?? [],
     load: () => readRailPreferences(new AbortController().signal, railMessages.resolve([locale]).t.loadFailed),
@@ -60,6 +65,7 @@ const railSaver = (initial: RailPreferences, locale: string) => {
       toast.error(t.failedClosed, { action: { label: t.open, onClick: () => openRailEditor(locale) } });
     },
   });
+  current = { userId: shellUser(), saver };
   return saver;
 };
 
@@ -75,8 +81,8 @@ const Row = (props: {
   title: string;
   subtitle?: string;
   off?: boolean;
-  failed?: boolean;
-  failedLabel: string;
+  /** Set while a change to this row was not saved; it names the change for screen readers. */
+  failed?: string;
   actions?: JSX.Element;
 }) => (
   <div class="rail-editor-row" data-off={props.off ? "" : undefined}>
@@ -88,9 +94,7 @@ const Row = (props: {
         <span class="rail-editor-row__subtitle">{props.subtitle}</span>
       </Show>
     </span>
-    <Show when={props.failed}>
-      <span class="rail-editor-row__failed" role="img" aria-label={props.failedLabel} />
-    </Show>
+    <Show when={props.failed}>{(label) => <span class="rail-editor-row__failed" role="img" aria-label={label()} />}</Show>
     <span class="rail-editor-row__actions">{props.actions}</span>
   </div>
 );
@@ -146,14 +150,52 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
     new Set([...managedShortcuts, ...settings().shortcuts].flatMap((entry) => (entry.kind === "app" ? [entry.appId] : [])));
   const others = () => props.apps.filter((app) => !pinned().has(app.id));
   const label = (entry: RailShortcut) => (entry.kind === "app" ? (catalog(entry.appId)?.label ?? t().unavailable) : entry.title);
-  const failedRow = () => {
-    const edit = props.saver.failure();
-    return edit ? railEditRow(edit) : undefined;
+  // A failed change names its row from the change itself, so the name stays when the change was taken back.
+  const linkTitle = (id: string) => {
+    const entry = settings().shortcuts.find((shortcut) => shortcut.id === id);
+    return entry?.kind === "link" ? entry.title : undefined;
   };
-  const failedLabel = () => {
-    const row = failedRow();
-    const entry = settings().shortcuts.find((shortcut) => shortcut.id === row);
-    const name = entry ? label(entry) : row ? catalog(row)?.label : undefined;
+  const editLabel = (edit: RailEdit): string | undefined => {
+    switch (edit.kind) {
+      case "visible":
+      case "pin":
+      case "unpin":
+        return catalog(edit.appId)?.label;
+      case "move":
+        return "appId" in edit.target ? catalog(edit.target.appId)?.label : linkTitle(edit.target.id);
+      case "addLink":
+      case "updateLink":
+        return edit.link.title;
+      case "remove":
+        return linkTitle(edit.id);
+      default:
+        return undefined;
+    }
+  };
+  const editMarks = (edit: RailEdit, row: { appId?: string; id?: string }) => {
+    switch (edit.kind) {
+      case "visible":
+      case "pin":
+      case "unpin":
+        return edit.appId === row.appId;
+      case "move":
+        return "appId" in edit.target ? edit.target.appId === row.appId : edit.target.id === row.id;
+      case "addLink":
+      case "updateLink":
+        return edit.link.id === row.id;
+      case "remove":
+        return edit.id === row.id;
+      default:
+        return false;
+    }
+  };
+  /** The mark on a row with a change that was not saved: its label for screen readers, or nothing. */
+  const failedMark = (row: { appId?: string; id?: string }, title: string) =>
+    props.saver.failures().some((edit) => editMarks(edit, row)) ? t().failedRow({ label: title }) : undefined;
+  const failureText = () => {
+    const failures = props.saver.failures();
+    if (failures.length > 1) return t().failedMany({ count: failures.length });
+    const name = failures[0] ? editLabel(failures[0]) : undefined;
     return name ? t().failedRow({ label: name }) : t().failed;
   };
   const [editing, setEditing] = createSignal<string>();
@@ -180,9 +222,9 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
           onValueChange={(showNames) => props.saver.apply({ kind: "names", showNames })}
         />
       </div>
-      <Show when={props.saver.failure()}>
+      <Show when={props.saver.failures().length > 0}>
         <NoticeCard tone="danger" icon={true} class="rail-editor-failure">
-          <span class="rail-editor-failure__text">{failedLabel()}</span>
+          <span class="rail-editor-failure__text">{failureText()}</span>
           <Button variant="secondary" size="sm" onClick={props.saver.retry}>
             {t().tryAgain}
           </Button>
@@ -198,7 +240,6 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
                 tile={<Tile id={link.appId ?? link.id} accent={link.accent} icon={link.iconClass} />}
                 title={link.label}
                 subtitle={t().managedHint}
-                failedLabel={failedLabel()}
               />
             </li>
           )}
@@ -210,7 +251,10 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
         itemLabel={label}
         itemIcon={(entry) => (entry.kind === "app" ? catalog(entry.appId)?.iconClass : entry.icon)}
         label={t().pinnedEntries}
-        onMove={(id, index) => props.saver.apply({ kind: "move", id, index })}
+        onMove={(id, index) => {
+          const entry = settings().shortcuts.find((shortcut) => shortcut.id === id);
+          if (entry) props.saver.apply({ kind: "move", target: entry.kind === "app" ? { appId: entry.appId } : { id }, index });
+        }}
         class="rail-editor-pinned"
       >
         {(entry, handle) => {
@@ -223,8 +267,7 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
                 grip={handle}
                 tile={<Tile id={appId} accent={catalog(appId)?.accent} icon={catalog(appId)?.iconClass ?? "ti ti-apps"} />}
                 title={label(entry())}
-                failed={failedRow() === entry().id || failedRow() === appId}
-                failedLabel={failedLabel()}
+                failed={failedMark({ appId, id: entry().id }, label(entry()))}
                 actions={
                   <>
                     <IconButton
@@ -253,8 +296,7 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
                 tile={<Tile id={link().id} icon={link().icon} />}
                 title={link().title}
                 subtitle={link().href.replace(/^https?:\/\//, "")}
-                failed={failedRow() === link().id}
-                failedLabel={failedLabel()}
+                failed={failedMark({ id: link().id }, link().title)}
                 actions={
                   <>
                     <IconButton size="sm" label={t().editLink({ label: link().title })} onClick={() => setEditing(link().id)}>
@@ -319,8 +361,7 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
                 tile={<Tile id={app.id} accent={app.accent} icon={app.iconClass} />}
                 title={app.label}
                 off={!visible(app)}
-                failed={failedRow() === app.id}
-                failedLabel={failedLabel()}
+                failed={failedMark({ appId: app.id }, app.label)}
                 actions={
                   <>
                     <IconButton
@@ -379,8 +420,10 @@ function RailEditor(props: { apps: RailApp[]; close: () => void }) {
   // A page that still saves keeps its saver; otherwise the editor starts from the stored settings.
   const loaded = query.create({
     source: () => "rail",
-    load: async (_, { abortSignal }) =>
-      saver?.busy() ? saver : railSaver(await readRailPreferences(abortSignal, t().loadFailed), locale()),
+    load: async (_, { abortSignal }) => {
+      const waiting = pageSaver();
+      return waiting?.busy() ? waiting : railSaver(await readRailPreferences(abortSignal, t().loadFailed), locale());
+    },
   });
   return (
     <>

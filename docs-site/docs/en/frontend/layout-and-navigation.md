@@ -613,9 +613,13 @@ and closing never asks; changes still waiting keep saving. The header says
 **Saves instantly**, **Saving…**, **Saved**, or **Not saved**. When a change
 meets settings that another tab saved, the editor loads them and applies the
 change again, so that tab's changes stay. Any other failure takes back only
-that change: a notice above the list names it with **Try again**, and its row
-carries a red dot. A failure after the editor closed shows a toast whose
-**Open** reopens the editor with that notice. **Reset app bar** saves the
+that change: a notice above the list names it, or counts several, with
+**Try again**, which saves each of them once more, and every affected row
+carries a red dot. The next change starts from a fresh read, because a failed
+write may still have reached Core; a failed change that the stored settings
+already contain needs no retry and loses its mark. A failure after the editor
+closed shows a toast whose **Open** reopens the editor with that notice. Each
+person in a document has their own changes; another person never sees them. **Reset app bar** saves the
 default app selection and an empty shortcut list at once and offers
 **Undo** in a toast; the names setting stays as it is.
 
