@@ -70,6 +70,16 @@ const date = (value: number) => new Date(value).toISOString().slice(0, 10);
 /** Every approved parity item has a concrete SVG spec and a named test or existing live demo. */
 export const chartParity: readonly ChartParityRow[] = [
   {
+    id: "standalone-ui-palette",
+    feature: "Standalone UI palette: opt-in conversion preserves legacy renderer defaults",
+    proof: {
+      file: "packages/ui/src/charts/core/palette.test.ts",
+      test: "all fourteen raw renderer kinds carry the UI defaults on explicit conversion",
+    },
+    spec: pie,
+    legacyId: "kind-pie",
+  },
+  {
     id: "line-forecast",
     feature: "Line: forecast and first-series band",
     proof: {

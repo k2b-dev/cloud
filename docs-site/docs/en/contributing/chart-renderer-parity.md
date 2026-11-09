@@ -31,6 +31,7 @@ merged. The fixture catalog is excluded from the published UI build.
 <!-- chart-parity:start -->
 | Feature | Proof | Status |
 | --- | --- | --- |
+| Standalone UI palette: opt-in conversion preserves legacy renderer defaults | packages/ui/src/charts/core/palette.test.ts: all fourteen raw renderer kinds carry the UI defaults on explicit conversion | Covered |
 | Line: forecast and first-series band | packages/ui/src/charts/core/line-forecast.test.ts: forecast layout binds ordered bounds to the first series suffix | Covered |
 | Line: negative zone | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
 | Line: warning threshold | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
