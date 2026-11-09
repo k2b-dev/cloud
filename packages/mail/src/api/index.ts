@@ -43,6 +43,8 @@ import {
   composePreviewInputSchema,
   composeSafetyConfigSchema,
   composeSafetyReviewInputSchema,
+  composeSignatureInputSchema,
+  composeSignatureSchema,
   composeSuggestionsInputSchema,
   configurableFolderRoleSchema,
   conversationPresenceHeartbeatSchema,
@@ -66,6 +68,7 @@ import {
   deriveDraftFromMessageInputSchema,
   draftContentInputSchema,
   draftEditableContentInputSchema,
+  draftEditModeSchema,
   draftLeaseSchema,
   draftLeaseTokenSchema,
   draftSchema,
@@ -368,6 +371,8 @@ const updateMailboxSchema = z
     searchBackend: searchBackendSchema.optional(),
     automaticReplyManagementPermission: automaticReplyManagementPermissionSchema.optional(),
     composeSafety: composeSafetyConfigSchema.optional(),
+    /** How new drafts are edited: one person at a time, or together. Existing drafts keep their mode. */
+    draftEditMode: draftEditModeSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 const calendarDestinationInputSchema = z.object({ spaceId: ResourceShortIdSchema.nullable() }).strict();
@@ -2944,6 +2949,31 @@ const mailOperationsApi = new Hono<MailApiContext>()
         input: await internalInput(c, c.req.valid("json")),
       }),
     ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/compose-signature",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Render the selected signature for the editor",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(composeSignatureSchema, "Sanitized signature fragment without outgoing styles or images"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid signature or compose render failure"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
+      },
+    }),
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", composeSignatureInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.previewComposeSignature({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
   .post(
     "/mailboxes/:mailboxId/compose-preview",

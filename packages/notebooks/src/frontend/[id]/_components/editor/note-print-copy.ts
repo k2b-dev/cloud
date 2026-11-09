@@ -1,4 +1,5 @@
 import { renderMermaid } from "@k2b/editor/markdown/mermaid-render";
+import { chartSvgWithUiPalette } from "@k2b/ui/charts/core";
 import type { renderNotebookBook } from "../../../../lib/book-renderer";
 import { createPrintDiagrams, mermaidFenceSources } from "./note-print-diagrams";
 
@@ -55,7 +56,11 @@ export function createNotePrintCopy(article: HTMLElement, options: Options) {
     if (last?.markdown === markdown && last.locale === locale) return;
     try {
       const { html } = renderBook({ markdown, locale, notebookId: options.notebookId, noteId: options.noteId, querySource: true });
-      article.innerHTML = html;
+      // Only the hidden print copy changes; the styled editor/Book keeps its drawing bytes.
+      article.innerHTML = html.replace(
+        /(<div class="k2b-chart__svg"[^>]*>)(<svg\b[\s\S]*?<\/svg>)/g,
+        (_match, viewport: string, svg: string) => viewport + chartSvgWithUiPalette(svg),
+      );
       article.setAttribute("data-print-region", "");
       last = { markdown, locale };
       diagrams.refresh();

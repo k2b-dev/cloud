@@ -20,6 +20,7 @@ import {
   getMailboxComposeStyle,
   listComposeTemplates,
   previewComposeDraft,
+  previewComposeSignature,
   removeMailboxComposeLogo,
   renderComposeDraft,
   renderComposeSnippet,
@@ -167,6 +168,33 @@ suite("mail compose templates", () => {
     }
   });
 
+  test("signature fragments require write access and never expose another owner's private template", async () => {
+    const created = await createComposeTemplate({
+      context: owner,
+      mailboxId,
+      input: {
+        kind: "signature",
+        scope: "private",
+        name: "Fragment test",
+        shortcut: "fragment_test",
+        body: "**{{ actor.display_name }}**",
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const input = { senderIdentityId, signatureTemplateId: created.data.id, format: "markdown" as const };
+    expect(await previewComposeSignature({ context: owner, mailboxId, input })).toMatchObject({ ok: true, data: { text: "Ada Owner" } });
+    expect(await previewComposeSignature({ context: collaborator, mailboxId, input })).toMatchObject({ ok: false });
+    const readGrant = await updateMailboxAccess({ context: owner, mailboxId, accessId: accessIds[0]!, permission: "read" });
+    if (!readGrant.ok) throw new Error(readGrant.error.message);
+    try {
+      expect(
+        await previewComposeSignature({ context: collaborator, mailboxId, input: { ...input, signatureTemplateId: null } }),
+      ).toMatchObject({ ok: false, error: { status: 403 } });
+    } finally {
+      await updateMailboxAccess({ context: owner, mailboxId, accessId: accessIds[0]!, permission: "write" });
+    }
+  });
+
   test("stale logo detail edits never restore an administrator's replaced logo", async () => {
     try {
       const input = { content: logoPng().toString("base64") };
@@ -274,6 +302,7 @@ suite("mail compose templates", () => {
       if (!signature.ok) throw new Error(signature.error.message);
       logoSignature = signature.data;
       const draft: DraftEditableContentInput = {
+        quoteSource: null,
         senderIdentityId,
         to: [],
         cc: [],
@@ -490,6 +519,7 @@ suite("mail compose templates", () => {
       origin: {
         kind: "compose",
         input: {
+          quoteSource: null,
           conversationId: null,
           intent: "new",
           sourceMessageId: null,
@@ -517,6 +547,7 @@ suite("mail compose templates", () => {
       context: owner,
       mailboxId,
       input: {
+        quoteSource: null,
         conversationId: null,
         intent: "new",
         sourceMessageId: null,
@@ -546,6 +577,7 @@ suite("mail compose templates", () => {
       context: collaborator,
       mailboxId,
       input: {
+        quoteSource: null,
         conversationId: null,
         intent: "new",
         sourceMessageId: null,
@@ -579,6 +611,7 @@ suite("mail compose templates", () => {
     const snippet = templates.data.find((template) => template.shortcut === "welcome");
     if (!snippet) throw new Error("Mailbox snippet is missing");
     const draft = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -650,6 +683,7 @@ suite("mail compose templates", () => {
     if (!mailboxTemplate.ok || !privateTemplate.ok) return;
 
     const draft = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -680,6 +714,7 @@ suite("mail compose templates", () => {
 
   test("materializes delegated service-account signatures as the delegated user", async () => {
     const draft = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -811,6 +846,7 @@ suite("mail compose templates", () => {
     expect(listed.ok && listed.data.every((entry) => entry.formattingWarnings === undefined)).toBe(true);
 
     const content = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -860,6 +896,7 @@ suite("mail compose templates", () => {
 
   test("preview and send preserve the same extra Markdown blank lines", async () => {
     const draft: DraftEditableContentInput = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -888,6 +925,7 @@ suite("mail compose templates", () => {
 
   test("preview and send preserve the same Markdown dividers and dash underlines", async () => {
     const draft: DraftEditableContentInput = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -917,6 +955,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       { code: "ignored_mailbox_css", property: "background" },
     ];
     const draft: DraftEditableContentInput = {
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -987,6 +1026,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       expect(saved).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
       if (!saved.ok) throw new Error(saved.error.message);
       const draft: DraftEditableContentInput = {
+        quoteSource: null,
         senderIdentityId,
         to: [{ name: null, address: "reader@example.test" }],
         cc: [],
@@ -1032,9 +1072,10 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     }
   });
 
-  const newContent = () => ({ senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
+  const newContent = () => ({ quoteSource: null, senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
 
   const content = (draft: MailDraft): DraftEditableContent => ({
+    quoteSource: null,
     senderIdentityId: draft.senderIdentityId,
     to: draft.to,
     cc: draft.cc,

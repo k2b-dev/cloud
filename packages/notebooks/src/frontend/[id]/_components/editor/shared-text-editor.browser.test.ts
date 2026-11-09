@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
-import { browserName, launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
 import { startNotebookEditorFixture } from "./shared-text-editor.browser-fixture";
 
 let browser: Browser;
@@ -786,7 +786,7 @@ describe("Notebook on the shared text editor", () => {
       expect(menuGeometry.font).toBe("13.5px");
       await page.keyboard.press("Escape");
       // Approved F2: a row grip offers row and table actions, a column grip column, alignment and table actions.
-      await cell(page, 1, 0).hover();
+      await hoverInPlace(cell(page, 1, 0));
       await page.locator(".k2b-ste-rowMenu").nth(1).click();
       await entries.first().waitFor();
       const row = await entries.allTextContents();

@@ -78,6 +78,7 @@ const seed: MailDraftSeed = {
   derivedFromMessageId: null,
   derivationKind: null,
   content: {
+    quoteSource: null,
     senderIdentityId: "Send01",
     to: [],
     cc: [],
@@ -90,7 +91,7 @@ const seed: MailDraftSeed = {
     requestReadReceipt: false,
   },
   attachments: [],
-  origin: { kind: "compose", input: { senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "", body: "" } },
+  origin: { kind: "compose", input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "", body: "" } },
   createdAt: now,
 };
 
@@ -110,6 +111,7 @@ const data: MailboxPageData = {
     searchBackend: "auto",
     automaticReplyManagementPermission: "admin",
     accessScope: "mailbox",
+    draftEditMode: "lock",
     composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
     createdAt: now,
     updatedAt: now,

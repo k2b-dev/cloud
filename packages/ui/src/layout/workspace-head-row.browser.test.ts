@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 import { type FixtureOptions, uiDirectory, workspaceCss, workspaceDist, workspaceTree } from "../../test/workspace-host-fixture";
 
 declare global {
@@ -394,14 +394,14 @@ test("view, classic tab, and segment selection and hover never move neighbouring
   try {
     const before = await boxes(page, ".k2b-view-tabs__tab");
     expect(await boxes(other, ".k2b-view-tabs__tab")).toEqual(before);
-    await page.locator(".k2b-view-tabs__tab").nth(1).hover();
+    await hoverInPlace(page.locator(".k2b-view-tabs__tab").nth(1));
     await settled(page);
     expect(await boxes(page, ".k2b-view-tabs__tab")).toEqual(before);
     await page.evaluate(() => window.mountControls());
     await settled(page);
     for (const selector of ['[role="tab"]', '[role="radio"]']) {
       const initial = await boxes(page, selector);
-      await page.locator(selector).nth(1).hover();
+      await hoverInPlace(page.locator(selector).nth(1));
       await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
       await page.locator(selector).nth(1).click();
