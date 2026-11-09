@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-shell-focus-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -184,7 +184,7 @@ const apple = (page: Page) => page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(na
 // where the avatar opens a dropdown island, the shortcut stands in for it.
 const hideSidebar = async (page: Page, touch: boolean) => {
   if (touch) return page.keyboard.press((await apple(page)) ? "Meta+Backslash" : "Control+Backslash");
-  await page.locator(".layout-rail .layout-profile-preferences__link").hover();
+  await hoverInPlace(page.locator(".layout-rail .layout-profile-preferences__link"));
   await page.locator(hide).click();
 };
 for (const [width, height, touch, inset] of [
@@ -257,7 +257,7 @@ for (const [width, height, touch, inset] of [
       if (width >= 1024) await expectClearCorners(page);
       if (!touch) {
         // The floating avatar's menu offers the way back.
-        await page.locator(".layout-rail .layout-profile-preferences__link").hover();
+        await hoverInPlace(page.locator(".layout-rail .layout-profile-preferences__link"));
         expect(await page.locator(show).isVisible()).toBe(true);
         expect(await page.locator(hide).isVisible()).toBe(false);
         await page.mouse.move(width / 2, height / 2);

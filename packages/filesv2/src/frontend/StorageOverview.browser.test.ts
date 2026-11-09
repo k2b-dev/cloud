@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { Browser, BrowserContextOptions } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 
 // Card layout, touch targets and hover stability need a real layout engine.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
@@ -150,7 +150,7 @@ describe("all storage overview in a browser", () => {
           }
           expect(await tab.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
           const before = await cards.first().boundingBox();
-          await cards.first().hover();
+          await hoverInPlace(cards.first());
           expect(await cards.first().boundingBox()).toEqual(before);
           await cards.first().click();
           // The navigation runs inside a view transition, one frame after the click.

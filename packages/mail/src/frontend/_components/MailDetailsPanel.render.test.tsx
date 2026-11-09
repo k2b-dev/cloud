@@ -400,7 +400,7 @@ describe("Mail conversation detail panel", () => {
     });
     expect(between(html, ">Properties<", ">Linked<")).toContain("Some properties can");
     expect(between(html, ">Attachments<", ">More about this conversation<")).toContain("No attachments");
-    expect(html).toContain('class="k2b-detail-panel__none">None yet</span>');
+    expect(html).toContain('class="k2b-section__none">None yet</span>');
     expect(between(html, ">Activity<", ">Technical details<")).toContain("Activity can");
     // A failure outside the outline's sections stays one line above them.
     expect(html.indexOf("keep")).toBeLessThan(html.indexOf(">Properties<"));

@@ -1,4 +1,4 @@
-import { Button, IconButton, MarkdownView, ProgressRing, Skeleton, Tooltip, useLocale } from "@k2b/ui";
+import { Button, IconButton, MarkdownView, ProgressRing, Section, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import { mailSummaryMessages } from "./mail-summary-messages";
@@ -12,7 +12,7 @@ export const showsConversationSummary = (state: ConversationContentSummary | nul
 const formatTime = (iso: string, locale: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 
 /**
- * The conversation summary. An AI text sits on the plum AI surface with ✦; a text a person wrote stays neutral.
+ * The conversation summary, a Section in the reader. An AI text has the AI tone (plum frame, title and ✦); a text a person wrote stays neutral.
  * Writing, failure and the daily limit replace the text in the same place, so the messages below never jump.
  */
 export default function MailConversationSummaryCard(props: {
@@ -100,36 +100,31 @@ export default function MailConversationSummaryCard(props: {
     </Tooltip.Anchor>
   );
 
+  // A topic of the reader: a Section island, plum frame, title and ✦ only for what the AI wrote.
   return (
-    <section
-      class="mx-auto my-3 flex w-full max-w-4xl flex-col rounded-[0.875rem] px-[1.125rem] pt-3.5 pb-3 text-sm"
-      classList={{
-        "min-h-[12.25rem]": ai(),
-        "bg-[var(--k2b-ai-surface)] text-primary": ai(),
-        "bg-[var(--ui-surface-subtle)] text-primary": !ai(),
-      }}
-      aria-labelledby="mail-conversation-summary-title"
-      aria-busy={busy()}
-      data-mail-conversation-summary={view()}
-      data-mail-summary-ai={ai() ? "" : undefined}
-    >
-      <div class="flex min-h-8 items-center gap-2">
-        <Show when={ai()}>
-          <i class="ti ti-sparkles text-[1.0625rem] text-[color:var(--k2b-ai-accent)]" aria-hidden="true" />
-        </Show>
-        <h2 id="mail-conversation-summary-title" class="text-sm font-semibold">
+    <Section
+      class={`mx-auto my-3 w-full max-w-4xl text-sm text-primary${ai() ? " min-h-[13.75rem]" : ""}`}
+      size="md"
+      tone={ai() ? "ai" : undefined}
+      icon={ai() ? "ti ti-sparkles" : undefined}
+      title={
+        <>
           {t().title}
           <Show when={ai()}>
             <span class="sr-only"> ({t().aiLabel})</span>
           </Show>
-        </h2>
-        <Show when={view() === "writing"}>
-          <span class="text-xs opacity-80" aria-live="polite">
+        </>
+      }
+      meta={
+        view() === "writing" ? (
+          <span class="text-xs" aria-live="polite">
             {t().writing}
           </span>
-        </Show>
-        <Show when={view() === "text"}>
-          <span class="ml-auto flex items-center gap-0.5">
+        ) : undefined
+      }
+      actions={
+        view() === "text" ? (
+          <>
             <Show when={props.state.canGenerate}>{tool(t().rewrite, "ti-refresh", () => props.onGenerate("replace"))}</Show>
             <Show when={props.canEdit}>{tool(t().edit, "ti-pencil", props.onEdit, props.editDisabled)}</Show>
             <Tooltip.Anchor content={why()}>
@@ -137,23 +132,15 @@ export default function MailConversationSummaryCard(props: {
                 <i class="ti ti-info-circle" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>
-          </span>
-        </Show>
-      </div>
-
+          </>
+        ) : undefined
+      }
+      state={view() === "writing" ? "loading" : "ready"}
+      loadingRows={4}
+      data-mail-conversation-summary={view()}
+      data-mail-summary-ai={ai() ? "" : undefined}
+    >
       <Switch>
-        <Match when={view() === "writing"}>
-          <div class="my-3.5 flex flex-col gap-2.5" aria-hidden="true">
-            <Skeleton class="h-3 w-[92%] rounded" />
-            <Skeleton class="h-3 w-[78%] rounded" />
-            <Skeleton class="h-3 w-[60%] rounded" />
-          </div>
-          <Skeleton class="h-3 w-2/5 rounded" />
-          <div class="mt-auto pt-2.5">
-            <Skeleton class="h-2.5 w-1/2 rounded" />
-          </div>
-        </Match>
-
         <Match when={view() === "failed"}>
           <p class="my-2.5 max-w-[62ch]" role="alert">
             {failureText()}
@@ -243,6 +230,6 @@ export default function MailConversationSummaryCard(props: {
           </Show>
         </Match>
       </Switch>
-    </section>
+    </Section>
   );
 }

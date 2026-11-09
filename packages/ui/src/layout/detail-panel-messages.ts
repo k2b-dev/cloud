@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-/** Counts and list folding shared by detail panel sections and discussions. */
+/** Counts and list folding shared by sections, detail panels, and discussions. */
 const detailPanelMessages = i18n.define({
   baseLocale: "en",
   messages: {

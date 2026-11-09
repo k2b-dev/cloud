@@ -1053,3 +1053,40 @@ Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Al
 When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.
 
 If the sending content changes after your check, Mail stops and queues no message. Open the draft, check it again and approve a new attempt. A signature that changes with the current time may need editing first. Mail does not retry or approve the new content automatically.
+
+## Compose signature fragments
+
+`POST /api/mail/mailboxes/:mailboxId/compose-signature` takes
+`{ senderIdentityId, signatureTemplateId, format }` and returns `{ html, text }`.
+It requires mailbox write access and a verified sender. Private signatures are
+available only to their owner. Use `null` for no signature. The filled signature
+uses the same template rules and render budget as sending, with sanitized
+Markdown HTML and plain text. It has no mailbox CSS or images; the mailbox
+logo becomes its alt text. With `format: "plain"`, `html` is `null`.
+
+Draft editable content includes `quoteSource`, defaulting to `null` (off). Set it
+to `{ locale, timeZone }` to append the readable `sourceMessageId` after the
+signature. The stored body stays editable without that history. Preview accepts
+`sourceMessageId` alongside `draft`; unreadable or missing sources add nothing. Server-generated
+attribution uses the locale and time zone saved when the person enables the quote,
+so preview, safety review and send stay identical across callers. Locale must be a
+valid BCP-47 tag: German variants resolve to `de`, English and unshipped languages
+to `en`. Time zones must be IANA names accepted by `Intl`. Source text never
+evaluates as a template. Oversized quotations fail with the existing compose
+render errors.
+
+REST, shared editing, recovery copies and draft capabilities retain this choice.
+`draft.patch` preserves it when omitted. Use `cld mail draft create|update --quote`
+or `--no-quote`; `--quote` saves the CLI locale and local time zone. Override the
+zone with `--quote-time-zone Europe/Berlin`. Compose preview accepts
+`--source-message`. Send review and queued or scheduled delivery include the
+quote in the frozen content. Turning quoting off retains the existing send hash format. IMAP draft copies include the
+chosen history; editing a copy externally makes that history ordinary body text
+and turns automatic quoting off to avoid appending it twice.
+
+Conversation workspace rows include `drafts: { count, editors }`. Counts cover
+visible open user drafts only; scheduled, sending and closed drafts are excluded.
+`editors` names at most three distinct creators or last editors, newest first,
+with their `kind`, principal `id` and `displayName`. Assigned-only access uses
+the same conversation and source-message visibility as the draft list. This is
+stored draft attribution; conversation presence remains a separate signal.

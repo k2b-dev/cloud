@@ -743,7 +743,7 @@ export default function WorkflowScannerSurface(props: Props) {
         <div class="sr-only" aria-live="polite" aria-relevant="additions text">
           <For each={announcements()}>{(announcement) => <p>{announcement.text}</p>}</For>
         </div>
-        <section ref={cameraFrame} class="relative min-h-0 overflow-hidden rounded-xl bg-black shadow-sm">
+        <section ref={cameraFrame} class="relative min-h-0 overflow-hidden rounded-xl bg-black">
           <video ref={video} class="h-full w-full object-contain" playsinline autoplay muted />
           <div class="pointer-events-none absolute inset-0">
             <For each={detections()}>

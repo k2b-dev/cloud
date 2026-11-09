@@ -12,6 +12,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: DetailPanel } = await import("./DetailPanel");
+const { Section } = await import("../surfaces/Section");
 
 describe("DetailPanel", () => {
   test("renders a compact header, one scroll owner, and semantic flat sections", () => {
@@ -36,13 +37,13 @@ describe("DetailPanel", () => {
                     actions: "Edit",
                     children: "Status and assignee",
                   }),
-                  createComponent(DetailPanel.Section, {
+                  createComponent(Section, {
                     title: "Workflow",
                     description: "No workflow context yet",
                     meta: "0",
                     actions: "Edit",
                   }),
-                  createComponent(DetailPanel.Section, {
+                  createComponent(Section, {
                     title: "Technical details",
                     collapsible: true,
                     defaultOpen: true,
@@ -66,14 +67,14 @@ describe("DetailPanel", () => {
     expect(html).not.toContain("k2b-detail-panel__icon");
     expect(html).toContain('data-scroll-preserve="mail-detail"');
     expect(html).toMatch(/<section class="k2b-detail-panel__summary"[^>]+aria-labelledby="k2b-detail-panel-summary-[^"]+"/);
-    expect(html).toContain("<h3 id=");
-    expect(html).toMatch(/<section[^>]+aria-labelledby="k2b-detail-panel-section-[^"]+"/);
+    expect(html).toMatch(/<section[^>]+data-frame="none"[^>]+aria-labelledby="k2b-section-[^"]+-title"/);
+    expect(html).not.toContain('data-frame="line"');
     expect(html).toContain("No workflow context yet");
     // State text sits right after the title, inside the heading row.
-    expect(html).toMatch(/<h3 id="[^"]+">Workflow<\/h3><span class="k2b-detail-panel__section-meta">0<\/span>/);
+    expect(html).toMatch(/<h3[^>]*>Workflow<\/h3><span class="k2b-section__meta">0<\/span>/);
     expect(html).toContain('data-open="true"');
     expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain('aria-controls="k2b-detail-panel-section-');
+    expect(html).toContain('aria-controls="k2b-section-');
     expect(html).not.toContain("paper");
   });
 
@@ -110,7 +111,7 @@ describe("DetailPanel", () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const panelRule = css.match(/\.k2b-ui \.k2b-detail-panel \{([^}]*)\}/)?.[1];
     const headerRule = css.match(/\.k2b-ui \.k2b-detail-panel__header \{([^}]*)\}/)?.[1];
-    const sectionRule = css.match(/\.k2b-ui section\.k2b-detail-panel__section \{([^}]*)\}/)?.[1];
+    const sectionRule = css.match(/\.k2b-ui \.k2b-section \{([^}]*)\}/)?.[1];
     const summaryRule = css.match(/\.k2b-ui \.k2b-detail-panel__summary \{([^}]*)\}/)?.[1];
     const bodyRule = css.match(/\.k2b-ui \.k2b-detail-panel__body \{([^}]*)\}/)?.[1];
 
@@ -164,13 +165,13 @@ describe("DetailPanel", () => {
                   label: "Document context",
                   get children() {
                     return [
-                      createComponent(DetailPanel.Section, {
+                      createComponent(Section, {
                         title: "Contents",
                         icon: "ti ti-list-tree",
-                        tone: "accent",
+                        tone: "success",
                         children: "Outline",
                       }),
-                      createComponent(DetailPanel.Section, {
+                      createComponent(Section, {
                         title: "Versions",
                         icon: "ti ti-history",
                         tone: "warning",
@@ -189,21 +190,22 @@ describe("DetailPanel", () => {
     );
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const groupRule = css.match(/\.k2b-ui \.k2b-detail-panel__group \{([^}]*)\}/)?.[1];
-    // A group, a section placed directly in the body and a discussion share one frame rule.
+    // A group and a section placed directly in the body (a discussion is one) share one frame rule.
     const frame = css.match(/\.k2b-ui\s*:is\(\s*(\.k2b-detail-panel__group,[^)]*)\)\s*\{([^}]*)\}/);
-    const groupedSectionRule = css.match(/\.k2b-ui \.k2b-detail-panel__group > \.k2b-detail-panel__section \{([^}]*)\}/)?.[1];
+    const groupedSectionRule = css.match(/\.k2b-ui \.k2b-detail-panel__group > \.k2b-section \{([^}]*)\}/)?.[1];
     const summaryRule = css.match(/\.k2b-ui \.k2b-detail-panel__summary \{([^}]*)\}/)?.[1];
-    const sectionIconRule = css.match(/\.k2b-ui \.k2b-detail-panel__section-icon,\s*\.k2b-ui \.k2b-discussion__icon \{([^}]*)\}/)?.[1];
+    const sectionIconRule = css.match(/\.k2b-ui \.k2b-section__icon \{([^}]*)\}/)?.[1];
 
     expect(html).toContain('class="k2b-detail-panel__header-icon"');
     expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Document context"');
-    expect(html).toContain('class="k2b-detail-panel__section-icon" data-tone="accent"');
-    expect(html).toContain('class="k2b-detail-panel__section-icon" data-tone="warning"');
+    expect(html).toContain('data-tone="success"');
+    expect(html).toContain('data-tone="warning"');
+    // In a panel, sections stand flat: the panel frames them.
+    expect(html).not.toContain('data-frame="line"');
     // One quiet surface like the summary: no border, no 1px rules between sections.
     expect(groupRule).not.toContain("gap: 1px");
     expect(groupRule).not.toContain("border:");
-    expect(frame?.[1]).toContain(".k2b-detail-panel__body > .k2b-detail-panel__section");
-    expect(frame?.[1]).toContain('.k2b-detail-panel .k2b-discussion[data-surface="default"]');
+    expect(frame?.[1]).toContain(".k2b-detail-panel__body > .k2b-section");
     expect(frame?.[2]).toContain("border: 0;");
     expect(frame?.[2]?.match(/background: ([^;]+);/)?.[1]).toBe(summaryRule?.match(/background: ([^;]+);/)?.[1]);
     expect(groupedSectionRule).not.toContain("background");
@@ -338,10 +340,10 @@ describe("DetailPanel", () => {
       createComponent(DetailPanel.Body, {
         get children() {
           return [
-            createComponent(DetailPanel.Section, { title: "Comments", icon: "ti ti-message", count: 3, actions: "Comment" }),
-            createComponent(DetailPanel.Section, { title: "Links", icon: "ti ti-link", count: 0 }),
-            createComponent(DetailPanel.Section, { title: "Tasks", icon: "ti ti-list-check", meta: "2 of 4 done" }),
-            createComponent(DetailPanel.Section, {
+            createComponent(Section, { title: "Comments", icon: "ti ti-message", count: 3, actions: "Comment" }),
+            createComponent(Section, { title: "Links", icon: "ti ti-link", count: 0 }),
+            createComponent(Section, { title: "Tasks", icon: "ti ti-list-check", meta: "2 of 4 done" }),
+            createComponent(Section, {
               title: "Contents",
               icon: "ti ti-list",
               count: 5,
@@ -354,10 +356,10 @@ describe("DetailPanel", () => {
       }),
     );
     expect(html).toMatch(
-      /<h3 id="[^"]+">Comments<\/h3><span class="k2b-count-chip">3<\/span><\/div><\/div><div class="k2b-detail-panel__section-actions">Comment<\/div>/,
+      /Comments<\/h3><span class="k2b-count-chip">3<\/span>(<!--!\$-->)?<\/span><\/span><div class="k2b-section__actions">Comment<\/div>/,
     );
-    expect(html).toMatch(/Links<\/h3><span class="k2b-detail-panel__none">None yet<\/span>/);
-    expect(html).toMatch(/Tasks<\/h3><span class="k2b-detail-panel__section-meta">2 of 4 done<\/span>/);
+    expect(html).toMatch(/Links<\/h3><span class="k2b-section__none">None yet<\/span>/);
+    expect(html).toMatch(/Tasks<\/h3><span class="k2b-section__meta">2 of 4 done<\/span>/);
     // The current row is exposed to assistive technology, not only by color.
     expect(html).toContain('aria-current="location"');
     expect(html).toContain('data-current="true"');

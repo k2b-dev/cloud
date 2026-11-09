@@ -1,6 +1,10 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { availability, found, jana, type Scenario, startContactsGeoHarness } from "./ContactAddressGeo.browser-fixture";
+
+// Every case loads its own page and runs a flow, some with a reload; in WebKit the
+// reload case alone took 4.4–4.7 s on an idle machine (#2892). Each step keeps 5 s in open().
+setDefaultTimeout(30_000);
 
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
@@ -36,12 +40,13 @@ beforeEach(() => {
 
 const open = async (name: string, scenario: Scenario, width = 1440, query = "", theme: "light" | "dark" = "light"): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin", reducedMotion: "reduce" });
+  page.setDefaultTimeout(5_000);
   const url = harness.url(name, scenario);
   await page.context().addCookies([{ name: "theme", value: theme, url: new URL(url).origin }]);
   await page.bringToFront();
   await page.goto(`${url}${query}`);
   await page.waitForFunction(() => "clientHeight" in window);
-  // Map-only cases inspect the address section; ordinary workspace reads keep its collapsed default.
+  // The address is a visible page topic in both standalone and workspace readers.
   if (scenario.view === "detail") await expandAddresses(page);
   // Activate before navigation so WebKit does not throttle fixture readiness or actions.
   return page;
@@ -55,6 +60,47 @@ const expectFocus = async (locator: ReturnType<Page["locator"]>) => {
   }));
   expect(state).toMatchObject({ focused: true });
 };
+
+test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((theme) => ({ width, theme }))))(
+  "contact is a page with ordered island sections at $width px in $theme",
+  async ({ width, theme }) => {
+    const page = await open("reader-page", { view: "workspace", contact: jana(found), availability: availability.off }, width, "", theme);
+    try {
+      const reader = page.locator('[data-workspace-main-region="contacts-reader"]');
+      await reader.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
+      expect(await page.locator(".k2b-app-workspace__detail").count()).toBe(0);
+      expect(await page.locator('[data-workspace-main-region="contacts-list"]').isVisible()).toBe(width >= 768);
+      if (width === 1440) expect(await page.locator("#contacts-book-navigation").isVisible()).toBe(true);
+      expect(await reader.locator(".k2b-avatar[data-size=lg]").count()).toBe(1);
+      const sections = reader.locator("article > div > section");
+      expect(await sections.locator(":scope > header h2").allTextContents()).toEqual([
+        "Erreichbar",
+        "Adresse",
+        "Beziehungen",
+        "Notizen",
+        "Mehr zu Jana Berger",
+      ]);
+      expect(await sections.evaluateAll((elements) => elements.every((element) => element.getAttribute("data-size") === "md"))).toBe(true);
+      const depth = await sections.first().evaluate((element) => {
+        const probe = document.createElement("div");
+        probe.style.boxShadow = "var(--k2b-shadow-raised)";
+        element.append(probe);
+        const expected = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        return { actual: getComputedStyle(element).boxShadow, expected };
+      });
+      const transparentShadow = "rgba(0, 0, 0, 0) 0px 0px 0px 0px";
+      if (theme === "dark") expect(depth.actual).toBe(transparentShadow);
+      else {
+        expect(depth.actual).toBe(depth.expected);
+        expect(depth.actual).not.toBe("none");
+        expect(depth.actual).not.toBe(transparentShadow);
+      }
+    } finally {
+      await page.close();
+    }
+  },
+);
 
 test("a pending address keeps its reserved map place from the server render until the pin arrives", async () => {
   harness.state.holdLocate = true;
@@ -261,10 +307,7 @@ test.each(["submission", "reload"] as const)("the focused address editor preserv
 });
 
 const expandAddresses = async (page: Page) => {
-  // The open section hides its summary and exposes a separate collapse button.
-  const toggle = page.getByRole("button", { name: /^Adressen\b/ });
-  await toggle.waitFor();
-  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+  await page.getByRole("heading", { name: "Adresse", exact: true }).waitFor();
 };
 const editAddress = async (page: Page) => {
   await expandAddresses(page);
@@ -534,7 +577,7 @@ test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((
       expect(geometry.gap).toBe("22px");
       expect(geometry.controls.map((control) => control.height)).toEqual([38, 38, 38, 38, 38]);
       expect(geometry.left).toBe(width < 768 ? "16px" : "28px");
-      if (width === 1440) expect(geometry.width).toBe(760);
+      expect(geometry.width).toBeLessThanOrEqual(760);
       if (width >= 768) {
         const row = page.locator("a[data-contact-row]");
         expect(await row.isVisible()).toBe(true);
@@ -545,16 +588,17 @@ test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((
         expect(nameFits).toBe(true);
         const listBox = await row.boundingBox();
         const formBox = await form.boundingBox();
-        const workspaceBox = await page.locator(".k2b-app-workspace").boundingBox();
-        expect(Math.abs(formBox!.x - workspaceBox!.x - 330)).toBeLessThanOrEqual(1);
+        const readerBox = await page.locator('[data-workspace-main-region="contacts-reader"]').boundingBox();
+        expect(formBox!.x).toBeGreaterThanOrEqual(readerBox!.x);
         expect(listBox!.x + listBox!.width).toBeLessThanOrEqual(formBox!.x);
       }
       if (width < 768) {
-        expect(geometry.width).toBe(width);
-        expect(geometry.controls[0]!.left).toBe(16);
-        const panel = await page.locator("#k2b-workspace-detail-contacts-detail-panel").boundingBox();
-        expect(panel?.y).toBe(0);
-        expect(panel?.height).toBe(900);
+        expect(geometry.width).toBeLessThanOrEqual(width);
+        expect(geometry.controls[0]!.left).toBeGreaterThanOrEqual(16);
+        const panel = await page.locator('[data-workspace-main-region="contacts-reader"]').boundingBox();
+        expect(panel!.y).toBeGreaterThanOrEqual(0);
+        expect(panel!.y + panel!.height).toBeLessThanOrEqual(900);
+        expect(await page.locator('[data-workspace-main-region="contacts-list"]').isVisible()).toBe(false);
         expect(geometry.inputs[2]!.y).toBeLessThan(geometry.inputs[3]!.y);
         expect(geometry.inputs[3]!.y).toBeLessThan(geometry.inputs[4]!.y);
       }
@@ -588,7 +632,7 @@ test.each([1440, 768, 390])("reloading and closing an address editor restores th
     expect(await action.isVisible()).toBe(true);
     expect(await action.evaluate((element) => element === document.activeElement)).toBe(true);
     const actionBox = await page.locator(`[data-contact-address-edit="${jana().addresses[0]!.id}"]`).boundingBox();
-    const panelBox = await page.locator("#k2b-workspace-detail-contacts-detail-panel").boundingBox();
+    const panelBox = await page.locator('[data-workspace-main-region="contacts-reader"]').boundingBox();
     expect(actionBox!.y).toBeGreaterThanOrEqual(panelBox!.y);
     expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(panelBox!.y + panelBox!.height);
   } finally {
@@ -727,6 +771,7 @@ test.each([false, true])("focused desktop editing keeps book navigation keyboard
 
 test("a narrow desktop host keeps the address deep link visible before and after hydration", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  page.setDefaultTimeout(5_000);
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;

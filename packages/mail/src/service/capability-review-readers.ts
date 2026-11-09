@@ -23,6 +23,7 @@ export const loadSendReviewContent = async (params: {
     expectedRevision: params.draft.revision,
     senderIdentityId: params.senderIdentityId,
     actor: actorRefFromRequest(params.context),
+    context: params.context,
   });
   if (!loaded.ok) return loaded;
   const snapshot = loaded.data.snapshot;

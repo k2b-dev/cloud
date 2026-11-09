@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { browserName, launchBrowser, settled } from "../../test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -115,7 +115,7 @@ for (const theme of ["light", "dark"]) {
         await page.keyboard.press("Tab");
         expect(await row.evaluate((e) => e === document.activeElement && e.matches(":focus-visible"))).toBe(true);
         await paintedRing(page, row);
-        await row.locator("td").first().hover();
+        await hoverInPlace(row.locator("td").first());
         await paintedRing(page, row);
         await page.keyboard.press("Enter");
         expect(await row.getAttribute("data-selected")).toBe("true");

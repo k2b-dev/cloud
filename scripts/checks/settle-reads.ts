@@ -28,6 +28,8 @@ const actions = new Set([
   "setViewportSize",
   "newPage",
 ]);
+/** Shared helpers from packages/ui/test/browser.ts that act like the Playwright call they replace. */
+const actionHelpers = new Set(["hoverInPlace"]);
 const settles = new Set(["settled", "waitForFunction", "waitFor", "keptThrough", "mostAtOnce"]);
 const readApis = new Set(["getComputedStyle", "getBoundingClientRect", "getClientRects", "checkVisibility", "elementFromPoint"]);
 const devices = new Set(["mouse", "keyboard", "touchscreen"]);
@@ -171,7 +173,7 @@ export const checkSettleReadsSource = (file: string, source: string): Finding[] 
         (propertyCall && name === "poll" && ts.isIdentifier(callee.expression) && callee.expression.text === "expect")
       ) {
         if (joined(call)) events.push({ kind: "settle", call });
-      } else if ((propertyCall && name && actions.has(name)) || deviceCall(callee)) {
+      } else if ((propertyCall && name && actions.has(name)) || (!helper && name && actionHelpers.has(name)) || deviceCall(callee)) {
         events.push({ kind: "action", call });
       } else if (summary?.end === "action" || (summary?.end === "settle" && joined(call))) {
         events.push({ kind: summary.end, call });

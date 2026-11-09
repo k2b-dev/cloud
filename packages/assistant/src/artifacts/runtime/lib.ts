@@ -21,9 +21,13 @@ import {
   funnelLayout,
   hbarLayout,
   isChartDatum,
-  line,
+  lineBase,
+  lineDetailsEnabled,
   pie,
-  renderBarChartSvg,
+  renderBarBaseSvg,
+  sankeyFrame,
+  sankeyWidth,
+  seriesBarLayout,
   sparkline,
   stat,
   waterfallLayout,
@@ -81,6 +85,10 @@ for (const option of ChartSchema.options) {
     for (const value of "options" in kind ? kind.options : kind.values) appChartKinds.add(value);
   }
 }
+/** Dot matrices share the portable bar kind but load only their own drawing part. */
+export const chartRendererKind = (input: CloudAiChartInput): string =>
+  input.kind === "bar" && input.marks === "dots" ? "dots" : input.kind;
+
 /** Inspection accepts exactly the same kinds as the app's portable chart schema. */
 export const isAppChartKind = (value: string | null): value is CloudAiChartInput["kind"] => value !== null && appChartKinds.has(value);
 
@@ -121,11 +129,15 @@ function drawChart(
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);
-        svg = renderBarChartSvg({ ...mapped, ...common, height: layout.layout === "rows" ? layout.height : (options.height ?? height) });
+        const drawing = { ...common, height: layout.layout === "rows" ? layout.height : (options.height ?? height) };
+        svg =
+          mapped.marks === "dots"
+            ? rareChartSvg({ ...mapped, kind: "dots" }, { ...drawing, dotLayout: seriesBarLayout({ ...mapped, ...drawing }, drawing) })
+            : renderBarBaseSvg({ ...mapped, ...drawing });
         break;
       }
       case "line":
-        svg = line({ ...mapped, ...common });
+        svg = lineDetailsEnabled(mapped) ? rareChartSvg(mapped, common, locale) : lineBase({ ...mapped, ...common });
         break;
       case "pie":
         svg = pie({ ...mapped, ...common });
@@ -140,7 +152,7 @@ function drawChart(
         svg = sparkline({ ...mapped, ...common });
         break;
       default:
-        svg = rareChartSvg(mapped, common);
+        svg = rareChartSvg(mapped, common, locale);
     }
     if (svg === undefined) return { svg, table: { columns: [], rows: [] } };
     // Walk marks in emitted order, exactly as the chat builds its table and tooltips.
@@ -165,7 +177,7 @@ function drawChart(
           opening = opening.replace(/ data-chart-datum="[^"]*"/, () => ` data-chart-datum="${escapeXml(JSON.stringify(datum))}"`);
         }
         const row = rows.add(datum);
-        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input.kind);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input);
         const text = [tooltip.title, ...tooltip.rows.map((row) => `${row.label}: ${row.value}`)].filter(Boolean).join(" · ");
         // Single-quoted XML attributes keep compact JSON quotes literal, saving space on dense charts.
         const encodedTooltip = escapeXml(JSON.stringify(tooltip)).replace(/&quot;/g, '"');
@@ -244,13 +256,24 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const { svg, table } = drawChart(prepared, locale, width, height);
   if (svg === undefined && !deferChartDrawing) throw new CloudError("invalid", "cloud.chart: The chart renderer returned no SVG.");
   // Bar rows take the height their labels need; the box reserves it.
+  const sankey = input.kind === "sankey";
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
   // CSS fits identical geometry before and after the lazy renderer arrives.
   const calendarSize = calendar ? pendingCalendarSize(prepared, locale, width, height) : undefined;
   const drawnHeight =
-    calendarSize?.height ??
-    (Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height));
-  const calendarWidth = calendarSize?.width ?? width;
+    input.kind === "sankey"
+      ? sankeyFrame({
+          nodes: input.nodes,
+          links: input.links,
+          legend: input.legend,
+          width,
+          height,
+          title: prepared.title,
+          subtitle: input.subtitle,
+        }).height
+      : (calendarSize?.height ??
+        (Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height)));
+  const calendarWidth = input.kind === "sankey" ? sankeyWidth(input, width) : (calendarSize?.width ?? width);
   const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = prepared.title ?? "";
   const subtitle = input.subtitle ?? "";
@@ -274,20 +297,29 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;display:flex;flex-direction:row-reverse;align-items:flex-start"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;flex:0 0 100%;margin-right:auto;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;display:flex;flex-direction:row-reverse;align-items:flex-start"' : sankey ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;flex:0 0 100%;margin-right:auto;` : sankey ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
 }
 
 /** Reserve horizontal rows before the offline renderer arrives. */
 export function pendingChartHeight(prepared: StoredChart, locale: string, width: number, height: number): number {
-  if (prepared.input.kind !== "hbar") return height;
+  if (prepared.input.kind !== "hbar" && prepared.input.kind !== "bar") return height;
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, {
     width,
     formats: { x: prepared.xFormat, y: prepared.yFormat, value: prepared.format },
   });
+  if (mapped.kind === "bar") {
+    const layout = barChartLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, width);
+    return layout.layout === "rows" ? layout.height : height;
+  }
   return mapped.kind === "hbar"
     ? hbarLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, { width, height }).height
     : height;
+}
+
+/** Reserve Sankey scrolling geometry before its renderer arrives. */
+export function pendingChartWidth(prepared: StoredChart, width: number): number {
+  return prepared.input.kind === "sankey" ? sankeyWidth(prepared.input, width) : width;
 }
 
 /** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
@@ -313,7 +345,7 @@ export async function resolveChartHtml(content: string, locale: string): Promise
     ids.map((id) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
-      return loadChartRenderer(options.input.kind);
+      return loadChartRenderer(chartRendererKind(options.input));
     }),
   );
   return content.replace(pendingMarkup, (markup, id: string) => {

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The edge contract: every field keeps a 2 px edge in every state, drawn
 // inside its box, so the outer box and the text never move. States change the
@@ -258,7 +258,9 @@ describe("field edge contract in the browser", () => {
 
 // Filters share the field edge as a pure inset (no border); an active filter
 // takes the selected edge and fill. Secondary buttons and clickable cards keep
-// a light 1 px border in every state and change only their fill.
+// a light 1 px border in every state and change only their fill. The card sits
+// in a flat layer here: in the main content a clickable card is an island with
+// the island shadow (elevation.browser.test.ts), which no state changes.
 const controlsEntry = resolve(import.meta.dir, "control-edge-controls.fixture.ts");
 const controlsFixture = `
 import { createComponent, render } from "solid-js/web";
@@ -266,6 +268,7 @@ import { Button, FilterChip, FilterToggle, Paper, SegmentedControl, Tabs, ViewTa
 const cell = (name, make) => {
   const node = document.createElement("div");
   node.dataset.control = name;
+  node.dataset.k2bLayer = "flat";
   node.style.cssText = "width:260px";
   render(make, node);
   return node;
@@ -359,7 +362,8 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
                 borderColor: rgba(style.borderTopColor),
                 inset: Number(inset[0]?.match(/(-?[\d.]+)px\s+inset/)?.[1] ?? 0),
                 insetColor: color ? rgba(color) : undefined,
-                drop: shadows.filter((part) => !part.includes("inset")),
+                // A transparent no-op layer (the flat island hook) paints nothing.
+                drop: shadows.filter((part) => !part.includes("inset") && part !== "rgba(0, 0, 0, 0) 0px 0px 0px 0px"),
                 background: rgba(style.backgroundColor),
               };
             });
@@ -405,7 +409,7 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               await page.mouse.move(5, 890);
               await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
               if (state === "focus") await element.evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
-              if (state === "hover") await element.hover();
+              if (state === "hover") await hoverInPlace(element);
               await settled(page);
               seen[state] = await measure(element);
               if (shots) {

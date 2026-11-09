@@ -83,6 +83,8 @@ const renderReader = (
     toolbarActions?: Array<"reply" | "reply_all" | "trash" | "spam" | "keep">;
     readingFormat?: "automatic" | "html" | "plain";
     theme?: "light" | "dark" | null;
+    workStatus?: "needs_action" | "waiting" | "done" | null;
+    assignment?: { assigned: boolean; others: string[] } | null;
   } = {},
 ) => {
   const messages = options.messages ?? [message];
@@ -130,8 +132,8 @@ const renderReader = (
       onUndoAutomation: () => undefined,
       onAssignConversation: () => undefined,
       onAssignConversationToMe: () => undefined,
-      assignment: null,
-      workStatus: null,
+      assignment: options.assignment ?? null,
+      workStatus: options.workStatus ?? null,
       completionPending: false,
       onSetCompletion: () => undefined,
       respondRequest: null,
@@ -211,13 +213,12 @@ describe("Mail conversation reader", () => {
     expect(html).not.toContain("View as plain text");
   });
 
-  test("marks Reply when the conversation has a draft without rendering a header CTA", () => {
+  test("marks Reply in the pill when the conversation has a draft without rendering a header CTA", () => {
     const html = renderReader([draft]);
 
+    expect(html).toContain("data-mail-reply-pill");
     expect(html).toContain('data-mail-toolbar-action="reply"');
     expect(html).toContain('aria-label="Reply, draft available"');
-    expect(html).toContain("data-mail-draft-label");
-    expect(html).toContain("Draft available");
     expect(html).toContain("data-mail-draft-indicator");
     expect(html).not.toContain("Continue draft");
   });
@@ -333,8 +334,39 @@ describe("Mail conversation reader", () => {
     };
     const html = renderReader([], { messages: [groupMessage] });
 
-    expect(html).toContain('data-mail-toolbar-action="reply_all"');
+    // Reply all is a pill action with its label while the row has room.
     expect(html).toContain('aria-label="Reply all"');
+    expect(html).toMatch(/class="k2b-toolbar__text"[^>]*>Reply all</);
+  });
+
+  test("the pill holds Reply, Reply all, Forward | Done, Assign in a shared mailbox and no Archive", () => {
+    const groupMessage = { ...message, cc: [{ name: "Stakeholder", address: "stakeholder@example.com" }] };
+    const html = renderReader([], {
+      messages: [groupMessage],
+      workStatus: "needs_action",
+      assignment: { assigned: false, others: ["Jana Berger"] },
+    });
+    const pill = html.slice(html.indexOf("data-mail-reply-pill"), html.indexOf("data-mail-conversation-messages"));
+    const names = [...pill.matchAll(/aria-label="([^"]+)"/g)].map((match) => match[1]);
+    expect(names.filter((name) => name !== "More actions" && name !== "Conversation actions")).toEqual([
+      "Reply",
+      "Reply all",
+      "Forward",
+      "Mark as done",
+      "Assign",
+    ]);
+    expect(pill).not.toContain("Archive");
+    // The head names who is responsible as a status chip, not a button.
+    expect(html).toContain("mail-reader-assignees");
+    expect(html).toContain("Jana Berger");
+  });
+
+  test("the pill has four buttons in a personal mailbox", () => {
+    const groupMessage = { ...message, cc: [{ name: "Stakeholder", address: "stakeholder@example.com" }] };
+    const html = renderReader([], { messages: [groupMessage], workStatus: "needs_action", assignment: null });
+    const pill = html.slice(html.indexOf("data-mail-reply-pill"), html.indexOf("data-mail-conversation-messages"));
+    expect(pill).not.toContain('aria-label="Assign"');
+    expect(html).not.toContain("mail-reader-assignees");
   });
 
   test("keeps an expanded older message body outside the muted header surface", () => {

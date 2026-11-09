@@ -10,6 +10,7 @@ import { localizeMailError } from "./error-messages";
 const content: DraftEditableContent = {
   senderIdentityId: "Sender",
   signatureTemplateId: null,
+  quoteSource: null,
   to: [{ address: "customer@example.test" }],
   cc: [],
   bcc: [],

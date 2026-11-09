@@ -35,6 +35,7 @@ const refused = (result: Result<unknown>) => {
 const editable = (draft: DraftEditableContent): DraftEditableContent => ({
   senderIdentityId: draft.senderIdentityId,
   signatureTemplateId: draft.signatureTemplateId,
+  quoteSource: draft.quoteSource,
   to: draft.to,
   cc: draft.cc,
   bcc: draft.bcc,
@@ -78,6 +79,7 @@ suite("Mail service-account suggestions", () => {
   const input = (thread: Awaited<ReturnType<typeof conversation>>, body = "Suggested reply") => ({
     senderIdentityId: identityId,
     signatureTemplateId: null,
+    quoteSource: null,
     conversationId: thread.id,
     sourceMessageId: thread.messageId,
     intent: "reply" as const,

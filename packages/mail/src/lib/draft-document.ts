@@ -20,6 +20,7 @@ export const normalizeDraftDocumentContent = (input: DraftEditableContent): Draf
 const settingKeys = [
   "senderIdentityId",
   "signatureTemplateId",
+  "quoteSource",
   "format",
   "priority",
   "requestDeliveryReceipt",
@@ -48,6 +49,7 @@ const recipientEntries = (content: DraftEditableContent) => {
 const settingsOf = (content: DraftEditableContent) => ({
   senderIdentityId: content.senderIdentityId,
   signatureTemplateId: content.signatureTemplateId ?? null,
+  quoteSource: content.quoteSource,
   format: content.format,
   priority: content.priority,
   requestDeliveryReceipt: content.requestDeliveryReceipt,
@@ -104,7 +106,14 @@ const writeHeaders = (doc: Y.Doc, before: DraftEditableContent | null, next: Dra
   const previousSettings = before && settingsOf(before);
   const nextSettings = settingsOf(next);
   for (const key of settingKeys) {
-    if (!previousSettings || previousSettings[key] !== nextSettings[key]) settings.set(key, nextSettings[key]);
+    // Keep deterministic legacy seed item IDs unchanged while quoting is off.
+    if (key === "quoteSource" && !settings.has(key) && !nextSettings[key]) continue;
+    const unchanged =
+      previousSettings &&
+      (key === "quoteSource"
+        ? JSON.stringify(previousSettings[key]) === JSON.stringify(nextSettings[key])
+        : previousSettings[key] === nextSettings[key]);
+    if (!unchanged) settings.set(key, nextSettings[key]);
   }
   const recipients = doc.getMap<Y.Map<unknown>>(RECIPIENTS);
   const previous = before ? recipientEntries(before) : new Map<string, z.infer<typeof recipientSchema>>();

@@ -3,6 +3,7 @@ import {
   Chart,
   ChartExplorer,
   type ChartFrameRequest,
+  type ChartSnapshot,
   ChartSnapshotView,
   createDataTableView,
   DashboardFrame,
@@ -97,50 +98,60 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
     columns: () => Parameters<typeof ChartExplorer<DescriptionRow>>[0]["columns"],
     chart: () => JSX.Element,
     legend?: () => Parameters<typeof ChartExplorer<DescriptionRow>>[0]["legend"],
-  ) => (
-    <DashboardFrame width={props.width}>
-      <ChartExplorer<DescriptionRow>
-        title={title()}
-        headingLevel={props.headingLevel ?? 3}
-        description={subtitle()}
-        height={calendar() ? undefined : height()}
-        inset="1rem"
-        renderDetails={false}
-        view={props.view}
-        onViewChange={props.onViewChange}
-        request={requests[state()]}
-        asOf={props.asOf}
-        onRetry={props.onRetry}
-        empty={empty()}
-        data={{
-          ...(calendar() ? { chart: withContent(state()) ? calendar() : { ...calendar()!, marks: [] } } : {}),
-          rows: withContent(state()) ? rows() : [],
-        }}
-        columns={columns()}
-        legend={legend?.()}
-      >
-        {chart()}
-      </ChartExplorer>
-    </DashboardFrame>
-  );
+    prepared?: () => ChartSnapshot | undefined,
+  ) => {
+    const data = () => {
+      const currentRows = withContent(state()) ? rows() : [];
+      const drawn = calendar();
+      if (drawn) return { chart: withContent(state()) ? drawn : { ...drawn, marks: [] }, rows: currentRows };
+      const chart = withContent(state()) ? prepared?.() : undefined;
+      return chart ? { chart, rows: currentRows } : { rows: currentRows };
+    };
+    return (
+      <DashboardFrame width={props.width}>
+        <ChartExplorer<DescriptionRow>
+          title={title()}
+          headingLevel={props.headingLevel ?? 3}
+          description={subtitle()}
+          height={calendar() ? undefined : height()}
+          inset="1rem"
+          renderDetails={false}
+          view={props.view}
+          onViewChange={props.onViewChange}
+          request={requests[state()]}
+          asOf={props.asOf}
+          onRetry={props.onRetry}
+          empty={empty()}
+          data={data()}
+          columns={columns()}
+          legend={legend?.()}
+        >
+          {chart()}
+        </ChartExplorer>
+      </DashboardFrame>
+    );
+  };
   return (
     <Switch>
       <Match when={drawing().mode === "snapshot" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "snapshot" }>)}>
-        {(snapshot) =>
-          explorer(
+        {(snapshot) => {
+          const detailedLine = () => snapshot().snapshot.kind === "line" && snapshot().snapshot.svg.includes("data-line-details");
+          return explorer(
             () => snapshot().rows,
             () => snapshot().columns,
-            () => (
-              <ChartSnapshotView
-                snapshot={snapshot().snapshot}
-                selectedKey={null}
-                onSelect={() => {}}
-                style={snapshot().legend.length ? undefined : { height: "100%" }}
-              />
-            ),
+            () =>
+              detailedLine() ? null : (
+                <ChartSnapshotView
+                  snapshot={snapshot().snapshot}
+                  selectedKey={null}
+                  onSelect={() => {}}
+                  style={snapshot().legend.length ? undefined : { height: "100%" }}
+                />
+              ),
             () => snapshot().legend,
-          )
-        }
+            () => (detailedLine() ? snapshot().snapshot : undefined),
+          );
+        }}
       </Match>
       <Match when={drawing().mode === "live" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "live" }>)}>
         {(live) =>

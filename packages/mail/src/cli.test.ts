@@ -1092,6 +1092,7 @@ test("compose rendering commands send one validated draft context", async () => 
   };
   const validatedDraft = {
     ...draft,
+    quoteSource: null,
     priority: "normal",
     requestDeliveryReceipt: false,
     requestReadReceipt: false,
@@ -1159,7 +1160,7 @@ test("compose rendering commands send one validated draft context", async () => 
     },
     {
       path: `/api/mail/mailboxes/${MAILBOX_ID}/compose-preview`,
-      body: { draft: validatedDraft, conversationId: CONVERSATION_ID },
+      body: { draft: validatedDraft, conversationId: CONVERSATION_ID, sourceMessageId: null },
     },
   ]);
   expect(JSON.parse(snippet.stdout)).toEqual({ markdown: "Rendered snippet" });
@@ -6359,4 +6360,36 @@ test("Mail export rejects --all with an explicit mailbox before calling the serv
   const result = await runCli(server.url.origin, ["mail", "automation", "export", "--all", "--mailbox", "Support"]);
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).toContain("Use either --mailbox or --all");
+});
+
+test("draft create and update carry the explicit quote choice", async () => {
+  const bodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    bodies.push(await request.json());
+    return api(draftFixture());
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  for (const command of [["create"], ["update", DRAFT_ID, "--revision", "1"]]) {
+    const base = ["--json", "mail", "draft", ...command, "--mailbox", MAILBOX_ID, "--identity", IDENTITY_ID, "--body", "Reply"];
+    for (const choice of ["--quote", "--no-quote"]) {
+      const result = await runCli(origin, [
+        "--locale",
+        "de-CH",
+        ...base,
+        choice,
+        ...(choice === "--quote" ? ["--quote-time-zone", "Europe/Berlin"] : []),
+      ]);
+      expect(result.exitCode, result.stderr).toBe(0);
+    }
+    const conflict = await runCli(origin, [...base, "--quote", "--no-quote"]);
+    expect(conflict.exitCode).toBe(1);
+    expect(conflict.stderr).toContain("Use either --quote or --no-quote.");
+  }
+  expect(bodies).toEqual([
+    expect.objectContaining({ quoteSource: { locale: "de", timeZone: "Europe/Berlin" } }),
+    expect.objectContaining({ quoteSource: null }),
+    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: { locale: "de", timeZone: "Europe/Berlin" } }) }),
+    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: null }) }),
+  ]);
 });

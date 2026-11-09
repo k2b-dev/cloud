@@ -28,7 +28,8 @@
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
-  box-shadow: inset 0 1px 2px rgb(9 9 11 / 0.05);
+  /* A control casts and sinks no shadow (Linie B); its border is its edge. */
+  box-shadow: none;
   /* Cloud's `.ac-editor` carries `@apply transition-colors`. The port dropped it
      but kept the reduced-motion guard below, so hover and focus border changes
      snapped instantly. */
@@ -49,7 +50,7 @@
   border-color: var(--k2b-focus-ring);
   outline: none;
   background: var(--k2b-surface);
-  box-shadow: inset 0 1px 2px rgb(9 9 11 / 0.05);
+  box-shadow: none;
 }
 
 .k2b-ui .k2b-autocomplete[data-single-line="true"] {

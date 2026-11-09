@@ -54,6 +54,7 @@ const buildCss = async (entry: string): Promise<string> => {
 const NOW = Date.UTC(2026, 9, 1, 10, 30);
 const at = (minutesAgo: number) => new Date(Date.UTC(2026, 9, 1, 10, 0) - minutesAgo * 60_000).toISOString();
 const item = (index: number, overrides: Partial<MailListItem> = {}): MailListItem => ({
+  drafts: { count: 0, editors: [] },
   id: `Cv${String(index).padStart(4, "0")}`,
   conversationId: `Cv${String(index).padStart(4, "0")}`,
   selectionKind: "conversation",
@@ -896,7 +897,7 @@ describe("Mail quick look", () => {
   }, 30_000);
 
   for (const theme of ["light", "dark"] as const) {
-    test(`uses the plain surface with inner depth only in the ${theme} theme`, async () => {
+    test(`uses the plain surface with an outer float shadow and no inner shade in the ${theme} theme`, async () => {
       const page = await load({ theme });
       try {
         await pointAt(page, row("Cv0000"));
@@ -907,7 +908,8 @@ describe("Mail quick look", () => {
           return { background: surface.backgroundColor, shadow: surface.boxShadow };
         });
         expect(style.background).toBe(theme === "light" ? "rgb(255, 255, 255)" : "rgb(17, 21, 27)");
-        for (const shadow of style.shadow.split(/,(?![^(]*\))/u)) expect(shadow).toContain("inset");
+        expect(style.shadow).not.toBe("none");
+        expect(style.shadow).not.toContain("inset");
         expect(page.errors).toEqual([]);
       } finally {
         await close(page);

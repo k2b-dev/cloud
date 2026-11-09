@@ -537,7 +537,7 @@ describe("HoverPreview", () => {
     ["light", "rgb(255, 255, 255)"],
     ["dark", "rgb(24, 29, 36)"],
   ] as const) {
-    test(`in the ${theme} theme the card is a plain surface with inner depth only`, async () => {
+    test(`in the ${theme} theme the card floats with an outer shadow and no inner shade`, async () => {
       const page = await load(desktop, theme);
       try {
         const before = await layout(page);
@@ -551,7 +551,8 @@ describe("HoverPreview", () => {
         expect(style.borderTopWidth).toBe("1px");
         const shadows = style.boxShadow.match(/rgba?\(/g)?.length ?? 0;
         expect(shadows).toBeGreaterThan(0);
-        expect(style.boxShadow.match(/inset/g)?.length).toBe(shadows);
+        // Layer 3: the float shadow lies outside; a dark inner shade as a fade is never used.
+        expect(style.boxShadow).not.toContain("inset");
         expect(await layout(page)).toEqual(before);
       } finally {
         await close(page);

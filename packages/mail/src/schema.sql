@@ -1136,6 +1136,9 @@ CREATE TABLE mail.drafts (
     derivation_request_hash text,
     materialization_key text,
     materialization_request_hash text,
+    quote_source boolean DEFAULT false NOT NULL,
+    quote_locale text DEFAULT 'en' NOT NULL,
+    quote_time_zone text DEFAULT 'UTC' NOT NULL,
     CONSTRAINT drafts_actor_shape_check CHECK ((((author_kind = 'system'::text) AND (author_id IS NULL)) OR ((author_kind <> 'system'::text) AND (author_id IS NOT NULL)))),
     CONSTRAINT drafts_author_kind_check CHECK ((author_kind = ANY (ARRAY['user'::text, 'service_account'::text, 'workflow'::text, 'system'::text]))),
     CONSTRAINT drafts_automatic_reply_origin_check CHECK (((delivery_class <> 'automatic_reply'::text) OR (origin = 'workflow'::text))),
@@ -1170,6 +1173,8 @@ CREATE INDEX drafts_derived_message_idx ON mail.drafts USING btree (mailbox_id, 
 CREATE INDEX drafts_mailbox_state_idx ON mail.drafts USING btree (mailbox_id, state, updated_at DESC);
 
 CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING btree (mailbox_id, author_kind, author_id, materialization_key) WHERE (materialization_key IS NOT NULL);
+
+CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
 
 CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
 WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL;

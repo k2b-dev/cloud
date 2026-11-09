@@ -119,15 +119,15 @@ describe("source-faithful editor SSR contracts", () => {
     expect(editorCss).toContain('.k2b-ui .k2b-autocomplete[data-single-line="true"]');
   });
 
-  test("keeps the recessed autocomplete well while focused", async () => {
+  test("draws the autocomplete as a flat control: focus changes the edge, no inner shade", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../../styles/editors-parity.css")).text();
     const focusRules = [...css.matchAll(/\.k2b-ui \.k2b-autocomplete:focus-within \{([^}]*)\}/g)].map((match) => match[1] ?? "");
 
     expect(focusRules).toHaveLength(1);
     for (const rule of focusRules) {
       expect(rule).toContain("border-color: var(--k2b-focus-ring)");
-      expect(rule).not.toMatch(/box-shadow:\s*none/);
-      expect(rule).toMatch(/box-shadow:\s*inset/);
+      // Controls cast and sink no shadow (layers and shadows, Linie B).
+      expect(rule).toMatch(/box-shadow:\s*none/);
     }
   });
 
