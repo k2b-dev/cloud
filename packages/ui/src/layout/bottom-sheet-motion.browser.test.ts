@@ -185,11 +185,13 @@ describe("BottomSheet motion on a phone", () => {
       await page.keyboard.press("ArrowDown");
       await settled(page);
       expect(await place(page)).toMatchObject({ visible: 422, detent: "half", footerBottom: 844 });
-      // The wheel in the list at half height grows the sheet first.
-      const list = (await page.locator("[data-list]").boundingBox())!;
-      await page.mouse.move(list.x + 50, 600);
-      await page.mouse.wheel(0, 120);
-      await page.waitForFunction(() => document.querySelector<HTMLElement>("dialog[open]")?.dataset.sheetDetent === "full");
+      // The wheel in the list at half height grows the sheet first. WebKit's phone emulation sends no wheel events.
+      if (browserName === "chromium") {
+        const list = (await page.locator("[data-list]").boundingBox())!;
+        await page.mouse.move(list.x + 50, 600);
+        await page.mouse.wheel(0, 120);
+        await page.waitForFunction(() => document.querySelector<HTMLElement>("dialog[open]")?.dataset.sheetDetent === "full");
+      }
     } finally {
       await page.context().close();
     }
