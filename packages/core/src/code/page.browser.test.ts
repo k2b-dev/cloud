@@ -587,8 +587,21 @@ describe("Code page in a browser", () => {
       await items.getByRole("button", { name: "Count" }).click();
       expect(await items.getByRole("row").nth(1).innerText()).toContain("Bicycle");
       await page.getByLabel("Title", { exact: true }).fill("Typed");
+      // The field holds the scan by the time the scanner leaves the page, not only once its history entry is gone.
+      await page.evaluate(() => {
+        const seen = window as unknown as { valueWhenScannerLeft?: string };
+        let opened = false;
+        const observer = new MutationObserver(() => {
+          if (document.querySelector('[role="dialog"]')) opened = true;
+          if (!opened || document.querySelector('[role="dialog"]')) return;
+          seen.valueWhenScannerLeft = document.querySelector<HTMLInputElement>('input[name="barcode"]')!.value;
+          observer.disconnect();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
       await page.getByRole("button", { name: "Scan", exact: true }).click();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
+      expect(await page.evaluate(() => (window as unknown as { valueWhenScannerLeft?: string }).valueWhenScannerLeft)).toBe("W-42");
       expect(await page.locator('input[name="barcode"]').inputValue()).toBe("W-42");
       // Closing the scanner leaves its history entry at the same address: nothing loads and nothing is sent.
       await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
