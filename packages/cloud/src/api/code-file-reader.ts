@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { getCapability } from "../_internal/registry";
+import { CapabilityStreamSizeError } from "../capabilities/stream-body";
 import { CodeBridgeRefusal } from "../code/bridge-contract";
 import { type CodeFileRefSchema, codeFileBinding } from "../code/file-ref";
 import type { CodeRunTokenClaims } from "../code/run-token";
@@ -85,6 +86,10 @@ export async function readCodeAiFile(input: {
         if (size !== ref.size) throw new CodeBridgeRefusal("code_file_size_mismatch");
         bytes = Buffer.concat(chunks, size);
         return Response.json({ ok: true, data: null });
+      } catch (error) {
+        if (error instanceof CapabilityStreamSizeError)
+          throw new CodeBridgeRefusal(error.reason === "overflow" ? "code_file_size_limit" : "code_file_size_mismatch");
+        throw error;
       } finally {
         await reader.cancel().catch(() => undefined);
         reader.releaseLock();

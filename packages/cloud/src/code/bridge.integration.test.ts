@@ -1621,6 +1621,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     let targetBytes = 0;
     let offerSize = payload.length;
     let sourceExtraByte = false;
+    let sourceMissingByte = false;
     let revokeAtWrite = false;
     let sourceLifetimeMs = 240_000;
     const published = new Set<string>();
@@ -1738,7 +1739,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               new TransformStream({
                 transform(chunk, controller) {
                   sourceBytes += chunk.byteLength;
-                  controller.enqueue(chunk);
+                  if (sourceMissingByte && chunk.byteLength > 0) {
+                    sourceMissingByte = false;
+                    controller.enqueue(chunk.subarray(1));
+                  } else controller.enqueue(chunk);
                 },
                 flush(controller) {
                   if (sourceExtraByte) controller.enqueue(new Uint8Array([1]));
@@ -1823,6 +1827,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       },
       extraByte: () => {
         sourceExtraByte = true;
+      },
+      missingByte: () => {
+        sourceMissingByte = true;
       },
       revokeAtWrite: () => {
         revokeAtWrite = true;
@@ -1995,7 +2002,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(Object.assign(transport, { preconnect: globalThis.fetch.preconnect }));
     try {
       const response = await send({
-        entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+        entry: {
+          ...baseEntry,
+          appId: "core",
+          manifest: decisionCompiled.manifest,
+          endpoint: "http://core.test/api/_internal/capabilities/v1",
+        },
         operation: "core.ai.generate",
         input: {
           call: {
@@ -2102,6 +2114,12 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const fresh = await fixture.read();
     callLimit = 1;
     await expect(aiRead(fresh.data)).rejects.toMatchObject({ code: "code_call_limit" });
+  }, 30_000);
+  test("AI file reader rejects an incomplete owning-app stream with a visible size error", async () => {
+    const fixture = await fileFixture();
+    const opened = await fixture.read();
+    fixture.missingByte();
+    await expect(aiRead(opened.data)).rejects.toMatchObject({ code: "code_file_size_mismatch", status: 400 });
   }, 30_000);
   test("AI SDK tools use the exact direct-call policy, approval, target, account and durable call log", async () => {
     const invoke = async (capability: string) => {

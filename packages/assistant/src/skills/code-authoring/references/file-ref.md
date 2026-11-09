@@ -67,7 +67,8 @@ transfer but does not undo a publication the target already committed.
 | Code | Meaning |
 | --- | --- |
 | `code_file_invalid` | The `file` is not a live reference from this run, has expired, or its name, media type or size were changed |
-| `code_file_size_limit` | The file is larger than the target accepts |
+| `code_file_size_limit` | The file is larger than the target accepts, or its AI read exceeds the declared size (400) |
+| `code_file_size_mismatch` | An AI read ended before the declared size (400); obtain a fresh reference before trying again |
 | `code_file_spent` | The reference was already used |
 | `code_stream_forbidden`, `code_stream` | The Action has a write stream without a `file` input |
 | `code_test_invalid_input`, `code_test_invalid_fixture` | In tests: the `file` or the mocked FileRef does not match, or exceeds the stream limit |

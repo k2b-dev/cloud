@@ -1169,6 +1169,9 @@ load. The owning app reads as the run's account and can refuse with a visible
 403 or 404. A refusal while attaching initial files rejects the SDK call as
 `CodeError` with that status. Viewer refusals are shown to the model. Both
 initial files and viewers use one reader.
+If a source sends more bytes than its FileRef declares, the reader refuses
+with `code_file_size_limit` (400). An incomplete file produces
+`code_file_size_mismatch` (400).
 
 Models with vision receive image pixels and rendered PDF pages directly.
 Text-only models use a separately charged vision description. Each PDF look
