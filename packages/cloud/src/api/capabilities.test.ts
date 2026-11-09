@@ -2359,7 +2359,7 @@ test.each(["all pages", "call limit"])("generated Code queries walk envelope cur
         return result.data;
       },
     });
-    const list = loaded.demo.app().list;
+    const list = loaded.demo.list;
     const walk = async () => {
       let cursor: string | undefined;
       const items: string[] = [];

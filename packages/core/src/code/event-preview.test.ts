@@ -97,13 +97,13 @@ test("Mail preview invokes its real SDK app.on handler through the simulator and
           bridge.begin();
           const runtime: {
             app: { on(type: string, handler: (event: AppEventEnvelope) => Promise<void>): void };
-            mail: { app(): { message: { read(input: object): Promise<{ data: typeof message }> } } };
+            mail: { message: { read(input: object): Promise<{ data: typeof message }> } };
             owner: { conversation: { mark(input: object): Promise<void> } };
             __codeSdk: { bind(bridge: CodeSdkBridge): void; run(entrypoint: string, input: unknown): Promise<unknown> };
           } = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
           runtime.__codeSdk.bind({ call: (operation, input) => bridge.call(operation, z.json().parse(input)) });
           runtime.app.on(event.type, async (received) => {
-            const { data: read } = await runtime.mail.app().message.read({ id: received.subject.id });
+            const { data: read } = await runtime.mail.message.read({ id: received.subject.id });
             expect(read.text).toBe(message.text);
             await runtime.owner.conversation.mark({
               target: { conversationId: read.conversationId, sourceFolderId: "Fol123" },

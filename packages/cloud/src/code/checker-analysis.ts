@@ -6,7 +6,7 @@ import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeCronSchedule } from "../shared/cron-schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
-import { codeSdkPhaseDiagnostic } from "./types";
+import { type CodeSdkOperation, codeSdkPhaseDiagnostic } from "./types";
 
 export type CodeAnalysis = {
   diagnostics: CodeCheckDiagnostic[];
@@ -116,7 +116,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     let base = unparen(node);
     while (ts.isPropertyAccessExpression(base) || ts.isElementAccessExpression(base)) {
       if (handle(base)) break;
-      const names = ts.isPropertyAccessExpression(base) ? [base.name.text] : base.argumentExpression && literals(base.argumentExpression);
+      const names = ts.isPropertyAccessExpression(base)
+        ? [base.name.text]
+        : base.argumentExpression && ts.isStringLiteralLike(base.argumentExpression)
+          ? [base.argumentExpression.text]
+          : null;
       if (!names || names.length !== 1) break;
       path.unshift(names[0]!);
       base = unparen(base.expression);
@@ -125,6 +129,151 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   }
   const signatureInSdk = (node: ts.CallExpression) =>
     checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
+  // Bind calls to declarations from this generated SDK, including namespace aliases and
+  // callable factory/method intersections. Spelling alone must never identify a factory.
+  const appOperations = new Map<ts.Node, CodeSdkOperation>();
+  const sdkNamespaces = new Set<ts.Type>();
+  const factoryDeclarations = new Set<ts.Node>();
+  const sdkSource = program.getSourceFile(root + "sdk.d.ts")!;
+  const sdkSymbol = checker.getSymbolAtLocation(sdkSource)!;
+  const sdkExports = checker.getExportsOfModule(sdkSymbol);
+  const sdkMemberType = (exportName: string, path: string[]) => {
+    const exported = sdkExports.find((symbol) => symbol.name === exportName);
+    let type = exported && checker.getTypeOfSymbolAtLocation(exported, sdkSource);
+    for (const segment of path) type = type && propertyType(type, segment, sdkSource);
+    return type;
+  };
+  for (const spec of request.sdk.manifest.handles) {
+    if (spec.type === null) continue;
+    for (const signature of sdkMemberType(spec.exportName, spec.factoryPath)?.getCallSignatures() ?? []) {
+      if (signature.declaration) factoryDeclarations.add(signature.declaration);
+      for (const op of request.sdk.manifest.operations.filter((op) => op.target === spec.type)) {
+        let namespace: ts.Type | undefined = checker.getReturnTypeOfSignature(signature);
+        for (const segment of op.methodPath) {
+          if (namespace) sdkNamespaces.add(namespace);
+          namespace = namespace && propertyType(namespace, segment, sdkSource);
+        }
+      }
+    }
+  }
+  for (const op of request.sdk.manifest.operations) {
+    if (op.target !== null) continue;
+    const app = request.sdk.manifest.apps.find((app) => app.appId === op.appId)!;
+    const owner = request.sdk.manifest.owner;
+    const exports = owner?.kind === "app" && owner.appId === op.appId ? [app.exportName, "owner"] : [app.exportName];
+    for (const exportName of exports) {
+      for (let length = 0; length < op.methodPath.length; length++) {
+        const namespace = sdkMemberType(exportName, op.methodPath.slice(0, length));
+        if (namespace) sdkNamespaces.add(namespace);
+      }
+    }
+    for (const signature of sdkMemberType(app.exportName, op.methodPath)?.getCallSignatures() ?? [])
+      if (signature.declaration) appOperations.set(signature.declaration, op);
+  }
+  const sdkMemberAccess = (node: ts.Node, receiver: ts.Expression): boolean => {
+    if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
+    if (node.expression !== receiver) return false;
+    const names = ts.isPropertyAccessExpression(node)
+      ? [node.name.text]
+      : node.argumentExpression && ts.isStringLiteralLike(node.argumentExpression)
+        ? [node.argumentExpression.text]
+        : null;
+    if (!names || names.length !== 1) return false;
+    const property = checker.getPropertyOfType(checker.getTypeAtLocation(node.expression), names[0]!);
+    return !!property?.declarations?.length && property.declarations.every((declaration) => declaration.getSourceFile() === sdkSource);
+  };
+  const sdkHandle = (type: ts.Type) =>
+    type
+      .getProperties()
+      .some((property) =>
+        property.declarations?.some(
+          (declaration) =>
+            declaration.getSourceFile() === sdkSource &&
+            ts.isPropertySignature(declaration) &&
+            ts.isComputedPropertyName(declaration.name) &&
+            ts.isTypeLiteralNode(declaration.parent) &&
+            ts.isTypeAliasDeclaration(declaration.parent.parent) &&
+            declaration.parent.parent.name.text === "CodeHandle",
+        ),
+      );
+  // Include typed inputs containing handle refs: a local function with an SDK
+  // signature must not pass those refs on through a structurally erased wrapper.
+  function sdkValue(type: ts.Type, ancestors = new Set<ts.Type>()): boolean {
+    if (
+      sdkNamespaces.has(type) ||
+      sdkHandle(type) ||
+      type.getCallSignatures().some((signature) => signature.declaration && factoryDeclarations.has(signature.declaration))
+    )
+      return true;
+    if (ancestors.has(type)) return false;
+    ancestors.add(type);
+    const contains = type.isUnionOrIntersection()
+      ? type.types.some((part) => sdkValue(part, ancestors))
+      : type
+          .getProperties()
+          .some(
+            (property) =>
+              property.declarations?.some((declaration) => files.has(declaration.getSourceFile().fileName)) &&
+              sdkValue(checker.getTypeOfSymbolAtLocation(property, sdkSource), ancestors),
+          );
+    ancestors.delete(type);
+    return contains;
+  }
+  function sdkRefArgument(node: ts.Expression): boolean {
+    const contextual = checker.getContextualType(node);
+    if (!contextual || !sdkValue(contextual)) return false;
+    let argument: ts.Node = node;
+    while (true) {
+      const parent = argument.parent;
+      if (
+        (ts.isPropertyAssignment(parent) && parent.initializer === argument) ||
+        (ts.isShorthandPropertyAssignment(parent) && parent.name === argument)
+      ) {
+        argument = parent.parent;
+        continue;
+      }
+      return ts.isCallExpression(parent) && parent.arguments.some((value) => value === argument) && signatureInSdk(parent);
+    }
+  }
+  // SDK values may be direct receivers, inferred const aliases, or branded refs
+  // in an attributed SDK call. Other escapes can erase their declarations.
+  function checkNamespaceUse(node: ts.Expression) {
+    if (ts.isPartOfTypeNode(node) || !sdkValue(checker.getTypeAtLocation(node))) return;
+    // `typeof core.ai.generate` reads a type, without exposing a runtime namespace.
+    let typeName: ts.Node = node;
+    while (ts.isQualifiedName(typeName.parent)) typeName = typeName.parent;
+    if (ts.isTypeQueryNode(typeName.parent)) return;
+    const parent = node.parent;
+    if (
+      ts.isIdentifier(node) &&
+      (ts.isImportSpecifier(parent) ||
+        ts.isImportClause(parent) ||
+        ts.isExportSpecifier(parent) ||
+        (ts.isVariableDeclaration(parent) && parent.name === node) ||
+        (ts.isBindingElement(parent) && (parent.name === node || parent.propertyName === node)) ||
+        (ts.isParameter(parent) && parent.name === node) ||
+        (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+        (ts.isPropertyAssignment(parent) && parent.name === node))
+    )
+      return;
+    let wrapped = node;
+    while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
+    const use = wrapped.parent;
+    if (ts.isCallExpression(wrapped) && ts.isExpressionStatement(use)) {
+      const declaration = checker.getResolvedSignature(wrapped)?.declaration;
+      if (declaration && factoryDeclarations.has(declaration)) return;
+    }
+    if (sdkMemberAccess(use, wrapped) || (ts.isCallExpression(use) && use.expression === wrapped) || sdkRefArgument(wrapped)) return;
+    if (
+      ts.isVariableDeclaration(use) &&
+      use.initializer === wrapped &&
+      ts.isIdentifier(use.name) &&
+      !use.type &&
+      ts.getCombinedNodeFlags(use) & ts.NodeFlags.Const
+    )
+      return;
+    report(node, "code_unresolved_call", "Verwende SDK-Handles und Namensräume direkt oder als const ohne Typangabe.");
+  }
   const permission = (node: ts.Node, operation: string, target: ReturnType<typeof handle>) => {
     if (!collecting) return;
     const sf = node.getSourceFile();
@@ -138,6 +287,17 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       });
     }
     if (request.aiOperations.includes(operation)) result.ai = true;
+  };
+  const operationCall = (node: ts.CallExpression, op: CodeSdkOperation, target: ReturnType<typeof handle>) => {
+    permission(node, op.capability, op.target ? target : null);
+    const arg = node.arguments[0];
+    if (arg)
+      for (const [field, expected] of Object.entries(op.refs)) {
+        const refType = propertyType(checker.getTypeAtLocation(arg), field, arg);
+        const ref = refType && handle(arg, refType);
+        if (!ref || ref.type !== expected) report(arg, "code_unresolved_ref", `Zusätzliches Ziel ${field} ist nicht erkennbar.`);
+        else permission(node, op.capability, ref);
+      }
   };
   const origins = new Set<string>();
   const allowedOrigins = new Set<string>();
@@ -254,6 +414,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", `In <${tag}> steht kein Text, nur seine Bausteine.`);
   }
   function visit(node: ts.Node) {
+    if (ts.isExpression(node)) checkNamespaceUse(node);
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) checkPageChild(node);
     if (ts.isIdentifier(node) && node.text === "__codeSdk") report(node, "code_reserved_sdk", "__codeSdk ist für den Runner reserviert.");
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
@@ -282,7 +443,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       let wrapped: ts.Expression = node;
       while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
       if (
-        signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts") &&
+        signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts" && !factoryDeclarations.has(s.declaration)) &&
+        !sdkMemberAccess(wrapped.parent, wrapped) &&
         !(ts.isCallExpression(wrapped.parent) && wrapped.parent.expression === wrapped) &&
         !(
           (ts.isJsxOpeningElement(node.parent) || ts.isJsxSelfClosingElement(node.parent) || ts.isJsxClosingElement(node.parent)) &&
@@ -306,7 +468,15 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         report(node, "code_unresolved_call", "Der aufgerufenen Funktion fehlt ein erkennbarer Typ. Verwende typisierte SDK-Objekte.");
       const { base, path } = member(node.expression);
       const target = handle(base);
-      if (target) {
+      const declaration = checker.getResolvedSignature(node)?.declaration;
+      const appOperation = declaration && appOperations.get(declaration);
+      const receiverCall =
+        ts.isPropertyAccessExpression(unparen(node.expression)) || ts.isElementAccessExpression(unparen(node.expression));
+      if (declaration && factoryDeclarations.has(declaration)) {
+        // A typed resource factory creates a handle; it does not call a capability.
+      } else if (appOperation && receiverCall) {
+        operationCall(node, appOperation, null);
+      } else if (target) {
         const appId = target.type === "cloud.app" ? target.ids?.[0] : target.type.split(".")[0];
         const method = path.join(".");
         const op = request.sdk.manifest.operations.find(
@@ -324,15 +494,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 : "Diese Query ist nur für Apps verfügbar.",
           );
         if (op) {
-          permission(node, op.capability, op.target ? target : null);
-          const arg = node.arguments[0];
-          if (arg)
-            for (const [field, expected] of Object.entries(op.refs)) {
-              const refType = propertyType(checker.getTypeAtLocation(arg), field, arg);
-              const ref = refType && handle(arg, refType);
-              if (!ref || ref.type !== expected) report(arg, "code_unresolved_ref", `Zusätzliches Ziel ${field} ist nicht erkennbar.`);
-              else permission(node, op.capability, ref);
-            }
+          operationCall(node, op, target);
         } else if (!omitted) report(node, "code_unresolved_call", "Die Operation am Objekt ist nicht erkennbar.");
       } else if (signatureInSdk(node)) {
         const method = path.at(-1);
@@ -573,9 +735,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             ["CodeContext", "CodeRequest", "CodePageComponent"].includes(declarationOwner.name.text)
           )
         ) {
-          // Recognized factory calls need no permission; detached methods lose their target and are rejected.
-          const factory = request.sdk.manifest.handles.some((spec) => path.join(".") === spec.factoryPath.join("."));
-          if (!factory) report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
+          report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
         }
       }
     }

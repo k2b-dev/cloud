@@ -38,6 +38,13 @@ secret values outside the repository and pass them through `secret set --from
 <file|->`. CI can check, test and push with its granted credential; it cannot
 activate Code.
 
+The first Code release exposes app operations directly, for example
+`core.ai.generate(...)`, alongside resource factories such as
+`mail.mailbox(id)`. Pre-release sources using `core.app().ai.generate(...)`
+must use the direct form; there is no compatibility alias. Pull a fresh SDK
+and check those sources again before submitting a version. The fixed `owner`
+handle and application capability manifest hashes keep their contracts.
+
 ## Configure the service
 
 Register an Ed25519 key for app ID `runner` using

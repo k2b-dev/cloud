@@ -41,13 +41,33 @@ test("the combined catalog SDK loads and its declarations compile with tsgo", as
   const directory = await mkdtemp(join(tmpdir(), "cloud-code-c15-catalog-"));
   const runtime = join(directory, "sdk.mjs");
   const declarations = join(directory, "sdk.d.ts");
+  const consumer = join(directory, "consumer.ts");
   try {
     await writeFile(runtime, sdk.runtime);
     await writeFile(declarations, sdk.declarations);
     const loaded = await import(runtime);
-    for (const app of sdk.manifest.apps) expect(loaded[app.exportName].app().id).toBe(app.appId);
+    for (const app of sdk.manifest.apps) expect(loaded[app.exportName].id).toBe(app.appId);
+    expect(loaded.capabilities.app("core")).toMatchObject({ type: "capabilities.app", id: "core" });
+    expect(() => loaded.capabilities.app()).toThrow("code_sdk_invalid_id");
+    loaded.__codeSdk.bind({
+      async call() {
+        return { data: { items: [] } };
+      },
+    });
+    await expect(loaded.capabilities.search({ query: "core", tags: [], limit: 10 })).resolves.toEqual({ data: { items: [] } });
+    await writeFile(
+      consumer,
+      `import { capabilities } from "./sdk";
+const handle = capabilities.app("core");
+const type: "capabilities.app" = handle.type;
+const id: "core" = handle.id;
+capabilities.search({ query: "core", tags: [], limit: 10 });
+// @ts-expect-error only the typed app(id) factory exists
+capabilities.app();
+`,
+    );
     const compiler = join(workspaceRoot, "node_modules/.bin/tsc");
-    const proc = Bun.spawn([compiler, "--checkers", "1", "--ignoreConfig", "--strict", "--noEmit", "--target", "esnext", declarations], {
+    const proc = Bun.spawn([compiler, "--checkers", "1", "--ignoreConfig", "--strict", "--noEmit", "--target", "esnext", consumer], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -56,6 +76,7 @@ test("the combined catalog SDK loads and its declarations compile with tsgo", as
   } finally {
     await unlink(runtime);
     await unlink(declarations);
+    await unlink(consumer);
     await rmdir(directory);
   }
 });

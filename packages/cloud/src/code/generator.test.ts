@@ -35,7 +35,7 @@ type TestHandle = {
 type TestModule = {
   secrets: Readonly<Record<string, string>>;
   http: CodeHttp;
-  work_shop: { workshop(id: string): TestHandle; item(id: string): object; app(): { catalog: { list(input: object): Promise<unknown> } } };
+  work_shop: { workshop(id: string): TestHandle; item(id: string): object; catalog: { list(input: object): Promise<unknown> } };
   owner: TestHandle;
   app: {
     schedule(cron: string, fn: () => void | Promise<void>, options?: { name: string; title?: string }): unknown;
@@ -60,12 +60,12 @@ async function runtime(mode: CodeSdkOptions = options, manifest = fixture): Prom
 function callableFixture() {
   return {
     ...fixture,
-    types: [...fixture.types, { ...fixture.types[0]!, localId: "app" }],
+    types: [...fixture.types, { ...fixture.types[0]!, localId: "branch" }],
     actions: fixture.actions.map((op) =>
       op.localId === "item.create"
-        ? { ...op, localId: "branch", target: undefined }
+        ? { ...op, localId: "branch.create", target: undefined }
         : op.localId === "item.move"
-          ? { ...op, localId: "branch.child", target: undefined }
+          ? { ...op, localId: "branch.create.child", target: undefined }
           : op,
     ),
   };
@@ -77,6 +77,7 @@ describe("Code SDK generation", () => {
     expect(sdk.declarations).toMatchSnapshot("declarations");
     expect(sdk.runtime).toMatchSnapshot("runtime");
     expect(sdk.manifest).toMatchSnapshot("manifest");
+    expect(sdk.manifest.apps[0]?.manifestHash).toBe(fixture.manifestHash);
     expect(sdk.runtime).not.toContain("inputSchema");
     expect(sdk.runtime).not.toContain("dataSchema");
   });
@@ -106,7 +107,7 @@ describe("Code SDK generation", () => {
     const manifest = { ...fixture, exportName: 'bad*/\n"; process.exit()' };
     expect(generateCodeSdk([manifest], options)).toEqual(generated());
   });
-  test("supports callable namespaces and overloaded app factories", async () => {
+  test("supports direct app methods beside a callable resource namespace", async () => {
     const sdk = generateCodeSdk([callableFixture()], { mode: "personal" });
     const dir = await temporaryDirectory("cloud-code-c15-callable-");
     const file = join(dir, "sdk.mjs");
@@ -118,11 +119,39 @@ describe("Code SDK generation", () => {
         calls.push(invocation);
       },
     });
-    expect(loaded.work_shop.app().type).toBe("cloud.app");
-    expect(loaded.work_shop.app("resource-app").type).toBe("work-shop.app");
-    await loaded.work_shop.app().branch({ title: "x", idempotencyKey: "key" });
-    await loaded.work_shop.app().branch.child({ itemId: "i", destination: loaded.work_shop.workshop("one") });
-    expect(calls.map((value) => value.call.capability)).toEqual(["work-shop.branch", "work-shop.branch.child"]);
+    expect(loaded.work_shop.type).toBe("cloud.app");
+    expect(loaded.work_shop.branch("resource-branch").type).toBe("work-shop.branch");
+    expect(loaded.work_shop.app).toBeUndefined();
+    await loaded.work_shop.branch.create({ title: "x", idempotencyKey: "key" });
+    await loaded.work_shop.branch.create.child({ itemId: "i", destination: loaded.work_shop.workshop("one") });
+    expect(calls.map((value) => value.call.capability)).toEqual(["work-shop.branch.create", "work-shop.branch.create.child"]);
+  });
+  test("rejects app method/factory and identity conflicts", () => {
+    for (const localId of ["workshop", "id", "id.read", "type", "type.read"]) {
+      const conflicting = { ...fixture, queries: fixture.queries.map((op) => (op.localId === "catalog.list" ? { ...op, localId } : op)) };
+      expect(() => generateCodeSdk([conflicting], { mode: "personal" })).toThrow("SDK path collision");
+    }
+    for (const localId of ["id", "type", "id.child", "type.child"]) {
+      const conflicting = { ...fixture, types: [...fixture.types, { ...fixture.types[0]!, localId }] };
+      expect(() => generateCodeSdk([conflicting], { mode: "personal" })).toThrow("SDK path collision");
+    }
+  });
+  test("retains typed app factories beside direct app methods", async () => {
+    const appFactory = { ...fixture, types: [...fixture.types, { ...fixture.types[0]!, localId: "app" }] };
+    const sdk = generateCodeSdk([appFactory], { mode: "personal" });
+    expect(sdk.declarations).toContain('readonly "app": (<const Id');
+    const dir = await temporaryDirectory("cloud-code-c15-app-factory-");
+    const file = join(dir, "sdk.mjs");
+    await writeFile(file, sdk.runtime);
+    const loaded = await import(file);
+    loaded.__codeSdk.bind({
+      async call() {
+        return { data: [] };
+      },
+    });
+    expect(loaded.work_shop.app("App001")).toMatchObject({ type: "work-shop.app", id: "App001" });
+    expect(() => loaded.work_shop.app()).toThrow();
+    await expect(loaded.work_shop.catalog.list({})).resolves.toEqual({ data: [] });
   });
   test("isolates every runtime internal from application exports", async () => {
     const names = [
@@ -153,7 +182,7 @@ describe("Code SDK generation", () => {
     const file = join(dir, "sdk.mjs");
     await writeFile(file, sdk.runtime);
     const loaded = await import(file);
-    for (const app of sdk.manifest.apps) expect(loaded[app.exportName].app().id).toBe(app.appId);
+    for (const app of sdk.manifest.apps) expect(loaded[app.exportName].id).toBe(app.appId);
     loaded.__codeSdk.bind({
       async call() {
         return { moved: true };
@@ -259,6 +288,7 @@ describe("generated runtime through the canonical call seam", () => {
         return { id: "created" };
       },
     });
+    expect(() => Reflect.apply(sdk.work_shop.workshop, undefined, ["one", "two"])).toThrow("code_sdk_invalid_id");
     const source = sdk.work_shop.workshop("source");
     const destination = sdk.work_shop.workshop("destination");
     const input = { title: "Hello", idempotencyKey: " invoice:fixed " };
@@ -283,7 +313,7 @@ describe("generated runtime through the canonical call seam", () => {
     expect(capabilityCallDigest(calls[1]!.call)).toBe(capabilityCallDigest(expected));
     await sdk.owner.item.create({ title: "Owned", idempotencyKey: "owned:fixed" });
     expect(calls[2]?.call.target?.id).toBe("owner-shop");
-    await sdk.work_shop.app().catalog.list({});
+    await sdk.work_shop.catalog.list({});
     expect(calls[3]?.call.target).toBeNull();
     expect(source).not.toHaveProperty("catalog");
     expect(sdk.work_shop.item("item")).not.toHaveProperty("stock");
@@ -426,6 +456,11 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
     writeFile(join(dir, "resource.d.ts"), resource.declarations),
     writeFile(join(dir, "personal.d.ts"), personal.declarations),
     writeFile(join(dir, "once.d.ts"), once.declarations),
+    writeFile(
+      join(dir, "app-factory.d.ts"),
+      generateCodeSdk([{ ...fixture, types: [...fixture.types, { ...fixture.types[0]!, localId: "app" }] }], { mode: "personal" })
+        .declarations,
+    ),
     writeFile(join(dir, "callable.d.ts"), generateCodeSdk([callableFixture()], { mode: "personal" }).declarations),
     writeFile(
       join(dir, "reserved.d.ts"),
@@ -439,13 +474,20 @@ import { work_shop as personal } from "./personal";
 import { work_shop as once } from "./once";
 import { workshop } from "./ids";
 import { work_shop as callable } from "./callable";
+import { work_shop as appFactory } from "./app-factory";
+const appHandle = appFactory.app("App001");
+const appType: "work-shop.app" = appHandle.type;
+const appId: "App001" = appHandle.id;
+appFactory.catalog.list({});
+// @ts-expect-error only the typed app(id) factory exists
+appFactory.app();
 import { _eval, _arguments, manifest } from "./reserved";
 import { work_shop as literals } from "./literals";
-literals.app().catalog.list({ [${JSON.stringify(literal)}]: literals.workshop("destination") });
-_eval.app(); _arguments.app(); manifest.app();
-callable.app("resource");
-callable.app().branch({ title: "x", idempotencyKey: "key" });
-callable.app().branch.child({ itemId: "i", destination: callable.workshop("one") });
+literals.catalog.list({ [${JSON.stringify(literal)}]: literals.workshop("destination") });
+_eval.catalog.list({}); _arguments.catalog.list({}); manifest.catalog.list({});
+callable.branch("resource");
+callable.branch.create({ title: "x", idempotencyKey: "key" });
+callable.branch.create.child({ itemId: "i", destination: callable.workshop("one") });
 const grid: CodeChartDescription = { kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: 1 }] };
 const calendar: CodeChartDescription = { kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", 1]], scale: "sequential" };
 const grouped: CodeChartDescription = { kind: "bar", title: "Orders", x: ["A"], series: [{ label: "Shop", data: [10] }], layout: "grouped" };
@@ -589,7 +631,7 @@ test("stream SDK inputs use branded FileRefs and pass only references through cl
     },
   });
   const ref = await loaded.owner.stock.export({});
-  expect(await loaded.imports.app().import({ file: ref, idempotencyKey: "invoice-1" })).toEqual({ imported: true });
+  expect(await loaded.imports.import({ file: ref, idempotencyKey: "invoice-1" })).toEqual({ imported: true });
   expect(calls[1]).toMatchObject({ call: { input: { file } }, metadata: { idempotencyKey: "invoice-1" } });
   expect(JSON.stringify(calls).length).toBeLessThan(1024);
   await writeFile(join(dir, "sdk.d.ts"), sdk.declarations);
@@ -597,12 +639,12 @@ test("stream SDK inputs use branded FileRefs and pass only references through cl
     join(dir, "types.ts"),
     `import { owner, imports, type FileRef } from "./sdk";
 const file: FileRef = await owner.stock.export({});
-const result = await imports.app().import({ file, idempotencyKey: "invoice-1" });
+const result = await imports.import({ file, idempotencyKey: "invoice-1" });
 const imported: boolean = result.imported;
 // @ts-expect-error metadata alone cannot manufacture a FileRef
-imports.app().import({ file: { id: "forged", mediaType: "application/pdf", size: 1 }, idempotencyKey: "k" });
+imports.import({ file: { id: "forged", mediaType: "application/pdf", size: 1 }, idempotencyKey: "k" });
 // @ts-expect-error a file input cannot be omitted
-imports.app().import({ idempotencyKey: "k" });
+imports.import({ idempotencyKey: "k" });
 // @ts-expect-error the FileRef has no download URL
 file.url;
 // @ts-expect-error the FileRef has no body

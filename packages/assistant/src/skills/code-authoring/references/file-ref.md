@@ -83,10 +83,10 @@ import { app, filesv2, imports } from "@sdk";
 const PRICE_LIST = "Fil001";
 
 app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "import-price-list" }, async () => {
-  const file = await filesv2.app().content.read({ id: PRICE_LIST });
+  const file = await filesv2.content.read({ id: PRICE_LIST });
   if (file.mediaType !== "text/csv" || file.size > 5 * 1024 * 1024) throw new Error("Unexpected price list file");
   const day = new Date().toISOString().slice(0, 10);
-  await imports.app().import({ file, idempotencyKey: `price-list:${day}` });
+  await imports.import({ file, idempotencyKey: `price-list:${day}` });
 }, { name: "import-price-list", title: "Import price list" });
 export default app;
 ```

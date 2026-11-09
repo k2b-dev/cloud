@@ -42,9 +42,9 @@ message ID; `event.data.receiptId` identifies the receipt.
 import { app, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   // Throwing before the first Action lets Cloud retry the run automatically.
   if (message.keywordsTruncated) throw new Error("Provider keywords are incomplete");
@@ -68,14 +68,14 @@ remaining rules for that message.
 ```ts
 import { app, mail, owner } from "@sdk";
 
-type Message = Awaited<ReturnType<ReturnType<typeof mail.app>["message"]["read"]>>["data"];
+type Message = Awaited<ReturnType<typeof mail.message.read>>["data"];
 
 async function tagInvoices(message: Message) {
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
   const { data: tags } = await owner.mailbox.tag.list({ limit: 50 });
   const tag = tags.find(candidate => candidate.name === "Invoice");
   if (!tag) return;
-  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
   await owner.conversation.tag.update({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,
@@ -85,7 +85,7 @@ async function tagInvoices(message: Message) {
 
 async function markWaiting(message: Message) {
   if (!message.conversationId || !/out of office/i.test(message.subject)) return;
-  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
   await owner.conversation.status.set({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,
@@ -94,9 +94,9 @@ async function markWaiting(message: Message) {
 }
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   await tagInvoices(message);
   await markWaiting(message);

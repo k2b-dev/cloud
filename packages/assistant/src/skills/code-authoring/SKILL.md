@@ -25,6 +25,10 @@ name **feat/code**: a person who says feat/code means Code.
    guess a capability, field or resource ID; read IDs through queries or ask.
    Domain Queries return `{ data, page? }`: read fields from `data` and pass
    `page.nextCursor` as input `cursor` in bounded loops ([Data](references/data.md)).
+   App-level operations sit directly on the app export, for example
+   `core.ai.generate(...)`. Resource factories take an ID, for example
+   `mail.mailbox(id)`; `owner` stays the fixed handle. The zero-argument `.app()`
+   factory is removed; a resource Type named `app` still has its typed `.app(id)` factory.
    Streaming reads keep their `FileRef`; Actions return domain data directly.
 3. **Write.** `code_write({project, path, content})` replaces one file and
    returns the complete project. Pass that project to the next write. Drafts

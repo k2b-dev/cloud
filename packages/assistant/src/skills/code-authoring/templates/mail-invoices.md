@@ -21,9 +21,9 @@ import { app, mail, owner, imports } from "@sdk";
 const importedTagId = "Tag123";
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (message.attachmentsTruncated) {
     throw new Error("Message attachments are not ready or complete");
@@ -33,12 +33,12 @@ app.on("mail.message.received", async event => {
   );
   if (!attachment || !message.conversationId) return;
 
-  const file = await mail.app().attachment.content.read({ id: attachment.id });
-  await imports.app().import({
+  const file = await mail.attachment.content.read({ id: attachment.id });
+  await imports.import({
     file,
     idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
   });
-  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
   await owner.conversation.tag.update({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,

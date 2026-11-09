@@ -1,7 +1,7 @@
 # Capabilities per app
 
 Code calls apps through the generated SDK. A handle selects the resource:
-`mail.app()` for app-wide operations, `spaces.space(id)` for one Space,
+`mail` for app-wide operations, `spaces.space(id)` for one Space,
 `owner` for the resource that owns this Code. Method paths follow the
 operation ID: `mail.conversation.tag.update` on a mailbox handle is
 `owner.conversation.tag.update(...)`. The SDK takes domain input, lifts
@@ -113,15 +113,15 @@ with `onlyIfUnassigned: true` to leave existing assignees alone.
 import { app, mail, owner } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
   while (message.hydrationStatus !== "complete") {
-    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+    ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
   // Fictional user name; the search also matches names and groups, so compare the exact uid.
   const lead = (await owner.mailbox.member.list({ query: "accounting.lead", limit: 20 })).data.find(member => member.uid === "accounting.lead");
   const { data: [identity] } = await owner.mailbox.identity.list({ limit: 1 });
-  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.conversation.read({ id: message.conversationId });
   if (lead) {
     await owner.conversation.assign({
       conversationId: message.conversationId,
@@ -213,7 +213,7 @@ import { app, chat } from "@sdk";
 app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
   // Fictional conversation ID; take the real one from the conversation's address in Chat or ask the person.
-  await chat.app().message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
+  await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
 }, { name: "weekend-note", title: "Weekend note" });
 export default app;
 ```
@@ -286,10 +286,10 @@ Reading from several apps in one personal page:
 import { app, contacts, filesv2, jsx, notebooks, Page, Table, Column } from "@sdk";
 
 app.get("/", async c => {
-  const [base] = (await filesv2.app().bases.list({})).data.items;
+  const [base] = (await filesv2.bases.list({})).data.items;
   const files = base ? (await filesv2.entry(base.ref.id).entry.list({ sort: "modified", order: "desc" })).data.items.slice(0, 10) : [];
-  const { data: people } = await contacts.app().contact.search({ query: "supplier", tags: [], limit: 10 });
-  const { data: notes } = await notebooks.app().note.search({ query: "supplier", tags: [], limit: 10 });
+  const { data: people } = await contacts.contact.search({ query: "supplier", tags: [], limit: 10 });
+  const { data: notes } = await notebooks.note.search({ query: "supplier", tags: [], limit: 10 });
   return c.page(
     <Page title="Suppliers">
       <Table width="third" title="Recent files" rows={files.map(file => ({ name: file.name, modified: file.modified }))}>
