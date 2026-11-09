@@ -19,11 +19,86 @@
   flex-direction: column;
   min-height: 0;
 }
+/* "All storage": favorites, storage locations, and the last things this person did, as quiet sections on one
+   surface. Each section body lines up under its heading's text, past the heading's icon. */
 .filesv2-overview {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1.75rem;
+  width: 100%;
+  max-width: 72rem;
   padding: 0.75rem;
+}
+.filesv2-overview__section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.filesv2-overview__section > :not(.k2b-panel-header) {
+  margin-inline-start: 1.625rem;
+}
+.filesv2-overview__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.filesv2-overview__title > .ti {
+  color: var(--k2b-text-muted);
+}
+.filesv2-overview__count {
+  padding: 0 0.4375rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted, var(--k2b-hover));
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.125rem;
+}
+.filesv2-overview__hint {
+  margin-block: 0.25rem 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+/* Loading keeps the place of six entries, so the storage locations below never move. */
+.filesv2-overview__skeleton-card {
+  height: 3.5rem;
+  border-radius: var(--k2b-radius-surface);
+}
+/* The same compact rows as Activity, with Activity's narrow layout on a phone. */
+.filesv2-overview__recent {
+  container: filesv2-history / inline-size;
+  margin-inline: -0.5rem;
+}
+/* The favorites page reads like a short list: inset from the edges, at a comfortable width. */
+.filesv2-favorites > .k2b-file-grid,
+.filesv2-favorites__skeleton {
+  max-width: 60rem;
+  padding: var(--ui-space-shell, 0.75rem);
+}
+.filesv2-favorites__skeleton {
+  display: grid;
+  gap: 0.25rem;
+}
+.filesv2-favorites__skeleton-row {
+  height: 3rem;
+  border-radius: var(--k2b-radius-control);
+}
+.filesv2-shares__lead {
+  margin: 0;
+  max-width: 46rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+@container k2b-app-area (max-width: 47.999rem) {
+  .filesv2-overview__section > :not(.k2b-panel-header) {
+    margin-inline-start: 0;
+  }
+  /* A phone shows four favorites; the page has the rest. Stronger than the card's own display. */
+  .filesv2-overview .filesv2-overview__favorites > :nth-child(n + 5) {
+    display: none;
+  }
 }
 .filesv2-browser__header {
   display: flex;

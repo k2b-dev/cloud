@@ -526,6 +526,22 @@ test("sparse actor/action filters consume only one bounded candidate window", as
   expect(last.exhausted).toBe(true);
 });
 
+test('"me" is the request identity: own changes only, never a client-chosen person', async () => {
+  const f = historyFixture([candidate(1, { actor_user_id: actorId }), candidate(2, { actor_user_id: otherId })]);
+  const mine = await f.reader.activity(call, { actor: "me" });
+  expect(mine.items.map((row) => row.id)).toEqual([candidate(1).id]);
+  expect(mine.items.every((row) => row.actor.userId === actorId)).toBe(true);
+  // The same filter by ID gives the same page; another person's ID gives theirs.
+  expect((await f.reader.activity(call, { actor: actorId })).items.map((row) => row.id)).toEqual([candidate(1).id]);
+  expect((await f.reader.activity(call, { actor: otherId })).items.map((row) => row.id)).toEqual([candidate(2).id]);
+  // A cursor of "me" stays bound to "me".
+  const paged = historyFixture([candidate(1, { actor_user_id: actorId }), candidate(2, { actor_user_id: actorId })]);
+  const first = await paged.reader.activity(call, { actor: "me", limit: 1 });
+  await expect(paged.reader.activity(call, { actor: actorId, cursor: first.next! })).rejects.toMatchObject({ code: "invalid_cursor" });
+  const second = await paged.reader.activity(call, { actor: "me", cursor: first.next! });
+  expect([...first.items, ...second.items].map((row) => row.id).sort()).toEqual([candidate(1).id, candidate(2).id]);
+});
+
 test("unknown snapshot metadata stays minimal for own, admin and currently authorized viewers", async () => {
   for (const viewer of ["own", "admin", "reader"] as const) {
     const row = candidate(1, {

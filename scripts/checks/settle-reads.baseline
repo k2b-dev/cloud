@@ -42,7 +42,7 @@ packages/core/src/pages/me/app.browser.test.ts | 1
 packages/dashboard/src/frontend/dashboard-home.browser.test.ts | 19
 packages/editor/src/markdown/tables.browser.test.ts | 3
 packages/filesv2/src/frontend/NewFolderDialog.browser.test.ts | 4
-packages/filesv2/src/frontend/StorageOverview.browser.test.ts | 3
+packages/filesv2/src/frontend/StorageOverview.browser.test.ts | 1
 packages/filesv2/src/frontend/UploadPanel.browser.test.ts | 3
 packages/grids/src/frontend/custom-app/chart-tooltips.browser-suite.ts | 1
 packages/grids/src/styles/app-host.browser.test.ts | 2

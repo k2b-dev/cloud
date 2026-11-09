@@ -540,7 +540,7 @@ export const mergeConversations = async (params: {
     if (result.ok && events.length > 0) mailLive.wake();
     return result;
   } catch (error) {
-    if (databaseErrorCode(error) === "23505" && databaseErrorConstraint(error) === "drafts_untouched_suggestion_idx")
+    if (databaseErrorCode(error) === "23505" && databaseErrorConstraint(error) === "drafts_untouched_suggestion_author_idx")
       return fail({ code: "DRAFT_SUGGESTION_CONFLICT", status: 409, message: draftAdoptionMessages.resolve(["en"]).t.mergeConflict });
     log.error("Failed to merge conversations", {
       mailboxId: params.mailboxId,

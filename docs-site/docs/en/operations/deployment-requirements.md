@@ -1269,15 +1269,38 @@ shows the signature below the text.
 Update all Mail replicas together before enabling Gustav suggestions. Earlier
 replicas do not record human adoption or enforce `DRAFT_ADOPTED`.
 The next start adds `mail.drafts.adopted_at`, the constraint allowing one
-untouched suggestion per conversation, and creation-key mappings. No setting
-is required. Existing drafts are treated as adopted because earlier editor
-attribution cannot establish whether a person ever changed them. Their content
-and authorship stay intact.
+untouched suggestion per conversation and author (it replaces the earlier
+one-per-conversation index), and creation-key mappings. Creation keys that an
+earlier release mapped to another account's draft are removed, so retrying
+such a key creates the caller's own suggestion. The change records the schema
+marker `3 (suggestions_per_author)`: Mail images from before it refuse to start
+on the upgraded database. Stop all older Mail processes before the first new
+one starts. No setting is required. Existing drafts are treated as adopted
+because earlier editor attribution cannot establish whether a person ever
+changed them. Their content and authorship stay intact.
 
 After the upgrade, create a service-account draft, edit it as a person, and
-check that an autonomous update returns `DRAFT_ADOPTED` (409). Rolling back
-retains the data but removes this protection; stop autonomous draft editing
-before a rollback.
+check that an autonomous update returns `DRAFT_ADOPTED` (409). Then let two
+service accounts create a draft in the same conversation and check that each
+gets its own suggestion.
+
+To roll Mail back to 0.71, stop all Mail processes, then run the following in
+the Cloud database. 0.71 has no draft suggestions: it ignores `adopted_at` and
+the creation-key table, but it refuses marker 3 and would fail to store a
+second draft of one service account in a conversation while the index exists.
+No draft content changes:
+
+```sql
+BEGIN;
+DROP INDEX IF EXISTS mail.drafts_untouched_suggestion_author_idx;
+DELETE FROM mail.schema_migrations WHERE version = 3 AND name = 'suggestions_per_author';
+COMMIT;
+```
+
+When you upgrade again, Mail recreates the index and the marker. If 0.71 left
+several open drafts of one service account in a conversation, the newest stays
+that account's suggestion; the others become ordinary drafts with their
+content unchanged.
 
 ### Mail mailbox logos
 

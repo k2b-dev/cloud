@@ -738,20 +738,26 @@
   .k2b-ui .k2b-placeholder.filesv2-history-placeholder { padding: 48px 8px; }
 }
 
-/* Compact rows: the activity list. One line on a wide area: a small avatar (left out when the actor repeats), the
-   sentence, then the facts with the time at the end so times line up. The file name is the strong element; actors
-   and verbs stay regular. A list row's action covers the facts on hover and focus instead of taking a column. */
-/* One-line rows carry the sentence and its facts side by side; a wider list keeps a bulk change on one line. */
+/* Compact rows: the activity list, one line each on a wide area. Under "All": a small avatar and the actor in their
+   own columns (both left out when the actor repeats), then the change in note style with the item first, then the
+   facts with the time at the end so times line up. Under "Me" the actor columns go. The item name is the strong
+   element; verbs and places stay quiet. A long line ends in an ellipsis instead of wrapping, so every row keeps one
+   height. A row's action covers the facts on hover and focus instead of taking a column. The page uses the full
+   width, like every other page of Files. */
 .filesv2-history-list--compact {
-  max-width: 1040px;
+  max-width: none;
 }
 .filesv2-history-row[data-variant="compact"] {
   position: relative;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 20px 8.5rem minmax(0, 1fr) auto;
+  align-items: center;
   gap: 0.625rem;
   min-height: 2.25rem;
   padding: 0.5rem;
   font-size: 0.875rem;
+}
+.filesv2-history-row[data-variant="compact"][data-mode="me"] {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 .filesv2-history-row[data-variant="compact"]:hover {
   background: var(--k2b-hover);
@@ -759,8 +765,24 @@
 .filesv2-history-row[data-variant="compact"] .filesv2-history-row__who {
   padding-top: 0;
 }
+.filesv2-history-row__actor {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A repeated actor keeps its column and its text for screen readers; only the eye skips it. */
+.filesv2-history-row__actor[data-repeat] {
+  color: transparent;
+}
 .filesv2-history-row[data-variant="compact"] .filesv2-history-row__sentence {
+  overflow: hidden;
   line-height: 1.25rem;
+  color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .filesv2-history-actor {
   color: var(--k2b-text);
@@ -770,7 +792,10 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
-  min-height: 1.25rem;
+  /* One line box of fixed height: a tag, an icon or the count chip centre in it and never make a row taller, whatever
+     line height a browser gives mixed text (WebKit's "normal" is a pixel taller than Chromium's). */
+  height: 1.25rem;
+  line-height: 1.25rem;
   font-size: 0.78125rem;
   color: var(--k2b-text-muted);
   white-space: nowrap;
@@ -862,12 +887,25 @@
 .filesv2-history-run__toggle .filesv2-history-row__sentence {
   display: block;
 }
+/* The count says how many lines open; its chevron turns. The chip keeps one width open and closed. */
+.filesv2-history-run__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  /* As tall as the facts' line, with its content centred: no padding or line height can grow it. */
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  line-height: 1;
+  border-radius: var(--k2b-radius-control);
+  font-variant-numeric: tabular-nums;
+}
+.filesv2-history-run__toggle:hover .filesv2-history-run__count {
+  background: var(--k2b-surface-muted, var(--k2b-hover));
+}
 .filesv2-history-run__chevron {
   display: inline-block;
-  margin-inline-start: 0.375rem;
-  color: var(--k2b-text-muted);
-  vertical-align: -1px;
-  transition: transform 0.16s;
+  font-size: 0.875rem;
+  transition: transform var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 .filesv2-history-run[data-expanded] .filesv2-history-run__chevron {
   transform: rotate(180deg);
@@ -903,16 +941,47 @@
   margin-top: 4px;
 }
 
-/* Phones: the facts move under the sentence, so a long sentence keeps its full width. */
+/* Phones: two lines. The change first and allowed to wrap; below it the actor, the channel and the time. */
 @container filesv2-history (max-width: 40rem) {
   .filesv2-history-row[data-variant="compact"] {
-    grid-template-columns: 20px minmax(0, 1fr);
+    grid-template-columns: 20px auto minmax(0, 1fr);
+    grid-template-areas: "who sentence sentence" "who actor facts" "who action action";
+    align-items: start;
     gap: 0.125rem 0.625rem;
     min-height: 0;
     padding: 0.5rem 0;
   }
+  .filesv2-history-row[data-variant="compact"][data-mode="me"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "sentence" "facts" "action";
+  }
+  .filesv2-history-row[data-variant="compact"] > .filesv2-history-row__who {
+    grid-area: who;
+  }
+  .filesv2-history-row[data-variant="compact"] > .filesv2-history-row__actor {
+    grid-area: actor;
+    font-size: 0.78125rem;
+    color: var(--k2b-text-muted);
+  }
+  .filesv2-history-row[data-variant="compact"] > .filesv2-history-row__actor:empty {
+    display: none;
+  }
+  /* On a phone every line names its actor: there is no column to line it up with. */
+  .filesv2-history-row__actor[data-repeat] {
+    color: var(--k2b-text-muted);
+  }
+  .filesv2-history-row[data-variant="compact"] > .filesv2-history-row__text {
+    grid-area: sentence;
+  }
+  .filesv2-history-row[data-variant="compact"] .filesv2-history-row__sentence {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .filesv2-history-row[data-variant="compact"] .filesv2-history-row__facts {
-    grid-column: 2;
+    grid-area: facts;
+    /* On a phone the facts may wrap onto a second line. */
+    height: auto;
+    min-height: 1.25rem;
     flex-wrap: wrap;
     justify-content: flex-start;
     gap: 0.125rem 0.5rem;
@@ -922,7 +991,7 @@
   .filesv2-history-row[data-variant="compact"] > .filesv2-history-row__action,
   .filesv2-history-row[data-variant="compact"] > .filesv2-history-row__action:not([data-keep]) {
     position: static;
-    grid-column: 2;
+    grid-area: action;
     padding: 0.25rem 0 0;
     background: none;
     opacity: 1;
