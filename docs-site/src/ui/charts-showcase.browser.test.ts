@@ -102,7 +102,10 @@ const frames = (page: Page, scope: string) =>
           frame.querySelector(".k2b-chart-explorer__viewport"),
         ].map((element) => {
           const box = element?.getBoundingClientRect();
-          return box ? [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)] : null;
+          // Focusing a tall chart may scroll the page. Layout stability concerns its document position.
+          return box
+            ? [Math.round(box.x + window.scrollX), Math.round(box.y + window.scrollY), Math.round(box.width), Math.round(box.height)]
+            : null;
         }),
       ),
     scope,

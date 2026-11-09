@@ -67,6 +67,7 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
     container: () => container,
     tooltip: () => tooltip,
     close: inspector.close,
+    scroll: options.nav?.keepScroll ? inspector.scroll : undefined,
     keepScroll: () => options.nav?.keepScroll,
   });
   const unlinkCursor = inspector.linkCursor(options.cursor);

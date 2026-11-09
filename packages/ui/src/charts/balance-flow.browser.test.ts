@@ -41,10 +41,19 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
         expect(await frame.locator('[data-balance-step="1"]').isDisabled()).toBe(true);
         expect(await chart.locator("[data-balance-period]").count()).toBe(4);
         // Keyboard focus must start inspection even when no pointer has entered the chart yet.
+        await page.setViewportSize({ width, height: 450 });
+        await settled(page);
         await chart.focus();
         await settled(page);
         expect(await chart.locator('[role="tooltip"]:popover-open').isVisible()).toBe(true);
+        const previousScroll = await page.evaluate(() => window.scrollY);
+        await page.evaluate((y) => window.scrollTo(0, y === 0 ? 20 : 0), previousScroll);
+        await settled(page);
+        expect(await page.evaluate(() => window.scrollY)).not.toBe(previousScroll);
+        expect(await chart.locator('[role="tooltip"]:popover-open').isVisible()).toBe(true);
         await page.keyboard.press("Escape");
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.setViewportSize({ width, height: 1100 });
         await chart.evaluate((element) => {
           if (element instanceof HTMLElement) element.blur();
         });
