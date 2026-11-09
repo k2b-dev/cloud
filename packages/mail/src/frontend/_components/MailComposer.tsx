@@ -54,6 +54,7 @@ import MailComposerHistory from "./MailComposerHistory";
 import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
 import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
+import MailInlineSignature from "./MailInlineSignature";
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
@@ -67,6 +68,7 @@ import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { confirmSharedDraftRecipients } from "./mail-draft-document-confirmation";
+import { mailDraftPeers } from "./mail-draft-document-presence";
 import { mailDraftJournalKey, serializeMailDraftContent } from "./mail-draft-journal";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
@@ -86,6 +88,15 @@ const intentIcon = (intent: DraftIntent): string =>
         ? "ti-arrow-forward-up"
         : "ti-send";
 
+/** What the host may start through the composer's own safe paths. */
+export type MailInlineDraftControls = {
+  collapse: () => Promise<void>;
+  /** The same Send as the draft's own button, with every review and guard. */
+  send: () => void;
+  /** Moves the caret back into the text, at its end. */
+  focusText: () => void;
+};
+
 /**
  * A conversation that shows the draft in place instead of a compose page. The composer keeps every save, lease, and
  * send rule; it only asks the host where to go instead of navigating.
@@ -100,7 +111,11 @@ export type MailComposerHost = {
   fullscreen: Accessor<boolean>;
   toggleFullscreen: () => void;
   /** The composer hands the host its safe close, so Esc and the host's own controls take the same path. */
-  register: (controls: { collapse: () => Promise<void> }) => void;
+  register: (controls: MailInlineDraftControls) => void;
+  /** Who wrote a message of the conversation and when, for the quote line ("Marlene Hofbauer, today 09:12"). */
+  messageLabel: (messageId: string) => string | null;
+  /** A new message tells the list its subject and recipients while someone types them. */
+  summary?: (value: { subject: string; to: string[] }) => void;
 };
 
 export default function MailComposer(props: {
@@ -453,13 +468,28 @@ export default function MailComposer(props: {
       (isShared() ? Boolean(shared() && !sharedState()?.terminal) : Boolean(lease()) || !draft() || materializedLeasePending()),
   );
   const editable = createMemo(() => canEditDraft() && composerTransition.active() === null);
+  let editorController: TextEditorController | undefined;
+  /** A click into the draft's empty room below the text puts the caret at the end of the text. */
+  const focusEditorAtEnd = () => {
+    const view = editorController?.view;
+    if (!view || !editable()) return;
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    view.focus();
+  };
   const focusFreshEditorAtStart = (element: TextEditorController) => {
+    editorController = element;
     // A new draft, and a draft someone opened inside its conversation, start with the caret in the text.
     if ((!props.initialSeed && !props.host) || initialEditorFocusApplied) return;
     queueMicrotask(() => {
       if (initialEditorFocusApplied || disposed || !editable() || !element.view.dom.isConnected) return;
       initialEditorFocusApplied = true;
-      focusMailComposerEditorAtStart(element);
+      // A new message inside the flow starts where it begins: with its recipients.
+      const recipients =
+        props.host && composerIntent() === "new" && to().length === 0
+          ? surface()?.querySelector<HTMLInputElement>(".mail-inline-draft-recipients input")
+          : null;
+      if (recipients) recipients.focus();
+      else focusMailComposerEditorAtStart(element);
     });
   };
   const attachments = createMailComposerAttachmentManager({
@@ -1294,7 +1324,11 @@ export default function MailComposer(props: {
     if (untouched() && editable()) return void (await discardDraft(true));
     await leaveComposer();
   };
-  props.host?.register({ collapse });
+  props.host?.register({
+    collapse,
+    send: () => void sendDraft({}),
+    focusText: () => focusEditorAtEnd(),
+  });
 
   let conflictDialogOpen = false;
   let lastPromptedConflict = leaseConflict();
@@ -1471,6 +1505,33 @@ export default function MailComposer(props: {
             ? t().inlineForward
             : t().inlineNew;
     };
+    // F4: a reply offers to attach the quoted message it answers; a forward already carries it.
+    // A shared draft names who writes along, with their caret colour; the carets themselves come from the editor.
+    const [sharedPeers, setSharedPeers] = createSignal<{ name: string; color: string }[]>([]);
+    createEffect(() => {
+      const client = shared();
+      if (!client) return setSharedPeers([]);
+      const changed = () => {
+        const peers = mailDraftPeers(client.doc.getText("codemirror"), client.awareness);
+        setSharedPeers([...new Map(peers.map((peer) => [peer.name, { name: peer.name, color: peer.color }])).values()]);
+      };
+      client.awareness.on("change", changed);
+      onCleanup(() => client.awareness.off("change", changed));
+      changed();
+    });
+    createEffect(() => {
+      if (!host.summary) return;
+      const recipients = parseMailRecipients(to()).map((recipient) => recipient.name || recipient.address);
+      host.summary({ subject: subject(), to: recipients });
+    });
+    // A suggestion from Gustav stays plum until someone types or changes anything, recipients included.
+    const suggestionUntouched = () => Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent;
+    const quoteLabel = () => {
+      const intent = composerIntent();
+      const sourceMessageId = draft()?.sourceMessageId ?? initial.sourceMessageId;
+      if ((intent !== "reply" && intent !== "reply_all") || !sourceMessageId) return null;
+      return host.messageLabel(sourceMessageId);
+    };
     const saveState = () => {
       if (status() === "saving" || status() === "preparing") return t().savingDraft;
       if (status() === "saved" && draft()) return t().draftSaved;
@@ -1519,6 +1580,7 @@ export default function MailComposer(props: {
         data-intent={composerIntent()}
         data-fullscreen={host.fullscreen() ? "" : undefined}
         data-history-label={t().historyBelow}
+        data-suggestion={suggestionUntouched() ? "" : undefined}
         aria-label={t().inlineDraftLabel({ intent: inlineIntentLabel() })}
         onKeyDown={onKeyDown}
       >
@@ -1531,10 +1593,20 @@ export default function MailComposer(props: {
           }}
         />
         <header class="mail-inline-draft-head">
-          <span class="mail-inline-draft-intent">
-            <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
-            {inlineIntentLabel()}
-          </span>
+          <Show
+            when={suggestionUntouched()}
+            fallback={
+              <span class="mail-inline-draft-intent">
+                <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
+                {inlineIntentLabel()}
+              </span>
+            }
+          >
+            <span class="mail-inline-draft-intent">
+              <i class="ti ti-sparkles" aria-hidden="true" />
+              {t().suggestionFromGustav}
+            </span>
+          </Show>
           <span class="mail-inline-draft-field-label">{t().to}</span>
           <div class="mail-inline-draft-recipients">
             <MailRecipientInput
@@ -1549,6 +1621,28 @@ export default function MailComposer(props: {
             <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
               {t().ccBcc}
             </Button>
+          </Show>
+          <Show when={sharedPeers().length > 0}>
+            <span class="mail-inline-draft-peers" data-mail-draft-peers>
+              <For each={sharedPeers().slice(0, 3)}>
+                {(peer) => (
+                  <span class="mail-inline-draft-peer" style={{ "--mail-peer-color": peer.color }} aria-hidden="true">
+                    {peer.name
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((part) => part[0]!.toUpperCase())
+                      .join("")}
+                  </span>
+                )}
+              </For>
+              {t().writingAlong({
+                names: sharedPeers()
+                  .map((peer) => peer.name)
+                  .join(", "),
+                count: sharedPeers().length,
+              })}
+            </span>
           </Show>
           <span class="mail-inline-draft-head-tools">
             <Dropdown.Root position="bottom-right" width="16rem" items={draftMenu()}>
@@ -1751,6 +1845,40 @@ export default function MailComposer(props: {
           onCancelUpload={(upload) => void attachments.cancelUpload(upload).catch((error) => prompts.error(error.message))}
         />
 
+        {/* The preview already shows the signature and the quote as the mail arrives. */}
+        <Show when={!inlinePreview()}>
+          <MailInlineSignature
+            mailboxId={props.mailboxId}
+            senderIdentityId={identityId}
+            signatureTemplateId={signatureTemplateId}
+            format={format}
+          />
+        </Show>
+        {/* The empty room below the text belongs to the text: a click there continues writing at its end. */}
+        <div class="mail-inline-draft-space" aria-hidden="true" onClick={focusEditorAtEnd} />
+        <Show when={!inlinePreview() && quoteLabel()}>
+          {(label) => (
+            <div class="mail-inline-draft-quote" data-mail-draft-quote>
+              <i class="ti ti-quote" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">
+                {quoteSource() ? t().quoteAttached({ label: label() }) : t().quoteOffer({ label: label() })}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                disabled={!editable()}
+                aria-pressed={Boolean(quoteSource())}
+                onClick={() =>
+                  setQuoteSource((current) => (current ? null : { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" }))
+                }
+              >
+                {quoteSource() ? t().removeQuote : t().attachQuote}
+              </Button>
+            </div>
+          )}
+        </Show>
+
         <footer class="mail-inline-draft-foot">
           <span class="mail-inline-draft-tools">
             <Show when={format() === "markdown"}>
@@ -1774,6 +1902,7 @@ export default function MailComposer(props: {
             </Tooltip.Anchor>
             <Show when={signatureChoiceVisible()}>
               <MailComposerSignature
+                quiet
                 signatures={props.signatures}
                 value={signatureTemplateId()}
                 senderDefaultId={senderDefaultSignatureId()}
@@ -1810,14 +1939,16 @@ export default function MailComposer(props: {
                 onClick={() => setInlinePreview((value) => !value)}
               >
                 <i class={`ti ${inlinePreview() ? "ti-pencil" : "ti-eye"}`} aria-hidden="true" />
-                {inlinePreview() ? t().write : t().preview}
+                <span class="mail-inline-draft-preview-label">{inlinePreview() ? t().write : t().preview}</span>
               </Button>
             </Show>
           </span>
           <span class="mail-inline-draft-status" role="status" aria-live="polite">
-            <Show when={saveState()}>
-              <i class={`ti ${status() === "saved" ? "ti-cloud-check" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
-              {saveState()}
+            <Show when={!suggestionUntouched()} fallback={<span class="mail-inline-draft-suggestion-hint">{t().suggestionHint}</span>}>
+              <Show when={saveState()}>
+                <i class={`ti ${status() === "saved" ? "ti-cloud-check" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
+                {saveState()}
+              </Show>
             </Show>
           </span>
           <SplitButton

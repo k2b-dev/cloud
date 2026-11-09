@@ -303,6 +303,17 @@ export const mailComposerMessages = i18n.define({
       historyBelow: "History, newest first",
       closedUnsaved:
         "The last changes of a shared draft you closed reached neither the server nor this device. Open the draft again and check its text.",
+      signatureBlock: "Signature",
+      signatureUnavailable: "The signature could not be shown",
+      signatureAtSend: "Mail adds the chosen signature when it sends.",
+      quoteOffer: ({ label }: { label: string }) => `Attach quote: ${label}`,
+      quoteAttached: ({ label }: { label: string }) => `Quote attached: ${label} · collapsed`,
+      attachQuote: "Attach",
+      removeQuote: "Remove",
+      suggestionFromGustav: "Suggestion from Gustav",
+      suggestionHint: "Type to take it over, or send it as it is",
+      writingAlong: ({ names, count }: { names: string; count: number }) =>
+        count === 1 ? `${names} is writing too` : `${names} are writing too`,
     },
     de: {
       reply: "Antworten",
@@ -608,6 +619,16 @@ export const mailComposerMessages = i18n.define({
       historyBelow: "Verlauf, neueste zuerst",
       closedUnsaved:
         "Die letzten Änderungen eines gemeinsamen Entwurfs, den du geschlossen hast, erreichten weder den Server noch dieses Gerät. Öffne den Entwurf erneut und prüfe den Text.",
+      signatureBlock: "Signatur",
+      signatureUnavailable: "Die Signatur kann nicht angezeigt werden",
+      signatureAtSend: "Mail fügt die gewählte Signatur beim Senden ein.",
+      quoteOffer: ({ label }) => `Zitat anhängen: ${label}`,
+      quoteAttached: ({ label }) => `Zitat angehängt: ${label} · eingeklappt`,
+      attachQuote: "Anhängen",
+      removeQuote: "Entfernen",
+      suggestionFromGustav: "Vorschlag von Gustav",
+      suggestionHint: "Tippe, um ihn zu übernehmen, oder sende ihn so",
+      writingAlong: ({ names, count }) => (count === 1 ? `${names} schreibt mit` : `${names} schreiben mit`),
     },
   },
 });
