@@ -3934,21 +3934,24 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
 
         test("Reply from a row's menu opens the conversation and starts the reply there", async () => {
-          const page = await open(boxPath);
+          const page = await open(`${boxPath}?identity=1`);
           try {
             const row = page.locator('.mail-workspace [data-conversation-id="Conv01"]');
-            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            // The reply starts as a draft in the conversation: Mail creates it before anyone types.
+            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
             await row.locator("a.mail-list-row").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
             await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
-            await drafts;
+            expect((await seed).postDataJSON()).toMatchObject({
+              origin: { kind: "compose", input: { intent: "reply", conversationId: "Conv01" } },
+            });
           } finally {
             await close(page);
           }
         });
 
         test("only the pill shows Reply; a message's right-click and … still reply to that message", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01`);
+          const page = await open(`${boxPath}?conversation=Conv01&identity=1`);
           try {
             await page.waitForFunction(
               () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
@@ -3966,11 +3969,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             for (const name of ["Reply", "Forward"])
               expect(await page.locator(dropdown).getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBe(1);
             await dismiss(page, dropdown);
-            // Right-click on the message: Reply starts the reply flow from this message's own menu.
-            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            // Right-click on the message: Reply starts the draft in the conversation from this message's own menu.
+            const seed = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/draft-seeds"));
             await message.locator("[data-mail-message-header]").click({ button: "right" });
             await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
-            await drafts;
+            expect((await seed).postDataJSON()).toMatchObject({
+              origin: { kind: "compose", input: { intent: "reply", sourceMessageId: "Msg001" } },
+            });
           } finally {
             await close(page);
           }

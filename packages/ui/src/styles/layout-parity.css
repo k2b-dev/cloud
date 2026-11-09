@@ -157,6 +157,12 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
   gap: 0.75rem;
 }
+/* Plain cards carry no frame, so they sit closer; the negative inset puts their tiles on the heading's edge. */
+.k2b-ui .k2b-app-overview__cards[data-surface="plain"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: 0.125rem 0.75rem;
+  margin-inline: -0.625rem;
+}
 
 /* Cloud renders the compact `Placeholder` as a bare child of the panel and
    lets the placeholder's own `px-3 py-6` carry the inset; the 0.75rem margin
@@ -1466,12 +1472,7 @@ html {
    start where the header's title does. */
 .k2b-ui
   :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  :is(
-    .k2b-detail-panel__summary,
-    .k2b-detail-panel__group,
-    .k2b-detail-panel__body > .k2b-detail-panel__section,
-    .k2b-detail-panel .k2b-discussion[data-surface="default"]
-  ) {
+  :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -1483,12 +1484,8 @@ html {
   gap: 1.5rem;
 }
 
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
-.k2b-ui
-  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  .k2b-detail-panel__group
-  > :is(.k2b-detail-panel__section, .k2b-discussion)
-  + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section,
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section + .k2b-section {
   padding: 0;
 }
 

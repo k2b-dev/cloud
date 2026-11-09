@@ -15,7 +15,7 @@ shadow; everything else is flat.
 | Layer | What lies there | Shadow |
 | --- | --- | --- |
 | 0 Workspace | The app card and its columns: sidebar, main content, docked detail panel | The app card: `--k2b-shadow-frame`. Columns: the quiet column shadow. Inside: flat. |
-| 1 Islands | Content cards in the main content: `Paper`, a framed `Section`, `LinkCard`, `ResourceCard`, `DashboardFrame`, a Kanban card | `--k2b-shadow-raised` with a light 1 px edge. Dark mode: a lighter surface instead. |
+| 1 Islands | Content cards in the main content: `Paper`, a framed `Section`, `LinkCard`, `ResourceCard`, `DashboardFrame`, `DashboardPanel`, a `StatCell` tile, a Kanban card | `--k2b-shadow-raised` with a light 1 px edge. Dark mode: a lighter surface instead. |
 | 2 Overlaying | Surfaces that cover content: a drawer, a sheet, a `PanelDialog`, the detail panel as a sheet on a phone | `--k2b-shadow-side`, `--k2b-shadow-sheet`. Inside: flat. |
 | 3 Floating | Menus, popovers, dialogs, tooltips, hover previews, toasts, drag previews; floating pills and toolbars | `--k2b-shadow-float`, `--k2b-shadow-toast`; pills and toolbars `--k2b-shadow-toolbar`. Inside: flat. |
 
@@ -70,6 +70,7 @@ shadow with a blur in packages and apps; rings and hairlines (blur 0, such as
 | --- | --- | --- | --- |
 | `--k2b-island-shadow` | `--k2b-shadow-raised` in the main content, no shadow in a flat layer | no shadow | Read this in every island. Never set a value yourself. |
 | `--k2b-island-surface` | `--k2b-surface-raised` in the main content, `--k2b-surface` in a flat layer | same | The background of an island. |
+| `--k2b-surface-beneath` | set inside an island to its surface | same | Mix a fill into what lies below it (a selected row) with `var(--k2b-surface-beneath, var(--k2b-surface))`; fields and controls keep `--k2b-surface`. |
 | `--k2b-shadow-raised` | `0 1px 2px rgb(15 23 19 / .05), 0 4px 12px -6px rgb(15 23 19 / .12)` | no shadow | Layer 1, through the island hook. |
 | `--k2b-surface-raised` | `--k2b-surface` | `--k2b-surface-elevated` | The lighter island surface in dark mode. |
 | `--k2b-shadow-toolbar` | `0 1px 2px rgb(9 9 11 / .06), 0 6px 18px -8px rgb(9 9 11 / .16)` | `0 1px 2px rgb(0 0 0 / .4), 0 8px 22px -10px rgb(0 0 0 / .5)` | Floating pills and toolbars that stay open. |
@@ -119,9 +120,11 @@ inner shadow as a fade is never used. `HoverPreview` floats on layer 3 with
 ## How an app gets it for free
 
 - **Use the components.** `Paper`, `Section`, `LinkCard`, `ResourceCard`,
-  `DashboardFrame`, `DataTable.Panel`, and the widgets are islands in the main
+  `DashboardFrame`, `DashboardPanel`, `StatCell`, `DataTable.Panel`, and the widgets are islands in the main
   content and flat everywhere else. `DetailPanel`, `AppWorkspace` columns,
   sheets, dialogs, popovers, menus, and toolbars make their inside flat.
+  A Markdown table in a chat or Assistant answer is an island like the view
+  table beside it; Markdown tables in documents stay flat hairlines.
 - **Mark a dense collection.** Put `data-k2b-layer="flat"` on the element that
   holds a grid or a list of cards that must stay flat.
 - **An app-owned card** that no component expresses, such as a Kanban card,

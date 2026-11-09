@@ -1,4 +1,5 @@
 import {
+  AppOverview,
   AppWorkspace,
   Avatar,
   AvatarFaces,
@@ -13,8 +14,10 @@ import {
   DataTable,
   DateTimePicker,
   DescriptionList,
+  DetailPanel,
   DotStrip,
   type DotStripTone,
+  Field,
   FileTypeIcon,
   FilterChip,
   FilterToggle,
@@ -33,6 +36,7 @@ import {
   RangePicker,
   ResourceCard,
   type ResourceCardState,
+  Section,
   SegmentedControl,
   Select,
   Skeleton,
@@ -506,6 +510,235 @@ const EmptyDemo = () => (
   </DemoCard>
 );
 
+const SectionKpis = (props: { items: readonly (readonly [string, string, string?])[] }) => (
+  <div class="ui-section-demo-kpis">
+    <For each={props.items}>
+      {([label, value, note]) => (
+        <div>
+          <small>{label}</small>
+          <b>{value}</b>
+          <Show when={note}>
+            <em>{note}</em>
+          </Show>
+        </div>
+      )}
+    </For>
+  </div>
+);
+
+const addButton = (label: string) => (
+  <IconButton variant="ghost" size="sm" label={label}>
+    <i class="ti ti-plus" aria-hidden="true" />
+  </IconButton>
+);
+
+const fileRow = (title: string, description: string, icon = "ti ti-file-type-pdf") => (
+  <DetailPanel.Action href="#section" leading={<i class={icon} aria-hidden="true" />} title={title} description={description} />
+);
+
+/** A customer file: one card per topic on a full page, as the approved mockup shows it. */
+const SectionPageDemo = () => (
+  <DemoCard
+    id="section-page"
+    chip={[
+      { kind: "component", name: "Section", from: "@k2b/ui" },
+      { kind: "component", name: "Field", from: "@k2b/ui" },
+    ]}
+    description="A full page gives every topic its own card with the light 1 px frame; as an island it takes the soft island shadow from the layer model. The icon sits in a neutral tile; parts divide a topic without a second frame."
+    code={`<Section size="md" icon="ti ti-id" title="Details" footer={<Button size="sm" variant="secondary">Edit all</Button>}>
+  <Section.Part title="Contact">
+    <Field label="Mobile" value="+49 151 2345 6789" copy />
+    <Field label="Email" value="marlene.hofbauer@example.org" kind="email" copy />
+  </Section.Part>
+</Section>
+<Section size="md" icon="ti ti-chart-bar" title="Reports" restricted="Only with permission">…</Section>`}
+  >
+    <div class="ui-section-demo-page">
+      <Section
+        size="md"
+        class="ui-section-demo-page__full"
+        icon="ti ti-checklist"
+        title="Todos"
+        count={3}
+        actions={
+          <Button variant="ghost" size="sm">
+            <i class="ti ti-plus" aria-hidden="true" />
+            Add todo
+          </Button>
+        }
+      >
+        <div class="ui-section-demo-todos">
+          <For
+            each={
+              [
+                ["Call back about the chest of drawers", "today", true],
+                ["Get contract 2026-031 signed", "Fri, Nov 13", false],
+                ["Send photos of the wardrobe", "Nov 14", false],
+              ] as const
+            }
+          >
+            {([title, due, late]) => (
+              <div class="ui-section-demo-todo">
+                <Checkbox label={title} value={false} onValueChange={() => {}} />
+                <span data-late={late ? "true" : undefined}>{due}</span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Section>
+      <div class="ui-section-demo-page__column">
+        <Section
+          size="md"
+          icon="ti ti-coins"
+          title="Money"
+          footer={
+            <Button size="sm" variant="secondary">
+              <i class="ti ti-cash" aria-hidden="true" />
+              Create payout
+            </Button>
+          }
+        >
+          <SectionKpis
+            items={[
+              ["Balance", "€1,240.00"],
+              ["Open", "€380.00"],
+              ["Paid out 2026", "€4,910.00"],
+            ]}
+          />
+        </Section>
+        <Section
+          size="md"
+          icon="ti ti-chart-bar"
+          title="Reports"
+          restricted="Only with permission"
+          actions={
+            <Button variant="ghost" size="sm">
+              Last 12 months
+              <i class="ti ti-chevron-down" aria-hidden="true" />
+            </Button>
+          }
+        >
+          <SectionKpis
+            items={[
+              ["Revenue", "€8,420", "+12 % on last year"],
+              ["Sold", "72 %"],
+              ["Avg. time listed", "41 days"],
+            ]}
+          />
+        </Section>
+        <Section size="md" icon="ti ti-notes" title="Notes and documents" count={4} actions={addButton("Add a note or document")}>
+          {fileRow("Call notes from Nov 3", "Jana Berger · Nov 3, 2026")}
+          {fileRow("Contract_2026-031.pdf", "240 KB · Nov 2, 2026")}
+          {fileRow("Chest_front.jpg", "1.8 MB · Nov 1, 2026", "ti ti-photo")}
+        </Section>
+      </div>
+      <div class="ui-section-demo-page__column">
+        <Section size="md" icon="ti ti-package" title="Consignments and contracts" count={5} actions={addButton("Add a consignment")}>
+          <DetailPanel.Row
+            leading={<i class="ti ti-armchair" aria-hidden="true" />}
+            title="E-2211 · Oak chest of drawers, around 1900"
+            description="Consigned Nov 5 · Price €480"
+            trailing={<StatusBadge variant="dot" tone="info" label="For sale" />}
+          />
+          <DetailPanel.Row
+            leading={<i class="ti ti-armchair" aria-hidden="true" />}
+            title="E-2190 · Pair of Thonet chairs"
+            description="Pickup by Nov 15"
+            trailing={<StatusBadge variant="dot" tone="warning" label="Pickup open" />}
+          />
+          <Section.Part title="Contracts">
+            <DetailPanel.Row
+              leading={<i class="ti ti-file-certificate" aria-hidden="true" />}
+              title="Consignment contract 2026-031"
+              description="Runs until Mar 31, 2027 · 25 % commission"
+              trailing={<StatusBadge variant="dot" tone="ok" label="Running" />}
+            />
+          </Section.Part>
+        </Section>
+        <Section size="md" icon="ti ti-history" title="History">
+          <DetailPanel.Row
+            leading={<i class="ti ti-shopping-cart" aria-hidden="true" />}
+            title="Oak chest of drawers sold, €420.00"
+            description="Today, 10:05 · Paul Ritter"
+          />
+          <DetailPanel.Row
+            leading={<i class="ti ti-cash" aria-hidden="true" />}
+            title="Payout of €610.00 transferred"
+            description="Nov 1, 2026 · System"
+          />
+        </Section>
+      </div>
+      <div class="ui-section-demo-page__column">
+        <Section
+          size="md"
+          icon="ti ti-id"
+          title="Details"
+          footer={
+            <Button size="sm" variant="secondary">
+              <i class="ti ti-pencil" aria-hidden="true" />
+              Edit all
+            </Button>
+          }
+        >
+          <Section.Part title="Person">
+            <Field label="Born" value="May 14, 1961" />
+            <Field label="Language" value="German" />
+          </Section.Part>
+          <Section.Part title="Contact">
+            <Field label="Mobile" value="+49 151 2345 6789" copy />
+            <Field label="Email" value="marlene.hofbauer-lindqvist@example.org" kind="email" copy />
+          </Section.Part>
+          <Section.Part title="Bank">
+            <Field label="IBAN" value="DE44 7015 0000 0012 3456 78" copy />
+          </Section.Part>
+        </Section>
+        <Section size="md" icon="ti ti-id-badge-2" title="ID card" tone="warning" meta="Expires soon">
+          <Field label="Number" value="L01X00T47" copy />
+          <Field label="Valid until" value="11/2026" />
+        </Section>
+        <Section size="md" icon="ti ti-arrows-exchange" title="Handover">
+          <p class="ui-section-demo-prose">
+            Jana Berger looks after the file until the end of 2026, then Paul Ritter. Open settlements stay with Jana.
+          </p>
+        </Section>
+      </div>
+    </div>
+  </DemoCard>
+);
+
+const SectionStatesDemo = () => (
+  <DemoCard
+    id="section-states"
+    chip={{ kind: "component", name: "Section", from: "@k2b/ui" }}
+    description="Named tones color the frame, title, and icon, never the fill, and the heading says the state in words. Visibility is a lock and words. Loading, error, empty, and closed keep the heading in place."
+    code={`<Section icon="ti ti-sparkles" title="Suggestion from Gustav" tone="ai" meta="AI">…</Section>
+<Section icon="ti ti-user" title="Customer" state="loading" loadingRows={2} />
+<Section icon="ti ti-paperclip" title="Files" state="error" errorMessage="Files could not load." onRetry={retry} />
+<Section icon="ti ti-history" title="Activity" collapsible summary="Paul uploaded a new version">…</Section>`}
+  >
+    <div class="ui-section-demo-states">
+      <Section icon="ti ti-chart-bar" title="Reports" restricted="Only with permission">
+        <p class="ui-section-demo-prose">Only people with the Reports permission see this.</p>
+      </Section>
+      <Section icon="ti ti-alert-triangle" title="ID card" tone="warning" meta="Expires soon">
+        <p class="ui-section-demo-prose">Valid until Nov 30, 2026. Request a new copy.</p>
+      </Section>
+      <Section icon="ti ti-alert-circle" title="Payment" tone="danger" meta="Failed">
+        <p class="ui-section-demo-prose">The transfer of €610.00 came back. Check the IBAN.</p>
+      </Section>
+      <Section icon="ti ti-sparkles" title="Suggestion from Gustav" tone="ai" meta="AI">
+        <p class="ui-section-demo-prose">Marlene asks about the pickup. A draft reply is ready.</p>
+      </Section>
+      <Section icon="ti ti-user" title="Customer" state="loading" loadingRows={2} />
+      <Section icon="ti ti-paperclip" title="Files" state="error" errorMessage="Files could not load." onRetry={() => {}} />
+      <Section icon="ti ti-checklist" title="Todos" count={0} actions={addButton("Add todo")} />
+      <Section icon="ti ti-history" title="Activity" collapsible summary="Paul Ritter uploaded a new version today, 10:42">
+        <p class="ui-section-demo-prose">Three entries</p>
+      </Section>
+    </div>
+  </DemoCard>
+);
+
 const PaperDemo = () => (
   <DemoCard
     id="paper"
@@ -624,13 +857,18 @@ const CardsDemo = () => (
     id="cards"
     chip={[
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
+      { kind: "component", name: "AppOverview", from: "@k2b/ui" },
       { kind: "component", name: "Avatar", from: "@k2b/ui" },
     ]}
-    description="LinkCard puts its icon in a soft chip of an explicit color or the app accent and can carry one trailing count. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
-    code={`import { Avatar, LinkCard } from "@k2b/ui";
+    description="LinkCard puts its icon in a soft chip of an explicit color or the app accent and can carry one trailing count. A plain LinkCard is a flat entry for a quiet overview, in AppOverview.Cards with the plain surface; media replaces the tile, for example with a file type. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
+    code={`import { AppOverview, Avatar, FileTypeIcon, LinkCard } from "@k2b/ui";
 
 <LinkCard href="/runtime" title="Runtime" description="Open details" icon="ti ti-server" color="cyan" />
 <LinkCard href="/apps/pulse" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
+<AppOverview.Cards surface="plain">
+  <LinkCard surface="plain" href="/storage/marketing" title="Team Marketing" description="Group · Cloud" icon="ti ti-users" />
+  <LinkCard surface="plain" href="/file/budget" title="Budget_2027.xlsx" description="Projects / Planning" media={<FileTypeIcon name="Budget_2027.xlsx" />} />
+</AppOverview.Cards>
 <Avatar name="Ada Lovelace" src="/avatars/ada.webp" size="lg" />
 <Avatar name="Grace Hopper" fallback="GH" size="md" />
 <Avatar name="Grace Hopper" size="sm" ring="success" alt="Grace Hopper is working on it" />
@@ -640,6 +878,16 @@ const CardsDemo = () => (
     <div class="ui-demo-form-grid">
       <LinkCard href="#cards" title="Runtime" description="Open runtime details" icon="ti ti-server" color="cyan" />
       <LinkCard href="#cards" title="Pulse" description="Telemetry sources" icon="ti ti-activity" meta="5 capabilities" />
+      <AppOverview.Cards surface="plain">
+        <LinkCard surface="plain" href="#cards" title="Team Marketing" description="Group · Cloud" icon="ti ti-users" />
+        <LinkCard
+          surface="plain"
+          href="#cards"
+          title="Budget_2027.xlsx"
+          description="Projects / Planning"
+          media={<FileTypeIcon name="Budget_2027.xlsx" />}
+        />
+      </AppOverview.Cards>
       <div class="ui-demo-row">
         <Avatar name="Ada Lovelace" src="/assets/logo.svg" size="lg" />
         <Avatar name="Grace Hopper" fallback="GH" size="md" />
@@ -1502,6 +1750,12 @@ const demos: DemoSection = {
   paper: () => (
     <DemoGrid columns="one">
       <PaperDemo />
+    </DemoGrid>
+  ),
+  section: () => (
+    <DemoGrid columns="one">
+      <SectionPageDemo />
+      <SectionStatesDemo />
     </DemoGrid>
   ),
   "empty-states": () => (

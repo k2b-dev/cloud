@@ -602,23 +602,30 @@
   gap: 1.5rem;
   align-items: start;
 }
+/* The form is an island (layers and shadows); the context column beside it is
+   flat text with a hairline between its parts. */
 .grids-form-workspace > .grids-form-workspace-main {
   padding: 1.25rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: 1rem;
-  background: var(--k2b-surface);
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
+}
+.grids-form-workspace > .grids-form-workspace-main > * {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-surface-beneath: var(--k2b-island-surface);
 }
 .grids-form-workspace-context {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 1.5rem;
 }
 .grids-form-summary,
 .grids-form-next {
-  padding: 1.25rem;
-  border-radius: 1rem;
-  background: var(--k2b-surface-muted);
+  padding-block: 1.25rem;
+}
+.grids-form-summary + .grids-form-next {
+  border-top: 1px solid var(--k2b-border);
 }
 .grids-form-summary-values {
   display: flex;

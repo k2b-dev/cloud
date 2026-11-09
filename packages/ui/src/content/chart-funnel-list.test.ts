@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { renderBarChartSvg } from "../charts/core/bar-render";
 import { funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "../charts/core/funnel";
-import { rankedBarLayout, renderBarChartSvg } from "./chart-bar";
+import { rankedBarLayout } from "./chart-bar";
 
 test("funnel ratios retain the start and previous step; rises fit the plot", () => {
   const spec = {

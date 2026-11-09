@@ -10,7 +10,9 @@ import { providerSupportsRequestHeaders } from "../shared/ai-request-options";
 import { getAiCredential, listAiCredentialProviderIds } from "./credentials";
 import { AI_FIRECRAWL_API_KEY_SETTING_KEY } from "./firecrawl-tools";
 import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
+import { aiModelUsesReasoning } from "./output-budget";
 import { createAiProvider } from "./provider";
+import { listProviderModels } from "./provider-connections";
 import { getAiRequestHeaders } from "./request-headers";
 import type { AiDataBoundary, AiModelPolicy, AiModelProfile, AiResolvedModel, AiSettingsError, AiSettingsState } from "./types";
 
@@ -99,12 +101,32 @@ export const resolveAiModelFromState = async (
   request?: AiModelRequest,
 ): Promise<AiResolvedModel> => {
   const model = resolveAiModelRef(state, policyRequest(policy, request));
-  const profile = selectAiModelProfile(state, policy, request);
+  let profile = selectAiModelProfile(state, policy, request);
   const credential = providerSupportsCredential(profile.provider) ? await getAiCredential(profile.providerId) : null;
   if (providerRequiresCredential(profile.provider) && !credential?.trim())
     return aiSettingsFailure("model_policy_mismatch", "The AI provider has no usable credential.");
   const headers = providerSupportsRequestHeaders(profile.provider) ? await getAiRequestHeaders(profile.providerId) : {};
-  return { model, profile, provider: createAiProvider(profile, credential?.trim() || undefined, headers) };
+  const provider = createAiProvider(profile, credential?.trim() || undefined, headers);
+  // Older catalog rows have no reported output ceiling. Resolve the provider's facts before budgeting, rather than
+  // treating a context window as an output limit. Explicit configuration avoids this lookup, bounded to ten seconds.
+  if (profile.maxOutputTokens === undefined && profile.outputTokenLimit === undefined && aiModelUsesReasoning(profile, provider)) {
+    try {
+      const reported = (
+        await listProviderModels({ type: profile.provider, baseUrl: profile.baseURL ?? null, apiKey: credential ?? undefined, headers })
+      ).find((candidate) => candidate.providerModel === profile.model);
+      if (reported) {
+        profile = {
+          ...profile,
+          contextWindow: profile.contextWindow ?? reported.contextWindow,
+          outputTokenLimit: reported.outputTokenLimit,
+        };
+        return { model, profile, provider: createAiProvider(profile, credential?.trim() || undefined, headers) };
+      }
+    } catch {
+      // Discovery is optional. An unavailable listing must not block an otherwise usable generation endpoint.
+    }
+  }
+  return { model, profile, provider };
 };
 export const resolveAiModel = async (
   policy: AiModelPolicy = { kind: "platform-default" },

@@ -1,3 +1,4 @@
+import { Marked, type Token, type Tokens } from "marked";
 import { chatMessages } from "./messages";
 import type { AttachmentView, SystemMessage } from "./service/contracts";
 
@@ -53,12 +54,52 @@ export const renderSystemMessage = (system: SystemMessage, authorName: string, l
   }
 };
 
+// The same Markdown the message renders with, so the preview reads what the message shows.
+const markdown = new Marked({ gfm: true, breaks: true });
+const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const decodeEntities = (text: string): string =>
+  text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, name: string) => {
+    if (!name.startsWith("#")) return NAMED_ENTITIES[name.toLowerCase()] ?? match;
+    const code = name[1] === "x" || name[1] === "X" ? Number.parseInt(name.slice(2), 16) : Number.parseInt(name.slice(1), 10);
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+  });
+
+/**
+ * Visible text of Markdown tokens: emphasis, link and code text, image alt text, list items and table cells. Blocks are
+ * joined with a space, inline parts without one, so "a**b**" stays one word.
+ */
+const visibleText = (tokens: readonly Token[], separator: "" | " "): string =>
+  tokens
+    .map((token): string => {
+      if (token.type === "list") return (token as Tokens.List).items.map((item) => visibleText(item.tokens, " ")).join(" ");
+      if (token.type === "table") {
+        const table = token as Tokens.Table;
+        return [table.header, ...table.rows].map((row) => row.map((cell) => visibleText(cell.tokens, "")).join(" ")).join(" ");
+      }
+      if (token.type === "checkbox") return "";
+      if ("tokens" in token && token.tokens) return visibleText(token.tokens, token.type === "blockquote" ? " " : "");
+      if (token.type === "br" || token.type === "space" || token.type === "hr") return " ";
+      return "text" in token && typeof token.text === "string" ? token.text : "";
+    })
+    .join(separator);
+
+/** A message as one line of plain text: what a reader sees, without Markdown marks. */
+export const messagePlainText = (body: string): string => {
+  let text: string;
+  try {
+    text = decodeEntities(visibleText(markdown.lexer(body), " "));
+  } catch {
+    text = body;
+  }
+  return text.replace(/\s+/gu, " ").trim();
+};
+
 export const messagePreview = (
   body: string,
   attachments: readonly Pick<AttachmentView, "kind" | "name">[] = [],
   locale?: string,
 ): string => {
-  const text = body.replace(/\s+/gu, " ").trim();
+  const text = messagePlainText(body);
   const first = attachments[0];
   let preview = text;
   if (!preview && first) {

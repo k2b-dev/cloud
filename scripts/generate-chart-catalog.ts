@@ -1,8 +1,8 @@
 /**
  * Generates what the Assistant and Code read about each chart kind from the chart showcase examples
  * (`docs-site/src/ui/demo-sections/charts/examples/<kind>.ts`): when to use it, when not, its options and one small
- * valid description per kind and layout. The examples keep their first three entries per list, so the model reads a
- * short description of the same shape the showcase draws.
+ * valid description per kind and layout. The examples keep their first three entries per list (Sankey keeps the
+ * nodes those links reference), so the model reads a short description of the same shape the showcase draws.
  *
  *   bun scripts/generate-chart-catalog.ts          write both files
  *   bun scripts/generate-chart-catalog.ts --check  exit 1 when one is stale
@@ -85,6 +85,28 @@ const shorten = (value: JsonValue): JsonValue =>
       ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, shorten(entry)]))
       : value;
 
+/** Keep Sankey endpoints together when shortening its independently sized lists. */
+const shortenExample = (value: JsonValue): JsonValue => {
+  const spec = shorten(value);
+  if (
+    value &&
+    !Array.isArray(value) &&
+    typeof value === "object" &&
+    spec &&
+    !Array.isArray(spec) &&
+    typeof spec === "object" &&
+    spec.kind === "sankey" &&
+    Array.isArray(value.nodes) &&
+    Array.isArray(spec.links)
+  ) {
+    const ids = new Set(
+      spec.links.flatMap((link) => (link && typeof link === "object" && !Array.isArray(link) ? [link.source, link.target] : [])),
+    );
+    return { ...spec, nodes: value.nodes.filter((node) => node && typeof node === "object" && !Array.isArray(node) && ids.has(node.id)) };
+  }
+  return spec;
+};
+
 type Entry = {
   kind: string;
   layout?: string;
@@ -105,7 +127,7 @@ export const chartCatalogEntries = (examples: readonly ChartShowcaseExample[] = 
       if (!layouts.has(layout)) layouts.set(layout, example);
     }
     return [...layouts.entries()].map(([layout, example]) => {
-      const spec = shorten(example.spec);
+      const spec = shortenExample(example.spec);
       const shape = schemaShape(kind, layout || undefined, surfaces.code) ?? {};
       return {
         kind,

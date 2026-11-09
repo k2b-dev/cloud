@@ -267,6 +267,51 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced" }))).toBe(document);
   });
 
+  test("a plain LinkCard is a flat anchor without frame or chevron, the same with enhanced navigation", () => {
+    const props = {
+      href: "/storage",
+      title: "Team Marketing",
+      description: "Group · Cloud",
+      icon: "ti ti-users",
+      surface: "plain" as const,
+      meta: "Missing",
+    };
+    const document = renderToString(() => createComponent(LinkCard, props));
+    const enhanced = renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced", onNavigate: () => {} }));
+    // `Link` may leave trailing whitespace in its class; the class list is what must match.
+    const attributes = (html: string) =>
+      (html.match(/^<a([^>]*)>/)?.[1]?.match(/[\w-]+="[^"]*"/g) ?? [])
+        .filter((attribute) => !attribute.startsWith("data-hk="))
+        .map((attribute) => attribute.replace(/\s+"$/, '"'))
+        .sort();
+    expect(attributes(enhanced)).toEqual(attributes(document));
+    expect(enhanced.slice(enhanced.indexOf(">"))).toBe(document.slice(document.indexOf(">")));
+    expect(document).toMatch(/^<a[^>]*class="k2b-link-card"/);
+    expect(document).toContain('data-surface="plain"');
+    expect(document).not.toContain("k2b-paper");
+    expect(document).not.toContain("k2b-link-card__chevron");
+    expect(document).toContain('<span class="k2b-link-card__meta">Missing</span>');
+    // The framed card keeps its look and chevron.
+    const framed = renderToString(() => createComponent(LinkCard, { ...props, surface: undefined }));
+    expect(framed).toContain("k2b-paper");
+    expect(framed).toContain("k2b-link-card__chevron");
+    expect(framed).not.toContain("data-surface");
+  });
+
+  test("media replaces the icon tile of a LinkCard", () => {
+    const html = renderToString(() =>
+      createComponent(LinkCard, {
+        href: "/file",
+        title: "Budget.xlsx",
+        description: "Projects / Planning",
+        surface: "plain",
+        media: createComponent(Tag, { children: "XLSX" }),
+      }),
+    );
+    expect(html).toContain('<div class="k2b-link-card__media">');
+    expect(html).not.toContain("k2b-link-card__icon");
+  });
+
   test("lets a LinkCard follow the app accent and carry one trailing fact", () => {
     const link = renderToString(() =>
       createComponent(LinkCard, {
@@ -642,9 +687,12 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
 
   test("keeps the Cloud chrome that earlier ports dropped", () => {
     // Every Paper is an island: it reads the one island hook, which each layer sets (layers and shadows).
-    const paperRule = parityCss.match(/\.k2b-ui \.k2b-paper \{[^}]*\}/)?.[0] ?? "";
-    expect(paperRule).toContain("box-shadow: var(--k2b-island-shadow)");
-    for (const selector of [".k2b-link-card", ".k2b-stat-grid", ".k2b-stat-cell", ".k2b-widget"]) {
+    // A key-figure tile and a dashboard panel are islands of their own and read the same hook.
+    for (const selector of [".k2b-paper", ".k2b-stat-cell", ".k2b-dashboard-panel"]) {
+      const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
+      expect(rule).toContain("box-shadow: var(--k2b-island-shadow)");
+    }
+    for (const selector of [".k2b-link-card", ".k2b-stat-grid", ".k2b-widget"]) {
       const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
       expect(rule).not.toContain("box-shadow:");
     }
@@ -654,8 +702,12 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     // `.state-placeholder[data-variant="panel"]` is 13rem/1.5rem, not 14rem/2rem.
     expect(parityCss).toContain('.k2b-placeholder[data-variant="panel"] { min-height: 13rem;');
     // Each key figure is its own framed tile (F2); a muted grid tints the tiles.
-    expect(parityCss).toMatch(/\.k2b-ui \.k2b-stat-cell \{[^}]*border: 1px solid var\(--k2b-border\)/);
-    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-surface="muted"] { background: var(--k2b-surface-muted); }');
+    expect(parityCss).toMatch(
+      /\.k2b-ui \.k2b-stat-cell \{[^}]*border: 1px solid color-mix\(in srgb, var\(--k2b-border\) 72%, transparent\)/,
+    );
+    expect(parityCss).toContain(
+      '.k2b-ui .k2b-stat-cell[data-surface="muted"] { background: var(--k2b-surface-muted); box-shadow: 0 0 #0000; }',
+    );
     // ProgressBar is a row: track then optional readout.
     expect(parityCss).toMatch(/\.k2b-progress \{[^}]*flex-direction: row/);
     // WidgetHero is a bare block inside the widget body, not a tinted card.

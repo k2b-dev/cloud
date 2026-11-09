@@ -63,7 +63,9 @@ opens the calendar as a bottom sheet with touch-sized days.
 A date-only `DateRangePicker` has a start and an end field in one box, with
 the range and its length in the status line. A pasted range such as
 `11.11. – 14.11.` or `11.11. bis 14.11.` fills both. The calendar keeps two
-clicks and **Apply**.
+clicks and **Apply**. In the phone sheet, picked days stay in the sheet until
+the range is saved, so closing the sheet without saving leaves the field as it
+was.
 
 Set `min` and `max` as date keys to limit the days. The calendar locks the
 other days and months and names the limits in its footer; a typed day outside
@@ -215,7 +217,7 @@ form needs it.
 
 ## API reference
 
-See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
+See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`. `DatePicker` in its default `field` appearance takes a [suggestion](/en/ui/input/field-suggestion) as a date key within `min` and `max`; `plain` pickers, `DateTimePicker`, and `DateRangePicker` do not take suggestions yet.
 
 ```ts
 type DatePreset<T> = {

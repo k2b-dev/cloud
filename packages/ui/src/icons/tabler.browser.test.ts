@@ -8,7 +8,6 @@ import { browserName, launchBrowser, settled } from "../../test/browser";
 // layout, which happy-dom does not model, so a real engine loads the shipped preset.
 const dist = resolve(import.meta.dir, "../../dist");
 const preset = readFileSync(resolve(dist, "tabler.css"), "utf8");
-const fontFile = /\.\/(tabler-icons-[\w-]+\.woff2)/.exec(preset)![1]!;
 
 // An icon in running text, an icon with a label, an icon-only control at another size, and text after each. The
 // preset is inline: a linked stylesheet could still be on its way when the first measurement runs.
@@ -38,9 +37,10 @@ describe("Tabler icon preset", () => {
       await tab.route("http://icons.test/**", async (route) => {
         const { pathname } = new URL(route.request().url());
         if (pathname === "/") return route.fulfill({ contentType: "text/html; charset=utf-8", body: page });
-        if (pathname === `/${fontFile}`) {
+        // Every font file the preset names: from Tabler 3.50 the font is split into unicode-range faces.
+        if (pathname.endsWith(".woff2")) {
           await firstFrame.promise;
-          return route.fulfill({ contentType: "font/woff2", path: resolve(dist, fontFile) });
+          return route.fulfill({ contentType: "font/woff2", path: resolve(dist, pathname.slice(1)) });
         }
         return route.fulfill({ status: 404, body: "" });
       });
@@ -51,11 +51,12 @@ describe("Tabler icon preset", () => {
             const { left, width } = element.getBoundingClientRect();
             return `${element.tagName.toLowerCase()}.${element.className} "${element.textContent?.trim()}" ${left} ${width}`;
           });
-          const font: string[] = [];
+          // The faces the page asked for; a split font leaves the faces it does not use unloaded.
+          const font = new Set<string>();
           document.fonts.forEach((face) => {
-            if (face.family === "tabler-icons") font.push(face.status);
+            if (face.family === "tabler-icons" && face.status !== "unloaded") font.add(face.status);
           });
-          return { boxes, font };
+          return { boxes, font: [...font] };
         });
       const before = await measure();
       firstFrame.resolve();
@@ -122,7 +123,7 @@ const openBrandPage = async (theme: "light" | "dark") => {
   await tab.route("http://icons.test/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname === "/") return route.fulfill({ contentType: "text/html; charset=utf-8", body: brandPage(theme) });
-    if (pathname === `/${fontFile}`) return route.fulfill({ contentType: "font/woff2", path: resolve(dist, fontFile) });
+    if (pathname.endsWith(".woff2")) return route.fulfill({ contentType: "font/woff2", path: resolve(dist, pathname.slice(1)) });
     return route.fulfill({ status: 404, body: "" });
   });
   await tab.goto("http://icons.test/");

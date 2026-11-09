@@ -4,8 +4,10 @@ import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { calendarLayout } from "../charts/core/calendar";
+import { lineDetailsEnabled, lineLegendX } from "../charts/core/line-options";
 import type { ChartDrawingOptions } from "../charts/core/render";
 import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
+import { sankeyWidth } from "../charts/core/sankey-size";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -21,6 +23,7 @@ import {
 } from "./chart-inspection-core";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { resolveChartMessages, useChartMessages } from "./chart-messages";
+import { sankeyInspectionNavigation } from "./chart-sankey";
 import {
   panStateTimelineViewport,
   type StateTimelineDomain,
@@ -126,6 +129,7 @@ export type ChartProps = {
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "treemap" || props.kind === "pareto") return !props.data.length;
+  if (props.kind === "sankey") return !props.nodes.length || !props.links.length;
   if (props.kind === "bubble") return !props.data.length;
   if (props.kind === "radar") return !props.series.length;
   if (props.kind === "area")
@@ -180,14 +184,21 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout({ ...props, locale: props.locale ?? locale() }) : undefined;
   const size = () => ({
     width: calendar()?.width ?? 480,
-    height: chartRenderHeight(props),
+    height: calendar()?.height ?? chartRenderHeight(props),
   });
   const topLegend = () =>
     props.kind === "area"
       ? props.legend !== false
-      : props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+      : props.kind === "line" && props.legend === true && (props.legendPlacement === "top-start" || lineDetailsEnabled(props));
   const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
   const legendValue = (index: number) => {
+    if (props.kind === "line") {
+      const defaultX = lineLegendX(props);
+      const last = props.series[index]?.data.find((point) => point.x === defaultX);
+      return last && Number.isFinite(last.y)
+        ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format(last.y))
+        : "—";
+    }
     if (props.kind !== "area") return "";
     const last = props.x.length - 1;
     const amount = props.series[index]?.data[last];
@@ -461,12 +472,18 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
     kind: () => props.kind,
-    nav: () => (props.kind === "heatmap" && props.layout === "calendar" ? calendarInspectionNavigation : undefined),
+    nav: () =>
+      props.kind === "sankey"
+        ? sankeyInspectionNavigation
+        : props.kind === "heatmap" && props.layout === "calendar"
+          ? calendarInspectionNavigation
+          : undefined,
     enabled: () => !isEmpty(props),
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields =
+        props.kind === "sankey" ||
         props.kind === "bubble" ||
         props.kind === "radar" ||
         props.kind === "treemap" ||
@@ -532,7 +549,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      props.kind === "bubble" ||
+      props.kind === "sankey" ||
+        props.kind === "bubble" ||
         props.kind === "radar" ||
         props.kind === "treemap" ||
         props.kind === "pareto" ||
@@ -570,7 +588,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
         tooltip: () => chartTooltipRef,
         scroll: inspection.scroll,
         close: closeChartTooltip,
-        keepScroll: () => props.kind === "heatmap" && props.layout === "calendar",
+        keepScroll: () => props.kind === "sankey" || (props.kind === "heatmap" && props.layout === "calendar"),
       }),
     );
   });
@@ -602,6 +620,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           to chart data/options rebuild the SVG; resizing does not. */}
       <div
         ref={containerRef}
+        id={calendar() ? `${chartTooltipId}-scroll` : undefined}
         class={`k2b-chart ${props.class ?? ""}`}
         data-chart-kind={props.kind}
         data-legend-placement={topLegend() ? "top-start" : undefined}
@@ -644,16 +663,20 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
                       height="8"
                       rx="2"
                       class={`stdlib-chart-series-${index() % 8}`}
-                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"][index() % 8]})`}
+                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${
+                        (props.kind === "line" && lineDetailsEnabled(props)
+                          ? ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"]
+                          : ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"])[index() % 8]
+                      })`}
                       stroke="none"
                     />
                   </svg>
                   <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
-                  <Show when={props.kind === "area"}>
+                  <Show when={props.kind === "area" || (props.kind === "line" && lineDetailsEnabled(props))}>
                     <b
                       data-chart-legend-value
                       data-series-index={index()}
-                      data-field={props.kind === "area" && props.normalize ? "percent" : "value"}
+                      data-field={props.kind === "area" && props.normalize ? "percent" : props.kind === "line" ? "y" : "value"}
                       data-default={legendValue(index())}
                     >
                       {legendValue(index())}
@@ -669,7 +692,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           data-stretch={!calendar() && !preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
             "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
-            "--k2b-chart-width": `${size().width}px`,
+            "max-width": calendar() ? `${calendar()!.maxWidth}px` : undefined,
+            "--k2b-chart-width": `${props.kind === "sankey" ? sankeyWidth(props, props.displayWidth ?? size().width) : size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
           }}
