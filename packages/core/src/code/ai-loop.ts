@@ -1,6 +1,12 @@
 import { sql } from "@k2b/cloud";
-import { type AiModelProfile, type AiResolvedModel, createAiRunFiles } from "@k2b/cloud/ai";
-import { CodeBridgeRefusal, type CodeRunnerDispatchDependencies, dispatchCodeSdkCall, readCodeAiFile } from "@k2b/cloud/api";
+import { type AiModelProfile, type AiResolvedModel, AiRunReadInput, AiRunViewInput, createAiRunFiles } from "@k2b/cloud/ai";
+import {
+  CodeBridgeRefusal,
+  type CodeFileObservationHost,
+  type CodeRunnerDispatchDependencies,
+  dispatchCodeSdkCall,
+  readCodeAiFile,
+} from "@k2b/cloud/api";
 import type { CodeAiToolBinding } from "@k2b/cloud/code";
 import { createCodeAiTools } from "@k2b/cloud/code";
 import { CodeRunTokenClaimsSchema } from "@k2b/cloud/code/run-token";
@@ -81,7 +87,8 @@ export async function prepareCodeAiLoop(
   const run = await codeAiRun(context);
   const signal = AbortSignal.any([context.signal, AbortSignal.timeout(Math.max(1, run.claims.exp * 1000 - Date.now()))]);
   const request = new Request("https://core.invalid/code-ai", { signal, headers: { "accept-language": context.locale } });
-  const dependencies: CodeRunnerDispatchDependencies = { host: createCodeBridgeHost(), ownOrigins: readCodeOwnOrigins };
+  const host = createCodeBridgeHost();
+  const dependencies: CodeRunnerDispatchDependencies = { host, ownOrigins: readCodeOwnOrigins };
   const reader = (model: Pick<AiResolvedModel, "profile">, maxInputTokens: number, describe: (parts: ContentPart[]) => Promise<string>) =>
     createAiRunFiles({
       model,
@@ -100,7 +107,7 @@ export async function prepareCodeAiLoop(
     reader,
     check,
     fileTool: <T>(name: "view_image" | "read_file", input: unknown, execute: () => Promise<T>) =>
-      codeAiFileTool(run.claims, name, input, execute, dependencies.host),
+      codeAiFileTool(run.claims, operation, name, input, execute, host),
     async tools(files: ReturnType<typeof createAiRunFiles>) {
       return createCodeAiTools({
         bindings: input.tools ?? [],
@@ -173,29 +180,31 @@ export const codeAiFileToolOperation = (name: "view_image" | "read_file") =>
 /** Internal viewers use the same durable observer and policy fence without reserving AI a second time. */
 export async function codeAiFileTool<T>(
   claims: Parameters<typeof readCodeAiFile>[0]["claims"],
+  operation: "core.ai.generate" | "core.ai.decide",
   name: "view_image" | "read_file",
   input: unknown,
   execute: () => Promise<T>,
-  host: CodeRunnerDispatchDependencies["host"],
+  host: CodeFileObservationHost,
 ): Promise<T> {
   let value: T | undefined;
   let failure: unknown;
-  const call = { claims, kind: "query" as const, call: { capability: codeAiFileToolOperation(name), target: null, refs: {}, input } };
-  const response = await host.withCall(call, async () => {
-    await sql.begin((tx) => authorizeCodeCall(call, tx));
+  const args = name === "view_image" ? AiRunViewInput.parse(input) : AiRunReadInput.parse(input);
+  const metadata = {
+    ref: { mediaType: args.ref.mediaType, size: args.ref.size, ...(args.ref.name ? { name: args.ref.name } : {}) },
+    ...("pages" in args && args.pages ? { pages: args.pages } : {}),
+    ...("offset" in args ? { offset: args.offset, length: args.length } : {}),
+  };
+  const response = await host.withFileObservation({ claims, operation: codeAiFileToolOperation(name), input: metadata }, async () => {
+    await sql.begin((tx) =>
+      authorizeCodeCall({ claims, kind: "query", call: { capability: operation, target: null, refs: {}, input: {} } }, tx),
+    );
     try {
       value = await execute();
       return Response.json({ ok: true, data: null });
     } catch (cause) {
       failure = cause;
-      const parsed = z.object({ code: z.string().optional(), status: z.number().optional() }).safeParse(cause);
-      return Response.json({
-        ok: false,
-        error: {
-          code: parsed.success && parsed.data.code ? parsed.data.code : "code_file_unavailable",
-          ...(parsed.success && parsed.data.status ? { status: parsed.data.status } : {}),
-        },
-      });
+      const parsed = z.object({ code: z.string().optional() }).safeParse(cause);
+      throw new CodeBridgeRefusal(parsed.success && parsed.data.code ? parsed.data.code : "code_file_unavailable");
     }
   });
   if (failure) throw failure;

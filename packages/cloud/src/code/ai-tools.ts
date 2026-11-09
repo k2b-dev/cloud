@@ -2,7 +2,7 @@ import { defineTool, type ServerTool } from "@k2b/nessi";
 import { z } from "zod";
 import { getCapability } from "../_internal/registry";
 import type { CodeVersionPermission } from "../contracts/code-version";
-import type { CodeAiToolBinding } from "./file-ref";
+import { type CodeAiToolBinding, CodeFileRefSchema, hasFileInput } from "./file-ref";
 import type { CodeSdkInvocation } from "./types";
 
 /** Checked evidence narrows tool admission. Dispatch still authorizes every actual call against current policy. */
@@ -43,7 +43,12 @@ export async function createCodeAiTools(options: {
       )
         throw new Error("code_ai_tool_invalid");
       // The advertised input contains only business data. Targets, account and authority never come from the model.
-      const input = z.fromJSONSchema(operation.inputSchema);
+      const properties = operation.inputSchema.properties;
+      const input = z.fromJSONSchema(
+        operation.stream?.direction === "write" && hasFileInput(operation.inputSchema) && properties && typeof properties === "object"
+          ? { ...operation.inputSchema, properties: { ...properties, file: z.toJSONSchema(CodeFileRefSchema) } }
+          : operation.inputSchema,
+      );
       return defineTool({
         name: `sdk_${index}`,
         description: `${binding.capability}: ${operation.description}`,

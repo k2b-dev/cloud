@@ -227,6 +227,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
     const use = wrapped.parent;
     return (
+      aiToolElement(node) !== null ||
       sdkMemberAccess(use, wrapped) ||
       (ts.isCallExpression(use) && use.expression === wrapped) ||
       (allowJsx &&

@@ -51,6 +51,7 @@ test("structured loop executes typed tools and injects acquired images into the 
   expect(f.execute).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(f.requests[1]!.messages)).toContain('"mediaType":"image/png"');
   expect(JSON.stringify(f.requests[1]!.messages)).toContain("untrusted content");
+  expect(JSON.stringify(f.requests[1]!.messages)).toContain("untrusted_tool_result");
 });
 
 test("submission is terminal even when the model sends more tools in the same response", async () => {
