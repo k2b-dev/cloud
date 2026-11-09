@@ -725,9 +725,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       draft?: { content: AiDraftContentPart[] };
       preloadTools?: Array<{ name: string } | { appId: string; kind: "query" | "action"; id: string }>;
     } = {},
+    options: { activate?: boolean } = {},
   ) => {
-    const generation = ++conversationOpenGeneration;
-    clearErrors();
+    const generation = options.activate === false ? conversationOpenGeneration : ++conversationOpenGeneration;
+    if (options.activate !== false) clearErrors();
     setCreationErrorStatus(null);
     try {
       const conversation = await request<AiConversation>(
@@ -738,7 +739,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       const projection = emptyProjection(conversation);
       cache.set(conversation.id, projection);
       setHasMore(conversation.id, false);
-      if (generation !== conversationOpenGeneration) return conversation;
+      if (generation !== conversationOpenGeneration || options.activate === false) return conversation;
       setState(reconcile(projection, { key: "id", merge: true }));
       setActiveConversationIdSignal(conversation.id);
       setLoadingConversationId(null);

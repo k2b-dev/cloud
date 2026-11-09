@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiStoredMessage } from "@k2b/cloud/ai";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import type { AssistantPlaceView } from "./assistant-place";
 
 // Gustav at a place in the side panel: the place bar, following the page (O1), the empty chat with starters, "Start
@@ -168,6 +168,7 @@ type Scenario = {
   /** The full Gustav app instead of the panel. */
   full?: boolean;
   placesFilter?: boolean;
+  creationErrors?: number[];
 };
 
 const models = [
@@ -315,6 +316,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
   /** Answers held back until the test releases them, by place id. */
   const held = new Map<string, () => void>();
   const hold = new Set<string>();
+  const heldChats = new Map<string, () => void>();
+  const holdChats = new Set<string>();
   await page.route(`${assets.url.href}**`, async (route: Route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
@@ -357,6 +360,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
         archived.push(id!);
         return route.fulfill({ status: 204 });
       }
+      if (suffix === "" && method === "GET" && holdChats.has(id!)) await new Promise<void>((release) => heldChats.set(id!, release));
       if (suffix === "" && method === "GET" && allChats.some((item) => item.id === id)) return route.fulfill({ json: detailOf(id!) });
       const fresh = createdChats.get(id!);
       if (suffix === "" && method === "GET" && fresh)
@@ -379,7 +383,9 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
     if (url.pathname === "/api/ai/conversations" && method === "POST") {
       const body = route.request().postDataJSON();
       created.push(body);
-      const fresh = { ...conversation("Pnew01", people[body.place?.id] ?? "Neu", 0, body.place?.id) };
+      const failure = scenario.creationErrors?.shift();
+      if (failure) return route.fulfill({ status: failure, json: { message: "Creation refused" } });
+      const fresh = { ...conversation(`Pnew0${createdChats.size + 1}`, people[body.place?.id] ?? "Neu", 0, body.place?.id) };
       createdChats.set(fresh.id, fresh);
       return route.fulfill({ status: 201, json: fresh });
     }
@@ -424,7 +430,28 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
   const setAnswer = async (id: string, answer: AssistantPlaceView) => {
     scenario.answers[id] = answer;
   };
-  return { page, errors, placeCalls, created, archived, drafts, turns, setAnswer, hold, held, navigateHost, close: () => context.close() };
+  const withdrawContext = () =>
+    page.evaluate(() => {
+      document.getElementById("cloud-panel-context")!.textContent = "null";
+      window.dispatchEvent(new Event("cloud.panel.context.changed"));
+    });
+  return {
+    page,
+    errors,
+    placeCalls,
+    created,
+    archived,
+    drafts,
+    turns,
+    setAnswer,
+    hold,
+    held,
+    holdChats,
+    heldChats,
+    navigateHost,
+    withdrawContext,
+    close: () => context.close(),
+  };
 };
 
 const poll = async (read: () => unknown, expected: unknown, timeout = 5_000) => {
@@ -447,6 +474,117 @@ const rowHeight = (page: Page) =>
     .evaluate((row) => row.getBoundingClientRect().height);
 
 describe("Gustav at a place", () => {
+  test("a cancelled chat open does not leave place following on for a later normal chat", async () => {
+    const h = await open(panel, {
+      place: "u_marta",
+      initial: true,
+      answers: { u_marta: available("u_marta", null), u_jonas: available("u_jonas", "Pjonas"), u_erika: available("u_erika", null) },
+    });
+    try {
+      await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).waitFor();
+      h.holdChats.add("Pjonas");
+      await h.navigateHost(2, "u_jonas");
+      await poll(() => h.heldChats.has("Pjonas"), true);
+      await h.navigateHost(3, null);
+      h.holdChats.delete("Pjonas");
+      h.heldChats.get("Pjonas")!();
+      await settled(h.page);
+      expect(new URL(h.page.url()).searchParams.get("conversation")).not.toBe("Pjonas");
+      // The panel receives a normal chat selected through the shell's search navigation bridge.
+      await h.page.evaluate(async () => {
+        const detail = {
+          target: { href: "/app/assistant/panel?conversation=Steu42", ref: { type: "assistant.chat", id: "Steu42" } },
+          handled: undefined as Promise<boolean> | undefined,
+        };
+        window.dispatchEvent(new CustomEvent("cloud.search.navigate", { detail }));
+        await detail.handled;
+      });
+      await h.page.getByText("Hier ist eine Checkliste für 2026").waitFor();
+      await h.navigateHost(4, "u_erika");
+      await bar(h.page).getByRole("button", { name: "Zu Erika Muster wechseln" }).waitFor();
+      expect(new URL(h.page.url()).searchParams.get("conversation")).toBe("Steu42");
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
+  for (const plain of [false, true]) {
+    test(`an unknown ${plain ? "plain" : "place"} creation cannot retarget the next place's first message`, async () => {
+      const h = await open(panel, {
+        ...(plain ? {} : { place: "u_marta", initial: true }),
+        creationErrors: [503],
+        answers: { u_marta: available("u_marta", null), u_jonas: available("u_jonas", null) },
+      });
+      try {
+        const composer = h.page.getByRole("textbox").last();
+        await composer.click();
+        await h.page.keyboard.type("First attempt");
+        await h.page.keyboard.press("Enter");
+        await poll(() => h.created.length, 1);
+        await h.navigateHost(2, "u_jonas");
+        await bar(h.page).getByRole("button", { name: "Zu Jonas Probe wechseln" }).click();
+        await h.page.getByRole("heading", { name: "Frag Gustav zu Jonas Probe" }).waitFor();
+        await composer.click();
+        await h.page.keyboard.press("ControlOrMeta+A");
+        await h.page.keyboard.type("Second place message");
+        await h.page.keyboard.press("Enter");
+        await poll(() => h.created.length, 2);
+        expect(h.created[1]).toMatchObject({
+          place: placeRef("u_jonas"),
+          draft: { content: [{ type: "text", text: "Second place message" }] },
+        });
+        await poll(() => h.turns.length, 1);
+        expect(h.turns).toEqual(["Pnew01"]);
+        expect(h.errors).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    }, 60_000);
+  }
+
+  test("a concurrent first-message conflict opens the existing place chat and retains the local text", async () => {
+    const h = await open(panel, {
+      place: "u_marta",
+      initial: true,
+      creationErrors: [409],
+      answers: { u_marta: available("u_marta", null) },
+    });
+    try {
+      await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).waitFor();
+      await h.setAnswer("u_marta", available("u_marta", "Pmarta"));
+      const composer = h.page.getByRole("textbox").last();
+      await composer.click();
+      await h.page.keyboard.type("Keep my text from the other tab");
+      await h.page.keyboard.press("Enter");
+      await h.page.getByText("Erledigt. Die Antwort hat jetzt 2 Sätze").waitFor();
+      await settled(h.page);
+      expect(new URL(h.page.url()).searchParams.get("conversation")).toBe("Pmarta");
+      expect(await composer.inputValue().catch(() => composer.textContent())).toContain("Keep my text from the other tab");
+      expect(h.created).toHaveLength(1);
+      expect(h.turns).toEqual([]);
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
+  test("withdrawing consent removes stale starters and offers the shell's context question", async () => {
+    const h = await open(panel, { place: "u_marta", initial: true, answers: { u_marta: available("u_marta", null) } });
+    try {
+      await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).waitFor();
+      await h.withdrawContext();
+      await settled(h.page);
+      await bar(h.page).getByRole("button", { name: "Kontext teilen …" }).waitFor();
+      expect(await h.page.getByRole("group", { name: "Vorschläge von Kundenkontakt" }).count()).toBe(0);
+      expect(h.created).toEqual([]);
+      expect(h.placeCalls).toEqual([]);
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
   test("the empty chat at a place names it, offers the app's starters, and creates the chat with the first message", async () => {
     for (const [view, name] of [
       [panel, "01-panel-ort-leer-light-1440"],
@@ -553,6 +691,7 @@ describe("Gustav at a place", () => {
 
       // Back at Jonas, the panel opens his chat at that place.
       await h.navigateHost(4, "u_jonas");
+      await settled(h.page);
       await h.page.getByText("Ja, Freitag ab 14 Uhr passt laut Kalender.").waitFor();
       expect(new URL(h.page.url()).searchParams.get("conversation")).toBe("Pjonas");
       expect(h.errors).toEqual([]);

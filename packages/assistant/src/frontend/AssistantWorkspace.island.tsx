@@ -778,6 +778,7 @@ export default function AssistantWorkspace(props: Props) {
     draft?: { content: AiDraftContentPart[] };
   };
   const creationRequests = new Map<string, CreationRequest>();
+  const creationComposerKey = (key: string) => (key.startsWith("place:") ? "__new__" : key);
   const [rejectedCreations, setRejectedCreations] = createSignal<ReadonlySet<string>>(new Set());
   const [creationVersion, setCreationVersion] = createSignal(0);
   const hasUnknownCreations = () => (creationVersion(), creationRequests.size > 0 && !newConversation.loading());
@@ -815,10 +816,12 @@ export default function AssistantWorkspace(props: Props) {
       projectId?: string;
       navigate?: boolean | (() => boolean);
       place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] };
+      background?: boolean;
     }
   >({
-    mutation: async ({ focus, projectId, navigate: shouldNavigate = true, place }) => {
-      const key = projectId ? projectComposerKey(projectId) : "__new__";
+    mutation: async ({ focus, projectId, navigate: shouldNavigate = true, place, background = false }) => {
+      const composerKey = projectId ? projectComposerKey(projectId) : "__new__";
+      const key = place ? `place:${JSON.stringify([place.ref.type, place.ref.id])}` : composerKey;
       let request = creationRequests.get(key);
       if (!request) {
         request = place
@@ -827,11 +830,43 @@ export default function AssistantWorkspace(props: Props) {
         creationRequests.set(key, request);
         setCreationVersion((version) => version + 1);
       }
-      setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== key)));
-      const conversation = await chat.createConversation(request);
+      setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== composerKey)));
+      const conversation = await chat.createConversation(request, { activate: !background });
+      if (!conversation && place && chat.creationErrorStatus() === 409) {
+        creationRequests.delete(key);
+        setCreationVersion((version) => version + 1);
+        const navigation = navigationRequest;
+        try {
+          const view = await loadPlace(place.ref, new AbortController().signal);
+          pagePlace.update(view);
+          if (
+            !background &&
+            navigation === navigationRequest &&
+            samePlace(emptyPlace()?.ref, place.ref) &&
+            view.state === "available" &&
+            view.conversationId
+          ) {
+            const target = view.conversationId;
+            const local = sessions.get(target);
+            if (local && (local.dirty || local.conflict || local.saving)) {
+              chat.setError(t().panelCreateDraftCollision);
+              return null;
+            }
+            if (await openAndFocusConversation(target)) {
+              const loaded = chat.conversation();
+              if (loaded?.id === target) migrateNewComposer(loaded);
+              commitConversationUrl(target);
+            }
+          }
+        } catch {
+          chat.setError(t().openConversationFailed);
+        }
+        // Another tab's draft is never submitted automatically. Keep this text for the person to review.
+        return null;
+      }
       if (!conversation && [400, 401, 403, 404, 409, 413, 422].includes(chat.creationErrorStatus() ?? 0)) {
         creationRequests.delete(key);
-        setRejectedCreations((keys) => new Set([...keys, key]));
+        setRejectedCreations((keys) => new Set([...keys, composerKey]));
         setCreationVersion((version) => version + 1);
       }
       const existing = conversation && !projectId ? sessions.get(conversation.id) : undefined;
@@ -845,8 +880,8 @@ export default function AssistantWorkspace(props: Props) {
           creationRequests.delete(key);
           setCreationVersion((version) => version + 1);
           if (projectId) setPendingProjectChats((all) => ({ ...all, [projectId]: conversation }));
-          else migrateNewComposer(conversation);
-          const targetKey = projectId ? key : conversation.id;
+          else if (!background) migrateNewComposer(conversation);
+          const targetKey = projectId ? composerKey : conversation.id;
           const local = session(targetKey);
           // A place chat is created with this composer's own first message as its draft: that revision is ours, not a
           // remote change, so the send right after builds on it instead of stopping at a draft conflict.
@@ -873,16 +908,19 @@ export default function AssistantWorkspace(props: Props) {
     projectId?: string,
     shouldNavigate: boolean | (() => boolean) = true,
     place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] },
+    background = false,
   ) => {
     if (newConversation.loading() || composerPicking() > 0) return null;
-    await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}) });
+    await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}), background });
     return newConversation.data();
   };
   type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
   let confirmedUnknownExit: UnknownExit | undefined;
   const unknownExitSnapshot = (): UnknownExit => ({
     revisions: { ...chat.uncertainSubmissions() },
-    generations: new Map([...new Set([...sessions.keys(), ...creationRequests.keys()])].map((key) => [key, session(key).editGeneration])),
+    generations: new Map(
+      [...new Set([...sessions.keys(), ...creationRequests.keys()])].map((key) => [key, session(creationComposerKey(key)).editGeneration]),
+    ),
     creations: new Map([...creationRequests].map(([key, request]) => [key, request.requestId])),
   });
   const sessionConversation = (key: string) => (key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key);
@@ -892,14 +930,15 @@ export default function AssistantWorkspace(props: Props) {
   };
   const emptyCreationCovered = (key: string, exit?: UnknownExit) => {
     const request = creationRequests.get(key);
+    const composerKey = creationComposerKey(key);
     return Boolean(
       request &&
         exit &&
         exit.creations.get(key) === request.requestId &&
-        exit.generations.get(key) === session(key).editGeneration &&
-        !composerDraft(key) &&
-        !composerAttachmentsFor(key).length &&
-        !mentionsFor(key).length,
+        exit.generations.get(key) === session(composerKey).editGeneration &&
+        !composerDraft(composerKey) &&
+        !composerAttachmentsFor(composerKey).length &&
+        !mentionsFor(composerKey).length,
     );
   };
   const hasUnsavedPanelState = (exit?: UnknownExit) => {
@@ -987,7 +1026,11 @@ export default function AssistantWorkspace(props: Props) {
         if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key, place))) return;
       }
       for (const request of [...creationRequests.values()]) {
-        if (!(await createConversation(false, request.projectId, false))) return;
+        const place = request.place && request.draft ? { ref: request.place, draft: request.draft.content } : undefined;
+        const current = request.projectId
+          ? activeProject()?.id === request.projectId
+          : !chat.activeConversationId() && (place ? samePlace(place.ref, emptyPlace()?.ref) : !emptyPlace());
+        if (!(await createConversation(false, request.projectId, false, place, !current))) return;
       }
       for (const [original, local] of [...sessions]) {
         if (!local.dirty || local.conflict) continue;
@@ -1046,7 +1089,7 @@ export default function AssistantWorkspace(props: Props) {
     const key = composerSessionKey();
     creationVersion();
     // An unknown creation is retried only by the person's explicit Save/Retry action.
-    if (creationRequests.has(key) || rejectedCreations().has(key)) return;
+    if ([...creationRequests.keys()].some((requestKey) => creationComposerKey(requestKey) === key) || rejectedCreations().has(key)) return;
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
     mentionsFor(key);
@@ -2786,8 +2829,12 @@ export default function AssistantWorkspace(props: Props) {
         if (switchingPlace()) {
           placeSwitch++;
           navigationRequest++;
+          setSwitchingPlace(false);
+          // Also invalidate the controller's in-flight open, so its late detail cannot become the active chat.
+          chat.setActiveConversationId(assistantConversationIdFromHref(window.location.href));
         }
         pagePlace.receive(next);
+        if (!next) retryOtherPlace();
         // Consent arrives as a new context: the open chat's own place loads again too.
         if (otherPlace()?.view?.state === "consent") retryOtherPlace();
       }),
@@ -2828,7 +2875,8 @@ export default function AssistantWorkspace(props: Props) {
   /** The page's place when it is the open chat's, or when the empty panel waits for its first message there. */
   const emptyPlace = () => {
     const at = emptyAt();
-    if (!props.embedded || !at || chat.activeConversationId() || mainView() || projectView() || !emptyChat()) return null;
+    if (!props.embedded || !at || !pagePlace.context() || chat.activeConversationId() || mainView() || projectView() || !emptyChat())
+      return null;
     // The page's fresher answer for the same place wins; after leaving it, the empty chat keeps its own place.
     const page = pagePlace.view();
     return page?.state === "available" && samePlace(page.ref, at.ref) ? page : at;
@@ -2855,6 +2903,7 @@ export default function AssistantWorkspace(props: Props) {
       return { kind: "loading" };
     }
     const followable = panelShowsNothingToLose();
+    if (emptyAt() && !pagePlace.context()) return { kind: "consent", title: emptyAt()!.title, app: emptyAt()!.app, onAsk: askPanelConsent };
     if (page?.state === "consent" && followable) return { kind: "consent", title: null, app: null, onAsk: askPanelConsent };
     const here = emptyPlace();
     const offer = followablePlace(page) && !samePlace(page.ref, here?.ref) ? page : null;

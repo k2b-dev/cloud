@@ -1,6 +1,6 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { Button, useLocale } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 import { placeMessages } from "./place-messages";
 
@@ -99,19 +99,21 @@ export default function AssistantEmptyChat(props: {
           {props.rowEnd}
         </div>
 
-        {props.place?.starters.length ? (
-          <div class="assistant-place-starters" role="group" aria-labelledby="assistant-place-starters-title">
-            <h2 id="assistant-place-starters-title" class="assistant-place-starters__heading">
-              {placeT().startersFrom({ app: props.place.appName })}
-            </h2>
-            {props.place.starters.map((starter) => (
-              <Button variant="ghost" size="sm" class="assistant-place-starter" onClick={() => props.place?.onStarter(starter)}>
-                <i class="ti ti-sparkles" aria-hidden="true" />
-                <span class="truncate">{starter.label}</span>
-              </Button>
-            ))}
-          </div>
-        ) : null}
+        <Show when={props.place?.starters.length ? props.place : null} keyed>
+          {(place) => (
+            <div class="assistant-place-starters" role="group" aria-labelledby="assistant-place-starters-title">
+              <h2 id="assistant-place-starters-title" class="assistant-place-starters__heading">
+                {placeT().startersFrom({ app: place.appName })}
+              </h2>
+              {place.starters.map((starter) => (
+                <Button variant="ghost" size="sm" class="assistant-place-starter" onClick={() => place.onStarter(starter)}>
+                  <i class="ti ti-sparkles" aria-hidden="true" />
+                  <span class="truncate">{starter.label}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </Show>
         {props.onStarter && !props.place ? (
           <div class="assistant-starters" role="group" aria-label={t().starters}>
             {starters().map((starter) => (

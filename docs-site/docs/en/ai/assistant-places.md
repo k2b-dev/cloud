@@ -165,3 +165,13 @@ A person's saved Action outcome check remains available in the chat even when
 that Action is no longer offered as a place tool. The check uses the application's
 read-only outcome Query under the person's current authority; it never repeats
 the Action.
+
+## Recover interrupted chat creation
+
+If another tab creates your chat at a place first, Gustav opens that chat and
+keeps your message in the composer for review. It does not send the message
+automatically. Retrying a creation whose outcome is unknown keeps the original
+place; a message at a different place uses a separate request.
+
+When you stop sharing page context, the empty panel hides the place's suggestions
+and offers **Share context …** to ask for consent again.

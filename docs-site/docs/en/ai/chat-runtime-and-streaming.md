@@ -411,7 +411,10 @@ shows. These helpers do not initialize
 Cloud server services. Import AI types with `import type` from
 `@k2b/cloud/ai`. Solid applications should use
 `createAiChatController()` from `@k2b/cloud/ai/solid`; it subscribes to the
-visible conversation over SSE. Changing chats closes the previous stream and
+visible conversation over SSE. To reconcile a previous creation request without
+changing the visible chat, call `createConversation(input, { activate: false })`.
+The result is cached while a foreground chat load and its stream stay active.
+Changing chats closes the previous stream and
 opens one for the new chat; every connection, including a reconnect, starts
 from a fresh authorized state snapshot. Assistant, the CLI, and low-level
 consumers all use `/conversations/:id/stream`. Over HTTP/1.1 each open
