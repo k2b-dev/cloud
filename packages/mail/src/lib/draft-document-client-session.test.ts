@@ -68,6 +68,7 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
   let switchAfterAuthorization = false;
   let restFailsOnce = false;
   let pendingGenerations: string[] = [];
+  let reconnectSnapshot: Uint8Array | undefined;
   const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockImplementation(async () => pendingGenerations);
   // Only the metadata enumeration is stubbed; native storage belongs to the browser suite.
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: {} });
@@ -127,7 +128,21 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
       this.sent.push(raw);
       const packet: { type: string; payload: { payload?: string } } = JSON.parse(raw);
       if (packet.type === "replayRequest")
-        queueMicrotask(() => this.receive("replayReady", { docId: "Draft1", generation, cursor, peerId: "peer1" }));
+        queueMicrotask(() => {
+          if (reconnectSnapshot)
+            this.receive("syncPush", {
+              docId: "Draft1",
+              generation,
+              snapshot: true,
+              updates: [{ payload: encoding.toBase64(reconnectSnapshot), generation, cursor: "s6t.fixture.10" }],
+            });
+          this.receive("replayReady", {
+            docId: "Draft1",
+            generation,
+            cursor: reconnectSnapshot ? "s6t.fixture.10" : cursor,
+            peerId: "peer1",
+          });
+        });
       if (packet.type === "syncPublish" && packet.payload.payload) {
         const payload = packet.payload.payload;
         Y.applyUpdate(document, encoding.fromBase64(payload));
@@ -213,6 +228,9 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     },
     pendingGenerations: (values: string[]) => {
       pendingGenerations = values;
+    },
+    reconnectWithSnapshot: (bytes: Uint8Array) => {
+      reconnectSnapshot = bytes;
     },
     disconnect: () => {
       for (const socket of sockets) {
@@ -660,6 +678,38 @@ test("explicit memory-only mode also works when the browser exposes no IndexedDB
     Reflect.deleteProperty(globalThis, "indexedDB");
     const client = await f.open("1", false);
     expect(client.state().remembering).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a durable reconnect snapshot merges without losing unconfirmed body or headers", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    const durable = Y.encodeStateAsUpdate(client.doc);
+    f.disconnect();
+    client.edit({ ...client.content(), body: "Unsent after pruning", subject: "Unsent header" });
+    const pending = client.provider.pendingState();
+    expect(client.provider.hasUnsentChanges()).toBe(true);
+    f.reconnectWithSnapshot(durable);
+    client.provider.reconnectNow();
+    await until(() => client.state().ready);
+    expect(client.content()).toMatchObject({ body: "Unsent after pruning", subject: "Unsent header" });
+    expect(client.state().dirty).toBe(true);
+    const publications = f.sockets
+      .at(-1)!
+      .sent.map((raw) => JSON.parse(raw))
+      .filter((packet) => packet.type === "syncPublish");
+    expect(publications).toHaveLength(1);
+    expect(publications[0].payload.baseCursor).toBe(pending.baseCursor);
+    const resent = new Y.Doc();
+    try {
+      Y.applyUpdate(resent, encoding.fromBase64(publications[0].payload.payload));
+      expect(readDraftDocument(resent)).toMatchObject({ body: "Unsent after pruning", subject: "Unsent header" });
+    } finally {
+      resent.destroy();
+    }
   } finally {
     await f.cleanup();
   }

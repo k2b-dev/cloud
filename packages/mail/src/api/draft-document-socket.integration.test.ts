@@ -19,6 +19,7 @@ import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { createActorCommand } from "../service/commands";
 import { reviewDraftComposeSafety } from "../service/compose-safety";
+import { pruneDraftDocumentLog } from "../service/draft-document-log";
 import * as draftDocumentService from "../service/draft-documents";
 import {
   acceptDraftDocumentUpdate,
@@ -252,6 +253,49 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         packet.payload.snapshot === true &&
         decode(fromBase64(packet.payload.updates[0]!.payload)).body === body,
     );
+
+  test("old reconnect cursors receive a covering SQL snapshot after startup pruning", async () => {
+    await draft();
+    const base = await read();
+    const local = new Y.Doc();
+    try {
+      Y.applyUpdate(local, base.durable.state);
+      local.getText("codemirror").insert(0, "Committed ");
+      value(
+        await acceptDraftDocumentUpdate({
+          context,
+          mailboxId,
+          draftId: currentDraft.id,
+          generation: base.generation,
+          baseCursor: base.durable.cursor,
+          update: Y.encodeStateAsUpdate(local),
+        }),
+      );
+      const current = await read();
+      if (!current.durable.cursor) throw new Error("Missing committed snapshot cursor");
+      expect((await pruneDraftDocumentLog())?.purged).toBeGreaterThan(0);
+      await stopMailDraftConnections();
+      await server.stop(true);
+      startServer();
+      const client = await connect();
+      client.send({
+        type: "replayRequest",
+        payload: { docId: currentDraft.short_id, generation: base.generation, fromCursor: base.durable.cursor },
+      });
+      await client.wait((packet) => packet.type === "replayReady");
+      const snapshot = client.messages.find((packet) => packet.type === "syncPush" && packet.payload.snapshot);
+      expect(snapshot).toMatchObject({ type: "syncPush", payload: { snapshot: true } });
+      if (snapshot?.type !== "syncPush") throw new Error("Missing durable snapshot");
+      expect(decode(fromBase64(snapshot.payload.updates[0]!.payload)).body).toBe("Committed Original");
+      expect(snapshot.payload.updates[0]!.cursor).toBe(current.durable.cursor);
+      expect(client.messages.indexOf(snapshot)).toBeLessThan(client.messages.findIndex((packet) => packet.type === "replayReady"));
+      client.socket.close();
+      await stopMailDraftConnections();
+    } finally {
+      local.destroy();
+      await sql`UPDATE mail.drafts SET state='discarded' WHERE id=${currentDraft.id}::uuid`;
+    }
+  });
 
   test("bounded reconnect storm preserves every admitted edit and replayed input is idempotent", async () => {
     await draft();
