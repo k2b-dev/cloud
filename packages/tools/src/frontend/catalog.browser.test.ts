@@ -15,7 +15,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-test("catalog keeps one ordered grouping and search through reload with no narrow-width overflow", async () => {
+test("catalog keeps one ordered grouping and search through reload and Back with no narrow-width overflow", async () => {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     try {
@@ -42,6 +42,7 @@ test("catalog keeps one ordered grouping and search through reload with no narro
       expect(await tab.locator(".k2b-link-card").count()).toBe(4);
       const before = await search.boundingBox();
       await search.fill("sha256");
+      await tab.waitForURL((url) => url.searchParams.get("q") === "sha256");
       expect(new URL(tab.url()).searchParams.get("q")).toBe("sha256");
       expect(await tab.locator("a.group\\/tool").allTextContents()).toHaveLength(1);
       expect(await tab.locator("a.group\\/tool").textContent()).toContain("Prüfsumme");
@@ -49,8 +50,18 @@ test("catalog keeps one ordered grouping and search through reload with no narro
       await search.waitFor();
       expect(await search.inputValue()).toBe("sha256");
       expect(await tab.locator("a.group\\/tool").textContent()).toContain("Prüfsumme");
+      // Keep the saved search in the previous entry to exercise same-document popstate restoration.
+      await tab.evaluate(() => window.history.pushState(window.history.state, "", "/tools"));
+      await search.fill("qr");
+      await tab.waitForURL((url) => url.searchParams.get("q") === "qr");
+      await tab.goBack();
+      await tab.waitForURL((url) => url.searchParams.get("q") === "sha256");
+      await tab.waitForFunction(() => document.querySelector<HTMLInputElement>('input[type="search"]')?.value === "sha256");
+      expect(await search.inputValue()).toBe("sha256");
+      expect(await tab.locator("a.group\\/tool").textContent()).toContain("Prüfsumme");
       await search.fill("zzzzzzzzzzzzzzzzzzzzzzzzzzzz");
       await tab.getByRole("button", { name: "Suche zurücksetzen" }).click();
+      await tab.waitForURL((url) => !url.searchParams.has("q"));
       expect(await search.inputValue()).toBe("");
       expect(await search.evaluate((element) => document.activeElement === element)).toBe(true);
       expect(new URL(tab.url()).searchParams.has("q")).toBe(false);
