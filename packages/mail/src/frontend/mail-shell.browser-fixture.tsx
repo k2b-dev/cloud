@@ -68,6 +68,7 @@ const conversationDraftsFixture = (url: URL, selectedConversationId: string | nu
           updatedAt: "2026-10-14T09:55:00.000Z",
           bodyPreview: "Hello Tom, here are the pickup details for Saturday.",
           createdByDisplayName: "Jonas Example",
+          suggestion: false,
         },
       ]
     : [];
