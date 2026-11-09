@@ -432,7 +432,8 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       });
       if (closed) return;
       if (!result.ok) {
-        if (result.error.status === 403 || result.error.status === 401) close("ACCESS_DENIED", t.access);
+        if (result.error.code === "DRAFT_DOCUMENT_STREAM_FULL") close("DRAFT_DOCUMENT_STREAM_FULL", t.streamFull, 1012);
+        else if (result.error.status === 403 || result.error.status === 401) close("ACCESS_DENIED", t.access);
         else reopen();
         return;
       }

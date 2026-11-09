@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { renderSankeySvg } from "./core/sankey";
 
 const root = resolve(import.meta.dir, "../..");
@@ -130,12 +130,12 @@ test("Sankey SSR, calm hover, keyboard, touch, scroll, theme and fixed host stat
         await page.keyboard.press("Escape");
         await chart.evaluate((e) => (e.scrollLeft = 0));
         const mark = chart.locator("[data-chart-datum]").last().locator("rect");
-        await mark.hover();
+        await hoverInPlace(mark);
         await settled(page);
         expect(await chart.locator("[data-inspected]").count()).toBe(1);
         expect(await mark.evaluate((e) => getComputedStyle(e).stroke)).not.toBe("none");
         const band = chart.locator(".k2b-chart-sankey-link").last();
-        await band.hover();
+        await hoverInPlace(band);
         await settled(page);
         expect(await band.evaluate((e) => getComputedStyle(e).fillOpacity)).toBe("0.6");
         expect(

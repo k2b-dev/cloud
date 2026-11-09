@@ -123,6 +123,7 @@ const mailbox = (id: string, name: string): MailboxPageData["mailbox"] => ({
   searchBackend: "auto",
   automaticReplyManagementPermission: "admin",
   accessScope: "mailbox",
+  draftEditMode: "lock",
   composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
   createdAt: MAIL_SHELL_NOW,
   updatedAt: MAIL_SHELL_NOW,

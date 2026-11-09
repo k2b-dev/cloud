@@ -1,9 +1,10 @@
 import { type SharedTextStore, sharedText, sharedTextNodeId } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { ConflictError } from "@k2b/sync";
+import { ConflictError, StoreFullError } from "@k2b/sync";
 import { inspectTableStructure } from "@k2b/ui/text-editor/model";
 import type { sql } from "bun";
 import * as Y from "yjs";
+import type { DraftQuoteSource } from "../contracts";
 import { type DraftEditableContent, draftEditableContentInputSchema } from "../contracts";
 import {
   createDraftDocument,
@@ -11,6 +12,7 @@ import {
   normalizeDraftDocumentContent,
   readDraftDocument as projectDocument,
 } from "../lib/draft-document";
+import { mailDraftDocumentMessages } from "../lib/draft-document-protocol";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
@@ -36,6 +38,15 @@ export const mailDraftDocumentLog = sharedText.define({
   maxPayloadBytes: MAX_LOG_ENVELOPE_BYTES,
 });
 
+/** Enable only after checking the installed retention contract AND the actual stream configuration. */
+export const sharedDraftsSupported = async (): Promise<boolean> => {
+  // k2b-dev/sync#4: reject-full, no expiry before snapshot coverage, and watermark pruning are all required.
+  return false;
+};
+
+/** TODO k2b-dev/sync#4: confirm the topic rejection type when the retention contract ships. */
+export const isDraftDocumentStreamFull = (error: unknown): boolean => error instanceof StoreFullError;
+
 type Db = typeof sql;
 type DraftRow = {
   id: string;
@@ -54,6 +65,7 @@ type DraftRow = {
   doc_frozen_revision: string | number | null;
   sender_identity_id: string;
   signature_template_id: string | null;
+  quote_context: DraftQuoteSource | null;
   sender_short_id: string | null;
   signature_short_id: string | null;
   to_addresses: DraftEditableContent["to"] | string;
@@ -165,7 +177,7 @@ export const lockDraftDocumentInTransaction = async (
   const loadRow = async (): Promise<DraftRow | null> => {
     const [row] = await awaitDraftDocumentQuery(
       db<DraftRow[]>`
-      SELECT d.*, sender.short_id AS sender_short_id, signature.short_id AS signature_short_id
+      SELECT d.*, CASE WHEN d.quote_source THEN jsonb_build_object('locale', d.quote_locale, 'timeZone', d.quote_time_zone) ELSE NULL END AS quote_context, sender.short_id AS sender_short_id, signature.short_id AS signature_short_id
       FROM mail.drafts d
       LEFT JOIN mail.sender_identities sender ON sender.id = d.sender_identity_id AND sender.mailbox_id = d.mailbox_id
       LEFT JOIN mail.compose_templates signature ON signature.id = d.signature_template_id AND signature.mailbox_id = d.mailbox_id
@@ -275,6 +287,7 @@ export const lockDraftDocumentInTransaction = async (
       const content = draftEditableContentInputSchema.parse({
         senderIdentityId: row.sender_short_id,
         signatureTemplateId: signatureShortId,
+        quoteSource: row.quote_context,
         to: typeof row.to_addresses === "string" ? JSON.parse(row.to_addresses) : row.to_addresses,
         cc: typeof row.cc_addresses === "string" ? JSON.parse(row.cc_addresses) : row.cc_addresses,
         bcc: typeof row.bcc_addresses === "string" ? JSON.parse(row.bcc_addresses) : row.bcc_addresses,
@@ -357,6 +370,8 @@ export const lockDraftDocumentInTransaction = async (
         UPDATE mail.drafts SET
           sender_identity_id = ${valid.data.senderIdentityId}::uuid,
           signature_template_id = ${valid.data.signatureTemplateId}::uuid,
+          quote_source = ${content.quoteSource !== null},
+          quote_locale = ${content.quoteSource?.locale ?? "en"}, quote_time_zone = ${content.quoteSource?.timeZone ?? "UTC"},
           to_addresses = ${content.to}::jsonb, cc_addresses = ${content.cc}::jsonb, bcc_addresses = ${content.bcc}::jsonb,
           subject = ${content.subject}, body_markdown = ${content.body}, body_format = ${content.format},
           priority = ${content.priority}, request_delivery_receipt = ${content.requestDeliveryReceipt},
@@ -383,6 +398,7 @@ export const lockDraftDocumentInTransaction = async (
         revision: updated.revision,
         sender_identity_id: valid.data.senderIdentityId,
         signature_template_id: valid.data.signatureTemplateId,
+        quote_context: content.quoteSource,
         body_markdown: content.body,
       };
       return { status: "saved", revision: Number(updated.revision), durable: { state: input.state, cursor: input.cursor, content } };
@@ -415,34 +431,41 @@ export const lockDraftDocumentInTransaction = async (
     // exact base64 envelope and metadata at publication.
     if (input.update.byteLength > MAX_LOG_ENVELOPE_BYTES) return recovery("Draft update exceeds the document log payload budget");
     let invalid: string | null = null;
-    const admitted = await bound.accept(draftId, {
-      actor,
-      update: input.update,
-      baseCursor: input.baseCursor,
-      restoreRevision: input.generation,
-      originNodeId:
-        revisionBase !== undefined
-          ? DRAFT_REVISION_OPERATION_ORIGIN
-          : input.originNodeId === DRAFT_REVISION_OPERATION_ORIGIN
-            ? sharedTextNodeId
-            : (input.originNodeId ?? sharedTextNodeId),
-      originPeerId: revisionBase !== undefined ? String(revisionBase) : (input.originPeerId ?? null),
-      signal: input.signal ?? params.signal,
-      maxLength: draftEditableContentInputSchema.shape.body.unwrap().maxLength ?? undefined,
-      validateState: async (state) => {
-        let content: DraftEditableContent;
-        try {
-          content = decode(state);
-        } catch {
-          invalid = "Merged draft content is invalid";
-          return false;
-        }
-        const valid = await validateContent(content, row);
-        if (!valid.ok) invalid = valid.error.message;
-        return valid.ok;
-      },
-      validate: async () => (await assertWritable(input.generation)).ok,
-    });
+    const admitted = await bound
+      .accept(draftId, {
+        actor,
+        update: input.update,
+        baseCursor: input.baseCursor,
+        restoreRevision: input.generation,
+        originNodeId:
+          revisionBase !== undefined
+            ? DRAFT_REVISION_OPERATION_ORIGIN
+            : input.originNodeId === DRAFT_REVISION_OPERATION_ORIGIN
+              ? sharedTextNodeId
+              : (input.originNodeId ?? sharedTextNodeId),
+        originPeerId: revisionBase !== undefined ? String(revisionBase) : (input.originPeerId ?? null),
+        signal: input.signal ?? params.signal,
+        maxLength: draftEditableContentInputSchema.shape.body.unwrap().maxLength ?? undefined,
+        validateState: async (state) => {
+          let content: DraftEditableContent;
+          try {
+            content = decode(state);
+          } catch {
+            invalid = "Merged draft content is invalid";
+            return false;
+          }
+          const valid = await validateContent(content, row);
+          if (!valid.ok) invalid = valid.error.message;
+          return valid.ok;
+        },
+        validate: async () => (await assertWritable(input.generation)).ok,
+      })
+      .catch((error: unknown) => {
+        if (isDraftDocumentStreamFull(error)) return null;
+        throw error;
+      });
+    if (!admitted)
+      return fail({ code: "DRAFT_DOCUMENT_STREAM_FULL", status: 409, message: mailDraftDocumentMessages.resolve([]).t.streamFull });
     if (admitted.status !== "accepted") return recovery(invalid ?? "Draft update requires recovery; retain the submitted content");
     publishedCursor = admitted.cursor;
     try {
@@ -510,6 +533,7 @@ export const lockDraftDocumentInTransaction = async (
       const projected = draftEditableContentInputSchema.safeParse({
         senderIdentityId: row.sender_short_id,
         signatureTemplateId: row.signature_template_id === null ? null : row.signature_short_id,
+        quoteSource: row.quote_context,
         to: typeof row.to_addresses === "string" ? JSON.parse(row.to_addresses) : row.to_addresses,
         cc: typeof row.cc_addresses === "string" ? JSON.parse(row.cc_addresses) : row.cc_addresses,
         bcc: typeof row.bcc_addresses === "string" ? JSON.parse(row.bcc_addresses) : row.bcc_addresses,
