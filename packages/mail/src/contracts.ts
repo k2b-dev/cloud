@@ -558,6 +558,8 @@ export const providerConnectionSchema = z.object({
 });
 export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
 
+export const draftEditModeSchema = z.enum(["lock", "shared"]);
+
 export const mailboxSchema = z.object({
   accessScope: z.enum(["mailbox", "assigned"]),
   id: ResourceShortIdSchema,
@@ -569,6 +571,8 @@ export const mailboxSchema = z.object({
   searchBackend: searchBackendSchema,
   automaticReplyManagementPermission: automaticReplyManagementPermissionSchema,
   composeSafety: composeSafetyConfigSchema,
+  // Creation switch only: rollback retains existing shared drafts and their recovery history.
+  draftEditMode: draftEditModeSchema.default("lock"),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

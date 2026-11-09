@@ -6,27 +6,39 @@ import type { Result } from "@k2b/stdlib";
 import { findTables, gridLine, inspectTableStructure } from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
+import { draftContentInputSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import * as access from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { createActorCommand } from "./commands";
+import { reviewDraftComposeSafety } from "./compose-safety";
 import * as revisionBase from "./draft-document-revision";
+import * as documentService from "./draft-documents";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import { draftProviderContentSchema } from "./draft-provider-mime";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { applyDraftTableAction } from "./draft-table-actions";
 import {
+  createDeliveryRecoveryDraft,
+  createDraft,
+  deriveDraftFromMessage,
   discardDraft,
   getDraft,
   listDraftFolder,
+  materializeDraftSeed,
   persistDraftDocument,
+  prepareDraftSeed,
   recoverDraftDocumentRest,
+  removeDraftAttachment,
   restoreDraftRecoveryCopy,
   updateDraft,
 } from "./drafts";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, getMailbox, updateMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
+import { cancelScheduledSend } from "./scheduled-sends";
 import { loadSendContent } from "./send-content";
 
 const suite = suiteFor("database", "nats");
@@ -42,6 +54,8 @@ suite("Mail document lifecycle boundaries", () => {
   let userId: string;
   let mailboxId: string;
   let senderId: string;
+  let senderShortId: string;
+  let otherWriter: MailRequestContext;
   beforeAll(async () => {
     await migrate();
     const suffix = newShortId();
@@ -75,11 +89,22 @@ suite("Mail document lifecycle boundaries", () => {
       accessSubject: { type: "user", userId },
     };
     mailboxId = value(await createMailbox(context, { name: `Draft lifecycle ${suffix}`, description: "Fictional fixture" })).id;
-    const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
+    const [sender] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.sender_identities
       (short_id, mailbox_id, label, display_name, from_address, automation_policy, status)
-      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Writer', 'Writer', 'writer@example.test', 'disabled', 'verified') RETURNING id`;
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Writer', 'Writer', 'writer@example.test', 'disabled', 'verified') RETURNING id, short_id`;
     if (!sender) throw new Error("Missing fixture sender");
     senderId = sender.id;
+    senderShortId = sender.short_id;
+    await prepareDraftSendBinding(mailboxId, senderId);
+    const [other] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, mail)
+      VALUES (${`draft-life-other-${suffix}`}, 'local', 'user', 'Other Writer', ${`other-${suffix}@example.test`}) RETURNING id`;
+    if (!other || context.actor.kind !== "user") throw new Error("Missing other writer");
+    extraUsers.push(other.id);
+    otherWriter = {
+      actor: { kind: "user", user: { ...context.actor.user, id: other.id, uid: `draft-life-other-${suffix}` } },
+      accessSubject: { type: "user", userId: other.id },
+    };
+    value(await access.grantMailboxAccess({ context, mailboxId, principal: otherWriter.accessSubject, permission: "write" }));
   });
   afterAll(async () => {
     if (mailboxId) {
@@ -107,6 +132,310 @@ suite("Mail document lifecycle boundaries", () => {
       await db`UPDATE mail.drafts SET state='scheduled' WHERE id=${target.draftId}::uuid`;
       return frozen;
     });
+
+  const review = async (target: Awaited<ReturnType<typeof draft>>) => {
+    const current = value(await readDraftDocument(target));
+    return value(await reviewDraftComposeSafety({ ...target, expectedRevision: current.revision }));
+  };
+  const send = (target: Awaited<ReturnType<typeof draft>>, checked: Awaited<ReturnType<typeof review>>, revision = checked.revision) =>
+    createActorCommand({
+      context: target.context,
+      mailboxId,
+      input: {
+        kind: "send",
+        draftId: target.draftId,
+        senderIdentityId: senderId,
+        expectedDraftRevision: revision,
+        expectedContentHash: checked.contentHash,
+        undoSeconds: 60,
+        idempotencyKey: crypto.randomUUID(),
+        safetyApproval: { revision: checked.revision, fingerprint: checked.fingerprint, warningIds: checked.warnings.map((w) => w.id) },
+      },
+    });
+  const nothingQueued = async (draftId: string) => {
+    expect(await sql`SELECT 1 FROM mail.commands WHERE target->>'draftId' = ${draftId}`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id = ${draftId}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM mail.draft_document_freezes WHERE draft_id = ${draftId}::uuid`).toHaveLength(0);
+  };
+
+  test("only an admin can select shared editing, and the retention gate refuses activation without changing settings", async () => {
+    expect(value(await getMailbox(context, mailboxId)).draftEditMode).toBe("lock");
+    expect(await updateMailbox({ context: otherWriter, mailboxId, draftEditMode: "shared" })).toMatchObject({
+      ok: false,
+      error: { status: 403 },
+    });
+    expect(await documentService.sharedDraftsSupported()).toBe(false);
+    expect(await updateMailbox({ context, mailboxId, draftEditMode: "shared", name: "Must roll back" })).toMatchObject({
+      ok: false,
+      error: { status: 409, code: "SHARED_DRAFTS_UNSUPPORTED" },
+    });
+    expect(value(await getMailbox(context, mailboxId))).toMatchObject({ draftEditMode: "lock" });
+    expect(value(await getMailbox(context, mailboxId)).name).not.toBe("Must roll back");
+  });
+
+  test("creation and seed materialization read the setting; rollback changes only new drafts and preserves retries", async () => {
+    const publicInput = draftContentInputSchema.parse({
+      senderIdentityId: senderShortId,
+      to: [{ address: "recipient@example.test" }],
+      body: "Created body",
+    });
+    // The transport validates short IDs; the service receives resolved internal IDs.
+    const input = { ...publicInput, senderIdentityId: senderId };
+    const locked = value(await createDraft({ context, mailboxId, input }));
+    expect(locked.editMode).toBe("lock");
+    const seed = value(await prepareDraftSeed({ context, mailboxId, origin: { kind: "compose", input } }));
+    const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
+    try {
+      expect(value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" })).draftEditMode).toBe("shared");
+      expect(
+        await sql`SELECT 1 FROM audit.events WHERE action='mail.mailbox.update'
+        AND target_id=${mailboxId} AND metadata->'changed' ? 'draftEditMode'`,
+      ).not.toHaveLength(0);
+      const shared = value(await createDraft({ context, mailboxId, input }));
+      expect(shared.editMode).toBe("shared");
+      const materialization = { context, mailboxId, input: { idempotencyKey: seed.id, origin: seed.origin, draft: seed.content } };
+      const materialized = value(await materializeDraftSeed(materialization));
+      expect(materialized.editMode).toBe("shared");
+      expect(value(await getDraft(context, mailboxId, locked.id)).editMode).toBe("lock");
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+      expect(value(await createDraft({ context, mailboxId, input })).editMode).toBe("lock");
+      expect(value(await materializeDraftSeed(materialization))).toMatchObject({ id: materialized.id, editMode: "shared" });
+      const target = { context, mailboxId, draftId: shared.id };
+      const base = value(await readDraftDocument(target));
+      const local = new Y.Doc();
+      try {
+        Y.applyUpdate(local, base.durable.state);
+        local.getText("codemirror").insert(0, "After rollback ");
+        expect(
+          value(
+            await acceptDraftDocumentUpdate({
+              ...target,
+              generation: base.generation,
+              baseCursor: base.durable.cursor,
+              update: Y.encodeStateAsUpdate(local),
+            }),
+          ).status,
+        ).toBe("accepted");
+        expect(value(await persistDraftDocument({ ...target, generation: base.generation })).durable.content.body).toBe(
+          "After rollback Created body",
+        );
+      } finally {
+        local.destroy();
+      }
+    } finally {
+      supported.mockRestore();
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+    }
+  });
+
+  test("derived user drafts inherit shared editing", async () => {
+    const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
+    try {
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" }));
+      const [source] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+        (short_id, mailbox_id, message_id, subject, plain_text, hydration_status, internal_date, content_hash)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, '<shared-source@example.test>', 'Source', 'Original source', 'complete',
+          '2026-01-01T00:00:00Z', ${"b".repeat(64)}) RETURNING id`;
+      if (!source) throw new Error("Missing derivation source");
+      const derived = value(
+        await deriveDraftFromMessage({
+          context,
+          mailboxId,
+          messageId: source.id,
+          input: { kind: "edit_as_new", senderIdentityId: senderId, includeAttachments: false, idempotencyKey: crypto.randomUUID() },
+        }),
+      );
+      expect(derived.editMode).toBe("shared");
+    } finally {
+      supported.mockRestore();
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+    }
+  });
+
+  test("delivery recovery inherits the setting when materialized and keeps that mode on idempotent retry after rollback", async () => {
+    const target = await draft("Ambiguous delivery");
+    const command = value(await send(target, await review(target)));
+    const [outbox] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+    if (!outbox) throw new Error("Missing ambiguous delivery");
+    await sql`UPDATE mail.outbox_submissions SET state='unknown', last_error_code='AMBIGUOUS_SMTP_OUTCOME' WHERE id=${outbox.id}::uuid`;
+    const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
+    try {
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" }));
+      const request = {
+        context,
+        mailboxId,
+        deliveryId: outbox.id,
+        input: { recipientMode: "all" as const, includeAttachments: false, idempotencyKey: crypto.randomUUID() },
+      };
+      const recovered = value(await createDeliveryRecoveryDraft(request));
+      expect(recovered).toMatchObject({ body: "Ambiguous delivery", editMode: "shared", state: "draft" });
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+      expect(value(await createDeliveryRecoveryDraft(request))).toMatchObject({ id: recovered.id, editMode: "shared" });
+    } finally {
+      supported.mockRestore();
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+    }
+  });
+
+  test("two editors in the same second cannot send a previously reviewed body, even with the current revision", async () => {
+    const target = await draft("Base");
+    const checked = await review(target);
+    const base = value(await readDraftDocument(target));
+    const editors = [new Y.Doc(), new Y.Doc()];
+    try {
+      for (const [index, editor] of editors.entries()) {
+        editor.clientID = 100 + index;
+        Y.applyUpdate(editor, base.durable.state);
+      }
+      const clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
+      try {
+        editors[0]!.getText("codemirror").insert(0, "A ");
+        editors[1]!.getText("codemirror").insert(4, " B");
+      } finally {
+        clock.mockRestore();
+      }
+      for (const editor of editors) {
+        expect(
+          value(
+            await acceptDraftDocumentUpdate({
+              ...target,
+              generation: base.generation,
+              baseCursor: base.durable.cursor,
+              update: Y.encodeStateAsUpdate(editor),
+            }),
+          ).status,
+        ).toBe("accepted");
+      }
+      const current = value(await readDraftDocument(target));
+      expect(current.durable.content.body).toBe("A Base B");
+      expect(await send(target, checked, current.revision)).toMatchObject({
+        ok: false,
+        error: { code: "SEND_CONTENT_CHANGED", status: 409 },
+      });
+      expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "CONFLICT", status: 409 } });
+      await nothingQueued(target.draftId);
+    } finally {
+      for (const editor of editors) editor.destroy();
+    }
+  });
+
+  test.each(["headers", "attachment"] as const)("a concurrent %s change invalidates the reviewed send content", async (change) => {
+    const target = await draft("Reviewed body");
+    let attachmentId: string | null = null;
+    if (change === "attachment") {
+      const blob = await storeReadableBlob(Readable.from([Buffer.from("Concurrent attachment fixture")]));
+      blobs.push(blob.id);
+      const [attachment] = await sql<{ id: string }[]>`INSERT INTO mail.draft_attachments
+        (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position)
+        VALUES (${newShortId()}, ${target.draftId}::uuid, ${blob.id}::uuid, 'review.txt', 'text/plain', ${blob.byteLength}, ${blob.contentHash}, 0)
+        RETURNING id`;
+      if (!attachment) throw new Error("Missing review attachment");
+      attachmentId = attachment.id;
+    }
+    const checked = await review(target);
+    const base = value(await readDraftDocument(target));
+    if (attachmentId) {
+      value(await removeDraftAttachment({ ...target, context: otherWriter, attachmentId, expectedRevision: base.revision }));
+    } else {
+      value(
+        await updateDraft({
+          ...target,
+          context: otherWriter,
+          expectedRevision: base.revision,
+          input: {
+            ...base.durable.content,
+            senderIdentityId: senderId,
+            subject: "Changed subject",
+            to: [{ address: "changed@example.test" }],
+          },
+        }),
+      );
+    }
+    const current = value(await readDraftDocument(target));
+    expect(await send(target, checked, current.revision)).toMatchObject({
+      ok: false,
+      error: { code: "SEND_CONTENT_CHANGED", status: 409 },
+    });
+    await nothingQueued(target.draftId);
+  });
+
+  test("published input with failed projection cannot send the old durable state", async () => {
+    const target = await draft("Durable");
+    const checked = await review(target);
+    const base = value(await readDraftDocument(target));
+    const editor = new Y.Doc();
+    editor.clientID = 104;
+    try {
+      Y.applyUpdate(editor, base.durable.state);
+      editor.getText("codemirror").insert(0, "Unprojected ");
+      const update = Y.encodeStateAsUpdate(editor);
+      const admitted = await sql.begin(async (db) => {
+        const locked = value(await lockDraftDocumentInTransaction({ ...target, db }));
+        const projection = spyOn(locked.store, "save").mockRejectedValueOnce(new Error("Fixture projection failure"));
+        try {
+          return value(await locked.accept({ generation: base.generation, baseCursor: base.durable.cursor, update }));
+        } finally {
+          projection.mockRestore();
+        }
+      });
+      expect(admitted.status).toBe("pendingPersistence");
+      const unprojected = value(await readDraftDocument(target));
+      expect(unprojected.fresh.content.body).toBe("Unprojected Durable");
+      expect(unprojected.fresh.cursor).toBe(admitted.status === "pendingPersistence" ? admitted.cursor : null);
+      expect(unprojected.durable.cursor).toBe(base.durable.cursor);
+      expect(unprojected.revision).toBe(base.revision);
+      expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
+      await nothingQueued(target.draftId);
+      expect(value(await readDraftDocument(target)).durable.content.body).toBe("Durable");
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  test("B can undo A's mailbox-wide send after rollback; old-generation input recovers without entering the send snapshot", async () => {
+    const target = await draft("Reviewed");
+    const base = value(await readDraftDocument(target));
+    const checked = await review(target);
+    const local = new Y.Doc();
+    const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
+    try {
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" }));
+      Y.applyUpdate(local, base.durable.state);
+      local.getText("codemirror").insert(8, " offline");
+      const command = value(await send(target, checked));
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+      const [submission] = await sql<{ id: string }[]>`SELECT id FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+      if (!submission) throw new Error("Missing undo submission");
+      const cancelled = value(
+        await cancelScheduledSend({ context: otherWriter, mailboxId, scheduledSendId: submission.id, input: { disposition: "draft" } }),
+      );
+      expect(cancelled.draftId).toBe(target.draftId);
+      const reopened = value(await readDraftDocument({ ...target, context: otherWriter }));
+      expect(BigInt(reopened.generation)).toBe(BigInt(base.generation) + 1n);
+      expect(reopened.durable.content.body).toBe("Reviewed");
+      expect(value(await getDraft(context, mailboxId, target.draftId)).editMode).toBe("shared");
+      const oldInput = { ...target, generation: base.generation, baseCursor: base.durable.cursor, update: Y.encodeStateAsUpdate(local) };
+      expect((await acceptDraftDocumentUpdate(oldInput)).ok).toBe(false);
+      const request = { ...target, generation: base.generation, clientId: crypto.randomUUID(), state: oldInput.update };
+      const recovered = value(await recoverDraftDocumentRest(request));
+      expect(recovered.status).toBe("recovered");
+      if (recovered.status !== "recovered") throw new Error("Missing offline recovery draft");
+      expect(recovered.draft).toMatchObject({ body: "Reviewed offline", editMode: "lock", state: "draft" });
+      expect(value(await recoverDraftDocumentRest(request))).toEqual(recovered);
+      const [outbox] = await sql<{ state: string; draft_snapshot: { body: string } }[]>`
+        SELECT state, draft_snapshot FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+      expect(outbox?.state).toBe("cancelled");
+      expect(outbox?.draft_snapshot.body).toBe("Reviewed");
+      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${recovered.draft.id}::uuid`).toHaveLength(0);
+      expect(
+        await sql`SELECT 1 FROM mail.draft_document_freezes WHERE draft_id=${target.draftId}::uuid AND generation=${base.generation}::bigint`,
+      ).toHaveLength(1);
+    } finally {
+      local.destroy();
+      supported.mockRestore();
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
+    }
+  });
 
   test("the Drafts folder lists what its rows need to delete a draft, and a scheduled draft stays out and cannot be discarded", async () => {
     const listed = await draft("Folder body");

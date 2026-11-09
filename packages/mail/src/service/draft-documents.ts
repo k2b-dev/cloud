@@ -1,6 +1,6 @@
 import { type SharedTextStore, sharedText, sharedTextNodeId } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { ConflictError } from "@k2b/sync";
+import { ConflictError, StoreFullError } from "@k2b/sync";
 import { inspectTableStructure } from "@k2b/ui/text-editor/model";
 import type { sql } from "bun";
 import * as Y from "yjs";
@@ -12,6 +12,7 @@ import {
   normalizeDraftDocumentContent,
   readDraftDocument as projectDocument,
 } from "../lib/draft-document";
+import { mailDraftDocumentMessages } from "../lib/draft-document-protocol";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
@@ -36,6 +37,15 @@ export const mailDraftDocumentLog = sharedText.define({
   deadLetterRetention: { maxBytes: 16 * 1024 * 1024 },
   maxPayloadBytes: MAX_LOG_ENVELOPE_BYTES,
 });
+
+/** Enable only after checking the installed retention contract AND the actual stream configuration. */
+export const sharedDraftsSupported = async (): Promise<boolean> => {
+  // k2b-dev/sync#4: reject-full, no expiry before snapshot coverage, and watermark pruning are all required.
+  return false;
+};
+
+/** TODO k2b-dev/sync#4: confirm the topic rejection type when the retention contract ships. */
+export const isDraftDocumentStreamFull = (error: unknown): boolean => error instanceof StoreFullError;
 
 type Db = typeof sql;
 type DraftRow = {
@@ -421,34 +431,41 @@ export const lockDraftDocumentInTransaction = async (
     // exact base64 envelope and metadata at publication.
     if (input.update.byteLength > MAX_LOG_ENVELOPE_BYTES) return recovery("Draft update exceeds the document log payload budget");
     let invalid: string | null = null;
-    const admitted = await bound.accept(draftId, {
-      actor,
-      update: input.update,
-      baseCursor: input.baseCursor,
-      restoreRevision: input.generation,
-      originNodeId:
-        revisionBase !== undefined
-          ? DRAFT_REVISION_OPERATION_ORIGIN
-          : input.originNodeId === DRAFT_REVISION_OPERATION_ORIGIN
-            ? sharedTextNodeId
-            : (input.originNodeId ?? sharedTextNodeId),
-      originPeerId: revisionBase !== undefined ? String(revisionBase) : (input.originPeerId ?? null),
-      signal: input.signal ?? params.signal,
-      maxLength: draftEditableContentInputSchema.shape.body.unwrap().maxLength ?? undefined,
-      validateState: async (state) => {
-        let content: DraftEditableContent;
-        try {
-          content = decode(state);
-        } catch {
-          invalid = "Merged draft content is invalid";
-          return false;
-        }
-        const valid = await validateContent(content, row);
-        if (!valid.ok) invalid = valid.error.message;
-        return valid.ok;
-      },
-      validate: async () => (await assertWritable(input.generation)).ok,
-    });
+    const admitted = await bound
+      .accept(draftId, {
+        actor,
+        update: input.update,
+        baseCursor: input.baseCursor,
+        restoreRevision: input.generation,
+        originNodeId:
+          revisionBase !== undefined
+            ? DRAFT_REVISION_OPERATION_ORIGIN
+            : input.originNodeId === DRAFT_REVISION_OPERATION_ORIGIN
+              ? sharedTextNodeId
+              : (input.originNodeId ?? sharedTextNodeId),
+        originPeerId: revisionBase !== undefined ? String(revisionBase) : (input.originPeerId ?? null),
+        signal: input.signal ?? params.signal,
+        maxLength: draftEditableContentInputSchema.shape.body.unwrap().maxLength ?? undefined,
+        validateState: async (state) => {
+          let content: DraftEditableContent;
+          try {
+            content = decode(state);
+          } catch {
+            invalid = "Merged draft content is invalid";
+            return false;
+          }
+          const valid = await validateContent(content, row);
+          if (!valid.ok) invalid = valid.error.message;
+          return valid.ok;
+        },
+        validate: async () => (await assertWritable(input.generation)).ok,
+      })
+      .catch((error: unknown) => {
+        if (isDraftDocumentStreamFull(error)) return null;
+        throw error;
+      });
+    if (!admitted)
+      return fail({ code: "DRAFT_DOCUMENT_STREAM_FULL", status: 409, message: mailDraftDocumentMessages.resolve([]).t.streamFull });
     if (admitted.status !== "accepted") return recovery(invalid ?? "Draft update requires recovery; retain the submitted content");
     publishedCursor = admitted.cursor;
     try {

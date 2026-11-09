@@ -11,6 +11,7 @@ import { truncateUtf8 } from "../lib/utf8";
 import { hasUnrenderedTemplateSyntax, removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
+import { newDraftEditMode } from "./draft-edit-mode";
 import {
   buildDraftProviderMimeStream,
   type DraftProviderContent,
@@ -1233,17 +1234,18 @@ const applyImportedDraft = async (params: {
             LIMIT 1
           `
         : [];
+      const editMode = await newDraftEditMode(tx, params.snapshot.mailbox_id);
       draftId = crypto.randomUUID();
       await withShortIdDb(
         tx,
         "draft",
         (db, shortId) => db`
         INSERT INTO mail.drafts (
-          id, short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id,
+          edit_mode, id, short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id,
           author_kind, author_id, last_editor_kind, last_editor_id, origin,
           to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format
         ) VALUES (
-          ${draftId}::uuid,
+          ${editMode}, ${draftId}::uuid,
           ${shortId},
           ${params.snapshot.mailbox_id}::uuid,
           ${thread?.conversation_id ?? null}::uuid,

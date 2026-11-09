@@ -269,6 +269,7 @@ test("mailbox scope uses the public ID and Mail's page without a mailbox has no 
       searchBackend: "postgres",
       automaticReplyManagementPermission: "admin",
       accessScope: "mailbox",
+      draftEditMode: "lock",
       composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
       createdAt: "2026-10-01T00:00:00.000Z",
       updatedAt: "2026-10-01T00:00:00.000Z",

@@ -54,6 +54,7 @@ const data: MailboxPageData = {
     searchBackend: "auto",
     automaticReplyManagementPermission: "admin",
     accessScope: "mailbox",
+    draftEditMode: "lock",
     composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
     createdAt: now,
     updatedAt: now,
