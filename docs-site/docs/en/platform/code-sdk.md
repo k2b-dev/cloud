@@ -247,6 +247,11 @@ a kind the chart data gains becomes a block of its own. A table sorts by any col
 and shows `empty`, or a default text, when it has no rows. Neighbouring
 `Button` and `Action` blocks share one row.
 
+For nested counts, `Chart.Bar` also accepts `layout: "nested"`, `marks: "dots"`,
+a positive `total`, an even `dots` count and aligned `x`/`series`. Each later
+series must fit inside the preceding one; unused capacity stays grey. Dots remain
+part of the `bar` description in `CodeChartDescription`.
+
 Line charts support `forecast`, `marker`, `threshold`, `zero`, `step`, and
 `legendValues`. With forecast, zero, threshold, marker, or legendValues enabled,
 an observation's `y: null` leaves a gap.

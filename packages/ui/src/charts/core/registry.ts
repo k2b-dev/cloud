@@ -1,6 +1,6 @@
-import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
+import { renderBarChartSvg } from "./bar-render";
 import { renderBubbleSvg } from "./bubble";
 import { renderHeatmapSvg } from "./calendar";
 import { renderFunnelSvg } from "./funnel";

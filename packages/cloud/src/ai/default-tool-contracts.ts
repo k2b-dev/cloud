@@ -202,6 +202,9 @@ const flatChartSchema = () => {
       .optional()
       .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
+    marks: z.enum(["bars", "dots"]).optional().describe("Bar: nested, nonnegative subset counts."),
+    total: z.number().positive().optional().describe("Dots: capacity; shares use 1. Latest/cursor legend, never summed rates."),
+    dots: z.number().int().min(2).optional().describe("Even dots per category (default 100); counted toward mark limit."),
     share: z.boolean().optional().describe("bar rows ranked list: show shares; requires nonnegative values."),
     limit: z.number().int().positive().optional().describe("bar rows ranked list: number of visible rows; requires nonnegative values."),
     tone: z.enum(["in", "out"]).optional().describe("bar rows ranked list: flow direction; requires nonnegative values."),
@@ -310,10 +313,10 @@ const chartInputSchema = () => {
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
       layout: z
-        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "calendar"])
+        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "calendar", "nested"])
         .optional()
         .describe(
-          "Groups: stack/grid. Bar: columns, rows, grouped or stacked. Area: stacked. heatmap: calendar uses ISO date/value pairs.",
+          "Groups: stack/grid. Bar: columns, rows, grouped, stacked or nested. Area: stacked. heatmap: calendar uses ISO date/value pairs.",
         ),
     })
     .superRefine((value, context) => {

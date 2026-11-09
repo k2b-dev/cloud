@@ -271,6 +271,7 @@
     "@k2b/ui src/content/calendar-month.browser.test.ts": 24.7,
     "@k2b/ui src/content/calendar-week-scroll.browser.test.ts": 3,
     "@k2b/ui src/content/chart-bars-family.browser.test.ts": 11.2,
+    "@k2b/ui src/content/chart-dot-matrix.browser.test.ts": 47.6,
     "@k2b/ui src/content/chart-focus-scroll.browser.test.ts": 3.3,
     "@k2b/ui src/content/chart-frame-states.browser.test.ts": 5.9,
     "@k2b/ui src/content/chart-funnel-list.browser.test.ts": 11.6,

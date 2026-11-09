@@ -80,6 +80,8 @@ wrong block fails with `code_page_child`.
 share (`0.08` is 8 %, or percentage points with `unit: "points"`) with
 `better: "up" | "down"`; `trend` holds up to 60 numbers.
 
+For nested counts, use `Chart.Bar` with `layout: "nested"`, `marks: "dots"`, a positive `total`, an even `dots` count and aligned `x`/`series`. Each later series must be contained in the preceding one; unused capacity stays grey. Dots are a Bar option, so there is no `Chart.Dots`.
+
 There is no image block and no free layout. Say so instead of working around it.
 
 ## Lay out a page

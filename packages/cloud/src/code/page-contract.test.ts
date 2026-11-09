@@ -31,6 +31,39 @@ test("Code pages accept the Sankey builder and reject a cyclic flow", async () =
     ),
   ).toThrow();
 });
+test("Code pages keep dot matrix options through the Bar builder and validate nested counts", async () => {
+  const sdk = generateCodeSdk([], { mode: "personal" });
+  const ui = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  const props = {
+    title: "Campaign",
+    marks: "dots",
+    layout: "nested",
+    total: 100,
+    dots: 20,
+    x: ["A"],
+    series: [
+      { label: "Opened", data: [80] },
+      { label: "Clicked", data: [30] },
+    ],
+  };
+  const block = ui.Chart.Bar(props);
+  expect(block).toEqual({ kind: "Chart", description: { kind: "bar", ...props } });
+  expect<unknown>(validateCodePage(page([block]), codeId)).toEqual(page([{ ...block, description: { ...block.description, data: [] } }]));
+  expect(() =>
+    validateCodePage(
+      page([
+        ui.Chart.Bar({
+          ...props,
+          series: [
+            { label: "Opened", data: [30] },
+            { label: "Clicked", data: [80] },
+          ],
+        }),
+      ]),
+      codeId,
+    ),
+  ).toThrow();
+});
 test("versioned pages accept every allowed block and the portable chart description", () => {
   const children = [
     { kind: "Section", title: "Overview", children: [{ kind: "Text", text: "Hello" }] },

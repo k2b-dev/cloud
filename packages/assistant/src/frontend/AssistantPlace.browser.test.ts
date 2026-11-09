@@ -569,6 +569,40 @@ describe("Gustav at a place", () => {
     }, 60_000);
   }
 
+  test("a plain first-save creation does not enable the place composer after switching", async () => {
+    const h = await open(panel, { answers: { u_marta: available("u_marta", null) } });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await h.page.route("**/api/ai/conversations", async (route) => {
+      if (route.request().method() === "POST") await gate;
+      await route.fallback();
+    });
+    try {
+      const composer = h.page.getByRole("textbox").last();
+      const creating = h.page.waitForRequest(
+        (request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/ai/conversations",
+      );
+      await composer.fill("Plain draft awaiting its first save");
+      await creating;
+      expect(await composer.isEnabled()).toBe(true);
+      await h.navigateHost(2, "u_marta");
+      await bar(h.page).getByRole("button", { name: "Zu Marta Beispiel wechseln" }).click();
+      await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).waitFor();
+      // The pending create belongs to the plain draft; a place send must not join or silently fail on that create.
+      expect(await composer.isDisabled()).toBe(true);
+      expect(h.turns).toEqual([]);
+      release();
+      await poll(() => h.created.length, 1);
+      await h.page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("textarea:not([aria-hidden='true'])")?.disabled);
+      expect(h.errors).toEqual([]);
+    } finally {
+      release();
+      await h.close();
+    }
+  }, 60_000);
+
   test("background creation recovery keeps its original request and the visible chat", async () => {
     const h = await open(panel, {
       place: "u_marta",

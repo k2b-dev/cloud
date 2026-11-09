@@ -5,8 +5,8 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { funnelListFixtures } from "../../test/chart-funnel-list-fixtures";
+import { renderBarChartSvg } from "../charts/core/bar-render";
 import { renderFunnelSvg } from "../charts/core/funnel";
-import { renderBarChartSvg } from "./chart-bar";
 
 const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
 Bun.plugin(plugin());
