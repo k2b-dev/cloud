@@ -15,7 +15,7 @@ test("every model step reauthorizes and reserves its worst-case cost before prov
     check = mock(async () => {});
   const model: AiResolvedModel = {
     model: { id: "chat" },
-    profile: aiModelFixture({ pricing: { inputPerMillion: 1000, outputPerMillion: 1000 } }),
+    profile: aiModelFixture({ contextWindow: 10, pricing: { inputPerMillion: 1000, outputPerMillion: 1000 } }),
     provider: {
       name: "fixture",
       family: "openai-compatible",

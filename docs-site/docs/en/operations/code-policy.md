@@ -150,7 +150,8 @@ call limit. Model steps and vision fallback reserve their worst-case priced
 cost from the admitted AI reservation before contacting a provider; the final
 settlement includes every model used. Unknown usage keeps the reservation
 spent. The existing run deadline bounds the entire loop. Policy changes and
-revoked grants take effect at subsequent calls and model steps.
+version approvals are checked before subsequent model steps. Owning applications
+recheck resource grants on actual tool and source-file calls.
 
 
 SDK execution calls use the existing 240-second long-call transport window,
@@ -159,3 +160,9 @@ abort signal still cancels the request, and ordinary capability deadlines
 continue to apply (45 seconds per query). A model loop must fit that query
 window as well as its remaining run time; use a faster model, fewer steps or
 separate explicit Code calls when it cannot.
+
+Model loops reserve each priced provider step against the model's full configured
+context window and bounded output. Token estimates, especially image estimates,
+are not spending ceilings. Choose a priced model with a configured context window
+and a Code allowance that covers that worst case. Settlement uses actual usage;
+unknown usage keeps the reservation spent.

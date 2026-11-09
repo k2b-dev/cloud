@@ -6,7 +6,7 @@ import { createCodeAiTools } from "@k2b/cloud/code";
 import { CodeRunTokenClaimsSchema } from "@k2b/cloud/code/run-token";
 import { type CapabilityExecutionContext, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { aiCostUnits, aiDecimalUnits } from "@k2b/cloud/shared";
-import { type ContentPart, estimateTokens, type Provider } from "@k2b/nessi";
+import type { ContentPart, Provider } from "@k2b/nessi";
 import type { GenerateRequest } from "@k2b/nessi/ai";
 import { z } from "zod";
 import { authorizeCodeCall, createCodeBridgeHost, readCodeOwnOrigins, requireCodeRunFence } from "./bridge";
@@ -139,21 +139,17 @@ export function codeAiModelBudget(reserved: string, check?: () => Promise<unknow
     const guard = (request: GenerateRequest) => {
       request.signal?.throwIfAborted();
       if (!model.profile.pricing) return;
-      const input =
-        estimateTokens(request.messages) +
-        Math.ceil(
-          ((request.systemPrompt?.length ?? 0) +
-            JSON.stringify(request.tools ?? []).length +
-            JSON.stringify(request.responseFormat ?? {}).length) /
-            4,
-        );
+      // Text and image token estimates are not upper bounds. Reserve the model's
+      // full advertised input window so a provider cannot overspend the run budget.
+      const input = model.profile.contextWindow ?? model.provider.contextWindow;
+      if (input === undefined) throw Object.assign(new Error("The model needs a known context window."), { code: "code_ai_budget_limit" });
       const output =
         request.maxOutputTokens ??
         model.profile.maxOutputTokens ??
         model.profile.outputTokenLimit ??
         model.profile.contextWindow ??
         model.provider.contextWindow;
-      if (output === undefined) throw new Error("code_ai_budget_limit: the model needs a known token limit.");
+      if (output === undefined) throw Object.assign(new Error("The model needs a known token limit."), { code: "code_ai_budget_limit" });
       reserve(model.profile, input, output);
     };
     const provider: Provider = {
