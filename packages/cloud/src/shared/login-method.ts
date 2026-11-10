@@ -3,6 +3,15 @@ export type LoginFallbackMethod = "email" | "ipa";
 
 const LOGIN_METHOD_COOKIE = "login_method";
 
+/** Set in a browser after a FreeIPA sign-in through the app; it names no account. */
+export const FREEIPA_APP_SIGN_IN_COOKIE = "login_freeipa_app";
+
+/** Set in a browser after a sign-in by email code for the login account category; it names no account. */
+export const LOGIN_EMAIL_SIGN_IN_COOKIE = "login_email";
+
+/** Everything the sign-in page remembers in a browser. A shared workstation keeps none of it. */
+export const LOGIN_MEMORY_COOKIES = [LOGIN_METHOD_COOKIE, FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE] as const;
+
 const decodeCookieValue = (value: string): string => {
   try {
     return decodeURIComponent(value);

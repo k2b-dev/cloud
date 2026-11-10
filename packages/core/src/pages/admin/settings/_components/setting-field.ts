@@ -19,6 +19,7 @@ export type SettingFieldDef = {
     | "enum"
     | "string_list"
     | "number_list"
+    | "storage_bucket"
     | "cron"
     | "timezone"
     | "template";

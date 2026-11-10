@@ -24,7 +24,7 @@ and such changes are not treated as breaking until then.
 
 | Entry point | Status | Use |
 | --- | --- | --- |
-| `@k2b/cloud` | Supported, server-only | Application declarations, notifications, native `sql` and `redis`, `createSql`, `createRedis`, `connections`, `lazySync`, and `storage` |
+| `@k2b/cloud` | Supported, server-only | Application declarations, notifications, native `sql` and `redis`, `createSql`, `createRedis`, `connections`, `lazySync`, and `storage` with `parseStorageBucketId`, `DEFAULT_STORAGE_BUCKET_ID` and the `StorageBucketId`, `StorageBucketSummary` and `ObjectStoreErrorCode` types |
 | `@k2b/cloud/start` | Supported, server-only | `startPlatform`, `initializePlatform`, and `PlatformStartOptions`; [startup contract](/en/docs/build/platform-start) |
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
@@ -487,6 +487,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/testing` | Supported, browser tests | Inspect mounted context actions and navigation, and capture search requests | [Universal search](/en/docs/platform/search#test-application-search-and-context-actions) |
 | `@k2b/cloud/browser/composer-insert` | Supported, SolidJS | Build insert rows with `cloudInsertMenu` and app-opening rows with `cloudCommandMenu` / `openComposerCommand`; read tags, `commands()` and `state()` from `createCloudComposerCatalog` | [Universal search](/en/docs/platform/search#insert-resources-from-a-composer) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |
+| `@k2b/cloud/browser/storage-bucket-select` | Supported, SolidJS | `StorageBucketSelect`: choose the bucket a `storage_bucket` setting points to | [Object store](/en/docs/platform/object-store#show-the-choice-in-your-administration) |
 | `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap` with authenticated Core map styles and tiles | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/browser/files` | Supported, SolidJS | `chooseFiles`: add files from this device or from Cloud apps that offer files, as `File` objects; `saveFiles`, `SaveFilesButton`, `saveFilesLabel`, `SAVE_FILES_ICON`: save copies into Cloud apps that store files | [File providers](/en/docs/platform/file-providers) |
 | `@k2b/cloud/clients/core` | Platform-owned, browser | Typed client for the Core platform API | — |

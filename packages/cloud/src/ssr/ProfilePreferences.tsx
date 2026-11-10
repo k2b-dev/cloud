@@ -9,6 +9,7 @@ import { PRIVACY_SHORTCUT } from "./privacy-screen-constants";
 import { privacyTimerLabel } from "./privacy-screen-messages";
 import { createPrivacyTimerChoice, parsePrivacyTimer } from "./privacy-timer-choice";
 import { createProfileActions } from "./profile-actions";
+import { SharedWorkstationCheck } from "./SharedWorkstationCheck";
 import { useShellData } from "./shell-data";
 
 type ProfilePreferencesProps = {
@@ -34,7 +35,11 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
   const locale = useLocale();
   const data = useShellData();
   const t = () => platformMessages.resolve([locale()]).t;
-  const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme, props.appHref, props.userId);
+  const { preferences, items, signOut, signingOut, sharedWorkstation } = createProfileActions(
+    props.initialTheme,
+    props.appHref,
+    props.userId,
+  );
   const [sidebarHidden, setSidebarHidden] = createSignal(false);
   onMount(() => {
     const sync = () => setSidebarHidden(readShellFocus());
@@ -173,7 +178,35 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
             </a>
           )}
         </div>
-        <div class="layout-profile-preferences__section">
+        {/* What belongs to this browser, not to the person: the shared workstation mark and sign-out. */}
+        <div
+          class="layout-profile-preferences__section"
+          role="group"
+          aria-labelledby={props.userId ? "cloud-profile-browser-section" : undefined}
+        >
+          {props.userId && (
+            <>
+              <span class="layout-profile-preferences__label" id="cloud-profile-browser-section">
+                <i class="ti ti-browser" aria-hidden="true" />
+                {sharedWorkstation.messages().browserSection}
+              </span>
+              <button
+                type="button"
+                class="menu-item"
+                role="switch"
+                aria-checked={sharedWorkstation.shared()}
+                aria-describedby="cloud-shared-workstation-description"
+                disabled={sharedWorkstation.pending()}
+                onClick={() => void sharedWorkstation.toggle()}
+              >
+                <SharedWorkstationCheck checked={sharedWorkstation.shared()} />
+                <span class="layout-profile-preferences__copy">
+                  <span>{sharedWorkstation.messages().label}</span>
+                  <small id="cloud-shared-workstation-description">{sharedWorkstation.messages().description}</small>
+                </span>
+              </button>
+            </>
+          )}
           <button type="button" class="menu-item" data-danger="true" onClick={signOut} disabled={signingOut()}>
             <i class="ti ti-logout" aria-hidden="true" />
             <span>{preferences.messages().signOut}</span>

@@ -107,6 +107,13 @@ describe("ProfilePreferences SSR", () => {
     expect(sections[1]).toMatch(/aria-checked="true"[^>]*>(<[^>]+>)*2 min/);
     expect(sections[2]).not.toContain('role="radiogroup"');
     expect(sections[2]).toContain(">Dunkel</span>");
+    // "Dieser Browser" holds what belongs to the browser: the shared workstation switch, then sign-out.
+    expect(sections[3]).toContain("Dieser Browser");
+    expect(sections[3]).toContain('role="switch"');
+    expect(sections[3]).toContain(">Gemeinsam genutzter Arbeitsplatz</span>");
+    const browserSection = sections[3] ?? "";
+    expect(browserSection.indexOf('role="switch"')).toBeLessThan(browserSection.indexOf('data-danger="true"'));
+    expect(sections[2]).not.toContain('role="switch"');
     expect(sections[3]).toContain('data-danger="true"');
     expect(sections[3]).toContain(">Abmelden</span>");
     expect(html).toContain('data-position="right-start"');

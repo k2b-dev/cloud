@@ -23,7 +23,14 @@ export type ShellData = {
   home?: string;
   legalLinks: AppLaunchpadLegalLink[];
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
-  profile?: { userId?: string; name: string; avatarSrc?: string; appHref?: string };
+  profile?: {
+    userId?: string;
+    name: string;
+    avatarSrc?: string;
+    appHref?: string;
+    /** This browser is marked as a shared workstation; the profile menu shows its switch on. */
+    sharedWorkstation?: true;
+  };
   theme: CloudThemePreference;
   /** The current app's accent, for the Help dialog and the phone menu, which open outside the app canvas. */
   accent?: string;

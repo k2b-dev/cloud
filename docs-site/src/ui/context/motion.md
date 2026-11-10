@@ -10,7 +10,7 @@ Use one vocabulary for every time and curve. The tokens are available on
 | `--k2b-motion-sheet` | `220ms` | Panels, sheets, period changes. |
 | `--k2b-motion-stack` | `400ms` | A toast stack fans out, folds, and makes room. |
 | `--k2b-motion-morph` | `280ms` | One large surface changes size or place, such as a pill that grows into an editor. |
-| `--k2b-motion-celebrate` | `600ms` | Completion moments only. |
+| `--k2b-motion-celebrate` | `600ms` | Completion moments only, such as the check that `celebrate` draws in a success toast, `prompts.success`, or a success `PanelDialog`. |
 | `--k2b-fresh-fade` | `1600ms` | Color only: a highlight fades out. |
 | `--k2b-ease-out` | `cubic-bezier(0.23, 1, 0.32, 1)` | Standard curve. |
 | `--k2b-ease-morph` | `cubic-bezier(0.2, 0, 0, 1)` | With `--k2b-motion-morph` only: a soft start and a long, calm landing. |

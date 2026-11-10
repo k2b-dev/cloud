@@ -1,6 +1,7 @@
 import { getK2bPortalRoot } from "../internal/portal";
 import { resolveUiMessages } from "../intl/messages";
 import { announce, ensureLiveRegions } from "./announce";
+import { createSuccessCheck } from "./success-check";
 import { resolveToastMessages } from "./toast-messages";
 
 export type ToastVariant = "default" | "success" | "warning" | "error";
@@ -25,6 +26,11 @@ export type ToastOptions = {
   /** Milliseconds until the toast closes; `0` keeps it until it is closed. Omit it for the default by variant, length, and action. */
   duration?: number;
   iconClass?: string;
+  /**
+   * A finished success, such as an issued document: the success toast draws its check once when it appears, in place of
+   * its icon. Leave it off for routine saves. Other variants and running progress ignore it.
+   */
+  celebrate?: boolean;
   /** A short line of context above the message. There is no default title. */
   title?: string;
   action?: ToastAction | null;
@@ -744,6 +750,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   let dismissTimer: ReturnType<typeof setTimeout> | null = null;
   let currentVariant: ToastVariant = options?.variant ?? "default";
   let currentProgress = options?.progress ?? null;
+  let currentCelebrate = options?.celebrate ?? false;
   let currentAction = options?.action ?? null;
   let currentSecondary = options?.secondaryAction ?? null;
   let currentLink = options?.link ?? null;
@@ -779,6 +786,18 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     applyIconClass(leadIconElement, iconClassOverride ?? VARIANT_STYLES[currentVariant].iconClass);
   };
   renderLead(options?.iconClass);
+  // The check takes the glyph's place and draws as it enters; updates that keep it leave it still.
+  let checkElement: SVGElement | null = null;
+  const renderCheck = () => {
+    const celebrating = currentCelebrate && currentVariant === "success" && currentProgress === null;
+    if (!celebrating) {
+      if (checkElement?.isConnected) checkElement.replaceWith(leadIconElement);
+      return;
+    }
+    checkElement ??= createSuccessCheck(doc);
+    if (!checkElement.isConnected) leadIconElement.replaceWith(checkElement);
+  };
+  renderCheck();
 
   const contentElement = doc.createElement("div");
   contentElement.className = "k2b-toast__content";
@@ -981,7 +1000,9 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     }
     if (has("duration")) explicitDuration = nextOptions!.duration;
     if (has("progress")) currentProgress = nextOptions!.progress ?? null;
+    if (has("celebrate")) currentCelebrate = nextOptions!.celebrate ?? false;
     renderProgress();
+    renderCheck();
     resetDismissTimer();
     if (variantChanged || (previousProgress !== null && currentProgress === null)) markSwap();
 
