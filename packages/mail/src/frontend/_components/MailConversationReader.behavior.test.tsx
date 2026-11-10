@@ -1373,3 +1373,40 @@ test.skipIf(isServer)("summary generation cancels the earlier A session after A 
     setSystemTime();
   }
 });
+
+test.skipIf(isServer)("a new message's Open rest replaces the draft in place instead of only closing it", async () => {
+  const dom = createDomTestHarness();
+  const inlineDraft = await import("./MailInlineDraft");
+  let host: { openDraft: (draftId: string) => void } | undefined;
+  const mocked = spyOn(inlineDraft, "default").mockImplementation((props) => {
+    host = props.host;
+    return null;
+  });
+  const opened: string[] = [];
+  let closed = 0;
+  const { MailConversationReader } = modules!;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        requestUrl: "/app/mail/Box001?draft=Draft1",
+        selectionKey: null,
+        selectedConversationId: null,
+        messages: [],
+        newMessage: { draftId: "Draft1", fresh: false },
+        onNewMessageClose: () => closed++,
+        onNewMessageOpenDraft: (draftId) => opened.push(draftId),
+      }),
+    dom.root,
+  );
+  try {
+    await waitFor(() => host !== undefined);
+    host!.openDraft("Draft2");
+    expect(opened).toEqual(["Draft2"]);
+    expect(closed).toBe(0);
+  } finally {
+    mocked.mockRestore();
+    dispose();
+    dom.cleanup();
+  }
+});

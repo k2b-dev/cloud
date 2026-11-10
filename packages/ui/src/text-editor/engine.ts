@@ -158,10 +158,15 @@ export function createTextEditor(options: TextEditorOptions) {
       label = next;
       view.contentDOM.setAttribute("aria-label", next);
     },
-    // Hosts re-run this from reactive state that may change inside an editor update; an unchanged value must not dispatch.
-    setReadOnly: (readOnly: boolean) => {
-      if (view.state.readOnly === readOnly && view.state.facet(EditorView.editable) === !readOnly) return;
-      view.dispatch({ effects: readOnlySlot.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) });
+    /**
+     * `locked` rejects input but keeps the text editable for the browser, so its caret, focus, and a phone keyboard
+     * stay through a short pause. Hosts re-run this from reactive state that may change inside an editor update; an
+     * unchanged value must not dispatch.
+     */
+    setReadOnly: (readOnly: boolean, locked = false) => {
+      const rejects = readOnly || locked;
+      if (view.state.readOnly === rejects && view.state.facet(EditorView.editable) === !readOnly) return;
+      view.dispatch({ effects: readOnlySlot.reconfigure([EditorState.readOnly.of(rejects), EditorView.editable.of(!readOnly)]) });
     },
     destroy: () => {
       view.contentDOM.removeEventListener("keydown", enter, true);
