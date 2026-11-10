@@ -204,28 +204,29 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
-  test('fit="page" shows the whole first page above the bar, narrower than the area', async () => {
-    const page = await load("?fit=page&height=416", { width: 420, height: 800 });
-    try {
-      await settled(page);
-      const area = (await page.locator(".k2b-pdf-viewer__pages").boundingBox())!;
-      const first = (await page.locator('[data-pdf-page="0"]').boundingBox())!;
-      const bar = (await page.locator(".k2b-pdf-viewer__bar .k2b-toolbar").boundingBox())!;
-      expect(first.y).toBeGreaterThanOrEqual(area.y);
-      expect(first.y + first.height).toBeLessThanOrEqual(bar.y);
-      expect(bar.y + bar.height).toBeLessThanOrEqual(area.y + area.height);
-      expect(first.width).toBeLessThan(area.width - 24);
-      expect(Math.abs(first.x + first.width / 2 - (area.x + area.width / 2))).toBeLessThan(8);
-      const fit = page.getByRole("button", { name: "Show the whole page" });
-      expect(await fit.getAttribute("aria-pressed")).toBe("true");
-      await page.getByRole("button", { name: "Zoom in" }).click();
-      await settled(page);
-      expect(await fit.getAttribute("aria-pressed")).toBe("false");
-      await fit.click();
-      await settled(page);
-      expect(Math.round((await page.locator('[data-pdf-page="0"]').boundingBox())!.width)).toBe(Math.round(first.width));
-    } finally {
-      await page.close();
-    }
-  });
+  for (const height of [416, 150])
+    test(`fit="page" shows the whole first page above the bar, narrower than the area, at ${height} px`, async () => {
+      const page = await load(`?fit=page&height=${height}`, { width: 420, height: 800 });
+      try {
+        await settled(page);
+        const area = (await page.locator(".k2b-pdf-viewer__pages").boundingBox())!;
+        const first = (await page.locator('[data-pdf-page="0"]').boundingBox())!;
+        const bar = (await page.locator(".k2b-pdf-viewer__bar .k2b-toolbar").boundingBox())!;
+        expect(first.y).toBeGreaterThanOrEqual(area.y);
+        expect(first.y + first.height).toBeLessThanOrEqual(bar.y);
+        expect(bar.y + bar.height).toBeLessThanOrEqual(area.y + area.height);
+        expect(first.width).toBeLessThan(area.width - 24);
+        expect(Math.abs(first.x + first.width / 2 - (area.x + area.width / 2))).toBeLessThan(8);
+        const fit = page.getByRole("button", { name: "Show the whole page" });
+        expect(await fit.getAttribute("aria-pressed")).toBe("true");
+        await page.getByRole("button", { name: "Zoom in" }).click();
+        await settled(page);
+        expect(await fit.getAttribute("aria-pressed")).toBe("false");
+        await fit.click();
+        await settled(page);
+        expect(Math.round((await page.locator('[data-pdf-page="0"]').boundingBox())!.width)).toBe(Math.round(first.width));
+      } finally {
+        await page.close();
+      }
+    });
 });

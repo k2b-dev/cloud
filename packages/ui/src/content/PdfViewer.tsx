@@ -144,11 +144,12 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   const fitMode = () => props.fit ?? "width";
   /** Every fitted page is this wide, so a landscape page among portrait ones never scrolls sideways. */
   const fittedWidth = () => {
-    const first = pages()[0] ?? { width: commonWidth(), height: commonWidth() };
+    // The whole page that shows first, also with `page`, fits the area's real height, however short.
+    const first = pages()[shown()[0] ?? 0] ?? { width: commonWidth(), height: commonWidth() };
     const height = first.height * (commonWidth() / first.width);
     return fittedPageWidth(
       fitMode(),
-      { width: Math.max(120, inner()), height: Math.max(120, innerHeight()) },
+      { width: Math.max(120, inner()), height: Math.max(1, innerHeight()) },
       { width: commonWidth(), height },
     );
   };
