@@ -350,7 +350,9 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
     const detail = map().details?.find((item) => item.id === id);
     return {
       note: detail?.note,
-      source: detail?.source ? { label: detail.source.label, icon: detail.source.icon ? `ti ti-${detail.source.icon}` : undefined } : undefined,
+      source: detail?.source
+        ? { label: detail.source.label, icon: detail.source.icon ? `ti ti-${detail.source.icon}` : undefined }
+        : undefined,
       links: (detail?.links ?? []).flatMap((link) => {
         const href = aiMapDetailLink(link.url);
         return href ? [{ label: link.label, href }] : [];
