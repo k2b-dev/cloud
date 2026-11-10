@@ -84,7 +84,8 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
       class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`}
       data-tone={local.tone ?? "neutral"}
       {...(local.icon ? { [local.layout === "card" ? "data-card-icon" : "data-icon"]: "" } : {})}
-      data-actions={hasActions() ? "" : undefined}
+      // A spread, not `data-actions={… : undefined}`: SSR writes an absent attribute as a stray space before `>`.
+      {...(hasActions() ? { "data-actions": "" } : {})}
     >
       <Show when={icon()}>
         {(icon) => (

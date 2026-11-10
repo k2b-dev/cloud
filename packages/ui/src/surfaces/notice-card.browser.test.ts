@@ -88,6 +88,10 @@ const measure = (page: Page) =>
         buttonTops: buttons.map((button) => Math.round(button.top)),
         buttonLefts: buttons.map((button) => Math.round(button.left - root.left)),
         buttonHeight: Math.round(buttons[0]!.height),
+        buttonWidths: buttons.map((button) => button.width),
+        buttonRights: buttons.map((button) => Math.round(button.right - root.left)),
+        rowWidth: actions.width,
+        rowRight: Math.round(actions.right - root.left),
         titleInk: getComputedStyle(card.querySelector(".k2b-notice-card__title")!).color,
         iconInk: getComputedStyle(card.querySelector(".k2b-notice-card__icon")!).color,
       };
@@ -135,20 +139,34 @@ describe("@k2b/ui NoticeCard with an icon and actions", () => {
     }
   });
 
-  test("on a phone the actions wrap below the text and the page does not widen", async () => {
-    const page = await load(320);
-    try {
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
-      const warning = (await measure(page))[1]!;
-      expect(new Set(warning.textEdges).size).toBe(1);
-      // Two actions that no longer fit side by side wrap onto a second row on the text edge.
-      expect(warning.buttonTops[1]).toBeGreaterThan(warning.buttonTops[0]!);
-      const edge = warning.textEdges[0]!;
-      expect(warning.buttonLefts).toEqual([edge, edge]);
-    } finally {
-      await page.close();
-    }
-  });
+  // Whether two labels fit side by side depends on the engine's font metrics: WebKit's default sans is narrower than
+  // Chromium's, so at 320px its two actions still fit in one row. The contract is the flex-wrap rule itself: actions
+  // that fit share a row, actions that do not wrap onto the text edge, and none overflows the card. At 260px the row is
+  // narrower than both labels together in any engine, so the wrap is also exercised everywhere.
+  for (const width of [320, 260]) {
+    test(`on a ${width}px phone the actions fit or wrap on the text edge and the page does not widen`, async () => {
+      const page = await load(width);
+      try {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+        const warning = (await measure(page))[1]!;
+        expect(new Set(warning.textEdges).size).toBe(1);
+        const edge = warning.textEdges[0]!;
+        const [first, second] = warning.buttonWidths as [number, number];
+        const fits = first + 8 + second <= warning.rowWidth;
+        if (width === 260) expect(fits).toBe(false);
+        if (fits) {
+          expect(warning.buttonTops[1]).toBe(warning.buttonTops[0]!);
+          expect(warning.buttonLefts[0]).toBe(edge);
+        } else {
+          expect(warning.buttonTops[1]).toBeGreaterThan(warning.buttonTops[0]!);
+          expect(warning.buttonLefts).toEqual([edge, edge]);
+        }
+        for (const right of warning.buttonRights) expect(right).toBeLessThanOrEqual(warning.rowRight);
+      } finally {
+        await page.close();
+      }
+    });
+  }
 
   for (const theme of ["light", "dark"] as const) {
     test(`hover and keyboard focus on an action move nothing (${theme})`, async () => {
