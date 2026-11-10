@@ -37,6 +37,7 @@ import {
 } from "./data-table-columns";
 import { useDataTableMessages } from "./data-table-messages";
 import { FlowAmount } from "./FlowAmount";
+import { LoadMore } from "./LoadMore";
 
 export type DataTableColumn<T> = {
   id: string;
@@ -128,12 +129,18 @@ export type DataTableProps<T> = {
   renderCell?: DataTableRenderCell<T>;
   renderHeader?: DataTableRenderHeader<T>;
   footer?: DataTableFooter<T>;
+  /** More rows follow the loaded ones; the table's end shows the shared `LoadMore` edge. */
   hasMore?: boolean;
+  /** The owner loads the next page right now. */
   loadingMore?: boolean;
   loading?: boolean;
   /** Initial placeholder count, clamped to an integer from 1 to 50. Defaults to 5. */
   loadingRows?: number;
-  onLoadMore?: () => void;
+  /**
+   * Called when the end of the table comes within reach while `hasMore` is true, or by its "Load more" button.
+   * Append the next page to `rows`. A returned promise that rejects shows the error with "Try again".
+   */
+  onLoadMore?: () => unknown;
   empty?: JSX.Element;
   density?: "compact" | "normal";
   stickyHeader?: boolean;
@@ -240,9 +247,6 @@ const rowInteractiveSelector = [
 const isNestedRowControl = (event: Event): boolean =>
   event.target instanceof Element && event.target.closest(rowInteractiveSelector) !== event.currentTarget;
 
-/** Distance in pixels before the table's end at which the next page is requested. */
-const loadMoreMargin = 240;
-
 type DataTableScrollbarAxis = "x" | "y";
 type DataTableScrollbarMetrics = { overflow: boolean; offset: number; size: number };
 
@@ -267,21 +271,19 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const panel = useContext(DataTablePanelContext);
   let tableRef: HTMLTableElement | undefined;
   let scrollRef: HTMLDivElement | undefined;
-  let loadMoreRef: HTMLDivElement | undefined;
   let scrollingTimeout: ReturnType<typeof setTimeout> | undefined;
   let scrollbarDragOffset = 0;
-  let hasMore = false;
-  let loadingMore = false;
-  let onLoadMore: (() => void) | undefined;
-  let loadMoreRequested = false;
-  let previousRowsLength = props.rows.length;
-  let previousLoadingMore = !!props.loadingMore;
-  let previousHasMore = !!props.hasMore;
+  // The load-more edge reads the owner's values through these memos, never through a chain of getters into the
+  // owner's markup: an owner that renders the table from a Show accessor and then hides it would otherwise have the
+  // edge read that accessor after it went stale (Pulse's SQL result). While the first rows load there is no next page,
+  // and a table that fills its height takes new rows into space it already has, so the row count tells a page.
+  const moreRows = createMemo(() => Boolean(props.hasMore) && !props.loading);
+  const loadingMoreRows = createMemo(() => Boolean(props.loadingMore));
+  const rowCount = createMemo(() => props.rows.length);
   const loadingRows = () => Math.min(50, Math.max(1, Math.trunc(Number.isNaN(props.loadingRows) ? 5 : (props.loadingRows ?? 5))));
   const rowId = (row: T) => props.getRowId?.(row);
   const isInteractive = () => !!props.selection || !!props.onRowClick || !!props.onRowDoubleClick;
   const shouldHoverRows = () => props.hoverRows ?? isInteractive();
-  const shouldRenderLoadMoreSentinel = () => !!props.onLoadMore;
   const labelledBy = () => props.ariaLabelledBy ?? (panel?.hasHeading() ? panel.headingId : undefined);
   const surface = () => props.surface ?? (props.class ? "plain" : "paper");
   const cellContentClass = () => props.cellContentClass ?? "k2b-data-table__cell-text";
@@ -290,36 +292,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     props.highlightColumns !== false && shouldHoverRows() && hoveredColumn() === index ? "true" : undefined;
   const setHoveredColumnIfEnabled = (index: number) => {
     if (shouldHoverRows()) setHoveredColumn(index);
-  };
-
-  /**
-   * A bounded table scrolls its own viewport. A table that grows with its rows
-   * leaves scrolling to the page or an ancestor, so its end is measured against
-   * the browser viewport instead.
-   */
-  const isNearBottom = () => {
-    if (!scrollRef || !loadMoreRef) return false;
-    if (scrollRef.scrollHeight > scrollRef.clientHeight + 1) {
-      return scrollRef.scrollTop + scrollRef.clientHeight >= scrollRef.scrollHeight - loadMoreMargin;
-    }
-    return loadMoreRef.getBoundingClientRect().top <= window.innerHeight + loadMoreMargin;
-  };
-
-  const maybeLoadMore = () => {
-    if (!hasMore || loadingMore || !onLoadMore) return;
-    if (!isNearBottom()) {
-      // Leaving the end re-arms a request the owner declined, for example while its first page was still loading.
-      loadMoreRequested = false;
-      return;
-    }
-    if (loadMoreRequested) return;
-    loadMoreRequested = true;
-    try {
-      onLoadMore();
-    } catch (error) {
-      loadMoreRequested = false;
-      throw error;
-    }
   };
 
   const syncScrollbars = () => {
@@ -342,7 +314,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const onScroll = () => {
     syncScrollbars();
     revealScrollbars();
-    maybeLoadMore();
   };
 
   const scrollFromPointer = (event: PointerEvent & { currentTarget: HTMLDivElement }, axis: DataTableScrollbarAxis) => {
@@ -678,14 +649,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   };
 
   onMount(() => {
-    if (typeof IntersectionObserver === "undefined" || !loadMoreRef) return;
-    // The viewport root notices the end whichever element scrolls; `isNearBottom` decides.
-    const observer = new IntersectionObserver(maybeLoadMore, { rootMargin: `${loadMoreMargin}px` });
-    observer.observe(loadMoreRef);
-    onCleanup(() => observer.disconnect());
-  });
-
-  onMount(() => {
     setScrollbarEnhanced(true);
     syncScrollbars();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncScrollbars);
@@ -707,22 +670,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     ),
   );
 
-  createEffect(() => {
-    const rowsLength = props.rows.length;
-    const nextHasMore = !!props.hasMore;
-    const nextLoadingMore = !!props.loadingMore;
-    if (rowsLength !== previousRowsLength || (previousLoadingMore && !nextLoadingMore) || (!previousHasMore && nextHasMore)) {
-      loadMoreRequested = false;
-    }
-    previousRowsLength = rowsLength;
-    previousLoadingMore = nextLoadingMore;
-    previousHasMore = nextHasMore;
-    hasMore = nextHasMore;
-    loadingMore = nextLoadingMore;
-    onLoadMore = props.onLoadMore;
-    maybeLoadMore();
-    queueMicrotask(syncScrollbars);
-  });
+  // New rows and the load-more edge change the scroll size.
+  createEffect(on([() => props.rows.length, () => props.hasMore, () => props.loadingMore], () => queueMicrotask(syncScrollbars)));
 
   return (
     <Show when={props.columns.length > 0} fallback={<Placeholder surface="paper" description={<>{dataTableMessages().noColumns}</>} />}>
@@ -938,8 +887,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               )}
             </Show>
           </table>
-          <Show when={shouldRenderLoadMoreSentinel()}>
-            <div ref={loadMoreRef} class="k2b-data-table__sentinel" aria-hidden="true" />
+          <Show when={props.onLoadMore}>
+            <LoadMore hasMore={moreRows()} loading={loadingMoreRows()} count={rowCount()} onLoadMore={() => props.onLoadMore?.()} />
           </Show>
         </div>
         <For each={["y", "x"] as const}>
