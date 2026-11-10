@@ -101,13 +101,13 @@ suite("mail baseline schema", () => {
         ids.push(draft!.id);
       }
       const before = await sql`SELECT id, subject, body_markdown, author_kind, author_id, updated_at
-        FROM mail.drafts WHERE id = ANY(${ids}::uuid[]) ORDER BY id`;
+        FROM mail.drafts WHERE id = ANY(${sql.array(ids, "UUID")}) ORDER BY id`;
       await migrate();
       expect(
         await sql`SELECT id, subject, body_markdown, author_kind, author_id, updated_at
-        FROM mail.drafts WHERE id = ANY(${ids}::uuid[]) ORDER BY id`,
+        FROM mail.drafts WHERE id = ANY(${sql.array(ids, "UUID")}) ORDER BY id`,
       ).toEqual(before);
-      expect((await sql`SELECT id FROM mail.drafts WHERE id = ANY(${ids}::uuid[]) AND adopted_at IS NOT NULL`).length).toBe(2);
+      expect((await sql`SELECT id FROM mail.drafts WHERE id = ANY(${sql.array(ids, "UUID")}) AND adopted_at IS NOT NULL`).length).toBe(2);
       const [fresh] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
         (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id)
         VALUES (${newShortId()}, ${mailboxId}::uuid, ${sender!.id}::uuid, 'service_account', ${crypto.randomUUID()}::uuid,
