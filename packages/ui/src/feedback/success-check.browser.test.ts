@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // `celebrate` draws the success check once when it appears: the ring closes, the check follows, the mark springs up,
 // all within a second. It sits where the glyph sat, at the glyph's size and colour, and reduced motion, from the
@@ -143,6 +143,10 @@ describe("@k2b/ui success check", () => {
         const plain = await open(place, false);
         const drawn = await open(place, true);
         try {
+          // The toast or dialog is still arriving when its glyph appears; compare the two once each has come to rest,
+          // or the boxes differ by where each arrival happens to be (WebKit: 0.035 px).
+          await settled(plain);
+          await settled(drawn);
           const before = await state(plain, place);
           const after = await state(drawn, place);
           expect(after.container).toEqual(before.container);
