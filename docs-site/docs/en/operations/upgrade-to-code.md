@@ -289,3 +289,10 @@ a new version.
 Paginated Queries expose the shared `page` envelope alongside existing
 domain cursors. Queries with a string `cursor` input must return `page`;
 a declared string `next` or `nextCursor` must match that envelope.
+
+## Code pages and guests
+
+Pages of Code that are not public open for every signed-in member and no
+longer for guest accounts. A guest gets 403 instead, for personal, mailbox
+and app Code alike. Public pages are unchanged. Code that should serve guests
+needs a public route, which receives no visitor identity.

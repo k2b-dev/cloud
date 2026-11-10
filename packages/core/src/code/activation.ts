@@ -4,7 +4,7 @@ import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
 import { mandates } from "@k2b/cloud/services/mandates";
-import { catalogCache, describeOperations, describeTarget } from "@k2b/cloud/ssr/code-page/load";
+import { catalogCache, describeEvent, describeOperations, describeTarget } from "@k2b/cloud/ssr/code-page/load";
 import { codeActivationRows, codeDynamicOperations } from "@k2b/cloud/ssr/code-page/targets";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -157,15 +157,29 @@ export async function previewCodeActivation(
       (SELECT number FROM code.versions WHERE id=${code.activeVersionId}::uuid)::int AS running`;
   const allowed = previewAllowed(context, code);
   const manifest = CodeCheckedVersionManifestSchema.safeParse(version.manifest);
+  const catalog = catalogCache(context.locale ?? "en");
+  // Event places are named as the Code page names them: no target app is asked.
+  const owner = code.owner.kind === "resource" ? { ref: code.owner.ref, title: "" } : { codeId: code.id };
   const base = {
     codeId: code.id,
     automations: manifest.success
-      ? manifest.data.entrypoints.map(({ entrypoint, title, route }) => ({
-          entrypoint,
-          ...(title === undefined ? {} : { title }),
-          ...(route ? { route } : {}),
-        }))
+      ? await Promise.all(
+          manifest.data.entrypoints.map(async ({ entrypoint, title, route, event }) => ({
+            entrypoint,
+            ...(title === undefined ? {} : { title }),
+            ...(route ? { route } : {}),
+            ...(event ? { event: await describeEvent(event, owner, catalog) } : {}),
+          })),
+        )
       : [],
+    // Everything else the version may do, so the card never reads as harmless when it is not.
+    ...(manifest.success
+      ? {
+          internet: manifest.data.internet ?? [],
+          secrets: (manifest.data.secrets ?? []).map(({ name, origin }) => ({ name, origin })),
+          database: manifest.data.database === true,
+        }
+      : {}),
     title: code.title,
     ownerKind: code.owner.kind,
     versionId: input.versionId,
@@ -175,7 +189,6 @@ export async function previewCodeActivation(
     allowed,
   };
   const place = null;
-  const catalog = catalogCache(context.locale ?? "en");
   const page = await previewPage(code, catalog);
   if (code.activeVersionId === input.versionId) {
     const [activation] = await sql<{ activating_person: string | null; updated_at: Date }[]>`

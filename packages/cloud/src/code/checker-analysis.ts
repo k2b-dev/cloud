@@ -752,7 +752,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               const matching = middleware.filter((item) => routeUnder(item.path, route.data.path));
               for (const item of matching) handlers.push({ handler: item.handler, name });
               if (!route.data.public)
-                privateRoutes.push({ node, path: route.data.path, handler: node.arguments[1], middleware: matching.map((item) => item.handler) });
+                privateRoutes.push({
+                  node,
+                  path: route.data.path,
+                  handler: node.arguments[1],
+                  middleware: matching.map((item) => item.handler),
+                });
               const sf = node.getSourceFile();
               result.entrypoints.push({
                 kind: "route",
@@ -923,7 +928,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const walk = (node: ts.Node) => {
       if (found) return;
       if (ts.isPropertyAccessExpression(node) && node.name.text === "user" && sdkUser(checker.getSymbolAtLocation(node.name))) found = true;
-      else if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === "user")
+      else if (
+        ts.isElementAccessExpression(node) &&
+        ts.isStringLiteralLike(node.argumentExpression) &&
+        node.argumentExpression.text === "user"
+      )
         found = sdkUser(checker.getTypeAtLocation(node.expression).getProperty("user"));
       else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
         const key = node.propertyName ?? node.name;

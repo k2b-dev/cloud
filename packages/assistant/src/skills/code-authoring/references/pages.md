@@ -7,9 +7,9 @@ browser, in light and dark and at phone width. There is no HTML, CSS, SVG,
 script, event handler or foreign link. `c.html()` does not exist.
 
 Core hosts the active version at `/code/<code-id>/…`. Routes need a signed-in
-person unless they declare `{ public: true }` ([Access](access.md)).
+member unless they declare `{ public: true }`; guests are refused ([Access](access.md)).
 The handler gets `c.user` with `id`, `username`, effective `groupIds` and `groupNames`, account `kind`
-(`"user"` or `"guest"`) and display `name`. Check these fields before reading or returning restricted data. Public
+(always `"user"` here) and display `name`. Check these fields before reading or returning restricted data. Public
 routes always get `null`, including for signed-in visitors.
 
 ## Where a page appears
@@ -127,7 +127,7 @@ Chart budgets: eight series, 200 values per series and 1,600 marks.
 
 Read data inside the handler, on each request. Shape it in plain TypeScript,
 then pass it as props. Pages of every Code open for **every signed-in
-person**, and their data comes from the Code's account, so check `c.user`
+member**, and their data comes from the Code's account, so check `c.user`
 before showing resource data ([Access](access.md)). This mailbox page counts
 open conversations for one team:
 

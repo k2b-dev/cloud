@@ -173,10 +173,11 @@ test("each member provider reaches the handler as a stable, minimal visitor iden
 });
 test("guests are refused on every page that is not public, for every method and owner, before the Code is asked", async () => {
   const guest = UserSchema.parse({ ...person, profile: "guest", roles: ["guest"] });
+  const variants: Record<string, string>[] = [{}, { Accept: "text/html" }, { Accept: "text/html", "X-Code-Page": "tree" }];
   for (const personalOwner of [id, null]) {
     const page = hosting(false, true, undefined, personalOwner, guest);
     for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
-      for (const headers of [{}, { Accept: "text/html" }, { Accept: "text/html", "X-Code-Page": "tree" }]) {
+      for (const headers of variants) {
         const response = await page.router.request(`/code/${codeId}/`, {
           method,
           headers: { ...headers, "X-Code-CSRF": codeCsrf("fixture-session", codeId) },

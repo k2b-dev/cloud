@@ -1,4 +1,4 @@
-import type { CodePageTarget } from "./data";
+import type { CodePageEvent, CodePageTarget } from "./data";
 import type { CodePageMessages } from "./messages";
 
 /**
@@ -92,3 +92,18 @@ export const codeTargetLabel = (target: CodePageTarget, ownerTitle: string, t: C
   if (target.typeTitle) return t.atTarget({ name: codeTargetName(target, ownerTitle) });
   return t.unknownTarget({ id: target.ref.id });
 };
+
+/**
+ * An automation as people read it: its reviewed title, else an event by its title and place, a page by its method and
+ * path, else its stable name.
+ */
+export const codeAutomationName = (
+  automation: { entrypoint: string; title?: string; event?: CodePageEvent; route?: { method: string; path: string } },
+  ownerTitle: string,
+): string =>
+  automation.title ??
+  (automation.event
+    ? `${automation.event.title ?? automation.event.type} · ${codeTargetName(automation.event.place, ownerTitle)}`
+    : automation.route
+      ? `${automation.route.method} ${automation.route.path}`
+      : automation.entrypoint);

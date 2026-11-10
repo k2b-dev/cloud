@@ -91,7 +91,7 @@ test("the card lists what the version calls where, as the Code page does, and ma
   };
   const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ targets, operationLabels }) } }) });
   const rows = [...dom.root.querySelectorAll(".assistant-code-version__target")].map((row) => row.textContent);
-  expect(dom.root.textContent).toContain("What this version calls");
+  expect(dom.root.textContent).toContain("What this version may do");
   expect(rows).toEqual([
     "at info@example.test itself",
     "Read message · MailMove message · Mailat Mailbox m_billingnew",
@@ -270,4 +270,58 @@ test("the chat version card names reviewed automations and falls back to their i
   });
   expect(dom.root.textContent).toContain("Lieferungen eintragen · legacyJob");
   expect(dom.root.textContent).not.toContain("deliver");
+});
+
+test("the card shows everything a version may do: pages and who opens them, events by place, internet, secrets and database", async () => {
+  const place = {
+    key: "spaces.space\u0000Spc001",
+    ref: { type: "spaces.space", id: "Spc001" },
+    title: null,
+    typeTitle: "Space",
+    icon: "ti ti-layout-board",
+    own: false,
+    href: null,
+  };
+  const automations = [
+    { entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } },
+    { entrypoint: "route:GET:/status", title: "Status", route: { method: "GET", path: "/status", public: true } },
+    { entrypoint: "event:spaces.item.due@1:place:0", event: { type: "spaces.item.due", title: "Item due", place } },
+  ];
+  const full = preview({
+    ownerKind: "person",
+    place: null,
+    targets: [],
+    automations,
+    internet: ["https://api.example.test"],
+    secrets: [{ name: "API_TOKEN", origin: "https://api.example.test" }],
+    database: true,
+  });
+  const { dom } = await mount({ "activation/preview": () => ({ json: { data: full } }) });
+  const rows = [...dom.root.querySelectorAll(".assistant-code-version__target")].map((row) => row.textContent);
+  expect(rows).toEqual([
+    "GET /All signed-in people (no guests) · runs with your rights",
+    "StatusPublic · no sign-in",
+    "Starts on “Item due”at Space Spc001",
+    "https://api.example.teston the internet, sends API_TOKEN",
+    "Reads and writesin its own database",
+  ]);
+  // An event is named by its title and place, never by its stable entrypoint.
+  expect(dom.root.textContent).toContain("Item due · Space Spc001");
+  expect(dom.root.textContent).not.toContain("event:spaces.item.due");
+  expect(dom.root.textContent).not.toContain("Calls no app.");
+
+  // Each kind alone is enough to say the version does something; a place's page runs with its service account.
+  for (const patch of [
+    { automations: [automations[0]!] },
+    { automations: [automations[2]!] },
+    { internet: ["https://api.example.test"] },
+    { database: true },
+  ]) {
+    restore.splice(0).forEach((undo) => undo());
+    const one = await mount({ "activation/preview": () => ({ json: { data: preview({ targets: [], ...patch }) } }) });
+    expect(one.dom.root.textContent).not.toContain("Calls no app.");
+    expect(one.dom.root.querySelectorAll(".assistant-code-version__target")).toHaveLength(1);
+    if (patch.automations?.[0]?.route)
+      expect(one.dom.root.textContent).toContain("All signed-in people (no guests) · runs with its service account’s rights");
+  }
 });

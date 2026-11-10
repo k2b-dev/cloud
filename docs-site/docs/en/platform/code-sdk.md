@@ -373,7 +373,7 @@ const closed = (
 
 // Public, without the Cloud layout: the page stands alone, like a form you hand out.
 // A public route never sees who is signed in: c.user is always null, also for signed-in visitors. A page that
-// recognises its visitors leaves out public; then every signed-in person sees it and c.user names them.
+// recognises its visitors leaves out public; then every signed-in member sees it and c.user names them.
 app.get("/", c => c.page(isClosed() ? closed : survey(crypto.randomUUID(), { rating: "", comment: "" })), {
   public: true,
   layout: "plain",
@@ -810,13 +810,14 @@ cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
 `text()` and `formData()`. Core forwards only the request data and normalized content type, never
 incoming request headers, browser cookies or credentials.
 
-Non-public routes open for every signed-in person, for personal, resource
-and app Code alike. They run with the Code account's authority; personal Code
+Non-public routes open for every signed-in member of the Cloud, for personal,
+resource and app Code alike. Guest accounts get 403 `code_members_only`
+before the Code runs. They run with the Code account's authority; personal Code
 uses its owner's mandate. Check `c.user` before reading private data or
 performing effects. For an owner-only page, compare `c.user.id` to the
 intended person's ID in shared middleware or in every protected handler.
 
-Routes require a signed-in person's session by default, including guests.
+Routes require a signed-in member's session by default; guests are refused.
 Check `c.user` in the handler when access depends on the visitor:
 
 ```ts
@@ -832,12 +833,13 @@ type CodeUser = {
 
 `id` is the Cloud user ID, `username` is its login handle, `groupIds` and
 `groupNames` are the effective groups' IDs and names respectively. `kind` is
-the account profile and `name` is the display name.
+the account profile, always `"user"` on a page that is not public, and `name`
+is the display name.
 Agents and other service accounts cannot visit private pages and are never
 projected into `c.user`.
 
 Public routes never see who is signed in. To recognise visitors, leave out
-`public`; then every signed-in person sees the page.
+`public`; then every signed-in member sees the page.
 
 Public routes also require the `public_routes` policy classification and version-bound
 administrator approval by default. Existing policy tables initially forbid this new
@@ -918,11 +920,22 @@ HTTP middleware.
 
 ## Zugriff prüfen
 
-Every non-public route admits every signed-in person. Put shared access checks
+Every non-public route admits every signed-in member; guests are refused. Put shared access checks
 in `app.use()` before the routes they protect; add handler checks for rules
 specific to one route. SDK calls use the Code account's grants, including
 shares given to resource Code's service account. The visitor's permissions
 do not limit those calls. Public routes have `c.user === null`.
+
+`code_check` warns, without blocking the version, about two cases:
+
+- `code_route_unchecked`: a non-public route whose handler and matching
+  `app.use()` before it never read `c.user`. Every member can open it, and it
+  runs with the owner's rights.
+- `code_route_before_middleware`: a non-public route registered before an
+  `app.use()` whose prefix matches it. That middleware never runs for it.
+
+A check that lives in a helper function the handler calls is not recognized.
+Read `c.user` in the handler or in middleware to silence the warning.
 
 Start with middleware for a private path prefix. Returning a Response stops
 before the handler; `return next()` continues. This check also covers later
