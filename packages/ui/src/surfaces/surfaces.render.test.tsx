@@ -53,6 +53,34 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(info).not.toContain("k2b-sr-only");
   });
 
+  test("NoticeCard layout card keeps the card for its icon and closes with the actions", () => {
+    const html = renderToString(() =>
+      createComponent(NoticeCard, {
+        tone: "warning",
+        icon: true,
+        layout: "card",
+        title: "Review needed",
+        meta: "Due Friday",
+        detail: "2 rows have no owner.",
+        actions: "Assign owners",
+      }),
+    );
+    expect(html).toMatch(/^<article class="k2b-notice-card\s*" data-tone="warning" data-card-icon="" data-actions="">/);
+    expect(html).not.toContain("data-icon");
+    expect(html).toContain('<span class="k2b-sr-only">Warning: </span>');
+    expect(html).toContain(
+      '<p class="k2b-notice-card__description">2 rows have no owner.</p><div class="k2b-notice-card__actions">Assign owners</div></div></article>',
+    );
+    // The compact status line is still what an icon alone gives, and a notice without actions keeps its markup.
+    const line = renderToString(() => createComponent(NoticeCard, { tone: "warning", icon: true, title: "x" }));
+    expect(line).toMatch(/data-icon=""/);
+    expect(line).not.toMatch(/data-card-icon|data-actions|k2b-notice-card__actions/);
+    // Without an icon the layout changes nothing.
+    expect(renderToString(() => createComponent(NoticeCard, { layout: "card", title: "x" }))).toBe(
+      renderToString(() => createComponent(NoticeCard, { title: "x" })),
+    );
+  });
+
   test("NoticeRow renders one notice row: decorative tile, text, then the action, with NoticeCard's tones", () => {
     const html = renderToString(() =>
       createComponent(NoticeRow, {

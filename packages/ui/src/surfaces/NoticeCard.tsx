@@ -13,10 +13,22 @@ export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" |
   NoticeCardContentProps & {
     tone?: NoticeTone;
     /**
-     * A Tabler icon class. Turns the notice into a compact status line whose icon and text take the tone colour. `true`
+     * A Tabler icon class. By default it turns the notice into a compact status line whose icon and text take the tone
+     * colour; `layout="card"` keeps the card instead. `true`
      * takes the tone's own icon, the one a toned dialog shows, and names the tone for screen readers.
      */
     icon?: string | true;
+    /**
+     * Where an icon goes. `line`, the default, is the compact status line above. `card` keeps the calm card and sets the
+     * icon in the tone colour beside the title, text, and actions, which share one text edge.
+     */
+    layout?: "line" | "card";
+    /**
+     * The direct next step: one or two `Button`s or `ButtonLink`s (`size="sm"`) in one row below the text. The primary
+     * action takes the tone's button variant; a second one is `secondary`. In a `NoticeCard.Grid` row the actions of all
+     * cards share the bottom edge.
+     */
+    actions?: JSX.Element;
     class?: string;
     bodyClass?: string;
   };
@@ -30,13 +42,30 @@ export const NOTICE_CARD_CLASSES = {
   meta: "k2b-notice-card__meta",
   description: "k2b-notice-card__description",
   body: "k2b-notice-card__body",
+  actions: "k2b-notice-card__actions",
 } as const;
 
+/** Whether resolved children render something; a Show whose condition is false renders nothing. */
+const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && node !== false && node !== "");
+
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
-  const [local, articleProps] = splitProps(props, ["tone", "icon", "title", "detail", "meta", "children", "class", "bodyClass"]);
+  const [local, articleProps] = splitProps(props, [
+    "tone",
+    "icon",
+    "layout",
+    "title",
+    "detail",
+    "meta",
+    "children",
+    "actions",
+    "class",
+    "bodyClass",
+  ]);
   // Children that render nothing, such as a Show whose condition is false, add no body and no gap.
   const body = children(() => local.children);
-  const hasBody = () => body.toArray().some((node) => node != null && node !== false && node !== "");
+  const hasBody = () => rendersSomething(body.toArray());
+  const actions = children(() => local.actions);
+  const hasActions = () => rendersSomething(actions.toArray());
   const messages = useUiMessages();
   /** The tone a dialog also knows, so `icon` true shows the same icon and word; info and neutral have no word. */
   const dialogTone = () => (local.tone === "success" || local.tone === "warning" || local.tone === "danger" ? local.tone : undefined);
@@ -54,7 +83,8 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
       {...articleProps}
       class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`}
       data-tone={local.tone ?? "neutral"}
-      {...(local.icon ? { "data-icon": "" } : {})}
+      {...(local.icon ? { [local.layout === "card" ? "data-card-icon" : "data-icon"]: "" } : {})}
+      data-actions={hasActions() ? "" : undefined}
     >
       <Show when={icon()}>
         {(icon) => (
@@ -77,6 +107,9 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
         <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
         <Show when={hasBody()}>
           <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>
+        </Show>
+        <Show when={hasActions()}>
+          <div class={NOTICE_CARD_CLASSES.actions}>{actions()}</div>
         </Show>
       </div>
     </article>
