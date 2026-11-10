@@ -29,3 +29,37 @@ test("a notice adds its body only while its children render something", async ()
     dom.cleanup();
   }
 });
+
+test("a notice adds its actions row only while the actions render something", async () => {
+  const dom = createDomTestHarness();
+  const { NoticeCard } = await import("../src/surfaces/NoticeCard");
+  const [offered, setOffered] = createSignal(false);
+  const dispose = render(
+    () => (
+      <NoticeCard
+        tone="danger"
+        title="Source unavailable"
+        actions={
+          <Show when={offered()}>
+            <button type="button">Retry now</button>
+          </Show>
+        }
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const card = dom.root.querySelector(".k2b-notice-card")!;
+    expect(card.querySelector(".k2b-notice-card__actions")).toBeNull();
+    expect(card.hasAttribute("data-actions")).toBe(false);
+    setOffered(true);
+    expect(card.querySelector(".k2b-notice-card__actions button")?.textContent).toBe("Retry now");
+    expect(card.hasAttribute("data-actions")).toBe(true);
+    setOffered(false);
+    expect(card.querySelector(".k2b-notice-card__actions")).toBeNull();
+    expect(card.hasAttribute("data-actions")).toBe(false);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

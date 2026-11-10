@@ -4389,6 +4389,11 @@ html[data-k2b-mobile-shell] .k2b-ui,
   line-height: 1.5rem;
 }
 
+/* A card icon stays centred on the taller title line. */
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card[data-card-icon] > .k2b-notice-card__icon {
+  height: 1.5rem;
+}
+
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading p,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__description,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__body,
