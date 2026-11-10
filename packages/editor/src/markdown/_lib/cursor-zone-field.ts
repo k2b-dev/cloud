@@ -99,57 +99,49 @@ export const pointerSelectionHoldEffect = StateEffect.define<boolean>();
  *  that cannot take focus, such as a read-only note. */
 export const placeMarkdownCaret = StateEffect.define<void>();
 
-const markdownFocusEffect = StateEffect.define<boolean>();
+const markdownBlurEffect = StateEffect.define<void>();
 
 const pressHeld = (tr: Transaction) => tr.state.field(pointerSelectionHeld, false) === true;
 
-/** Focus that came with a press still held: it counts from the refresh after the release, like the press's selection. */
-const focusAwaitingRelease = StateField.define<boolean>({
+/** Something the person did in the editor: set or moved the selection, typed, deleted, undid or redid. */
+const personActs = (tr: Transaction) => ["select", "input", "delete", "undo", "redo", "move"].some((event) => tr.isUserEvent(event));
+
+/** A press that acted while its button is still down: it counts from the refresh after the release, like its selection. */
+const actAwaitingRelease = StateField.define<boolean>({
   create: () => false,
   update(value, tr) {
-    for (const effect of tr.effects) {
-      if (effect.is(markdownFocusEffect)) value = effect.value && pressHeld(tr);
-      else if (effect.is(refreshMarkdownDecorationsEffect)) value = false;
-    }
-    return value;
+    if (tr.effects.some((effect) => effect.is(markdownBlurEffect) || effect.is(refreshMarkdownDecorationsEffect))) value = false;
+    return value || (personActs(tr) && pressHeld(tr));
   },
 });
 
-/** Decorations added to an editor that already has focus, such as when a note switches to its rich view, see no focus
- *  change; this reads the focus once they are in place. */
-const focusOnMount = ViewPlugin.define((view) => {
-  if (view.hasFocus && view.state.field(markdownEditorFocused, false) === false)
-    queueMicrotask(() => {
-      if (view.hasFocus && view.state.field(markdownEditorFocused, false) === false)
-        view.dispatch({ effects: markdownFocusEffect.of(true) });
-    });
-  return {};
-});
-
-/** Whether the editor has focus, or a control placed the caret in an editor that cannot take focus. Without it nothing
- *  is being edited and every block shows formatted: a note opens without a `#` before its title even though
- *  CodeMirror's default selection sits there, the same as the server render, and the block last edited renders again
- *  once focus leaves. Each decoration that reveals Markdown source brings this field along. */
+/** Whether the person is editing in the editor: they acted in it (a press, a key that moves the caret, typing) since
+ *  it last lost focus, or a control placed the caret in an editor that cannot take focus. Focus alone is not enough:
+ *  a note that the app focuses on open, or that regains focus from a dialog or another window, shows every block
+ *  formatted and no `#` before its title, the same as the server render. The block last edited renders again once
+ *  focus leaves. Only blur is reported as a focus transaction, so focus moves between the editor and its own sheets and
+ *  cells stay plain updates. Each decoration that reveals Markdown source brings this field along. */
 export const markdownEditorFocused: StateField<boolean> = StateField.define<boolean>({
   create: () => false,
   update(value, tr) {
-    for (const effect of tr.effects) {
-      if (effect.is(markdownFocusEffect)) value = effect.value && !pressHeld(tr);
-      else if (effect.is(placeMarkdownCaret)) value = true;
-      else if (effect.is(refreshMarkdownDecorationsEffect) && tr.startState.field(focusAwaitingRelease, false) === true) value = true;
-    }
-    return value;
+    if (tr.effects.some((effect) => effect.is(markdownBlurEffect))) return false;
+    if (tr.effects.some((effect) => effect.is(placeMarkdownCaret))) return true;
+    if (
+      tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect)) &&
+      tr.startState.field(actAwaitingRelease, false) === true
+    )
+      return true;
+    return value || (personActs(tr) && !pressHeld(tr));
   },
   provide: (field) => [
-    focusAwaitingRelease,
-    focusOnMount,
+    actAwaitingRelease,
     EditorView.focusChangeEffect.of((state, focusing) =>
-      state.field(field) === focusing && !state.field(focusAwaitingRelease) ? null : markdownFocusEffect.of(focusing),
+      !focusing && (state.field(field) || state.field(actAwaitingRelease)) ? markdownBlurEffect.of() : null,
     ),
   ],
 });
 
-/** The selection Markdown reveals its source around, or `null` while the editor has no focus. */
+/** The selection Markdown reveals its source around, or `null` while the person is not editing in the editor. */
 export const revealedSelection = (state: EditorState): EditorSelection | null =>
   state.field(markdownEditorFocused, false) === false ? null : state.selection;
 
@@ -171,14 +163,11 @@ export const holdsDecorations = (tr: Transaction): boolean =>
   tr.state.field(pointerSelectionHeld, false) === true &&
   isPointerSelectionTransaction(tr);
 
-/** True when decorations that follow the selection must rebuild although it did not move: an explicit refresh, or a
- *  change of focus. Focus that comes with a press waits for the refresh after the release, like its selection. */
+/** True when decorations that follow the selection must rebuild although it may not have moved: an explicit refresh, or
+ *  the person starting or stopping to edit. A press waits for the refresh after its release, like its selection. */
 export const refreshesMarkdownDecorations = (tr: Transaction): boolean =>
-  tr.effects.some(
-    (effect) =>
-      effect.is(refreshMarkdownDecorationsEffect) ||
-      ((effect.is(markdownFocusEffect) || effect.is(placeMarkdownCaret)) && tr.state.field(pointerSelectionHeld, false) !== true),
-  );
+  tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect)) ||
+  (tr.startState.field(markdownEditorFocused, false) !== tr.state.field(markdownEditorFocused, false) && !pressHeld(tr));
 
 export const initialMarkdownDecorationRefreshExtension = (): Extension =>
   ViewPlugin.fromClass(

@@ -138,18 +138,25 @@ describe("Markdown source follows focus", () => {
     };
   };
 
-  test("a note without focus shows no marker, focus reveals the caret's block and blur renders it again", async () => {
+  test("a note shows no marker until the person acts in it, and blur renders the block again", async () => {
     const { view, cleanup } = await open();
     try {
       expect(view.state.selection.main.head).toBe(0);
       expect(view.contentDOM.textContent).toBe("Title with bold and linkBody");
       expect(view.state.field(markdownEditorFocused)).toBe(false);
 
+      // The app focuses the note when it opens, so the person can type right away: that alone reveals nothing.
       view.focus();
       jest.advanceTimersByTime(10);
+      view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true });
+      expect(view.state.field(markdownEditorFocused)).toBe(false);
+      expect(view.contentDOM.textContent).toBe("Title with bold and linkBody");
+
+      // A key that moves the caret is the person's own act.
+      view.dispatch({ selection: { anchor: 1 }, userEvent: "select" });
       expect(view.state.field(markdownEditorFocused)).toBe(true);
       expect(view.contentDOM.textContent).toBe("# Title with bold and linkBody");
-      view.dispatch({ selection: { anchor: 16 } });
+      view.dispatch({ selection: { anchor: 16 }, userEvent: "select" });
       expect(view.contentDOM.textContent).toBe("# Title with **bold** and linkBody");
 
       // Focus moves to another field: nothing is being edited, so the block renders again.
@@ -157,6 +164,22 @@ describe("Markdown source follows focus", () => {
       jest.advanceTimersByTime(10);
       expect(view.state.field(markdownEditorFocused)).toBe(false);
       expect(view.contentDOM.textContent).toBe("Title with bold and linkBody");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("taking focus adds no transaction of its own, so focus listeners such as table cells see a plain focus update", async () => {
+    const updates: Array<{ transactions: number; focusChanged: boolean }> = [];
+    const { view, cleanup } = await open([
+      EditorView.updateListener.of((update) => {
+        if (update.focusChanged) updates.push({ transactions: update.transactions.length, focusChanged: true });
+      }),
+    ]);
+    try {
+      view.focus();
+      jest.advanceTimersByTime(10);
+      expect(updates).toEqual([{ transactions: 0, focusChanged: true }]);
     } finally {
       cleanup();
     }
@@ -192,7 +215,7 @@ describe("Markdown source follows focus", () => {
     }
   });
 
-  test("decorations added to an editor that already has focus reveal the caret's block", async () => {
+  test("decorations added to an editor that already has focus reveal the caret's block once the person acts", async () => {
     const dom = createDomTestHarness();
     const rich = new Compartment();
     const text = "# Title\n\nBody";
@@ -206,9 +229,10 @@ describe("Markdown source follows focus", () => {
       // A note switches from its source view to its rich view while the person keeps typing.
       view.dispatch({ effects: rich.reconfigure(markupExtension()) });
       forceParsing(view, text.length, 5000);
-      await Promise.resolve();
+      expect(view.contentDOM.textContent).toBe("TitleBody");
+      view.dispatch({ changes: { from: 7, insert: "s" }, selection: { anchor: 8 }, userEvent: "input.type" });
       expect(view.state.field(markdownEditorFocused)).toBe(true);
-      expect(view.contentDOM.textContent).toBe("# TitleBody");
+      expect(view.contentDOM.textContent).toBe("# TitlesBody");
     } finally {
       view.destroy();
       dom.cleanup();

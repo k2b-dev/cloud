@@ -8,8 +8,8 @@ import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
 import { markdownExtension } from "./markdown";
 
 // Every block opens at the start of the note, where CodeMirror's default selection sits. Nobody is editing it until the
-// editor has focus, so readers see it rendered; once focus leaves, the block last edited renders again.
-describe("Markdown blocks render while the editor has no focus", () => {
+// person acts in the focused editor, so readers see it rendered; once focus leaves, the block last edited renders again.
+describe("Markdown blocks render until the person edits in the editor", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
     return;
@@ -66,7 +66,7 @@ describe("Markdown blocks render while the editor has no focus", () => {
   ];
 
   test.each(cases)(
-    "a $name at the start renders without focus, shows its source with focus, and renders again on blur",
+    "a $name at the start stays rendered on focus, shows its source once the person acts, and renders again on blur",
     async ({ doc, source, widget, extensions }) => {
       const dom = createDomTestHarness();
       const rendered = () =>
@@ -82,9 +82,11 @@ describe("Markdown blocks render while the editor has no focus", () => {
         expect(view.state.selection.main.head).toBe(0);
         expect(rendered()).toBe(true);
 
-        // CodeMirror reports a focus change after 10 ms.
+        // Focus alone, as when the app focuses the note, reveals nothing; the person's own key or press does.
         view.focus();
         jest.advanceTimersByTime(10);
+        expect(rendered()).toBe(true);
+        view.dispatch({ selection: { anchor: 0 }, userEvent: "select" });
         expect(rendered()).toBe(false);
         expect(view.contentDOM.textContent).toContain(source);
 

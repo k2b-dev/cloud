@@ -83,8 +83,8 @@ test("a local table and its formulas render a chart preview without a server", a
     expect(dom.root.querySelector(".cm-query-block-widget")).not.toBeNull();
     editor!.focus();
     await Bun.sleep(30);
-    // happy-dom moves a caret that sat inside the drawn chart out of it on focus; a browser keeps it. Place it again.
-    editor!.dispatch({ selection: { anchor: markdown.indexOf("type: bar") } });
+    // The person moves the caret into the chart's source.
+    editor!.dispatch({ selection: { anchor: markdown.indexOf("type: bar") }, userEvent: "select" });
     expect(dom.root.querySelector(".cm-query-block-widget")).toBeNull();
     editor!.contentDOM.blur();
     await Bun.sleep(30);

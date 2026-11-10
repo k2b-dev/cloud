@@ -347,7 +347,8 @@ for (const fixture of [
       const rows = preview.locator(".notebook-note-preview__line");
       expect(await rows.nth(0).isVisible()).toBe(true);
       expect(await rows.nth(2).isVisible()).toBe(true);
-      expect(await rows.nth(0).textContent()).toBe("# Wochenplan");
+      // Rich mode shows no mark before the title: the editor reveals none until the person acts in it.
+      expect(await rows.nth(0).textContent()).toBe(fixture.mode === "source" ? "# Wochenplan" : "Wochenplan");
       expect(await rows.nth(2).textContent()).toContain("Wir sammeln");
       expect(await preview.locator("script, img").count()).toBe(0);
       const count = notePreviewLines(fixture.headings ? headingMarkdown : markdown, fixture.mode).length;
