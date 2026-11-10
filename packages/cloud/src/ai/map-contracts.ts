@@ -9,6 +9,7 @@ import {
   GeoPointSchema,
 } from "../contracts/geo";
 import {
+  GEO_ROUTE_MAX_STOPS,
   GeoRouteChangesSchema,
   GeoRouteOptionsSchema,
   GeoRoutePlanSchema,
@@ -26,8 +27,38 @@ export const aiMapWebsite = (value: string | undefined): string | undefined => {
   }
 };
 
+/** Browser-safe root-relative Cloud paths or absolute HTTP(S) links. */
+export const aiMapDetailLink = (value: string): string | undefined => {
+  if (/^\/(?!\/)[^\\\u0000-\u001f\u007f]*$/.test(value)) return value;
+  return /^https?:\/\//.test(value) ? aiMapWebsite(value) : undefined;
+};
+
 const label = z.string().trim().min(1).max(160);
 const web = z.object({ placeId: z.string().max(2048), description: z.string().max(600), url: z.url().max(2000) }).strict();
+const maxGroups = 2;
+const maxPlaces = 20;
+export const AI_MAP_MAX_DETAILS = maxGroups * maxPlaces + GEO_ROUTE_MAX_STOPS;
+const details = z
+  .array(
+    z
+      .object({
+        id: z.string().min(1).max(2048),
+        note: z.string().max(600).optional(),
+        source: z
+          .object({
+            label: z.string().trim().min(1).max(120),
+            icon: z.enum(["user", "file-text", "box", "notebook", "building", "calendar", "link", "info"]).optional(),
+          })
+          .strict()
+          .optional(),
+        links: z
+          .array(z.object({ label: z.string().trim().min(1).max(80), url: z.string().min(1).max(2000) }).strict())
+          .max(3)
+          .optional(),
+      })
+      .strict(),
+  )
+  .max(AI_MAP_MAX_DETAILS);
 // A map may accumulate two full Places result pages. Subsequent searches replace the secondary group.
 export const AiMapSchema = z
   .object({
@@ -57,8 +88,9 @@ export const AiMapSchema = z
       .optional(),
     searchAddress: z.object({ text: z.string(), address: GeoAddressSchema }).strict().optional(),
     availability: GeoAvailabilityDataSchema,
-    groups: z.array(z.object({ title: label, places: z.array(GeoPlaceSchema).max(20) }).strict()).max(2),
-    web: z.array(web).max(40),
+    groups: z.array(z.object({ title: label, places: z.array(GeoPlaceSchema).max(maxPlaces) }).strict()).max(maxGroups),
+    web: z.array(web).max(maxGroups * maxPlaces),
+    details: details.optional(),
     route: GeoRouteSchema.optional(),
     plan: GeoRoutePlanSchema.optional(),
     preview: z.object({ result: GeoRouteUpdateDataSchema, changes: GeoRouteChangesSchema, title: label }).strict().optional(),
@@ -119,14 +151,18 @@ export const AiMapCommandSchema = z.discriminatedUnion("type", [
       stops: z
         .array(stop)
         .min(2)
-        .max(26)
+        .max(GEO_ROUTE_MAX_STOPS)
         .refine((stops) => new Set(stops.map((s) => s.id)).size === stops.length, "Stop IDs must be unique"),
       options: GeoRouteOptionsSchema.optional(),
       title: label,
+      details: details.optional(),
     })
     .strict(),
   z.object({ type: z.literal("search"), search, insert: z.boolean().optional(), web: z.array(web).max(20).optional() }).strict(),
-  z.object({ type: z.literal("describe"), web: z.array(web).max(40) }).strict(),
+  z
+    .object({ type: z.literal("describe"), web: z.array(web).max(40).optional(), details: details.optional() })
+    .strict()
+    .refine((value) => value.web !== undefined || value.details !== undefined, "Supply web or details"),
   z
     .object({
       type: z.literal("preview"),

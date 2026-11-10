@@ -7,7 +7,15 @@ import type { GeoCategorySchema, GeoPoint } from "../../contracts/geo";
 import type { GeoRouteOptions } from "../../contracts/geo-route";
 import { AddressAutocomplete } from "../../geo/AddressAutocomplete";
 import { CloudMap } from "../../geo/CloudMap";
-import { type AiMap, type AiMapCommand, AiMapReferenceSchema, AiMapSchema, AiMapToolResultSchema, aiMapWebsite } from "../map-contracts";
+import {
+  type AiMap,
+  type AiMapCommand,
+  AiMapReferenceSchema,
+  AiMapSchema,
+  AiMapToolResultSchema,
+  aiMapDetailLink,
+  aiMapWebsite,
+} from "../map-contracts";
 import { mapOpeningHours } from "../map-opening-hours";
 import type { AiTurnBlock } from "../protocol";
 import { mapMessages } from "./map-messages";
@@ -340,6 +348,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
       )
       .join(", ");
   const web = () => map().web.find((w) => w.placeId === selectedPlace()?.id);
+  const placeDetails = () => map().details?.find((item) => item.id === selectedPlace()?.id);
   const visiblePlaces = () => {
     const all = places();
     if (!narrow() || expanded()) return all;
@@ -639,7 +648,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
     </div>
   );
   const info = () => (
-    <div class="ai-map__info" aria-live="polite">
+    <div class="ai-map__info" data-details={Boolean(placeDetails())} aria-live="polite">
       <Show when={!map().issue && !waiting() ? selectedPlace() : undefined}>
         {(p) => (
           <>
@@ -655,6 +664,30 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
               )}
             </Show>
             <p class="ai-map__description">{web()?.description}</p>
+            <Show when={placeDetails()?.note}>{(note) => <p class="ai-map__note">{note()}</p>}</Show>
+            <Show when={placeDetails()?.source}>
+              {(source) => (
+                <small>
+                  <i class={`ti ti-${source().icon === "info" || !source().icon ? "info-circle" : source().icon}`} aria-hidden="true" />{" "}
+                  {source().label}
+                </small>
+              )}
+            </Show>
+            <For each={placeDetails()?.links}>
+              {(link) => (
+                <Show when={aiMapDetailLink(link.url)}>
+                  {(href) => (
+                    <a
+                      href={href()}
+                      target={href().startsWith("/") ? undefined : "_blank"}
+                      rel={href().startsWith("/") ? undefined : "noopener noreferrer"}
+                    >
+                      {link.label}
+                    </a>
+                  )}
+                </Show>
+              )}
+            </For>
             <small>
               {t().source}: {p().provenance.attribution.text}
               <Show when={web()}>
@@ -947,6 +980,9 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
                             </span>
                             <span>
                               {changedRoute()?.stops.find((s) => s.id === leg.toStopId)?.label ?? leg.toStopId}
+                              <Show when={map().details?.find((item) => item.id === leg.toStopId)?.note}>
+                                {(note) => <small class="ai-map__note">{note()}</small>}
+                              </Show>
                               <small>
                                 {leg.options.mode ? t()[leg.options.mode] : ""}
                                 {leg.options.avoid?.length ? ` · ${t().without} ${leg.options.avoid.map((a) => t()[a]).join(", ")}` : ""}

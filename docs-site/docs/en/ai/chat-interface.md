@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-23
+updated: 2026-11-10
 ---
 
 # Chat interface
@@ -696,6 +696,19 @@ Select a pin or a list row to show its information. Arrow keys, Home, and End mo
 through the list. On phones and in the Assistant panel, four rows appear first;
 **All places** expands the list in the conversation. The information card keeps
 its height, including when an opening schedule or description is missing.
+
+Callers can attach a note, a source label with an optional generic symbol, and up
+to three labeled links to each place or route stop. The selected place shows these
+details; route legs show the destination stop's note below its label. Use
+`describe` with `details`, `web`, or both, or pass stop `details` with `route`.
+Each detail's `id` is a returned place mark or stable stop ID. Notes allow 600
+characters, source labels 120, link labels 80, and link URLs 2,000. At most 66
+entries are retained (two groups of 20 places plus 26 route stops); new details
+replace the entry for that ID, and replacing places or stops drops stale entries.
+External HTTP(S) links require a source already read in the conversation and open
+in a new tab. Root-relative Cloud paths beginning with a single `/` open in place
+without fetching; other link forms are rejected. These fields are caller-supplied
+display information; the map has no application-specific knowledge.
 
 Follow-up searches reuse `mapId` and the current revision. A second group uses
 letters and a second color on the original map; later searches replace that

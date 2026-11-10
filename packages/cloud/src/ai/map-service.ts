@@ -4,7 +4,7 @@ import type { CapabilityClientResult } from "../capabilities/types";
 import { GeoAddressSchema, type GeoPlaceSearchInput } from "../contracts/geo";
 import type { GeoRouteChanges, GeoRoutePlan } from "../contracts/geo-route";
 import { mapMessages } from "./chat/map-messages";
-import { type AiMap, type AiMapCommand, AiMapSchema } from "./map-contracts";
+import { AI_MAP_MAX_DETAILS, type AiMap, type AiMapCommand, AiMapSchema, aiMapDetailLink } from "./map-contracts";
 import { AiMapConflict, type AiMapStored } from "./map-store";
 
 export class AiMapGeoError extends Error {
@@ -51,6 +51,35 @@ const readWeb = async (map: AiMap, web: AiMap["web"], ctx: AiMapContext) => {
   }
   const fresh = new Set(resolved.map((w) => w.placeId));
   return [...map.web.filter((w) => !fresh.has(w.placeId)), ...resolved].slice(-40);
+};
+const readDetails = async (map: AiMap, details: NonNullable<AiMap["details"]>, ctx: AiMapContext, stopsOnly = false) => {
+  const stops = new Set((map.route?.stops ?? map.plan?.stops ?? []).map((s) => s.id));
+  const resolved = details.map((item) => {
+    if (stops.has(item.id)) return item;
+    if (stopsOnly) throw new Error("MAP_STOP_NOT_FOUND");
+    return { ...item, id: placeById(map, item.id, ctx).id };
+  });
+  for (const item of resolved)
+    for (const link of item.links ?? []) {
+      const href = aiMapDetailLink(link.url);
+      if (!href) throw new Error("MAP_DETAIL_LINK_INVALID");
+      if (!href.startsWith("/") && !(await ctx.verifyWeb(href))) throw new Error("MAP_WEB_SOURCE_NOT_READ");
+    }
+  const merged = new Map((map.details ?? []).map((item) => [item.id, item]));
+  for (const item of resolved) {
+    merged.delete(item.id);
+    merged.set(item.id, item);
+  }
+  return [...merged.values()].slice(-AI_MAP_MAX_DETAILS);
+};
+const dropStaleDetails = (map: AiMap) => {
+  if (!map.details) return;
+  const ids = new Set([
+    ...map.groups.flatMap((g) => g.places.map((p) => p.id)),
+    ...(map.picker ?? []).map((p) => p.id),
+    ...(map.route?.stops ?? map.plan?.stops ?? []).map((s) => s.id),
+  ]);
+  map.details = map.details.filter((item) => ids.has(item.id));
 };
 const searchPlaces = async (map: AiMap, search: Extract<AiMapCommand, { type: "places" }>["search"], ctx: AiMapContext, limit = 20) => {
   const geo = ctx.geo ?? geoClient;
@@ -193,6 +222,7 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       map.plan = plan;
       map.kind = "route";
       map.title = command.title;
+      if (command.details) map.details = await readDetails(map, command.details, ctx, true);
       map.route = data(await geo.calculateRoute({ plan }, ctx.caller)).route;
       delete map.preview;
       delete map.candidates;
@@ -249,11 +279,15 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
         title: ctx.caller.locale?.startsWith("de") ? "Rückgängig gemacht" : "Undone",
         at: (ctx.now?.() ?? new Date()).toISOString(),
       };
-    } else if (command.type === "describe") map.web = await readWeb(map, command.web, ctx);
+    } else if (command.type === "describe") {
+      if (command.web) map.web = await readWeb(map, command.web, ctx);
+      if (command.details) map.details = await readDetails(map, command.details, ctx);
+    }
     if (!map.issue) {
       delete map.retryUsesMarks;
       delete map.retryInsertStopId;
     }
+    dropStaleDetails(map);
     return { map: AiMapSchema.parse(map), ...(map.issue ? { retry: stored.retry } : {}) };
   } catch (cause) {
     if (!(cause instanceof AiMapGeoError)) throw cause;
@@ -283,6 +317,7 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       ...(typeof d.retryAfterSeconds === "number" ? { retryAfterSeconds: d.retryAfterSeconds } : {}),
       ...(d.costs && typeof d.costs === "object" ? { costs: d.costs } : {}),
     });
+    dropStaleDetails(map);
     return { map: AiMapSchema.parse(map), retry };
   }
 }
