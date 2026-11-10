@@ -9,7 +9,7 @@ order: 30
 
 ## Eine Nachricht beginnen {icon="square-plus"}
 
-Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste über der neuesten Nachricht, oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, über der neuesten Nachricht, und die Schreibmarke steht im Text. Am Telefon wartet die Leiste unten, und der Entwurf öffnet oben über die volle Breite. Mail legt den gemeinsamen Entwurf an, bevor du tippst. So liegt nichts nur in deinem Browser.
+Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste über der neuesten Nachricht, oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, über der neuesten Nachricht, und die Schreibmarke steht im Text. Am Telefon wartet die Leiste unten, und der Entwurf öffnet oben über die volle Breite. Mail legt den gemeinsamen Entwurf an, bevor du tippst.
 
 Wähle **Verfassen** für eine neue Nachricht. Sie steht als **Neue Nachricht** oben in der Liste, und rechts steht eine leere Unterhaltung mit dem Entwurf. Nach dem Senden wird daraus eine Unterhaltung.
 
@@ -85,6 +85,10 @@ Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat.
 Ein Vorschlag von Gustav oder einem anderen automatischen Konto ist ein echter Entwurf, der schon offen in der Unterhaltung steht, in Pflaume, mit dem Namen des Kontos, zum Beispiel **Vorschlag von Gustav**, und **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und das Konto ersetzt ihn nie. Jedes Konto hat in einer Unterhaltung höchstens einen solchen Vorschlag.
 
 Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt Mail im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
+
+Der Speicherstatus unterscheidet **Änderungen ausstehend**, **Auf diesem Gerät gesichert** und **Auf dem Server gespeichert**. Eine Gerätekopie übersteht eine kurze Offline-Zeit; sie bestätigt noch nicht, dass der Server den neuesten Text gespeichert hat. Wiederherstellungsprotokolle im Klartext laufen 24 Stunden nach ihrer letzten Änderung ab. Autorisiert Mail in diesem Browser ein anderes Konto, entfernt es die Protokolle des vorherigen Kontos.
+
+Kann eine Textänderung nicht sicher übernommen werden, hält Mail den Vorschlag getrennt fest. Wähle im Hinweis am Editor **Vorschlag übernehmen**, um es erneut zu versuchen, oder **Vorschlag verwerfen**, um ihn zu entfernen. **Entwurf kopieren** kopiert den ausstehenden Vorschlag. Änderungen anderer Personen und Neuladen verwerfen ihn nicht. Kläre den Vorschlag vor dem Senden. Dauert der Abgleich zu lange, beendet Mail das Warten auf das Speichern. Deine Eingabe bleibt zum erneuten Versuch oder Kopieren erhalten.
 
 Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. Mail lehnt Speichern, Änderungen an Anhängen und Verwerfen aus jeder anderen Sitzung, jedem Tab, Agenten oder CLI-Aufruf ab und nennt die bearbeitende Person. Hält niemand die Sperre, kann die nächste Sitzung den Entwurf wieder ändern. Deine eigene abgelaufene Sitzung blockiert dich also nie.
 

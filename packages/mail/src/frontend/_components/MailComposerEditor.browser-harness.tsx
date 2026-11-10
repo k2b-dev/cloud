@@ -13,10 +13,10 @@ import {
   materializeDraftSeedInputSchema,
   type SenderIdentity,
 } from "../../contracts";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import MailComposer from "./MailComposer";
 import MailComposerEditor from "./MailComposerEditor";
 import { readMailDraftSeed, storeMailDraftSeed } from "./mail-draft-seed-store";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 export type MailComposerEditorHarnessOptions = {
   locale: "en" | "de";

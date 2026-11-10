@@ -13,6 +13,11 @@ import {
   type MailDraftSeed,
 } from "../../contracts";
 import { type MailDraftDocumentClient, type MailSharedDraftState, openMailDraftDocumentClient } from "../../lib/draft-document-client";
+import {
+  MailUserDraftStorageEndedError,
+  openMailUserDraftStorage,
+  synchronizeMailDraftStorageUser,
+} from "../../lib/mail-user-draft-storage";
 import { parseMailLiveEvent } from "../../live-event";
 import { readApiError, readApiFailure } from "./api-response";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -28,9 +33,8 @@ import { classifyDraftLeaseAnswer, type DraftLeaseResult, recoverDraftLeaseReque
 import { isClosedMailDraft, type MailDraftLifecycleTransition, reconcileMailDraftLifecycle } from "./mail-draft-lifecycle";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 
-import { MailUserDraftStorageEndedError, openMailUserDraftStorage } from "./mail-user-draft-storage";
-
-type ComposerStatus = "local" | "preparing" | "saved" | "saving" | "error" | "readonly";
+type ComposerStatus = "pending" | "local" | "preparing" | "saved" | "saving" | "error" | "readonly";
+export type MailDraftSaveStatus = "pending" | "local" | "saved";
 type RegainLeaseResult = AcquiredDraftLease | null | "cancelled";
 
 export type MailDraftLeaseConflict = {
@@ -135,14 +139,27 @@ export const createMailDraftSession = (options: {
   const editorId = crypto.randomUUID();
   const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
   let lastSavedContent = seedBaseline ?? "";
+  const [confirmedContent, setConfirmedContent] = createSignal(lastSavedContent);
+  const [journalContent, setJournalContent] = createSignal<string | null>(null);
   let confirmedDigest: { content: string; digest: string } | null = null;
   const [localCopyFailed, setLocalCopyFailed] = createSignal(false);
   const markSaved = (content: DraftEditableContent) => {
     lastSavedContent = serializeMailDraftContent(content);
+    setConfirmedContent(lastSavedContent);
   };
   const serializeMutation = createSerializedDraftMutationQueue();
 
   const serializedContent = () => serializeMailDraftContent(options.content());
+  const saveStatus = createMemo<MailDraftSaveStatus>(() => {
+    if (isShared()) {
+      const next = sharedState();
+      if (!next || next.rejectedEdit) return "pending";
+      return next.dirty ? (next.locallySaved ? "local" : "pending") : "saved";
+    }
+    const current = serializedContent();
+    if (draft() && initialized() && status() !== "saving" && current === confirmedContent()) return "saved";
+    return !localCopyFailed() && current === journalContent() ? "local" : "pending";
+  });
   let userStorage: ReturnType<typeof openMailUserDraftStorage> | undefined;
   let navigationAllowed = false;
   const draftStorage = () => {
@@ -175,6 +192,7 @@ export const createMailDraftSession = (options: {
       // The per-editor copy already protects this tab; handoff is best-effort.
     }
     setLocalCopyFailed(false);
+    setJournalContent(serializeMailDraftContent(journal.content));
   };
   const tryWriteJournal = (draftId: string, journal: MailDraftJournal) => {
     try {
@@ -349,6 +367,13 @@ export const createMailDraftSession = (options: {
   };
 
   const acceptLease = (acquired: AcquiredDraftLease) => {
+    if (options.currentActor.kind === "user") {
+      try {
+        synchronizeMailDraftStorageUser(localStorage, options.currentActor.id);
+      } catch {
+        setLocalCopyFailed(true);
+      }
+    }
     setLease(acquired);
     setLeaseConflict(null);
     // Lease work must not clear an in-flight save or its result.
@@ -580,7 +605,19 @@ export const createMailDraftSession = (options: {
         batch(() => {
           setSharedState(next);
           if (authenticationRequired()) return;
-          setStatus(next.terminal ? "readonly" : next.saving ? "saving" : next.error ? "error" : "saved");
+          setStatus(
+            next.terminal
+              ? "readonly"
+              : next.saving
+                ? "saving"
+                : next.error
+                  ? "error"
+                  : next.dirty
+                    ? next.locallySaved
+                      ? "local"
+                      : "pending"
+                    : "saved",
+          );
           setStatusMessage(next.message);
         });
       },
@@ -902,7 +939,9 @@ export const createMailDraftSession = (options: {
       batch(() => {
         markSaved(nextContent);
         confirmedDigest = { content: serialized, digest: savedDigest };
-        if (!options.isDisposed()) setDraft(saved);
+        // Cleanup can still owe a second write for typing after this request.
+        // Its CAS revision must follow every committed response, even after unmount.
+        setDraft(saved);
       });
       try {
         const storage = draftStorage();
@@ -1053,6 +1092,9 @@ export const createMailDraftSession = (options: {
         revision: conflictBaseRevision ?? currentDraft?.revision ?? 0,
         content: options.content(),
       });
+      untrack(() => {
+        if (["saved", "local", "pending"].includes(status())) setStatus(localCopyFailed() ? "pending" : "local");
+      });
     } catch {
       setStatus("error");
       setStatusMessage(t().deviceSessionEnded);
@@ -1168,10 +1210,10 @@ export const createMailDraftSession = (options: {
     // closes; if neither works, the person hears it instead of losing the text in silence.
     const client = shared();
     const saveSharedBeforeClose = async () => {
-      if (!client || !sharedState()?.dirty) return;
+      if (!client || (!sharedState()?.dirty && !sharedState()?.rejectedEdit)) return;
       await Promise.race([client.save().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 5_000))]);
       const kept = await client.flushLocal().catch(() => false);
-      if (!kept && sharedState()?.dirty) options.onClosedUnsaved?.();
+      if (!kept && (sharedState()?.dirty || sharedState()?.rejectedEdit)) options.onClosedUnsaved?.();
     };
     stopScheduledSave();
     stopHeartbeat();
@@ -1318,6 +1360,7 @@ export const createMailDraftSession = (options: {
     },
     lifecycleTransition,
     status,
+    saveStatus,
     setStatus,
     statusMessage,
     setStatusMessage,
@@ -1354,7 +1397,7 @@ export const createMailDraftSession = (options: {
     },
     hasUnsavedChanges: () =>
       isShared()
-        ? (sharedState()?.dirty ?? false)
+        ? Boolean(sharedState()?.rejectedEdit) || (sharedState()?.dirty ?? false)
         : !draft() && options.initialSeed
           ? draftSeedContentChanged(options.initialSeed, options.content())
           : serializedContent() !== lastSavedContent,

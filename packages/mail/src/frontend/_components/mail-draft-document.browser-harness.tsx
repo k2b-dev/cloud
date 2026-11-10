@@ -15,7 +15,10 @@ declare global {
       dispose: () => void;
       remember: (value: boolean) => Promise<void>;
       recover: () => Promise<unknown>;
+      rejectProposal: (body: string) => boolean;
     };
+    /** Texts the tested copy actions wrote, recorded by the browser test in place of the system clipboard. */
+    copiedTexts?: string[];
   }
 }
 
@@ -54,6 +57,22 @@ const main = async () => {
         await session.shared()?.setRemembering(value);
       },
       recover: async () => session.shared()?.recover(),
+      rejectProposal: (body) => {
+        const client = session.shared();
+        if (!client) return false;
+        const clock = Date.now;
+        const start = Date.parse("2026-11-09T12:00:00Z");
+        let reads = 0;
+        Date.now = () => start + (reads++ ? 1000 : 0);
+        try {
+          client.edit({ ...client.content(), body });
+          return false;
+        } catch {
+          return client.state().rejectedEdit !== null;
+        } finally {
+          Date.now = clock;
+        }
+      },
     };
     return (
       <LocaleProvider locale="de">

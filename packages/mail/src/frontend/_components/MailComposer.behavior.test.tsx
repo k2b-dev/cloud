@@ -298,6 +298,19 @@ describe("MailComposer signature choice", () => {
     option!.click();
   };
 
+  test("the page composer distinguishes device storage from confirmed server storage during autosave", async () => {
+    delegateEvents(["click", "input"]);
+    await mount();
+    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saved on server");
+    const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
+    subject.value = "Changed before autosave";
+    subject.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => dom.root.querySelector("[data-mail-save-status]")?.getAttribute("data-mail-save-status") === "local");
+    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saved on this device");
+    await waitFor(() => dom.root.querySelector("[data-mail-save-status]")?.getAttribute("data-mail-save-status") === "saved");
+    expect(saves.at(-1)?.subject).toBe("Changed before autosave");
+  });
+
   test("shared projection preserves an open empty Cc and its unfinished query without republishing remote input", async () => {
     const offline = await import("@k2b/cloud/browser/shared-text");
     const generations = spyOn(offline, "listSharedTextOfflineGenerations").mockResolvedValue([]);
