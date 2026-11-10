@@ -181,7 +181,6 @@ export default function MailDraftsView(props: {
             <div
               class="flex flex-col gap-0.5"
               classList={{ "mail-columns mail-columns-personal": props.columns }}
-              style={{ opacity: props.loading ? 0.5 : undefined }}
               ref={list}
               role="list"
               aria-label={t().draftListLabel({ title: props.title })}
