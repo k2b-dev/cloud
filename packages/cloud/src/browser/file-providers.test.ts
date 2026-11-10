@@ -661,7 +661,7 @@ describe("browsing a provider", () => {
       },
     );
     expect(body).toEqual({ input: { parent: "f1", query: "inv", cursor: "c1", limit: 50 } });
-    expect(page).toEqual({ items: [file("a", 3)], next: "c2", writable: false });
+    expect(page).toEqual({ items: [file("a", 3)], next: "c2", writable: false, incomplete: false });
   });
 
   test("keeps the provider's status, so the chooser can tell no access from an outage", async () => {
@@ -902,7 +902,20 @@ test("asks for a tree search only from a supporting provider and only with a que
       { parent: "docs", limit: 50 },
     ]);
     expect(page.items.map((entry) => entry.location)).toEqual(["Team / Reports", undefined]);
+    expect(page.incomplete).toBe(false);
   }
+});
+
+test("passes on that a tree search left out folders, and nothing else", async () => {
+  const answer = (data: Record<string, unknown>) => ({
+    locale: "en",
+    fetch: async () => json({ data: { writable: false, items: [], next: null, ...data } }),
+  });
+  const source = { ...provider, tree: true };
+  expect((await listProviderFolder(source, { parent: "docs", query: "x", tree: true }, answer({ incomplete: true }))).incomplete).toBe(
+    true,
+  );
+  expect((await listProviderFolder(source, { parent: "docs", query: "x", tree: true }, answer({}))).incomplete).toBe(false);
 });
 
 test("sends context on every supporting provider page and never sends it to another provider", async () => {

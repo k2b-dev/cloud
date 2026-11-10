@@ -545,6 +545,8 @@ export function FileChooser(props: {
           <Match when={!location()}>{null}</Match>
           <Match when={overLimit()}>{overLimit()}</Match>
           <Match when={chosen().length > 0}>{t().selected({ count: chosen().length })}</Match>
+          {/* The search left out folders it could not search: one calm line in the status's fixed place. */}
+          <Match when={folder.query() && folder.incomplete()}>{t().subfoldersSkipped}</Match>
           <Match when={limits()}>{`${t().selectHint({ multiple })} · ${limits()}`}</Match>
           <Match when={true}>{t().selectHint({ multiple })}</Match>
         </Switch>

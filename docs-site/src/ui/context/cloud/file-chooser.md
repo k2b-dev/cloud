@@ -104,7 +104,10 @@ moves it.
   folder below it; the filter then says **Search here and in subfolders**,
   and each hit leads its facts with where it lies, for example "Intern /
   Info sheets · 1.2 MB". Other providers say **Filter this folder** and
-  match names in the open folder only. The filter asks the provider after
+  match names in the open folder only. When the provider could not search
+  some subfolders, such as unreadable ones in shared storage, the hits stay
+  and the status line says **Some subfolders could not be searched**, in its
+  fixed place and without an error. The filter asks the provider after
   250 ms; typing again stops a request that is still running.
 - **Preview,** from 75 rem: the column right of the list shows the file in
   focus once the person used the list. A PDF shows its whole first page in

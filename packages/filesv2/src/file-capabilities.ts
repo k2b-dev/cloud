@@ -180,40 +180,55 @@ const providerHit = async (baseId: string, hit: FileEntry, searched: string, pre
 };
 
 /**
- * Filegate refuses a tree search with an unreadable folder anywhere below; the searched folder itself was authorized.
- * That is no lost access, so it answers as a search limit with its own message instead of 403.
+ * Filegate refuses a whole tree search under the person's Unix identity as soon as any folder below is unreadable, even
+ * one that would not match. Shared and group storage often has such folders; that is no lost access.
  */
-const belowUnreadable = async <T>(search: () => Promise<T>): Promise<T> => {
-  try {
-    return await search();
-  } catch (error) {
-    if (error instanceof FilegateError && error.status === 403) throw new FilesError("search_unreadable", 409, { cause: error });
-    throw error;
-  }
-};
+const treeRefused = (error: unknown) => error instanceof FilegateError && error.status === 403;
 
 /**
- * A name search in a folder and every folder below it. Without a parent it searches every storage base of the caller,
- * one search page per call: the cursor names the base and that base's own cursor, and each hit's location starts with
- * the base's name.
+ * A name search in a folder and every folder below it, each hit with its location. Cursors say which way the search
+ * went: `s:` continues the tree search; `f:` continues the fallback when the tree was refused, which filters names
+ * inside the folder only and marks every page `incomplete`. Without a parent it searches every storage base of the
+ * caller, one search page per call (`t<base>:<cursor>`); a base whose tree is refused is left out and marks its page.
  */
 const providerTreeSearch = async (c: CapabilityExecutionContext, input: ProviderListInput & { query: string }) => {
   const q = searchWords(input.query);
   const parent = input.parent;
   if (parent !== undefined) {
-    const page = await belowUnreadable(() =>
-      filesService.folderSearch(capabilityCall(c), {
-        id: parent,
-        q,
-        after: input.cursor,
-        pageSize: input.limit,
-        signal: c.signal,
-      }),
-    );
+    const way = input.cursor === undefined ? "s" : input.cursor.slice(0, 2);
+    const after = input.cursor?.slice(2) || undefined;
+    if (way !== "s" && way !== "s:" && way !== "f:") throw new FilesError("cursor_invalid", 409);
+    if (way !== "f:") {
+      try {
+        const page = await filesService.folderSearch(capabilityCall(c), {
+          id: parent,
+          q,
+          after,
+          pageSize: input.limit,
+          signal: c.signal,
+        });
+        return {
+          writable: page.writable,
+          items: await Promise.all(page.items.map((hit) => providerHit(page.base.id, hit, page.path, []))),
+          next: page.next ? `s:${page.next}` : null,
+        };
+      } catch (error) {
+        // A refusal after the first page means the tree changed: the consumer restarts the search.
+        if (!treeRefused(error)) throw error;
+        if (after) throw new FilesError("cursor_invalid", 409, { cause: error });
+      }
+    }
+    const page = await filesService.folder(capabilityCall(c), {
+      id: parent,
+      q: input.query,
+      after: way === "f:" ? after : undefined,
+      pageSize: Math.ceil(input.limit / 2),
+    });
     return {
       writable: page.writable,
-      items: await Promise.all(page.items.map((hit) => providerHit(page.base.id, hit, page.path, []))),
-      next: page.next,
+      items: await Promise.all(page.items.map((entry) => providerEntry(page.base.id, entry))),
+      next: page.next ? `f:${page.next}` : null,
+      incomplete: true,
     };
   }
   const cursor = /^t(\d{1,6})(?::(.+))?$/s.exec(input.cursor ?? "t0");
@@ -222,21 +237,25 @@ const providerTreeSearch = async (c: CapabilityExecutionContext, input: Provider
   if (index < 0 || index >= Math.max(1, bases.length)) throw new FilesError("cursor_invalid", 409);
   const current = bases[index];
   if (!current) return { writable: false, items: [], next: null };
-  const page = await belowUnreadable(() =>
-    filesService.search(capabilityCall(c), {
+  const following = index + 1 < bases.length ? `t${index + 1}` : null;
+  try {
+    const page = await filesService.search(capabilityCall(c), {
       baseId: current.base.id,
       q,
       after: cursor?.[2],
       pageSize: input.limit,
       signal: c.signal,
-    }),
-  );
-  const next = page.next ? `t${index}:${page.next}` : index + 1 < bases.length ? `t${index + 1}` : null;
-  return {
-    writable: false,
-    items: await Promise.all(page.items.map((hit) => providerHit(current.base.id, hit, "", [current.name]))),
-    next,
-  };
+    });
+    return {
+      writable: false,
+      items: await Promise.all(page.items.map((hit) => providerHit(current.base.id, hit, "", [current.name]))),
+      next: page.next ? `t${index}:${page.next}` : following,
+    };
+  } catch (error) {
+    if (!treeRefused(error)) throw error;
+    // The base's hits on earlier pages stay; the rest of it is left out, and the search continues with the next base.
+    return { writable: false, items: [], next: following, incomplete: true };
+  }
 };
 
 const SavedFile = z

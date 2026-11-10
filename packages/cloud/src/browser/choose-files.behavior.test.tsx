@@ -998,9 +998,7 @@ domTest("a search refused at a provider's root shows the folder error and keeps 
   const view = await chooser(
     {},
     (_path, input) =>
-      input?.query
-        ? Response.json({ code: "search_unreadable", message: "Some folders below this one cannot be searched." }, { status: 403 })
-        : folderPage([entry("root-file", 1)]),
+      input?.query ? Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 }) : folderPage([entry("root-file", 1)]),
     [{ ...drive, tree: true }],
     { appId: "drive", folders: [] },
   );
@@ -1012,6 +1010,47 @@ domTest("a search refused at a provider's root shows the folder error and keeps 
     await until(() => Boolean(view.dom.root.textContent?.includes("You no longer have access")));
     expect(view.button("Drive")).toBeDefined();
     expect(view.dom.root.textContent).not.toContain("no longer available");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a search that left out unreadable subfolders shows its hits with one calm line in the status, never an error", async () => {
+  const view = await chooser(
+    { multiple: true },
+    (_path, input) => {
+      if (!input?.query) return folderPage([entry("root-file", 1)]);
+      const items = input.query === "plan" ? [entry("plan", 1)] : [];
+      return Response.json({ data: { writable: false, items, next: null, incomplete: true } });
+    },
+    [{ ...drive, tree: true }],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.row("root-file.txt")));
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    filter.value = "plan";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.row("plan.txt")));
+    expect(view.status().textContent).toBe("Some subfolders could not be searched");
+    // The note uses the status's fixed place, so nothing moves; it is no error.
+    expect(view.status().dataset.error).toBeUndefined();
+    // A selection takes the status back; the note returns without it.
+    view.row("plan.txt")!.click();
+    await until(() => view.status().textContent === "1 file selected");
+    view.row("plan.txt")!.click();
+    await until(() => view.status().textContent === "Some subfolders could not be searched");
+    // Without hits, the empty state names this folder only and repeats the note.
+    filter.value = "zzz";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.dom.root.textContent?.includes("Nothing matches “zzz”")));
+    expect(view.dom.root.textContent).not.toContain("here or in subfolders");
+    expect(view.dom.root.querySelector(".cloud-file-chooser__state")?.textContent).toContain("Some subfolders could not be searched");
+    // Clearing the filter ends the note.
+    filter.value = "";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.row("root-file.txt")));
+    expect(view.status().textContent).not.toContain("subfolders");
   } finally {
     view.cleanup();
   }

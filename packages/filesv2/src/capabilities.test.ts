@@ -34,6 +34,8 @@ let baseCount = 1;
 let next: string | null = null;
 let failure = false;
 let serviceFailure: Error | null = null;
+/** Bases and folder IDs whose tree search Filegate refuses because a folder below is unreadable. */
+const refusedTrees = new Set<string>();
 let items: FileEntry[] = [];
 let calls = 0;
 let basesCalls = 0;
@@ -137,6 +139,7 @@ mock.module("./service", () => ({
     folderSearch: async (_actor: unknown, input: { id: string; q: string; after?: string; pageSize: number }) => {
       searches.push({ ...input, folder: true });
       if (serviceFailure) throw serviceFailure;
+      if (refusedTrees.has(input.id)) throw new FilegateError(403, "forbidden", "private upstream message");
       const ref = ids.get(input.id);
       if (!ref) throw new MockFilesError("not_found", 404);
       return { base: { ...base, id: ref.baseId }, path: ref.path, writable: folderWritable, items, next, query: input.q, scope: "tree" };
@@ -173,6 +176,7 @@ mock.module("./service", () => ({
     list: page,
     search: async (_call: unknown, input: Record<string, unknown>) => {
       searches.push(input);
+      if (refusedTrees.has(String(input.baseId))) throw new FilegateError(403, "forbidden", "private upstream message");
       const result = await page();
       return {
         ...result,
@@ -222,6 +226,7 @@ const context: CapabilityExecutionContext = {
   signal: new AbortController().signal,
 };
 afterEach(() => {
+  refusedTrees.clear();
   baseCount = 1;
   next = null;
   failure = false;
@@ -794,7 +799,11 @@ describe("Files as a file provider", () => {
       { id: "folder-id", q: "hinweis a b c d e f g", after: undefined, pageSize: 20, signal: context.signal, folder: true },
     ]);
     expect(result.data.data.writable).toBe(true);
-    expect(result.data.data.next).toBe("hits-2");
+    expect(result.data.data.next).toBe("s:hits-2");
+    expect(result.data.data).not.toHaveProperty("incomplete");
+    await listProvider({ parent: "folder-id", query: "hinweis", scope: "tree", cursor: "s:hits-2" });
+    expect(searches.at(-1)).toMatchObject({ id: "folder-id", after: "hits-2" });
+    searches.pop();
     expect(result.data.data.items.map((item) => [item.name, "location" in item ? item.location : undefined])).toEqual([
       ["Hinweis.pdf", "Info-Blätter / Schilder"],
       ["Hinweise", undefined],
@@ -838,14 +847,50 @@ describe("Files as a file provider", () => {
     });
   });
 
-  test("a tree search over an unreadable folder below answers as a search limit, not as lost access", async () => {
+  test("a tree Filegate refuses for an unreadable folder below falls back to the folder's own names, marked incomplete", async () => {
     ids.set("folder-id", { baseId: "base", path: "Intern" });
-    serviceFailure = new FilegateError(403, "forbidden", "private upstream message");
-    await expect(listProvider({ parent: "folder-id", query: "plan", scope: "tree" })).rejects.toMatchObject({
-      code: "search_unreadable",
+    refusedTrees.add("folder-id");
+    folderWritable = true;
+    next = "names-2";
+    items = [{ name: "Plan.pdf", path: "Intern/Plan.pdf", directory: false, size: 4, modified }];
+    const first = await listProvider({ parent: "folder-id", query: "plan", scope: "tree", limit: 20 });
+    if (!first.ok) throw new Error("expected a fallback page");
+    expect(first.data.data).toMatchObject({ writable: true, next: "f:names-2", incomplete: true });
+    expect(first.data.data.items.map((item) => [item.name, "location" in item ? item.location : undefined])).toEqual([
+      ["Plan.pdf", undefined],
+    ]);
+    expect(folderCalls).toEqual([{ id: "folder-id", q: "plan", after: undefined, pageSize: 10 }]);
+    expect(capabilityResultSchema(FileProviderListDataSchema).safeParse(first.data).success).toBe(true);
+    // The fallback continues as a fallback, without asking for the tree again.
+    next = null;
+    const second = await listProvider({ parent: "folder-id", query: "plan", scope: "tree", cursor: "f:names-2", limit: 20 });
+    if (!second.ok) throw new Error("expected the next fallback page");
+    expect(second.data.data).toMatchObject({ next: null, incomplete: true });
+    expect(folderCalls.at(-1)).toMatchObject({ after: "names-2" });
+    expect(searches.filter((input) => input.folder)).toHaveLength(1);
+    // A tree that becomes unreadable after its first page restarts the search instead of mixing both ways.
+    await expect(listProvider({ parent: "folder-id", query: "plan", scope: "tree", cursor: "s:hits-2" })).rejects.toMatchObject({
+      code: "cursor_invalid",
       status: 409,
-      message: errorMessage("search_unreadable", "en"),
     });
+    await expect(listProvider({ parent: "folder-id", query: "plan", scope: "tree", cursor: "x:1" })).rejects.toMatchObject({
+      code: "cursor_invalid",
+    });
+  });
+
+  test("a tree search at the root leaves out a base whose tree is refused and continues with the next", async () => {
+    const home = { ...base, id: "cloud:users:me", name: "alice" };
+    const team = { ...base, id: "cloud:groups:a", name: "alpha", kind: "groups" as const };
+    baseItems = [team, home];
+    refusedTrees.add("cloud:users:me");
+    items = [{ name: "plan.pdf", path: "plan.pdf", directory: false, size: 4, modified }];
+    const first = await listProvider({ query: "plan", scope: "tree" });
+    if (!first.ok) throw new Error("expected the refused base");
+    expect(first.data.data).toMatchObject({ writable: false, items: [], next: "t1", incomplete: true });
+    const second = await listProvider({ query: "plan", scope: "tree", cursor: "t1" });
+    if (!second.ok) throw new Error("expected the readable base");
+    expect(second.data.data.items.map((item) => item.name)).toEqual(["plan.pdf"]);
+    expect(second.data.data).not.toHaveProperty("incomplete");
   });
 
   test("a tree search at the root reaches every base, also past the ten that global search names", async () => {

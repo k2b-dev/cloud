@@ -318,7 +318,9 @@ function, and `FILE_PROVIDER_FUNCTIONS` lists their names. `save` must declare
   characters and a `name`. Files also carry `size` and may carry `mediaType`.
   Both kinds may carry `updatedAt`, a Tabler `icon` class, and up to three
   display `tags` of up to 40 characters with an optional `tone`. Tags describe
-  an entry; they do not filter or grant anything. A tree-search hit may carry
+  an entry; they do not filter or grant anything. A page may set `incomplete`
+  when a tree search left out folders it could not search (see **Search below
+  a folder**). A tree-search hit may carry
   `location`, up to 1,024 characters: the folders between the searched folder
   and the hit as people read them, for example `Team / Reports`. Consumers
   show it as text, cleaned of control and bidi characters.
@@ -485,11 +487,18 @@ import { FileProviderListDataSchema, FileProviderTreeListInputSchema } from "@k2
   an outage or a cut-off search with an empty page.
 - Authorize every hit as for listing: list only entries the caller can open,
   and never let a hit's `location` reveal a folder the caller cannot read.
-- A search you cannot run over the whole tree, such as one that meets an
-  unreadable folder below, fails with its own code and message, not 403 or
-  404; Files answers `409 search_unreadable`. The chooser shows the message
-  in the folder and keeps the folder and the provider: only a listing
-  without `query` that answers 403 or 404 means they are gone.
+- When you cannot search part of the tree, such as an unreadable folder
+  below, answer what you can and set `incomplete: true` on the page; never
+  answer 403 or 404 for it, which consumers read as lost access. Only a
+  listing without `query` that answers 403 or 404 means the folder or the
+  provider is gone. Consumers keep the note once any page of a search sets
+  it; the chooser shows **Some subfolders could not be searched** in its
+  status line and keeps the hits, without an error.
+- Files searches as the person's Unix identity, and Filegate refuses such a
+  tree search as a whole when any folder below is unreadable, even one that
+  would not match. Files then filters names inside `parent` only
+  (`incomplete: true` on every page), and at the root it leaves out a base
+  whose tree is refused and continues with the next.
 - `writable` still describes `parent`.
 
 Consumers check `fileProviderSearchesTree(manifest)` before they send

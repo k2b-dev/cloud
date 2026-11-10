@@ -247,10 +247,6 @@ const messages: Record<string, [string, string]> = {
     "This search takes too long. Search in a smaller folder, add a filter, or search exact names.",
     "Diese Suche dauert zu lange. Suche in einem kleineren Ordner, setze einen Filter oder suche nach genauen Namen.",
   ],
-  search_unreadable: [
-    "Some folders below this one cannot be searched. Open a folder further down and search there.",
-    "Einige Ordner darunter lassen sich nicht durchsuchen. Öffne einen Ordner weiter unten und suche dort.",
-  ],
   search_busy: [
     "Storage is busy with other searches. Try again in a moment.",
     "Die Ablage ist mit anderen Suchen beschäftigt. Versuche es gleich noch einmal.",

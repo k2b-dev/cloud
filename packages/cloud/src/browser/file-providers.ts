@@ -158,7 +158,8 @@ export const loadFileProviders = async (caller: FileProviderCaller, signal?: Abo
   return fileProviderSources(apps, caller.locale);
 };
 
-export type FileProviderPage = { items: FileProviderEntry[]; next: string | null; writable: boolean };
+/** `incomplete`: a tree search left out folders it could not search; see `FileProviderListDataSchema`. */
+export type FileProviderPage = { items: FileProviderEntry[]; next: string | null; writable: boolean; incomplete: boolean };
 
 /** One folder page. Without `parent` it is the provider's root. */
 export const listProviderFolder = async (
@@ -191,7 +192,7 @@ export const listProviderFolder = async (
     const where = location === undefined ? "" : safeLocation(location);
     return { ...entry, name: safeFileName(entry.name), ...(where ? { location: where } : {}) };
   });
-  return { items, next: result.data.data.next, writable: result.data.data.writable };
+  return { items, next: result.data.data.next, writable: result.data.data.writable, incomplete: result.data.data.incomplete === true };
 };
 
 export type EntryProblem = "type" | "size";

@@ -91,6 +91,11 @@ export const FileProviderListDataSchema = z
     writable: z.boolean(),
     items: z.array(FileProviderEntrySchema).max(100),
     next: CursorSchema.nullable(),
+    /**
+     * A tree search left out folders it could not search, such as unreadable ones; its entries are still correct, and
+     * it may have filtered only inside `parent` instead. Consumers keep the note once any page of a search sets it.
+     */
+    incomplete: z.boolean().optional(),
   })
   .loose();
 

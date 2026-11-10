@@ -46,6 +46,8 @@ export const createProviderFolder = (props: {
   const [status, setStatus] = createSignal<"loading" | "ready" | "more" | "error">("ready");
   const [error, setError] = createSignal<FileProviderError | null>(null);
   const [contextual, setContextual] = createSignal(false);
+  /** The search shown left out folders it could not search; the dialog says so in a line, never as an error. */
+  const [incomplete, setIncomplete] = createSignal(false);
   let resolvedContext: FileProviderContext | undefined;
   const contextFor = async (signal: AbortSignal): Promise<FileProviderContext> => {
     if (resolvedContext) return resolvedContext;
@@ -115,6 +117,7 @@ export const createProviderFolder = (props: {
         if (pending.signal.aborted) return;
         // Kept entries give way to the first page of the new answer, in the same update.
         const replace = first && keep;
+        const opening = first;
         first = false;
         batch(() => {
           // An ID names one entry: a repeated one, on this page or an earlier one, is left out.
@@ -130,6 +133,9 @@ export const createProviderFolder = (props: {
           });
           setNext(page.next);
           if (!more) setWritable(page.writable);
+          // A search that left out folders on any of its pages stays marked until a new search or folder starts.
+          if (opening) setIncomplete(page.incomplete);
+          else if (page.incomplete) setIncomplete(true);
         });
         if (items().length > 0 || !page.next || ++followed >= EMPTY_PAGES_FOLLOWED) break;
         cursor = page.next;
@@ -187,6 +193,7 @@ export const createProviderFolder = (props: {
     batch(() => {
       setFilter("");
       setQuery("");
+      setIncomplete(false);
       setLocation(target);
       setContextual(false);
       setItems([]);
@@ -225,6 +232,7 @@ export const createProviderFolder = (props: {
   return {
     location,
     searchesTree,
+    incomplete,
     placeholder,
     contextual,
     filter,
@@ -364,8 +372,11 @@ export function FolderContents(props: {
             class="cloud-file-chooser__state"
             icon={folder.searchesTree() ? "ti ti-search-off" : "ti ti-filter-off"}
             title={
-              folder.searchesTree() ? props.t().noMatchesBelow({ query: folder.query() }) : props.t().noMatches({ query: folder.query() })
+              folder.searchesTree() && !folder.incomplete()
+                ? props.t().noMatchesBelow({ query: folder.query() })
+                : props.t().noMatches({ query: folder.query() })
             }
+            description={folder.incomplete() ? props.t().subfoldersSkipped : undefined}
           />
         </Show>
       </Match>
