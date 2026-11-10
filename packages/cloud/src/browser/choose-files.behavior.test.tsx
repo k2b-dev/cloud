@@ -993,3 +993,26 @@ domTest("a new filter hides Load more of the earlier results until its own first
     view.cleanup();
   }
 });
+
+domTest("a search refused at a provider's root shows the folder error and keeps the provider", async () => {
+  const view = await chooser(
+    {},
+    (_path, input) =>
+      input?.query
+        ? Response.json({ code: "search_unreadable", message: "Some folders below this one cannot be searched." }, { status: 403 })
+        : folderPage([entry("root-file", 1)]),
+    [{ ...drive, tree: true }],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.row("root-file.txt")));
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    filter.value = "plan";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => Boolean(view.dom.root.textContent?.includes("You no longer have access")));
+    expect(view.button("Drive")).toBeDefined();
+    expect(view.dom.root.textContent).not.toContain("no longer available");
+  } finally {
+    view.cleanup();
+  }
+});

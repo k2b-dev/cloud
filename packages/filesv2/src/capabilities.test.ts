@@ -838,6 +838,16 @@ describe("Files as a file provider", () => {
     });
   });
 
+  test("a tree search over an unreadable folder below answers as a search limit, not as lost access", async () => {
+    ids.set("folder-id", { baseId: "base", path: "Intern" });
+    serviceFailure = new FilegateError(403, "forbidden", "private upstream message");
+    await expect(listProvider({ parent: "folder-id", query: "plan", scope: "tree" })).rejects.toMatchObject({
+      code: "search_unreadable",
+      status: 409,
+      message: errorMessage("search_unreadable", "en"),
+    });
+  });
+
   test("a tree search at the root reaches every base, also past the ten that global search names", async () => {
     baseItems = Array.from({ length: 12 }, (_, index) => ({
       ...base,

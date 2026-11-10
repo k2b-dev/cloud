@@ -4,7 +4,7 @@ import { createSignal } from "solid-js";
 import type { FileChooserPlace } from "../contracts/file-chooser-place";
 import { deviceFilesProblem } from "./choice-limits";
 import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
-import { type FileChooserPlaceState, readFileChooserPlace, rememberFileChooserPlace } from "./file-chooser-place";
+import type { FileChooserPlaceState } from "./file-chooser-place";
 import type { FileProviderCaller, FileProviderSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
 import { importOnDemand } from "./reload";
@@ -65,15 +65,23 @@ export const createFileChoosing = (
     if (known) void settle(list.refresh(discovery.signal));
     else load();
     const [place, setPlace] = createSignal<FileChooserPlaceState>(knownPlace ?? { state: "loading" });
+    // The place module validates with Zod, so it loads with the chooser, never with the page. A failed load only
+    // means the chooser opens on This device, like `files.tsx` loading the provider list.
+    const places = () => import("./file-chooser-place");
     if (!knownPlace)
-      void readFileChooserPlace(caller(), discovery.signal).then((value) => {
-        if (!open) return;
-        knownPlace = { state: "ready", place: value };
-        setPlace(knownPlace);
-      });
+      void places()
+        .then((module) => module.readFileChooserPlace(caller(), discovery.signal))
+        .catch(() => null)
+        .then((value) => {
+          if (!open) return;
+          knownPlace = { state: "ready", place: value };
+          setPlace(knownPlace);
+        });
     const remember = (value: FileChooserPlace | null) => {
       knownPlace = { state: "ready", place: value };
-      rememberFileChooserPlace(caller(), value);
+      void places()
+        .then((module) => module.rememberFileChooserPlace(caller(), value))
+        .catch(() => undefined);
     };
     return (async () => {
       let abort = () => {};

@@ -1572,12 +1572,15 @@ suite("Files service and durable bindings", () => {
     );
 
     // A tree search from a folder ID finds readable names below it and reports the folder's own write permission.
+    // Indexed FreeIPA search refuses a tree with an unreadable folder below, as Files search does (`Private` here).
     ipaIndexed = true;
-    const found = await service.folderSearch(testCall(actor), { id: ref(""), q: "q3", pageSize: 50 });
-    expect(found).toMatchObject({ writable: true, path: "" });
+    await expect(service.folderSearch(testCall(actor), { id: ref(""), q: "q3", pageSize: 50 })).rejects.toMatchObject({ status: 403 });
+    const found = await service.folderSearch(testCall(actor), { id: ref("Reports"), q: "q3", pageSize: 50 });
+    expect(found).toMatchObject({ writable: true, path: "Reports" });
     expect(found.items.map((item) => item.path)).toEqual(["Reports/q3.pdf"]);
     expect((await service.folderSearch(testCall(actor), { id: ref("Reports"), q: "secret", pageSize: 50 })).items).toEqual([]);
     expect((await service.folderSearch(testCall(actor), { id: ref("ReadOnly"), q: "q3", pageSize: 50 })).writable).toBe(false);
+    ipaIndexed = false;
 
     // Another account cannot browse or save into this base, whatever ID it holds.
     const bob = await user("bob", "ipa");

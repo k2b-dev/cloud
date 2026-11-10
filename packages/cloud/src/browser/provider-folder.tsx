@@ -144,7 +144,8 @@ export const createProviderFolder = (props: {
       if (pending.signal.aborted) return;
       const failure =
         cause instanceof FileProviderError ? cause : new FileProviderError("INTERNAL", cause instanceof Error ? cause.message : "", 500);
-      if (!more && (failure.status === 403 || failure.status === 404)) {
+      // Only a folder's own listing proves it or its provider gone; a search there can be refused for other reasons.
+      if (!more && !query() && (failure.status === 403 || failure.status === 404)) {
         if (current.trail.length === 1) {
           navigate(null);
           props.gone(current.provider);
