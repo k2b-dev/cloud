@@ -35,6 +35,7 @@ export type {
   AppWorkspaceSidebarItemTone,
   AppWorkspaceSidebarProps,
   AppWorkspaceSidebarSectionProps,
+  AppWorkspaceSidebarToggleProps,
   AppWorkspaceSidebarVisibility,
   AppWorkspaceWidthShare,
 } from "./AppWorkspace";

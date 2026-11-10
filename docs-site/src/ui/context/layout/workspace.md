@@ -60,13 +60,16 @@ Three exceptions:
 
 The head follows these rules as well:
 
-- It shows no title while the visible sidebar marks the object (from
-  64 rem). The title follows the page trail: a page with a page above it
-  shows its title and back link with the sidebar collapsed or hidden, on
-  focus pages that the sidebar does not mark (such as Compose or Preview),
-  and on tablet and phone. An app's root page shows its title only beside
-  the overlay sidebar's button. A page without its own `h1` keeps a visually
-  hidden one.
+- It shows no title while the sidebar marks the object: as a column from
+  64 rem and as the overlay below it. The title follows the page trail: a
+  page with a page above it shows its title and back link with the sidebar
+  collapsed or hidden, on focus pages that the sidebar does not mark (such
+  as Compose or Preview), and on the phone. An app's root page shows no
+  title in the head. A page without its own `h1` keeps a visually hidden one.
+- Beside the overlay sidebar the head holds its button. A page whose first
+  row is its own toolbar puts `AppWorkspace.SidebarToggle` at the start of
+  that row instead; a head with nothing else to show then takes no row (see
+  [Sidebar button in the page's toolbar](#sidebar-button-in-the-pages-toolbar)).
 - The back link goes with the title. Beside a visible sidebar that marks the
   page, or its container with `active="ancestor"` on a page deeper than the
   sidebar lists, neither shows: the marked item is the way up.
@@ -172,6 +175,36 @@ names the object on desktop; the head keeps its views while hiding the repeated
 title. A hidden `h1` supplies the page heading only when Main has no `h1`.
 The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
+
+### Sidebar button in the page's toolbar
+
+From 48 to 64 rem of app width, and wherever the sidebar does not fit beside
+`Main`, the sidebar is an overlay that a button opens. By default that button
+sits in the head. When the first row of `Main`, or of its first `MainPane`, is
+the page's own toolbar (search, a view pill, "…"), put
+`AppWorkspace.SidebarToggle` at the start of that row:
+
+```tsx
+<AppWorkspace.MainPane id="list" label="Inbox">
+  <div class="list-toolbar">
+    <AppWorkspace.SidebarToggle size="sm" />
+    <IconButton label="Search" size="sm"><i class="ti ti-search" aria-hidden="true" /></IconButton>
+    {viewPill}
+    {moreMenu}
+  </div>
+  {rows}
+</AppWorkspace.MainPane>
+```
+
+The button shows only while the sidebar is an overlay, so from 64 rem the row
+starts with search, as before. The head then gives up its own button, and a
+head without a head row, a waiting Details button, or a title to show takes
+no row. Its heading still names a page without its own `h1` for assistive
+technology. The shared controller opens and closes the overlay and keeps
+`aria-expanded` current. On the phone the button stays hidden; the host's
+menu opens the navigation there. Set `size` to match the row's other icon
+buttons. Without such a toolbar, keep the default: the head shows a compact
+row with only the button.
 
 ### Without a head
 

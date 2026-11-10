@@ -365,11 +365,11 @@ test("the current view stays inside the strip's scrollport when long labels do n
   }
 });
 
-test("a page at the app's root keeps its title beside the overlay sidebar's button", async () => {
+test("a page at the app's root shows no title beside the overlay sidebar's button", async () => {
   const page = await load({ head: { root: true } }, 1440, 834);
   try {
     expect(await page.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
-    expect(await page.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(true);
+    expect(await page.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(false);
   } finally {
     await page.close();
   }
@@ -680,7 +680,8 @@ test("marked desktop objects suppress only the visible title, retaining the head
     { host: 1440, collapsed: false, mainHeading: false, title: false },
     { host: 1440, collapsed: false, mainHeading: true, title: false },
     { host: 1440, collapsed: true, mainHeading: false, title: true },
-    { host: 900, collapsed: false, mainHeading: false, title: true },
+    // Beside the overlay, the sidebar marks the page as well.
+    { host: 900, collapsed: false, mainHeading: false, title: false },
   ]) {
     const page = await load(
       { head: { mainHeading: scenario.mainHeading }, layoutState: { version: 2, sidebarCollapsed: scenario.collapsed } },
