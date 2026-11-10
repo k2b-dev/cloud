@@ -37,10 +37,13 @@ test("floating Toolbar is a pill with the toolbar shadow, reserves height, and k
   const pill = declarations('.k2b-ui .k2b-toolbar[data-variant="floating"]');
   expect(pill.get("box-shadow")).toEqual(["var(--k2b-shadow-toolbar)"]);
   expect(pill.get("border-radius")).toEqual(["999px"]);
-  // 44 px controls by default; a host may lower `--k2b-toolbar-control`, and the pill follows its controls.
-  expect(pill.get("block-size")).toEqual(["calc(var(--k2b-toolbar-control, 2.75rem) + 0.5rem + 2px)"]);
+  // 44 px controls by default; a host may lower `--k2b-toolbar-control` and `--k2b-toolbar-inset`, and the pill
+  // follows its controls with the same inset above, below, and at the sides.
+  expect(pill.get("block-size")).toEqual(["calc(var(--k2b-toolbar-control, 2.75rem) + 2 * var(--k2b-toolbar-inset, 0.25rem) + 2px)"]);
+  expect(pill.get("padding")).toEqual(["var(--k2b-toolbar-inset, 0.25rem)"]);
   const controls = rules.find((rule) => rule.selector.startsWith('.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button:not('));
   expect(controls && cssDeclarations(controls.body).get("block-size")).toEqual(["var(--k2b-toolbar-control, 2.75rem)"]);
+  expect(controls && cssDeclarations(controls.body).get("min-block-size")).toEqual(["var(--k2b-toolbar-control, 2.75rem)"]);
   const strip = declarations(".k2b-ui .k2b-toolbar-float");
   expect(strip.get("position")).toEqual(["sticky"]);
   expect(strip.get("margin-block-start")).toEqual(["auto"]);

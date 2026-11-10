@@ -1,6 +1,6 @@
 import { listLegalLinks } from "@k2b/cloud";
 import { type AccountCategory, resolveAccountCategoryLogin } from "@k2b/cloud/contracts";
-import { getLocale } from "@k2b/cloud/server";
+import { auth, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { normalizeRedirectTo, readLoginMethodFromCookieHeader } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider, NoticeCard } from "@k2b/ui";
@@ -12,6 +12,7 @@ import AdminLoginForm from "./AdminLoginForm.island";
 import AppLoginForm from "./AppLoginForm.island";
 import AuthFooter from "./AuthFooter";
 import GuestLoginForm from "./GuestLoginForm.island";
+import IdleSignOutFinish from "./IdleSignOutFinish.island";
 import LoginForm from "./LoginForm.island";
 import { isReauthenticationRequest } from "./login-redirect";
 import { authMessages } from "./messages";
@@ -46,8 +47,11 @@ export default ssr(async (c) => {
   const ipaUid = params.get("ipa-uid") ?? undefined;
   const hide = params.get("hide") ?? undefined;
 
-  const cookie = c.req.raw.headers.get("Cookie") ?? "";
+  // A shared workstation remembers nothing about sign-ins: no method, no credential choice, no autofilled account.
+  const sharedWorkstation = auth.session.isSharedWorkstation(c);
+  const cookie = sharedWorkstation ? "" : (c.req.raw.headers.get("Cookie") ?? "");
   const persistedLoginMethod = readLoginMethodFromCookieHeader(cookie);
+  const signedOutIdle = params.get("signedOut") === "idle";
 
   // If guest is hidden, force IPA method
   const isGuestHidden = freeIpaEnabled && hide === "guest";
@@ -159,6 +163,12 @@ export default ssr(async (c) => {
                 )}
 
                 <div class="flex flex-1 flex-col justify-center gap-4 pt-4 pb-3 md:py-7">
+                  {signedOutIdle && (
+                    <>
+                      <IdleSignOutFinish />
+                      <NoticeCard tone="info">{t.signedOutIdle}</NoticeCard>
+                    </>
+                  )}
                   {isAdminLogin ? (
                     <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
                   ) : useApproval && activeMethod ? (
@@ -167,6 +177,7 @@ export default ssr(async (c) => {
                       redirectTo={redirectTo}
                       fallback={{ href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead }}
                       setupHint={activeMethod === "freeipa" ? t.appSetupPassword : t.appSetupEmail}
+                      forget={sharedWorkstation}
                     />
                   ) : isEmailLogin ? (
                     <GuestLoginForm
@@ -174,9 +185,16 @@ export default ssr(async (c) => {
                       token={token}
                       category={activeMethod === "guest" || activeMethod === "login" ? activeMethod : undefined}
                       allowSelfRegistration={allowSelfRegistration && policy.guest.enabled && activeMethod !== "login"}
+                      forget={sharedWorkstation}
                     />
                   ) : activeMethod === "freeipa" ? (
-                    <LoginForm redirectTo={redirectTo} showBanner={hasBanner === "true"} defaultUsername={ipaUid} appName={appName} />
+                    <LoginForm
+                      redirectTo={redirectTo}
+                      showBanner={hasBanner === "true"}
+                      defaultUsername={ipaUid}
+                      appName={appName}
+                      forget={sharedWorkstation}
+                    />
                   ) : (
                     <NoticeCard tone="info">{t.noLoginAvailable}</NoticeCard>
                   )}
@@ -185,11 +203,12 @@ export default ssr(async (c) => {
                       {t.useAppInstead}
                     </ButtonLink>
                   )}
+                  {sharedWorkstation && !signedOutIdle && <p class="text-xs text-dimmed">{t.sharedWorkstationHint}</p>}
                 </div>
 
                 {!isAdminLogin && !token && (
                   <div class="auth-secondary-actions flex flex-wrap items-center justify-between gap-2 text-xs text-dimmed">
-                    {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} />}
+                    {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}
                     <ButtonLink href={supportHref} variant="secondary" size="sm">
                       <i class="ti ti-lifebuoy" />
                       {t.contactSupport}

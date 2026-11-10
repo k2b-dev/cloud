@@ -6,7 +6,11 @@ import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/br
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
-export default function PasskeyLoginButton(props: { redirectTo?: string }) {
+export default function PasskeyLoginButton(props: {
+  redirectTo?: string;
+  /** A shared workstation: the page does not remember the method. */
+  forget?: boolean;
+}) {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
   const mutation = mutations.create({
@@ -34,7 +38,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
       }
     },
     onSuccess: () => {
-      cookies.writeCookie("login_method", "passkey");
+      if (!props.forget) cookies.writeCookie("login_method", "passkey");
       window.location.href = afterSignInHref(props.redirectTo);
     },
   });

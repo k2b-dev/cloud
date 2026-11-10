@@ -14,6 +14,8 @@ export default function AppLoginForm(props: {
   redirectTo?: string;
   fallback?: { href: string; label: string };
   setupHint?: string;
+  /** A shared workstation: the page remembers neither the account nor the method. */
+  forget?: boolean;
 }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
@@ -76,8 +78,10 @@ export default function AppLoginForm(props: {
           if (!disposed) {
             setSignedIn(true);
             // Reopen this account type next time; a FreeIPA browser also keeps the app ahead of the password.
-            cookies.writeCookie("login_method", props.category === "freeipa" ? "ipa" : props.category);
-            if (props.category === "freeipa") cookies.writeCookie(FREEIPA_APP_SIGN_IN_COOKIE, "1");
+            if (!props.forget) {
+              cookies.writeCookie("login_method", props.category === "freeipa" ? "ipa" : props.category);
+              if (props.category === "freeipa") cookies.writeCookie(FREEIPA_APP_SIGN_IN_COOKIE, "1");
+            }
             if (props.category === "login") cookies.deleteCookie(LOGIN_EMAIL_SIGN_IN_COOKIE);
             window.location.assign(afterSignInHref(props.redirectTo));
           }
@@ -165,7 +169,7 @@ export default function AppLoginForm(props: {
                 placeholder={t().identifierPlaceholder}
                 value={identifier}
                 onValueChange={setIdentifier}
-                autocomplete="username"
+                autocomplete={props.forget ? "off" : "username"}
                 icon=""
                 activeIcon=""
                 required

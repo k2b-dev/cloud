@@ -267,6 +267,8 @@ export const migrate = async (): Promise<void> => {
   // Existing sessions retain their access; every newly issued session records
   // whether explicit first-login acceptance is still outstanding.
   await sql`ALTER TABLE auth.session_families ADD COLUMN IF NOT EXISTS legal_pending BOOLEAN NOT NULL DEFAULT false`.simple();
+  // Set only for browser sessions on a shared workstation: the last real input, which bounds the session's idle time.
+  await sql`ALTER TABLE auth.session_families ADD COLUMN IF NOT EXISTS last_input_at TIMESTAMPTZ`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS auth.legal_acceptances (
       user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,

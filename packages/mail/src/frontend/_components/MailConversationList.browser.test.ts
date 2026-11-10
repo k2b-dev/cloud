@@ -1180,6 +1180,66 @@ describe("Mail kept conversations", () => {
   });
 });
 
+// The reply pill is a floating pill like the Notebooks editor pills and the PdfViewer bar: the space between its edge
+// and the background of each control is the same above, below, and at the sides (@k2b/ui `--k2b-pill-control` and
+// `--k2b-pill-inset`), and touch screens keep a 44 px hit area.
+describe("Mail reply pill", () => {
+  for (const viewport of [
+    { name: "desktop", context: { viewport: { width: 1440, height: 900 } } },
+    { name: "phone", context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+  ] satisfies { name: string; context: BrowserContextOptions }[]) {
+    test(`${viewport.name}: keeps the same space around its controls on every side`, async () => {
+      const page = await load({
+        context: viewport.context,
+        reader: true,
+        selectedConversationId: "Cv0001",
+        toolbarActions: ["reply", "reply_all", "forward", "done", "spam", "trash"],
+      });
+      try {
+        // The pill measures which actions fit before it shows them.
+        const toolbar = page.locator("[data-mail-reply-pill] .k2b-toolbar:not([data-overflow-pending])");
+        await toolbar.waitFor();
+        const pill = await toolbar.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          const controls = [...element.querySelectorAll<HTMLElement>(".k2b-button")]
+            .filter((control) => control.getClientRects().length > 0 && !control.closest('[data-overflow="hidden"], [popover]'))
+            .map((control) => {
+              const rect = control.getBoundingClientRect();
+              // On a coarse pointer `::after` is the invisible hit area around the visible button.
+              const hit = getComputedStyle(control, "::after");
+              const px = (value: string) => Number.parseFloat(value) || 0;
+              return {
+                rect,
+                hitHeight: hit.content === "none" ? rect.height : rect.height - px(hit.top) - px(hit.bottom),
+              };
+            });
+          return {
+            height: box.height,
+            controlHeights: controls.map(({ rect }) => rect.height),
+            tops: controls.map(({ rect }) => rect.top - box.top),
+            bottoms: controls.map(({ rect }) => box.bottom - rect.bottom),
+            start: controls[0]!.rect.left - box.left,
+            end: box.right - controls.at(-1)!.rect.right,
+            hitHeights: controls.map((control) => control.hitHeight),
+          };
+        });
+        const screenshots = process.env.MAIL_PILL_SCREENSHOTS;
+        if (screenshots) await page.screenshot({ path: `${screenshots}/reader-${viewport.context.viewport.width}.png` });
+        expect(pill.height).toBe(38);
+        expect(pill.controlHeights.length).toBeGreaterThan(1);
+        for (const height of pill.controlHeights) expect(height).toBe(24);
+        const inset = pill.tops[0]!;
+        expect(inset).toBe(7);
+        for (const value of [...pill.tops, ...pill.bottoms, pill.start, pill.end]) expect(Math.abs(value - inset)).toBeLessThanOrEqual(0.5);
+        for (const height of pill.hitHeights) expect(height).toBeGreaterThanOrEqual(viewport.name === "phone" ? 44 : 24);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
+});
+
 describe("Mail row actions", () => {
   const environments = [
     { name: "desktop mouse", hover: "hover", "any-hover": "hover", pointer: "fine", "any-pointer": ["fine"] },
@@ -1559,6 +1619,63 @@ describe("Mail rows that an action takes out of the list", () => {
       await close(page);
     }
   }, 30_000);
+});
+
+describe("Mail list while the view refreshes in the background", () => {
+  /** Whether the list or anything around it is faded or filtered, and the top of every row. */
+  const look = (page: Page) =>
+    page.evaluate(() => {
+      const faded: string[] = [];
+      const list = document.querySelector('[data-mail-conversation-list] [role="list"]');
+      for (let node = list; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.opacity !== "1" || style.filter !== "none") faded.push(`${node.tagName.toLowerCase()} ${style.opacity} ${style.filter}`);
+      }
+      const tops = Object.fromEntries(
+        [...document.querySelectorAll<HTMLElement>(".mail-list-entry")].map((entry) => [
+          entry.dataset.conversationId ?? "",
+          Math.round(entry.getBoundingClientRect().top * 10) / 10,
+        ]),
+      );
+      return { faded, tops };
+    });
+
+  for (const viewport of [
+    { name: "desktop", context: { viewport: { width: 1440, height: 900 } } },
+    { name: "phone", context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+  ] satisfies { name: string; context: BrowserContextOptions }[]) {
+    test(`${viewport.name}: new mail arrives without fading the list or moving its rows`, async () => {
+      const page = await load({ context: viewport.context });
+      const screenshots = process.env.MAIL_LIST_SCREENSHOTS;
+      // The list announces the refresh for screen readers while it runs.
+      const refreshing = page.locator('[data-mail-conversation-list] [role="status"]', { hasText: "Loading view" });
+      try {
+        await page.locator(row("Cv0002")).waitFor();
+        const idle = await look(page);
+        expect(idle.faded).toEqual([]);
+
+        await page.evaluate(() => window.setMailLoading(true));
+        await refreshing.waitFor({ state: "attached" });
+        if (screenshots) await page.screenshot({ path: `${screenshots}/refreshing-${viewport.context.viewport.width}.png` });
+        expect(await look(page)).toEqual(idle);
+
+        // The new conversation lands on top; the list stays as it was until then.
+        await page.evaluate(
+          (next) => {
+            window.setMailItems(next);
+            window.setMailLoading(false);
+          },
+          [{ ...items[2]!, id: "Cv9000", conversationId: "Cv9000", subject: "Just arrived" }, ...items],
+        );
+        await page.locator(row("Cv9000")).waitFor();
+        await refreshing.waitFor({ state: "detached" });
+        expect((await look(page)).faded).toEqual([]);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
 });
 
 describe("Mail search returns to the view it started from", () => {

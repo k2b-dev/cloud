@@ -5583,7 +5583,7 @@
   width: max-content;
   min-width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem 0.75rem 4.5rem;
+  padding: 0.75rem 0.75rem 3.5rem;
 }
 
 .k2b-ui .k2b-pdf-viewer__page {
@@ -5616,16 +5616,25 @@
   pointer-events: none;
 }
 
-/* Icons only, round like the pill; a pressed fit shows its blue icon without a fill. */
+/* Icons only, round like the pill; a pressed fit shows its blue icon without a fill. The pill has the size of every
+   floating pill of small controls: the same space around its icons above, below, and at the sides. */
 .k2b-ui .k2b-pdf-viewer__bar > .k2b-toolbar {
   --k2b-radius-control: 9999px;
   --k2b-selected: transparent;
-  padding: 0.25rem;
+  padding: var(--k2b-pill-inset);
   border: 1px solid var(--k2b-border);
   border-radius: 9999px;
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-toolbar);
   pointer-events: auto;
+}
+
+/* Touch screens keep the 44 px hit area through the buttons' own touch rule. */
+.k2b-ui .k2b-pdf-viewer__bar .k2b-toolbar__action {
+  min-inline-size: var(--k2b-pill-control);
+  inline-size: var(--k2b-pill-control);
+  min-block-size: var(--k2b-pill-control);
+  block-size: var(--k2b-pill-control);
 }
 
 .k2b-ui :is(.k2b-pdf-viewer__percent, .k2b-pdf-viewer__page-number) {

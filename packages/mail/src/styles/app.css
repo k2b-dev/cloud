@@ -1506,8 +1506,13 @@
 
 /* The reply pill (layers and shadows, layer 3): a floating toolbar above the
    newest message that sticks to the top of the reader while the messages
-   scroll. It replaces the reply box and the phone's bottom bar. */
+   scroll. It replaces the reply box and the phone's bottom bar. It is a pill of
+   small controls like the Notebooks editor pills and the PdfViewer bar (@k2b/ui
+   `--k2b-pill-control`, `--k2b-pill-inset`): the same space around its buttons
+   on every side; touch screens keep the 44 px hit area. */
 .k2b-ui .mail-reader-reply-pill {
+  --k2b-toolbar-control: var(--k2b-pill-control);
+  --k2b-toolbar-inset: var(--k2b-pill-inset);
   display: contents;
 }
 /* The floating toolbar with `edge="top"` sticks itself; its strip spans the

@@ -516,7 +516,6 @@ export default function MailConversationList(props: {
               <div
                 class="flex flex-col gap-0.5"
                 classList={{ "mail-columns": Boolean(props.columns), "mail-columns-personal": props.columns?.shared === false }}
-                style={{ opacity: props.loading ? 0.5 : undefined }}
                 role="list"
                 aria-label={
                   props.listMode === "conversations"

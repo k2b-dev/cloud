@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.65.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.64.0...npm-cloud-v0.65.0) (2026-11-10)
+
+
+### Features
+
+* **cloud:** apps store files in additional buckets the admin connects ([#3126](https://github.com/k2b-dev/cloud/issues/3126)) ([cec2624](https://github.com/k2b-dev/cloud/commit/cec2624f4185823e59648ce1dcf7dbc56b285bea))
+* **cloud:** the app bar editor saves each change in one ordered list ([#3073](https://github.com/k2b-dev/cloud/issues/3073)) ([487da82](https://github.com/k2b-dev/cloud/commit/487da823121c68c27e6bf1bf94d0b00f45938d85))
+* **cloud:** the app bar shows names beside icons on wide screens ([#3061](https://github.com/k2b-dev/cloud/issues/3061)) ([24f518d](https://github.com/k2b-dev/cloud/commit/24f518d1c21183416bd572f167f9ef8d7b9ea9e9))
+* **mail:** shared drafts keep every edit until a snapshot covers it ([#3008](https://github.com/k2b-dev/cloud/issues/3008)) ([a26d37a](https://github.com/k2b-dev/cloud/commit/a26d37aa3afd1eb893fabc1f1204c47dae10a8d3))
+* **ui:** balance flows carry each month's closing into the next ([#2824](https://github.com/k2b-dev/cloud/issues/2824)) ([3b4452e](https://github.com/k2b-dev/cloud/commit/3b4452e2551f40a8ea1705e76838cbde446c5b14))
+* **ui:** notice cards carry an icon and a call to action ([#3115](https://github.com/k2b-dev/cloud/issues/3115)) ([d3c60bd](https://github.com/k2b-dev/cloud/commit/d3c60bde3dfeafa249785019b733ab95f39652b3))
+* **ui:** settings and admin pages stay flat; only charts, dashboard frames, and key figures lift ([#3034](https://github.com/k2b-dev/cloud/issues/3034)) ([dfa954d](https://github.com/k2b-dev/cloud/commit/dfa954d8ae2d7c81f1537a7d132a6d133e09b6f0))
+* **ui:** the workspace head shows no separate title row while the sidebar is an overlay ([#3119](https://github.com/k2b-dev/cloud/issues/3119)) ([b1600b7](https://github.com/k2b-dev/cloud/commit/b1600b7be9e5109f951e511bd4b64cea1615faa8))
+
+
+### Bug Fixes
+
+* **ai:** reasoning models use their reported output limit when no context window is known ([#3107](https://github.com/k2b-dev/cloud/issues/3107)) ([ede53d5](https://github.com/k2b-dev/cloud/commit/ede53d55821f66904e8a228aacceb457fc9dc228))
+* **cloud:** pinned items open the app launcher as ordinary first tiles ([#3059](https://github.com/k2b-dev/cloud/issues/3059)) ([ef23139](https://github.com/k2b-dev/cloud/commit/ef231399dc8aced6e0d13c70c514dbc47ad726aa))
+* **cloud:** shared editing reconnects when the server is busy instead of stopping with "Connection closed" ([#3044](https://github.com/k2b-dev/cloud/issues/3044)) ([ea9192d](https://github.com/k2b-dev/cloud/commit/ea9192d14ee33d2f2b36c30aa9e774bd4ded521e))
+* **mail:** drafts retain every edit through closing and reconnects ([#3081](https://github.com/k2b-dev/cloud/issues/3081)) ([70d4c4f](https://github.com/k2b-dev/cloud/commit/70d4c4f05ddc8215e784ab9245743d5352704cf5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.53.0 to 0.54.0
+    * @k2b/editor bumped from 0.10.0 to 0.11.0
+
 ## [0.64.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.63.0...npm-cloud-v0.64.0) (2026-11-09)
 
 
