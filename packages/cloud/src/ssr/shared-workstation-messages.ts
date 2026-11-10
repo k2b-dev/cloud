@@ -4,7 +4,6 @@ export const sharedWorkstationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      browserSection: "This browser",
       label: "Shared workstation",
       description: "Signs out after a while without input",
       marked: ({ minutes }: { minutes: number }) =>
@@ -18,7 +17,6 @@ export const sharedWorkstationMessages = i18n.define({
       signOut: "Sign out",
     },
     de: {
-      browserSection: "Dieser Browser",
       label: "Gemeinsam genutzter Arbeitsplatz",
       description: "Meldet ab, wenn hier eine Weile niemand arbeitet",
       marked: ({ minutes }) =>

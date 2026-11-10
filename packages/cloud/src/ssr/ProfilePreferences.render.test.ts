@@ -89,8 +89,9 @@ describe("ProfilePreferences SSR", () => {
     expect(html).toContain('<button type="button" class="layout-profile-preferences__link"');
     expect(html).not.toContain('<a href="/me" class="layout-profile-preferences__link"');
     expect(html.indexOf("Abmelden")).toBeGreaterThan(html.indexOf("Profileinstellungen"));
-    // The sidebar entries come first, with the shortcut; then the privacy screen for the person, with its shortcut
-    // and the saved timer from the server's first frame; sign-out ends the menu in the danger tone, in its own section.
+    // The sidebar entries come first, with the shortcut; then one screen section with two one-line entries, the
+    // privacy screen with its shortcut and the shared workstation switch, without headings, descriptions or timer;
+    // sign-out ends the menu in the danger tone, in its own section.
     const sections = panel.split('class="layout-profile-preferences__section"').slice(1);
     expect(sections).toHaveLength(4);
     expect(sections[0]).toContain('data-cloud-shell-focus-toggle="hide"');
@@ -98,22 +99,16 @@ describe("ProfilePreferences SSR", () => {
     expect(sections[0]).toContain('data-cloud-shell-focus-toggle="show"');
     expect(sections[0]).toContain(">Seitenleiste einblenden</span>");
     expect(sections[0]).toContain('class="k2b-kbd"');
-    expect(sections[1]).toContain("Sichtschutz · für dich");
-    expect(sections[1]).toContain(">Sichtschutz jetzt</span>");
+    expect(sections[1]).toContain(">Sichtschutz</span>");
     expect(sections[1]).toContain('aria-keyshortcuts="Control+Period"');
     expect(sections[1]).toContain('class="k2b-kbd"');
-    expect(sections[1]).toContain('aria-label="Automatisch verdecken"');
-    expect(sections[1]!.match(/role="radio"/g)).toHaveLength(5);
-    expect(sections[1]).toMatch(/aria-checked="true"[^>]*>(<[^>]+>)*2 min/);
-    expect(sections[2]).not.toContain('role="radiogroup"');
+    expect(sections[1]).toContain('role="switch"');
+    expect(sections[1]).toContain(">Gemeinsam genutzter Arbeitsplatz</span>");
+    expect(sections[1]).not.toContain("<small");
+    expect(panel).not.toContain('role="radio"');
+    expect(panel).not.toContain("Dieser Browser");
     expect(sections[2]).toContain(">Dunkel</span>");
-    // "Dieser Browser" holds what belongs to the browser: the shared workstation switch, then sign-out.
-    expect(sections[3]).toContain("Dieser Browser");
-    expect(sections[3]).toContain('role="switch"');
-    expect(sections[3]).toContain(">Gemeinsam genutzter Arbeitsplatz</span>");
-    const browserSection = sections[3] ?? "";
-    expect(browserSection.indexOf('role="switch"')).toBeLessThan(browserSection.indexOf('data-danger="true"'));
-    expect(sections[2]).not.toContain('role="switch"');
+    expect(sections[3]).not.toContain('role="switch"');
     expect(sections[3]).toContain('data-danger="true"');
     expect(sections[3]).toContain(">Abmelden</span>");
     expect(html).toContain('data-position="right-start"');

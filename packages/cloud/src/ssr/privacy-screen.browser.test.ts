@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-privacy-screen-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -614,6 +614,72 @@ describe("privacy screen", () => {
       expect(await covered(page)).toBe(true);
       await page.keyboard.press("x");
       expect(await covered(page)).toBe(false);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("the profile menu is 18 rem and every entry stays on one line, also with a longer translation", async () => {
+    timer = 120;
+    for (const locale of ["de-DE", "en-US"]) {
+      const { context, page } = await open({ locale });
+      try {
+        await ready(page);
+        await hoverInPlace(page.locator(".layout-profile-preferences__link"));
+        const rows = () =>
+          page.evaluate(() => {
+            const panel = document.querySelector<HTMLElement>(".layout-profile-preferences__panel")!;
+            return {
+              width: Math.round(panel.getBoundingClientRect().width),
+              rows: [...panel.querySelectorAll<HTMLElement>(".menu-item")]
+                .filter((row) => row.checkVisibility())
+                .map((row) => {
+                  const label = row.querySelector<HTMLElement>(":scope > span:last-of-type")!;
+                  const line = Number.parseFloat(getComputedStyle(label).lineHeight);
+                  return {
+                    text: label.textContent,
+                    oneLine: label.getBoundingClientRect().height <= line + 1,
+                    clipped: label.scrollWidth > label.clientWidth + 0.5,
+                  };
+                }),
+            };
+          });
+        // settled: transitions are off and the fake clock holds animation frames; the panel shows on hover.
+        const shown = await rows();
+        // 18 rem: the smallest width where "Gemeinsam genutzter Arbeitsplatz" fits beside its check box.
+        expect(shown.width).toBe(288);
+        expect(shown.rows.every((row) => row.oneLine)).toBe(true);
+        // The labels the menu ships fit without an ellipsis.
+        expect(shown.rows.filter((row) => row.clipped)).toEqual([]);
+        // A longer translation ends in an ellipsis instead of wrapping.
+        await page.evaluate(() => {
+          const label = document.querySelector('.layout-profile-preferences__panel [role="switch"] > span:last-of-type')!;
+          label.textContent = "Gemeinsam genutzter Arbeitsplatz für mehrere Personen am Empfang";
+        });
+        // settled: a text change animates nothing; layout follows synchronously in the read.
+        const long = await rows();
+        expect(long.rows.every((row) => row.oneLine)).toBe(true);
+        expect(long.rows.filter((row) => row.clipped).map((row) => row.text)).toEqual([
+          "Gemeinsam genutzter Arbeitsplatz für mehrere Personen am Empfang",
+        ]);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  test("the command to set the timer leads to the section on /me", async () => {
+    timer = 120;
+    const { context, page } = await open();
+    try {
+      await ready(page);
+      await page.evaluate(async () => {
+        const detail: { commands: { id: string; action: unknown }[] } = { commands: [] };
+        window.dispatchEvent(new CustomEvent("cloud.command.collect", { detail }));
+        const command = detail.commands.find((entry) => entry.id === "cloud.privacy.timer");
+        if (typeof command?.action === "function") await command.action();
+      });
+      await page.waitForURL((url) => url.pathname === "/me" && url.hash === "#screen");
     } finally {
       await context.close();
     }

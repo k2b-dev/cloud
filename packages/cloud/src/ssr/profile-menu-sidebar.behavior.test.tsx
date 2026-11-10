@@ -79,7 +79,7 @@ test("the hover menu starts with the sidebar entries and ends with sign-out in t
   const sections = [...page.profile.querySelectorAll(".layout-profile-preferences__panel > .layout-profile-preferences__section")];
   expect(sections.map((section) => [...section.querySelectorAll(".menu-item > span")].map((label) => label.textContent))).toEqual([
     ["Seitenleiste ausblenden", "Seitenleiste einblenden"],
-    ["Sichtschutz jetztVerdeckt Inhalte, sperrt nicht"],
+    ["Sichtschutz"],
     ["Automatisch", "English", "Profileinstellungen", "App"],
     ["Abmelden"],
   ]);

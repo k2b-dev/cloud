@@ -1145,14 +1145,15 @@
   box-shadow: var(--ui-focus);
 }
 
-/* Beside the rail, growing upward from the avatar. Wide enough for the privacy timer's five choices in one row. */
+/* Beside the rail, growing upward from the avatar. 18 rem holds the longest entry, "Gemeinsam genutzter Arbeitsplatz"
+   beside its check box, on one line. */
 .layout-profile-preferences__panel {
   position: absolute;
   z-index: 100;
   bottom: 0;
   left: 100%;
   display: none;
-  width: min(20rem, calc(100vw - 1rem));
+  width: min(18rem, calc(100vw - 1rem));
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.25rem;
@@ -1183,23 +1184,19 @@
   margin-left: auto;
 }
 
+/* Every entry is one line: a label too long for the menu ends in an ellipsis and never wraps, in the panel and in
+   the touch menu alike. */
+.layout-profile-preferences__panel .menu-item > span:not(.cloud-shared-workstation-check),
+.k2b-ui .layout-profile-preferences__menu .k2b-dropdown__copy > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The shared workstation's check box sits in the 1rem icon column, so its label lines up with the other entries. */
 .layout-profile-preferences__panel .menu-item > .cloud-shared-workstation-check {
   margin-inline: 0.0625rem;
-}
-
-/* A label with a quiet line below, as in the touch menu's choice rows. */
-.layout-profile-preferences__copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  text-align: start;
-}
-
-.layout-profile-preferences__copy > small {
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-  line-height: 1rem;
 }
 
 /* The sidebar entry, the preferences, and sign-out are three sections, each

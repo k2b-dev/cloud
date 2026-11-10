@@ -1,5 +1,5 @@
 import { accountCategoryLabel } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, isAppSessionActor } from "@k2b/cloud/server";
 import {
   accountsAppService,
   audit,
@@ -10,6 +10,7 @@ import {
   webauthn,
 } from "@k2b/cloud/services";
 import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
+import { sharedWorkstationIdleSeconds } from "@k2b/cloud/services/session/shared-workstation";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, keyboardPlatform, NoticeCard, Placeholder, SettingsSection } from "@k2b/ui";
@@ -62,6 +63,10 @@ export default ssr<AuthContext>(async (c) => {
     notifications.user.preferences.list(user.id, locale),
     screenPreferences.get(user.id),
   ]);
+  // Only a browser session can mark its browser as a shared workstation; the mobile app's phone never is one.
+  const sharedWorkstation = isAppSessionActor(c.get("actor"))
+    ? undefined
+    : { userId: user.id, minutes: Math.round((await sharedWorkstationIdleSeconds()) / 60) };
   const customizedNotifications = notificationPreferences.definitions.filter((preference) => preference.customized).length;
   const action = c.req.query("action");
   // Mirrors when the profile actions offer Extend account, so the notice has no empty action row.
@@ -178,7 +183,7 @@ export default ssr<AuthContext>(async (c) => {
             </dl>
           </SettingsSection>
 
-          <ScreenSettings timerSeconds={screen.privacyTimerSeconds} platform={platform} />
+          <ScreenSettings timerSeconds={screen.privacyTimerSeconds} platform={platform} sharedWorkstation={sharedWorkstation} />
 
           <ul class="-mx-3 grid gap-1 sm:grid-cols-2">
             {(

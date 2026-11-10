@@ -293,7 +293,7 @@ test("the profile menu's switch says on or off to the eye and to screen readers,
             checked: element.getAttribute("aria-checked"),
             checks: element.querySelectorAll(".cloud-shared-workstation-check .ti-check").length,
             row: box(element),
-            label: box(element.querySelector(".layout-profile-preferences__copy")),
+            label: box(element.querySelector(":scope > span:last-of-type")),
           };
         }),
       );

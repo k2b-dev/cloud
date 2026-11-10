@@ -26,7 +26,13 @@ test("At your screen saves the timer at once, says so in place, and offers to tr
   let status = 500;
   const bodies: unknown[] = [];
   const previous = globalThis.fetch;
-  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+  const marks: unknown[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("/me/browser/shared-workstation")) {
+      marks.push(JSON.parse(String(init?.body)));
+      return Response.json({ sharedWorkstation: true, idle: { remainingSeconds: 600, timeoutSeconds: 600 } });
+    }
     bodies.push(JSON.parse(String(init?.body)));
     return new Response(status === 200 ? String(init?.body) : "{}", { status, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
@@ -38,14 +44,24 @@ test("At your screen saves the timer at once, says so in place, and offers to tr
       createComponent(LocaleProvider, {
         locale: "de",
         get children() {
-          return createComponent(ScreenSettings, { timerSeconds: 120 });
+          return createComponent(ScreenSettings, { timerSeconds: 120, sharedWorkstation: { userId: "u1", minutes: 10 } });
         },
       }),
     dom.root,
   );
   const section = dom.root.querySelector<HTMLElement>("#screen")!;
   expect(section.textContent).toContain("Am Bildschirm");
-  expect(section.textContent).toContain("Für dich, auf allen Computern mit Maus oder Touchpad");
+  // Short and quiet: one sentence under the title, and the admin's minutes beside the shared workstation switch.
+  expect(section.textContent).toContain("Schützt deine Inhalte vor fremden Blicken.");
+  expect(section.textContent).toContain("Dieser Browser meldet nach 10 Minuten ohne Eingabe ab.");
+  const workstation = section.querySelector<HTMLInputElement>('input[role="switch"]')!;
+  expect(workstation.checked).toBe(false);
+  workstation.click();
+  await until(
+    () => workstation.checked && marks.length === 1,
+    () => ({ marks }),
+  );
+  expect(marks).toEqual([{ shared: true }]);
   const options = () => [...section.querySelectorAll<HTMLButtonElement>(".k2b-segmented-control__option")];
   const checked = () => options().find((option) => option.getAttribute("aria-checked") === "true")?.textContent;
   const status_ = () => section.querySelector('[role="status"]')?.textContent ?? "";
@@ -59,7 +75,7 @@ test("At your screen saves the timer at once, says so in place, and offers to tr
     () => ({ checked: checked(), status: status_(), bodies }),
   );
   // The page names the failure in place; no toast repeats it.
-  expect(document.querySelector(".k2b-toast")).toBeNull();
+  expect([...document.querySelectorAll(".k2b-toast")].some((toast) => toast.textContent?.includes("gespeichert"))).toBe(false);
   status = 200;
   [...section.querySelectorAll<HTMLButtonElement>('[role="status"] button')]
     .find((button) => button.textContent === "Erneut versuchen")!

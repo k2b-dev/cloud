@@ -48,14 +48,12 @@ Er sperrt nichts. Die App-Leiste bleibt sichtbar, aber du kannst sie nicht
 bedienen.
 
 :::reference
-- **Sofort:** Wähle im Profilmenü **Sichtschutz jetzt** oder drücke
-  **Strg+.** (**⌘+.** am Mac). Das
-  Kürzel wirkt auch, wenn ein Dialog offen ist.
+- **Sofort:** Wähle im Profilmenü **Sichtschutz** oder drücke **Strg+.**
+  (**⌘+.** am Mac). Das Kürzel wirkt auch, wenn ein Dialog offen ist.
 - **Automatisch:** Wenn du Cloud zwei Minuten nicht benutzt, verdeckt Cloud
-  deine Inhalte. Wähle im Profilmenü unter **Automatisch verdecken** eine
-  andere Zeit oder **Aus**. Dieselbe Einstellung steht in den
-  Profileinstellungen unter **Am Bildschirm**. Sie gilt auf allen Computern, an
-  denen du dich anmeldest.
+  deine Inhalte. Wähle in den Profileinstellungen unter **Am Bildschirm** bei
+  **Automatisch verdecken** eine andere Zeit oder **Aus**. Die Einstellung gilt
+  auf allen Computern, an denen du dich anmeldest.
 - **Vorwarnung:** Zehn Sekunden vorher erscheint über deinem Profil ein Symbol
   mit einem Ring, der sich leert. Jede Taste oder Mausbewegung hält den
   Sichtschutz auf.

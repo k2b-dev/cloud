@@ -10,6 +10,7 @@ import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
 import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
+import * as sharedWorkstation from "@k2b/cloud/services/session/shared-workstation";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { createConfig } from "@k2b/ssr";
@@ -246,6 +247,7 @@ beforeEach(() => {
     // The page shell's own reads.
     spyOn(railPreferences, "get").mockResolvedValue(defaultRailPreferences()),
     spyOn(screenPreferences, "get").mockResolvedValue(defaultScreenPreferences()),
+    spyOn(sharedWorkstation, "sharedWorkstationIdleSeconds").mockResolvedValue(600),
     spyOn(services.railShortcuts, "forUser").mockResolvedValue([]),
     spyOn(services.announcements.active, "forState").mockResolvedValue({
       banners: [],

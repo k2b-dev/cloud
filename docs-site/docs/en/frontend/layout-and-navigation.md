@@ -135,11 +135,11 @@ sidebar too, through the application's own links.
 
 On computers with a mouse or touchpad, the signed-in `Layout` covers the
 content when someone looks over the person's shoulder. It hides, it does not
-lock. People start it with **Privacy screen now** in the profile menu, the
+lock. People start it with **Privacy screen** in the profile menu, the
 command menu's **Cloud** group, or `Ctrl+.` (`Cmd+.` on macOS), also over an
 open dialog. Without input for the person's timer (default two minutes;
-30 s, 1, 2 or 5 min, or Off in the profile menu and under Profile settings ›
-At your screen) it starts on its own. Ten seconds before, a countdown shows
+30 s, 1, 2 or 5 min, or Off under Profile settings › At your screen, `/me#screen`)
+it starts on its own. Ten seconds before, a countdown shows
 above the profile in the app bar, or as a pill above the avatar while the app
 bar is hidden; any input cancels it. Phones and touch-only tablets have no
 privacy screen.
@@ -526,10 +526,12 @@ Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the Cloud app (the `pwa` application), the menu also shows **App**, which
 leads to `/me/app`, where people pair and remove devices. From 768 px the
-menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. On
-computers with a mouse or touchpad, the section **Privacy screen · for you**
-follows with **Privacy screen now** and the timer as one segmented row. It
-ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
+menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. A
+section without a heading follows with **Privacy screen** and its shortcut
+(computers with a mouse or touchpad only) and the **Shared workstation**
+switch for this browser. Every entry is one line; a label too long for the
+18 rem menu ends in an ellipsis. The privacy timer and the details live under
+`/me#screen`. The menu ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without
 profile actions, and `MinimalLayout` pages show them in their footer.
 Applications must not add a second theme or language control to their own

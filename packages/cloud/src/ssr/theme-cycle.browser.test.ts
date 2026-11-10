@@ -69,9 +69,9 @@ const dropdownOnly = `.layout-profile-preferences > .layout-profile-preferences_
 .layout-profile-preferences__link, .layout-profile-preferences__panel { display: none; }`;
 const surfaces = {
   profile: {
-    // The preferences follow the sidebar entry's section and, with a mouse, the privacy screen's two sections.
-    control: '.k2b-dropdown__menu .k2b-dropdown__section:nth-child(4) > [role="menuitem"]',
-    neighbor: '.k2b-dropdown__menu .k2b-dropdown__section:nth-child(4) > [role="menuitem"]:nth-child(2)',
+    // The preferences follow the sidebar entry's section and the screen section (privacy screen, shared workstation).
+    control: '.k2b-dropdown__menu .k2b-dropdown__section:nth-child(3) > [role="menuitem"]',
+    neighbor: '.k2b-dropdown__menu .k2b-dropdown__section:nth-child(3) > [role="menuitem"]:nth-child(2)',
     container: ".k2b-dropdown__menu",
     css: dropdownOnly,
   },

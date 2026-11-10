@@ -45,13 +45,12 @@ The privacy screen hides your content when someone looks over your shoulder.
 It locks nothing. The app bar stays visible, but you cannot use it.
 
 :::reference
-- **Now:** In the profile menu, choose **Privacy screen now**, or press
-  **Ctrl+.** (**⌘+.** on a Mac). The
-  shortcut also works while a dialog is open.
+- **Now:** In the profile menu, choose **Privacy screen**, or press **Ctrl+.**
+  (**⌘+.** on a Mac). The shortcut also works while a dialog is open.
 - **Automatically:** When you do not use Cloud for two minutes, Cloud hides
-  your content. In the profile menu, choose another time or **Off** under
-  **Hide automatically**. Profile settings show the same setting under **At
-  your screen**. It applies on every computer where you sign in.
+  your content. In profile settings under **At your screen**, choose another
+  time or **Off** for **Hide automatically**. The setting applies on every
+  computer where you sign in.
 - **Countdown:** Ten seconds before, a symbol with a ring that empties shows
   above your profile. Any key or mouse movement stops the privacy screen.
 - **Continue working:** Press a key or choose any place on the page. The page

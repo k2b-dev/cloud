@@ -98,30 +98,6 @@
   font-size: 0.75rem;
 }
 
-/* The profile panel's labelled sections ("Privacy screen · for you", "This browser"): a quiet label; the timer is a
-   segmented row that starts at the entries' text column. */
-.layout-profile-preferences__label {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem 0.125rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.layout-profile-preferences__timer {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.25rem 0.75rem 0.5rem 2.5rem;
-}
-
-.layout-profile-preferences__caption {
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-}
-
 /* The countdown before the timer covers the content: a fixed place above the profile, only while the timer is on,
    so it never pushes anything; only the app list scrolls. The ring empties over ten seconds without counting
    aloud; reduced motion shows the seconds instead. It is decoration: the screen reader hears one sentence. */
