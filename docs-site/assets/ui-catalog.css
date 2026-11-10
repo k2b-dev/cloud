@@ -1251,7 +1251,9 @@
 }
 
 .ui-pdf-demo {
-  min-height: 10rem;
+  display: flex;
+  height: 20rem;
+  flex-direction: column;
 }
 
 .ui-thumbnail-strip-demo {

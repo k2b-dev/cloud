@@ -43,7 +43,7 @@ import { type DelimitedPreferences, decodeDelimitedContent, readDelimitedPrefere
 import { type FileViewFile, fileViewExtension, getFileViewPreviewKind, parseDelimitedText } from "./file-view-preview";
 import MarkdownView from "./MarkdownView";
 import { leadingMarkdownTitle } from "./markdown-title";
-import PdfPreview from "./PdfPreview";
+import PdfViewer from "./PdfViewer";
 import StructuredDataPreview, { type StructuredDataValue } from "./StructuredDataPreview";
 import VideoPlayer from "./VideoPlayer";
 
@@ -597,8 +597,8 @@ const pdfBlob = (content: FileViewContent): Blob => {
 };
 
 /**
- * Both ways end in `PdfPreview`, which draws with pdf.js and falls back to the browser's viewer. A host inline URL is
- * fetched from there and stays the address the open action shows. Without one, the loaded bytes become a local PDF
+ * Both ways end in `PdfViewer`, which draws with pdf.js. A host inline URL is fetched from there and stays the address
+ * the pill's open action shows. Without one, the loaded bytes become a local PDF
  * Blob: a download URL is an attachment and would leave a viewer empty.
  */
 const sameOrigin = (href: string): boolean => {
@@ -629,16 +629,13 @@ function PdfRenderer(props: FileViewRendererProps) {
           fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={fileViewMessages().noInlinePreview} />}
         >
           {(pdf) => (
-            // Composed without the standalone heading: the host already names the file, and the frame keeps the
-            // file name as its accessible title.
-            <PdfPreview autoLoad title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)} request={async () => pdf}>
-              {(parts) => (
-                <div class="k2b-content-file-view__pdf-viewer">
-                  {parts.actions}
-                  {parts.content}
-                </div>
-              )}
-            </PdfPreview>
+            // The host already names the file; the viewer keeps the file name as its accessible title.
+            <PdfViewer
+              class="k2b-content-file-view__pdf-viewer"
+              open
+              title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+              data={pdf}
+            />
           )}
         </Show>
       }
@@ -646,33 +643,22 @@ function PdfRenderer(props: FileViewRendererProps) {
       {(href) => (
         // Keyed by the address: a new revision of the file loads the new document.
         <Show keyed when={href()}>
-          {(current) => {
-            // Closing the preview or a new revision stops a running download.
-            const abort = new AbortController();
-            onCleanup(() => abort.abort());
-            return (
-              // A page may fetch only its own origin's PDFs without CORS; another origin's address stays with the
-              // browser's viewer, which embeds it as before.
-              <Show
-                when={sameOrigin(current)}
-                fallback={<object data={current} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
-              >
-                <PdfPreview
-                  autoLoad
-                  title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
-                  openHref={current}
-                  request={() => fetch(current, { credentials: "same-origin", signal: abort.signal })}
-                >
-                  {(parts) => (
-                    <div class="k2b-content-file-view__pdf-viewer">
-                      {parts.actions}
-                      {parts.content}
-                    </div>
-                  )}
-                </PdfPreview>
-              </Show>
-            );
-          }}
+          {(current) => (
+            // A page may fetch only its own origin's PDFs without CORS; another origin's address stays with the
+            // browser's viewer, which embeds it as before. The viewer fetches a same-origin address itself and stops
+            // when the preview closes or a new revision arrives.
+            <Show
+              when={sameOrigin(current)}
+              fallback={<object data={current} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
+            >
+              <PdfViewer
+                class="k2b-content-file-view__pdf-viewer"
+                title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+                open={current}
+                data={current}
+              />
+            </Show>
+          )}
         </Show>
       )}
     </Show>

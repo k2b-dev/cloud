@@ -1,6 +1,6 @@
 # Media preview
 
-`Lightbox` presents one or more images in a modal viewer. `VideoPlayer` plays one video with the browser's own controls. `PdfPreview` requests a PDF and displays the resulting document. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
+`Lightbox` presents one or more images in a modal viewer. `VideoPlayer` plays one video with the browser's own controls. `PdfViewer` shows a PDF, from its bytes, its address, or a request, with pdf.js. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
 
 ## Use media preview
 
@@ -8,7 +8,7 @@ Use `Lightbox` when a page already shows an image or thumbnail and readers need 
 
 Use `VideoPlayer` wherever a stored video should play in place, such as a file preview or an attachment dialog. Do not wrap it in a `Lightbox`.
 
-Use `PdfPreview` when a user action generates or loads a PDF for inspection. Use a normal download link when inline inspection is not part of the task.
+Use `PdfViewer` wherever a PDF should be read in place: a stored file, an attachment, or a document a user action generates. Use a normal download link when inline inspection is not part of the task.
 
 Use `ZoomPanViewport` when content has detail that does not fit its box, such as a diagram, plan, or large SVG. Do not use it for photos that already open in a `Lightbox`, or for content that should scroll.
 
@@ -17,13 +17,11 @@ Use `ZoomPanViewport` when content has detail that does not fit its box, such as
 ```tsx
 import {
   Lightbox,
-  PdfPreview,
   type LightboxAction,
   type LightboxImage,
-  type PdfPreviewProps,
-  type PdfPreviewRequest,
   PdfViewer,
   type PdfViewerProps,
+  type PdfViewerRequest,
   ThumbnailStrip,
   type ThumbnailStripItem,
   type ThumbnailStripProps,
@@ -81,55 +79,49 @@ When the browser cannot play the video, for example because of its codec, the fr
 
 Pass `error` to show the host's own content in the frame instead of the video, for example an error with a retry when fetching the address failed. The frame keeps its size, so nothing moves when the error appears or the retry succeeds.
 
-## PDF requests
-
-`PdfPreview` accepts a `request` function that resolves to a `Blob` or `Response`. A failed response becomes an error state. A Blob with a declared type other than `application/pdf` is rejected.
-
-The document shows in [`PdfViewer`](#pdf-viewer): pdf.js draws it the same way in every browser, also on iPad, where an embedded PDF in a frame shows only its first page. Until a document is shown, the viewer area shows a `Placeholder`: `emptyText` before the first request, `state="loading"` while a request runs and until the viewer has drawn the first page, and `state="error"` with the message after a failure. The error state never adds a second retry: an on-demand preview retries with its render action in the toolbar.
-
-When pdf.js cannot draw a document (broken, encrypted, without pages, or past the viewer's limits), the browser's own viewer takes over in a frame. The frame loads it transparently and out of keyboard reach beneath the loading state and appears when it fires `load`. Where the browser has no inline PDF viewer either, `navigator.pdfViewerEnabled === false`, as in Chrome on Android, the preview shows no frame but a placeholder that says in the inherited locale that the browser cannot show PDFs inside a page and asks to open the document, and announces it. The hint adds no action of its own. The way to the document is the open action and the caller's `onDownload`, or the host's own open and download actions when it leaves `actions` out.
-
-These states and the document share one box, so loading, the hint, and errors do not move the page: the box fills the remaining height of a sized flex column and keeps an iframe's default height of 150 px where nothing sizes it. A long error scrolls inside that box from its top. Give the preview or its composed container a height when the document needs more room. While an on-demand preview renders again, the shown document stays until the new one arrives.
-
-Without a `children` render function, the preview is a standalone frame: an optional `title` heading and the actions in a toolbar above the document. Spacing, not a divider line, separates the toolbar from the document.
-
-The component provides separate actions to render inside the page or open the document in a new tab. `disabled` is a reactive guard for invalid form state or an unavailable renderer.
-
-By default, the open action shows a temporary local copy of the document in a new tab. That copy has no file name and does not survive a reload, and Safari on iOS may download it instead. When the caller can serve the document itself, pass `openHref`: a stable same-origin URL that returns the PDF with `Content-Disposition: inline`. The open action then becomes a plain link to that URL in a new tab without an opener, so the browser's viewer can reload the document and shows the file name from the last path segment. The caller owns the URL, its authorization, and its response headers.
-
-Pass `onDownload` to add a **Download** action. The caller owns the download, for example issuing a fresh attachment URL with the right file name; `disabled` also disables it.
-
-Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled or the browser has no inline PDF viewer, and shows the loading placeholder. The server HTML and the initial browser render already show that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
-
-An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request. The render action appears only while no document is shown and none is loading, for example when `disabled` kept the preview from starting, and never without an inline viewer, where the open action is also the retry after a failure. After a failed request, the render action moves into the error state as its retry, labeled with `buttonLabel` or **Retry**; beside `renderError` content, it stays in the toolbar and in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
-
-Authentication, request input, server-side rendering, and error sanitization remain with the caller.
-
-### Compose a dialog or pane
-
-Pass a `children` render function to place `actions` and `content` in an existing container. The preview then omits its own border, heading, and toolbar; `class` only applies to its default shell. Render each part at most once. A host with its own open and download actions, such as an automatic preview of a stored file, can leave `actions` out. The same request state, disabled controls, and object URL cleanup apply in either layout.
-
-For a dialog, put `actions` in `PanelDialog.Header` and `content` in a flex column that fills the remaining body height. Keep explanatory text in `InlineGuidance` above the content. Do not put another preview card inside the dialog.
-
-Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. It replaces the default error state; the toolbar keeps the render action, which retries. Errors replace the document, including a previously rendered PDF after a failed reload. Keep an accessible alert role in custom error content. A blocked new tab is not a document error: a localized alert beside the actions says so, and the shown document stays.
-
 ## PDF viewer
 
-`PdfViewer` shows a PDF you already have, as a `Blob` or `ArrayBuffer`, without requests or actions of its own. `PdfPreview` uses it; use it directly where a page already holds the document's bytes.
+`PdfViewer` is the one component for PDFs. Pass the document in one of three ways:
 
-The pages lie one below the other in one scroll area, as images drawn by pdf.js, with an invisible text layer over each page, so text can be selected, copied, and found with the browser's search. Only pages near the view are drawn and carry text, and at most 24 drawn pages stay in memory; the others keep their size, so the scroll bar is right from the start. The browser's search finds text on those near pages.
+- `data` as a `Blob` or `ArrayBuffer` when the page already holds the bytes; it shows at once.
+- `data` as the address of a PDF on this site; the viewer fetches it with the page's cookies and stops the request when the viewer goes or the address changes.
+- `request`, a function that resolves to a `Blob` or `Response`, for a document the server generates. With `autoLoad`, it runs as soon as the viewer shows; without it, the empty state offers one action, named by `loadLabel`, and the pill keeps that action as an icon to render again. `disabled` keeps the request from starting, for example while the form behind it is incomplete.
 
-The view starts fitted to the width: every page as wide as the area, so a landscape page among portrait ones never scrolls sideways. A fitted page never grows past 100 %, so zooming the browser out does not enlarge it. A small pill at the bottom shows the current page as "1 / 6", then −, the percentage, and +, which zoom in steps from 25 % to 300 %, and one icon that returns to the fit. The controls are icons only; the pressed fit is its blue icon without a fill. Ctrl or ⌘ with the mouse wheel, a trackpad pinch, and two fingers zoom freely around the pointer. The pill is solid, and the area keeps room below the pages, so the end of the last page always scrolls clear of it. `zoom={false}` leaves the bar out and always fits; `page` shows a single page (zero-based).
+A failed `Response` becomes the error state with its JSON `message` or the HTTP status; a Blob with a declared type other than `application/pdf` is rejected. The caller owns authentication, request input, server-side rendering, and error wording; a request that should stop when its dialog closes takes the dialog's abort signal.
 
-Pass `fit="page"` where the viewer is a preview beside other content, such as a details panel: the whole first page shows in the area's height, narrower than the area and centred, above the pill, and the fit icon returns to that view. Give the area its height; reading views keep the default `fit="width"`. `PdfPreview` passes `fit` on.
+The viewer is one grey area with the surface radius. The pages, the empty, loading, and error states, and the pill all lie in it, so nothing around it moves while a document arrives. The area takes the height its host gives it and keeps 12.5rem where nothing sizes it. A long error scrolls inside the area from its top. Do not put the viewer into another card or frame: its ground is the frame.
 
-`onReady` reports the first drawn page. `onError` reports a document pdf.js cannot open or draw, including one without pages or past the limits (100 MiB, 2,000 pages); show the browser's viewer or a download then, as `PdfPreview` does. Printing and filling forms stay with the browser's viewer: offer an open action next to the viewer.
+The pages lie one below the other in one scroll area, as images drawn by pdf.js, with an invisible text layer over each page, so text can be selected, copied, and found with the browser's search. pdf.js draws the same way in every browser, also on iPad, where an embedded PDF in a frame shows only its first page. Only pages near the view are drawn and carry text, and at most 24 drawn pages stay in memory; the others keep their size, so the scroll bar is right from the start.
 
-pdf.js loads only when a document opens. The @k2b/ui build ships it with its worker as two files that a host's bundler copies next to its chunks; neither enters a page's bundle, also not a classic script. pdf.js runs no code from the document and fetches nothing beyond the given bytes.
+The view starts fitted to the width: every page as wide as the area, so a landscape page among portrait ones never scrolls sideways. A fitted page never grows past 100 %, so zooming the browser out does not enlarge it. A small pill at the bottom shows the current page as "1 / 6", then −, the percentage, and +, which zoom in steps from 25 % to 300 %, and one icon that returns to the fit. The controls are icons only, each with its name as tooltip and accessible name; the pressed fit is its blue icon without a fill. Ctrl or ⌘ with the mouse wheel, a trackpad pinch, and two fingers zoom freely around the pointer. The pill is solid, and the area keeps room below the pages, so the end of the last page always scrolls clear of it. `zoom={false}` leaves the zoom controls out and always fits; `page` shows a single page (zero-based).
+
+Pass `fit="page"` where the viewer is a preview beside other content, such as a details panel: the whole first page shows in the area's height, narrower than the area and centred, above the pill, and the fit icon returns to that view. Reading views keep the default `fit="width"`.
+
+Pass `open` to add "Open in new tab" at the end of the pill, for printing, forms, or the browser's own viewer. `open` alone opens a temporary copy of the shown document; it has no file name and does not survive a reload. Pass a stable same-origin address instead, one that returns the PDF with `Content-Disposition: inline`, and the tab opens that address, reloads it, and shows its file name. When the browser blocks the tab, a short alert says so and the document stays. A host that already offers open and download actions, such as a dialog header, leaves `open` out.
+
+When pdf.js cannot draw a document (broken, encrypted, without pages, or past the limits of 100 MiB and 2,000 pages), the area says "This PDF cannot be shown here" and offers the open action when `open` is set; `onError` reports it. There is no second viewer in a frame.
+
+pdf.js loads only when a document shows. The @k2b/ui build ships it with its worker as two files that a host's bundler copies next to its chunks; neither enters a page's bundle, also not a classic script. pdf.js runs no code from the document and fetches nothing beyond the given bytes.
 
 ```tsx
-<PdfViewer data={blob} title="Rental agreement" onError={() => setFallback(true)} />
+<PdfViewer data={blob} title="Rental agreement" />
+<PdfViewer data={`/api/files/${id}/inline`} open={`/api/files/${id}/inline`} title={file.name} />
+<PdfViewer request={renderPreview} loadLabel="Render preview" emptyText="Render the template to inspect it." disabled={!valid()} open title="Invoice" />
 ```
+
+### Migrate from PdfPreview
+
+`PdfPreview` is gone; `PdfViewer` takes its place with the same request, states, and lazy pdf.js:
+
+- `<PdfPreview request={r} …/>` becomes `<PdfViewer request={r} title=… />`; `title` is now required, `autoLoad` and `emptyText` stay.
+- `buttonLabel` becomes `loadLabel`, and `disabled={() => x}` becomes `disabled={x}`.
+- `openHref` and the open action become `open`: `true` for the shown document, or the address.
+- `children` with `actions` and `content`, `renderError`, `openButtonLabel`, and `onDownload` are gone. Place the viewer in your container, keep download in your own header, and let the viewer's error state show the reason with its retry.
+- The browser's viewer in a frame no longer takes over when pdf.js cannot draw a document; pass `open` so people can open it in a new tab.
+
+### In a dialog or pane
+
+Put the viewer in a flex column that fills the remaining height, with explanatory text in `InlineGuidance` above it. The dialog header keeps the title and close; the viewer brings its own states and actions. Do not wrap it in another preview card.
 
 ## Zoomable content
 
@@ -163,18 +155,12 @@ type ThumbnailStripProps = {
 
 type LightboxAction = { label: string; icon: string; onClick: () => void };
 
-type PdfPreviewRequest = () => Promise<Response | Blob>;
-
-type PdfPreviewProps = {
-  request: PdfPreviewRequest; autoLoad?: boolean; disabled?: () => boolean; title?: string; buttonLabel?: string;
-  openButtonLabel?: string; openHref?: string; onDownload?: () => void; emptyText?: string;
-  fit?: "width" | "page"; class?: string;
-  children?: (parts: { actions: JSX.Element; content: JSX.Element }) => JSX.Element;
-  renderError?: (message: string) => JSX.Element;
-};
+type PdfViewerRequest = () => Promise<Response | Blob>;
 
 type PdfViewerProps = {
-  data: Blob | ArrayBuffer; title: string; zoom?: boolean; fit?: "width" | "page"; page?: number;
+  title: string; data?: Blob | ArrayBuffer | string; request?: PdfViewerRequest; autoLoad?: boolean;
+  disabled?: boolean; emptyText?: string; loadLabel?: string; open?: boolean | string;
+  zoom?: boolean; fit?: "width" | "page"; page?: number;
   onReady?: () => void; onError?: (error: unknown) => void; class?: string;
 };
 ```
@@ -200,13 +186,13 @@ type ZoomPanViewportProps = {
 };
 ```
 
-`Lightbox` requires `images: LightboxImage[]` and `onClose: () => void`; `initialIndex?: number` defaults to 0. `PdfPreview.disabled` is an accessor, not a direct boolean. Omitted labels use localized defaults; without `autoLoad`, `request` runs only after a preview/open action.
+`Lightbox` requires `images: LightboxImage[]` and `onClose: () => void`; `initialIndex?: number` defaults to 0. Omitted labels use localized defaults; without `autoLoad`, `request` runs only after the load action.
 
 ## Accessibility
 
 The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`. A dialog that an image action opens above the lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
 
-`PdfPreview` names its document area with `title`; a fallback frame takes it as its title. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. The viewer's loading state is a polite status and its error state an alert. When a rendered document turns the loading state into the missing-viewer hint, the preview announces the hint politely. When a retry removes the focused retry action, focus moves to the open action once the document is shown; when the host leaves `actions` out, it waits in the viewer until the frame has loaded the document and then moves to the document; after another failure it moves to the retry of the new error state.
+`PdfViewer` names its page area with `title`. The pill's icons carry their names as tooltips and accessible names; the state actions are native buttons named by their visible labels. Keep `loadLabel` specific when several documents appear on one page. The loading state is a polite status and the error state an alert; when a document turns out not to be drawable, the viewer announces that politely. While a placeholder shows, the viewer itself holds keyboard focus that would otherwise drop; once the first page is drawn, focus moves on to the pages.
 
 `VideoPlayer` names its video with `label`. The browser's controls bring their own labels and keyboard support. With focus on the video, the player adds the same keys in every engine: Space and `K` play and pause, the left and right arrows seek five seconds, `M` mutes, and `F` opens fullscreen. Focus draws its ring around the frame. The loading state is a polite status. The fallback is an alert that names the problem and offers its action; when it replaces the focused video, focus moves to that action, or to the frame when there is none.
 
@@ -214,7 +200,7 @@ The lightbox uses a native dialog, labeled navigation controls, arrow keys, Esca
 
 ## Runtime
 
-`Lightbox` and `PdfPreview` require browser code. `Lightbox` calls `showModal()` after mount. `PdfPreview` creates and revokes browser object URLs after loading a preview. A late response after unmount cannot display a preview or retain an object URL.
+`Lightbox` and `PdfViewer` require browser code. `Lightbox` calls `showModal()` after mount. `PdfViewer` renders its loading or empty state on the server and loads in the browser; a late response after unmount shows nothing. Only "Open in new tab" with `open` alone creates a temporary object URL, which it revokes after a minute.
 
 The server may render their initial markup, but modal behavior, network requests, Blob URLs, and navigation controls run in the browser.
 
@@ -239,10 +225,11 @@ const images: LightboxImage[] = [
   <Lightbox images={images} onClose={() => setLightboxOpen(false)} />
 </Show>
 
-<PdfPreview
+<PdfViewer
   title="Generated report"
   request={() => fetch("/api/reports/42/pdf")}
-  disabled={() => reportMutation.loading()}
+  disabled={reportMutation.loading()}
+  open
 />
 ```
 
@@ -274,12 +261,10 @@ const images: LightboxImage[] = [
 ```
 
 ```tsx
-<PdfPreview autoLoad title="Report" request={() => fetch("/api/reports/42/pdf")}>
-  {(preview) => (
-    <PanelDialog>
-      <PanelDialog.Header title="Report preview" actions={preview.actions} close={close} />
-      <PanelDialog.Body>{preview.content}</PanelDialog.Body>
-    </PanelDialog>
-  )}
-</PdfPreview>
+<PanelDialog>
+  <PanelDialog.Header title="Report preview" close={close} />
+  <PanelDialog.Body scrollFade={false}>
+    <PdfViewer autoLoad open title="Report" request={() => fetch("/api/reports/42/pdf", { signal })} />
+  </PanelDialog.Body>
+</PanelDialog>
 ```

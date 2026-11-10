@@ -1,5 +1,5 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, FileView, PdfPreview, Placeholder, VideoPlayer } from "@k2b/ui";
+import { Button, FileView, PdfViewer, Placeholder, VideoPlayer } from "@k2b/ui";
 import { createEffect, createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
 import { hasPdfSignature, PDF_HEADER_WINDOW } from "../pdf-body";
@@ -96,9 +96,9 @@ function RevisionPreview(props: PreviewProps) {
         <Match when={kind() === "pdf"}>
           {/* The host owns the viewer actions: the dialog header and the details panel offer Open in new tab and
               Download, so the preview is only the document. */}
-          <PdfPreview autoLoad title={props.entry.name} buttonLabel={t().retry} request={readPdf} fit={props.pdfFit}>
-            {(parts) => <div class="filesv2-preview__pdf">{parts.content}</div>}
-          </PdfPreview>
+          <div class="filesv2-preview__pdf">
+            <PdfViewer autoLoad title={props.entry.name} request={readPdf} fit={props.pdfFit} />
+          </div>
         </Match>
         {/* A video keeps its frame from the start, also when its lease fails, and asks for a fresh lease itself when
             one expires during playback; the browser fetches it by range, so it never loads into memory. The details

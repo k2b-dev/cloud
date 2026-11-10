@@ -29,7 +29,7 @@ const result = await Bun.build({
     const query = new URLSearchParams(location.search);
     const app = document.getElementById("app");
     if (query.get("height")) app.style.height = query.get("height") + "px";
-    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", fit: query.get("fit") ?? undefined, onError: (error) => window.pdfErrors.push(String(error)) }), app);
+    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", fit: query.get("fit") ?? undefined, open: query.has("open") || undefined, onError: (error) => window.pdfErrors.push(String(error)) }), app);
   `,
   },
   target: "browser",
@@ -187,6 +187,23 @@ describe("@k2b/ui PdfViewer", () => {
       }));
       expect(paint.background).toBe("rgba(0, 0, 0, 0)");
       expect(paint.color).not.toBe(paint.text);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("open adds one icon to the end of the pill, named for screen readers and the tooltip", async () => {
+    const page = await load("?open");
+    try {
+      await settled(page);
+      const buttons = page.locator(".k2b-pdf-viewer__bar button");
+      expect(await buttons.count()).toBe(4);
+      const open = buttons.last();
+      expect(await open.getAttribute("aria-label")).toBe("Open in new tab");
+      expect((await open.textContent())?.trim()).toBe("");
+      // The ground is rounded and the pages sit in it without a second frame.
+      const radius = await page.locator(".k2b-pdf-viewer").evaluate((element) => getComputedStyle(element).borderTopLeftRadius);
+      expect(radius).not.toBe("0px");
     } finally {
       await page.close();
     }

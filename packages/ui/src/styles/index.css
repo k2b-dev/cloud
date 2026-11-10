@@ -2548,7 +2548,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       .k2b-detail-panel__header,
       .k2b-detail-panel__primary-actions,
       .k2b-image-input__actions,
-      .k2b-content-pdf-preview__actions,
       .k2b-toolbar[data-wrap="true"],
       .k2b-toolbar[data-orientation="vertical"]
     ) {

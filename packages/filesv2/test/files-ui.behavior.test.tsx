@@ -295,7 +295,9 @@ describe("Filesv2 interactions", () => {
     await settleLeases();
 
     const dialog = dom.document.querySelector("dialog")!;
-    expect(dialog.querySelector("iframe")?.getAttribute("src")).toMatch(/^blob:preview-/);
+    // pdf.js draws only in a real browser; here the viewer reaches its end state in its own area, without a frame.
+    expect(dialog.querySelector("iframe")).toBeNull();
+    expect(dialog.querySelector(".filesv2-preview .k2b-pdf-viewer")?.getAttribute("data-state")).toBe("undrawable");
     // The dialog header owns the viewer actions; the preview below is only the document.
     expect(dialog.querySelectorAll(".filesv2-preview :is(a, button)")).toHaveLength(0);
     const [open, download] = [...dialog.querySelectorAll<HTMLElement>(".k2b-panel-dialog__actions :is(a, button)")];

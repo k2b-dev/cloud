@@ -421,12 +421,9 @@
   position: relative;
   min-width: 0;
 }
-.k2b-ui .filesv2-inspector-preview .k2b-content-pdf-preview__viewer {
+.k2b-ui .filesv2-inspector-preview .k2b-pdf-viewer {
   height: min(26rem, 60svh);
-  overflow: hidden;
-  border-radius: var(--k2b-radius-surface);
-  /* Loading and error states keep the viewer's ground, so the area never changes while the document arrives. */
-  background: var(--k2b-surface-muted);
+  flex: none;
 }
 .k2b-ui .filesv2-inspector-preview__expand {
   --k2b-radius-control: 9999px;
