@@ -934,8 +934,10 @@ do not limit those calls. Public routes have `c.user === null`.
 - `code_route_before_middleware`: a non-public route registered before an
   `app.use()` whose prefix matches it. That middleware never runs for it.
 
-A check that lives in a helper function the handler calls is not recognized.
-Read `c.user` in the handler or in middleware to silence the warning.
+Only a read of `c.user` in the handler itself, or in middleware registered
+before it whose prefix covers the whole route, counts. A check in a helper or
+callback function is not recognized, and middleware in another module counts
+only while no module uses a top-level `await`.
 
 Start with middleware for a private path prefix. Returning a Response stops
 before the handler; `return next()` continues. This check also covers later

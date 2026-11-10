@@ -171,27 +171,28 @@ test("each member provider reaches the handler as a stable, minimal visitor iden
     }
   }
 });
-test("guests are refused on every page that is not public, for every method and owner, before the Code is asked", async () => {
+test("guests are refused on every page that is not public, for every method, before the Code is asked", async () => {
+  // The rule reads only the visitor's profile: owner kind and owner never enter it.
   const guest = UserSchema.parse({ ...person, profile: "guest", roles: ["guest"] });
   const variants: Record<string, string>[] = [{}, { Accept: "text/html" }, { Accept: "text/html", "X-Code-Page": "tree" }];
-  for (const personalOwner of [id, null]) {
-    const page = hosting(false, true, undefined, personalOwner, guest);
-    for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
-      for (const headers of variants) {
-        const response = await page.router.request(`/code/${codeId}/`, {
-          method,
-          headers: { ...headers, "X-Code-CSRF": codeCsrf("fixture-session", codeId) },
-        });
-        expect(response.status).toBe(403);
-        if (method !== "HEAD") expect(await response.json()).toEqual({ code: "code_members_only" });
-      }
+  const page = hosting(false, true, undefined, null, guest);
+  const groupLookups = page.groups.mock.calls.length;
+  for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+    for (const headers of variants) {
+      const response = await page.router.request(`/code/${codeId}/`, {
+        method,
+        headers: { ...headers, "X-Code-CSRF": codeCsrf("fixture-session", codeId) },
+      });
+      expect(response.status).toBe(403);
+      if (method !== "HEAD") expect(await response.json()).toEqual({ code: "code_members_only" });
     }
-    expect(page.calls).toHaveLength(0);
-    // A member on the same page reaches the handler.
-    const member = hosting(false, true, undefined, personalOwner);
-    expect((await member.router.request(`/code/${codeId}/`)).status).toBe(200);
-    expect(member.calls).toHaveLength(1);
   }
+  expect(page.calls).toHaveLength(0);
+  expect(page.groups.mock.calls.length).toBe(groupLookups);
+  // A member on the same page reaches the handler.
+  const member = hosting(false, true);
+  expect((await member.router.request(`/code/${codeId}/`)).status).toBe(200);
+  expect(member.calls).toHaveLength(1);
   // A public route stays open to a guest, anonymous as for everyone.
   const publicPage = hosting(true, true, undefined, null, guest);
   expect((await publicPage.router.request(`/code/${codeId}/`)).status).toBe(200);

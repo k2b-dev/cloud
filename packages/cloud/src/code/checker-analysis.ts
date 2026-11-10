@@ -756,7 +756,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                   node,
                   path: route.data.path,
                   handler: node.arguments[1],
-                  middleware: matching.map((item) => item.handler),
+                  // Only middleware that surely runs counts as a check: its prefix covers every path of the route, and
+                  // without a top-level await, a module evaluated earlier has registered it before this route.
+                  middleware: matching
+                    .filter((item) => routeCovered(item.path, route.data.path))
+                    .filter((item) => !topLevelAwait || item.node.getSourceFile() === node.getSourceFile())
+                    .map((item) => item.handler),
                 });
               const sf = node.getSourceFile();
               result.entrypoints.push({
@@ -897,6 +902,19 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     ts.forEachChild(node, visit);
   }
   const sourceOrder = [...ordered, ...Object.keys(request.files).filter((name) => !reachable.has(name))];
+  // A module suspended at a top-level await lets later modules register first, so file order no longer proves order.
+  const topLevelAwait = sourceOrder.some((name) => {
+    const sf = program.getSourceFile(root + name);
+    let found = false;
+    const walk = (node: ts.Node) => {
+      if (found || ts.isFunctionLike(node) || ts.isClassLike(node)) return;
+      if (ts.isAwaitExpression(node) || (ts.isForOfStatement(node) && node.awaitModifier)) found = true;
+      else if (ts.isVariableDeclarationList(node) && (node.flags & ts.NodeFlags.AwaitUsing) === ts.NodeFlags.AwaitUsing) found = true;
+      else ts.forEachChild(node, walk);
+    };
+    if (sf) walk(sf);
+    return found;
+  });
   for (const name of sourceOrder) {
     const sf = program.getSourceFile(root + name)!;
     if (files.has(sf.fileName) && sf.fileName !== root + "sdk.d.ts") {
@@ -921,23 +939,38 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   }
   attributeEntrypoints(checker, result.permissions, placed, handlers);
   // Every member may open a page that is not public; one that never reads c.user serves them all alike.
-  const sdkUser = (symbol: ts.Symbol | undefined) =>
-    !!symbol?.declarations?.some((declaration) => declaration.getSourceFile().fileName === sdkFile);
+  /** Only the `user` of the route context counts, never an SDK response field that happens to share the name. */
+  const contextUser = (symbol: ts.Symbol | undefined) =>
+    !!symbol?.declarations?.some(
+      (declaration) =>
+        declaration.getSourceFile().fileName === sdkFile &&
+        ts.isPropertySignature(declaration) &&
+        ts.isTypeLiteralNode(declaration.parent) &&
+        ts.isTypeAliasDeclaration(declaration.parent.parent) &&
+        declaration.parent.parent.name.text === "CodeContext",
+    );
+  const assigned = (node: ts.Node) =>
+    ts.isBinaryExpression(node.parent) &&
+    node.parent.left === node &&
+    node.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+    node.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+  /** Whether the function itself reads c.user; a nested function may never run, so its reads do not count. */
   const readsUser = (fn: ts.Node): boolean => {
     let found = false;
     const walk = (node: ts.Node) => {
-      if (found) return;
-      if (ts.isPropertyAccessExpression(node) && node.name.text === "user" && sdkUser(checker.getSymbolAtLocation(node.name))) found = true;
+      if (found || (node !== fn && ts.isFunctionLike(node))) return;
+      if (ts.isPropertyAccessExpression(node) && node.name.text === "user")
+        found = !assigned(node) && contextUser(checker.getSymbolAtLocation(node.name));
       else if (
         ts.isElementAccessExpression(node) &&
         ts.isStringLiteralLike(node.argumentExpression) &&
         node.argumentExpression.text === "user"
       )
-        found = sdkUser(checker.getTypeAtLocation(node.expression).getProperty("user"));
+        found = !assigned(node) && contextUser(checker.getTypeAtLocation(node.expression).getProperty("user"));
       else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
         const key = node.propertyName ?? node.name;
         if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === "user")
-          found = sdkUser(checker.getTypeAtLocation(node.parent).getProperty("user"));
+          found = contextUser(checker.getTypeAtLocation(node.parent).getProperty("user"));
       }
       if (!found) ts.forEachChild(node, walk);
     };
@@ -984,6 +1017,13 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       "Lege mindestens einen Zeitplan oder eine Route auf Modulebene an.",
     );
   return result;
+}
+
+/** Whether middleware registered for `prefix` runs on every path of `path`: each prefix segment is the same literal. */
+function routeCovered(prefix: string, path: string): boolean {
+  const segments = path.replace(/\/$/, "").split("/");
+  const parts = prefix === "/" ? [] : prefix.split("/");
+  return parts.length <= segments.length && parts.every((part, index) => segments[index] === part);
 }
 
 /** Whether middleware registered for `prefix` may run on `path`; a parameter segment may match any literal. */

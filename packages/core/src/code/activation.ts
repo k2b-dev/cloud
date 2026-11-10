@@ -167,7 +167,8 @@ export async function previewCodeActivation(
           manifest.data.entrypoints.map(async ({ entrypoint, title, route, event }) => ({
             entrypoint,
             ...(title === undefined ? {} : { title }),
-            ...(route ? { route } : {}),
+            // The card needs who may open the page, not where it appears.
+            ...(route ? { route: { method: route.method, path: route.path, public: route.public } } : {}),
             ...(event ? { event: await describeEvent(event, owner, catalog) } : {}),
           })),
         )

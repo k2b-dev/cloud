@@ -79,3 +79,39 @@ app.use("/admin", async (c, next) => (c.user?.groupNames.includes("admin") ? nex
 export default app;`),
   ).toEqual(["code_route_before_middleware@code.ts:2"]);
 });
+
+test("only a read that surely runs is a check: no nested function, no assignment, no middleware that may miss the path", () => {
+  expect(
+    warnings(`import { app } from "@sdk";
+app.use("/admin", async (c, next) => (c.user?.username === "admin" ? next() : c.text("Denied", 403)));
+app.get("/:section/list", c => c.text("Open"));
+app.get("/later", c => {
+  const unused = () => c.user;
+  return c.text(typeof unused);
+});
+app.get("/cleared", c => {
+  c.user = null;
+  return c.text("Open");
+});
+app.get("/admin/:id", c => c.text(c.req.param("id")));
+export default app;`),
+  ).toEqual(["code_route_unchecked@code.ts:3", "code_route_unchecked@code.ts:4", "code_route_unchecked@code.ts:8"]);
+});
+
+test("after a top-level await, middleware in another file no longer counts as registered first", () => {
+  expect(
+    warnings(
+      `import "./guard";
+import "./routes";
+import { app } from "@sdk";
+export default app;`,
+      {
+        "guard.ts": `import { app } from "@sdk";
+await Promise.resolve();
+app.use(async (c, next) => (c.user?.username === "admin" ? next() : c.text("Denied", 403)));`,
+        "routes.ts": `import { app } from "@sdk";
+app.get("/", c => c.text("Open"));`,
+      },
+    ),
+  ).toEqual(["code_route_unchecked@routes.ts:2"]);
+});
