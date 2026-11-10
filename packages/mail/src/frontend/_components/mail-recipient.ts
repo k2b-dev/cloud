@@ -2,8 +2,9 @@ import { type MailAddress, type MailDraft, mailAddressSchema } from "../../contr
 
 const angleAddressPattern = /^(.*?)\s*<([^<>]+)>$/;
 
+/** A name with a list separator keeps its quotes, so the pill can be edited and committed again unchanged. */
 export const formatMailRecipient = (recipient: MailAddress): string =>
-  recipient.name ? `${recipient.name} <${recipient.address}>` : recipient.address;
+  recipient.name ? `${/[,;]/.test(recipient.name) ? `"${recipient.name}"` : recipient.name} <${recipient.address}>` : recipient.address;
 
 export const formatMailRecipients = (recipients: MailDraft["to"]): string[] => recipients.map(formatMailRecipient);
 
@@ -28,17 +29,63 @@ export const parseMailRecipients = (values: string[]): MailAddress[] => {
   return [...recipients.values()];
 };
 
-export const commitMailRecipient = (values: string[], raw: string, index: number | null = null): string[] | null => {
-  const recipient = parseMailRecipient(raw);
-  if (!recipient) return null;
-  const formatted = formatMailRecipient(recipient);
+/** True while a quote or an angle bracket in `value` is still open. */
+const opensGroup = (value: string): boolean => {
+  let quoted = false;
+  let angled = false;
+  for (const character of value) {
+    if (character === '"' && !angled) quoted = !quoted;
+    else if (character === "<" && !quoted) angled = true;
+    else if (character === ">" && !quoted) angled = false;
+  }
+  return quoted || angled;
+};
+
+/**
+ * Splits pasted or typed text at commas, semicolons, and line breaks. A comma inside a quoted name
+ * (`"Kolb, Bernd" <b@example.test>`) or inside angle brackets stays part of its address.
+ */
+export const splitMailRecipients = (raw: string): string[] => {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  let angled = false;
+  for (const character of raw) {
+    if (character === '"' && !angled) quoted = !quoted;
+    else if (character === "<" && !quoted) angled = true;
+    else if (character === ">" && !quoted) angled = false;
+    if (!quoted && !angled && (character === "," || character === ";" || character === "\n" || character === "\r")) {
+      if (current.trim()) parts.push(current.trim());
+      current = "";
+    } else current += character;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+};
+
+/**
+ * Adds every valid address in `raw`, or replaces the pill at `index` with the first one. Text that is not an
+ * address comes back as `rest`, so the field keeps it for correction instead of dropping it.
+ */
+export const commitMailRecipients = (values: string[], raw: string, index: number | null = null): { values: string[]; rest: string } => {
+  const parts = splitMailRecipients(raw);
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const part of parts) {
+    const recipient = parseMailRecipient(part);
+    if (recipient) valid.push(formatMailRecipient(recipient));
+    else invalid.push(part);
+  }
+  if (valid.length === 0) return { values, rest: invalid.join(", ") };
   const candidates =
-    index === null ? [...values, formatted] : values.map((value, candidateIndex) => (candidateIndex === index ? formatted : value));
-  return parseMailRecipients(candidates).map(formatMailRecipient);
+    index === null ? [...values, ...valid] : values.flatMap((value, candidateIndex) => (candidateIndex === index ? valid : [value]));
+  return { values: parseMailRecipients(candidates).map(formatMailRecipient), rest: invalid.join(", ") };
 };
 
 export const shouldCommitMailRecipient = (value: string, key: string): boolean => {
   if (!value.trim()) return false;
-  if (key === "Enter" || key === ",") return true;
+  if (key === "Enter") return true;
+  // Inside a quoted name ("Kolb, Bernd") or an address in brackets, a separator is text.
+  if (key === "," || key === ";") return !opensGroup(value);
   return key === " " && parseMailRecipient(value) !== null;
 };

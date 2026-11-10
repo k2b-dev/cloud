@@ -5,16 +5,37 @@ import { mailRecipientSuggestionsSchema } from "../../contracts";
 import { suggestContacts } from "./contact-capabilities";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
-import { commitMailRecipient, parseMailRecipient, shouldCommitMailRecipient } from "./mail-recipient";
+import {
+  commitMailRecipients,
+  formatMailRecipient,
+  parseMailRecipient,
+  shouldCommitMailRecipient,
+  splitMailRecipients,
+} from "./mail-recipient";
 
 type RecipientSuggestion = { label: string; address: string; context: string | null; source: "contacts" | "mailbox" };
+
+/** What the composer may ask a recipient field right before it sends. */
+export type MailRecipientField = {
+  /**
+   * Takes every complete address still typed in the field. Returns `false` when text remains that is not an address:
+   * the field then keeps it, marks it, and takes the focus, so nothing typed goes missing from the message.
+   */
+  commitPending: () => boolean;
+  /** Whether the field holds typed text that is not a recipient yet. */
+  pending: () => boolean;
+};
 
 export default function MailRecipientInput(props: {
   value: () => string[];
   onChange: (value: string[]) => void;
   placeholder: string;
   disabled?: boolean;
+  /** Blocks typing for a moment, such as while the message is sending, and keeps the focus where it is. */
+  readOnly?: boolean;
   mailboxId?: string;
+  /** Hands the composer this field's last check before sending; the returned function ends the registration. */
+  register?: (field: MailRecipientField) => () => void;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -43,7 +64,8 @@ export default function MailRecipientInput(props: {
   let input: HTMLInputElement | undefined;
   let pillButtons: HTMLButtonElement[] = [];
 
-  const add = (raw: string) => {
+  /** Adds every address in `raw`; text that is no address stays in the field, marked. True when nothing stays. */
+  const add = (raw: string): boolean => {
     // Resolve the pill by address immediately: a remote edit can change array positions before effects run.
     const index =
       editingAddress === null ? null : props.value().findIndex((value) => parseMailRecipient(value)?.address === editingAddress);
@@ -52,23 +74,49 @@ export default function MailRecipientInput(props: {
       setEditingIndex(null);
       setValidationError(t().recipientRemovedRemotely);
       focusInput();
-      return;
+      return false;
     }
-    const next = commitMailRecipient(props.value(), raw, index);
-    if (!next) {
-      setValidationError(t().enterValidEmail);
-      return;
+    const committed = commitMailRecipients(props.value(), raw, index);
+    if (committed.values !== props.value()) {
+      editingAddress = null;
+      setEditingIndex(null);
+      props.onChange(committed.values);
+      setSuggestions([]);
     }
-    editingAddress = null;
-    setEditingIndex(null);
-    props.onChange(next);
-    setQuery("");
-    setSuggestions([]);
-    setValidationError(null);
+    setQuery(committed.rest);
+    setValidationError(committed.rest ? t().enterValidEmail : null);
+    return !committed.rest;
   };
 
+  /** A pasted list becomes one pill per address; a single pasted address stays ordinary typing. */
+  const paste = (event: ClipboardEvent) => {
+    const text = event.clipboardData?.getData("text") ?? "";
+    if (props.readOnly || splitMailRecipients(text).length < 2) return;
+    event.preventDefault();
+    // The list takes the place of a selection, as ordinary pasting would; text around it stays.
+    const value = input?.value ?? query();
+    const start = input?.selectionStart ?? value.length;
+    const end = input?.selectionEnd ?? value.length;
+    add(`${value.slice(0, start)}\n${text}\n${value.slice(end)}`);
+    focusInput();
+  };
+
+  onCleanup(
+    props.register?.({
+      commitPending: () => {
+        const pending = query().trim();
+        if (!pending || add(pending)) return true;
+        setValidationError(t().recipientNotSent({ text: query() }));
+        focusInput(true);
+        return false;
+      },
+      pending: () => Boolean(query().trim()),
+    }) ?? (() => undefined),
+  );
+
+  // Formatting quotes a name with a comma ("Kolb, Bernd"), so the list splitter keeps it whole.
   const pick = (suggestion: RecipientSuggestion) =>
-    add(suggestion.label === suggestion.address ? suggestion.address : `${suggestion.label} <${suggestion.address}>`);
+    add(formatMailRecipient({ name: suggestion.label === suggestion.address ? null : suggestion.label, address: suggestion.address }));
 
   /** Closes the list and ends a pending lookup, so its answer cannot reopen the list without new input. */
   const dismissSuggestions = () => {
@@ -111,12 +159,15 @@ export default function MailRecipientInput(props: {
     return false;
   };
 
-  const focusInput = () =>
-    queueMicrotask(() => {
+  const focusInput = (now = false) => {
+    const focus = () => {
       input?.focus();
       const caret = input?.value.length ?? 0;
       input?.setSelectionRange(caret, caret);
-    });
+    };
+    if (now) focus();
+    else queueMicrotask(focus);
+  };
 
   const edit = (index: number) => {
     const recipient = props.value()[index];
@@ -294,7 +345,7 @@ export default function MailRecipientInput(props: {
                     class="mail-recipient-pill min-w-0 flex-1 truncate rounded text-left"
                     aria-label={t().editRecipient({ recipient })}
                     title={t().editRecipientHint({ recipient })}
-                    disabled={props.disabled}
+                    disabled={props.disabled || props.readOnly}
                     onClick={() => edit(index())}
                     onKeyDown={(event) => handlePillKeyDown(event, index())}
                   >
@@ -304,7 +355,7 @@ export default function MailRecipientInput(props: {
                     type="button"
                     class="!h-5 !w-5 !p-0"
                     label={t().removeRecipient({ recipient })}
-                    disabled={props.disabled}
+                    disabled={props.disabled || props.readOnly}
                     onClick={() => remove(index())}
                   >
                     <i class="ti ti-x" aria-hidden="true" />
@@ -317,6 +368,7 @@ export default function MailRecipientInput(props: {
                 class="mail-recipient-edit h-7 min-w-40 max-w-72 rounded-[var(--ui-radius-control)] px-2 text-xs outline-none"
                 value={query()}
                 disabled={props.disabled}
+                readOnly={props.readOnly}
                 aria-label={t().editRecipient({ recipient })}
                 aria-invalid={Boolean(validationError())}
                 aria-describedby={validationError() ? errorId : undefined}
@@ -330,13 +382,14 @@ export default function MailRecipientInput(props: {
                   setQuery(event.currentTarget.value);
                   setValidationError(null);
                 }}
+                onPaste={paste}
                 onKeyDown={(event) => {
                   // An IME composition owns its keys until it ends.
-                  if (event.isComposing) return;
+                  if (event.isComposing || props.readOnly) return;
                   if (handleSuggestionKey(event)) return;
                   if (shouldCommitMailRecipient(query(), event.key)) {
                     event.preventDefault();
-                    add(query().replace(/,$/, ""));
+                    add(query().replace(/[,;]$/, ""));
                   } else if (event.key === "Escape") {
                     event.preventDefault();
                     cancelEdit();
@@ -358,6 +411,7 @@ export default function MailRecipientInput(props: {
             value={query()}
             placeholder={props.value().length === 0 ? props.placeholder : t().addAnotherRecipient}
             disabled={props.disabled}
+            readOnly={props.readOnly}
             aria-label={props.placeholder}
             aria-invalid={Boolean(validationError())}
             aria-describedby={validationError() ? errorId : undefined}
@@ -371,19 +425,21 @@ export default function MailRecipientInput(props: {
               setQuery(event.currentTarget.value);
               setValidationError(null);
             }}
+            onPaste={paste}
             onKeyDown={(event) => {
               // An IME composition owns its keys until it ends.
-              if (event.isComposing) return;
+              if (event.isComposing || props.readOnly) return;
               if (handleSuggestionKey(event)) return;
               if (shouldCommitMailRecipient(query(), event.key)) {
                 event.preventDefault();
-                add(query().replace(/,$/, ""));
+                add(query().replace(/[,;]$/, ""));
               } else if ((event.key === "ArrowLeft" || event.key === "Backspace") && !query() && props.value().length > 0) {
                 event.preventDefault();
                 focusPill(props.value().length - 1);
               }
             }}
             onBlur={() => {
+              if (props.readOnly) return;
               if (query().includes("@")) add(query());
             }}
           />

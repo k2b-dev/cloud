@@ -228,7 +228,11 @@ transaction and reparse before another operation.
 ## Loading and access
 
 `loading` reserves the text area with a placeholder and blocks editing.
-`readOnly` blocks editing and hides the built-in toolbar. Neither replaces the application's server authorization.
+`readOnly` blocks editing and hides the built-in toolbar. Use it for text the person cannot edit.
+`locked` is a short pause, such as while the host saves or sends: input waits, while the caret, the focus, a phone
+keyboard, and the toolbar stay in place with its controls disabled. A pause never uses `readOnly`, because hiding the
+toolbar moves the text and dropping the focus closes a phone keyboard. None of these replaces the application's server
+authorization.
 
 The length limit refuses only edits that make an over-limit text longer, so a
 text above the limit can still be shortened.

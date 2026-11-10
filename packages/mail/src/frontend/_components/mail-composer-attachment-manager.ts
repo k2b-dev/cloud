@@ -1,6 +1,6 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, toast } from "@k2b/ui";
-import type { Accessor, Setter } from "solid-js";
+import type { Accessor } from "solid-js";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CreateAttachmentLinkInput, CreatedAttachmentLink, DraftAttachment, DraftAttachmentUpload, MailDraft } from "../../contracts";
@@ -27,7 +27,8 @@ export const createMailComposerAttachmentManager = (options: {
   serializeDraftMutation: <T>(operation: () => Promise<T>) => Promise<T>;
   transition: ReturnType<typeof createMailComposerTransition>;
   format: Accessor<"plain" | "markdown">;
-  setBody: Setter<string>;
+  /** Adds text at the end of the message as one step of the person's own undo history. */
+  insertText: (text: string) => void;
   isDisposed: () => boolean;
   locale: Accessor<string>;
 }) => {
@@ -45,6 +46,23 @@ export const createMailComposerAttachmentManager = (options: {
   const isEntry = (upload: MailComposerUpload) => (entry: MailComposerUpload) =>
     upload.file ? entry.file === upload.file : entry.uploadId === upload.uploadId;
   const uploadControllers = new Map<File, AbortController>();
+  /**
+   * Uploads whose bytes all reached the server but whose attaching did not answer. The server may have attached
+   * them already; finalize is idempotent, so asking again reconciles instead of uploading a second copy.
+   */
+  const finalizeUncertain = new Set<string>();
+  const finalize = (draftId: string, uploadId: string, filename: string, signal?: AbortSignal) =>
+    options.serializeDraftMutation(async () => {
+      const latest = options.draft();
+      if (!latest) throw new Error(t().finalizeFileFailed({ filename }));
+      const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["attachment-uploads"][":uploadId"].finalize.$post(
+        { param: { mailboxId: options.mailboxId, draftId, uploadId }, json: { expectedRevision: latest.revision } },
+        signal ? { init: { signal } } : undefined,
+      );
+      if (!response.ok) throw new Error(await readApiError(response, t().finalizeFileFailed({ filename })));
+      options.setDraft(await response.json());
+      finalizeUncertain.delete(uploadId);
+    });
   const materializedAttachmentId = (requestedId: string, currentDraft: MailDraft): string => {
     const initial = options.initialAttachments().find((attachment) => attachment.id === requestedId);
     if (!initial) return requestedId;
@@ -94,20 +112,8 @@ export const createMailComposerAttachmentManager = (options: {
         const progress = file.size === 0 ? 100 : Math.round((Math.min(file.size, offset + chunk.size) / file.size) * 100);
         setUploads((current) => current.map((entry) => (entry.file === file ? { ...entry, progress } : entry)));
       }
-      await options.serializeDraftMutation(async () => {
-        const latest = options.draft() ?? saved;
-        const finalizeResponse = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["attachment-uploads"][
-          ":uploadId"
-        ].finalize.$post(
-          {
-            param: { mailboxId: options.mailboxId, draftId: saved.id, uploadId: upload.id },
-            json: { expectedRevision: latest.revision },
-          },
-          { init: { signal: controller.signal } },
-        );
-        if (!finalizeResponse.ok) throw new Error(await readApiError(finalizeResponse, t().finalizeFileFailed({ filename: file.name })));
-        options.setDraft(await finalizeResponse.json());
-      });
+      finalizeUncertain.add(upload.id);
+      await finalize(saved.id, upload.id, file.name, controller.signal);
       setUploads((current) => current.filter((entry) => entry.file !== file));
     } finally {
       if (uploadControllers.get(file) === controller) uploadControllers.delete(file);
@@ -126,7 +132,10 @@ export const createMailComposerAttachmentManager = (options: {
       // An upload this page found unfinished may have been completed or cancelled by the session that streamed
       // it since the page loaded; then it no longer blocks sending and the entry only needs to go.
       const endedElsewhere = upload.file === null && (response.status === 404 || response.status === 409);
-      if (!response.ok && !endedElsewhere) {
+      // The server attached it although its answer got lost: show the attachment, which the person can remove.
+      const attachedUnanswered = response.status === 409 && finalizeUncertain.has(upload.uploadId);
+      if (attachedUnanswered) await finalize(upload.draftId, upload.uploadId, upload.filename);
+      else if (!response.ok && !endedElsewhere) {
         throw new Error(await readApiError(response, t().cancelUploadFailed({ filename: upload.filename })));
       }
     }
@@ -137,6 +146,12 @@ export const createMailComposerAttachmentManager = (options: {
     const file = upload.file;
     if (!file) return;
     try {
+      if (upload.uploadId && upload.draftId && finalizeUncertain.has(upload.uploadId)) {
+        // Every byte is on the server: attach it (again). Attaching twice returns the same draft.
+        await finalize(upload.draftId, upload.uploadId, upload.filename);
+        setUploads((current) => current.filter((entry) => !isEntry(upload)(entry)));
+        return;
+      }
       await cancelUpload(upload);
       await uploadFile(file);
     } catch (error) {
@@ -198,8 +213,7 @@ export const createMailComposerAttachmentManager = (options: {
     },
     onSuccess: ({ link, url }) => {
       const label = link.filename ?? t().downloadAttachment;
-      const insertion = options.format() === "markdown" ? `[${label.replaceAll("]", "\\]")}](${url})` : url;
-      options.setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${insertion}`);
+      options.insertText(options.format() === "markdown" ? `[${label.replaceAll("]", "\\]")}](${url})` : url);
       toast.success(t().publicLinkInserted);
     },
     onError: (error) => prompts.error(error.message),

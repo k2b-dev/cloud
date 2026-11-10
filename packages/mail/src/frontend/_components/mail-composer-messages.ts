@@ -281,6 +281,13 @@ export const mailComposerMessages = i18n.define({
       downloadAttachment: "Download attachment",
       publicLinkInserted: "Public attachment link inserted",
       enterValidEmail: "Enter a valid email address.",
+      discardUnsavedDescription: "This message was not saved yet. What you wrote will be lost.",
+      popoutDiscarded: "Draft discarded",
+      popoutSaved: "Draft saved",
+      popoutCloseHint: "You can close this window.",
+      closeWindow: "Close window",
+      recipientNotSent: ({ text }: { text: string }) =>
+        `"${text}" is not sent yet: choose a suggestion, complete the address, or remove it.`,
       deviceSessionEnded: "This browser session ended. Copy your input before leaving and sign in again.",
       recipientRemovedRemotely: "This recipient was removed elsewhere. Your input is still here; check it before adding it again.",
       editRecipient: ({ recipient }: { recipient: string }) => `Edit ${recipient}`,
@@ -601,6 +608,13 @@ export const mailComposerMessages = i18n.define({
       downloadAttachment: "Anhang herunterladen",
       publicLinkInserted: "Öffentlichen Link zum Anhang eingefügt",
       enterValidEmail: "Gib eine gültige E-Mail-Adresse ein.",
+      discardUnsavedDescription: "Diese Nachricht ist noch nicht gespeichert. Was du geschrieben hast, geht verloren.",
+      popoutDiscarded: "Entwurf verworfen",
+      popoutSaved: "Entwurf gespeichert",
+      popoutCloseHint: "Du kannst dieses Fenster schließen.",
+      closeWindow: "Fenster schließen",
+      recipientNotSent: ({ text }) =>
+        `„${text}“ wird noch nicht mitgesendet: Wähle einen Vorschlag, vervollständige die Adresse oder entferne sie.`,
       deviceSessionEnded: "Diese Sitzung ist beendet. Kopiere deine Eingabe vor dem Verlassen und melde dich erneut an.",
       recipientRemovedRemotely:
         "Dieser Empfänger wurde woanders entfernt. Deine Eingabe bleibt erhalten; prüfe sie, bevor du sie erneut hinzufügst.",

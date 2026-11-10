@@ -871,3 +871,353 @@ describe("MailComposer signature choice", () => {
     expect(saves.at(-1)).toMatchObject({ signatureTemplateId: null, body: "Recovered\n\n\u2063Best regards\u2064" });
   });
 });
+
+describe("MailComposer robustness", () => {
+  if (isServer) {
+    test.skip("runs in the dedicated browser-conditions test process", () => {});
+    return;
+  }
+  const originalFetch = globalThis.fetch;
+  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const originalWebSocket = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
+  let dom: DomTestHarness;
+  let dispose = () => {};
+  let saves: DraftEditableContent[];
+  let requests: string[];
+  let lease: Promise<void>;
+  let leaves: string[];
+  let opened: string[];
+
+  beforeEach(() => {
+    dom = createDomTestHarness();
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+    Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: OfflineWebSocket });
+    installPopover();
+    delegateEvents(["click", "keydown", "input"]);
+    saves = [];
+    requests = [];
+    leaves = [];
+    opened = [];
+    lease = Promise.resolve();
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        requests.push(`${request.method} ${path}`);
+        if (path.endsWith("/lease")) {
+          await lease;
+          return Response.json({
+            token: crypto.randomUUID(),
+            holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
+            acquiredAt: now,
+            expiresAt: now,
+          });
+        }
+        if (path.endsWith("/compose-preview")) return Response.json({ html: "<p>Hello</p>", text: "Hello", formattingWarnings: [] });
+        if (path.endsWith("/draft-seeds/materialize")) {
+          const json = materializeDraftSeedInputSchema.parse(await request.json());
+          saves.push(json.draft);
+          return Response.json({ ...initialDraft, ...json.draft });
+        }
+        if (path.endsWith("/drafts/Draft1") && request.method === "GET") return Response.json(initialDraft);
+        if (path.endsWith("/drafts/Draft1") && request.method === "PUT") {
+          const json = z
+            .object({ expectedRevision: z.number().int().positive(), draft: draftEditableContentInputSchema })
+            .parse(await request.json());
+          saves.push(json.draft);
+          return Response.json({ ...initialDraft, ...json.draft, revision: json.expectedRevision + 1 });
+        }
+        if (path.endsWith("/safety-review"))
+          return Response.json({ revision: 2, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) });
+        if (path.endsWith("/commands")) return Response.json({ id: crypto.randomUUID(), result: {} });
+        if (path.endsWith("/discard")) return Response.json({ ...initialDraft, state: "discarded" });
+        throw new Error(`Unexpected request: ${request.method} ${path}`);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+  });
+  afterEach(async () => {
+    dispose();
+    await Bun.sleep(30);
+    globalThis.fetch = originalFetch;
+    for (const [key, descriptor] of [
+      ["localStorage", originalStorage],
+      ["WebSocket", originalWebSocket],
+    ] as const) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+    dom.cleanup();
+  });
+
+  const mount = async (
+    options: {
+      host?: boolean;
+      popout?: boolean;
+      draft?: MailDraft;
+      seed?: MailDraftSeed;
+      templates?: { id: string; name: string }[];
+      canShareAttachments?: boolean;
+      ready?: boolean;
+    } = {},
+  ) => {
+    const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
+    const draft = options.seed ? undefined : (options.draft ?? initialDraft);
+    dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <MailComposer
+            mailboxId="Box001"
+            currentActor={{ kind: "user", id: "Usr001" }}
+            identities={[identity("Send01", "Support", "Sign01")]}
+            signatures={{ templates: options.templates ?? [], personalDefaults: [] }}
+            initialDraft={draft}
+            initialSeed={options.seed}
+            initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }}
+            returnHref="/app/mail/Box001"
+            popout={options.popout}
+            canShareAttachments={options.canShareAttachments}
+            dateConfig={{ locale: "en", timeZone: "UTC" }}
+            host={
+              options.host
+                ? {
+                    fresh: false,
+                    fullscreen: () => false,
+                    toggleFullscreen: () => undefined,
+                    register: () => undefined,
+                    messageLabel: () => null,
+                    leave: (outcome) => leaves.push(outcome),
+                    openDraft: (draftId) => opened.push(draftId),
+                  }
+                : undefined
+            }
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    await waitFor(() => Boolean(dom.root.querySelector(".cm-content")));
+    if (options.ready !== false) await waitFor(() => Boolean(sendButton() && !sendButton().disabled));
+  };
+  const sendButton = () => dom.root.querySelector<HTMLButtonElement>("button.mail-compose-action")!;
+  const recipientInput = () => dom.root.querySelector<HTMLInputElement>(".mail-recipient-input input")!;
+  const view = () => EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
+  const type = (input: HTMLInputElement, value: string) => {
+    input.focus();
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const sendShortcut = (target: Element) =>
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+  const sent = () => requests.some((request) => request.endsWith("/commands"));
+
+  test.each(["bernd", "bernd@firma"])("unfinished recipient text %p blocks Send, stays, and takes the focus", async (typed) => {
+    await mount({ host: true });
+    type(recipientInput(), typed);
+    sendButton().click();
+    await Bun.sleep(80);
+    expect(requests.some((request) => request.endsWith("/safety-review"))).toBe(false);
+    expect(sent()).toBe(false);
+    expect(recipientInput().value).toBe(typed);
+    expect(recipientInput().getAttribute("aria-invalid")).toBe("true");
+    expect(dom.document.activeElement).toBe(recipientInput());
+    expect(dom.root.textContent).toContain("is not sent yet");
+  });
+
+  test("complete recipient text goes with the message although nobody pressed Enter", async () => {
+    await mount({ host: true });
+    type(recipientInput(), "Bernd <bernd@firma.de>");
+    sendButton().click();
+    await waitFor(sent);
+    expect(saves.at(-1)?.to).toEqual([
+      { name: null, address: "recipient@example.test" },
+      { name: "Bernd", address: "bernd@firma.de" },
+    ]);
+    await waitFor(() => leaves.includes("sent"));
+  });
+
+  test.each([false, true])("Ctrl+Enter sends with the button's checks (inline %p), and the button names it", async (host) => {
+    await mount({ host });
+    sendButton().dispatchEvent(new MouseEvent("pointerenter", { bubbles: true }));
+    sendButton().focus();
+    await waitFor(() => Boolean(dom.document.body.textContent?.includes("Send (Ctrl+↵)")));
+    type(recipientInput(), "bernd");
+    sendShortcut(view().contentDOM);
+    await Bun.sleep(80);
+    expect(sent()).toBe(false);
+    expect(dom.document.activeElement).toBe(recipientInput());
+    type(recipientInput(), "bernd@firma.de");
+    sendShortcut(recipientInput());
+    await waitFor(sent);
+    expect(saves.at(-1)?.to.map((recipient) => recipient.address)).toContain("bernd@firma.de");
+  });
+
+  test("a send keeps the text focused, its toolbar in place, and the text unchanged while it waits", async () => {
+    await mount();
+    const review = Promise.withResolvers<void>();
+    let reviewing = false;
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/safety-review")) {
+          reviewing = true;
+          await review.promise;
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    view().focus();
+    view().dispatch({ selection: { anchor: 3 } });
+    const toolbar = dom.root.querySelector(".k2b-ste-toolbar");
+    expect(toolbar).not.toBeNull();
+    sendButton().click();
+    await waitFor(() => reviewing);
+    expect(dom.root.querySelector(".k2b-ste-toolbar")).toBe(toolbar);
+    expect(view().contentDOM.getAttribute("contenteditable")).toBe("true");
+    expect(view().state.readOnly).toBe(true);
+    expect(dom.document.activeElement).toBe(view().contentDOM);
+    review.resolve();
+    await waitFor(sent);
+  });
+
+  test("an opening draft shows its toolbar at once, and the inline reply takes the caret once the lease arrives", async () => {
+    const granted = Promise.withResolvers<void>();
+    lease = granted.promise;
+    await mount({ host: true, ready: false, draft: { ...initialDraft, conversationId: "Conv01", intent: "reply" } });
+    await Bun.sleep(30);
+    expect(dom.document.activeElement).not.toBe(view().contentDOM);
+    expect(view().contentDOM.getAttribute("contenteditable")).toBe("true");
+    granted.resolve();
+    await waitFor(() => !sendButton().disabled);
+    await waitFor(() => dom.document.activeElement === view().contentDOM);
+  });
+
+  test("a focus chosen before the lease arrives stays where the person put it", async () => {
+    const granted = Promise.withResolvers<void>();
+    lease = granted.promise;
+    await mount({ host: true, ready: false, draft: { ...initialDraft, conversationId: "Conv01", intent: "reply" } });
+    const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
+    subject.focus();
+    granted.resolve();
+    await waitFor(() => !sendButton().disabled);
+    await Bun.sleep(30);
+    expect(dom.document.activeElement).toBe(subject);
+  });
+
+  test("Esc that ends a Safari IME composition keeps the draft open", async () => {
+    await mount({ host: true });
+    let collapsed = false;
+    const section = dom.root.querySelector<HTMLElement>("[data-mail-inline-draft]")!;
+    section.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented) collapsed = true;
+    });
+    view().contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 229, bubbles: true, cancelable: true }));
+    await Bun.sleep(30);
+    expect(collapsed).toBe(false);
+    expect(leaves).toEqual([]);
+  });
+
+  test("discarding a new message that was never saved asks first when it holds input", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
+    try {
+      await mount({ seed: { ...initialSeed, content: { ...initialSeed.content, body: "" } }, ready: false });
+      view().dispatch({ changes: { from: 0, insert: "Important words" }, userEvent: "input.type" });
+      dom.root.querySelector<HTMLButtonElement>('footer button[aria-label="Discard draft"]')!.click();
+      await waitFor(() => Boolean(dom.document.body.textContent?.includes("Discard draft?")));
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      navigate.mockRestore();
+    }
+  });
+
+  test("discarding a new message asks first when only a recipient field holds typed text", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
+    try {
+      await mount({ seed: initialSeed, ready: false });
+      type(recipientInput(), "Bernd");
+      dom.root.querySelector<HTMLButtonElement>('footer button[aria-label="Discard draft"]')!.click();
+      await waitFor(() => Boolean(dom.document.body.textContent?.includes("Discard draft?")));
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      navigate.mockRestore();
+    }
+  });
+
+  test("a popout closes its window after Send instead of loading the mailbox into it", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const navigate = spyOn(nav, "navigateTo").mockImplementation(() => undefined as never);
+    const close = spyOn(dom.window, "close").mockImplementation(() => undefined);
+    try {
+      await mount({ popout: true });
+      sendButton().click();
+      await waitFor(sent);
+      await waitFor(() => close.mock.calls.length > 0);
+      expect(navigate).not.toHaveBeenCalled();
+      // A browser that keeps the window open shows a short confirmation in place.
+      await waitFor(() => Boolean(dom.root.textContent?.includes("You can close this window")));
+      // The covered composer leaves the keyboard and screen readers; the confirmation takes the focus.
+      expect(dom.root.querySelector<HTMLElement>("footer")!.closest("[inert]")).not.toBeNull();
+      expect(dom.document.activeElement?.textContent).toContain("Close window");
+    } finally {
+      navigate.mockRestore();
+      close.mockRestore();
+    }
+  });
+
+  test("a signature that arrives after opening can be removed again", async () => {
+    localStorage.setItem(
+      "cloud:user:Usr001:mail:cloud:mail:draft:Box001:Draft1",
+      JSON.stringify({
+        revision: 1,
+        content: { ...draftEditableContentInputSchema.strip().parse(initialDraft), signatureTemplateId: "Other1" },
+      }),
+    );
+    await mount({ draft: { ...initialDraft, signatureTemplateId: null } });
+    await waitFor(() => Boolean(dom.root.querySelector("footer button.mail-composer-signature")));
+  });
+
+  test("Undo takes back an inserted attachment link and nothing typed before it", async () => {
+    const linkUi = await import("./attachment-link-ui");
+    const prompt = spyOn(linkUi, "promptAttachmentLinkOptions").mockResolvedValue({ expiresAt: null, password: null });
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/links")) return Response.json({ link: { filename: "report.pdf" }, url: "https://cloud.example.test/l/abc" });
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount({
+        canShareAttachments: true,
+        draft: {
+          ...initialDraft,
+          attachments: [
+            {
+              id: "Att001",
+              filename: "report.pdf",
+              contentType: "application/pdf",
+              byteLength: 10,
+              contentHash: "b".repeat(64),
+              position: 0,
+              createdAt: now,
+            },
+          ],
+        },
+      });
+      const { undo } = await import("@codemirror/commands");
+      view().dispatch({ changes: { from: view().state.doc.length, insert: " world" }, userEvent: "input.type" });
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Insert public link for report.pdf"]')!.click();
+      await waitFor(() => view().state.doc.toString().includes("https://cloud.example.test/l/abc"));
+      undo(view());
+      expect(view().state.doc.toString()).toBe("Hello world");
+    } finally {
+      prompt.mockRestore();
+    }
+  });
+});
