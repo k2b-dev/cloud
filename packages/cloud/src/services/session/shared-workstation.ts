@@ -57,9 +57,9 @@ export const sharedWorkstationIdleSeconds = async (): Promise<number> => {
 /**
  * SQL condition: a family's idle limit has not passed. Request authentication ends such a family when it sees it;
  * every check that reads `auth.session_families` directly adds this, so a family nobody used since is not valid
- * either. `lastInputAt` is the column, such as sql`f.last_input_at`.
+ * either. `lastInputAt` is the column, such as sql`f.last_input_at`; read `timeoutSeconds` with
+ * `sharedWorkstationIdleSeconds()`. Synchronous on purpose: a query fragment is thenable, so awaiting or returning it
+ * from an async function would run it on its own.
  */
-export const withinIdleLimit = async (lastInputAt: SQLQuery): Promise<SQLQuery> => {
-  const timeoutSeconds = await sharedWorkstationIdleSeconds();
-  return sql`(${lastInputAt} IS NULL OR ${lastInputAt} > now() - ${timeoutSeconds} * interval '1 second')`;
-};
+export const withinIdleLimit = (lastInputAt: SQLQuery, timeoutSeconds: number): SQLQuery =>
+  sql`(${lastInputAt} IS NULL OR ${lastInputAt} > now() - ${timeoutSeconds} * interval '1 second')`;

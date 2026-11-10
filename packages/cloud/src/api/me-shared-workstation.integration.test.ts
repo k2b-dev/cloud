@@ -233,7 +233,8 @@ suite("shared workstation", () => {
     const response = await request("GET", "/api/me", `${MARK}=1; session_token=${token}`, undefined, undefined);
     expect(response.status).toBe(200);
     expect((await family(token)).last_input_at).not.toBeNull();
-    expect(cookieNamed(response.headers.getSetCookie(), "session_token")).not.toMatch(/Max-Age|Expires/);
+    // The request does not rewrite the cookie: a late response must not replace a newer sign-in's cookie.
+    expect(cookieNamed(response.headers.getSetCookie(), "session_token")).toBeUndefined();
   });
 
   test("an idle sign-out ends only the session its tab left, never a newer sign-in", async () => {

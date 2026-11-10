@@ -179,11 +179,9 @@ const loadAuthenticatedActorUncached = async (
       session.isSharedWorkstation(c) &&
       session.usesBrowserCookie(c, token)
     ) {
+      // The cookie stays as it is: a late response must not overwrite a newer sign-in's cookie. The server holds the limit.
       const started = await session.startIdleLimit({ userId: user.id, sid: authenticatedSession.data.sid });
-      if (started) {
-        authenticatedSession.data.idle = started;
-        session.setWebCookie(c, token, new Date(authenticatedSession.data.expiresAt));
-      }
+      if (started) authenticatedSession.data.idle = started;
     }
     const actor: UserRequestActor = { kind: "user", user, ...(authenticatedSession.data.kind === "app" ? { sessionKind: "app" } : {}) };
     c.set("actor", actor);

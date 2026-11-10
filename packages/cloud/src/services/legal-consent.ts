@@ -7,7 +7,7 @@ import { isAccountExpired } from "./account-model";
 import { verifySessionToken } from "./identity";
 import { getIdentityRuntimeConfig } from "./identity/runtime-config";
 import { session } from "./session";
-import { withinIdleLimit } from "./session/shared-workstation";
+import { sharedWorkstationIdleSeconds, withinIdleLimit } from "./session/shared-workstation";
 import { loadJwtSessionUser } from "./session/user";
 import * as settings from "./settings";
 
@@ -56,7 +56,7 @@ export const legalConsent = {
     if (!pending) throw new HTTPException(401, { message: "Sign in again to continue." });
     const current = await legalConsent.documents();
     if (current.version !== version) throw new HTTPException(409, { message: "The documents changed. Reload and review them again." });
-    const familyIdle = await withinIdleLimit(sql`sf.last_input_at`);
+    const familyIdle = withinIdleLimit(sql`sf.last_input_at`, await sharedWorkstationIdleSeconds());
     await sql.begin(async (tx) => {
       const [user] = await tx<{ provider: "local" | "ipa"; profile: "guest" | "user" }[]>`
         SELECT u.provider, u.profile FROM auth.users u JOIN auth.session_families sf ON sf.user_id = u.id

@@ -39,7 +39,7 @@ import { type AppLoginRequestContext, buildLoginContext, trimAppLoginResponse } 
 import { pairingSecret } from "./pairing-secret";
 import { toPgTextArray } from "./postgres";
 import { requireEligibleAccount, requireRecentWebSession } from "./session/recent";
-import { withinIdleLimit } from "./session/shared-workstation";
+import { sharedWorkstationIdleSeconds, withinIdleLimit } from "./session/shared-workstation";
 import { CORE_SETTINGS } from "./settings/core-settings";
 import { decryptValue } from "./settings/crypto";
 
@@ -901,14 +901,14 @@ export const createAppApprovalService = (
               return reject("CONFLICT", 409);
             const [initiator] = await tx`SELECT sid FROM auth.session_families WHERE sid=${pairing.initiator_sid}::uuid
               AND user_id=${pairing.initiated_by}::uuid AND auth_epoch=${user.auth_epoch} AND revoked_at IS NULL AND expires_at>now()
-              AND ${await withinIdleLimit(sql`last_input_at`)} FOR UPDATE`;
+              AND ${withinIdleLimit(sql`last_input_at`, await sharedWorkstationIdleSeconds())} FOR UPDATE`;
             if (!initiator) return reject("CONFLICT", 409);
           } else {
             if (!target || change.device_id !== command.targetId) return reject("CONFLICT", 409);
             if (command.decision === "deny" && device.id === change.device_id) return reject("CONFLICT", 409);
             const [requester] = await tx`SELECT sid FROM auth.session_families WHERE sid=${change.requested_by_sid}::uuid
               AND user_id=${change.user_id}::uuid AND auth_epoch=${user.auth_epoch} AND revoked_at IS NULL AND expires_at>now()
-              AND ${await withinIdleLimit(sql`last_input_at`)} FOR UPDATE`;
+              AND ${withinIdleLimit(sql`last_input_at`, await sharedWorkstationIdleSeconds())} FOR UPDATE`;
             if (!requester) return reject("CONFLICT", 409);
           }
           const state = command.decision === "approve" ? ("approved" as const) : ("denied" as const);
@@ -1007,7 +1007,7 @@ export const createAppApprovalService = (
             await tx`UPDATE auth.app_devices SET actions_at=now(), accepts=${toPgTextArray(command.accept ?? [])}::text[] WHERE id=${device.id}::uuid`;
             let changes: AppDeviceChange[] | undefined;
             if (command.accept?.includes("device-changes")) {
-              const familyIdle = await withinIdleLimit(sql`f.last_input_at`);
+              const familyIdle = withinIdleLimit(sql`f.last_input_at`, await sharedWorkstationIdleSeconds());
               const rows = await tx<
                 (ChangeRow & { target_id: string; name: string })[]
               >`SELECT c.*, COALESCE(p.device_id,d.id) AS target_id, COALESCE(p.name,d.name) AS name

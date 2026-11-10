@@ -54,26 +54,27 @@ const readIdleSignOut = (): IdleSignOutRecord | null => {
 /**
  * On the sign-in page after a shared workstation signed out for lack of input: revokes exactly the session the tab
  * left, once the apps saved their work on `pagehide`, and clears that account's data in this browser. A newer sign-in
- * of the same account keeps its session and data. The record stays until every step succeeded, so `"failed"` can be
- * retried; `"none"` means there was nothing to finish.
+ * keeps its session. The record stays until every step succeeded, so `"failed"` can be retried; `"none"` means there
+ * was nothing to finish.
  */
 export const finishIdleSignOut = async (): Promise<"done" | "failed" | "none"> => {
   const record = readIdleSignOut();
   if (!record) return "none";
+  let failed = false;
+  // Push first, while the session still authenticates removing its endpoint. Each step runs on its own: a failed
+  // unsubscribe must not keep local drafts.
+  await import("./notifications").then(({ browserNotificationClient }) => browserNotificationClient.disable()).catch(() => (failed = true));
   const response = await apiClient.auth.logout
     .$post({}, { headers: { "x-cloud-logout-user": record.userId, "x-cloud-logout-session": record.sid } })
     .catch(() => null);
-  if (!response) return "failed";
-  let failed = !response.ok && response.status !== 409;
-  if (response.ok) {
-    // Each step runs on its own: a failed push unsubscribe must not keep local drafts.
-    const steps = [
-      () => import("./notifications").then(({ browserNotificationClient }) => browserNotificationClient.disable()),
-      async () => clearUserStorage(record.userId),
-      () => import("./shared-text-offline").then(({ logoutSharedTextOffline }) => logoutSharedTextOffline(record.userId)),
-    ];
-    for (const step of steps) await step().catch(() => (failed = true));
-  }
+  // 409: a newer sign-in took over this browser and keeps its session. The account the tab left keeps no data here
+  // either way, since the newer sign-in may be another person's.
+  if (!response || (!response.ok && response.status !== 409)) return "failed";
+  const steps = [
+    async () => clearUserStorage(record.userId),
+    () => import("./shared-text-offline").then(({ logoutSharedTextOffline }) => logoutSharedTextOffline(record.userId)),
+  ];
+  for (const step of steps) await step().catch(() => (failed = true));
   if (!failed) {
     try {
       window.sessionStorage.removeItem(IDLE_SIGN_OUT_STORAGE_KEY);
