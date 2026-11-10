@@ -27,7 +27,8 @@ export async function startConversationPanelFixture() {
       import("@k2b/cloud/ssr/help"),
       import("@k2b/cloud/services/panel-context-consent"),
     ]);
-  const backend = await startChatHarness();
+  // This fixture builds the embedding client below; the backend only serves data, CSS and fonts.
+  const backend = await startChatHarness({ client: false });
   const assistant = assistantPanelFixture();
   let contextAllowed = false;
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;

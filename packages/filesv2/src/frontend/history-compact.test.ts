@@ -1,7 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { entry, env, gone, hidden, live, snapshot } from "../../test/history-fixtures";
 import type { ActivityEntry } from "../activity-contracts";
-import { historyRows, historyRuns, type Part, plain, RUN_MIN, rowAction, runSentence, sentence } from "./history-actions";
+import {
+  historyRows,
+  historyRuns,
+  noteSentence,
+  type Part,
+  plain,
+  RUN_MIN,
+  rowAction,
+  runDestination,
+  runSentence,
+  sentence,
+} from "./history-actions";
 import { historyMessages } from "./history-messages";
 
 const de = historyMessages("de");
@@ -118,8 +129,10 @@ describe("a run of changes by one person at one time collapses", () => {
     const run = runs[0]!;
     if (run.kind !== "run") throw new Error("expected a run");
     expect(run.rows.map((row) => row.kind)).toEqual(Array(12).fill("renameMove"));
-    expect(plain(runSentence(run.rows, de, env, "de"))).toBe("Valentin Kolb hat 12 Dateien umbenannt und verschoben");
-    expect(plain(runSentence(run.rows, en, env, "en"))).toBe("Valentin Kolb renamed and moved 12 files");
+    // Note style beside the actor's column; all twelve went to one folder, so the line names it.
+    expect(plain(runSentence(run.rows, de, env, "de"))).toBe("12 Dateien umbenannt und verschoben nach Team Vertrieb › Buchhaltung › ebay");
+    expect(plain(runSentence(run.rows, en, env, "en"))).toBe("12 files renamed and moved to Team Vertrieb › Buchhaltung › ebay");
+    expect(runDestination(run.rows, env)).not.toBeNull();
   });
 
   test("another actor, a gap over a minute or an unfinished change ends the run", () => {
@@ -135,18 +148,31 @@ describe("a run of changes by one person at one time collapses", () => {
     expect(historyRuns([...rows.slice(0, 2), failed, ...rows.slice(3)]).map((item) => item.kind)).toEqual(Array(6).fill("row"));
   });
 
-  test("lines inside a run name only the change; other changes keep the full sentence", () => {
+  test("compact lines read in note style with the item first; rare changes keep the full sentence", () => {
     const [pair] = historyRows(renameThenMove("A", 10), { batches: true, merge: true });
-    expect(plain(sentence(pair!, de, env, { context: "activity", member: true }))).toBe(
-      "A.pdf → A-Rechnung.pdf, nach Team Vertrieb › Buchhaltung › ebay verschoben",
+    expect(plain(noteSentence(pair!, de, env)!)).toBe(
+      "A-Rechnung.pdf umbenannt und verschoben nach Team Vertrieb › Buchhaltung › ebay, vorher A.pdf",
     );
-    expect(plain(sentence(pair!, en, env, { context: "activity", member: true }))).toBe(
-      "A.pdf → A-Rechnung.pdf, moved to Team Vertrieb › Buchhaltung › ebay",
+    expect(plain(noteSentence(pair!, en, env)!)).toBe(
+      "A-Rechnung.pdf renamed and moved to Team Vertrieb › Buchhaltung › ebay, before A.pdf",
+    );
+    // Inside a run whose line names the destination, a line shows only the names.
+    expect(plain(noteSentence(pair!, de, env, { short: true })!)).toBe("A-Rechnung.pdf, vorher A.pdf");
+    const upload = entry({
+      action: "file.upload",
+      actor: valentin,
+      after: live("vertrieb/Kampagnen/Herbst/Angebot.pdf", { directory: false }),
+    });
+    expect(plain(noteSentence(historyRows([upload], { batches: true })[0]!, de, env)!)).toBe(
+      "Angebot.pdf hochgeladen in Team Vertrieb › Kampagnen › Herbst",
     );
     const share = entry({ action: "share.create", actor: valentin, after: live("vertrieb/A.pdf", { directory: false }) });
-    expect(plain(sentence(historyRows([share], { batches: true })[0]!, de, env, { context: "activity", member: true }))).toBe(
-      "Valentin Kolb hat einen öffentlichen Link für A.pdf erstellt",
-    );
+    expect(plain(noteSentence(historyRows([share], { batches: true })[0]!, de, env)!)).toBe("A.pdf öffentlicher Link erstellt");
+    const provision = entry({ action: "place.provision", actor: valentin, after: live("vertrieb/Neu") });
+    expect(noteSentence(historyRows([provision], { batches: true })[0]!, de, env)).toBeNull();
+    // A move to a place the reader cannot see keeps the sentence that says so.
+    const hiddenMove = entry({ action: "item.move", actor: valentin, before: gone("vertrieb/x.pdf"), after: hidden });
+    expect(noteSentence(historyRows([hiddenMove], { batches: true })[0]!, de, env)).toBeNull();
   });
 
   test("mixed changes read as changed items", () => {
@@ -161,7 +187,8 @@ describe("a run of changes by one person at one time collapses", () => {
     const trash = entry({ action: "item.trash", time: at(24), actor: valentin, before: snapshot("vertrieb/x.pdf", { directory: false }) });
     const run = historyRuns(historyRows([...uploads, trash], { batches: true, merge: true }))[0]!;
     if (run.kind !== "run") throw new Error("expected a run");
-    expect(plain(runSentence(run.rows, de, env, "de"))).toBe("Valentin Kolb hat 6 Elemente geändert");
+    expect(plain(runSentence(run.rows, de, env, "de"))).toBe("6 Elemente geändert");
+    expect(runDestination(run.rows, env)).toBeNull();
   });
 });
 

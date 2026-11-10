@@ -82,7 +82,7 @@ Dein Standardformat steht unter **… → Einstellungen → Schreiben → Format
 
 Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Eine Unterhaltung zeigt ihre Entwürfe: den offenen an der Stelle der Leiste, jeden weiteren als Zeile mit Autor, Änderungszeit und Vorschau. Wähle eine Zeile, um den Entwurf an Ort und Stelle zu öffnen. **Antworten**, **Allen** oder **Weiterleiten** öffnen einen vorhandenen Entwurf mit demselben Zweck, statt einen zweiten zu beginnen. In der Liste zeigt eine Unterhaltung mit Entwürfen **Entwurf** oder die Anzahl der Entwürfe mit den Personen, die daran schreiben.
 
-Ein Vorschlag von Gustav ist ein echter Entwurf, der schon offen in der Unterhaltung steht, in Pflaume, mit **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und Gustav ersetzt ihn nie.
+Ein Vorschlag von Gustav oder einem anderen automatischen Konto ist ein echter Entwurf, der schon offen in der Unterhaltung steht, in Pflaume, mit dem Namen des Kontos, zum Beispiel **Vorschlag von Gustav**, und **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und das Konto ersetzt ihn nie. Jedes Konto hat in einer Unterhaltung höchstens einen solchen Vorschlag.
 
 Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt Mail im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
 

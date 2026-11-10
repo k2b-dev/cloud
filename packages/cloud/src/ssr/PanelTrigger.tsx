@@ -1,8 +1,9 @@
-import { Tooltip, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { PanelRequest } from "../browser/panel";
 import { platformMessages } from "./platform-messages";
+import { RailItemHint } from "./RailItemHint";
 import { useShellData } from "./shell-data";
 
 /**
@@ -29,20 +30,23 @@ export default function PanelTrigger(props: { open?: boolean }) {
   const label = () => (open() ? t().closePanel : t().openPanel);
   const icon = () => (open() ? "ti ti-layout-sidebar-right-collapse" : "ti ti-layout-sidebar-right-expand");
   const toggle = () => window.dispatchEvent(new CustomEvent<PanelRequest>("cloud.panel.request", { detail: { action: "toggle" } }));
+  let target: HTMLButtonElement | undefined;
   return (
-    <Tooltip.Trigger
-      type="button"
-      class="rail-item rail-item-panel text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300"
-      aria-label={label()}
-      aria-controls="cloud-panel"
-      aria-expanded={open()}
-      data-cloud-panel-toggle=""
-      content={title()}
-      placement="right"
-      delay={0}
-      onClick={toggle}
-    >
-      <i class={`${icon()} text-xl`} aria-hidden="true" />
-    </Tooltip.Trigger>
+    <>
+      <button
+        ref={target}
+        type="button"
+        class="rail-item rail-item-panel text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300"
+        aria-label={label()}
+        aria-controls="cloud-panel"
+        aria-expanded={open()}
+        data-cloud-panel-toggle=""
+        onClick={toggle}
+      >
+        <i class={`${icon()} text-xl`} aria-hidden="true" />
+        <span class="rail-item-label">{t().railPanel}</span>
+      </button>
+      <RailItemHint target={() => target} content={title()} />
+    </>
   );
 }

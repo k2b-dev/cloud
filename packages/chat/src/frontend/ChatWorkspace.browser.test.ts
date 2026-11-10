@@ -903,7 +903,7 @@ describe("ChatWorkspace browser read state", () => {
           expect(await jump.isVisible()).toBe(true);
           expect(chatReads(chat).at(-1)!.seq).toBe(8);
           // On a phone the error toast overlays the header. Dismiss it before using the same recovery control.
-          await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+          await page.getByRole("button", { name: `Close: ${chatMessages.resolve(["en"]).t.openFailed}`, exact: true }).click();
           await page.getByText(chatMessages.resolve(["en"]).t.openFailed, { exact: true }).waitFor({ state: "detached" });
           const reloaded = page.waitForResponse((response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.ok());
           await jump.click();
@@ -1014,13 +1014,15 @@ describe("ChatWorkspace browser read state", () => {
           expect(await rows(second.page, name).locator("[data-unread]").count()).toBe(50);
           await readAllAction(second.page, name);
           // Clearing the 50 rendered rows does not finish the unloaded 51st chat's batch.
-          const completed = second.page.waitForResponse(async (response) => {
-            if (!response.url().endsWith("/api/chat/conversations/read-all") || !response.ok()) return false;
-            const result = ReadAllOutcomeSchema.parse(await response.json());
-            return result.outcome === "done" && !result.more;
-          });
-          await dialog.getByRole("button", { name: "Mark all read", exact: true }).click();
-          await completed;
+          // Observe both waits immediately: a response timeout must not escape while click awaits navigation.
+          await Promise.all([
+            second.page.waitForResponse(async (response) => {
+              if (!response.url().endsWith("/api/chat/conversations/read-all") || !response.ok()) return false;
+              const result = ReadAllOutcomeSchema.parse(await response.json());
+              return result.outcome === "done" && !result.more;
+            }),
+            dialog.getByRole("button", { name: "Mark all read", exact: true }).click(),
+          ]);
           await second.page.waitForFunction(() => document.querySelectorAll("[data-unread]").length === 0);
           expect(many.every((chat) => harness.props({ chat }).open!.conversation.unread === 0)).toBe(true);
           expect(second.errors).toEqual([]);

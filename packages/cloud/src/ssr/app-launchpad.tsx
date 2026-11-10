@@ -1,9 +1,10 @@
-import { IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { IconButton, useLocale } from "@k2b/ui";
 import { createEffect } from "solid-js";
 import { importOnDemand } from "../browser/reload";
 import type { AppLaunchpadApp, AppLaunchpadContext, AppLaunchpadLegalLink } from "./AppLaunchpadPanel";
 import { createBusyAction } from "./busy-action";
 import { platformMessages } from "./platform-messages";
+import { RailItemHint } from "./RailItemHint";
 import { readShellData } from "./shell-data";
 
 export type { AppLaunchpadApp, AppLaunchpadLegalLink } from "./AppLaunchpadPanel";
@@ -86,20 +87,23 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
     );
 
   if (props.variant === "rail") {
+    let target: HTMLButtonElement | undefined;
     return (
-      <Tooltip.Trigger
-        type="button"
-        class="rail-item shrink-0"
-        data-cloud-launchpad
-        content={props.label ?? t().apps}
-        placement="right"
-        delay={0}
-        aria-label={props.label ?? t().openApps}
-        onClick={open}
-        aria-busy={action.busy() ? "true" : undefined}
-      >
-        <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-grid-dots"} text-xl`} aria-hidden="true" />
-      </Tooltip.Trigger>
+      <>
+        <button
+          ref={target}
+          type="button"
+          class="rail-item shrink-0"
+          data-cloud-launchpad
+          aria-label={props.label ?? t().openApps}
+          onClick={open}
+          aria-busy={action.busy() ? "true" : undefined}
+        >
+          <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-grid-dots"} text-xl`} aria-hidden="true" />
+          <span class="rail-item-label">{t().apps}</span>
+        </button>
+        <RailItemHint target={() => target} content={props.label ?? t().apps} />
+      </>
     );
   }
 
