@@ -1,0 +1,270 @@
+import { expect, test } from "bun:test";
+import { defaultRailPreferences, type RailPreferences } from "../contracts/rail-preferences";
+import { applyRailEdit, createRailSaver, type RailEdit, type RailSaveResult } from "./rail-editor-model";
+import type { RailApp } from "./rail-navigation";
+
+const app = (id: string, defaultVisible = true): RailApp => ({
+  id,
+  label: id,
+  href: `/app/${id}`,
+  match: `/app/${id}`,
+  iconClass: "ti ti-box",
+  defaultVisible,
+});
+const apps = [app("mail"), app("chat"), app("spaces", false)];
+const base = (): RailPreferences => ({ ...defaultRailPreferences(), revision: 1 });
+const link = { id: "l1", kind: "link" as const, title: "Intranet", href: "https://intranet.example", icon: "ti ti-world" };
+
+test("every change states its result, so applying it twice or on a newer state changes nothing more", () => {
+  const edits: RailEdit[] = [
+    { kind: "names", showNames: false },
+    { kind: "visible", appId: "mail", visible: false },
+    { kind: "visible", appId: "spaces", visible: true },
+    { kind: "pin", id: "p1", appId: "chat" },
+    { kind: "addLink", link },
+    { kind: "move", target: { id: "l1" }, index: 0 },
+    { kind: "updateLink", link: { ...link, title: "Wiki" } },
+  ];
+  let settings = base();
+  for (const edit of edits) {
+    const once = applyRailEdit(settings, edit, apps);
+    expect(applyRailEdit(once, edit, apps)).toEqual(once);
+    settings = once;
+  }
+  expect(settings).toEqual({
+    ...base(),
+    showNames: false,
+    visibility: { mail: false, spaces: true },
+    shortcuts: [
+      { ...link, title: "Wiki" },
+      { id: "p1", kind: "app", appId: "chat" },
+    ],
+  });
+  // A pin shows the app; a visible default app leaves no entry behind.
+  expect(applyRailEdit({ ...base(), visibility: { mail: false } }, { kind: "pin", id: "p2", appId: "mail" }, apps).visibility).toEqual({});
+  expect(applyRailEdit(settings, { kind: "unpin", appId: "chat" }, apps).shortcuts).toEqual([{ ...link, title: "Wiki" }]);
+  expect(applyRailEdit(settings, { kind: "remove", id: "l1" }, apps).shortcuts).toEqual([{ id: "p1", kind: "app", appId: "chat" }]);
+  const reset = applyRailEdit(settings, { kind: "reset" }, apps);
+  expect(reset).toEqual({ ...base(), showNames: false });
+  expect(applyRailEdit(reset, { kind: "restore", visibility: settings.visibility, shortcuts: settings.shortcuts }, apps)).toEqual(settings);
+});
+
+/** A Core stand-in: revisioned writes, answers released one by one by the test. */
+const server = (initial: RailPreferences) => {
+  let stored = initial;
+  const writes: RailPreferences[] = [];
+  const pending: (() => void)[] = [];
+  let failNext = 0;
+  let loseNext = 0;
+  const save = (value: RailPreferences) =>
+    new Promise<RailSaveResult>((resolve, reject) => {
+      writes.push(value);
+      pending.push(() => {
+        if (failNext > 0) {
+          failNext -= 1;
+          return resolve({ ok: false, conflict: false });
+        }
+        if (value.revision !== stored.revision) return resolve({ ok: false, conflict: true });
+        stored = { ...value, revision: stored.revision + 1 };
+        // The write lands, but its answer never arrives.
+        if (loseNext > 0) {
+          loseNext -= 1;
+          return reject(new Error("connection reset"));
+        }
+        resolve({ ok: true, settings: stored });
+      });
+    });
+  return {
+    writes,
+    stored: () => stored,
+    save,
+    load: async () => stored,
+    /** Another tab saves in between. */
+    external: (value: Partial<RailPreferences>) => {
+      stored = { ...stored, ...value, revision: stored.revision + 1 };
+    },
+    failNext: () => {
+      failNext += 1;
+    },
+    loseNext: () => {
+      loseNext += 1;
+    },
+    release: async () => {
+      for (let turn = 0; turn < 20 && !pending.length; turn += 1) await Promise.resolve();
+      pending.shift()?.();
+      for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+    },
+  };
+};
+
+test("changes save one after another, each on the result of the one before", async () => {
+  const core = server(base());
+  const published: number[] = [];
+  const saver = createRailSaver({
+    initial: base(),
+    apps: () => apps,
+    load: core.load,
+    save: core.save,
+    saved: (s) => published.push(s.revision),
+  });
+  saver.apply({ kind: "pin", id: "p1", appId: "chat" });
+  saver.apply({ kind: "visible", appId: "mail", visible: false });
+  // The editor shows both at once, while only the first is on its way.
+  expect(saver.settings().shortcuts).toHaveLength(1);
+  expect(saver.settings().visibility).toEqual({ mail: false });
+  expect(saver.busy()).toBe(true);
+  await core.release();
+  await core.release();
+  expect(core.writes.map((write) => write.revision)).toEqual([1, 2]);
+  expect(core.writes[1]?.shortcuts).toHaveLength(1);
+  expect(core.stored()).toMatchObject({ revision: 3, visibility: { mail: false } });
+  expect(published).toEqual([2, 3]);
+  expect([saver.busy(), saver.state(), saver.failures()]).toEqual([false, "saved", []]);
+});
+
+test("a change that meets a newer state reloads and applies once more, keeping the other tab's work", async () => {
+  const core = server(base());
+  const saver = createRailSaver({ initial: base(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });
+  core.external({ visibility: { spaces: true } });
+  saver.apply({ kind: "pin", id: "p1", appId: "chat" });
+  await core.release();
+  await core.release();
+  expect(core.stored()).toMatchObject({ visibility: { spaces: true }, shortcuts: [{ appId: "chat" }] });
+  expect(saver.failures()).toEqual([]);
+});
+
+test("a move names a pinned app, so it still lands when another tab pinned that app under another ID", async () => {
+  const core = server(base());
+  const saver = createRailSaver({ initial: base(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });
+  core.external({ shortcuts: [{ id: "p-chat", kind: "app", appId: "chat" }] });
+  saver.apply({ kind: "pin", id: "local-mail", appId: "mail" });
+  saver.apply({ kind: "pin", id: "local-chat", appId: "chat" });
+  saver.apply({ kind: "move", target: { appId: "chat" }, index: 1 });
+  for (let turn = 0; turn < 4; turn += 1) await core.release();
+  // The other tab's Chat pin keeps its ID; the move still puts Chat after Mail.
+  expect(core.stored().shortcuts).toEqual([
+    { id: "local-mail", kind: "app", appId: "mail" },
+    { id: "p-chat", kind: "app", appId: "chat" },
+  ]);
+  expect(saver.state()).toBe("saved");
+});
+
+test("after a lost answer the next change starts from a fresh read, so it is not skipped as having no effect", async () => {
+  const core = server(base());
+  const saver = createRailSaver({ initial: base(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });
+  core.loseNext();
+  saver.apply({ kind: "names", showNames: false });
+  saver.apply({ kind: "names", showNames: true });
+  await core.release();
+  await core.release();
+  expect(core.stored().showNames).toBe(true);
+  // The lost write did land, so it needs no retry and leaves no mark.
+  expect([saver.failures(), saver.state()]).toEqual([[], "saved"]);
+});
+
+test("every failure keeps its own retry; a later success clears what it already did; the state follows", async () => {
+  const core = server(base());
+  const saver = createRailSaver({ initial: base(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });
+  core.failNext();
+  core.failNext();
+  saver.apply({ kind: "pin", id: "p1", appId: "chat" });
+  saver.apply({ kind: "visible", appId: "mail", visible: false });
+  saver.apply({ kind: "names", showNames: false });
+  await core.release();
+  // Try again while the queue still runs: the state ends right, not stuck on an earlier failure.
+  await core.release();
+  expect(saver.failures()).toHaveLength(2);
+  saver.retry();
+  for (let turn = 0; turn < 3; turn += 1) await core.release();
+  expect(core.stored()).toMatchObject({ shortcuts: [{ appId: "chat" }], visibility: { mail: false }, showNames: false });
+  expect([saver.failures(), saver.state()]).toEqual([[], "saved"]);
+
+  // Doing the same change again instead of Try again also clears its mark.
+  core.failNext();
+  saver.apply({ kind: "unpin", appId: "chat" });
+  await core.release();
+  expect(saver.failures()).toHaveLength(1);
+  saver.apply({ kind: "unpin", appId: "chat" });
+  await core.release();
+  expect([saver.failures(), saver.state()]).toEqual([[], "saved"]);
+});
+
+test("reopening takes the stored settings and shows them in the app bar", () => {
+  const published: RailPreferences[] = [];
+  const saver = createRailSaver({
+    initial: base(),
+    apps: () => apps,
+    load: async () => base(),
+    save: async () => ({ ok: false, conflict: false }),
+    saved: (settings) => published.push(settings),
+  });
+  saver.refresh({ ...base(), revision: 4, showNames: false });
+  expect(saver.settings()).toMatchObject({ revision: 4, showNames: false });
+  expect(published).toEqual([{ ...base(), revision: 4, showNames: false }]);
+});
+
+test("a failed change alone goes back, the next ones still save, and Try again saves it later", async () => {
+  const core = server(base());
+  const failed: RailEdit[] = [];
+  const saver = createRailSaver({
+    initial: base(),
+    apps: () => apps,
+    load: core.load,
+    save: core.save,
+    saved: () => {},
+    failed: (edit) => failed.push(edit),
+  });
+  core.failNext();
+  saver.apply({ kind: "pin", id: "p1", appId: "chat" });
+  saver.apply({ kind: "names", showNames: false });
+  await core.release();
+  expect(saver.failures()).toEqual([{ kind: "pin", id: "p1", appId: "chat" }]);
+  expect(failed).toHaveLength(1);
+  // Only the failed pin is gone from what the editor shows; the next change waits and then saves.
+  expect(saver.settings()).toMatchObject({ shortcuts: [], showNames: false });
+  await core.release();
+  expect(core.stored()).toMatchObject({ shortcuts: [], showNames: false });
+  expect(saver.state()).toBe("failed");
+  saver.retry();
+  expect(saver.failures()).toEqual([]);
+  await core.release();
+  expect(core.stored()).toMatchObject({ shortcuts: [{ appId: "chat" }], showNames: false });
+  expect(saver.state()).toBe("saved");
+});
+
+test("a move whose pin failed stays failed with it, and Try again puts both back in order", async () => {
+  const core = server({ ...base(), shortcuts: [{ id: "p-chat", kind: "app", appId: "chat" }] });
+  const saver = createRailSaver({ initial: core.stored(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });
+  core.failNext();
+  saver.apply({ kind: "pin", id: "p-mail", appId: "mail" });
+  saver.apply({ kind: "move", target: { appId: "mail" }, index: 0 });
+  saver.apply({ kind: "names", showNames: false });
+  for (let turn = 0; turn < 2; turn += 1) await core.release();
+  // The move had nothing to move once the pin went back; it is not done, so it waits beside the pin.
+  expect(saver.failures().map((edit) => edit.kind)).toEqual(["pin", "move"]);
+  saver.retry();
+  for (let turn = 0; turn < 2; turn += 1) await core.release();
+  expect(core.stored().shortcuts.map((entry) => (entry.kind === "app" ? entry.appId : entry.id))).toEqual(["mail", "chat"]);
+  expect([saver.failures(), saver.state()]).toEqual([[], "saved"]);
+});
+
+test("settings read before newer saves never replace them", () => {
+  const saver = createRailSaver({
+    initial: { ...base(), revision: 5, showNames: false },
+    apps: () => apps,
+    load: async () => base(),
+    save: async () => ({ ok: false, conflict: false }),
+    saved: () => {},
+  });
+  saver.refresh({ ...base(), revision: 3 });
+  expect(saver.settings()).toMatchObject({ revision: 5, showNames: false });
+});
+
+test("a change with no effect sends nothing", async () => {
+  const core = server(base());
+  const saver = createRailSaver({ initial: base(), apps: () => apps, load: core.load, save: core.save, saved: () => {} });
+  saver.apply({ kind: "visible", appId: "mail", visible: true });
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+  expect(core.writes).toEqual([]);
+  expect(saver.state()).toBe("saved");
+});

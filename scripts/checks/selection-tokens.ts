@@ -52,6 +52,12 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Token owner: Cloud defines the AA-checked app border role in each app scope.",
   },
   {
+    file: "packages/cloud/src/styles/utilities-navigation.css",
+    subject:
+      '.k2b-ui .rail-editor-pin[aria-pressed="true"], .k2b-ui .rail-editor-pin[aria-pressed="true"]:not(:disabled):hover { background }',
+    reason: "Control: the pressed pin toggle in the app bar editor; the row itself is not selected.",
+  },
+  {
     file: "packages/cloud/src/styles/resource-search.css",
     subject: ".cloud-resource-search__tag { background }",
     reason: "Control: the scope chip in the search field is a filter.",
