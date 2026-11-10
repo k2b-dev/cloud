@@ -213,6 +213,7 @@ const mountNoteEditor = async ({
   initialRichMode = "source",
   documentUnavailable = false,
   documentRetryGate,
+  deviceCopy = false,
 }: {
   pending?: boolean;
   readOnly?: boolean;
@@ -221,6 +222,8 @@ const mountNoteEditor = async ({
   initialRichMode?: "rich" | "source";
   documentUnavailable?: boolean;
   documentRetryGate?: Promise<void>;
+  /** Pending device text from an earlier session that the live note no longer accepts. */
+  deviceCopy?: boolean;
 } = {}) => {
   let pending = initialPending;
   annotationText = initialContent;
@@ -302,9 +305,10 @@ const mountNoteEditor = async ({
     if (documentUnavailable) throw new loaded!.offline.NotebookAuthorizationError(0);
     options.doc.transact(() => options.doc.getText("codemirror").insert(0, options.noteId === "Note01" ? initialContent : ""), "remote");
     const provider = loaded!.yjs.createYjsProvider({ ...options, initialRestoreRevision: "0" });
+    if (deviceCopy) options.onDeviceState?.({ pending: true, saved: true, failed: false, recovery: true });
     return {
       provider,
-      recovery: false,
+      recovery: deviceCopy,
       pending: false,
       refresh: async () => {
         const response = await routeGet({ query: { href: window.location.pathname + window.location.search } });
@@ -458,6 +462,34 @@ describe("sync ended editor recovery", () => {
       copied.mockRestore();
       success.mockRestore();
     }
+  });
+
+  test("a device copy shows one red pill with copy, keep and discard, and no second recovery row", async () => {
+    using editor = await mountNoteEditor({ deviceCopy: true });
+    await flush();
+    const pill = editor.dom.root.querySelector('[data-sync-ended] .k2b-toolbar[data-tone="danger"]')!;
+    expect(pill).not.toBeNull();
+    expect(pill.textContent).toContain("Changes not saved. Copy on this device");
+    const named = (label: string) =>
+      Array.from(editor.dom.root.querySelectorAll("button")).filter((button) => button.getAttribute("aria-label") === label);
+    // The pill holds every action once; the old row with its second Copy text is gone.
+    expect(named("Copy text")).toHaveLength(1);
+    expect(named("Keep on this device")).toHaveLength(1);
+    expect(named("Discard device changes")).toHaveLength(1);
+    expect(named("Reload")).toHaveLength(0);
+    expect(editor.dom.root.querySelector("[data-notebook-device-state]")).toBeNull();
+    named("Discard device changes")[0]!.click();
+    await flush();
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+  });
+
+  test("the red pill announces its message to screen readers at once", async () => {
+    using editor = await mountNoteEditor({ pending: false });
+    editor.providers[0]!.opts.onReady?.();
+    const assertive = () => document.querySelector('[data-k2b-live] [data-politeness="assertive"]')?.textContent ?? "";
+    editor.end();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(assertive()).toContain("All changes saved.");
   });
 
   test("the bar that replaces the toolbar keeps the workspace's navigation and Details buttons", async () => {
@@ -1303,16 +1335,14 @@ describe("sync ended editor recovery", () => {
     expect(editor.dom.root.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("false");
     expect(editor.mirror.editorView()!.state.doc.toString()).toBe(markdown);
     expect(editor.bar().textContent).toContain(`Changes not saved. ${title}`);
-    expect(editor.bar().querySelector('[role="alert"]')?.getAttribute("data-tone")).toBe("danger");
+    expect(editor.bar().querySelector(".k2b-toolbar")?.getAttribute("data-tone")).toBe("danger");
     const originalBar = editor.bar();
     const originalEnd = editor.sync.ended();
     editor.end(code);
     expect(editor.sync.ended()).toBe(originalEnd);
     expect(editor.bar()).toBe(originalBar);
     const signIn = code === "SESSION_EXPIRED" || code === "LOGIN_REQUIRED";
-    expect(
-      editor.bar().querySelectorAll("button:not([data-app-workspace-sidebar-toggle], [data-app-workspace-detail-toggle])"),
-    ).toHaveLength(signIn ? 1 : 2);
+    expect(editor.bar().querySelectorAll(".k2b-toolbar__action")).toHaveLength(signIn ? 1 : 2);
     expect(document.activeElement).toBe(editor.button(signIn ? "Sign in again" : "Copy text"));
     if (signIn) {
       editor.button("Sign in again").click();
@@ -1350,11 +1380,9 @@ describe("sync ended editor recovery", () => {
     expect(editor.bar().textContent).toContain(`All changes saved. ${title}`);
     expect(editor.mirror.editorView()!.state.readOnly).toBe(true);
     expect(refreshCurrentPath).not.toHaveBeenCalled();
-    expect(editor.bar().querySelector('[role="alert"]')?.getAttribute("data-tone")).toBe("warning");
+    expect(editor.bar().querySelector(".k2b-toolbar")?.getAttribute("data-tone")).toBe("danger");
     if (code === "SESSION_EXPIRED" || code === "LOGIN_REQUIRED") {
-      expect(
-        editor.bar().querySelectorAll("button:not([data-app-workspace-sidebar-toggle], [data-app-workspace-detail-toggle])"),
-      ).toHaveLength(1);
+      expect(editor.bar().querySelectorAll(".k2b-toolbar__action")).toHaveLength(1);
       editor.button("Sign in again").click();
       expect(editor.opened).toHaveBeenCalledTimes(1);
     } else {
@@ -1413,7 +1441,7 @@ describe("sync ended editor recovery", () => {
     editor.setPending(false);
     expect(editor.bar()).toBe(bar);
     expect(bar.textContent).toContain("All changes saved. Connection closed");
-    expect(bar.querySelector('[role="alert"]')?.getAttribute("data-tone")).toBe("warning");
+    expect(bar.querySelector(".k2b-toolbar")?.getAttribute("data-tone")).toBe("danger");
     editor.setPending(true);
     expect(bar.textContent).toContain("Changes not saved. Connection closed");
     editor.sync.ready();

@@ -32,7 +32,8 @@ let stop: () => void;
 const spies: { mockRestore(): void }[] = [];
 beforeAll(async () => {
   spies.push(
-    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    // The trail's widths are measured beside the 56 px icon app bar; names would take 160 px more from 1680 px.
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue({ ...defaultRailPreferences(), showNames: false }),
     spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
     spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   );

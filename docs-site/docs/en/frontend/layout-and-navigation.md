@@ -38,6 +38,7 @@ when people navigate.
 | Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card down to the screen's bottom edge | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
 | 768 to 1023 px (tablets) | No header. A 60 px app bar in a rounded gradient container sits beside the app card. Both have 20 px corners, 8 px spacing to the window edges, and 8 px between them | The same header controls; header, content, and footer as cards on the app background |
 | From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
+| From 1680 px | As from 1024 px, but the app bar shows each entry's name beside its icon and is 216 px wide, unless the person turned names off | As from 1024 px |
 
 Where the app area is a card, the outermost workspace is that card. It has
 rounded corners and the card's frame, also when it is `flat`. Render that
@@ -58,6 +59,18 @@ gradient on a neutral canvas. The selected app has a surface background, and
 there is no separator between shortcuts and apps. Announcements and account
 notices above the app are cards with the same 8 px spacing.
 
+From 1680 px the app bar shows names: the installation's name beside the logo,
+each app, shortcut, and the app grid with its name, search with its shortcut,
+help, and the person's name beside the avatar. Rows are 40 px high and stay on
+the app background without a surface, edge, or shadow; icons keep their
+column, so turning names on moves no icon. A name too long for the row ends in
+an ellipsis, and the entry's hint shows it in full. Entries show their hint
+only while their name is hidden or cut off. A count stands at the end of its
+row. The width follows the window alone; the person's setting only allows it
+(see [Personalize the app bar](#personalize-the-app-bar)). The server renders
+the setting, so the first frame already has the final width. Hiding the
+sidebar hides the wide app bar as it hides the narrow one.
+
 The installed app on a tablet reports safe areas, such as the status bar and
 the home indicator. From 768 to 1023 px these insets add to the 8 px spacing:
 the app bar and card stay clear of them on every side. From 1024 px the card
@@ -68,8 +81,8 @@ above the home indicator.
 Below 768 px, including narrow tablet split views, the signed-in canvas
 shows the app gradient. Its title row has no line or surface fill and holds
 the app's name, search, help, and the app menu in that order. There is no
-bottom bar and no panel button: the app menu leads with **Home** (**Start** in
-German) before the shortcuts and apps of the person's app bar and every other
+bottom bar and no panel button: the app menu's first tile is **Home** (**Start**
+in German), followed by the person's app bar shortcuts and then every other
 app, and help opens the panel, whose tabs lead to the other panels.
 
 The phone's content is a soft card with 28 px top corners that reaches the
@@ -549,8 +562,9 @@ router.get("/api/inventory/badge", async (c) => {
   tab, and each count appears as soon as its own answer arrives, so a slow
   application delays only its own badge.
 - **Layout:** the count sits over the corner of the icon, so appearing,
-  growing, or clearing moves nothing. Screen readers hear it with the app's
-  name, for example "Chat, 3 new".
+  growing, or clearing moves nothing. In the app bar with names it stands at
+  the end of the row and can only shorten the name beside it. Screen readers
+  hear it with the app's name, for example "Chat, 3 new".
 - **Fresh after a change:** after the person changed what the badge counts,
   for example by reading a conversation, call `refreshAppBadges()` from
   `@k2b/cloud/browser/app-badges` so the app bar agrees with the page at once.
@@ -578,21 +592,25 @@ title and icon, edit it, move it up or down, or remove it. Pinning an app remove
 its duplicate from the ordinary list. Links to individual pages can coexist
 with their application. Dashboard shortcuts remain independent.
 
-The editor groups apps and shortcuts into separate sections. Its fixed footer
-places **Reset app bar** on the left and **Save** on the right.
+The editor starts with **Show names in the app bar**, on by default, which
+allows the app bar with names on windows from 1680 px. Phones have no app bar,
+so the editor shows this switch from 768 px. Below it, the editor groups apps
+and shortcuts into separate sections. Its fixed footer places **Reset app bar**
+on the left and **Save** on the right.
 
-**Save** applies the changes across Cloud. Closing with unsaved edits asks before discarding them;
-**Reset app bar** prepares the default app selection and an empty shortcut list
-for saving. If another editor has saved in the meantime, the save is rejected
+**Save** applies the changes across Cloud, and the open page's app bar follows
+at once. Closing with unsaved edits asks before discarding them;
+**Reset app bar** prepares the default app selection, an empty shortcut list,
+and names turned on for saving. If another editor has saved in the meantime, the save is rejected
 so that those changes are not overwritten. Close and reopen to load them.
 
 App and shortcut hints open immediately to the right on hover or keyboard
 focus. The app list scrolls when space is limited, keeping the launcher and
-global controls reachable. On mobile, app bar shortcuts remain available in
-the app launcher. Shortcuts occupy a compact first row of smaller icon tiles,
-with labels below the icons and spacing before the app catalog. The row has
-no visible heading or divider. All shortcuts use a persistent neutral icon
-background without button borders.
+global controls reachable. The app launcher (**Apps** on the desktop, the
+app menu on phones) shows app bar shortcuts as ordinary app tiles: they come
+first, in their app bar order, and the other apps follow. A pinned app appears
+once, in its pinned place. A link shortcut takes the same tile, with its own
+icon and a tone derived from its ID, as an app without an accent does.
 
 Core stores these preferences per user; the platform loads them before SSR
 through a shared Valkey cache. Applications do not need to fetch or
@@ -602,7 +620,8 @@ removing their saved preferences. Showing or pinning an app does not grant
 access to its routes or resources.
 
 The self-service API is `GET /api/me/rail` and `PUT /api/me/rail`. The snapshot
-contains `revision`, `visibility` (app IDs mapped to booleans), and `shortcuts`.
+contains `revision`, `visibility` (app IDs mapped to booleans), `shortcuts`,
+and `showNames` (a boolean; a write without it saves `true`).
 Writes must supply the revision read previously; a stale revision returns
 `409`. Core derives the user from authentication. Settings have a 16 KiB
 serialized page budget; links accept absolute paths and HTTP(S) URLs without
@@ -627,7 +646,7 @@ confirmation. Concurrent changes return a conflict instead of overwriting
 another administrator's configuration; reload the page before trying again.
 
 Global shortcuts appear before personal shortcuts in the desktop app bar and
-the mobile launcher. Users see them under **Provided by the administration**
+the app launcher. Users see them under **Provided by the administration**
 in their personal editor and cannot change or remove them. Resetting personal
 settings preserves global shortcuts. An app pinned globally and personally is
 shown once, while the personal pin stays saved and reappears if the global pin

@@ -48,6 +48,7 @@ const draft: MailDraft = {
   requestReadReceipt: false,
   attachments: [],
   suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId },
   lastEditedBy: { kind: "user", userId },
   lastEditedByDisplayName: "Test Writer",
@@ -73,7 +74,15 @@ beforeEach(() => {
       data: { userId, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
     }),
   );
-  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
+  spies.push(
+    spyOn(rail, "readRailSnapshot").mockResolvedValue({
+      revision: 0,
+      visibility: {},
+      shortcuts: [],
+      showNames: true,
+      managedShortcuts: [],
+    }),
+  );
   spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
   spies.push(spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(draftId));
   spies.push(

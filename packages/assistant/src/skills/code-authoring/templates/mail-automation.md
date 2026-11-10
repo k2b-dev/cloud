@@ -112,6 +112,8 @@ async function draftReply(conversationId: string, message: Message, category: Ca
     output: { type: "text", maxChars: 1500 },
   });
   if (typeof reply.output !== "string" || !reply.output.trim()) return;
+  // Each automated author has its own untouched suggestion in this conversation.
+  // The returned draft may be that account's existing suggestion; this handler does not replace it.
   // On a rerun the new text conflicts with this key instead of adding a second draft; the run then fails visibly.
   await owner.draft.create({
     senderIdentityId: identity.ref.id,

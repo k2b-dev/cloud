@@ -11,12 +11,13 @@ import {
   Placeholder,
   panelDialogOptions,
   Select,
+  Switch,
   TextInput,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { coreClient } from "../clients/core";
-import { type RailPreferences, RailPreferencesSchema, type RailShortcut } from "../contracts/rail-preferences";
+import { defaultRailPreferences, type RailPreferences, RailPreferencesSchema, type RailShortcut } from "../contracts/rail-preferences";
 import { publishRailPreferences, readRailContext } from "./rail-context";
 import { railMessages } from "./rail-messages";
 import { isRailAppVisible, projectRailNavigation, type RailApp, sortRailApps } from "./rail-navigation";
@@ -80,6 +81,16 @@ function RailEditorForm(props: RailDialogProps & { initial: RailPreferences }) {
       />
       <PanelDialog.Body>
         <fieldset disabled={save.loading()} class="flex min-h-0 flex-col gap-4">
+          {/* Phones have no app bar, so the setting only shows where it can matter. */}
+          <div class="rail-editor-names">
+            <Switch
+              label={t().showNames}
+              description={t().showNamesHint}
+              disabled={save.loading()}
+              value={() => settings().showNames}
+              onValueChange={(showNames) => setSettings((value) => ({ ...value, showNames }))}
+            />
+          </div>
           <Show when={managedLinks().length > 0}>
             <PanelDialog.Section title={t().managed} icon="ti ti-building">
               <For each={managedLinks()}>
@@ -241,7 +252,7 @@ function RailEditorForm(props: RailDialogProps & { initial: RailPreferences }) {
             variant="ghost"
             size="sm"
             disabled={save.loading()}
-            onClick={() => setSettings({ revision: props.initial.revision, visibility: {}, shortcuts: [] })}
+            onClick={() => setSettings({ ...defaultRailPreferences(), revision: props.initial.revision })}
           >
             {t().reset}
           </Button>

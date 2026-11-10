@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { SQL } from "bun";
+import { afterDraftDocumentCommit } from "./draft-document-log";
 
 // Each SQL statement uses the socket's existing access-refresh budget.
 export const DRAFT_DOCUMENT_ACCESS_REFRESH_MS = 10_000;
@@ -33,7 +34,13 @@ export const withDraftDocumentTransaction = async <T>(
   signal: AbortSignal | undefined,
   operation: (db: typeof sql) => Promise<T>,
 ): Promise<T> => {
-  if (!signal) return sql.begin(operation);
+  if (!signal)
+    return afterDraftDocumentCommit((observe) =>
+      sql.begin((db) => {
+        observe(db);
+        return operation(db);
+      }),
+    );
   signal.throwIfAborted();
   const reserved = await sql.reserve({ signal });
   // A closed client socket does not wake a backend waiting on a row lock: it
@@ -57,9 +64,11 @@ export const withDraftDocumentTransaction = async <T>(
     pid = backend?.pid;
     if (signal.aborted) abort();
     signal.throwIfAborted();
-    return await reserved.begin(async (db) => {
-      await awaitDraftDocumentQuery(
-        db`
+    return await afterDraftDocumentCommit((observe) =>
+      reserved.begin(async (db) => {
+        observe(db);
+        await awaitDraftDocumentQuery(
+          db`
         SELECT set_config('statement_timeout', (
           CASE WHEN current_setting('statement_timeout')::interval = interval '0'
             THEN ${DRAFT_DOCUMENT_ACCESS_REFRESH_MS}
@@ -70,12 +79,13 @@ export const withDraftDocumentTransaction = async <T>(
           END
         )::text, true)
       `,
-        signal,
-      );
-      const result = await operation(db);
-      signal.throwIfAborted();
-      return result;
-    });
+          signal,
+        );
+        const result = await operation(db);
+        signal.throwIfAborted();
+        return result;
+      }),
+    );
   } finally {
     signal.removeEventListener("abort", abort);
     // A cancel still on its way could otherwise hit the next user of this connection.

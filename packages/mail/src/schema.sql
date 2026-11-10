@@ -1102,6 +1102,11 @@ CREATE INDEX draft_recovery_copies_unresolved_idx ON mail.draft_recovery_copies 
 
 -- mail.drafts -------------------------------------------------------------
 
+CREATE TABLE mail.draft_document_log_policy (
+    log_id text PRIMARY KEY,
+    recovered_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE mail.drafts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     short_id text NOT NULL,
@@ -1117,6 +1122,7 @@ CREATE TABLE mail.drafts (
     subject text DEFAULT ''::text NOT NULL,
     body_markdown text DEFAULT ''::text NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
+    doc_idle_through bigint,
     state text DEFAULT 'draft'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1176,7 +1182,7 @@ CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING 
 
 CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
 
-CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
+CREATE UNIQUE INDEX drafts_untouched_suggestion_author_idx ON mail.drafts (mailbox_id, conversation_id, author_id)
 WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL;
 
 CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, origin, state, updated_at DESC);
