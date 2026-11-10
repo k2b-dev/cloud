@@ -126,10 +126,7 @@ export const markdownEditorFocused: StateField<boolean> = StateField.define<bool
   update(value, tr) {
     if (tr.effects.some((effect) => effect.is(markdownBlurEffect))) return false;
     if (tr.effects.some((effect) => effect.is(placeMarkdownCaret))) return true;
-    if (
-      tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect)) &&
-      tr.startState.field(actAwaitingRelease, false) === true
-    )
+    if (tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect)) && tr.startState.field(actAwaitingRelease, false) === true)
       return true;
     return value || (personActs(tr) && !pressHeld(tr));
   },

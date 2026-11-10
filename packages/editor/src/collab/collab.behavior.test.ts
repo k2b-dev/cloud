@@ -91,6 +91,10 @@ describe("@k2b/editor/collab", () => {
     page.view.focus();
     page.view.dispatch({ selection: { anchor: 2, head: 4 } });
     expect(head()).toBe(4);
+    // Another editor on this awareness redraws when the cursor goes; it may be the editor that is updating right now.
+    page.awareness.on("change", () => {
+      if (page.awareness.getLocalState()?.cursor === null) page.view.dispatch({});
+    });
 
     const field = document.createElement("input");
     document.body.append(field);

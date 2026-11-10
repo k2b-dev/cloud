@@ -271,8 +271,14 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
             }
           } else if (cursor != null && !update.view.dom.contains(update.view.dom.ownerDocument.activeElement)) {
             // Focus moved to another field: the others no longer see a caret here until it returns. A table cell inside
-            // the editor keeps the cursor it publishes itself, and another window keeps the last place.
-            awareness.setLocalStateField("cursor", null);
+            // the editor keeps the cursor it publishes itself, and another window keeps the last place. The change is
+            // written after this update: other editors on the same awareness may be inside an update of their own,
+            // such as the one whose edit reached this view, and redraw on it.
+            const view = update.view;
+            queueMicrotask(() => {
+              if (view.hasFocus || view.dom.contains(view.dom.ownerDocument.activeElement)) return;
+              if (awareness.getLocalState()?.cursor != null) awareness.setLocalStateField("cursor", null);
+            });
           }
         }
       }
