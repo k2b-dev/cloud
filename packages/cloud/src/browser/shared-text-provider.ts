@@ -124,6 +124,9 @@ export type SharedTextProviderOptions<Event = never, Participant = never> = {
 /** Consecutive storage refusals before termination; replay alone does not reset the budget. */
 export const MAX_SHARED_TEXT_STORAGE_RETRIES = 5;
 
+/** One awareness expiry window without an echo means this connection is no longer live. */
+export const SHARED_TEXT_ACK_TIMEOUT_MS = awarenessProtocol.outdatedTimeout;
+
 /**
  * WebSocket close code 1013 ("try again later"): a busy server or proxy shed this connection.
  * Like a plain drop, it reconnects with backoff and the replay resends every unsent edit.
@@ -164,6 +167,8 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   let needsReopen = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let awarenessTimer: ReturnType<typeof setTimeout> | null = null;
+  let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;
+  const publishedAt = new Map<string, number>();
   let awarenessDue = false;
   let failedConnects = 0;
   let storageFailures = 0;
@@ -180,6 +185,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   let unconfirmedBytes = 0;
   const forgetPending = (payload: string) => {
     if (unconfirmed.delete(payload)) unconfirmedBytes -= payload.length;
+    publishedAt.delete(payload);
   };
   let unsentBase: string | null | undefined;
   let recoveryText: string | undefined;
@@ -271,6 +277,8 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     if (!send({ type: "syncPublish", payload: { docId: activeDocId, payload, generation, baseCursor } })) return false;
     if (!unconfirmed.has(payload)) unconfirmedBytes += payload.length;
     unconfirmed.set(payload, baseCursor);
+    if (!publishedAt.has(payload)) publishedAt.set(payload, Date.now());
+    watchAcknowledgements();
     pendingChanged();
     return true;
   };
@@ -329,6 +337,10 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
           !send({ type: "syncPublish", payload: { docId: activeDocId, payload, generation, baseCursor: group.baseCursor } })
         )
           return;
+        for (const original of group.payloads) {
+          if (!publishedAt.has(original)) publishedAt.set(original, Date.now());
+        }
+        watchAcknowledgements();
       }
     }
     localStateSent = true;
@@ -341,6 +353,9 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   const terminate = (error: SharedTextProviderError) => {
     if (isTerminated) return;
     if (error.reopen) needsReopen = true;
+    if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
+    acknowledgementTimer = null;
+    publishedAt.clear();
     isTerminated = true;
     actionHistory?.cancelPending(new Error(error.message));
     replayReady = false;
@@ -357,6 +372,40 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       }
     }
     opts.onFatal?.(error);
+  };
+
+  const watchAcknowledgements = () => {
+    if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
+    acknowledgementTimer = null;
+    if (!publishedAt.size || isDisposed || isTerminated) return;
+    // Map order is publication order; new typing never postpones the oldest input.
+    const oldest = publishedAt.values().next().value;
+    if (oldest === undefined) return;
+    acknowledgementTimer = setTimeout(
+      () => {
+        acknowledgementTimer = null;
+        if (isDisposed || isTerminated || !ws) return;
+        const socket = ws;
+        // Do not depend on the half-open socket delivering its close event.
+        ws = null;
+        replayReady = false;
+        localStateSent = false;
+        publishedAt.clear();
+        opts.onError?.({
+          code: "SYNC_TIMEOUT",
+          message: "Synchronization timed out. Your changes remain here; retry or copy your text.",
+          docId: activeDocId,
+        });
+        opts.onConnectionChange?.(false);
+        try {
+          socket.close();
+        } catch {
+          /* Reconnect still owns the pending input. */
+        }
+        reconnectTimer = setTimeout(connect, opts.reconnectDelayMs(failedConnects++));
+      },
+      Math.max(0, oldest + SHARED_TEXT_ACK_TIMEOUT_MS - Date.now()),
+    );
   };
 
   const onDocUpdate = (update: Uint8Array, origin: unknown) => {
@@ -572,6 +621,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
             for (const payload of covered) forgetPending(payload);
             covering.delete(update.payload);
           } else forgetPending(update.payload);
+          watchAcknowledgements();
           if (echoed) {
             if (!unconfirmed.size) covering.clear();
             failedConnects = 0;
@@ -649,6 +699,9 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
 
     socket.onclose = (event) => {
       if (ws !== socket) return;
+      if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
+      acknowledgementTimer = null;
+      publishedAt.clear();
       opts.onConnectionChange?.(false);
       replayReady = false;
       localStateSent = false;
@@ -730,17 +783,20 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     /** Local edits the server has not echoed yet. */
     hasUnsentChanges: (): boolean => needsFullResync || unconfirmed.size > 0,
     /** Reconnect after a terminal error, used after the person signs in again. */
-    resume: (): void => {
-      if (!isTerminated || isDisposed || needsReopen) return;
+    resume: (): "resumed" | "reopen" | "unavailable" => {
+      if (needsReopen) return "reopen";
+      if (!isTerminated || isDisposed) return "unavailable";
       isTerminated = false;
       failedConnects = 0;
       connect();
+      return "resumed";
     },
     dispose: () => {
       isDisposed = true;
       actionHistory?.dispose();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (awarenessTimer) clearTimeout(awarenessTimer);
+      if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
       awarenessProtocol.removeAwarenessStates(awareness, [doc.clientID], "disconnect");
       doc.off("update", onDocUpdate);
       awareness.off("update", onAwarenessUpdate);

@@ -296,10 +296,9 @@ for (const width of [390, 800, 1440, 1920]) {
             .first()
             .evaluate((e) => e.outerHTML),
         ).toBe(serverSvg);
-        const calendar = page
-          .locator(".k2b-chart")
-          .filter({ has: page.locator("svg[data-calendar]") })
-          .first();
+        // Native `:has()`: Playwright's `has` filter matches in page script across every chart on the overview, which
+        // took seconds in WebKit for the same element (#3021).
+        const calendar = page.locator(".k2b-chart:has(svg[data-calendar])").first();
         expect(await calendar.count(), path).toBe(1);
         const geometry = await calendar.evaluate((element) => {
           const viewport = element.getBoundingClientRect();
@@ -396,14 +395,13 @@ for (const width of [390, 1440]) {
     const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
     const errors = pageErrors(page);
     try {
-      const card = page.locator(".ui-charts-card").filter({ has: page.getByRole("heading", { name: "Sankey", exact: true }) });
+      // Native `:has()` as in the calendar test (#3021); the heading still names the card.
+      const card = page.locator('.ui-charts-card:has([data-chart-kind="sankey"])');
+      expect(await card.count()).toBe(1);
+      expect(await card.getByRole("heading").textContent()).toBe("Sankey");
       const scroller = card.locator(".ui-charts-card__chart");
       expect(await scroller.evaluate((e) => e.scrollLeft)).toBe(0);
-      const source = card
-        .locator("[data-chart-datum]")
-        .filter({ has: page.locator("rect") })
-        .first()
-        .locator("text");
+      const source = card.locator("[data-chart-datum]:has(rect)").first().locator("text");
       expect(await source.textContent()).toContain("Clicked");
       const viewport = await scroller.boundingBox(),
         label = await source.boundingBox();

@@ -82,7 +82,8 @@ export function parseActivityFilters(params: URLSearchParams): ActivityFilters |
     filters.scope = scope;
   }
   if (who) {
-    if (!UUID.test(who)) return null;
+    // `me` is the person's own activity; the server resolves it from the request identity.
+    if (who !== "me" && !UUID.test(who)) return null;
     filters.actor = who;
   }
   if (what) {

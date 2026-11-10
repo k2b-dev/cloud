@@ -26,6 +26,20 @@ See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
 ## Shared drafts per mailbox
 
+Browser updates now reconnect after 30 seconds without an acknowledgement,
+using the same pending input and original synchronization base. A send waiting
+for synchronization stops after that interval and keeps the text available
+for retry or copying. No server configuration or data migration is required.
+
+Mail's local plaintext recovery journals expire 24 hours after their last
+write, matching the existing local draft-seed window. Mail removes expired
+journals when it next opens or reads them. Journals from older releases receive
+one recovery window when first opened. An authorized Mail session under a
+different account clears the former account's Mail journals and prevents its
+older tabs from writing them again. Short offline periods and signing in again
+as the same account retain recovery input. Shared Yjs offline storage keeps
+its existing separate lifecycle.
+
 Each mailbox has a draft editing mode, `lock` or `shared`. The default is
 `lock`: one person edits a draft at a time and others can take it over.
 With `shared`, everyone with write access edits the same draft at once.

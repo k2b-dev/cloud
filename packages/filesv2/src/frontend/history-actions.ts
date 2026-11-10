@@ -397,8 +397,22 @@ const RUN_VERBS: Partial<Record<HistoryAction, HistoryMessageKey>> = {
   "item.restore": "runRestored",
 };
 /** "Valentin Kolb renamed and moved 12 files": the actor, at most two kinds of change, and the visible count. */
-export function runSentence(rows: readonly HistoryRowModel[], t: HistoryMessages, env: HistoryEnvironment, locale: string): Part[] {
-  const actor = actorParts(actorOf(rows[0]!.lead, t, env), t);
+/** The one folder every change of a run moved its item to, or null; only then may its lines leave the place out. */
+export function runDestination(rows: readonly HistoryRowModel[], env: HistoryEnvironment): VisibleSide | null {
+  const first = rows[0]?.lead.after;
+  if (!first || !visible(first)) return null;
+  const place = plain([sidePlace(env, first)]);
+  const moved = (row: HistoryRowModel) => row.kind === "renameMove" || row.lead.action === "item.move";
+  return rows.every((row) => moved(row) && visible(row.lead.after) && plain([sidePlace(env, row.lead.after)]) === place) ? first : null;
+}
+
+export function runSentence(
+  rows: readonly HistoryRowModel[],
+  t: HistoryMessages,
+  env: HistoryEnvironment,
+  locale: string,
+  options: { links?: boolean } = {},
+): Part[] {
   const entries = rows.flatMap((row) => row.entries);
   // A fixed order, so "renamed and moved" reads the same whichever half the reader returned first.
   const order = Object.values(RUN_VERBS);
@@ -412,11 +426,22 @@ export function runSentence(rows: readonly HistoryRowModel[], t: HistoryMessages
     : directories.every((value) => value === true)
       ? t.foldersCount
       : t.itemsCount;
-  return fill(t.runSummary, {
-    actor,
+  const destination = runDestination(rows, env);
+  return fill(destination ? t.runSummaryTo : t.runSummary, {
     verbs: new Intl.ListFormat(locale, { type: "conjunction" }).format(words),
-    count: noun.replace("{count}", String(rows.length)),
+    count: [{ kind: "name", text: noun.replace("{count}", String(rows.length)) }],
+    ...(destination ? { to: [sidePlace(env, destination, !!options.links)] } : {}),
   });
+}
+
+/** The note-style line of a row, or null where only the full sentence fits; see `SentenceOptions.member`. */
+export function noteSentence(
+  row: HistoryRowModel,
+  t: HistoryMessages,
+  env: HistoryEnvironment,
+  options: { links?: boolean; short?: boolean } = {},
+): Part[] | null {
+  return memberParts(row, t, env, !!options.links, !!options.short);
 }
 
 export type DayGroup = { key: string; label: string; detail: string | null; rows: HistoryRowModel[] };
@@ -478,13 +503,33 @@ const DONE: Partial<Record<HistoryAction, HistoryMessageKey>> = {
 };
 
 /**
- * `links` makes names and folders of current sides lead there, as in the activity list. `member` is a line inside a
- * run, which already names the actor: common finished changes then name only the change.
+ * `links` makes names and folders of current sides lead there, as in the activity list. `member` writes the line in
+ * note style with the item first, for a list that shows the actor apart or not at all; `"short"` is a line inside a
+ * run whose line already names the destination.
  */
-export type SentenceOptions = { context: SentenceContext; directory?: boolean; links?: boolean; member?: boolean };
+export type SentenceOptions = {
+  context: SentenceContext;
+  directory?: boolean;
+  links?: boolean;
+  member?: boolean | "short";
+};
 
-/** The change alone, for a line inside a run; null where only the full sentence says it right. */
-function memberParts(row: HistoryRowModel, t: HistoryMessages, env: HistoryEnvironment, links: boolean): Part[] | null {
+const NOTES: Partial<Record<HistoryAction, { key: HistoryMessageKey; place: boolean }>> = {
+  "file.upload": { key: "memberUpload", place: true },
+  "folder.create": { key: "memberCreate", place: true },
+  "file.create": { key: "memberCreate", place: true },
+  "file.edit": { key: "memberEdit", place: true },
+  "file.overwrite": { key: "memberOverwrite", place: true },
+  "item.trash": { key: "memberTrash", place: false },
+  "item.restore": { key: "memberRestore", place: false },
+  "item.purge": { key: "memberPurge", place: false },
+  "share.create": { key: "memberShareCreate", place: false },
+  "share.revoke": { key: "memberShareRevoke", place: false },
+  "version.restore": { key: "memberVersionRestore", place: false },
+};
+
+/** The change in note style, the item first; null where only the full sentence says it right. */
+function memberParts(row: HistoryRowModel, t: HistoryMessages, env: HistoryEnvironment, links: boolean, short: boolean): Part[] | null {
   const entry = row.lead;
   if (entry.state !== "done" || row.kind === "batch" || row.kind === "saves") return null;
   const { before, after } = entry;
@@ -493,32 +538,23 @@ function memberParts(row: HistoryRowModel, t: HistoryMessages, env: HistoryEnvir
     const rename = row.entries.find((member) => member.action === "item.rename")!;
     if (!visible(rename.before) || !visible(after)) return null;
     // The old name is history, the new one the item: only the new name is the strong element.
+    if (short) return fill(t.memberRenameShort, { old: [text(rename.before.name)], new: [now(after)] });
     return fill(t.memberRenameMove, { old: [text(rename.before.name)], new: [now(after)], to: [sidePlace(env, after, links)] });
   }
-  const object = () => {
-    const side = subjectSide(entry);
-    return side ? [now(side)] : null;
-  };
   switch (entry.action) {
     case "item.rename":
-      return visible(before) && visible(after) ? fill(t.memberRename, { old: [text(before.name)], new: [now(after)] }) : null;
+      if (!visible(before) || !visible(after)) return null;
+      return fill(short ? t.memberRenameShort : t.memberRename, { old: [text(before.name)], new: [now(after)] });
     case "item.move":
     case "item.copy":
-      if (!visible(before) || !visible(after)) return null;
+      // A hidden destination keeps the full sentence, which says so; a hidden source is simply not named.
+      if (!visible(after)) return null;
       return fill(entry.action === "item.move" ? t.memberMove : t.memberCopy, { object: [now(after)], to: [sidePlace(env, after, links)] });
-    case "file.upload":
-    case "folder.create":
-    case "file.create": {
-      const parts = object();
-      return parts ? fill(entry.action === "file.upload" ? t.memberUpload : t.memberCreate, { object: parts }) : null;
-    }
-    case "item.trash": {
-      const parts = object();
-      return parts ? fill(t.memberTrash, { object: parts }) : null;
-    }
-    default:
-      return null;
   }
+  const note = NOTES[entry.action];
+  const side = subjectSide(entry);
+  if (!note || !side) return null;
+  return fill(t[note.key], { object: [now(side)], ...(note.place ? { at: [sidePlace(env, side, links)] } : {}) });
 }
 
 function objectParts(entry: ActivityEntry, t: HistoryMessages, options: SentenceOptions): Part[] {
@@ -543,7 +579,7 @@ export function sentence(row: HistoryRowModel, t: HistoryMessages, env: HistoryE
   const ongoing = entry.state !== "done";
   const { before, after } = entry;
   const links = !!options.links && options.context === "activity";
-  const member = options.member && options.context === "activity" ? memberParts(row, t, env, links) : null;
+  const member = options.member && options.context === "activity" ? memberParts(row, t, env, links, options.member === "short") : null;
   if (member) return member;
 
   if (row.kind === "renameMove") {

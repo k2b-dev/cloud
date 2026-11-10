@@ -156,14 +156,14 @@ describe("Files history in the workspace", () => {
     const activityLink = button(dom.root.querySelector(".k2b-app-workspace__sidebar-section")!, "Activity");
     expect(activityLink?.getAttribute("href")).toBe(source);
 
-    // Resetting the filters writes the address at once; the list reloads in place and keeps the new filters.
-    button(main(), "Reset")!.click();
+    // Resetting the filters writes the address at once and leads back to "Me"; the list reloads in place.
+    main().querySelector<HTMLButtonElement>(".filesv2-history-head__filters > .filesv2-history-link")!.click();
     await flush();
-    expect(dom.window.location.search).toBe("?view=activity");
-    expect(pending("activity").input).toEqual({ query: {} });
+    expect(dom.window.location.search).toBe("?view=activity&who=me");
+    expect(pending("activity").input).toEqual({ query: { actor: "me" } });
     pending("activity").resolve(Response.json(page([])));
     await flush();
-    expect(main().textContent).toContain("No activity yet");
+    expect(main().textContent).toContain("No activity of yours yet");
 
     // Back loads the earlier address and its filters return with it.
     dom.window.history.replaceState(null, "", source);

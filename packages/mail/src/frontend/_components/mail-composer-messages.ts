@@ -241,6 +241,9 @@ export const mailComposerMessages = i18n.define({
       collaboratorDescription:
         "You can read the draft now, or take over when you need to make changes. Taking over makes their editor read-only.",
       collaboratorStatus: ({ name }: { name: string }) => `${name} is currently editing this draft.`,
+      collaboratorLostDescription:
+        "Another person took over editing. Your input stays here for copying or recovery. You can keep reading or take over again.",
+      collaboratorLostStatus: ({ name }: { name: string }) => `${name} took over editing. Your input stays here for recovery.`,
       takeOver: "Take over",
       draftOpenElsewhere: "Draft open elsewhere",
       unknownSessionDescription:
@@ -278,6 +281,13 @@ export const mailComposerMessages = i18n.define({
       downloadAttachment: "Download attachment",
       publicLinkInserted: "Public attachment link inserted",
       enterValidEmail: "Enter a valid email address.",
+      discardUnsavedDescription: "This message was not saved yet. What you wrote will be lost.",
+      popoutDiscarded: "Draft discarded",
+      popoutSaved: "Draft saved",
+      popoutCloseHint: "You can close this window.",
+      closeWindow: "Close window",
+      recipientNotSent: ({ text }: { text: string }) =>
+        `"${text}" is not sent yet: choose a suggestion, complete the address, or remove it.`,
       deviceSessionEnded: "This browser session ended. Copy your input before leaving and sign in again.",
       recipientRemovedRemotely: "This recipient was removed elsewhere. Your input is still here; check it before adding it again.",
       editRecipient: ({ recipient }: { recipient: string }) => `Edit ${recipient}`,
@@ -296,7 +306,9 @@ export const mailComposerMessages = i18n.define({
       formatting: "Formatting",
       showPreview: "Preview: how the mail arrives",
       hidePreview: "Back to the text",
-      draftSaved: "Saved",
+      draftSaved: "Saved on server",
+      draftSavedLocally: "Saved on this device",
+      draftSavePending: "Changes pending",
       draftActions: "Draft actions",
       inOwnWindow: "In its own window",
       ccBcc: "Cc, Bcc",
@@ -310,7 +322,7 @@ export const mailComposerMessages = i18n.define({
       quoteAttached: ({ label }: { label: string }) => `Quote attached: ${label} · collapsed`,
       attachQuote: "Attach",
       removeQuote: "Remove",
-      suggestionFromGustav: "Suggestion from Gustav",
+      suggestionFrom: ({ name }: { name: string }) => `Suggestion from ${name}`,
       suggestionHint: "Type to take it over, or send it as it is",
       writingAlong: ({ names, count }: { names: string; count: number }) =>
         count === 1 ? `${names} is writing too` : `${names} are writing too`,
@@ -556,6 +568,9 @@ export const mailComposerMessages = i18n.define({
       collaboratorDescription:
         "Du kannst den Entwurf lesen oder die Bearbeitung übernehmen. Dadurch wird der Editor der anderen Person schreibgeschützt.",
       collaboratorStatus: ({ name }) => `${name} bearbeitet diesen Entwurf gerade.`,
+      collaboratorLostDescription:
+        "Eine andere Person hat die Bearbeitung übernommen. Deine Eingabe bleibt zum Kopieren oder Wiederherstellen erhalten. Du kannst weiterlesen oder die Bearbeitung wieder übernehmen.",
+      collaboratorLostStatus: ({ name }) => `${name} hat die Bearbeitung übernommen. Deine Eingabe bleibt zur Wiederherstellung erhalten.`,
       takeOver: "Bearbeitung übernehmen",
       draftOpenElsewhere: "Entwurf an anderer Stelle geöffnet",
       unknownSessionDescription:
@@ -593,6 +608,13 @@ export const mailComposerMessages = i18n.define({
       downloadAttachment: "Anhang herunterladen",
       publicLinkInserted: "Öffentlichen Link zum Anhang eingefügt",
       enterValidEmail: "Gib eine gültige E-Mail-Adresse ein.",
+      discardUnsavedDescription: "Diese Nachricht ist noch nicht gespeichert. Was du geschrieben hast, geht verloren.",
+      popoutDiscarded: "Entwurf verworfen",
+      popoutSaved: "Entwurf gespeichert",
+      popoutCloseHint: "Du kannst dieses Fenster schließen.",
+      closeWindow: "Fenster schließen",
+      recipientNotSent: ({ text }) =>
+        `„${text}“ wird noch nicht mitgesendet: Wähle einen Vorschlag, vervollständige die Adresse oder entferne sie.`,
       deviceSessionEnded: "Diese Sitzung ist beendet. Kopiere deine Eingabe vor dem Verlassen und melde dich erneut an.",
       recipientRemovedRemotely:
         "Dieser Empfänger wurde woanders entfernt. Deine Eingabe bleibt erhalten; prüfe sie, bevor du sie erneut hinzufügst.",
@@ -612,7 +634,9 @@ export const mailComposerMessages = i18n.define({
       formatting: "Formatierung",
       showPreview: "Vorschau: so kommt die Mail an",
       hidePreview: "Zurück zum Text",
-      draftSaved: "Gespeichert",
+      draftSaved: "Auf dem Server gespeichert",
+      draftSavedLocally: "Auf diesem Gerät gesichert",
+      draftSavePending: "Änderungen ausstehend",
       draftActions: "Entwurf",
       inOwnWindow: "In eigenem Fenster",
       ccBcc: "Cc, Bcc",
@@ -626,7 +650,7 @@ export const mailComposerMessages = i18n.define({
       quoteAttached: ({ label }) => `Zitat angehängt: ${label} · eingeklappt`,
       attachQuote: "Anhängen",
       removeQuote: "Entfernen",
-      suggestionFromGustav: "Vorschlag von Gustav",
+      suggestionFrom: ({ name }) => `Vorschlag von ${name}`,
       suggestionHint: "Tippe, um ihn zu übernehmen, oder sende ihn so",
       writingAlong: ({ names, count }) => (count === 1 ? `${names} schreibt mit` : `${names} schreiben mit`),
     },

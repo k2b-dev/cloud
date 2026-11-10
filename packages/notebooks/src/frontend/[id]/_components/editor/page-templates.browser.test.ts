@@ -263,6 +263,45 @@ describe("Notebook page templates", () => {
     }
   });
 
+  test("the offer shows only while the note holds its title: a second line, also an empty one, sends it away", async () => {
+    for (const device of [desktop, phone]) {
+      const width = device.viewport!.width;
+      const page = await open({ device });
+      try {
+        const surface = page.getByRole("textbox", { name: "Note editor surface" });
+        const offer = page.locator("[data-notebook-empty-templates]");
+        await offer.getByRole("button", { name: "Meeting notes" }).waitFor();
+        await shoot(page, "07-empty-note-opened", width);
+
+        // The line below the title of a new note is where the caret goes: the offer starts below it, never behind the caret.
+        await surface.getByText("New Document").click();
+        await page.keyboard.press("ArrowDown");
+        await shoot(page, "08-empty-note-caret-below-title", width);
+        const label = (await offer.getByText("Start with a template").boundingBox())!;
+        expect(label.y).toBeGreaterThanOrEqual(await page.evaluate(() => window.templateHarness.caretBottom()));
+
+        await page.keyboard.press("ArrowUp");
+        await page.keyboard.press("End");
+        await page.keyboard.press("Enter");
+        expect(await page.evaluate(() => window.templateHarness.text())).toBe("# New Document\n\n");
+        await shoot(page, "09-empty-note-after-enter", width);
+        await offer.waitFor({ state: "detached" });
+
+        await page.keyboard.press("ControlOrMeta+z");
+        await page.waitForFunction(() => window.templateHarness.text() === "# New Document\n");
+        await offer.getByRole("button", { name: "Meeting notes" }).waitFor();
+
+        // A collaborator's edit counts the same as one's own.
+        await page.evaluate(() => window.templateHarness.applyRemote(15, 15, "\n"));
+        await offer.waitFor({ state: "detached" });
+        await page.evaluate(() => window.templateHarness.applyRemote(15, 16, ""));
+        await offer.getByRole("button", { name: "Meeting notes" }).waitFor();
+      } finally {
+        await page.context().close();
+      }
+    }
+  });
+
   test("the offer reads in dark mode and stays inside a phone's width", async () => {
     for (const [device, theme] of [
       [desktop, "dark"],

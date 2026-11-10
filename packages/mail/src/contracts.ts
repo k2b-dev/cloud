@@ -3223,6 +3223,11 @@ export const updateMailboxComposeStyleInputSchema = z
   .strict();
 export type UpdateMailboxComposeStyleInput = z.infer<typeof updateMailboxComposeStyleInputSchema>;
 
+/** Writing activity is checked once per heartbeat in every Mail editor. */
+export const DRAFT_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
+/** Three missed heartbeats end the server's writing reservation. */
+export const DRAFT_LEASE_TTL_MS = 3 * DRAFT_LEASE_HEARTBEAT_INTERVAL_MS;
+
 /** Stable lease outcomes shared by interactive and automated editors. */
 export const DRAFT_LEASE_ERROR_CODES = {
   HELD: "DRAFT_LEASE_HELD",
@@ -3495,6 +3500,8 @@ export const draftSchema = z.object({
   requestReadReceipt: z.boolean(),
   attachments: z.array(draftAttachmentSchema),
   suggestion: z.boolean(),
+  /** Name of the account that suggested this untouched draft; null once it is no suggestion. Absent from older pods. */
+  suggestedBy: z.string().min(1).nullable().optional(),
   createdBy: draftActorRefSchema,
   lastEditedBy: draftActorRefSchema,
   lastEditedByDisplayName: z.string().min(1),
@@ -3532,6 +3539,8 @@ export const conversationListDraftsSchema = z
           .strict(),
       )
       .max(3),
+    /** Account behind the conversation's only draft while it is an untouched suggestion. Absent from older pods. */
+    suggestedBy: z.string().min(1).nullable().optional(),
   })
   .strict();
 export type ConversationListDrafts = z.infer<typeof conversationListDraftsSchema>;
