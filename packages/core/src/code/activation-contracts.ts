@@ -76,6 +76,8 @@ export const CodeActivationPreviewSchema = z
     ]),
     /** The resource that holds this Code, as far as this person may read it; null otherwise and for personal Code. */
     place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).strict().nullable(),
+    /** The Code page of a resource Code, from the `code.pages` pattern its owner's app declares; null when it declares none. */
+    page: z.string().nullable().optional(),
     /**
      * For the version that would switch on next: each target its checked manifest calls, with the operations there and
      * whether that is new compared with the running version, as the Code page lists them. A null target collects the

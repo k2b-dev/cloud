@@ -71,7 +71,8 @@ also returns `activated`. For the version that would switch on next, optional
 `targets` lists each target its checked manifest calls, with `operations` and
 `isNew` against the running version, named from registry manifests as on the
 Code page; a `null` target collects calls with a target picked at run time.
-These rows are review evidence, not grants. Preview asks no target or owner
+These rows are review evidence, not grants. For resource Code, `page` is the
+Code page its owner's app declares in `code.pages`, or `null`. Preview asks no target or owner
 application to plan, inspect or grant access. The Code page's dialog starts the
 same durable activation directly.
 

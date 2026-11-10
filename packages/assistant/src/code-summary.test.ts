@@ -9,6 +9,7 @@ import {
   countOwnRunsSince,
   hasPersonalCode,
   loadCodeAttention,
+  loadCodeNextRun,
   loadCodeSummaries,
   nextCodeRun,
   startOfDayIn,
@@ -237,4 +238,27 @@ test("attention stops after its bounded windows and says where to continue", asy
   });
   expect(await loadCodeAttention(endless.invoke)).toEqual({ items: [], nextCursor: "c_more04" });
   expect(calls).toBe(4);
+});
+
+test("a Code with a page and an event keeps its schedule's next run", async () => {
+  const entry = (entrypoint: string, kind: string, nextRunAt: string | null) => ({
+    entrypoint,
+    kind,
+    cron: kind === "schedule" ? "0 7 * * *" : null,
+    nextRunAt,
+    lastRun: null,
+    missingTargets: [],
+  });
+  const core = fakeCore({
+    "code.automation.list": () => ({
+      codeId: "c_info01",
+      items: [
+        entry("GET /", "route", null),
+        entry("event:mail.message.received@1:place:0", "event", null),
+        entry("morning", "schedule", "2026-11-03T06:00:00.000Z"),
+      ],
+      removedTargets: [],
+    }),
+  });
+  expect(await loadCodeNextRun(core.invoke, "c_info01")).toBe("2026-11-03T06:00:00.000Z");
 });

@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema, cloudResourceRefAppId } from "@k2b/cloud/contracts";
 import { catalogCache, describeTarget } from "@k2b/cloud/ssr/code-page/load";
 import { codeActivationRows, codeDynamicOperations } from "@k2b/cloud/ssr/code-page/targets";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
@@ -175,6 +175,8 @@ export async function previewCodeActivation(
     allowed,
   };
   const place = null;
+  const catalog = catalogCache(context.locale ?? "en");
+  const page = await previewPage(code, catalog);
   if (code.activeVersionId === input.versionId) {
     const [activation] = await sql<{ activating_person: string | null; updated_at: Date }[]>`
       SELECT activating_person, updated_at FROM code.activations
@@ -192,10 +194,11 @@ export async function previewCodeActivation(
       activated: activation ? { at: activation.updated_at.toISOString(), byYou: by === person.id, byName } : null,
       readiness: { state: "ready" },
       place,
+      page,
     };
   }
   // An older card in a chat asks no target again: nothing can be switched on from there.
-  if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place };
+  if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place, page };
   let readiness: CodeActivationPreview["readiness"] = { state: "ready" };
   try {
     await requireCodeVersionApproval(code, input.versionId, sql);
@@ -206,8 +209,16 @@ export async function previewCodeActivation(
         ? { state: "approval_pending" }
         : { state: "refused", code: error.code, message: error.message };
   }
-  const targets = manifest.success ? await previewTargets(code, manifest.data, catalogCache(context.locale ?? "en")) : undefined;
-  return { ...base, activated: null, readiness, place, ...(targets ? { targets } : {}) };
+  const targets = manifest.success ? await previewTargets(code, manifest.data, catalog) : undefined;
+  return { ...base, activated: null, readiness, place, page, ...(targets ? { targets } : {}) };
+}
+/** A resource Code's page from its owner app's registry manifest; the owner app itself is not asked. */
+async function previewPage(code: Code, catalog: ReturnType<typeof catalogCache>): Promise<string | null> {
+  if (code.owner.kind !== "resource") return null;
+  const { ref } = code.owner;
+  const app = await catalog(cloudResourceRefAppId(ref));
+  const pattern = app?.ok ? app.data?.manifest.code?.pages?.[ref.type.slice(cloudResourceRefAppId(ref).length + 1)] : undefined;
+  return pattern ? pattern.replace("{id}", encodeURIComponent(ref.id)) : null;
 }
 /**
  * The targets the Code page lists for switching on this version, through the same grouping and naming from registry

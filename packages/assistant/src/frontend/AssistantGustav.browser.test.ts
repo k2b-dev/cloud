@@ -479,6 +479,7 @@ const cardPreview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPrevie
   allowed: { allowed: true },
   readiness: { state: "ready" },
   place: { title: "info@moebel-beispiel.de", typeTitle: "Postfach", href: "/app/mail/m/info" },
+  page: "/app/mail/m/info/code",
   ...patch,
 });
 

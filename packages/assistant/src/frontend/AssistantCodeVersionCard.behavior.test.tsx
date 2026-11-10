@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { type CodeVersionPreview, codeVersionPageHref } from "./code-activation";
+import { type CodeVersionPreview, codeVersionOwnPageHref, codeVersionPageHref } from "./code-activation";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 const codeId = "c_info01";
@@ -19,6 +19,7 @@ const preview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview =>
   allowed: { allowed: true },
   readiness: { state: "ready" },
   place: { title: "info@example.test", typeTitle: "mailbox", href: "/app/mail/m_info" },
+  page: "/app/mail/m_info/code",
   ...patch,
 });
 
@@ -160,10 +161,10 @@ test("a switched-on version links its page, its next run and its runs in the sam
   ]);
   expect(calls.map((call) => call.route)).toEqual(["activation/preview", "/api/capabilities/v1/queries/core/code.automation.list"]);
 
-  // Without a readable place and without a schedule, the line stays alone.
+  // Without a declared Code page and without a schedule, the line stays alone.
   restore.splice(0).forEach((undo) => undo());
   const bare = await mount({
-    "activation/preview": () => ({ json: { data: { ...on, place: null, automations: [] } } }),
+    "activation/preview": () => ({ json: { data: { ...on, page: null, automations: [] } } }),
     "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
   });
   expect(bare.dom.root.querySelector(".assistant-code-version__links")).toBeNull();
@@ -225,12 +226,18 @@ test("an older version, no access and an outage each say so; the outage retries"
   expect(button(down.dom.root, "Switch on")).toBeDefined();
 });
 
-test("the Code page is the place's own /code page, or a personal Code's page in Gustav", () => {
+test("the Code page is the one the owner's app declares, or a personal Code's page in Gustav", () => {
   expect(codeVersionPageHref(preview())).toBe("/app/mail/m_info/code");
-  expect(codeVersionPageHref(preview({ ownerKind: "person", place: null }))).toBe(`/app/assistant/code/${codeId}`);
-  // A place the person may not read has no address; Code of a place is never sent to a personal page.
-  expect(codeVersionPageHref(preview({ place: null }))).toBeNull();
-  expect(codeVersionPageHref(preview({ place: { title: "info@", typeTitle: null, href: null } }))).toBeNull();
+  expect(codeVersionPageHref(preview({ ownerKind: "person", place: null, page: null }))).toBe(`/app/assistant/code/${codeId}`);
+  // Without a declared page there is no address, also when the place is readable; Code of a place never gets a personal page.
+  expect(codeVersionPageHref(preview({ page: null }))).toBeNull();
+  expect(codeVersionPageHref(preview({ page: undefined, place: null }))).toBeNull();
+});
+
+test("a page served for every method opens like a GET page; a page with a named segment does not", () => {
+  const route = (method: string, path: string) => ({ entrypoint: `${method} ${path}`, route: { method, path, public: false } });
+  expect(codeVersionOwnPageHref(preview({ automations: [route("ALL", "/")] }))).toBe(`/code/${codeId}/`);
+  expect(codeVersionOwnPageHref(preview({ automations: [route("GET", "/item/:id"), route("POST", "/")] }))).toBeNull();
 });
 
 test("an activation whose person is hidden or gone is credited to nobody", async () => {

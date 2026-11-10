@@ -29,6 +29,8 @@ const PreviewSchema = z.object({
     z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }),
   ]),
   place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).nullable(),
+  /** The Code page of a resource Code, as its owner's app declares it in the registry. */
+  page: z.string().nullable().optional(),
   /** What switching on this version calls where, as the Code page lists it; a null target is picked while the Code runs. */
   targets: z
     .array(
@@ -52,15 +54,15 @@ const PreviewSchema = z.object({
 });
 export type CodeVersionPreview = z.infer<typeof PreviewSchema>;
 
-/** The Code page of this Code: a personal Code's page in Gustav, or its place's "/code" page when the person may read it. */
-export const codeVersionPageHref = (preview: CodeVersionPreview): string | null => {
-  if (preview.ownerKind === "person") return `/app/assistant/code/${preview.codeId}`;
-  return preview.place?.href ? `${preview.place.href.replace(/\/$/, "")}/code` : null;
-};
+/** The Code page of this Code: a personal Code's page in Gustav, or the Code page its owner's app declares. */
+export const codeVersionPageHref = (preview: CodeVersionPreview): string | null =>
+  preview.ownerKind === "person" ? `/app/assistant/code/${preview.codeId}` : (preview.page ?? null);
 
-/** The Code's own page: its first GET route without named segments, served under `/code/<id>`. */
+/** The Code's own page: its first route a browser can open (GET or ALL) without named segments, served under `/code/<id>`. */
 export const codeVersionOwnPageHref = (preview: CodeVersionPreview): string | null => {
-  const route = preview.automations?.find((entry) => entry.route?.method === "GET" && !entry.route.path.includes(":"))?.route;
+  const route = preview.automations?.find(
+    (entry) => (entry.route?.method === "GET" || entry.route?.method === "ALL") && !entry.route.path.includes(":"),
+  )?.route;
   return route ? codeOwnPath(preview.codeId, route.path) : null;
 };
 

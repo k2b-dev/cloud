@@ -33,7 +33,7 @@ const AutomationListSchema = z.object({
     z.object({
       entrypoint: z.string(),
       title: z.string().optional(),
-      kind: z.enum(["schedule", "manual"]),
+      kind: z.enum(["schedule", "manual", "event", "route"]),
       cron: z.string().nullable(),
       at: z.string().optional(),
       timeZone: z.string().optional(),

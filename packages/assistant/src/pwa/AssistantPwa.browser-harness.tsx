@@ -248,7 +248,10 @@ const detailOf = (id: string): Detail | null => {
           codeStep("test", "code_test", { version: 1, mode: "test", ok: false, error: null, diagnostics: [], cases: [] }),
           codeStep("check", "code_check", {
             version: 1,
-            result: { ok: false, diagnostics: [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 9 }] },
+            result: {
+              ok: false,
+              diagnostics: [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 9 }],
+            },
             manifest: null,
             permissions: [],
           }),
@@ -504,7 +507,16 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   if (url.pathname === "/api/capabilities/v1/queries/core/code.automation.list")
     return json({
       data: {
-        items: [{ entrypoint: "morning", kind: "schedule", cron: "0 7 * * *", nextRunAt: "2026-11-05T06:00:00.000Z", lastRun: null, missingTargets: [] }],
+        items: [
+          {
+            entrypoint: "morning",
+            kind: "schedule",
+            cron: "0 7 * * *",
+            nextRunAt: "2026-11-05T06:00:00.000Z",
+            lastRun: null,
+            missingTargets: [],
+          },
+        ],
         removedTargets: [],
       },
     });
