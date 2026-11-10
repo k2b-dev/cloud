@@ -1,0 +1,6 @@
+### A test clock pinned to a calendar date expires against the real clock
+
+- **What happened:** From 10.11.2026 12:00 UTC, the Mail browser test "rejected proposals offer copy, explicit discard and restoration after reload" failed on every branch. After the reload, the rejected proposal was gone.
+- **Root cause:** To force a rejected edit, the harness replaced `Date.now` with a fixed date, 2026-11-09T12:00Z. The proposal was stored with that time plus the 24-hour local draft lifetime. After the reload, the restored `Date.now` is the real clock, so the entry counted as expired and was removed once a day had passed since the pinned date.
+- **Error class:** A test pins the clock only for part of its run, and production code later compares the stored time with the real clock. The test passes until the real date passes the pinned date plus the lifetime.
+- **Guard:** The harness derives its fake time from the real clock (`start = clock()`), so the stored expiry is always in the future. Convention `pin-clock-whole-run-or-relative`: a test that changes `Date.now` for only part of its run moves it relative to the real time and never sets it to a calendar date. A repository rule does not fit, because the pattern varies (a direct assignment, a mock, a fake timer). Review checks this convention instead.
