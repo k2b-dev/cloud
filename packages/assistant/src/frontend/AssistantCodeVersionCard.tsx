@@ -6,13 +6,15 @@ import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch 
 import {
   type CodeVersionActivation,
   type CodeVersionPreview,
+  codeVersionOwnPageHref,
   codeVersionPageHref,
   loadCodeVersionPreview,
   pendingCodeVersionActivation,
   readCodeVersionActivation,
   startCodeVersionActivation,
 } from "./code-activation";
-import { formatCodeTime } from "./code-client";
+import { loadCodeNextRun } from "../code-summary";
+import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
 import { assistantMessages } from "./messages";
 
 const POLLS = 90;
@@ -62,9 +64,15 @@ export default function AssistantCodeVersionCard(props: {
   onCleanup(() => {
     disposed = true;
   });
+  const [nextRun, setNextRun] = createSignal<string | null>(null);
   const load = async () => {
     setLoaded(null);
-    setLoaded(await loadCodeVersionPreview(props.codeId, props.versionId));
+    const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
+    // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
+    setNextRun(
+      typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null,
+    );
+    setLoaded(preview);
   };
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   const pending = pendingCodeVersionActivation(props.codeId, props.versionId);
@@ -166,6 +174,14 @@ export default function AssistantCodeVersionCard(props: {
     if (current.state === "waiting") return t().codeVersionWaiting;
     return current.state === "applying" || current.state === "rolling_back" ? t().codeVersionApplying : t().codeVersionChecking;
   };
+  const page = () => {
+    const current = preview();
+    return current ? codeVersionPageHref(current) : null;
+  };
+  const ownPage = () => {
+    const current = preview();
+    return current ? codeVersionOwnPageHref(current) : null;
+  };
   const diffHref = () => {
     const current = preview();
     const page = current && codeVersionPageHref(current);
@@ -209,20 +225,65 @@ export default function AssistantCodeVersionCard(props: {
         </p>
       </Match>
       <Match when={preview()?.running === props.number}>
-        <p class="assistant-code-version__line" data-tone="ok" data-state="on" role="status">
-          <i class="ti ti-circle-check" aria-hidden="true" />
-          <Show when={preview()?.activated} fallback={t().codeVersionOnPlain({ version: props.number })}>
-            {(activated) => {
-              const when = () => switchedOnWhen(activated().at, locale(), props.timeZone, new Date());
-              if (activated().byYou) return t().codeVersionOn({ version: props.number, when: when() });
-              const name = activated().byName;
-              // A name this person may not see, or an account that is gone, stays out of the line.
-              return name
-                ? t().codeVersionOnBy({ version: props.number, when: when(), name })
-                : t().codeVersionOnNeutral({ version: props.number, when: when() });
-            }}
+        <div class="assistant-code-version__on">
+          <p class="assistant-code-version__line" data-tone="ok" data-state="on" role="status">
+            <i class="ti ti-circle-check" aria-hidden="true" />
+            <Show when={preview()?.activated} fallback={t().codeVersionOnPlain({ version: props.number })}>
+              {(activated) => {
+                const when = () => switchedOnWhen(activated().at, locale(), props.timeZone, new Date());
+                if (activated().byYou) return t().codeVersionOn({ version: props.number, when: when() });
+                const name = activated().byName;
+                // A name this person may not see, or an account that is gone, stays out of the line.
+                return name
+                  ? t().codeVersionOnBy({ version: props.number, when: when(), name })
+                  : t().codeVersionOnNeutral({ version: props.number, when: when() });
+              }}
+            </Show>
+          </p>
+          <Show when={ownPage() || nextRun() || page()}>
+            <div class="assistant-code-version__links">
+              <Show when={ownPage()}>
+                {(href) => (
+                  <ButtonLink href={href()} size="sm" variant="secondary">
+                    <i class="ti ti-external-link" aria-hidden="true" />
+                    {t().codeVersionOpenPage}
+                  </ButtonLink>
+                )}
+              </Show>
+              <Show when={nextRun()}>
+                {(when) => {
+                  const label = () => t().codeVersionNextRun({ when: formatCodeNextRun(when(), locale(), props.timeZone) });
+                  return (
+                    <Show
+                      when={page()}
+                      fallback={
+                        <span class="assistant-code-version__next">
+                          <i class="ti ti-clock" aria-hidden="true" />
+                          {label()}
+                        </span>
+                      }
+                    >
+                      {(href) => (
+                        <ButtonLink href={href()} size="sm" variant="ghost">
+                          <i class="ti ti-clock" aria-hidden="true" />
+                          {label()}
+                        </ButtonLink>
+                      )}
+                    </Show>
+                  );
+                }}
+              </Show>
+              <Show when={page()}>
+                {(href) => (
+                  <ButtonLink href={`${href()}?tab=runs`} size="sm" variant="ghost">
+                    <i class="ti ti-list-details" aria-hidden="true" />
+                    {t().codeVersionRuns}
+                  </ButtonLink>
+                )}
+              </Show>
+            </div>
           </Show>
-        </p>
+        </div>
       </Match>
       <Match when={(preview()?.latest ?? 0) > props.number}>
         <p class="assistant-code-version__line" data-state="superseded">
@@ -258,7 +319,8 @@ export default function AssistantCodeVersionCard(props: {
                           <li class="assistant-code-version__target">
                             <i
                               class={
-                                row.target?.icon ?? (!row.target ? "ti ti-arrows-shuffle" : row.target.own ? "ti ti-home" : "ti ti-target-arrow")
+                                row.target?.icon ??
+                                (!row.target ? "ti ti-arrows-shuffle" : row.target.own ? "ti ti-home" : "ti ti-target-arrow")
                               }
                               aria-hidden="true"
                             />

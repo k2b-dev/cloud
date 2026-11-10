@@ -146,6 +146,12 @@ export const nextCodeRun = (code: CodeSummary): string | null =>
     null,
   );
 
+/** The earliest next run of one Code's automations, from the same list "My apps" reads; null when none is due or unknown. */
+export const loadCodeNextRun = async (invoke: CodeQueryInvoke, codeId: string): Promise<string | null> => {
+  const result = await invoke(query("code.automation.list", { codeId }), AutomationListSchema).catch(() => null);
+  return result?.ok ? nextCodeRun({ id: codeId, title: "", state: "active", automations: result.data.data.items }) : null;
+};
+
 const AttentionSchema = z.object({
   items: z.array(
     z.object({

@@ -125,6 +125,50 @@ test("switching on runs Core's activation and the card becomes one line, the sam
   expect(button(dom.root, "Switch on")).toBeUndefined();
 });
 
+test("a switched-on version links its page, its next run and its runs in the same paint as its line", async () => {
+  const automation = (nextRunAt: string | null) => ({
+    entrypoint: "morning",
+    kind: "schedule",
+    cron: "0 7 * * *",
+    nextRunAt,
+    lastRun: null,
+    missingTargets: [],
+  });
+  const on = preview({
+    running: 5,
+    activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null },
+    automations: [
+      { entrypoint: "morning", title: "Every morning" },
+      { entrypoint: "GET /invoices/:id", route: { method: "GET", path: "/invoices/:id", public: false } },
+      { entrypoint: "GET /", route: { method: "GET", path: "/", public: false } },
+    ],
+  });
+  const { dom, calls } = await mount({
+    "activation/preview": () => ({ json: { data: on } }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({
+      json: { data: { items: [automation("2026-11-11T07:00:00.000Z"), automation(null)], removedTargets: [] } },
+    }),
+  });
+  const links = [...dom.root.querySelectorAll(".assistant-code-version__links a")].map((link) => [
+    link.textContent,
+    link.getAttribute("href"),
+  ]);
+  expect(links).toEqual([
+    ["Open page", "/code/c_info01/"],
+    [expect.stringMatching(/^Next run .*11.*07:00/), "/app/mail/m_info/code"],
+    ["Runs", "/app/mail/m_info/code?tab=runs"],
+  ]);
+  expect(calls.map((call) => call.route)).toEqual(["activation/preview", "/api/capabilities/v1/queries/core/code.automation.list"]);
+
+  // Without a readable place and without a schedule, the line stays alone.
+  restore.splice(0).forEach((undo) => undo());
+  const bare = await mount({
+    "activation/preview": () => ({ json: { data: { ...on, place: null, automations: [] } } }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
+  });
+  expect(bare.dom.root.querySelector(".assistant-code-version__links")).toBeNull();
+});
+
 test("a refusal says nothing changed and offers to try again with a new identity", async () => {
   const { dom, calls } = await mount({
     "activation/preview": () => ({ json: { data: preview() } }),
