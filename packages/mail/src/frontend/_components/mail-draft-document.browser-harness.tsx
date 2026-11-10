@@ -61,7 +61,8 @@ const main = async () => {
         const client = session.shared();
         if (!client) return false;
         const clock = Date.now;
-        const start = Date.parse("2026-11-09T12:00:00Z");
+        // Relative to the real clock: the stored proposal expires against it after a reload.
+        const start = clock();
         let reads = 0;
         Date.now = () => start + (reads++ ? 1000 : 0);
         try {
