@@ -42,6 +42,11 @@ export type MapViewProps = Omit<MapViewFrameProps, "attribution"> & {
   /** Browser-only handle; remains safely callable after disposal (rejects disposed). */
   ref?: (handle: MapViewHandle) => void;
   attribution: JSX.Element;
+  /**
+   * A calm picture: the map image loads, but there are no controls, gestures, pin selection, or info tile, and pins
+   * are labelled images. MapTile uses it; its own button opens the full map.
+   */
+  still?: boolean;
   onSelect?: (id: string) => void;
   infoTile?: (marker: MapViewMarker) => JSX.Element;
   notice?: JSX.Element;

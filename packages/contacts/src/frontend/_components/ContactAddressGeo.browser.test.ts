@@ -52,6 +52,14 @@ const open = async (name: string, scenario: Scenario, width = 1440, query = "", 
   return page;
 };
 const mapBox = (page: Page) => page.locator(".k2b-map-view").first().boundingBox();
+/** A found address's route lives in the full map: open it from the tile, read the navigation link, close it. */
+const routeHref = async (page: Page) => {
+  await page.locator(".k2b-map-tile__open").first().click();
+  const href = await page.locator("dialog[open]").getByRole("link", { name: "In OpenStreetMap öffnen" }).getAttribute("href");
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+  return href;
+};
 const expectFocus = async (locator: ReturnType<Page["locator"]>) => {
   const state = await locator.evaluate((element) => ({
     focused: element === document.activeElement,
@@ -117,9 +125,31 @@ test("a pending address keeps its reserved map place from the server render unti
     expect(await mapBox(page)).toEqual(before);
     expect(await page.locator('span[role="status"]', { hasText: "Karte lädt" }).count()).toBe(0);
     expect(harness.state.locateRequests).toBe(1);
-    expect(await page.getByRole("link", { name: /Route planen/ }).getAttribute("href")).toBe(
-      "https://www.openstreetmap.org/directions?route=%3B48.39841%2C9.99155",
-    );
+    // The found address is one tile; "Plan route" moved into the full map it opens.
+    expect(await page.getByRole("link", { name: /Route planen/ }).count()).toBe(0);
+    expect(await routeHref(page)).toBe("https://www.openstreetmap.org/directions?route=%3B48.39841%2C9.99155");
+  } finally {
+    await page.close();
+  }
+});
+
+test("the address map opens from its tile, closes on Back onto the tile, and a reload opens it again", async () => {
+  const page = await open("address-dialog", { view: "detail", contact: jana(), availability: availability.configured });
+  try {
+    const tile = page.getByRole("button", { name: /^Karte öffnen: Jana Berger, / });
+    await tile.click();
+    const dialog = page.locator("dialog[open]");
+    await dialog.getByRole("heading", { name: "Jana Berger" }).waitFor();
+    const addressId = jana().addresses[0]!.id;
+    expect(new URL(page.url()).searchParams.get("map")).toBe(addressId);
+    await page.reload();
+    await page.waitForFunction(() => "clientHeight" in window);
+    await expandAddresses(page);
+    await dialog.getByRole("heading", { name: "Jana Berger" }).waitFor();
+    await page.goBack();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-map-tile__open"));
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("map"));
   } finally {
     await page.close();
   }
@@ -255,7 +285,7 @@ test.each(["submission", "reload"] as const)("the focused address editor preserv
     availability: availability.configured,
   });
   const routeLatitude = async () => {
-    const href = await page.getByRole("link", { name: /Route planen/ }).getAttribute("href");
+    const href = await routeHref(page);
     return Number(new URL(href!, page.url()).searchParams.get("route")?.split(";")[1]?.split(",")[0]);
   };
   try {
@@ -344,7 +374,7 @@ test.each([false, true])("a manually changed address gets its new location (relo
       await expandAddresses(page);
     }
     await page.locator(".k2b-map-view__pin").waitFor();
-    expect(await page.getByRole("link", { name: /Route planen/ }).getAttribute("href")).toContain("49%2C10");
+    expect(await routeHref(page)).toContain("49%2C10");
     expect(harness.state.locateRequests).toBe(1);
   } finally {
     harness.releaseLocate();
@@ -922,7 +952,11 @@ test("editing an address after an earlier lookup cannot reuse the old point", as
     const located = page.waitForResponse((response) => response.url().endsWith("/locate"));
     await page.getByRole("button", { name: "Speichern", exact: true }).click();
     expect((await located).ok()).toBe(true);
-    await page.waitForFunction(() => document.querySelector('a[href*="49%2C10"]') !== null);
+    // The tile shows the old point until the new lookup answers; the full map then links to the new one.
+    await page.waitForFunction(() => document.querySelector(".k2b-map-tile .k2b-map-view__pin") !== null);
+    let href: string | null = null;
+    for (let attempt = 0; attempt < 20 && !href?.includes("49%2C10"); attempt++) href = await routeHref(page);
+    expect(href).toContain("49%2C10");
     expect(harness.state.locateRequests).toBe(2);
   } finally {
     await page.close();

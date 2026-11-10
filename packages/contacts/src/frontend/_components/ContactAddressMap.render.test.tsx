@@ -77,15 +77,18 @@ describe("contact address map", () => {
     expect(html).toContain("Bearbeiten");
   });
 
-  test("a found address shows its pin, attribution and a route to the point", () => {
+  test("a found address is one tile that opens the full map; the route lives in that map", () => {
     const html = render({
       address: { ...address, location: { status: "found", point: { lat: 48.4, lon: 9.99 }, provenance } },
       availability: configured,
       canEdit: false,
     });
+    expect(html).toContain("k2b-map-tile");
+    expect(html).toContain('aria-label="Karte öffnen: Jana Berger, Frauenstraße 28, 89073 Ulm, DE"');
+    expect(html).toContain('data-still="true"');
     expect(html).toContain("k2b-map-view__pin");
     expect(html).toContain("OpenStreetMap");
-    expect(html).toContain("https://www.openstreetmap.org/directions?route=%3B48.4%2C9.99");
+    expect(html).not.toContain("Route planen");
     expect(html).not.toContain("Karte lädt");
     expect(html).not.toContain("Bearbeiten");
   });

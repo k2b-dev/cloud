@@ -1,6 +1,6 @@
 import type { GeoAvailabilityData, GeoPoint } from "@k2b/cloud/contracts/geo";
 import { CloudMap, type GeoNavigationPlatform, geoNavigationHref, geoNavigationPlatform } from "@k2b/cloud/geo/ui";
-import { Button, ButtonLink, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, MapDialog, MapTile, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, type JSX, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactAddress } from "../../service";
@@ -149,10 +149,32 @@ export default function ContactAddressMap(props: Props) {
     }
   };
   const href = () => geoNavigationHref({ point: point(), text: addressText(props.address), name: props.contactName }, platform());
+  const dialog = (close: () => void) => (
+    <MapDialog
+      title={props.contactName}
+      count={props.address.label ?? undefined}
+      places={[{ id: props.address.id, name: props.contactName, point: point() ?? undefined, address: addressText(props.address) }]}
+      map={(map) => <CloudMap {...map} availability={props.availability} />}
+      provenance={t().addressMapSource}
+      onClose={close}
+    />
+  );
 
   return (
     <>
-      <Show when={view().kind !== "off"}>
+      <Show when={point()}>
+        {/* The map opens the full map with the navigation link; "Plan route" lives there. */}
+        <MapTile
+          class="mt-2"
+          label={t().openAddressMap({ name: props.contactName, address: addressText(props.address) })}
+          summary={addressText(props.address)}
+          restoreId={props.address.id}
+          dialog={dialog}
+        >
+          <CloudMap still height={MAP_HEIGHT} availability={props.availability} markers={markers()} />
+        </MapTile>
+      </Show>
+      <Show when={view().kind !== "off" && !point()}>
         <div class="relative mt-2 overflow-hidden rounded-xl">
           <CloudMap height={MAP_HEIGHT} availability={props.availability} markers={markers()} />
           <Show when={message()}>
@@ -170,16 +192,18 @@ export default function ContactAddressMap(props: Props) {
         </div>
       </Show>
       <div class="mt-2 flex flex-wrap gap-2">
-        {/* geo: hands over to the Android maps app; web links open beside Cloud. */}
-        <ButtonLink
-          href={href()}
-          target={platform() === "android" ? undefined : "_blank"}
-          rel="noopener noreferrer"
-          variant="secondary"
-          size="sm"
-        >
-          <i class="ti ti-directions" aria-hidden="true" /> {t().planRoute}
-        </ButtonLink>
+        {/* Without a point there is no full map; the route goes by the address text. geo: hands over to Android's maps app. */}
+        <Show when={!point()}>
+          <ButtonLink
+            href={href()}
+            target={platform() === "android" ? undefined : "_blank"}
+            rel="noopener noreferrer"
+            variant="secondary"
+            size="sm"
+          >
+            <i class="ti ti-directions" aria-hidden="true" /> {t().planRoute}
+          </ButtonLink>
+        </Show>
         <Show when={props.canEdit}>
           <Button variant="secondary" size="sm" onClick={() => props.onEdit()} data-contact-address-edit={props.address.id}>
             <i class="ti ti-pencil" aria-hidden="true" /> {t().editAddress}

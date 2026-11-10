@@ -8,7 +8,7 @@ import {
   GeoDocumentSchema,
 } from "@k2b/cloud/geo/document";
 import { CloudMap } from "@k2b/cloud/geo/ui";
-import { Button, Dropdown, LocaleProvider, Select, TextInput, useLocale } from "@k2b/ui";
+import { Button, Dropdown, LocaleProvider, MapDialog, type MapPlace, MapTile, Select, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { apiClient } from "../../api/client";
@@ -17,7 +17,9 @@ import {
   mapLinkHref,
   mapMarkers,
   mapStateMessage,
+  mapTileSummary,
   type NotebookMapState,
+  routeFigures,
   routeMetrics,
   routeSummary,
 } from "../../lib/map-blocks";
@@ -85,6 +87,34 @@ export function NotebookMap(props: Props) {
   const blocked = () => mapBlocked(state());
   const showMap = () => !blocked() && !listMode();
   const active = createMemo(() => document().pins.find((pin) => pin.id === selected()));
+  const lines = () => (document().route ? [{ id: "route", polyline6: document().route!.polyline6 }] : []);
+  // The full map lists the pins with their links, then the route's stops.
+  const dialogPlaces = createMemo((): MapPlace[] => [
+    ...document().pins.map((pin, index) => ({
+      id: pin.id,
+      name: pin.label,
+      point: pin.point,
+      mark: index + 1,
+      links: pin.link
+        ? [
+            {
+              label: pin.link.label,
+              href: mapLinkHref(pin.link, props.notebookId, props.mode),
+              icon: `ti ti-${pin.link.type === "url" ? "link" : pin.link.type === "heading" ? "heading" : "file-text"}`,
+            },
+          ]
+        : [],
+    })),
+    ...(document().route?.stops.map((stop, index) => ({
+      id: `route-${stop.id}`,
+      name: stop.label ?? stop.address?.formatted ?? String.fromCharCode(65 + index),
+      point: stop.point,
+      mark: String.fromCharCode(65 + index),
+      tone: document().pins.length ? ("second" as const) : ("accent" as const),
+      subtitle: t().stop,
+      address: stop.address?.formatted,
+    })) ?? []),
+  ]);
   let list!: HTMLDivElement;
   let body!: HTMLDivElement;
   const [compact, setCompact] = createSignal(false);
@@ -429,15 +459,40 @@ export function NotebookMap(props: Props) {
         </Show>
         <Show when={showMap()}>
           <div class="notebook-map__viewport">
-            <CloudMap
-              height={routeOnly() ? (compact() ? 200 : 240) : compact() ? 230 : 320}
-              markers={mapMarkers(document())}
-              lines={document().route ? [{ id: "route", polyline6: document().route!.polyline6 }] : []}
-              selectedId={selected()}
-              onSelect={setSelected}
-              availability={state().availability}
-              empty={t().empty}
-            />
+            <MapTile
+              label={t().openMap({ title: document().title, summary: mapTileSummary(document(), locale()) })}
+              summary={mapTileSummary(document(), locale())}
+              dialog={(close) => (
+                <MapDialog
+                  title={document().title}
+                  facts={
+                    routeFigures(document(), locale())
+                      ? [
+                          { value: routeFigures(document(), locale())!.distance, label: t().distance },
+                          { value: routeFigures(document(), locale())!.time, label: t().duration },
+                        ]
+                      : undefined
+                  }
+                  count={document().route ? undefined : t().placeCount({ count: document().pins.length })}
+                  listLabel={routeOnly() ? t().stops : t().pins}
+                  places={dialogPlaces()}
+                  lines={lines()}
+                  selectedId={selected()}
+                  onSelect={setSelected}
+                  map={(map) => <CloudMap {...map} availability={state().availability} empty={t().empty} />}
+                  provenance={document().route ? `${t().routeSource} · ${routeMetrics(document(), locale())}` : t().source}
+                  onClose={close}
+                />
+              )}
+            >
+              <CloudMap
+                still
+                height={routeOnly() ? (compact() ? 200 : 240) : compact() ? 230 : 320}
+                markers={mapMarkers(document())}
+                lines={lines()}
+                availability={state().availability}
+              />
+            </MapTile>
           </div>
         </Show>
         <Show when={draft()}>
