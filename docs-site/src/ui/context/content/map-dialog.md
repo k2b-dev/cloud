@@ -57,17 +57,20 @@ its details show below the list (on a phone, above it).
 | `places` | `MapPlace[]`, see below. One place shows its details without a list. |
 | `lines`, `markers`, `fit` | Route lines, extra pins that are not listed (such as a proposed stop), and the fit mode. |
 | `selectedId`, `onSelect` | Optional controlled selection; otherwise the first place. |
-| `listLabel`, `group` | Name of the list for assistive technology, and a heading above it. |
+| `listLabel` | Name of the list for assistive technology, such as `Stops`. |
 | `loading`, `empty` | Loading rows, and the content that replaces an empty list. |
 | `map` | `(view) => JSX.Element`: spread `view` (height, padding, markers, lines, selection, own location) onto `MapView` or its host wrapper. |
 | `menu` | Actions in the **More actions** menu next to the title. |
 | `placeActions` | More buttons next to the navigation link of the selected place. |
+| `placeHint` | A short line under the actions, such as why one of them is unavailable right now. |
 | `notice` | Host content above the list, such as a confirmation or a recovery. |
 | `provenance` | The source line at the bottom. |
 | `onLocation` | Receives the person's location after **Show my location**. |
 
 A `MapPlace` has `id`, `name`, and optionally `point`, `mark`, `tone`,
-`subtitle`, `trailing` and `trailingDetail` (the right column of the row),
+`group` (a heading where its group starts in the list, such as the search
+that found it, in the place's tone), `subtitle`, `trailing` and
+`trailingDetail` (the right column of the row),
 `address` (with a copy button), `hours`, `note`, `source`, and `links`.
 The host fills `note`, `source` (`{ label, icon?, tone? }`; `tone: "ai"`
 marks a suggestion that an account without a person made), and `links`

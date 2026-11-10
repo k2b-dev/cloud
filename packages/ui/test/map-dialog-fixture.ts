@@ -57,7 +57,7 @@ const stops = [
 const names = ["Polsterei Hartl", "Holzwerkstatt Reiter", "Möbelrestaurierung Aigner", "Vergolderei Thoma", "Restaurierung Sedlmayr", "Atelier Blattgold",
   "Schreinerei Kugler", "Uhrenwerkstatt Pfeiffer", "Sattlerei Obermaier", "Korbflechterei Wimmer", "Glaserei Stadler", "Steinmetz Lechner"];
 const places = names.map((name, i) => ({
-  id: "p" + (i + 1), mark: i + 1, name, tone: "second",
+  id: "p" + (i + 1), mark: i + 1, name, tone: "second", group: "Restauratoren und Polsterer",
   point: { lat: 48.97 + ((i * 37) % 11) * 0.009, lon: 10.94 + ((i * 53) % 13) * 0.016 },
   subtitle: "Restaurierung · " + (i % 3 ? "jetzt geöffnet" : "Öffnungszeiten unbekannt"), trailing: (1.2 + i * 2.7).toFixed(1).replace(".", ",") + " km",
   address: "Bahnhofstraße " + (i + 3) + ", 9178" + (i % 10) + " Lindach", hours: i % 3 ? "Mo–Fr 8:00–17:00 · jetzt geöffnet" : "Öffnungszeiten unbekannt",
@@ -70,7 +70,7 @@ const scenes = {
     lines: [{ id: "route", points: [stops[0].point, { lat: 49.02, lon: 11.0 }, stops[1].point, { lat: 49.0, lon: 11.05 }, stops[2].point, { lat: 49.02, lon: 11.1 }, stops[3].point] }],
     menu: ["Stopp einfügen", "Reihenfolge optimieren", "Optionen"], provenance: "Route: Geoapify · OpenStreetMap · Zeiten ohne Verkehr, berechnet 14:05" },
   places: { title: "Restauratoren im Umkreis", summary: "12 Orte", label: "Karte öffnen: Restauratoren im Umkreis, 12 Orte", count: "12 Orte",
-    group: "Restauratoren und Polsterer", places, provenance: "Geoapify · OpenStreetMap" },
+    places, provenance: "Geoapify · OpenStreetMap" },
   single: { title: "Dr. Helene Voss", summary: "Schlossallee 7, 91790 Sandberg", label: "Karte öffnen: Dr. Helene Voss, Schlossallee 7, 91790 Sandberg",
     count: "Privatadresse", places: [{ id: "k1", name: "Dr. Helene Voss", point: stops[3].point, address: "Schlossallee 7, 91790 Sandberg" }], provenance: "Geoapify · OpenStreetMap" },
   empty: { title: "Herbstmärkte 2026", summary: "Keine Orte", label: "Karte öffnen: Herbstmärkte 2026, keine Orte", count: "0 Orte", places: [] },
@@ -93,7 +93,7 @@ window.mountScene = (name, options = {}) => {
       get loading() { return loading(); },
       restoreId: options.restoreId,
       dialog: (close) => createComponent(MapDialog, {
-        title: scene.title, facts: scene.facts, count: scene.count, listLabel: scene.listLabel, group: scene.group,
+        title: scene.title, facts: scene.facts, count: scene.count, listLabel: scene.listLabel,
         get places() { return loading() ? [] : scene.places; }, lines: scene.lines, provenance: scene.provenance,
         get loading() { return loading(); },
         menu: scene.menu?.map((label) => ({ label, onSelect: () => window.events.push(label) })),

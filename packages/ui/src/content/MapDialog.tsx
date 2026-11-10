@@ -21,6 +21,8 @@ export type MapPlace = {
   /** A number, a single letter, or "+", as on MapView markers. */
   mark?: number | string;
   tone?: MapViewTone;
+  /** The heading of the place's group in the list, such as the search that found it; shown where the group starts. */
+  group?: string;
   /** Second line in the list. */
   subtitle?: string;
   /** Right column of the list row, for example a leg's minutes and kilometres. */
@@ -56,8 +58,6 @@ export type MapDialogProps = {
   count?: string;
   /** Name of the list for assistive technology, such as "Stops". */
   listLabel?: string;
-  /** A heading above the list, such as the search that found the places. */
-  group?: string;
   places: MapPlace[];
   lines?: MapViewLine[];
   /** Pins beyond the places, such as a proposed stop; drawn but not listed. */
@@ -74,6 +74,8 @@ export type MapDialogProps = {
   menu?: MapDialogMenuItem[];
   /** More actions beside the navigation link of the selected place. */
   placeActions?: (place: MapPlace) => JSX.Element;
+  /** A short line under the actions, such as why one of them is unavailable right now. */
+  placeHint?: (place: MapPlace) => string | undefined;
   /** Host content above the list, such as a confirmation or a recovery. */
   notice?: JSX.Element;
   /** The source line at the bottom. */
@@ -283,6 +285,7 @@ export function MapDialog(props: MapDialogProps): JSX.Element {
           )}
         </For>
       </div>
+      <Show when={props.placeHint?.(place)}>{(hint) => <p class="k2b-map-dialog__hint">{hint()}</p>}</Show>
     </>
   );
 
@@ -412,39 +415,41 @@ export function MapDialog(props: MapDialogProps): JSX.Element {
                   aria-activedescendant={selected() ? `${id}-place-${props.places.indexOf(selected()!)}` : undefined}
                   onKeyDown={keydown}
                 >
-                  <Show when={props.group}>
-                    <div class="k2b-map-dialog__group" aria-hidden="true">
-                      {props.group}
-                    </div>
-                  </Show>
                   <For each={props.places}>
                     {(place, index) => (
-                      // biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keys through aria-activedescendant.
-                      <div
-                        id={`${id}-place-${index()}`}
-                        class="k2b-map-dialog__place"
-                        role="option"
-                        data-place-id={place.id}
-                        data-tone={place.tone}
-                        aria-selected={selected()?.id === place.id}
-                        onClick={() => select(place.id, "list")}
-                      >
-                        <span class="k2b-map-dialog__mark" data-empty={place.mark === undefined || undefined} aria-hidden="true">
-                          {place.mark}
-                        </span>
-                        <span class="k2b-map-dialog__place-text">
-                          <span>{place.name}</span>
-                          <Show when={place.subtitle}>
-                            <small>{place.subtitle}</small>
-                          </Show>
-                        </span>
-                        <Show when={place.trailing || place.trailingDetail}>
-                          <span class="k2b-map-dialog__trailing">
-                            <span>{place.trailing}</span>
-                            <small>{place.trailingDetail}</small>
-                          </span>
+                      <>
+                        <Show when={place.group && place.group !== props.places[index() - 1]?.group}>
+                          <div class="k2b-map-dialog__group" data-tone={place.tone} aria-hidden="true">
+                            {place.group}
+                          </div>
                         </Show>
-                      </div>
+                        {/* biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keys through aria-activedescendant. */}
+                        <div
+                          id={`${id}-place-${index()}`}
+                          class="k2b-map-dialog__place"
+                          role="option"
+                          data-place-id={place.id}
+                          data-tone={place.tone}
+                          aria-selected={selected()?.id === place.id}
+                          onClick={() => select(place.id, "list")}
+                        >
+                          <span class="k2b-map-dialog__mark" data-empty={place.mark === undefined || undefined} aria-hidden="true">
+                            {place.mark}
+                          </span>
+                          <span class="k2b-map-dialog__place-text">
+                            <span>{place.name}</span>
+                            <Show when={place.subtitle}>
+                              <small>{place.subtitle}</small>
+                            </Show>
+                          </span>
+                          <Show when={place.trailing || place.trailingDetail}>
+                            <span class="k2b-map-dialog__trailing">
+                              <span>{place.trailing}</span>
+                              <small>{place.trailingDetail}</small>
+                            </span>
+                          </Show>
+                        </div>
+                      </>
                     )}
                   </For>
                 </div>

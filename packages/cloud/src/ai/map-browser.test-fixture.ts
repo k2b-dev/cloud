@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
-import { z } from "zod";
 import type { GeoPlaceSearchInput } from "../contracts/geo";
 import { GeoRouteResolvedStopSchema } from "../contracts/geo-route";
 import { GeoapifyAdapter } from "../services/geo/geoapify";
@@ -16,18 +15,14 @@ import { mapAddress, mapFixture, mapGeoFixture, mapSuccess, mapTime } from "./ma
 import { AiMapActionSchema, AiMapCommandSchema, type AiMapToolResult, aiMapToolResult } from "./map-contracts";
 import { type AiMapContext, applyAiMap } from "./map-service";
 import type { AiMapStored } from "./map-store";
-export async function startMapBrowserFixture(options: { view?: "map" | "save" } = {}) {
-  const notes = new Map<string, string>();
-  const hash = (text: string) => `sha256:${new Bun.CryptoHasher("sha256").update(text).digest("hex")}`;
+export async function startMapBrowserFixture() {
   const fixtureDir = await mkdtemp(join(tmpdir(), "assistant-map-"));
   const ui = resolve(import.meta.dir, "../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [
-      resolve(import.meta.dir, options.view === "save" ? "chat/map-notebook.browser-harness.tsx" : "chat/map-widget.browser-harness.tsx"),
-    ],
+    entrypoints: [resolve(import.meta.dir, "chat/map-widget.browser-harness.tsx")],
     target: "browser",
     conditions: ["browser"],
     format: "esm",
@@ -280,56 +275,11 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
           states.set(name, next);
           return Response.json({ map: next.map });
         }
-        if (path.endsWith("/export")) {
-          const { aiMapNotebookContent } = await import("./map-notebook");
-          return Response.json({
-            content: aiMapNotebookContent(before.map),
-            revision: before.map.revision,
-            ownerUserId: "fictional-owner",
-          });
-        }
         return Response.json({ map: before.map, canAdmin: name.includes("admin") });
       }
       if (path === "/api/capabilities/v1/queries/core/address.autocomplete") {
         calls.push("autocomplete");
         return Response.json({ data: { suggestions: [mapAddress(), mapAddress(1), mapAddress(2)], provenance: mapAddress().provenance } });
-      }
-      if (path === "/api/capabilities/v1/queries/notebooks/notebook.list")
-        return Response.json({ data: [{ id: "Book01", name: "Fiktive Reiseplanung" }] });
-      const saveScenario = new URL(request.headers.get("referer") ?? "http://localhost").searchParams.get("scenario") ?? "places";
-      if (path === "/api/capabilities/v1/actions/notebooks/note.create") {
-        const body = z
-          .object({ input: z.object({ notebookId: z.string(), content: z.string().max(200_000) }) })
-          .parse(await request.json());
-        commands.push(body);
-        if (saveScenario.includes("unknown-save"))
-          return Response.json({ code: "CAPABILITY_UNAVAILABLE", message: "Outcome unclear" }, { status: 503 });
-        notes.set(saveScenario, body.input.content);
-        return Response.json({ data: { id: "Note01", notebookId: "Book01" } });
-      }
-      if (path === "/api/capabilities/v1/queries/notebooks/note.read") {
-        return Response.json({ data: { id: "Note01", notebookId: "Book01", contentHash: hash(notes.get(saveScenario) ?? "") } });
-      }
-      if (path === "/api/capabilities/v1/actions/notebooks/note.edit") {
-        const body = z
-          .object({
-            input: z.object({
-              noteId: z.string(),
-              ifContentHash: z.string(),
-              operations: z
-                .array(z.object({ kind: z.literal("append"), content: z.string().max(10_000), separator: z.literal("none") }))
-                .max(20),
-            }),
-          })
-          .parse(await request.json());
-        commands.push(body);
-        const content = notes.get(saveScenario) ?? "";
-        const beforeHash = hash(content);
-        if (beforeHash !== body.input.ifContentHash)
-          return Response.json({ code: "CONTENT_CONFLICT", message: "Note changed" }, { status: 409 });
-        const next = content + body.input.operations.map((op) => op.content).join("");
-        notes.set(saveScenario, next);
-        return Response.json({ data: { beforeHash, afterHash: hash(next) } });
       }
       const asset = assets.get(path.slice(1));
       if (asset) return new Response(asset, { headers: { "content-type": "text/javascript" } });
@@ -339,7 +289,7 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
       const theme = url.searchParams.get("theme") ?? "light";
       const lang = url.searchParams.get("lang") ?? "de";
       return new Response(
-        `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><link rel="stylesheet" href="/styles.css"><style>body{margin:0;background:var(--k2b-surface-canvas);color:var(--k2b-text)}.map-fixture{width:796px;max-width:calc(100% - 32px);margin:0 auto}.fixture-question{height:36px;margin:0 0 14px;padding-top:12px}.ai-turn{margin-bottom:24px}.map-fixture[data-panel=true]{width:352px;margin-left:auto;margin-right:16px}@media(max-width:599px){.map-fixture{width:358px}.fixture-question{font-size:14px}}</style></head><body class="k2b-ui"><main class="map-fixture" data-panel="${url.searchParams.get("panel") ?? "false"}"><p class="fixture-question">Zeig mir ${map.kind === "places" ? "Museen in Ulm." : "eine Tour auf der Schwäbischen Alb."}</p><div id="fixture-mount">${options.view === "save" ? "" : renderMapFixture(map, followups.get(name) ?? [], lang)}</div></main><script id="snapshot" type="application/json">${JSON.stringify({ map, followups: followups.get(name) ?? [] }).replaceAll("<", "\\u003c")}</script>${url.searchParams.has("ssr") ? "" : '<script type="module" src="/harness.js"></script>'}</body></html>`,
+        `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><link rel="stylesheet" href="/styles.css"><style>body{margin:0;background:var(--k2b-surface-canvas);color:var(--k2b-text)}.map-fixture{width:796px;max-width:calc(100% - 32px);margin:0 auto}.fixture-question{height:36px;margin:0 0 14px;padding-top:12px}.ai-turn{margin-bottom:24px}.map-fixture[data-panel=true]{width:352px;margin-left:auto;margin-right:16px}@media(max-width:599px){.map-fixture{width:358px}.fixture-question{font-size:14px}}</style></head><body class="k2b-ui"><main class="map-fixture" data-panel="${url.searchParams.get("panel") ?? "false"}"><p class="fixture-question">Zeig mir ${map.kind === "places" ? "Museen in Ulm." : "eine Tour auf der Schwäbischen Alb."}</p><div id="fixture-mount">${renderMapFixture(map, followups.get(name) ?? [], lang)}</div></main><script id="snapshot" type="application/json">${JSON.stringify({ map, followups: followups.get(name) ?? [] }).replaceAll("<", "\\u003c")}</script>${url.searchParams.has("ssr") ? "" : '<script type="module" src="/harness.js"></script>'}</body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -348,7 +298,7 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
     server.stop(true);
     await rm(fixtureDir, { recursive: true, force: true });
   };
-  return { server, stop, calls, commands, placeSearches, states, geo, get, notes };
+  return { server, stop, calls, commands, placeSearches, states, geo, get };
 }
 if (import.meta.main) {
   const fixture = await startMapBrowserFixture();

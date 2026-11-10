@@ -315,6 +315,11 @@ Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
 unlimited fallback. Availability checks remain free. Cache failures alone do
 not fail a request that admission accepts.
 
+Assistant maps open as a map dialog from a still tile in the chat. Their
+**Save as Notebook** action and the browser route
+`GET /api/ai/conversations/:conversationId/maps/:mapId/export` behind it are
+removed. Maps saved to notes earlier stay in those notes and keep showing.
+
 ## Prepare application connection bootstrap
 
 Core and Gateway keep their infrastructure environment configuration. Every

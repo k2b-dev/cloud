@@ -9,26 +9,23 @@ const messages = i18n.define({
       changeStop: "Change stop",
       without: "avoiding",
       route: "Route",
-      searched: "Places searched",
-      calculated: "Route calculated",
       loading: "Loading places and route …",
+      open: "Open map",
       here: "Route here",
       nearby: "More nearby",
-      save: "Save as Notebook",
-      locate: "I am here",
-      unknown: "Opening hours unknown",
       source: "Place and hours",
       description: "Description",
-      all: "All",
-      less: "Show fewer",
       jump: "Jump to map",
       noPlaces: "No places found.",
       expand: "Search within 10 km",
       retry: "Try again",
       failed: "Places or route could not be loaded. Your question and answer are kept.",
+      failedShort: "Map not loaded · open to try again",
       off: "Places and maps are not configured.",
+      offShort: "Maps are not configured",
       configure: "Configure places and maps",
       budget: "Map allowance reached",
+      limitShort: "Map limit reached",
       person: "Daily allowance",
       cloud: "Monthly budget",
       reset: "Available again",
@@ -37,7 +34,6 @@ const messages = i18n.define({
       optimize: "Optimize stop order",
       options: "Options",
       along: "Eat along the route",
-      nav: "Open navigation app",
       discard: "Discard",
       cancel: "Cancel",
       preview: "Preview for",
@@ -48,6 +44,7 @@ const messages = i18n.define({
       duration: "Travel time",
       choose: "Which place did you mean?",
       useStop: "Use this stop",
+      startStop: "Start",
       stopSearch: "Find a place near the route",
       search: "Search",
       category: "Category",
@@ -61,7 +58,6 @@ const messages = i18n.define({
       car: "Car",
       bike: "Bike",
       walk: "Walk",
-      avoid: "Avoid",
       highways: "Highways",
       tolls: "Tolls",
       ferries: "Ferries",
@@ -72,17 +68,15 @@ const messages = i18n.define({
       to: "To km",
       corridor: "Distance from route",
       noRoute: "No usable route. Change a stop or the options.",
-      noLocation: "Location denied · allow it in your browser",
-      locationFailed: "Location unavailable. Enter a starting place.",
+      offlineRoute: "Without a connection there is no new route. The navigation app still works.",
       start: "Starting place",
       go: "Plan route",
       conflict: "This map has changed. Load its current state and choose your change again.",
       reload: "Load current state",
-      pending: "Saving …",
-      changed: "Changed",
       stops: "Stops",
       noTraffic: "Times without traffic, calculated",
       resumeRoute: "Continue calculation",
+      costShort: "Confirm costs",
       routeLimit:
         "This route needs more credits than the configured limit. Use fewer stops, select address suggestions, or ask an administrator to raise the budget.",
       budgetNumbers: ({ required, available, missing }: { required: string; available: string; missing: string }) =>
@@ -91,29 +85,6 @@ const messages = i18n.define({
         `Last attempt: ${settled} credits charged. Reserved with an unknown outcome: ${unknown}.`,
       noInvoiceCap: "Cloud reserves estimated costs; Geoapify does not guarantee a cap on its side.",
       cost: "The route cost more than estimated. Calculation stopped. Continuing can incur further costs.",
-      notebook: "Choose notebook",
-      inspectNotebook: "Inspect notebook",
-      noNotebooks: "No writable notebook found.",
-      saved: "Saved in Notebook",
-      previousSave: "This map has an earlier save receipt. Open the notebook to find the note before starting another save.",
-      resumeSave: "Resume save",
-      reconcileSave: "Check save outcome",
-      partialNote: "Open partial note",
-      saveProgress: "Map save progress",
-      saveLoading: "Preparing save …",
-      saveCancelled: "Saving stopped. Any saved part is kept. You can resume here.",
-      savePaused: "This save is unfinished. Resume to check the note and continue.",
-      saveStorage: "Save progress could not be stored in this browser. Allow local storage and try again before continuing.",
-      saveLockUnavailable: "This browser cannot protect the save across tabs. Use a browser with Web Locks support.",
-      saveLocked: "This map is being saved in another tab. Wait for it to finish, then check again.",
-      saveOwnerChanged: "The signed-in account has changed. Reload the page before saving.",
-      saveFailed: "The map could not be saved. Try again or open the notebook to check it.",
-      saveSourceChanged: "The map source has changed. Reload the map. Open any partial note before starting another save.",
-      saveContentChanged: "The note has changed. Open it to review your changes; this save cannot continue.",
-      saveInvalid: "The saved progress or map source cannot be used. Open the notebook to recover any saved part.",
-      saveTooLarge: "The map title cannot fit in a save request. Shorten it before saving.",
-      saveAppendUnknown: "The last part may still be saving. Check the outcome again later. It will not be sent twice.",
-      unknownSave: "The note may have been created. Open the notebook to recover it. This save will not be sent again.",
     },
     de: {
       places: "Orte",
@@ -121,26 +92,23 @@ const messages = i18n.define({
       changeStop: "Stopp ändern",
       without: "ohne",
       route: "Route",
-      searched: "Orte gesucht",
-      calculated: "Route berechnet",
       loading: "Orte und Route werden geladen …",
+      open: "Karte öffnen",
       here: "Route hierher",
       nearby: "Mehr in der Nähe",
-      save: "Als Notebook speichern",
-      locate: "Ich bin hier",
-      unknown: "Öffnungszeiten unbekannt",
       source: "Ort und Zeiten",
       description: "Beschreibung",
-      all: "Alle",
-      less: "Weniger zeigen",
       jump: "Zur Karte",
       noPlaces: "Keine Orte gefunden.",
       expand: "Umkreis 10 km",
       retry: "Erneut versuchen",
       failed: "Die Orte oder Route konnten nicht geladen werden. Deine Frage und die Antwort bleiben stehen.",
+      failedShort: "Karte nicht geladen · öffnen zum erneuten Versuch",
       off: "Orte und Karten sind nicht eingerichtet.",
+      offShort: "Karten sind nicht eingerichtet",
       configure: "Orte und Karten einrichten",
       budget: "Kartengrenze erreicht",
+      limitShort: "Kartengrenze erreicht",
       person: "Tagesgrenze",
       cloud: "Monatsbudget",
       reset: "Wieder verfügbar",
@@ -149,7 +117,6 @@ const messages = i18n.define({
       optimize: "Reihenfolge optimieren",
       options: "Optionen",
       along: "Unterwegs essen",
-      nav: "In Navi-App öffnen",
       discard: "Verwerfen",
       cancel: "Abbrechen",
       preview: "Vorschau für",
@@ -160,6 +127,7 @@ const messages = i18n.define({
       duration: "Fahrzeit",
       choose: "Welcher Ort ist gemeint?",
       useStop: "Als Stopp übernehmen",
+      startStop: "Start",
       stopSearch: "Ort nahe der Strecke suchen",
       search: "Suchen",
       category: "Kategorie",
@@ -173,7 +141,6 @@ const messages = i18n.define({
       car: "Auto",
       bike: "Rad",
       walk: "Zu Fuß",
-      avoid: "Meiden",
       highways: "Autobahn",
       tolls: "Maut",
       ferries: "Fähren",
@@ -184,87 +151,23 @@ const messages = i18n.define({
       to: "Bis km",
       corridor: "Abstand zur Strecke",
       noRoute: "Keine befahrbare Strecke. Ändere einen Stopp oder die Optionen.",
-      noLocation: "Standort nicht erlaubt · im Browser freigeben",
-      locationFailed: "Standort nicht verfügbar. Gib einen Startort ein.",
+      offlineRoute: "Ohne Verbindung keine neue Route. Die Navi-App geht weiter.",
       start: "Startort",
       go: "Route planen",
       conflict: "Diese Karte wurde inzwischen geändert. Aktuellen Stand laden und die Änderung erneut wählen.",
       reload: "Aktuellen Stand laden",
-      pending: "Wird gespeichert …",
-      changed: "Geändert",
       stops: "Stopps",
       noTraffic: "Zeiten ohne Verkehr, gerechnet",
       resumeRoute: "Berechnung fortsetzen",
+      costShort: "Kosten bestätigen",
       routeLimit:
         "Diese Route benötigt mehr Credits als die eingestellte Grenze. Wähle weniger Stopps oder Adressvorschläge, oder lass das Budget durch einen Administrator erhöhen.",
       budgetNumbers: ({ required, available, missing }) => `Benötigt: ${required} Credits. Verfügbar: ${available}. Fehlend: ${missing}.`,
       recordedCosts: ({ settled, unknown }) => `Letzter Versuch: ${settled} Credits gebucht. Mit unklarem Ergebnis reserviert: ${unknown}.`,
       noInvoiceCap: "Cloud reserviert geschätzte Kosten; Geoapify garantiert auf seiner Seite keine Obergrenze.",
       cost: "Die Route war teurer als geschätzt. Die Berechnung wurde gestoppt. Beim Fortsetzen können weitere Kosten entstehen.",
-      notebook: "Notebook auswählen",
-      inspectNotebook: "Notebook prüfen",
-      noNotebooks: "Kein beschreibbares Notebook gefunden.",
-      saved: "Im Notebook gespeichert",
-      previousSave:
-        "Für diese Karte liegt ein früherer Speicherbeleg vor. Öffne das Notebook, um die Notiz zu finden, bevor du erneut speicherst.",
-      resumeSave: "Speichern fortsetzen",
-      reconcileSave: "Speicherstand prüfen",
-      partialNote: "Teilweise gespeicherte Notiz öffnen",
-      saveProgress: "Fortschritt beim Speichern der Karte",
-      saveLoading: "Speichern wird vorbereitet …",
-      saveCancelled: "Speichern gestoppt. Bereits gespeicherte Teile bleiben erhalten. Du kannst hier fortsetzen.",
-      savePaused: "Das Speichern ist noch nicht abgeschlossen. Beim Fortsetzen wird die Notiz geprüft.",
-      saveStorage:
-        "Der Fortschritt konnte in diesem Browser nicht gespeichert werden. Erlaube lokalen Speicher und versuche es erneut, bevor du fortsetzt.",
-      saveLockUnavailable:
-        "Dieser Browser kann das Speichern nicht über mehrere Tabs absichern. Verwende einen Browser mit Web-Locks-Unterstützung.",
-      saveLocked: "Diese Karte wird in einem anderen Tab gespeichert. Warte, bis er fertig ist, und prüfe erneut.",
-      saveOwnerChanged: "Das angemeldete Konto hat sich geändert. Lade die Seite vor dem Speichern neu.",
-      saveFailed: "Die Karte konnte nicht gespeichert werden. Versuche es erneut oder prüfe das Notebook.",
-      saveSourceChanged:
-        "Die Kartenquelle hat sich geändert. Lade die Karte neu. Öffne eine teilweise gespeicherte Notiz, bevor du erneut speicherst.",
-      saveContentChanged:
-        "Die Notiz hat sich geändert. Öffne sie, um deine Änderungen zu prüfen. Dieser Speichervorgang kann nicht fortgesetzt werden.",
-      saveInvalid:
-        "Der gespeicherte Fortschritt oder die Kartenquelle ist nicht verwendbar. Öffne das Notebook, um bereits gespeicherte Teile zu finden.",
-      saveTooLarge: "Der Kartentitel passt nicht in eine Speicheranfrage. Kürze ihn vor dem Speichern.",
-      saveAppendUnknown:
-        "Der letzte Teil wird möglicherweise noch gespeichert. Prüfe den Stand später erneut. Er wird nicht doppelt gesendet.",
-      unknownSave:
-        "Die Notiz wurde möglicherweise erstellt. Öffne das Notebook, um sie zu finden. Dieser Speichervorgang wird nicht erneut gesendet.",
     },
   },
 });
 
 export const mapMessages = (locale: string) => messages.resolve([locale]).t;
-
-/** Helper codes are internal; owning capabilities may supply a final human message. */
-export const mapSaveMessage = (locale: string, code?: string, message?: string): string => {
-  const t = mapMessages(locale);
-  switch (code) {
-    case "source_changed":
-      return t.saveSourceChanged;
-    case "checkpoint_failed":
-    case "persistence_failed":
-      return t.saveStorage;
-    case "content_changed":
-    case "note_moved":
-    case "unexpected_receipt":
-      return t.saveContentChanged;
-    case "invalid_checkpoint":
-    case "invalid_title":
-      return t.saveInvalid;
-    case "request_too_large":
-      return t.saveTooLarge;
-    case "create_outcome_unknown":
-      return t.unknownSave;
-    case "append_outcome_unknown":
-      return t.saveAppendUnknown;
-    case "cancelled":
-      return t.saveCancelled;
-    case "save_failed":
-      return t.saveFailed;
-    default:
-      return message || t.savePaused;
-  }
-};
