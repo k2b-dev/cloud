@@ -61,6 +61,19 @@ export const chartFixtures = {
     data: [{ label: "Campaign A", group: "North", x: 20, y: 40, size: 25 }],
   },
   radar: { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Plan A", data: [4, 3, 2] }] },
+  balanceFlow: {
+    kind: "balanceFlow",
+    currency: "EUR",
+    periods: [
+      {
+        label: "October",
+        opening: 100,
+        inflows: [{ label: "Orders", value: 300 }],
+        outflows: [{ label: "Fees", value: 50 }],
+        closing: 350,
+      },
+    ],
+  },
   sankey: {
     kind: "sankey",
     nodes: [

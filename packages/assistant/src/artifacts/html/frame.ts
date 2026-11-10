@@ -9,7 +9,7 @@ import { type ChartInspection, type ChartTooltip, inspectChart, isChartDatum } f
 import { calendarInspectionNavigation, mountCalendarScroll, sankeyInspectionNavigation } from "@k2b/ui/charts";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
-import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
+import { chartInteraction, configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { createCloud } from "../runtime/cloud";
 import { CloudError } from "../runtime/errors";
 import {
@@ -383,6 +383,10 @@ async function paintChart(element: HTMLElement) {
     const markup = chartMarkup(options, config.context.locale, width, height, measure);
     if (markup.includes("data-chart-pending=")) throw new Error("The chart module does not support this chart kind.");
     const fragment = document.createRange().createContextualFragment(String(markup));
+    if (options.input.kind === "balanceFlow") {
+      element.closest(".k2b-chart")?.replaceWith(fragment);
+      return;
+    }
     const chart = fragment.querySelector(".k2b-chart")!;
     const drawing = chart.firstElementChild!;
     // Keep author listeners and references on the returned chart and drawing nodes.
@@ -453,6 +457,14 @@ new MutationObserver((records) => {
     chartTooltips.delete(element);
   }
   for (const element of document.querySelectorAll<HTMLElement>("[data-chart-pending]")) void fillChart(element);
+  for (const root of document.querySelectorAll<HTMLElement>("[data-balance-flow]:not([data-balance-mounted])")) {
+    const chart = root.querySelector<HTMLElement>(".k2b-chart");
+    if (!chart) continue;
+    const mount = chartInteraction("balanceFlow");
+    if (!mount) continue;
+    const dispose = mount(root, { locale: config.context.locale }, inspectChart);
+    inspections.set(chart, { invalidate() {}, close() {}, destroy: dispose });
+  }
   for (const chart of document.querySelectorAll<HTMLElement>(".k2b-chart")) {
     if (inspections.has(chart) || !chart.querySelector("[data-chart-datum]")) continue;
     const kind = chart.getAttribute("data-chart-kind");

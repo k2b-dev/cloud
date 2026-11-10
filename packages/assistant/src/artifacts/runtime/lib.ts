@@ -7,13 +7,14 @@ import {
   type CloudAiFormat,
   type CloudAiNumberFormat,
   cloudAiAppChartSchema,
-  cloudAiChartRenderOptions,
-  cloudAiChartRows,
+  cloudAiBaseChartRenderOptions as cloudAiChartRenderOptions,
+  cloudAiBaseChartRows as cloudAiChartRows,
   cloudAiChartTooltip,
 } from "@k2b/cloud/ai/app-frame";
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
 import { money } from "@k2b/stdlib";
 import {
+  balanceFlowHeight,
   barChartLayout,
   calendarLayout,
   donut,
@@ -116,8 +117,19 @@ function drawChart(
 ): { svg: string | undefined; table: CloudAiChartTable } {
   try {
     const formats = { x: options.xFormat, y: options.yFormat, value: options.format };
-    const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
     const common: ChartDrawing = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
+    if (options.input.kind === "balanceFlow") {
+      const { periods, currency } = options.input;
+      return {
+        svg: rareChartSvg(
+          { kind: "balanceFlow", periods, currency },
+          { ...common, balanceFlow: { input: options.input, formats } },
+          locale,
+        ),
+        table: { columns: [], rows: [] },
+      };
+    }
+    const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
     if (mapped.kind === "hbar") {
       common.hbar = hbarLayout({ ...mapped, ...common }, { width, height });
       common.height = common.hbar.height;
@@ -255,6 +267,15 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const { input } = prepared;
   const { svg, table } = drawChart(prepared, locale, width, height);
   if (svg === undefined && !deferChartDrawing) throw new CloudError("invalid", "cloud.chart: The chart renderer returned no SVG.");
+  if (input.kind === "balanceFlow") {
+    if (svg !== undefined) return new Html(svg);
+    const id = `c${++chartSeq}`;
+    pendingChartOptions.set(id, prepared);
+    const frameHeight = balanceFlowHeight(input.periods, height);
+    return new Html(
+      `<div class="k2b-chart k2b-ui" data-balance-pending style="--k2b-balance-flow-height:${frameHeight}px;--k2b-balance-flow-phone-height:${(180 * (frameHeight - 46)) / frameHeight + 2}px;--k2b-balance-flow-rows:${Math.min(6, ...input.periods.map((p) => p.inflows.length + p.outflows.length + 3))}"><div class="k2b-chart__svg" data-chart-pending="${id}" aria-busy="true" style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${chartLoading(locale)}</div></div>`,
+    );
+  }
   // Bar rows take the height their labels need; the box reserves it.
   const sankey = input.kind === "sankey";
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
@@ -303,6 +324,7 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
 
 /** Reserve horizontal rows before the offline renderer arrives. */
 export function pendingChartHeight(prepared: StoredChart, locale: string, width: number, height: number): number {
+  if (prepared.input.kind === "balanceFlow") return balanceFlowHeight(prepared.input.periods);
   if (prepared.input.kind !== "hbar" && prepared.input.kind !== "bar") return height;
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, {
     width,
@@ -324,6 +346,7 @@ export function pendingChartWidth(prepared: StoredChart, width: number): number 
 
 /** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
 function pendingCalendarSize(prepared: StoredChart, locale: string, width: number, height: number) {
+  if (prepared.input.kind !== "heatmap" || prepared.input.layout !== "calendar") return;
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, { width });
   return mapped.kind === "heatmap" && mapped.layout === "calendar"
     ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle })
@@ -339,7 +362,7 @@ export function chartLoading(locale: string): string {
 export async function resolveChartHtml(content: string, locale: string): Promise<string> {
   if (!content.includes("data-chart-pending=")) return content;
   const pendingMarkup =
-    /<div class="k2b-chart"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g;
+    /<div class="k2b-chart(?: k2b-ui)?"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g;
   const ids = [...content.matchAll(pendingMarkup)].map((match) => match[1]!);
   await Promise.all(
     ids.map((id) => {
