@@ -26,7 +26,7 @@ export const browserName: "chromium" | "webkit" = (() => {
 // which leaves 1 s for the rest of the hook; a launch still pending after 4 s reports before the hook fails (#1473).
 const gracefulCloseMs = 2000;
 const killWaitMs = 2000;
-// Once its process group is gone, the browser is closed; Playwright then only removes the profile, which can take
+// Once its process group has no living members, the browser is closed; Playwright then only removes the profile, which can take
 // seconds on a busy runner. That cleanup finishes in the background instead of using up the hook's last second.
 const profileWaitMs = 250;
 const slowLaunchMs = 4000;
@@ -83,17 +83,28 @@ const within = async (promise: Promise<unknown>, timeoutMs: number): Promise<boo
   }
 };
 
-const processGroupAlive = (pid: number): boolean => {
+export const processGroupAlive = (pid: number): boolean => {
   try {
     process.kill(-pid, 0);
-    return true;
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
     throw error;
   }
+  // Signal 0 also succeeds for a group made up only of zombies. They have exited and released their resources;
+  // only their parent can reap them. Inspect every group member: a living orphan still counts after its leader exits.
+  const result = Bun.spawnSync(["ps", "-eo", "pid=,pgid=,stat="], { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(`Cannot inspect browser process group ${pid}: ${result.stderr.toString()}`);
+  return result.stdout
+    .toString()
+    .trim()
+    .split("\n")
+    .some((line) => {
+      const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s*$/.exec(line);
+      return match !== null && Number(match[2]) === pid && !/^[ZX]/.test(match[3]!);
+    });
 };
 
-/** Kills the browser's process group and waits until no process of it is left; its leader exiting alone is not enough (#1473). */
+/** Kills the browser's process group and waits until no living member is left; its leader exiting alone is not enough (#1473). */
 export const killProcessGroup = async (browserProcess: BrowserProcess, gracefulMs: number): Promise<number> => {
   const { pid } = browserProcess;
   const started = Date.now();
