@@ -224,13 +224,14 @@ The subpath includes lists and list commands, display ligatures, marks,
 subscript and superscript, notices, named data blocks, images, links, math,
 Mermaid, completions, themes, and scroll helpers. The Markdown parsers are also
 available to render the same source outside an editor. Extensions preserve the
-source text; editing a rendered block reveals its Markdown, and only while the
-editor has focus. Without focus every block renders: the default selection at
-the start of the document reveals nothing, so a note opens without a `#` before
-its title, like its server render, and the block last edited renders again when
-focus moves elsewhere. A control that moves the selection into a block's source
-for the person, also in a read-only editor that cannot take focus, adds
-`placeMarkdownCaret.of()` to its transaction. The math extension expects the
+source text; editing a rendered block reveals its Markdown, once the person acts
+in the focused editor: a press, a key that moves the caret, typing, deleting, or
+undo. Focus alone reveals nothing, so a note that the application focuses when
+it opens shows no `#` before its title, like its server render, and neither does
+focus that returns from a dialog or another window. The block last edited
+renders again when focus moves elsewhere. A control that moves the selection
+into a block's source for the person, also in a read-only editor that cannot
+take focus, adds `placeMarkdownCaret.of()` to its transaction. The math extension expects the
 host to load KaTeX’s stylesheet and fonts.
 
 | Extension | Application options |
