@@ -326,6 +326,7 @@ export default function Layout(props: LayoutProps) {
             pageTrail
             help={runtimeHelp}
             panel={panel ? true : undefined}
+            privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
           />
           <PageTrailProvider trail={pageTrail} onOwnTitle={() => (focusContent.ownTitle = true)}>
             {(() => {

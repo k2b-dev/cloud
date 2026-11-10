@@ -385,7 +385,8 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
           }}
         </Show>
       </div>
-      <div class="k2b-sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {/* Its sentences can name files, so under the privacy screen it leaves the accessibility tree like the list. */}
+      <div class="k2b-sr-only" role="status" aria-live="polite" aria-atomic="true" data-cloud-privacy="blur">
         {live()}
       </div>
     </section>

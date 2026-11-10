@@ -9,6 +9,7 @@ export const PRIVACY_REQUEST_EVENT = "cloud.privacy.request";
 
 export type PrivacyRequest = { action: "on" | "off" };
 export type PrivacyChannelMessage =
+  | { type: "hello" }
   | { type: "timer"; seconds: PrivacyTimerSeconds }
   | { type: "on" }
   | { type: "off" }
@@ -34,22 +35,22 @@ export const onPrivacyTimer = (listener: (seconds: PrivacyTimerSeconds) => void)
 
 const openChannel = () => (typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(PRIVACY_CHANNEL));
 
-/**
- * Saves the person's timer and tells this tab and the other tabs of this browser. Resolves `false` when the server
- * did not save it; the caller then shows the previous value again.
- */
+/** Saves the person's timer. Resolves `false` when the server did not save it. */
 export const savePrivacyTimer = async (seconds: PrivacyTimerSeconds): Promise<boolean> => {
   try {
     // The API client loads with the first change, not with every page.
     const { coreClient } = await import("../clients/core");
     const response = await coreClient.me.screen.$put({ json: { privacyTimerSeconds: seconds } });
-    if (!response.ok) return false;
+    return response.ok;
   } catch {
     return false;
   }
+};
+
+/** Tells this tab and the other tabs of this browser about a saved timer. */
+export const announceSavedPrivacyTimer = (seconds: PrivacyTimerSeconds) => {
   publishPrivacyTimer(seconds);
   const channel = openChannel();
   channel?.postMessage({ type: "timer", seconds } satisfies PrivacyChannelMessage);
   channel?.close();
-  return true;
 };

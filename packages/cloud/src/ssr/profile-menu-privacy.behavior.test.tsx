@@ -138,6 +138,38 @@ test("the touch menu offers the same entries where a mouse or touchpad is also c
   expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual(["false", "false", "false", "true", "false"]);
 });
 
+test("quick choices save one after another and the last one wins, also when an earlier answer comes late", async () => {
+  const bodies: unknown[] = [];
+  const answers: (() => void)[] = [];
+  const previous = globalThis.fetch;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = String(init?.body);
+    bodies.push(JSON.parse(body));
+    await new Promise<void>((done) => answers.push(done));
+    return new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  restoreFetch = () => (globalThis.fetch = previous);
+  const menu = await mount();
+  const heard: number[] = [];
+  window.addEventListener("cloud.privacy.timer", (event) => heard.push((event as CustomEvent<number>).detail));
+  menu.options()[1]!.click();
+  menu.options()[0]!.click();
+  menu.options()[4]!.click();
+  expect(menu.checked()).toBe("5 min");
+  await until(() => answers.length === 1);
+  // Only one save runs; the choices in between are not sent.
+  expect(bodies).toEqual([{ privacyTimerSeconds: 30 }]);
+  answers.shift()!();
+  await until(() => answers.length === 1 && bodies.length === 2);
+  expect(bodies).toEqual([{ privacyTimerSeconds: 30 }, { privacyTimerSeconds: 300 }]);
+  expect(heard).toEqual([]);
+  expect(menu.checked()).toBe("5 min");
+  answers.shift()!();
+  await until(() => heard.length === 1);
+  expect(heard).toEqual([300]);
+  expect(menu.checked()).toBe("5 min");
+});
+
 test("arrow keys move through the timer", async () => {
   const bodies = serve(() => 200);
   const menu = await mount();

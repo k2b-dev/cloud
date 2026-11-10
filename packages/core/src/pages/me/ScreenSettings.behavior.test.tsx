@@ -61,7 +61,9 @@ test("At your screen saves the timer at once, says so in place, and offers to tr
   // The page names the failure in place; no toast repeats it.
   expect(document.querySelector(".k2b-toast")).toBeNull();
   status = 200;
-  [...section.querySelectorAll<HTMLButtonElement>('[role="status"] button')].find((button) => button.textContent === "Erneut versuchen")!.click();
+  [...section.querySelectorAll<HTMLButtonElement>('[role="status"] button')]
+    .find((button) => button.textContent === "Erneut versuchen")!
+    .click();
   await until(
     () => checked() === "Aus" && status_().includes("Gespeichert"),
     () => ({ checked: checked(), status: status_(), bodies }),

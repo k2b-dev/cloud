@@ -30,8 +30,14 @@
   --cloud-privacy-hint-y: 50vh;
   position: fixed;
   z-index: 1000;
+  /* A manual popover in the top layer: no UA inset, margin, frame or scroller. */
+  inset: auto;
   top: var(--cloud-privacy-hint-y);
   left: var(--cloud-privacy-hint-x);
+  height: auto;
+  margin: 0;
+  border: 0;
+  overflow: visible;
   display: flex;
   width: min(22.5rem, calc(100vw - 2rem));
   flex-direction: column;
@@ -44,6 +50,11 @@
   text-align: center;
   transform: translate(-50%, -50%);
   transition: box-shadow 160ms ease-out;
+}
+
+/* The sign-out warning has priority: the hint waits behind it. */
+.cloud-privacy-hint[hidden] {
+  display: none;
 }
 
 /* A mouse movement, a scroll, or a right click lights the hint up: the way back is a click or a key. */

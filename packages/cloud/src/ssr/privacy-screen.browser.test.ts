@@ -66,10 +66,16 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import ShellRuntime from "./ShellRuntime.island";
 import { readShellData } from "./shell-data";
-// The real runtime with the timer the server rendered; the harness hydrates no island.
+// The real runtime with the timer the server rendered; the harness hydrates no island. "?popout" runs it as a page
+// without the command menu, as a pop-out editor does.
 const timerSeconds = readShellData()?.privacyTimerSeconds ?? 0;
+const popout = new URLSearchParams(location.search).has("popout");
 render(
-  () => createComponent(ShellRuntime, { focus: true, commands: { searchResources: false }, privacy: { timerSeconds, name: "Cloud" } }),
+  () =>
+    createComponent(ShellRuntime, {
+      ...(popout ? {} : { focus: true, commands: { searchResources: false } }),
+      privacy: { timerSeconds, name: "Cloud" },
+    }),
   document.createElement("div"),
 );
 `,
@@ -124,8 +130,8 @@ afterAll(async () => {
   stop?.();
 });
 
-const open = async (options: BrowserContextOptions & { cookies?: { name: string; value: string }[] } = {}) => {
-  const { cookies, ...contextOptions } = options;
+const open = async (options: BrowserContextOptions & { cookies?: { name: string; value: string }[]; search?: string } = {}) => {
+  const { cookies, search, ...contextOptions } = options;
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     locale: "de-DE",
@@ -140,7 +146,7 @@ const open = async (options: BrowserContextOptions & { cookies?: { name: string;
   const errors = pageErrors(page);
   // playwright clock: the idle timer, the countdown and the cross-tab deadline are the subject; fake timers drive them.
   await page.clock.install({ time: START });
-  await page.goto(`${origin}/app/privacy`);
+  await page.goto(`${origin}/app/privacy${search ?? ""}`);
   return { context, page, errors };
 };
 /** Waits for the runtime: it appends its live region on install. */
@@ -445,6 +451,156 @@ describe("privacy screen", () => {
       await first.page.waitForFunction(() => document.documentElement.dataset.cloudPrivacy !== "on");
     } finally {
       await first.context.close();
+    }
+  });
+
+  test("Enter on the hint's button lifts and is used up; a click on the hint lifts too", async () => {
+    timer = 0;
+    const { context, page } = await open();
+    try {
+      await ready(page);
+      await page.locator("#reply").click();
+      await shortcut(page);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Weiterarbeiten");
+      await page.keyboard.down("Enter");
+      expect(await covered(page)).toBe(false);
+      await page.keyboard.down("Enter");
+      await page.keyboard.up("Enter");
+      expect(await page.locator("#reply").inputValue()).toBe("");
+      await shortcut(page);
+      // settled: transitions are off and the fake clock holds animation frames; the hint shows with the attribute.
+      const title = await page.locator(".cloud-privacy-hint__title").boundingBox();
+      await page.mouse.click(title!.x + 4, title!.y + 4);
+      expect(await covered(page)).toBe(false);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("the hint stays in the middle of the view over a transformed, clipping dialog, and open popovers blur", async () => {
+    timer = 0;
+    const { context, page } = await open();
+    try {
+      await ready(page);
+      await page.evaluate(() => {
+        const dialog = document.createElement("dialog");
+        dialog.style.cssText =
+          "position:fixed;inset:auto;top:50%;left:50%;width:240px;height:120px;overflow:hidden;transform:translate(-50%,-50%)";
+        dialog.innerHTML = "<p>Gehalt 2026</p>";
+        document.body.append(dialog);
+        dialog.showModal();
+        const popover = document.createElement("div");
+        popover.id = "menu-popover";
+        popover.popover = "manual";
+        popover.textContent = "Vertrag Lindner";
+        document.querySelector("#subject")!.append(popover);
+      });
+      await shortcut(page);
+      // settled: transitions are off and the fake clock holds animation frames; the hint shows with the attribute.
+      const box = await page.locator(".cloud-privacy-hint").boundingBox();
+      // settled: the app area never moves while covered.
+      const area = await page.locator(".layout-shell-content").boundingBox();
+      expect(Math.abs(box!.x + box!.width / 2 - (area!.x + area!.width / 2))).toBeLessThanOrEqual(1);
+      expect(box!.width).toBeGreaterThan(240);
+      await page.keyboard.press("x");
+      await page.evaluate(() => {
+        document.querySelector("dialog")?.close();
+        (document.getElementById("menu-popover") as HTMLElement).showPopover();
+      });
+      await shortcut(page);
+      expect(await page.locator("#menu-popover").getAttribute("data-cloud-privacy-covered")).toBe("");
+      // Closing the popover and opening it again while covered keeps it covered.
+      await page.evaluate(() => {
+        const popover = document.getElementById("menu-popover") as HTMLElement;
+        popover.hidePopover();
+        popover.showPopover();
+      });
+      await page.waitForFunction(() => document.getElementById("menu-popover")?.hasAttribute("data-cloud-privacy-covered"));
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("text beside an island covers its container, island included; a new island inside covered content stays covered", async () => {
+    timer = 0;
+    const { context, page } = await open();
+    try {
+      await ready(page);
+      await page.evaluate(() => {
+        const mixed = document.createElement("div");
+        mixed.id = "mixed";
+        mixed.innerHTML = 'Gehalt 120.000 € <span data-cloud-privacy="keep">42 %</span>';
+        document.querySelector(".k2b-app-workspace__main")!.append(mixed);
+      });
+      await shortcut(page);
+      expect(await page.locator("#mixed").getAttribute("data-cloud-privacy-covered")).toBe("");
+      await page.evaluate(() => {
+        const late = document.createElement("div");
+        late.id = "late";
+        late.dataset.cloudPrivacy = "live";
+        late.textContent = "Diktat läuft";
+        document.getElementById("subject")!.append(late);
+      });
+      // The subject holds text of its own, so the dictation inside it stays covered rather than showing the subject.
+      await page.waitForFunction(() => document.getElementById("late")?.closest("[data-cloud-privacy-covered]"));
+      expect(await page.locator("#upload").getAttribute("data-cloud-privacy-covered")).toBeNull();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a tab that opens while the others are covered is covered at once", async () => {
+    timer = 0;
+    const first = await open();
+    try {
+      await ready(first.page);
+      await shortcut(first.page);
+      const second = await first.context.newPage();
+      await second.clock.install({ time: START });
+      await second.goto(`${origin}/app/privacy`);
+      await second.waitForFunction(() => document.documentElement.dataset.cloudPrivacy === "on");
+    } finally {
+      await first.context.close();
+    }
+  });
+
+  test("after a dictation ends the idle time starts again with its countdown; the first mouse movement counts", async () => {
+    timer = 30;
+    const { context, page } = await open();
+    try {
+      await ready(page);
+      await page.evaluate(() => {
+        const dictation = document.createElement("div");
+        dictation.id = "dictation";
+        dictation.dataset.cloudPrivacy = "live";
+        document.querySelector(".k2b-app-workspace__main")!.append(dictation);
+      });
+      await page.clock.runFor(90_000);
+      await page.evaluate(() => document.getElementById("dictation")?.remove());
+      await page.clock.runFor(2_000);
+      expect(await covered(page)).toBe(false);
+      expect(await counting(page)).toBe(false);
+      await page.clock.runFor(20_000);
+      expect(await counting(page)).toBe(true);
+      // This page has had no pointer movement yet: the first one stops the countdown.
+      await page.mouse.move(600, 300);
+      expect(await counting(page)).toBe(false);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a page without the command menu, such as a pop-out editor, still covers with the shortcut", async () => {
+    timer = 0;
+    const { context, page } = await open({ search: "?popout" });
+    try {
+      await ready(page);
+      await shortcut(page);
+      expect(await covered(page)).toBe(true);
+      await page.keyboard.press("x");
+      expect(await covered(page)).toBe(false);
+    } finally {
+      await context.close();
     }
   });
 

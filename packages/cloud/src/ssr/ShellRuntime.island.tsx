@@ -109,6 +109,8 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         installPrivacyScreen({
           timerSeconds: privacy.timerSeconds,
           text: () => ({ ...text(), tabTitle: privacy.name }),
+          // Without the command menu, as in pop-out editors, the runtime owns Cmd/Ctrl+. itself.
+          shortcut: !props.commands,
         }),
       );
     });

@@ -35,9 +35,7 @@ export default function ScreenSettings(props: { timerSeconds: PrivacyTimerSecond
           <div class="flex flex-col gap-5">
             <div class="flex flex-col gap-2">
               <div>
-                <p class="text-sm font-medium text-primary">
-                  {privacy.messages().timer}
-                </p>
+                <p class="text-sm font-medium text-primary">{privacy.messages().timer}</p>
                 <p class="text-xs text-dimmed">{t().privacyTimerHint}</p>
               </div>
               <SegmentedControl

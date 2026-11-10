@@ -1,4 +1,4 @@
-import { Button } from "@k2b/ui";
+import { Button, keyboardPlatform } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { PrivacyTimerSeconds } from "../contracts/screen-preferences";
 import {
@@ -77,7 +77,17 @@ export type PrivacyScreenOptions = {
   timerSeconds: PrivacyTimerSeconds;
   text: () => PrivacyScreenText;
   clock?: PrivacyClock;
+  /**
+   * Pages without the command menu, such as pop-out editors, handle Cmd/Ctrl+. here; elsewhere the registered
+   * command owns it, so Help and the command menu show it.
+   */
+  shortcut?: boolean;
 };
+
+const isShortcut = (event: KeyboardEvent) =>
+  event.key === "." &&
+  !event.altKey &&
+  (keyboardPlatform() === "apple" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
 
 export const privacyScreenActive = () => document.documentElement.dataset.cloudPrivacy === "on";
 export const sessionWarningOpen = () =>
@@ -142,10 +152,12 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     sayHandle = clock.set(() => (live.textContent = message), 30);
   };
 
+  // The hint is no island: a click on it lifts, and Enter on its button is used up like any key. It shows in the top
+  // layer, so a dialog's transform or clipping never moves it.
   const hint = document.createElement("div");
   hint.className = "cloud-privacy-hint";
   hint.setAttribute("role", "dialog");
-  hint.dataset.cloudPrivacy = "keep";
+  hint.setAttribute("popover", "manual");
   const ids = { title: "cloud-privacy-title", body: "cloud-privacy-body", note: "cloud-privacy-note" };
   hint.setAttribute("aria-labelledby", ids.title);
   hint.setAttribute("aria-describedby", `${ids.body} ${ids.note}`);
@@ -163,24 +175,35 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
       madeInert.add(element);
     }
   };
-  let arrived = false;
-  const cover = (container: Element, fresh: boolean) => {
+  /** Text of its own beside an island cannot blur alone, so such a container covers whole, the island with it. */
+  const hasOwnText = (element: Element) =>
+    Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()));
+  const cover = (container: Element) => {
     for (const child of Array.from(container.children)) {
-      if (SKIPPED.has(child.tagName) || child.hasAttribute(COVERED) || isIsland(child)) continue;
+      if (SKIPPED.has(child.tagName) || isIsland(child)) continue;
       if (child.classList.contains("layout-rail")) mark(child, "rail");
-      else if (holdsIsland(child)) cover(child, fresh);
-      else {
-        mark(child, "");
-        // Toasts and dialogs that arrive while covered stay covered; the screen reader hears only that something came.
-        if (fresh && !arrived && container === document.body && child.querySelector(".k2b-toast, [role=alert], [role=status]")) {
-          arrived = true;
-          say(options.text().newMessages);
-        }
-      }
+      else if (holdsIsland(child) && !hasOwnText(child)) cover(child);
+      else mark(child, "");
     }
   };
-  /** Parts of an island that would tell too much, such as file names, blur and rest like the covered page. */
-  const coverParts = () => {
+  /**
+   * Open dialogs and popovers render in the top layer, outside the filter of a covered ancestor; each covers on its
+   * own. Parts of an island that would tell too much, such as file names, blur and rest like the covered page; they
+   * also leave the accessibility tree, so an island's announcements cannot name them.
+   */
+  const coverSurfaces = () => {
+    const open = (selector: string) => {
+      try {
+        return Array.from(document.querySelectorAll(selector));
+      } catch {
+        return [];
+      }
+    };
+    for (const surface of [...open("dialog[open]"), ...open(":popover-open")]) {
+      if (surface === hint || isIsland(surface) || surface.hasAttribute(COVERED)) continue;
+      if (holdsIsland(surface) && !hasOwnText(surface)) cover(surface);
+      else mark(surface, "");
+    }
     for (const part of document.querySelectorAll('[data-cloud-privacy="blur"]')) {
       if (!part.closest(`[${COVERED}]`)) mark(part, "part");
     }
@@ -196,24 +219,71 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     const dialogs = Array.from(document.querySelectorAll("dialog[open]")).filter((dialog) => isModal(dialog) && !isSessionWarning(dialog));
     return dialogs.at(-1) ?? document.body;
   };
+  const showHint = (show: boolean) => {
+    try {
+      if (show && !hint.matches(":popover-open")) hint.showPopover();
+      if (!show && hint.matches(":popover-open")) hint.hidePopover();
+    } catch {
+      /* Without the popover API the hint stays a fixed layer in its host. */
+    }
+  };
   const placeHint = () => {
     const host = hintHost();
-    if (hint.parentElement !== host) host.append(hint);
+    if (hint.parentElement !== host) {
+      showHint(false);
+      host.append(hint);
+    }
+    // The warning has priority; while it is open the hint waits behind it.
+    hint.hidden = sessionWarningOpen();
+    showHint(!hint.hidden);
     const area = document.querySelector(".cloud-app-canvas [data-cloud-app-area]")?.getBoundingClientRect();
     const x = area && area.width > 0 ? area.left + area.width / 2 : window.innerWidth / 2;
     const y = area && area.height > 0 ? area.top + area.height / 2 : window.innerHeight / 2;
     hint.style.setProperty("--cloud-privacy-hint-x", `${Math.round(x)}px`);
     hint.style.setProperty("--cloud-privacy-hint-y", `${Math.round(y)}px`);
   };
+  /** One pass from scratch: islands, dialogs and popovers may have come, gone, opened or closed since the last. */
+  const reconcile = () => {
+    uncover();
+    placeHint();
+    cover(document.body);
+    coverSurfaces();
+  };
+  let arrived = false;
+  let reconciling = false;
   const observer = new MutationObserver((records) => {
     if (!active) return;
+    const relevant = records.some((record) => {
+      if (record.type === "attributes") return true;
+      const nodes = [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)].filter(
+        (node): node is Element => node instanceof Element && node !== hint,
+      );
+      if (!nodes.length) return false;
+      // Changes deep inside covered content stay covered; only new islands, warnings or uncovered places matter.
+      const inside = record.target instanceof Element && Boolean(record.target.closest(`[${COVERED}]`));
+      return !inside || nodes.some((node) => node.matches(`${ISLAND}, ${SESSION_WARNING_ACTION}`) || holdsIsland(node));
+    });
+    if (!relevant || reconciling) return;
     const fresh = records.some((record) =>
-      Array.from(record.addedNodes).some((node) => node instanceof Element && !node.closest(`[${COVERED}]`) && node !== hint),
+      Array.from(record.addedNodes).some(
+        (node) =>
+          node instanceof Element &&
+          record.target === document.body &&
+          Boolean(node.querySelector(".k2b-toast, [role=alert], [role=status]")),
+      ),
     );
-    if (!fresh) return;
-    placeHint();
-    cover(document.body, true);
-    coverParts();
+    reconciling = true;
+    queueMicrotask(() => {
+      reconciling = false;
+      if (!active) return;
+      reconcile();
+      observer.takeRecords();
+      // Toasts that arrive while covered stay covered; the screen reader hears only that something came.
+      if (fresh && !arrived) {
+        arrived = true;
+        say(options.text().newMessages);
+      }
+    });
   });
   const titleObserver = new MutationObserver(() => {
     if (!active || document.title === options.text().tabTitle) return;
@@ -236,11 +306,14 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     // A key still held from the activation, such as Enter in the search, is used up until it is released.
     if (heldKey) consumedKey = heldKey;
     root.dataset.cloudPrivacy = "on";
-    placeHint();
-    cover(document.body, false);
-    coverParts();
+    reconcile();
     arrived = false;
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["open", "popover", "data-cloud-privacy"],
+    });
     savedTitle = document.title;
     document.title = options.text().tabTitle;
     const title = document.querySelector("head > title");
@@ -257,6 +330,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     uncover();
     delete root.dataset.cloudPrivacy;
     delete hint.dataset.wake;
+    showHint(false);
     hint.remove();
     if (savedTitle !== null) document.title = savedTitle;
     savedTitle = null;
@@ -300,8 +374,12 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     clock.clear(tickHandle);
     if (paused()) {
       stopCountdown();
-      // A dictation or the warning may end without an input; look again in a while.
-      if (!active && timerSeconds > 0) deadlineHandle = clock.set(check, 1_000);
+      // A dictation or the warning may end without an input; look again in a while. The idle time starts again when
+      // the pause ends, so the full time and its countdown follow.
+      if (!active && timerSeconds > 0) {
+        lastActivity = clock.now();
+        deadlineHandle = clock.set(check, 1_000);
+      }
       return;
     }
     const rest = lastActivity + timerSeconds * 1000 - clock.now();
@@ -340,6 +418,11 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     heldKey = event.code || event.key;
     activity(true);
     if (consumedKey && (event.code || event.key) === consumedKey) return stop(event);
+    if (!active && options.shortcut && !event.repeat && !event.isComposing && isShortcut(event) && !sessionWarningOpen()) {
+      stop(event);
+      activate("request");
+      return;
+    }
     if (!active || sessionWarningOpen()) return;
     if (event.isComposing || event.keyCode === 229 || MODIFIERS.has(event.key)) return;
     // Tab moves between the hint and the islands that stay usable.
@@ -376,7 +459,8 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   };
   const pointermove = (event: PointerEvent) => {
     if (!event.isTrusted) return;
-    const moved = lastPointer !== null && (lastPointer.x !== event.clientX || lastPointer.y !== event.clientY);
+    // The first trusted movement counts too: it may come during the countdown.
+    const moved = lastPointer === null || lastPointer.x !== event.clientX || lastPointer.y !== event.clientY;
     lastPointer = { x: event.clientX, y: event.clientY };
     if (!moved) return;
     activity(true);
@@ -406,7 +490,9 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   };
   const message = (event: MessageEvent<PrivacyChannelMessage>) => {
     const data = event.data;
-    if (data?.type === "activity") activity(false);
+    // A tab that opens asks the others for the state, so it never shows content while they are covered.
+    if (data?.type === "hello") channel?.postMessage({ type: active ? "on" : "activity" } satisfies PrivacyChannelMessage);
+    else if (data?.type === "activity") activity(false);
     else if (data?.type === "timer") publishPrivacyTimer(data.seconds);
     else if (data?.type === "on") activate("channel");
     else if (data?.type === "off") lift(true);
@@ -432,6 +518,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   window.addEventListener("resize", resize);
   window.addEventListener(PRIVACY_REQUEST_EVENT, request);
   channel?.addEventListener("message", message);
+  channel?.postMessage({ type: "hello" } satisfies PrivacyChannelMessage);
   schedule();
 
   return () => {

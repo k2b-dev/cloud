@@ -175,8 +175,13 @@ Applications need no code for this. Mark only the exceptions with
 </section>
 ```
 
-Render `live` only while the work runs. Keep islands small: everything inside
-one stays readable.
+Render `live` only while the work runs; when it ends, the idle time starts
+again. Keep islands small: everything inside one stays readable. A `blur` part
+also leaves the accessibility tree, so put a live region that names content
+inside it. An element with text of its own beside an island covers whole,
+the island included, because loose text cannot blur alone. Open dialogs and
+popovers cover too, also in pop-out pages without the app bar, and a tab that
+opens while the others are covered starts covered.
 
 ## Render the application layout
 
