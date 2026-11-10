@@ -82,7 +82,7 @@ export function LoadMore(props: LoadMoreProps): JSX.Element {
   };
 
   const load = (byReader: boolean) => {
-    if (!props.hasMore || loading()) return;
+    if (disposed || !props.hasMore || loading()) return;
     if (!byReader && (requested || error())) return;
     requested = true;
     progressAtRequest = progress();

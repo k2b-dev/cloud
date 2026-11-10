@@ -273,6 +273,13 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   let scrollRef: HTMLDivElement | undefined;
   let scrollingTimeout: ReturnType<typeof setTimeout> | undefined;
   let scrollbarDragOffset = 0;
+  // The load-more edge reads the owner's values through these memos, never through a chain of getters into the
+  // owner's markup: an owner that renders the table from a Show accessor and then hides it would otherwise have the
+  // edge read that accessor after it went stale (Pulse's SQL result). While the first rows load there is no next page,
+  // and a table that fills its height takes new rows into space it already has, so the row count tells a page.
+  const moreRows = createMemo(() => Boolean(props.hasMore) && !props.loading);
+  const loadingMoreRows = createMemo(() => Boolean(props.loadingMore));
+  const rowCount = createMemo(() => props.rows.length);
   const loadingRows = () => Math.min(50, Math.max(1, Math.trunc(Number.isNaN(props.loadingRows) ? 5 : (props.loadingRows ?? 5))));
   const rowId = (row: T) => props.getRowId?.(row);
   const isInteractive = () => !!props.selection || !!props.onRowClick || !!props.onRowDoubleClick;
@@ -881,16 +888,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             </Show>
           </table>
           <Show when={props.onLoadMore}>
-            {(onLoadMore) => (
-              // A table that fills its height takes new rows into space it already has, so the row count tells a page.
-              // While the first rows load, there is no end to load beyond: the edge waits for them.
-              <LoadMore
-                hasMore={Boolean(props.hasMore) && !props.loading}
-                loading={props.loadingMore}
-                count={props.rows.length}
-                onLoadMore={onLoadMore()}
-              />
-            )}
+            <LoadMore hasMore={moreRows()} loading={loadingMoreRows()} count={rowCount()} onLoadMore={() => props.onLoadMore?.()} />
           </Show>
         </div>
         <For each={["y", "x"] as const}>

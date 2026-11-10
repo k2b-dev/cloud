@@ -1,6 +1,7 @@
 import {
   type Accessor,
   createEffect,
+  createMemo,
   createRoot,
   createSignal,
   For,
@@ -1310,6 +1311,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const loadBelow = () => {
     if (!loadingNewer() && moreBelow()) load("newer");
   };
+  // The edge reads the owner's `hasMore` through the feed's own memo, never through a chain of getters into the
+  // owner's markup, so it never reads an owner's value that the owner has just removed.
+  const edgeHasMore = createMemo(moreBelow);
 
   return (
     <div
@@ -1354,7 +1358,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         </div>
         <Show when={fromStart && props.onLoadMore}>
           <div ref={tailBox} class="k2b-virtual-feed__more">
-            <LoadMore auto={false} hasMore={moreBelow()} loading={loadingNewer()} error={failedBelow()} onLoadMore={loadBelow} />
+            <LoadMore auto={false} hasMore={edgeHasMore()} loading={loadingNewer()} error={failedBelow()} onLoadMore={loadBelow} />
           </div>
         </Show>
       </div>
