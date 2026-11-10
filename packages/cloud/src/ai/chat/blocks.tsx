@@ -37,8 +37,8 @@ import { AssistantMarkdownBlock } from "./primitives";
 import { ToolActionView } from "./tool-action";
 import { AiToolActivity } from "./tool-disclosure";
 import { isFailedTool } from "./tool-groups";
-import { submittedCodeVersion } from "./turn-layout";
 import type { AiTurnActionState } from "./turn-layout";
+import { submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
 

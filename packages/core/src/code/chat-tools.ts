@@ -5,8 +5,8 @@ import { z } from "zod";
 import { codeAuthoringFailure } from "../api/code-authoring";
 import { type CodeContext, CodeDataError, requireCodePermission } from "./access";
 import { codeAuthoringServices } from "./authoring";
-import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
 import { CODE_AUTHORING_REQUEST_BYTES, CodeAuthoringErrorSchema, codeAuthoringContracts } from "./authoring-contracts";
+import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
 import { CodeSourceFilesSchema } from "./contracts";
 import { readCode } from "./store";
 

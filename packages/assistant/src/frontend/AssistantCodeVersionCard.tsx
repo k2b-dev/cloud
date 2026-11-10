@@ -1,8 +1,9 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
-import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
 import { codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
+import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { loadCodeNextRun } from "../code-summary";
 import {
   type CodeVersionActivation,
   type CodeVersionPreview,
@@ -13,7 +14,6 @@ import {
   readCodeVersionActivation,
   startCodeVersionActivation,
 } from "./code-activation";
-import { loadCodeNextRun } from "../code-summary";
 import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
 import { assistantMessages } from "./messages";
 

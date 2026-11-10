@@ -52,7 +52,9 @@ const SECRET_NOTICES = ["replaced", "submitted", "saved", "submit-failed"] as co
 /** The owning resource, or null for personal Code. */
 const ownerRefOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.ref : null);
 const ownerTitleOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.title : "");
+
 export { permissionRef, targetKey };
+
 const isOwnRef = (ref: { type: string; id: string }, owner: LoadCodePageOptions["owner"]) => {
   const own = ownerRefOf(owner);
   return own !== null && sameRef(ref, own);
