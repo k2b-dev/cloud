@@ -41,6 +41,49 @@ const dimensions = async (page: Page) =>
     const b = el.getBoundingClientRect();
     return { top: b.top, height: b.height, width: b.width };
   });
+test.each([1440, 390])("place details show note, symbol and safe links after reload at %i", async (width) => {
+  const { page, context } = await open(`places-details-${width}`, width);
+  const errors = pageErrors(page);
+  try {
+    for (const reload of [false, true]) {
+      if (reload) await page.reload();
+      const info = page.locator(".ai-map__info");
+      await info.getByText("Meet at the main entrance.").waitFor();
+      expect(await info.innerText()).toContain("Visit notes");
+      expect(await info.locator(".ti-notebook").count()).toBe(1);
+      const local = info.getByRole("link", { name: "Open in Cloud" });
+      expect(await local.getAttribute("href")).toBe("/app/example/items/1");
+      expect(await local.getAttribute("target")).toBeNull();
+      const external = info.getByRole("link", { name: "Read website" });
+      expect(await external.getAttribute("target")).toBe("_blank");
+      expect(await external.getAttribute("rel")).toBe("noopener noreferrer");
+      await external.focus();
+      await settled(page);
+      expect(
+        await external.evaluate((el) => {
+          const rect = el.getBoundingClientRect(),
+            parent = el.closest(".ai-map__info")!.getBoundingClientRect();
+          return rect.top >= parent.top && rect.bottom <= parent.bottom;
+        }),
+      ).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+test("route leg shows its destination stop note below the label", async () => {
+  const { page, context } = await open("route-details");
+  const errors = pageErrors(page);
+  try {
+    const leg = page.locator(".ai-map__leg").first();
+    expect(await leg.innerText()).toContain("Bad Urach");
+    expect(await leg.locator(".ai-map__note").innerText()).toBe("Meet at the main entrance.");
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
 test("places use numbered pins, keyboard/list/map selection and unknown hours", async () => {
   fixture.get("places-keyboard").map.groups[0]!.places[5]!.website = "https://[";
   const { page, context } = await open("places-keyboard");
