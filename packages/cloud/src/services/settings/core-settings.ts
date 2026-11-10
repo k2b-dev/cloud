@@ -851,6 +851,16 @@ export const CORE_SETTINGS = {
     min: 1,
     description: "How long a login session stays valid (in hours)",
   },
+  "user.session.shared_workstation_idle_minutes": {
+    kind: "number",
+    label: "Shared workstation idle minutes",
+    default: 10,
+    min: 2,
+    max: 240,
+    integer: true,
+    description:
+      "Minutes without typing, clicking, scrolling or touching after which a browser marked as a shared workstation signs out. Background updates do not count. Applies to every marked browser and to sessions already running there.",
+  },
   "user.account.ipa_expires_days": {
     kind: "number",
     label: "IPA Account Expiry Days",

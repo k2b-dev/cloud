@@ -192,6 +192,34 @@ describe("@k2b/ui PdfViewer", () => {
     }
   });
 
+  // The bar has the size of every floating pill of small controls (`--k2b-pill-control`, `--k2b-pill-inset`), the
+  // Notebooks editor pills too: the round background of each icon has the same space to the edge above, below, and at
+  // the end, so the pill is never taller than its icons need.
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ])
+    test(`the pill keeps the same space around its icons on every side at ${viewport.width} px`, async () => {
+      const page = await load("?open", viewport);
+      try {
+        await settled(page);
+        const pill = await page.locator(".k2b-pdf-viewer__bar > .k2b-toolbar").evaluate((toolbar) => {
+          const box = toolbar.getBoundingClientRect();
+          const icons = Array.from(toolbar.querySelectorAll("button")).map((button) => button.getBoundingClientRect());
+          return {
+            height: box.height,
+            radius: getComputedStyle(toolbar.querySelector("button")!).borderRadius,
+            insets: icons.flatMap((icon) => [icon.top - box.top, box.bottom - icon.bottom]).concat(box.right - icons.at(-1)!.right),
+          };
+        });
+        expect(pill.height).toBe(38);
+        expect(pill.radius).toBe("9999px");
+        for (const inset of pill.insets) expect(Math.abs(inset - pill.insets[0]!)).toBeLessThanOrEqual(0.5);
+      } finally {
+        await page.close();
+      }
+    });
+
   test("open adds one icon to the end of the pill, named for screen readers and the tooltip", async () => {
     const page = await load("?open");
     try {

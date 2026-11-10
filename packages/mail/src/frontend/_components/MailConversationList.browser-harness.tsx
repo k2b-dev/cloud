@@ -48,6 +48,8 @@ declare global {
     setMailItems: (items: MailListItem[]) => void;
     /** Marks rows as leaving, as the workspace does while an action takes them out of the list. */
     setMailLeaving: (keys: string[]) => void;
+    /** Marks the view as loading, as the workspace does while it refreshes the list in the background. */
+    setMailLoading: (loading: boolean) => void;
     mountMailQuickLook: (item: MailListItem, preview: MailConversationPreview) => void;
     setMailActive: (id: string | null) => void;
     setMailChecked: (ids: string[]) => void;
@@ -152,6 +154,8 @@ window.mountMailList = (options) => {
   window.setMailItems = (items) => setList("items", reconcile(items));
   const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
   window.setMailLeaving = (keys) => setLeaving(new Set(keys));
+  const [loading, setLoading] = createSignal(false);
+  window.setMailLoading = setLoading;
   window.mailItems = () => [...list.items];
   const [selected, setSelected] = createSignal(options.selectedConversationId);
   window.setMailActive = setSelected;
@@ -279,7 +283,7 @@ window.mountMailList = (options) => {
                       : null;
                   })()}
                   listMode="conversations"
-                  loading={false}
+                  loading={loading()}
                   liveDegraded={false}
                   onCollapse={noop}
                   onOpenHealth={noop}

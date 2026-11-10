@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.54.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.53.0...npm-ui-v0.54.0) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** `PdfPreview`, `PdfPreviewProps`, and `PdfPreviewRequest` are removed from `@k2b/ui`. Migrate to `PdfViewer`: keep `request`, `autoLoad`, and `emptyText`; pass `title`; rename `buttonLabel` to `loadLabel`; pass `disabled` as a boolean; replace `openHref` with `open` (`true` or the address); drop `children`, `renderError`, `openButtonLabel`, and `onDownload` and place the viewer in your own container.
+
+### Features
+
+* **cloud:** the app bar editor saves each change in one ordered list ([#3073](https://github.com/k2b-dev/cloud/issues/3073)) ([487da82](https://github.com/k2b-dev/cloud/commit/487da823121c68c27e6bf1bf94d0b00f45938d85))
+* **filesv2:** Activity becomes the place for your recent files, with a calmer start page ([#2939](https://github.com/k2b-dev/cloud/issues/2939)) ([8bb2389](https://github.com/k2b-dev/cloud/commit/8bb2389b3707bdf800eae7c2aa3579000c3750bf))
+* **filesv2:** uploads sit as a socket at the toast rail's edge ([#2982](https://github.com/k2b-dev/cloud/issues/2982)) ([7a6e871](https://github.com/k2b-dev/cloud/commit/7a6e8719ff26599663f1491c20faba94c00e2fad))
+* **mail:** the composer never sends to fewer people than typed and stays calm while it works ([#3084](https://github.com/k2b-dev/cloud/issues/3084)) ([3f90cda](https://github.com/k2b-dev/cloud/commit/3f90cdaf11b479024944acff2e8844eb239d09b5))
+* **ui:** a finished success can draw its check ([#3134](https://github.com/k2b-dev/cloud/issues/3134)) ([4d363f3](https://github.com/k2b-dev/cloud/commit/4d363f395cf20eec8ebd17f2945a5bb3995b71f5))
+* **ui:** a stopped editor shows one red toolbar pill with its way out ([#3046](https://github.com/k2b-dev/cloud/issues/3046)) ([e16c670](https://github.com/k2b-dev/cloud/commit/e16c67081e7b887a779a9470a00275623eac353a))
+* **ui:** balance flows carry each month's closing into the next ([#2824](https://github.com/k2b-dev/cloud/issues/2824)) ([3b4452e](https://github.com/k2b-dev/cloud/commit/3b4452e2551f40a8ea1705e76838cbde446c5b14))
+* **ui:** bottom sheets follow the finger and move by transform only ([#2981](https://github.com/k2b-dev/cloud/issues/2981)) ([6265239](https://github.com/k2b-dev/cloud/commit/626523920d32bad6877e644429ef175ec3b976cb))
+* **ui:** detail panels start with the name and separate topics with a hairline ([#3116](https://github.com/k2b-dev/cloud/issues/3116)) ([a9ad7d0](https://github.com/k2b-dev/cloud/commit/a9ad7d099dc2a16527b2f9b330805e3dd1f72740))
+* **ui:** notice cards carry an icon and a call to action ([#3115](https://github.com/k2b-dev/cloud/issues/3115)) ([d3c60bd](https://github.com/k2b-dev/cloud/commit/d3c60bde3dfeafa249785019b733ab95f39652b3))
+* **ui:** one PdfViewer shows every PDF on a rounded grey ground, and the file detail shows its whole first page ([#3117](https://github.com/k2b-dev/cloud/issues/3117)) ([b15842b](https://github.com/k2b-dev/cloud/commit/b15842b2bd39f1104ebe1e74f7db8520f27e2284))
+* **ui:** settings and admin pages stay flat; only charts, dashboard frames, and key figures lift ([#3034](https://github.com/k2b-dev/cloud/issues/3034)) ([dfa954d](https://github.com/k2b-dev/cloud/commit/dfa954d8ae2d7c81f1537a7d132a6d133e09b6f0))
+* **ui:** the workspace head shows no separate title row while the sidebar is an overlay ([#3119](https://github.com/k2b-dev/cloud/issues/3119)) ([b1600b7](https://github.com/k2b-dev/cloud/commit/b1600b7be9e5109f951e511bd4b64cea1615faa8))
+* **ui:** toasts stack with icon tiles, a round close button, and more variants ([#2979](https://github.com/k2b-dev/cloud/issues/2979)) ([621c21b](https://github.com/k2b-dev/cloud/commit/621c21b4a8684324ff156203e194e45a9015a263))
+* **ui:** virtual lists can start at the top with sticky group heads ([#3120](https://github.com/k2b-dev/cloud/issues/3120)) ([dc1a72f](https://github.com/k2b-dev/cloud/commit/dc1a72fe47746b8b7011b81936c82e8a04eca981))
+
+
+### Bug Fixes
+
+* **editor:** preserve pasted content and speed up long notes ([#3088](https://github.com/k2b-dev/cloud/issues/3088)) ([4a5b296](https://github.com/k2b-dev/cloud/commit/4a5b2968808ae8aaf94aa6d3b2602b840616e418)), closes [#3077](https://github.com/k2b-dev/cloud/issues/3077) [#3078](https://github.com/k2b-dev/cloud/issues/3078) [#3079](https://github.com/k2b-dev/cloud/issues/3079)
+* **ui:** a section heading's action moves under the title before the title truncates ([#3024](https://github.com/k2b-dev/cloud/issues/3024)) ([9a86f1c](https://github.com/k2b-dev/cloud/commit/9a86f1c4de617414adb2a25d91d89d310267cfb7))
+* **ui:** browser test cleanup counts only living processes ([#3132](https://github.com/k2b-dev/cloud/issues/3132)) ([6761e98](https://github.com/k2b-dev/cloud/commit/6761e98d37142ef81b950656d15b0eb81dc66f6e)), closes [#2871](https://github.com/k2b-dev/cloud/issues/2871)
+* **ui:** the detail float test times its slide by the animation, not the wall clock ([#3135](https://github.com/k2b-dev/cloud/issues/3135)) ([4ab807a](https://github.com/k2b-dev/cloud/commit/4ab807a0342a5eb7cec6510b06e46fe364e6fae2)), closes [#1622](https://github.com/k2b-dev/cloud/issues/1622)
+
 ## [0.53.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.52.0...npm-ui-v0.53.0) (2026-11-09)
 
 

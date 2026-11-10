@@ -182,6 +182,55 @@ for (const width of [1440, 900])
     }
   });
 
+// A pill is as high as its controls need: the space between its edge and the round background of a control is the same
+// above, below, and at the sides, also in the red pill that replaces both (@k2b/ui `--k2b-pill-control` and
+// `--k2b-pill-inset`). The PdfViewer bar has the same 38 px (packages/ui pdf-viewer.browser.test.ts).
+for (const [name, device] of Object.entries(devices))
+  test(`every pill keeps the same space around its controls on every side (${name})`, async () => {
+    const page = await open(device);
+    try {
+      await load(page, "# Cold chain\n\nText");
+      const measure = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".notebooks-editor-pill, .k2b-toolbar[data-variant=floating]")).map((pill) => {
+            const box = pill.getBoundingClientRect();
+            const controls = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-button"))
+              .filter((control) => control.getClientRects().length > 0 && !control.closest('[data-overflow="hidden"]'))
+              .map((control) => control.getBoundingClientRect());
+            const first = controls[0]!;
+            const last = controls.at(-1)!;
+            const label = pill.querySelector(".k2b-toolbar__label")?.getBoundingClientRect();
+            return {
+              height: box.height,
+              tops: controls.map((control) => control.top - box.top),
+              bottoms: controls.map((control) => box.bottom - control.bottom),
+              // A pill that starts with its message, or whose tools scroll on beyond its end, has no control at that edge.
+              start: label && label.left < first.left ? undefined : first.left - box.left,
+              end: last.right > box.right ? undefined : box.right - last.right,
+            };
+          }),
+        );
+      const check = (pills: Awaited<ReturnType<typeof measure>>) => {
+        expect(pills.length).toBeGreaterThan(0);
+        for (const pill of pills) {
+          expect(pill.height).toBe(38);
+          const inset = pill.tops[0]!;
+          for (const value of [...pill.tops, ...pill.bottoms, pill.start ?? inset, pill.end ?? inset])
+            expect(Math.abs(value - inset)).toBeLessThanOrEqual(0.5);
+          expect(pill.start ?? pill.end).toBeDefined();
+        }
+      };
+      check(await measure());
+      await page.evaluate(async () => {
+        window.toolbarHarness.endSync("RESYNC_REQUIRED", true, true);
+        await window.toolbarHarness.settle();
+      });
+      check(await measure());
+    } finally {
+      await page.context().close();
+    }
+  });
+
 const caret = (page: Page, text: string, offset = 3) =>
   page.evaluate(
     async ({ text, offset }) => {
@@ -877,7 +926,7 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
                 .filter((button) => button.getClientRects().length > 0 && !button.closest('[data-overflow="hidden"]'))
                 .every((button) => {
                   const control = button.getBoundingClientRect();
-                  return control.width >= 38 && control.height === 38;
+                  return control.width >= 24 && control.height === 24;
                 }),
               // The save state is never cut: it shows whole, and only the reason after it may drop.
               stateWhole: (() => {

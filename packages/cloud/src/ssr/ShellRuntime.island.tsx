@@ -15,6 +15,7 @@ import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_intern
 import { installAppAccessRecovery } from "../browser/app-access-recovery";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
+import { type IdleState, type IdleWarning, installSharedWorkstation } from "../browser/idle-sign-out";
 import { navigationSearchItems } from "../browser/navigation-search";
 import { openPanel, type PanelRequest } from "../browser/panel";
 import { importOnDemand } from "../browser/reload";
@@ -56,6 +57,8 @@ export type ShellRuntimeProps = {
   announcements?: { entries: AnnouncementDisplayEntry[]; latestVersion: number };
   /** Banners rendered by Layout: their dismiss buttons record the dismissal. */
   banners?: boolean;
+  /** Signed-in browser sessions: with `idle` this browser is a shared workstation and signs out without input. */
+  browserSession?: { userId: string; sid: string; idle?: IdleState };
 };
 
 /** The search rows of the shell's destinations; the page carries each link once, without the fields a row repeats. */
@@ -84,6 +87,17 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
     if (props.appAccess) onCleanup(installAppAccessRecovery(props.appAccess));
   });
   onMount(() => onCleanup(installInputModeController()));
+  onMount(() => {
+    const browserSession = props.browserSession;
+    if (!browserSession) return;
+    // The dialog code loads with the first warning, not with every page; one chain keeps open and close in order.
+    let render: Promise<((warning: IdleWarning | null) => void) | undefined> | undefined;
+    const warn = (warning: IdleWarning | null) => {
+      render ??= importOnDemand(() => import("./idle-warning")).then((loaded) => loaded?.createIdleWarning(locale));
+      void render.then((show) => show?.(warning));
+    };
+    onCleanup(installSharedWorkstation(browserSession, warn));
+  });
 
   const togglePanel = () => {
     window.dispatchEvent(new CustomEvent<PanelRequest>("cloud.panel.request", { detail: { action: "toggle" } }));

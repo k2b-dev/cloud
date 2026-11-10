@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.11.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.10.0...npm-editor-v0.11.0) (2026-11-10)
+
+
+### Features
+
+* **ui:** balance flows carry each month's closing into the next ([#2824](https://github.com/k2b-dev/cloud/issues/2824)) ([3b4452e](https://github.com/k2b-dev/cloud/commit/3b4452e2551f40a8ea1705e76838cbde446c5b14))
+
+
+### Bug Fixes
+
+* **editor:** Markdown source, the bubble menu and the shared caret follow focus ([#3086](https://github.com/k2b-dev/cloud/issues/3086)) ([a9b3b65](https://github.com/k2b-dev/cloud/commit/a9b3b656c5754b19da2828de33b1b0fac592414d))
+* **editor:** preserve pasted content and speed up long notes ([#3088](https://github.com/k2b-dev/cloud/issues/3088)) ([4a5b296](https://github.com/k2b-dev/cloud/commit/4a5b2968808ae8aaf94aa6d3b2602b840616e418)), closes [#3077](https://github.com/k2b-dev/cloud/issues/3077) [#3078](https://github.com/k2b-dev/cloud/issues/3078) [#3079](https://github.com/k2b-dev/cloud/issues/3079)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.53.0 to 0.54.0
+
 ## [0.10.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.9.0...npm-editor-v0.10.0) (2026-11-09)
 
 
