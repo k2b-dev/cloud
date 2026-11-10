@@ -212,7 +212,6 @@ export default function ChatInfoPanel(props: {
   return (
     <DetailPanel>
       <DetailPanel.Header
-        kind={<span>{props.conversation.channel ? t().channelChoice : t().chatChoice}</span>}
         title={props.conversation.title}
         subtitle={system() ? t().systemMembers : t().members({ count: props.conversation.memberCount })}
         menu={commands()}

@@ -12,12 +12,7 @@ export default function DeadLetterDetail(props: { entry: SyncDeadLetterEntry; cl
     <aside id="sync-dead-letter-detail" class="paper p-3" aria-label={o.details}>
       <DetailPanel>
         <DetailPanel.Header
-          kind={
-            <>
-              <span>{t.deadLetter}</span>
-              <StatusBadge tone="error" label={o.failed} variant="dot" />
-            </>
-          }
+          kind={<StatusBadge tone="error" label={o.failed} variant="dot" />}
           title={props.entry.reason}
           subtitle={props.entry.failedAt}
           actions={

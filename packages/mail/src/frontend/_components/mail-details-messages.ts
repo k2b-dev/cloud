@@ -5,7 +5,6 @@ export const mailDetailsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      kind: "Conversation",
       noneYet: "None yet",
       readOnly: "Read only",
       readOnlyMeta: "you can only read",
@@ -59,7 +58,6 @@ export const mailDetailsMessages = i18n.define({
       presenceAlone: "Whoever opens this conversation appears here.",
     },
     de: {
-      kind: "Unterhaltung",
       noneYet: "Noch keine",
       readOnly: "Nur lesen",
       readOnlyMeta: "du kannst nur lesen",

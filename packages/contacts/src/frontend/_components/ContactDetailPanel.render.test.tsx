@@ -446,7 +446,7 @@ describe("Contacts reader page", () => {
     expect(html).toContain('data-scroll-preserve="contacts-org-tree"');
     expect(html).toContain("<h2>Org tree</h2>");
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).toMatch(/class="k2b-detail-panel__kind"[^>]*>(<[^>]+>)*Organization</);
+    expect(html).not.toContain('class="k2b-detail-panel__kind"');
     expect(html).toContain('aria-label="Organization context"');
     expect(html).toContain("Grace Hopper");
     expect(html).toContain("Katherine Johnson");

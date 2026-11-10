@@ -52,12 +52,7 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
     <aside id="capability-execution-detail" class="paper p-3" aria-label={t.detailTitle}>
       <DetailPanel>
         <DetailPanel.Header
-          kind={
-            <>
-              <span>{t.detailTitle}</span>
-              {single ? statusBadge(single) : <StatusBadge tone="neutral" label={t.callCount({ count: props.executions.length })} />}
-            </>
-          }
+          kind={single ? statusBadge(single) : <StatusBadge tone="neutral" label={t.callCount({ count: props.executions.length })} />}
           title={single ? label(single) : t.callCount({ count: props.executions.length })}
           subtitle={t.detailHint}
           actions={
