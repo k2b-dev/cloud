@@ -199,8 +199,13 @@ describe("the rule decides the form by depth", () => {
         try {
           const list = await trail(page);
           // Start and the app root are dropped, so the list is one level: its own heading is the title.
+          // Beside the overlay sidebar, the head keeps only the sidebar button, without a second title.
           if (device.width >= 1024) expect(list.head?.display).toBe("none");
-          else expect(list).toMatchObject({ form: "title", title: { text: "Users" } });
+          else {
+            expect(list).toMatchObject({ title: null, head: { display: "flex" } });
+            expect(list.head!.box.height).toBe(46);
+            expect(await page.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
+          }
           expect(list.shellRow?.display).toBe("none");
 
           await page.goto(`${origin}/app/accounts/users/user07`);

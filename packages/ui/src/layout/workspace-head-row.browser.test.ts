@@ -365,11 +365,11 @@ test("the current view stays inside the strip's scrollport when long labels do n
   }
 });
 
-test("a page at the app's root keeps its title beside the overlay sidebar's button", async () => {
+test("a page at the app's root shows no title beside the overlay sidebar's button", async () => {
   const page = await load({ head: { root: true } }, 1440, 834);
   try {
     expect(await page.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
-    expect(await page.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(true);
+    expect(await page.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(false);
   } finally {
     await page.close();
   }

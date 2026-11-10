@@ -22,7 +22,7 @@ import {
   useContext,
 } from "solid-js";
 import { Dynamic, isServer } from "solid-js/web";
-import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
+import { Button, ButtonLink, type ButtonSize, IconButton, IconButtonLink } from "../actions/Button";
 import { Dropdown, type DropdownItem, type DropdownSearch } from "../actions/Dropdown";
 import { useFilterMessages } from "../actions/filter-messages";
 import { dialogCore } from "../feedback/dialog-core";
@@ -88,6 +88,8 @@ const ResizeContext = createContext(true);
 /** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
 const WorkspaceContext = createContext<{
   sidebarId: string;
+  /** The sidebar's current DOM ID, for every button that opens it. */
+  currentSidebarId: () => string;
   setSidebarId: (id: string) => void;
   initialLayoutState: () => AppWorkspaceLayoutState | null | undefined;
 }>();
@@ -532,6 +534,11 @@ export type AppWorkspaceSidebarItemProps = {
   sidebarMode?: AppWorkspaceSidebarVisibility;
 };
 export type AppWorkspaceSidebarIconGridProps = AppWorkspaceSidebarContentProps & { title?: string; columns?: 2 | 3 };
+export type AppWorkspaceSidebarToggleProps = {
+  /** Match the row's other icon buttons. */
+  size?: ButtonSize;
+  class?: string;
+};
 export type AppWorkspaceSidebarIconActionProps = {
   href?: string | null;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
@@ -2342,6 +2349,7 @@ const AppWorkspaceSidebarIconAction = (props: AppWorkspaceSidebarIconActionProps
 type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   LayoutStateProvider: (props: AppWorkspaceLayoutStateProviderProps) => JSX.Element;
   Head: (props: AppWorkspaceHeadProps) => JSX.Element;
+  SidebarToggle: (props: AppWorkspaceSidebarToggleProps) => JSX.Element;
   Content: (props: AppWorkspaceContentProps) => JSX.Element;
   Main: (props: AppWorkspaceMainProps) => JSX.Element;
   MainPane: (props: AppWorkspaceMainPaneProps) => JSX.Element;
@@ -2366,14 +2374,17 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
 };
 
 /**
- * The row above the work area. From 48 to 64 rem it holds the button that
- * opens the overlay sidebar. On a page with a page above it, it shows the
+ * The row above the work area. Where the sidebar is an overlay it holds the
+ * button that opens it, unless the page puts `AppWorkspace.SidebarToggle` in
+ * its own first toolbar row. On a page with a page above it, it shows the
  * host's page title with the way up (see `PageTitle`); the page's own
  * `PageTitle` takes its place. The visible title is no heading, because many
  * pages render their own `h1`. From 64 rem a sidebar that marks the current
  * page, or the item a deeper page belongs to, names it already and links the
- * way up: the title and the way up hide, and only on a page
- * without its own `h1` its heading stays for assistive technology. With an
+ * way up: the title and the way up hide. Beside the closed overlay only a
+ * page without a page above it drops its title; a deeper page keeps its title
+ * and way up. On a page without its own `h1` the head's heading stays for
+ * assistive technology where the title hides. With an
  * `AppWorkspace.Head` slot the row is always there and also carries the
  * views, the filters, the result count, and the actions; only its title
  * follows the rules above. It draws no line; CSS decides what shows and when
@@ -2538,13 +2549,35 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
   );
 }
 
+/**
+ * The sidebar button for a page's own first toolbar row. It shows only where
+ * the sidebar is an overlay; there the head yields its own button to it, and a
+ * head with nothing else to show takes no row. The shared controller runs it.
+ */
+function AppWorkspaceSidebarToggle(props: AppWorkspaceSidebarToggleProps): JSX.Element {
+  const workspace = useContext(WorkspaceContext);
+  const messages = useWorkspaceMessages();
+  return (
+    <IconButton
+      class={`k2b-app-workspace__sidebar-toggle ${props.class ?? ""}`}
+      size={props.size}
+      label={messages().showNavigation}
+      aria-controls={workspace?.currentSidebarId()}
+      aria-expanded="false"
+      data-app-workspace-sidebar-toggle=""
+    >
+      <i class="ti ti-layout-sidebar" aria-hidden="true" />
+    </IconButton>
+  );
+}
+
 const AppWorkspace = ((props: AppWorkspaceProps) => {
   let root: HTMLDivElement | undefined;
   const serverLayoutState = useContext(LayoutStateContext);
   const nested = Boolean(useContext(WorkspaceContext));
   const [sidebarId, setSidebarId] = createSignal(`k2b-workspace-sidebar-${createUniqueId()}`);
   const initialLayoutState = () => props.layoutState?.() ?? serverLayoutState;
-  const workspace = { sidebarId: sidebarId(), setSidebarId, initialLayoutState };
+  const workspace = { sidebarId: sidebarId(), currentSidebarId: sidebarId, setSidebarId, initialLayoutState };
   // Read once in the untracked component body and written once: the controller owns the sizes after the first
   // frame. In the root's effect, every rerun (a class that follows the view) rewrote the inline style and showed
   // the restored widths for a frame.
@@ -2615,6 +2648,7 @@ AppWorkspace.LayoutStateProvider = (props) => (
   <LayoutStateContext.Provider value={props.state ?? null}>{props.children}</LayoutStateContext.Provider>
 );
 AppWorkspace.Head = AppWorkspaceHeadSlot;
+AppWorkspace.SidebarToggle = AppWorkspaceSidebarToggle;
 AppWorkspace.Content = (props) => <div class={`k2b-app-workspace__content ${props.class ?? ""}`}>{props.children}</div>;
 AppWorkspace.Main = AppWorkspaceMain;
 AppWorkspace.MainPane = AppWorkspaceMainPane;
