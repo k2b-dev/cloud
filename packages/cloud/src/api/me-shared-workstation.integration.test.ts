@@ -212,6 +212,61 @@ suite("shared workstation", () => {
     expect((await family((await signIn(userId, `${MARK}=1`)).token)).last_input_at).not.toBeNull();
   });
 
+  test("a session token sent as a bearer can neither lift the limit nor report input", async () => {
+    const { token } = await signIn(userId, `${MARK}=1`);
+    const before = (await family(token)).last_input_at;
+    const bearer = { Authorization: `Bearer ${token}`, Origin: issuer, "Content-Type": "application/json" };
+    const unmark = await router.request("/api/me/browser/shared-workstation", {
+      method: "PUT",
+      headers: bearer,
+      body: JSON.stringify({ shared: false }),
+    });
+    expect(unmark.status).toBe(403);
+    expect((await router.request("/api/me/browser/activity", { method: "POST", headers: bearer })).status).toBe(403);
+    expect((await family(token)).last_input_at).toEqual(before);
+  });
+
+  test("a session that began before the mark gets the limit on its next request on the marked browser", async () => {
+    // For example signed in while another tab marked the browser.
+    const { token } = await signIn(userId, "");
+    expect((await family(token)).last_input_at).toBeNull();
+    const response = await request("GET", "/api/me", `${MARK}=1; session_token=${token}`, undefined, undefined);
+    expect(response.status).toBe(200);
+    expect((await family(token)).last_input_at).not.toBeNull();
+    expect(cookieNamed(response.headers.getSetCookie(), "session_token")).not.toMatch(/Max-Age|Expires/);
+  });
+
+  test("an idle sign-out ends only the session its tab left, never a newer sign-in", async () => {
+    const old = await signIn(userId, `${MARK}=1`);
+    const current = await signIn(userId, `${MARK}=1`);
+    const headers = { "x-cloud-logout-user": userId, "x-cloud-logout-session": sidOf(old.token) };
+    const refused = await router.request("/api/auth/logout", {
+      method: "POST",
+      headers: { ...headers, Cookie: `session_token=${current.token}`, Origin: issuer },
+    });
+    expect(refused.status).toBe(409);
+    expect(await session.authenticate(current.token)).not.toBeNull();
+    const ended = await router.request("/api/auth/logout", {
+      method: "POST",
+      headers: { ...headers, "x-cloud-logout-session": sidOf(current.token), Cookie: `session_token=${current.token}`, Origin: issuer },
+    });
+    expect(ended.status).toBe(200);
+    expect(await session.authenticate(current.token)).toBeNull();
+  });
+
+  test("checks that read the session directly see the idle limit before anyone ends it", async () => {
+    const { token } = await signIn(userId, `${MARK}=1`);
+    await idleFor(token, IDLE_MINUTES * 60 + 1);
+    // Nothing authenticated since, so the family is not revoked yet; a fresh-sign-in check still refuses it.
+    expect((await family(token)).revoked_at).toBeNull();
+    const user = await accounts.users.get({ id: userId });
+    if (!user) throw new Error("Missing user");
+    const key = await serviceAccountCredentials
+      .createUserApiToken({ user, browserSignIn: { userId, sid: sidOf(token) }, name: "Late key" })
+      .catch(() => ({ ok: false as const }));
+    expect(key.ok).toBe(false);
+  });
+
   test("API keys and agents are not affected", async () => {
     const { token } = await signIn(userId, `${MARK}=1`);
     const user = await accounts.users.get({ id: userId });

@@ -1,5 +1,5 @@
 import { apiClient } from "../clients/core";
-import { IDLE_SIGN_OUT_STORAGE_KEY } from "./idle-sign-out";
+import { IDLE_SIGN_OUT_STORAGE_KEY, type IdleSignOutRecord } from "./idle-sign-out";
 
 /** Fence and remove application-owned entries in the authenticated user's browser namespace. */
 const clearUserStorage = (userId: string): void => {
@@ -39,18 +39,47 @@ export const signOutBrowserSession = async (userId: string | undefined, errorMes
   if (!response.ok || cleanupFailed) throw new Error(errorMessage);
 };
 
-/**
- * On the sign-in page after a shared workstation signed out for lack of input: revokes the session the page left, once
- * the apps saved their work on `pagehide`, and clears that account's data in this browser. The server ends the idle
- * session moments later on its own, so a failure needs no retry.
- */
-export const finishIdleSignOut = async (): Promise<void> => {
-  let userId: string | null;
+const readIdleSignOut = (): IdleSignOutRecord | null => {
   try {
-    userId = window.sessionStorage.getItem(IDLE_SIGN_OUT_STORAGE_KEY);
-    window.sessionStorage.removeItem(IDLE_SIGN_OUT_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(IDLE_SIGN_OUT_STORAGE_KEY);
+    const record: unknown = raw ? JSON.parse(raw) : null;
+    if (!record || typeof record !== "object" || !("userId" in record) || !("sid" in record)) return null;
+    const { userId, sid } = record;
+    return typeof userId === "string" && typeof sid === "string" ? { userId, sid } : null;
   } catch {
-    return;
+    return null;
   }
-  if (userId) await signOutBrowserSession(userId, "Idle sign-out").catch(() => undefined);
+};
+
+/**
+ * On the sign-in page after a shared workstation signed out for lack of input: revokes exactly the session the tab
+ * left, once the apps saved their work on `pagehide`, and clears that account's data in this browser. A newer sign-in
+ * of the same account keeps its session and data. The record stays until every step succeeded, so `"failed"` can be
+ * retried; `"none"` means there was nothing to finish.
+ */
+export const finishIdleSignOut = async (): Promise<"done" | "failed" | "none"> => {
+  const record = readIdleSignOut();
+  if (!record) return "none";
+  const response = await apiClient.auth.logout
+    .$post({}, { headers: { "x-cloud-logout-user": record.userId, "x-cloud-logout-session": record.sid } })
+    .catch(() => null);
+  if (!response) return "failed";
+  let failed = !response.ok && response.status !== 409;
+  if (response.ok) {
+    // Each step runs on its own: a failed push unsubscribe must not keep local drafts.
+    const steps = [
+      () => import("./notifications").then(({ browserNotificationClient }) => browserNotificationClient.disable()),
+      async () => clearUserStorage(record.userId),
+      () => import("./shared-text-offline").then(({ logoutSharedTextOffline }) => logoutSharedTextOffline(record.userId)),
+    ];
+    for (const step of steps) await step().catch(() => (failed = true));
+  }
+  if (!failed) {
+    try {
+      window.sessionStorage.removeItem(IDLE_SIGN_OUT_STORAGE_KEY);
+    } catch {
+      // Nothing is left to finish; a later visit repeats an idempotent sign-out at worst.
+    }
+  }
+  return failed ? "failed" : "done";
 };

@@ -23,6 +23,7 @@ export const authMessages = i18n.define({
       usePasswordInstead: "Use your FreeIPA password instead",
       noLoginAvailable: "This sign-in option is unavailable. Contact your administrator or use your invitation link.",
       signedOutIdle: "You were signed out because nobody worked at this shared workstation for a while.",
+      idleCleanupFailed: "Your data in this browser could not be fully removed. Try again before you leave this workstation.",
       sharedWorkstationHint:
         "This is a shared workstation: it remembers nothing about your sign-in and signs you out after a while without input.",
       restoreLoginTitle: "Local Login accounts are disabled",
@@ -138,6 +139,8 @@ export const authMessages = i18n.define({
       usePasswordInstead: "Stattdessen FreeIPA-Passwort nutzen",
       noLoginAvailable: "Diese Anmeldung ist nicht verfügbar. Wende dich an die Administration oder nutze deinen Einladungslink.",
       signedOutIdle: "Du wurdest abgemeldet, weil an diesem gemeinsam genutzten Arbeitsplatz eine Weile niemand gearbeitet hat.",
+      idleCleanupFailed:
+        "Deine Daten in diesem Browser konnten nicht vollständig entfernt werden. Versuche es erneut, bevor du den Arbeitsplatz verlässt.",
       sharedWorkstationHint:
         "Das ist ein gemeinsam genutzter Arbeitsplatz: Er merkt sich nichts von deiner Anmeldung und meldet dich nach einer Weile ohne Eingabe ab.",
       restoreLoginTitle: "Lokale Login-Accounts sind deaktiviert",

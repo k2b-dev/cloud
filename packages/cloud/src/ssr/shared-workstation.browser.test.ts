@@ -24,6 +24,7 @@ const { person } = await import("../_internal/define-app.test-fixture");
 const { server, serverState, TIMEOUT_SECONDS } = await import("./shared-workstation.browser-harness");
 
 const START = Date.UTC(2026, 10, 10, 9, 0, 0);
+const SID = "22222222-2222-4222-8222-222222222222";
 let fakeNow = START;
 
 let browser: Browser;
@@ -115,6 +116,7 @@ const openTab = async (context: BrowserContext, remaining: number, beside?: Page
   if (!beside) await context.clock.install({ time: fakeNow });
   await page.addInitScript((session) => Object.assign(window, { __browserSession: session }), {
     userId: person.id,
+    sid: SID,
     idle: { remainingSeconds: remaining, timeoutSeconds: TIMEOUT_SECONDS },
   });
   await page.goto(`${origin}/app/desk`);
@@ -166,6 +168,14 @@ test("background work never extends the session; the warning's Keep working does
     // Before warning the tab asked the server, without extending.
     expect(serverState.reads).toBe(1);
     expect(await warning(page).textContent()).toMatch(/you will be signed out in \d+ seconds/);
+    // A script pressing Keep working is no person.
+    await page.evaluate(() =>
+      Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === "Keep working")
+        ?.click(),
+    );
+    expect(serverState.reports).toBe(0);
+    await warning(page).waitFor();
 
     // A second tab of the same browser hears the new deadline once this tab has applied it.
     const listener = await page.context().newPage();
@@ -231,7 +241,11 @@ test("input in one tab keeps the other awake, and the sign-out takes every tab a
       first.getByRole("button", { name: "Sign out" }).click(),
     ]);
     expect(serverState.reports).toBe(1);
-    expect(await first.evaluate(() => sessionStorage.getItem("cloud.idle-sign-out"))).toBe(person.id);
+    // The sign-in page ends exactly this session and clears this account's data.
+    expect(JSON.parse((await first.evaluate(() => sessionStorage.getItem("cloud.idle-sign-out"))) ?? "null")).toEqual({
+      userId: person.id,
+      sid: SID,
+    });
   } finally {
     await context.close();
   }

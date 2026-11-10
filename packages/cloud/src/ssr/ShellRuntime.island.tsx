@@ -58,7 +58,7 @@ export type ShellRuntimeProps = {
   /** Banners rendered by Layout: their dismiss buttons record the dismissal. */
   banners?: boolean;
   /** Signed-in browser sessions: with `idle` this browser is a shared workstation and signs out without input. */
-  browserSession?: { userId: string; idle?: IdleState };
+  browserSession?: { userId: string; sid: string; idle?: IdleState };
 };
 
 /** The search rows of the shell's destinations; the page carries each link once, without the fields a row repeats. */

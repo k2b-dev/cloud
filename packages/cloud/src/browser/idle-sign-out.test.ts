@@ -23,8 +23,8 @@ const createHarness = (options: { report?: () => IdleState | null | "unavailable
     remainingSeconds: Math.max(0, TIMEOUT - (now - serverLastInput) / 1_000),
     timeoutSeconds: TIMEOUT,
   });
-  const deps = (userId = "user-1"): IdleSignOutDeps => ({
-    userId,
+  const deps = (sid = "family-1"): IdleSignOutDeps => ({
+    sid,
     now: () => now,
     setTimer: (run, ms) => {
       const id = ++nextId;
@@ -53,7 +53,8 @@ const createHarness = (options: { report?: () => IdleState | null | "unavailable
       const due = [...timers.entries()].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
       if (!due) break;
       timers.delete(due[0]);
-      now = due[1].at;
+      // A timer overdue after sleep runs late; the clock never goes back.
+      now = Math.max(now, due[1].at);
       due[1].run();
       await flush();
     }
@@ -90,8 +91,31 @@ describe("shared workstation idle sign-out", () => {
     expect(h.log.left).toBe(0);
     await h.advance(1);
     expect(h.log.left).toBe(1);
-    expect(h.log.sent).toContainEqual({ type: "leave", userId: "user-1" });
+    expect(h.log.sent).toContainEqual({ type: "leave", sid: "family-1" });
     expect(h.log.reports).toBe(0);
+  });
+
+  test("a report held back by a frozen tab or sleep does not pass old input off as new", async () => {
+    const h = createHarness();
+    const watcher = createIdleSignOut(fresh(), h.deps());
+    watcher.input();
+    await h.flush();
+    await h.advance(1_000);
+    watcher.input();
+    // The machine sleeps before the trailing report fires; on wake that report is stale.
+    h.sleep(500_000);
+    await h.advance(1);
+    expect(h.log.reports).toBe(1);
+  });
+
+  test("a warning closed without a decision extends nothing and opens again", async () => {
+    const h = createHarness();
+    createIdleSignOut(fresh(), h.deps());
+    await h.advance(warnAfterMs);
+    h.warning()?.onClosed();
+    await h.advance(1_000);
+    expect(h.log.reports).toBe(0);
+    expect(h.log.warnings.filter(Boolean)).toHaveLength(2);
   });
 
   test("real input reaches the server at most once per interval, with the last input at its end", async () => {
@@ -153,7 +177,7 @@ describe("shared workstation idle sign-out", () => {
     const h = createHarness();
     const watcher = createIdleSignOut(fresh(), h.deps());
     await h.advance(120_000);
-    watcher.receive({ type: "deadline", userId: "user-1", deadline: h.now() + TIMEOUT * 1_000, timeoutSeconds: TIMEOUT });
+    watcher.receive({ type: "deadline", sid: "family-1", deadline: h.now() + TIMEOUT * 1_000, timeoutSeconds: TIMEOUT });
     await h.advance(warnAfterMs - 1);
     expect(h.warning()).toBeNull();
 
@@ -168,15 +192,16 @@ describe("shared workstation idle sign-out", () => {
     expect(quiet.log.left).toBe(0);
   });
 
-  test("a sign-out in one tab takes every tab of the account along, and only that account", async () => {
+  test("a sign-out in one tab takes every tab of that session along, never a newer sign-in", async () => {
     const h = createHarness();
     const watcher = createIdleSignOut(fresh(), h.deps());
-    watcher.receive({ type: "leave", userId: "someone-else" });
+    // An older session of the same account in this browser leaves without touching this one.
+    watcher.receive({ type: "leave", sid: "older-family" });
     expect(h.log.left).toBe(0);
-    watcher.receive({ type: "leave", userId: "user-1" });
+    watcher.receive({ type: "leave", sid: "family-1" });
     expect(h.log.left).toBe(1);
     // The follower does not announce again.
-    expect(h.log.sent).not.toContainEqual({ type: "leave", userId: "user-1" });
+    expect(h.log.sent).not.toContainEqual({ type: "leave", sid: "family-1" });
   });
 
   test("after sleep past the end it leaves on wake without waiting for a timer", async () => {
@@ -207,7 +232,7 @@ describe("shared workstation idle sign-out", () => {
   test("unmarking in another tab stops the watcher", async () => {
     const h = createHarness();
     const watcher = createIdleSignOut(fresh(), h.deps());
-    watcher.receive({ type: "unmarked", userId: "user-1" });
+    watcher.receive({ type: "unmarked", sid: "family-1" });
     await h.advance(TIMEOUT * 2_000);
     expect(h.log.left).toBe(0);
     expect(h.log.reads).toBe(0);

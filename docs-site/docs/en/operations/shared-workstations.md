@@ -49,24 +49,31 @@ soon**, with **Keep working** and **Sign out**. Ten seconds before the end, the
 tabs hide their content and open the sign-in page. Leaving the page gives
 applications their usual `pagehide` and `visibilitychange` saves while the
 session is still valid, so drafts that an application saves on the server are
-kept. The sign-in page then ends the session and clears the account's data in
-this browser, as a manual sign-out does, and explains why the person was
-signed out.
+kept. The sign-in page then ends exactly that session and clears the account's data
+in this browser, as a manual sign-out does, and explains why the person was
+signed out. A newer sign-in of the same account keeps its session. When the
+cleanup fails, the page says so and offers to try again.
 
 The server enforces the limit on its own. Every authenticated request checks
 the session's last real input, including SSR pages, application APIs behind
 the gateway, and user-scoped streams. A session past its limit is revoked with
 the reason `idle`, also when the browser was closed or the computer slept, and
-later input does not revive it.
+later input does not revive it. Checks that read the session without
+authenticating, such as pending device pairings, app-PWA authority, and
+confirmation of a fresh sign-in, treat it as ended as well.
 
 ## Mark and unmark from the API
 
 `PUT /api/me/browser/shared-workstation` with `{ "shared": true }` marks the
 browser and starts the idle limit for the browser session that sent it;
-`{ "shared": false }` unmarks it and lifts the limit for that session. The route
-accepts only browser sessions, with the canonical `Origin` of the Cloud.
-`GET /api/me/browser` reads the state and the seconds left without extending
-the session.
+`{ "shared": false }` unmarks it and lifts the limit for that session. This
+route and the activity route accept only the browser's own session cookie with
+the canonical `Origin` of the Cloud; a session token sent as a bearer gets
+`403`. `GET /api/me/browser` reads the state and the seconds left without
+extending the session.
+
+A session that began before the browser was marked, for example in another tab
+at the same moment, gets the limit with its next request on the marked browser.
 
 ## Limits
 

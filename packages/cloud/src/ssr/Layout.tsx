@@ -224,7 +224,9 @@ export default function Layout(props: LayoutProps) {
   const browserSession = !!user && !isAppSessionActor(c.get("actor"));
   const sharedWorkstation = browserSession && readSharedWorkstationMark(c.req.raw.headers);
   const sessionIdle = browserSession ? c.get("sessionIdle") : undefined;
-  const signedInBrowser = browserSession && user ? { userId: user.id, ...(sessionIdle ? { idle: sessionIdle } : {}) } : undefined;
+  const proof = browserSession ? c.get("credentialProof") : undefined;
+  const signedInBrowser =
+    user && proof?.kind === "session" ? { userId: user.id, sid: proof.sid, ...(sessionIdle ? { idle: sessionIdle } : {}) } : undefined;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id

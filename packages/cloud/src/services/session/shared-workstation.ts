@@ -1,6 +1,8 @@
+import type { SQLQuery } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { env } from "../../config/env";
+import { sql } from "../../runtime/clients";
 import { readCookie } from "../../server/request-cookies";
 import { LOGIN_MEMORY_COOKIES } from "../../shared/login-method";
 import * as settings from "../settings";
@@ -10,9 +12,8 @@ import * as settings from "../settings";
  * person: it outlives sign-out. It only decides how new sign-ins start there; the idle limit itself is held by the
  * server on each session family (`last_input_at`), so removing or copying the cookie changes no running session.
  */
-export const sharedWorkstationCookieName = (development = env.IS_DEVELOPMENT): string =>
-  development ? "cloud_shared_workstation" : "__Host-cloud_shared_workstation";
-const cookieName = sharedWorkstationCookieName;
+const cookieName = (development: boolean) => (development ? "cloud_shared_workstation" : "__Host-cloud_shared_workstation");
+export const sharedWorkstationCookieName = (development = env.IS_DEVELOPMENT): string => cookieName(development);
 
 /** Browsers keep a cookie at most 400 days; every sign-in on the marked browser renews it. */
 const MARK_MAX_AGE_SECONDS = 400 * 86_400;
@@ -51,4 +52,14 @@ export const sharedWorkstationIdleSeconds = async (): Promise<number> => {
   const minutes = await settings.get<number>(SHARED_WORKSTATION_IDLE_SETTING);
   if (!Number.isFinite(minutes) || minutes < 1) throw new Error(`${SHARED_WORKSTATION_IDLE_SETTING} must be a positive number`);
   return Math.floor(minutes * 60);
+};
+
+/**
+ * SQL condition: a family's idle limit has not passed. Request authentication ends such a family when it sees it;
+ * every check that reads `auth.session_families` directly adds this, so a family nobody used since is not valid
+ * either. `lastInputAt` is the column, such as sql`f.last_input_at`.
+ */
+export const withinIdleLimit = async (lastInputAt: SQLQuery): Promise<SQLQuery> => {
+  const timeoutSeconds = await sharedWorkstationIdleSeconds();
+  return sql`(${lastInputAt} IS NULL OR ${lastInputAt} > now() - ${timeoutSeconds} * interval '1 second')`;
 };

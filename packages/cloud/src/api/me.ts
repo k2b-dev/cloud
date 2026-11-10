@@ -97,6 +97,20 @@ const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => 
   return next();
 });
 
+/**
+ * The shared workstation routes act on this browser: only its own session cookie counts. A session token sent as a
+ * bearer, such as a copied one, can neither lift the idle limit nor report input for it.
+ */
+const requireBrowserCookie = createMiddleware<AuthContext>(async (c, next) => {
+  if (!auth.session.usesBrowserCookie(c, c.get("sessionToken"))) {
+    return c.json(
+      { code: "BROWSER_SIGN_IN_REQUIRED", message: lastingAccessApiMessages.resolve([getLocale(c)]).t.browserSignInRequired },
+      403,
+    );
+  }
+  return next();
+});
+
 const requireBrowserSignIn = createMiddleware<AuthContext>(async (c, next) => {
   if (!(await auth.browserSignIn(c))) {
     return c.json(
@@ -900,6 +914,7 @@ const app = new Hono<AuthContext>()
     "/browser/activity",
     auth.rejectAppSession,
     requireBrowserSignIn,
+    requireBrowserCookie,
     describeRoute({
       tags: ["Me"],
       summary: "Record real input in this browser",
@@ -928,6 +943,7 @@ const app = new Hono<AuthContext>()
     "/browser/shared-workstation",
     auth.rejectAppSession,
     requireBrowserSignIn,
+    requireBrowserCookie,
     describeRoute({
       tags: ["Me"],
       summary: "Mark this browser as a shared workstation",

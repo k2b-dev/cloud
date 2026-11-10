@@ -1,5 +1,7 @@
 import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import { isAccountCategoryAllowed } from "../account-category-policy";
+import { withinIdleLimit } from "./shared-workstation";
 
 export type EligibleAccount = {
   id: string;
@@ -45,6 +47,7 @@ export const requireRecentWebSession = async (
   const [row] = await tx`SELECT sid FROM auth.session_families f JOIN auth.users u ON u.id = f.user_id
     WHERE f.sid = ${actor.sid}::uuid AND f.user_id = ${actor.userId}::uuid AND f.revoked_at IS NULL
       AND f.auth_epoch = u.auth_epoch AND f.expires_at > now() AND f.pwa_device_id IS NULL
+      AND ${await withinIdleLimit(sql`f.last_input_at`)}
       AND f.issued_at > now() - ${seconds} * interval '1 second'`;
   if (!row) return reject("REAUTHENTICATE");
   return requireEligibleAccount(tx, actor.userId, reject);

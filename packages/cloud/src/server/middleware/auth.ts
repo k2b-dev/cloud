@@ -172,6 +172,19 @@ const loadAuthenticatedActorUncached = async (
 
   if (authenticatedSession && token) {
     const { user } = authenticatedSession;
+    // A session that runs on a shared workstation carries its idle limit, also when it began before the mark.
+    if (
+      authenticatedSession.data.kind === "web" &&
+      !authenticatedSession.data.idle &&
+      session.isSharedWorkstation(c) &&
+      session.usesBrowserCookie(c, token)
+    ) {
+      const started = await session.startIdleLimit({ userId: user.id, sid: authenticatedSession.data.sid });
+      if (started) {
+        authenticatedSession.data.idle = started;
+        session.setWebCookie(c, token, new Date(authenticatedSession.data.expiresAt));
+      }
+    }
     const actor: UserRequestActor = { kind: "user", user, ...(authenticatedSession.data.kind === "app" ? { sessionKind: "app" } : {}) };
     c.set("actor", actor);
     c.set("accessSubject", { type: "user", userId: user.id });

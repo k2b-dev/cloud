@@ -21,6 +21,7 @@ export type LayoutContext = {
   };
   get(key: "runtime"): RuntimeContext;
   get(key: "sessionIdle"): AuthContext["Variables"]["sessionIdle"];
+  get(key: "credentialProof"): AuthContext["Variables"]["credentialProof"];
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
   /** Every application settings snapshot includes Core's app metadata. */
   get(key: "settings"): Record<string, any>;

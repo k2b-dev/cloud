@@ -424,6 +424,21 @@ const recordInput = async (signIn: { userId: string; sid: string }): Promise<Ses
 };
 
 /**
+ * A cookie session on a marked browser that has no idle limit yet gets one now: one signed in while another tab
+ * marked the browser, or a cookie brought from elsewhere. Sessions that run on a shared workstation carry its limit.
+ */
+const startIdleLimit = async (signIn: { userId: string; sid: string }): Promise<SessionIdle | null> => {
+  const timeoutSeconds = await sharedWorkstationIdleSeconds();
+  const [row] = await sql<Array<{ sid: string }>>`
+    UPDATE auth.session_families SET last_input_at = now()
+    WHERE sid = ${signIn.sid}::uuid AND user_id = ${signIn.userId}::uuid AND pwa_device_id IS NULL
+      AND revoked_at IS NULL AND expires_at > now() AND last_input_at IS NULL
+    RETURNING sid
+  `;
+  return row ? { remainingSeconds: timeoutSeconds, timeoutSeconds } : null;
+};
+
+/**
  * Marks or unmarks this browser as a shared workstation and applies it to the browser session that asked. Marking
  * starts the idle limit for that session, makes its cookie end with the browser and forgets what the sign-in page
  * remembered; unmarking lifts the limit and restores the cookie's expiry. The mark itself stays across sign-out.
@@ -717,20 +732,28 @@ export const session = {
 
   recordInput,
 
+  startIdleLimit,
+
   setSharedWorkstation,
+
+  /** The request authenticated with this browser's own session cookie, not a bearer header carrying a session token. */
+  usesBrowserCookie: (c: Context, token: string | null | undefined): boolean =>
+    !c.req.header("Authorization") && !!token && token === session.getWebToken(c),
 
   isSharedWorkstation: (c: Context): boolean => isSharedWorkstation(c),
 
   revoke: revokeToken,
 
   /** Signs out the web session (or an explicit bearer). False when an expected account no longer owns the request's credential. */
-  delete: async (c: Context, expectedUserId?: string | null): Promise<boolean> => {
+  delete: async (c: Context, expectedUserId?: string | null, expectedSid?: string): Promise<boolean> => {
     // Capture once: another tab may replace the browser cookie while this
     // request runs, but both the comparison and revocation concern this token.
     const token = getWebOrBearerToken(c);
     if (token && expectedUserId !== undefined) {
       const claims = await verifySessionToken(token);
       if (claims && claims.sub !== expectedUserId) return false;
+      // An idle sign-out ends only the session its tab left, never a newer sign-in of the same account.
+      if (claims && expectedSid !== undefined && claims.sid !== expectedSid) return false;
     }
     if (token) await revokeToken(token, c.req.header("x-request-id"));
     // Bound browser logout revokes the captured family without mutating the

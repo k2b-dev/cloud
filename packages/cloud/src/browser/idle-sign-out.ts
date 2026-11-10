@@ -17,6 +17,8 @@ export const IDLE_WARNING_SECONDS = 60;
 export const IDLE_LEAVE_MARGIN_SECONDS = 10;
 /** Real input reaches the server at most this often, unless the end is near. */
 export const INPUT_REPORT_INTERVAL_MS = 20_000;
+/** A held-back report that fires later than this after its input is dropped. */
+const STALE_REPORT_GRACE_MS = 5_000;
 /** The sign-in page reads this once to finish the sign-out: revoke the session and clear the account's browser data. */
 export const IDLE_SIGN_OUT_STORAGE_KEY = "cloud.idle-sign-out";
 /** Window event the profile menu's switch dispatches after the server changed the mark. */
@@ -29,24 +31,28 @@ const INPUT_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
 /** `null`: the session has ended; `"unlimited"`: it has no idle limit any more; `"unavailable"`: the server could not be asked. */
 type ServerAnswer = IdleState | null | "unlimited" | "unavailable";
 
+/** Tabs talk about one session family (`sid`): a newer sign-in of the same account in this browser is another session. */
 type ChannelMessage =
-  | { type: "deadline"; userId: string; deadline: number; timeoutSeconds: number }
-  | { type: "leave"; userId: string }
-  | { type: "unmarked"; userId: string };
+  | { type: "deadline"; sid: string; deadline: number; timeoutSeconds: number }
+  | { type: "leave"; sid: string }
+  | { type: "unmarked"; sid: string };
 
 type Channel = { postMessage(message: ChannelMessage): void };
 
 export type IdleWarning = {
   /** Seconds until the page leaves, for the countdown. */
   secondsLeft: () => number;
-  /** "Weiterarbeiten": counts as real input. */
+  /** "Weiterarbeiten" pressed by a person: counts as real input. */
   onContinue: () => void;
   /** Leave now instead of waiting. */
   onSignOut: () => void;
+  /** Closed without a decision; it opens again while the end is near. */
+  onClosed: () => void;
 };
 
 export type IdleSignOutDeps = {
-  userId: string;
+  /** The session family this tab belongs to. */
+  sid: string;
   now: () => number;
   setTimer: (run: () => void, ms: number) => unknown;
   clearTimer: (timer: unknown) => void;
@@ -79,6 +85,7 @@ export const createIdleSignOut = (initial: IdleState, deps: IdleSignOutDeps): Id
   let timer: unknown;
   let trailing: unknown;
   let lastReport = Number.NEGATIVE_INFINITY;
+  let lastInput = Number.NEGATIVE_INFINITY;
   let reporting = false;
   let reportAgain = false;
   let warningOpen = false;
@@ -102,13 +109,13 @@ export const createIdleSignOut = (initial: IdleState, deps: IdleSignOutDeps): Id
     deps.clearTimer(timer);
     deps.clearTimer(trailing);
     closeWarning();
-    if (announce) deps.channel?.postMessage({ type: "leave", userId: deps.userId });
+    if (announce) deps.channel?.postMessage({ type: "leave", sid: deps.sid });
     deps.leave();
   };
 
   const moveDeadline = (next: number, announce: boolean) => {
     deadline = next;
-    if (announce) deps.channel?.postMessage({ type: "deadline", userId: deps.userId, deadline, timeoutSeconds });
+    if (announce) deps.channel?.postMessage({ type: "deadline", sid: deps.sid, deadline, timeoutSeconds });
     schedule();
   };
 
@@ -154,6 +161,9 @@ export const createIdleSignOut = (initial: IdleState, deps: IdleSignOutDeps): Id
         void report();
       },
       onSignOut: () => leave(true),
+      onClosed: () => {
+        warningOpen = false;
+      },
     });
   };
 
@@ -196,6 +206,7 @@ export const createIdleSignOut = (initial: IdleState, deps: IdleSignOutDeps): Id
   const input = () => {
     if (stopped || left) return;
     const now = deps.now();
+    lastInput = now;
     // Near the end every input goes out at once; otherwise once per interval, with the last input sent at its end.
     if (warningOpen || now >= warnAt() - INPUT_REPORT_INTERVAL_MS || now - lastReport >= INPUT_REPORT_INTERVAL_MS) {
       deps.clearTimer(trailing);
@@ -208,6 +219,8 @@ export const createIdleSignOut = (initial: IdleState, deps: IdleSignOutDeps): Id
       trailing = deps.setTimer(
         () => {
           trailing = undefined;
+          // A report held back by a sleeping machine or a frozen tab would pass old input off as new.
+          if (deps.now() - lastInput > INPUT_REPORT_INTERVAL_MS + STALE_REPORT_GRACE_MS) return;
           void report();
         },
         lastReport + INPUT_REPORT_INTERVAL_MS - now,
@@ -215,7 +228,7 @@ export const createIdleSignOut = (initial: IdleState, deps: IdleSignOutDeps): Id
   };
 
   const receive = (message: ChannelMessage) => {
-    if (message.userId !== deps.userId || stopped) return;
+    if (message.sid !== deps.sid || stopped) return;
     if (message.type === "leave") return leave(false);
     if (message.type === "unmarked") return stop();
     if (message.type === "deadline" && message.deadline > deadline) {
@@ -266,10 +279,13 @@ const ask = (method: "GET" | "POST", path: string) => () =>
     (): ServerAnswer => "unavailable",
   );
 
+/** What the sign-in page needs to end exactly the session this tab left, and to clear its account's data. */
+export type IdleSignOutRecord = { userId: string; sid: string };
+
 /** Hides the page at once, so nobody reads it while the browser leaves, and opens the sign-in page. */
-const leavePage = (userId: string) => {
+const leavePage = (record: IdleSignOutRecord) => {
   try {
-    window.sessionStorage.setItem(IDLE_SIGN_OUT_STORAGE_KEY, userId);
+    window.sessionStorage.setItem(IDLE_SIGN_OUT_STORAGE_KEY, JSON.stringify(record));
   } catch {
     // The server still ends the session; only the browser data cleanup on the sign-in page is skipped.
   }
@@ -282,7 +298,7 @@ const leavePage = (userId: string) => {
  * profile menu's switch and other tabs start and stop it. `warn` renders the warning.
  */
 export const installSharedWorkstation = (
-  session: { userId: string; idle?: IdleState },
+  session: { userId: string; sid: string; idle?: IdleState },
   warn: (warning: IdleWarning | null) => void,
 ): (() => void) => {
   const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(CHANNEL_NAME) : null;
@@ -299,14 +315,14 @@ export const installSharedWorkstation = (
   const start = (idle: IdleState) => {
     watcher?.stop();
     watcher = createIdleSignOut(idle, {
-      userId: session.userId,
+      sid: session.sid,
       now: Date.now,
       setTimer: (run, ms) => window.setTimeout(run, Math.max(0, ms)),
       clearTimer: (timer) => window.clearTimeout(timer as number),
       report: ask("POST", "/api/me/browser/activity"),
       read: ask("GET", "/api/me/browser"),
       warn,
-      leave: () => leavePage(session.userId),
+      leave: () => leavePage({ userId: session.userId, sid: session.sid }),
       ...(channel ? { channel } : {}),
     });
   };
@@ -317,7 +333,7 @@ export const installSharedWorkstation = (
 
   const onMessage = (event: MessageEvent<ChannelMessage>) => {
     const message = event.data;
-    if (!message || message.userId !== session.userId) return;
+    if (!message || message.sid !== session.sid) return;
     // A tab opened before another tab marked the browser starts watching now.
     if (message.type === "deadline" && !watcher)
       start({ remainingSeconds: Math.max(0, (message.deadline - Date.now()) / 1_000), timeoutSeconds: message.timeoutSeconds });
@@ -332,13 +348,13 @@ export const installSharedWorkstation = (
       if (watcher)
         channel?.postMessage({
           type: "deadline",
-          userId: session.userId,
+          sid: session.sid,
           deadline: watcher.deadline(),
           timeoutSeconds: detail.idle.timeoutSeconds,
         });
     } else {
       stop();
-      channel?.postMessage({ type: "unmarked", userId: session.userId });
+      channel?.postMessage({ type: "unmarked", sid: session.sid });
     }
   };
 
