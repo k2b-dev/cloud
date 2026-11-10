@@ -1,15 +1,20 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
+import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
+import { codeOperationText, codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { loadCodeNextRun } from "../code-summary";
 import {
   type CodeVersionActivation,
+  type CodeVersionPreview,
+  codeVersionOwnPageHref,
   codeVersionPageHref,
   loadCodeVersionPreview,
   pendingCodeVersionActivation,
   readCodeVersionActivation,
   startCodeVersionActivation,
 } from "./code-activation";
-import { formatCodeTime } from "./code-client";
+import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
 import { assistantMessages } from "./messages";
 
 const POLLS = 90;
@@ -48,15 +53,26 @@ export default function AssistantCodeVersionCard(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => assistantMessages.resolve([locale()]).t);
+  // Targets read exactly as on the Code page.
+  const pageT = createMemo(() => codePageMessages.resolve([locale()]).t);
+  /** The own place by its title where this person may read it, else by its type and ID, as foreign targets are. */
+  const targetLabel = (target: NonNullable<NonNullable<CodeVersionPreview["targets"]>[number]["target"]>, place: string | null) =>
+    codeTargetLabel(target, place ?? codeTargetName({ ...target, own: false }, ""), pageT());
   const [loaded, setLoaded] = createSignal<Loaded>(null);
   const [activation, setActivation] = createSignal<Activation>({ kind: "idle" });
   let disposed = false;
   onCleanup(() => {
     disposed = true;
   });
+  const [nextRun, setNextRun] = createSignal<string | null>(null);
   const load = async () => {
     setLoaded(null);
-    setLoaded(await loadCodeVersionPreview(props.codeId, props.versionId));
+    const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
+    // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
+    setNextRun(
+      typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null,
+    );
+    setLoaded(preview);
   };
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   const pending = pendingCodeVersionActivation(props.codeId, props.versionId);
@@ -158,6 +174,14 @@ export default function AssistantCodeVersionCard(props: {
     if (current.state === "waiting") return t().codeVersionWaiting;
     return current.state === "applying" || current.state === "rolling_back" ? t().codeVersionApplying : t().codeVersionChecking;
   };
+  const page = () => {
+    const current = preview();
+    return current ? codeVersionPageHref(current) : null;
+  };
+  const ownPage = () => {
+    const current = preview();
+    return current ? codeVersionOwnPageHref(current) : null;
+  };
   const diffHref = () => {
     const current = preview();
     const page = current && codeVersionPageHref(current);
@@ -201,20 +225,65 @@ export default function AssistantCodeVersionCard(props: {
         </p>
       </Match>
       <Match when={preview()?.running === props.number}>
-        <p class="assistant-code-version__line" data-tone="ok" data-state="on" role="status">
-          <i class="ti ti-circle-check" aria-hidden="true" />
-          <Show when={preview()?.activated} fallback={t().codeVersionOnPlain({ version: props.number })}>
-            {(activated) => {
-              const when = () => switchedOnWhen(activated().at, locale(), props.timeZone, new Date());
-              if (activated().byYou) return t().codeVersionOn({ version: props.number, when: when() });
-              const name = activated().byName;
-              // A name this person may not see, or an account that is gone, stays out of the line.
-              return name
-                ? t().codeVersionOnBy({ version: props.number, when: when(), name })
-                : t().codeVersionOnNeutral({ version: props.number, when: when() });
-            }}
+        <div class="assistant-code-version__on">
+          <p class="assistant-code-version__line" data-tone="ok" data-state="on" role="status">
+            <i class="ti ti-circle-check" aria-hidden="true" />
+            <Show when={preview()?.activated} fallback={t().codeVersionOnPlain({ version: props.number })}>
+              {(activated) => {
+                const when = () => switchedOnWhen(activated().at, locale(), props.timeZone, new Date());
+                if (activated().byYou) return t().codeVersionOn({ version: props.number, when: when() });
+                const name = activated().byName;
+                // A name this person may not see, or an account that is gone, stays out of the line.
+                return name
+                  ? t().codeVersionOnBy({ version: props.number, when: when(), name })
+                  : t().codeVersionOnNeutral({ version: props.number, when: when() });
+              }}
+            </Show>
+          </p>
+          <Show when={ownPage() || nextRun() || page()}>
+            <div class="assistant-code-version__links">
+              <Show when={ownPage()}>
+                {(href) => (
+                  <a class="k2b-text-link" href={href()}>
+                    <i class="ti ti-external-link" aria-hidden="true" />
+                    {t().codeVersionOpenPage}
+                  </a>
+                )}
+              </Show>
+              <Show when={nextRun()}>
+                {(when) => {
+                  const label = () => t().codeVersionNextRun({ when: formatCodeNextRun(when(), locale(), props.timeZone) });
+                  return (
+                    <Show
+                      when={page()}
+                      fallback={
+                        <span>
+                          <i class="ti ti-clock" aria-hidden="true" />
+                          {label()}
+                        </span>
+                      }
+                    >
+                      {(href) => (
+                        <a class="k2b-text-link" href={href()}>
+                          <i class="ti ti-clock" aria-hidden="true" />
+                          {label()}
+                        </a>
+                      )}
+                    </Show>
+                  );
+                }}
+              </Show>
+              <Show when={page()}>
+                {(href) => (
+                  <a class="k2b-text-link" href={`${href()}?tab=runs`}>
+                    <i class="ti ti-list-details" aria-hidden="true" />
+                    {t().codeVersionRuns}
+                  </a>
+                )}
+              </Show>
+            </div>
           </Show>
-        </p>
+        </div>
       </Match>
       <Match when={(preview()?.latest ?? 0) > props.number}>
         <p class="assistant-code-version__line" data-state="superseded">
@@ -239,6 +308,49 @@ export default function AssistantCodeVersionCard(props: {
             <p class="assistant-code-version__note">
               {current().ownerKind === "person" ? t().codeVersionRunsAsYou : t().codeVersionRunsAsAccount}
             </p>
+            <Show when={current().targets}>
+              {(targets) => (
+                <div class="assistant-code-version__targets">
+                  <p class="assistant-code-version__label">{t().codeVersionTargets}</p>
+                  <Show when={targets().length > 0} fallback={<p class="assistant-code-version__note">{t().codeVersionNoTargets}</p>}>
+                    <ul class="assistant-code-version__list">
+                      <For each={targets()}>
+                        {(row) => (
+                          <li class="assistant-code-version__target">
+                            <i
+                              class={
+                                row.target?.icon ??
+                                (!row.target ? "ti ti-arrows-shuffle" : row.target.own ? "ti ti-home" : "ti ti-target-arrow")
+                              }
+                              aria-hidden="true"
+                            />
+                            <span class="assistant-code-version__calls">
+                              <Show when={row.operations.length > 0}>
+                                <span class="assistant-code-version__ops">
+                                  <For each={row.operations}>
+                                    {(operation) => (
+                                      <span title={operation} data-id={current().operationLabels?.[operation] ? undefined : ""}>
+                                        {codeOperationText(operation, current().operationLabels)}
+                                      </span>
+                                    )}
+                                  </For>
+                                </span>
+                              </Show>
+                              <span class="assistant-code-version__where">
+                                {row.target ? targetLabel(row.target, current().place?.title ?? null) : t().codeVersionDynamicTarget}
+                              </span>
+                            </span>
+                            <Show when={row.isNew}>
+                              <span class="assistant-code-version__new">{pageT().newAccess}</span>
+                            </Show>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                </div>
+              )}
+            </Show>
             <Show when={current().readiness.state === "approval_pending"}>
               <p class="assistant-code-version__note">
                 <i class="ti ti-hourglass" aria-hidden="true" />

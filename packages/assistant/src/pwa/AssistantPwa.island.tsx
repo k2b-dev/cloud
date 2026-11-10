@@ -41,6 +41,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
+import AssistantCodeVersionCard from "../frontend/AssistantCodeVersionCard";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
 import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
@@ -967,11 +968,20 @@ export default function AssistantPwa(props: AssistantPwaProps) {
               <Match when={true}>
                 <AiChatActionsProvider
                   actions={{
+                    // The same version card as the workspace: on a phone it says where switching on works.
+                    renderCodeVersion: (version) => <AssistantCodeVersionCard {...version} timeZone={props.timeZone} />,
                     actionDisabled: () => chat.runStatus() === "stopping",
                     onCheckAction: (request) => chat.checkAction(request),
                     onApproval: async (request, input) => {
                       if (await chat.respondToApproval(request, input)) return;
                       // The card says itself that the answer is not confirmed; the field's hint line stays free.
+                      const reason = chat.error() ?? t().retry;
+                      chat.setError(null);
+                      throw new Error(reason);
+                    },
+                    // Questions in the chat are answered here as in the workspace.
+                    onFrontendToolResult: async (request, result) => {
+                      if (await chat.submitFrontendToolResult(request, result)) return;
                       const reason = chat.error() ?? t().retry;
                       chat.setError(null);
                       throw new Error(reason);

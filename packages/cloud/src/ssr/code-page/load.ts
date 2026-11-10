@@ -39,6 +39,7 @@ import {
   VersionListSchema,
   VersionReadSchema,
 } from "./data";
+import { type CodeOperationLabel, codeActivationRows, codeTargetsOf, permissionRef, targetKey } from "./targets";
 
 /** Core pages run metadata and versions in pages of 20. */
 const PAGE = 20;
@@ -51,11 +52,13 @@ const SECRET_NOTICES = ["replaced", "submitted", "saved", "submit-failed"] as co
 /** The owning resource, or null for personal Code. */
 const ownerRefOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.ref : null);
 const ownerTitleOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.title : "");
+
+export { permissionRef, targetKey };
+
 const isOwnRef = (ref: { type: string; id: string }, owner: LoadCodePageOptions["owner"]) => {
   const own = ownerRefOf(owner);
   return own !== null && sameRef(ref, own);
 };
-export const targetKey = (ref: { type: string; id: string }) => `${ref.type}\u0000${ref.id}`;
 const sameRef = (a: { type: string; id: string }, b: { type: string; id: string }) => a.type === b.type && a.id === b.id;
 
 export type LoadCodePageOptions = {
@@ -163,6 +166,24 @@ export const describeTarget = async (
   }
 };
 
+/** Titles and app names of called operations in the caller's locale, from registry manifests; unknown ones are left out. */
+export const describeOperations = async (
+  operations: Iterable<string>,
+  catalog: ReturnType<typeof catalogCache>,
+): Promise<Record<string, CodeOperationLabel>> => {
+  const entries = await Promise.all(
+    [...new Set(operations)].map(async (operation) => {
+      const appId = operation.split(".")[0]!;
+      const app = await catalog(appId).catch(() => null);
+      if (!app?.ok || !app.data) return null;
+      const localId = operation.slice(appId.length + 1);
+      const entry = [...app.data.manifest.actions, ...app.data.manifest.queries].find((candidate) => candidate.localId === localId);
+      return entry ? ([operation, { title: entry.title, app: app.data.appName ?? null }] as const) : null;
+    }),
+  );
+  return Object.fromEntries(entries.filter((entry) => entry !== null));
+};
+
 /** The title of a called Query or Action in the caller's locale, from the same registry manifest; null when unknown. */
 const capabilityTitle = async (capability: string, catalog: ReturnType<typeof catalogCache>): Promise<string | null> => {
   const appId = capability.split(".")[0]!;
@@ -194,14 +215,6 @@ const loadManifest = async (invoke: CodePageInvoke, codeId: string, versionId: s
     return null;
   }
 };
-
-/** Core turns a permission without a target into a grant at the receiving app; dynamic personal IDs have none. */
-export const permissionRef = (permission: { operation: string; target: { type: string; id: string | null } | null }) =>
-  permission.target === null
-    ? { type: "app", id: permission.operation.split(".")[0]! }
-    : permission.target.id === null
-      ? null
-      : { type: permission.target.type, id: permission.target.id };
 
 const versionView = (
   receipt: Pick<z.infer<typeof VersionListSchema>["items"][number], "version"> &
@@ -311,19 +324,8 @@ const loadReady = async (
   for (const version of [olderActive, olderSelected]) if (version) numbers.set(version.id, version.number);
 
   // Targets: what the running version calls, plus what the waiting version would add, as the checker read them.
-  const byTarget = (manifest: z.infer<typeof ManifestSchema> | null) => {
-    const map = new Map<string, { ref: { type: string; id: string }; operations: Set<string> }>();
-    for (const permission of manifest?.permissions ?? []) {
-      const ref = permissionRef(permission);
-      if (!ref) continue;
-      const entry = map.get(targetKey(ref)) ?? { ref, operations: new Set<string>() };
-      entry.operations.add(permission.operation);
-      map.set(targetKey(ref), entry);
-    }
-    return map;
-  };
-  const activeByTarget = byTarget(activeManifest);
-  const waitingByTarget = byTarget(waitingManifest);
+  const activeByTarget = codeTargetsOf(activeManifest);
+  const waitingByTarget = codeTargetsOf(waitingManifest);
   const diffPermissions = diffResult?.ok ? diffResult.data.data.permissions : [];
   const ownerRef = ownerRefOf(options.owner);
   /** The refused call of a failed run: the target refusal Core recorded, else the first policy or approval refusal loaded. */
@@ -418,21 +420,21 @@ const loadReady = async (
 
   const waitingTargets =
     waitingReceipt && waitingManifest
-      ? [
-          // A resource owner is checked on every switch-on, also when the Code only works on itself.
-          ...(!ownerRef || waitingByTarget.has(targetKey(ownerRef))
-            ? []
-            : [{ target: targetOf(ownerRef), operations: [] as string[], isNew: false }]),
-          ...[...waitingByTarget.values()].map((entry) => {
-            const present = activeByTarget.get(targetKey(entry.ref))?.operations;
-            return {
-              target: targetOf(entry.ref),
-              operations: [...entry.operations],
-              isNew: !present || [...entry.operations].some((operation) => !present.has(operation)),
-            };
-          }),
-        ]
+      ? codeActivationRows(activeManifest, waitingManifest, ownerRef).map((row) => ({
+          target: targetOf(row.ref),
+          operations: row.operations,
+          isNew: row.isNew,
+        }))
       : null;
+  // Names only the operations this page shows anyway: its target rows, the switch-on rows and the version difference.
+  const operationLabels = await describeOperations(
+    [
+      ...(targetRows ?? []).flatMap((row) => [...row.operations, ...row.newOperations]),
+      ...(waitingTargets ?? []).flatMap((row) => row.operations),
+      ...diffPermissions.map((permission) => permission.operation),
+    ],
+    catalog,
+  );
   // A skipped tick or a cancelled start is not a run's result.
   const nextRuns = new Map(automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : []);
   const lastRunOf = (entrypoint: string) =>
@@ -604,6 +606,7 @@ const loadReady = async (
     refusal,
     attentionReasons: attentionResult?.ok ? (attentionResult.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? []) : null,
     waitingTargets,
+    operationLabels,
     runs:
       runs && runsResult.ok
         ? { items: runs, nextCursor: runsResult.data.data.nextCursor, eventDeliveries: runsResult.data.data.eventDeliveries ?? [] }

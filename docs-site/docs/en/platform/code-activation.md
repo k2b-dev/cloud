@@ -67,7 +67,13 @@ The chat version card and `cld code activate` use the preview. It contains the
 version's `number`, `running`, `latest`, optional reviewed `automations`, and
 `readiness`: `ready`, `approval_pending`, or `refused` with a stable code and
 message. `allowed` explains phone or credential restrictions. A running version
-also returns `activated`. Preview has no target-rights rows and asks no target
+also returns `activated`. For the version that would switch on next, optional
+`targets` lists each target its checked manifest calls, with `operations` and
+`isNew` against the running version, named from registry manifests as on the
+Code page; a `null` target collects calls with a target picked at run time.
+`operationLabels` names those operations by title and app from registry
+manifests. These rows are review evidence, not grants. For resource Code, `page` is the
+Code page its owner's app declares in `code.pages`, or `null`. Preview asks no target or owner
 application to plan, inspect or grant access. The Code page's dialog starts the
 same durable activation directly.
 

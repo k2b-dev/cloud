@@ -21,7 +21,7 @@ appear exactly like built-in ones.
 | Where | What you get |
 | --- | --- |
 | `cld code sdk pull` | The typed SDK for one Code in its `sdk/` folder. Your editor completes every app, operation, input and result. |
-| `code_sdk` in a Gustav chat | The same declarations. Gustav reads them before it writes a line. |
+| `code_sdk` in a Gustav chat | An index of every app and method first, then the same declarations for the apps Gustav uses, before it writes a line. |
 | `cld capabilities catalog` | Every app's capabilities; `--json` returns the complete manifests with inputs, results and policy. |
 | `cld events ls` | The events Code can react to. |
 | The Cloud [MCP server](/en/docs/platform/mcp) | Every live capability as a tool, and `cloud__events__list` for events. It does not hand out the Code SDK itself. |

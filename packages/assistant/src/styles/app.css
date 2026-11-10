@@ -654,6 +654,64 @@
 .assistant-code-version__note > .ti {
   margin-top: 0.125rem;
 }
+/* What the version calls where, as the Code page lists it; plain rows on the card's own surface. */
+.assistant-code-version__targets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.assistant-code-version__label {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.assistant-code-version__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.assistant-code-version__target {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.5rem;
+}
+.assistant-code-version__target > .ti {
+  margin-top: 0.125rem;
+  color: var(--k2b-text-secondary);
+}
+.assistant-code-version__calls {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.assistant-code-version__ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+}
+.assistant-code-version__ops > span {
+  color: var(--k2b-text);
+  overflow-wrap: anywhere;
+}
+/* An operation the registry does not name shows its ID. */
+.assistant-code-version__ops > span[data-id] {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  font-size: 0.78125rem;
+}
+.assistant-code-version__where {
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+  overflow-wrap: anywhere;
+}
+.assistant-code-version__new {
+  color: var(--k2b-info-text);
+  font-size: 0.75rem;
+}
 .assistant-code-version__actions {
   display: flex;
   flex-wrap: wrap;
@@ -672,6 +730,26 @@
 .assistant-code-version__line[data-tone="ok"] {
   background: color-mix(in srgb, var(--k2b-success-500) 12%, transparent);
   color: var(--k2b-success-text);
+}
+
+.assistant-code-version__on {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.assistant-code-version__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding-inline: 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+.assistant-code-version__links > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
 }
 
 /* Waiting for you: list headings and Code of a place that needs the person. */

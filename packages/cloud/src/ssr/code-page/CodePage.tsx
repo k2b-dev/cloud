@@ -47,6 +47,7 @@ import {
 } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
+import { type CodeOperationLabels, codeOperationText, codeTargetLabel, codeTargetName } from "./targets";
 
 export { CodeNavStatus, codeNavAttentionLabel } from "./CodeNavStatus";
 export type { CodeAttention, CodePageData, CodePageTab } from "./data";
@@ -136,19 +137,8 @@ function usePageText(data: () => CodePageData) {
     date: date(iso),
     time: dates.formatTime(iso, context()),
   });
-  /** A foreign target is never named: its type and ID only, like cron names a path. */
-  const targetName = (target: CodePageTarget): string => {
-    if (target.own) return data().owner.title;
-    if (target.ref.type === "app") return target.title ?? target.ref.id;
-    return [target.typeTitle, target.ref.id].filter(Boolean).join(" ");
-  };
-  const targetLabel = (target: CodePageTarget): string => {
-    const current = t();
-    if (target.own) return current.atOwn({ name: data().owner.title });
-    if (target.ref.type === "app") return current.atApp({ name: target.title ?? target.ref.id });
-    if (target.typeTitle) return current.atTarget({ name: targetName(target) });
-    return current.unknownTarget({ id: target.ref.id });
-  };
+  const targetName = (target: CodePageTarget): string => codeTargetName(target, data().owner.title);
+  const targetLabel = (target: CodePageTarget): string => codeTargetLabel(target, data().owner.title, t());
   /** The service account a place's Code runs as; personal Code has none. */
   const account = () => (data().owner.kind === "resource" ? t().accountName({ name: data().owner.title }) : null);
   return { t, locale, date, when, moment, targetName, targetLabel, account };
@@ -239,6 +229,14 @@ function InlineError(props: { text: string; retry: string }) {
 }
 
 const Op = (props: { children: string }) => <code class="cloud-code__op">{props.children}</code>;
+/** A called Query or Action by its title and app, its ID in the tooltip; one the registry does not name keeps its ID. */
+const Operation = (props: { operation: string; labels: CodeOperationLabels }) => (
+  <Show when={props.labels[props.operation]} fallback={<Op>{props.operation}</Op>}>
+    <span class="cloud-code__op-title" title={props.operation}>
+      {codeOperationText(props.operation, props.labels)}
+    </span>
+  </Show>
+);
 
 /** The shared Code page of one resource: automations, targets, runs with their calls, versions, switching on. */
 /** Personal Code runs as its person; it has no place that it acts for. */
@@ -528,7 +526,11 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
   const newOperations = () =>
     (props.state.waitingTargets ?? [])
       .filter((row) => row.isNew && !row.target.own)
-      .flatMap((row) => row.operations.map((operation) => `${operation} ${props.text.targetLabel(row.target)}`));
+      .flatMap((row) =>
+        row.operations.map(
+          (operation) => `${codeOperationText(operation, props.state.operationLabels)} ${props.text.targetLabel(row.target)}`,
+        ),
+      );
   const running = () => props.state.active?.number ?? null;
   return (
     <div class="cloud-code__body">
@@ -842,7 +844,9 @@ function TargetRow(props: { row: CodePageTargetRow; state: CodePageReady; text: 
       </span>
       <span class="cloud-code__cell">
         <span class="cloud-code__ops">
-          <For each={[...props.row.operations, ...props.row.newOperations]}>{(operation) => <Op>{operation}</Op>}</For>
+          <For each={[...props.row.operations, ...props.row.newOperations]}>
+            {(operation) => <Operation operation={operation} labels={props.state.operationLabels} />}
+          </For>
         </span>
         <span class="cloud-code__sub">
           <TargetText target={props.row.target} text={props.text} />
@@ -853,7 +857,11 @@ function TargetRow(props: { row: CodePageTargetRow; state: CodePageReady; text: 
           <span class="cloud-code__new">
             {props.row.operations.length === 0
               ? t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })
-              : t().alsoNew({ operations: props.row.newOperations.join(", ") })}
+              : t().alsoNew({
+                  operations: props.row.newOperations
+                    .map((operation) => codeOperationText(operation, props.state.operationLabels))
+                    .join(", "),
+                })}
           </span>
         </Show>
       </span>
@@ -1385,7 +1393,7 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
                         <i class={permission.target?.icon ?? (permission.target?.own ? "ti ti-home" : "ti ti-target-arrow")} />
                       </span>
                       <span class="cloud-code__cell">
-                        <Op>{permission.operation}</Op>
+                        <Operation operation={permission.operation} labels={props.state.operationLabels} />
                         <span class="cloud-code__sub">{permission.target ? props.text.targetLabel(permission.target) : ""}</span>
                       </span>
                       <span class="cloud-code__right text-dimmed">{t().line({ file: permission.file, line: permission.line })}</span>

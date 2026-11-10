@@ -198,6 +198,11 @@ a.cloud-code__row[aria-current="true"] {
   color: var(--k2b-text);
   overflow-wrap: anywhere;
 }
+.cloud-code__op-title {
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
 .cloud-code__right {
   max-width: 22rem;
   text-align: right;

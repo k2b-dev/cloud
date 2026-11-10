@@ -127,7 +127,9 @@ describe("Code page states", () => {
     expect(page).toContain("alle 15 Minuten");
     expect(page).toContain("montags 07:00");
     expect(page).toContain("nächster Lauf");
-    expect(page).toContain("spaces.task.create");
+    // Operations read by their title and app; the technical ID stays in the tooltip.
+    expect(page).toContain("Aufgabe anlegen · Spaces");
+    expect(html("overview")).toContain('<span class="cloud-code__op-title" title="spaces.task.create">Aufgabe anlegen · Spaces</span>');
     // A foreign target by type and ID, linked from its type's page pattern; never by name.
     expect(page).toContain("an Space sp_2lg8");
     expect(html("overview")).toContain('<a href="/app/spaces/sp_2lg8">an Space sp_2lg8</a>');
@@ -912,7 +914,14 @@ describe("Code page loader", () => {
     if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
     expect(data.state.refusal).toEqual({ kind: "target_refused", runId: RUN, versionId: V4, call: null });
     // Targets from the reviewed manifest stay: readers may read the version's source, which names them anyway.
-    const serialized = JSON.stringify({ ...data.state, targets: null, diff: null, waitingTargets: null });
+    // Operation titles name only operations those rows show, never the refused call.
+    const shown = new Set([
+      ...(data.state.targets ?? []).flatMap((row) => [...row.operations, ...row.newOperations]),
+      ...(data.state.waitingTargets ?? []).flatMap((row) => row.operations),
+      ...(data.state.diff?.permissions ?? []).map((permission) => permission.operation),
+    ]);
+    expect(Object.keys(data.state.operationLabels).filter((operation) => !shown.has(operation))).toEqual([]);
+    const serialized = JSON.stringify({ ...data.state, targets: null, diff: null, waitingTargets: null, operationLabels: {} });
     expect(serialized).not.toContain("k7qm2x9a");
     expect(serialized).not.toContain("spaces.task.create");
   });

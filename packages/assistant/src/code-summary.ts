@@ -33,7 +33,7 @@ const AutomationListSchema = z.object({
     z.object({
       entrypoint: z.string(),
       title: z.string().optional(),
-      kind: z.enum(["schedule", "manual"]),
+      kind: z.enum(["schedule", "manual", "event", "route"]),
       cron: z.string().nullable(),
       at: z.string().optional(),
       timeZone: z.string().optional(),
@@ -139,12 +139,18 @@ export const automationStatus = (code: CodeSummary, automation: CodeAutomation):
 };
 
 /** The earliest next run of a Code's automations, or null when none is due. */
-export const nextCodeRun = (code: CodeSummary): string | null =>
+export const nextCodeRun = (code: Pick<CodeSummary, "automations">): string | null =>
   (code.automations ?? []).reduce<string | null>(
     (earliest, automation) =>
       automation.nextRunAt && (!earliest || Date.parse(automation.nextRunAt) < Date.parse(earliest)) ? automation.nextRunAt : earliest,
     null,
   );
+
+/** The earliest next run of one Code's automations, from the same list "My apps" reads; null when none is due or unknown. */
+export const loadCodeNextRun = async (invoke: CodeQueryInvoke, codeId: string): Promise<string | null> => {
+  const result = await invoke(query("code.automation.list", { codeId }), AutomationListSchema).catch(() => null);
+  return result?.ok ? nextCodeRun({ automations: result.data.data.items }) : null;
+};
 
 const AttentionSchema = z.object({
   items: z.array(
