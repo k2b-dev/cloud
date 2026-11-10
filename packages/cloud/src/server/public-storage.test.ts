@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import * as objectStoreConfig from "../_internal/object-store-config";
+import { StorageBucketIdSchema } from "../contracts/storage-buckets";
 import { redis } from "../runtime/clients";
 
 import * as store from "../services/settings/store";
@@ -57,6 +59,43 @@ afterEach(async () => {
   await server.stop(true);
 });
 const request = (key = "photo.png", init?: RequestInit) => new Request(`https://cloud.example.test/public/storage/inventory/${key}`, init);
+
+test("additional bucket URLs share delivery protections, area parsing and the rate limit", async () => {
+  const id = StorageBucketIdSchema.parse("12345678-1234-1234-1234-123456789012");
+  const backend = await objectStoreConfig.objectStoreBackend();
+  const resolve = spyOn(objectStoreConfig, "objectStoreBackend").mockResolvedValue(backend);
+  try {
+    const response = await servePublicStorage(new Request(`https://cloud.example.test/public/storage/~${id}/inventory/photo.png`));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("image");
+    expect(response.headers.get("content-security-policy")).toContain("sandbox");
+    expect(resolve).toHaveBeenCalledWith(id);
+    expect(calls.every((call) => call.path.startsWith("/cloud-test/public/inventory/"))).toBe(true);
+    for (const code of ["storage_bucket_unknown", "storage_bucket_disconnected"] as const) {
+      resolve.mockRejectedValue(new objectStoreConfig.ObjectStoreConfigurationError("Reconnect the bucket.", code));
+      expect((await servePublicStorage(new Request(`https://cloud.example.test/public/storage/~${id}/inventory/photo.png`))).status).toBe(
+        404,
+      );
+    }
+  } finally {
+    resolve.mockRestore();
+  }
+});
+
+test.each([
+  "~default/inventory/photo.png",
+  "~wrong/inventory/photo.png",
+  "~/inventory/photo.png",
+  "~ABCDEF12-1234-5678-90AB-ABCDEF123456/inventory/photo.png",
+  "~12345678-1234-1234-1234-123456789012/storage/photo.png",
+  "~12345678-1234-1234-1234-123456789012/inventory/",
+  "~12345678-1234-1234-1234-123456789012/inventory/x%2fy.png",
+  "~12345678-1234-1234-1234-123456789012/~inventory/photo.png",
+])("rejects malformed bucket paths %s before reading storage", async (path) => {
+  expect((await servePublicStorage(new Request(`https://cloud.example.test/public/storage/${path}`))).status).toBe(404);
+  expect(calls).toEqual([]);
+  expect(store.readStates).not.toHaveBeenCalled();
+});
 
 test.each([
   "",
