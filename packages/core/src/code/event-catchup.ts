@@ -56,8 +56,10 @@ export const codeEventCatchupPumpConfig: PumpConfig<Input, number, Item> = {
         )
       )
         throw new CodeDataError("CONFLICT", "Catch-up occurrence is not in the saved operation.");
-      const [subscription] = await sql<{ resource_binding: ResourceEventBinding }[]>`SELECT resource_binding FROM events.app_subscriptions
-      WHERE state='active' AND event_type=${item.event.type} AND version=${item.event.version}
+      const [subscription] = await sql<
+        { id: string; resource_binding: ResourceEventBinding }[]
+      >`SELECT id,resource_binding FROM events.app_subscriptions
+      WHERE resource_binding IS NOT NULL AND state='active' AND event_type=${item.event.type} AND version=${item.event.version}
         AND resource_binding->>'consumer'=${CODE_EVENT_CONSUMER} AND resource_binding->>'key'=${input.codeId}
         AND resource_binding->'place'=${JSON.stringify(item.event.place)}::text::jsonb`;
       if (!subscription) throw new CodeDataError("CONFLICT", "The handler's resource access or execution mandate is unavailable.");
@@ -91,7 +93,8 @@ export const codeEventCatchupPumpConfig: PumpConfig<Input, number, Item> = {
               : await db`SELECT id FROM auth.service_accounts WHERE id=${principal.serviceAccountId}::uuid AND kind='code' AND status='active' FOR SHARE`;
           const [execution] = await db`SELECT mandate.id FROM auth.mandates mandate
         JOIN events.app_subscriptions subscription ON subscription.resource_binding->>'mandateId'=mandate.id::text
-        WHERE mandate.owner_app_id='runner' AND mandate.workload_type='code.version' AND mandate.workload_id=${input.versionId}
+        WHERE subscription.id=${subscription.id} AND mandate.id=${subscription.resource_binding.mandateId}::uuid
+          AND mandate.owner_app_id='runner' AND mandate.workload_type='code.version' AND mandate.workload_id=${input.versionId}
           AND mandate.subject_kind=${principal.type}
           AND COALESCE(mandate.subject_user_id,mandate.subject_service_account_id)=${principal.type === "user" ? principal.userId : principal.serviceAccountId}::uuid
           AND mandate.state='active' AND mandate.confirmed_at IS NOT NULL
