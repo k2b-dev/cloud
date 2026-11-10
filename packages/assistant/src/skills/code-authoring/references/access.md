@@ -7,7 +7,7 @@ handle or a setting that names a resource grants nothing.
 
 | Owner | Runs as | Who switches it on | Notes |
 | --- | --- | --- | --- |
-| Personal | Its person, with their current access | Only that person, in a browser session | Its non-public routes open for every signed-in person; handlers restrict visitors with `c.user`. Can use `core.ai.chat.*` in the owner's own chats. |
+| Personal | Its person, with their current access | Only that person, in a browser session | Its non-public routes open for every signed-in member, not for guests; handlers restrict visitors with `c.user`. Can use `core.ai.chat.*` in the owner's own chats. |
 | Mailbox | The mailbox's service account | A person with **Manage** access to the mailbox, or a Cloud administrator | Can subscribe to `mail.message.received`. |
 | App | The app's service account | A Cloud administrator | Created and managed in Administration › Code. |
 
@@ -28,8 +28,8 @@ others first needs a Cloud administrator's approval under the default policy.
 
 ## The visitor of a page: `c.user`
 
-Routes need a signed-in person by default, including signed-in guests.
-`c.user` contains only the visitor's own identity:
+Routes need a signed-in member by default; guest accounts get 403 before the
+Code runs, for every owner type. `c.user` contains only the visitor's own identity:
 
 | Field | Meaning |
 | --- | --- |
@@ -37,7 +37,7 @@ Routes need a signed-in person by default, including signed-in guests.
 | `username` | Cloud login handle, separate from the user ID |
 | `groupIds` | Effective Cloud group IDs |
 | `groupNames` | Effective group names |
-| `kind` | Cloud account profile: `"user"` or `"guest"` |
+| `kind` | Cloud account profile; always `"user"` on a page that is not public |
 | `name` | Display name |
 
 Agents and other service accounts cannot visit private pages; they do not

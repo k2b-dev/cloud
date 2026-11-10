@@ -1052,6 +1052,19 @@ test("human check output uses reviewed titles and JSON retains both titles and s
   expect(machine.printed[0]).toMatchObject({ result: { manifest: { entrypoints: entries } } });
 });
 
+test("check warnings print before the review and never fail the check", async () => {
+  const data = structuredClone(checked);
+  if (!data.result.ok) throw new Error("Expected successful check");
+  data.result.warnings = [{ code: "code_route_unchecked", message: "Prüfe c.user.", file: "code.ts", line: 2, column: 1 }];
+  const human = context([], {}, "text");
+  printCodeCheck(human.ctx, data);
+  expect(human.printed[0]).toBe("code.ts:2:1 Warnung code_route_unchecked: Prüfe c.user.");
+  const { directory } = await project();
+  const machine = context(["check", directory], {}, "json", () => Response.json(data));
+  expect(await code.run(machine.ctx)).toBe(0);
+  expect(machine.printed[0]).toMatchObject({ result: { warnings: data.result.warnings } });
+});
+
 test("human runs keep the command identifier beside a reviewed title and JSON preserves both fields", async () => {
   const { directory } = await project();
   const run = { ...runMetadata, title: "Lieferungen eintragen" };

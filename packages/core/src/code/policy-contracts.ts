@@ -90,6 +90,10 @@ export function codePolicyPreset(preset: Exclude<CodePolicyPreset, "custom">): C
     })),
   };
 }
+/** Inference classification shared by the checker, runtime bridge and Gustav's SDK index. */
+export const isCodeAiOperation = (capability: string): boolean =>
+  capability.startsWith("core.ai.") && !["core.ai.chat.deliver", "core.ai.chat.run.read"].includes(capability);
+
 /** Conservative classification: an Action without declared policy requires the app_asks row. */
 export function codePolicyRow(kind: "query" | "action" | "ai" | "internet", policy?: CapabilityActionPolicy): CodePolicyRow {
   if (kind === "query") return "read";

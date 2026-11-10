@@ -1,3 +1,4 @@
+import type { CodeRouteOwner } from "@k2b/cloud/ssr/code-page/messages";
 import { i18n } from "@k2b/stdlib";
 import type { CodePolicyRow, CodePolicyValue } from "../../../code/policy-contracts";
 
@@ -46,7 +47,8 @@ export const codeAdminMessages = i18n.define({
       area: "Code",
       automations: "Automations",
       routePublic: "Public · no sign-in",
-      routePrivate: "Sign-in required",
+      routePrivate: ({ owner }: { owner: CodeRouteOwner }) =>
+        `All signed-in people (no guests) · runs with ${owner.kind === "you" ? "your rights" : owner.kind === "person" ? `the rights of ${owner.name}` : owner.name ? `the rights of the service account “${owner.name}”` : "its service account’s rights"}`,
       areaSub: "Everything that runs as Code in Cloud",
       approvals: "Approvals",
       allCode: "Code in this Cloud",
@@ -384,7 +386,8 @@ export const codeAdminMessages = i18n.define({
       area: "Code",
       automations: "Automationen",
       routePublic: "Öffentlich · ohne Anmeldung",
-      routePrivate: "Anmeldung erforderlich",
+      routePrivate: ({ owner }: { owner: CodeRouteOwner }) =>
+        `Alle Angemeldeten (ohne Gäste) · läuft mit ${owner.kind === "you" ? "deinen Rechten" : owner.kind === "person" ? `den Rechten von ${owner.name}` : owner.name ? `den Rechten des Dienstkontos „${owner.name}“` : "den Rechten seines Dienstkontos"}`,
       areaSub: "Alles, was als Code in Cloud läuft",
       approvals: "Freigaben",
       allCode: "Code in dieser Cloud",

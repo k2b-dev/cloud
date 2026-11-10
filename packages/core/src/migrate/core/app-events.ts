@@ -42,6 +42,13 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     await tx`ALTER TABLE events.app_subscriptions ADD COLUMN IF NOT EXISTS resource_binding JSONB`.simple();
     await tx`CREATE INDEX IF NOT EXISTS app_subscriptions_resource ON events.app_subscriptions
       ((resource_binding->>'consumer'),(resource_binding->>'key')) WHERE resource_binding IS NOT NULL`.simple();
+    // Build atomically before the broker starts. CONCURRENTLY cannot run in this transaction.
+    // Separate partial indexes keep each OR arm bounded by its matching subscriptions.
+    await tx`CREATE INDEX IF NOT EXISTS app_subscriptions_fanout_service ON events.app_subscriptions
+      (event_type,version) WHERE state='active' AND resource_binding IS NULL`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS app_subscriptions_fanout_resource ON events.app_subscriptions
+      (event_type,version,(resource_binding->'place'->>'type'),(resource_binding->'place'->>'id'),first_seen_at)
+      WHERE state='active' AND resource_binding IS NOT NULL`.simple();
     await tx`CREATE TABLE IF NOT EXISTS events.app_deliveries (
       seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, id UUID NOT NULL UNIQUE,
       subscription_id TEXT NOT NULL REFERENCES events.app_subscriptions(id),

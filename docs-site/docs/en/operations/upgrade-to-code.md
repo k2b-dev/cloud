@@ -5,7 +5,7 @@ section: Operations
 order: 1194
 description: Export, freeze, upgrade and rebuild when Studio, Mail rules, automatic replies and routines give way to Code.
 tags: [operations, upgrades, code, migrations]
-updated: 2026-11-08
+updated: 2026-11-10
 ---
 
 # Upgrade to Code (Gustav release)
@@ -76,18 +76,13 @@ schedules, so store them with the upgrade's restricted backup material. See
 [Export automation definitions](/en/docs/operations/automation-definition-export)
 for the format and the paged API routes.
 
-Then back up what the exports leave out:
-
-- A **database backup** of the whole installation. It keeps Mail run
-  history, rule logs, commands and outbox evidence, and routine occurrences
-  and messages.
-- **Studio has no migration export**: nothing moves into Code. Back up
-  anything your retention contract needs before the upgrade, including the
-  **external RSQL databases**: a Postgres backup holds only the namespace
-  mappings, not their contents. A person with **Manage** access can download
-  one Studio app's database as SQLite with
-  `cld assistant code database-export <app> --out <file>` on the old release.
-  This is the last chance; the upgrade deletes Studio data.
+**An upgrade with populated Studio apps has not been rehearsed.** Studio data
+is **deleted, not migrated**. On the **old version**, a person
+with **Manage** access exports each Studio app's database with
+`cld assistant code database-export <app> --out <file>` using an explicitly
+selected profile. Preserve other Studio files your retention contract needs.
+These exports do not replace the matching database and RSQL recovery point
+required **after drain and reconciliation** in step 3.
 
 If people kept editing during the export, export again. Pages are live reads,
 not one transaction.
@@ -109,6 +104,32 @@ not one transaction.
 A stopped process is not proof that its scheduled records are gone; the new
 release removes them, but only once the old one is down.
 
+### Create the recovery point
+
+After the drain and reconciliation above, create **one binding, consistent
+recovery point for the whole installation database and external RSQL data**.
+This is the recovery point every rollback instruction below refers to.
+
+1. With old Core, Assistant and Mail stopped, let remaining shared work finish,
+   then stop all remaining application replicas, workers, timers, provider sync
+   and other writers to the installation database and RSQL namespaces. Block
+   user and API writes too.
+   Keep writes stopped until both backups are complete; two independent live
+   backups are not one consistent recovery point.
+2. Back up the whole installation database, including commands, outbox evidence,
+   Mail history and routine occurrences, and the external RSQL data, including
+   every Studio namespace. Postgres holds namespace mappings, not RSQL contents.
+   Record the two backup identifiers and their common recovery-point time
+   together. Retain the matching configuration and `APP_SECRET` securely.
+3. Verify that both backups can be read and restored using the installation's
+   backup procedure. Keep this recovery set for the entire rollback window.
+   Do not substitute an earlier pre-drain backup or definition export.
+
+**A later rollback loses changes made after this recovery point**, including
+new messages and edits. Before old workers start again, reconcile all external
+effects since the recovery point, including sent mail, against provider evidence.
+Restoring the database does not undo those effects or make replay safe.
+
 ## 4. Upgrade
 
 Upgrade Core, the gateway, Assistant, Mail, the Code runner, all other
@@ -128,7 +149,8 @@ matching AppArmor profile on each host and deploy the matching seccomp policy.
 Follow [Runner deployment](/en/docs/operations/code-runner) for host,
 user-namespace and container prerequisites.
 
-After preparing the new images and stopping all old replicas, start in stages.
+After preparing the new images and completing the recovery point in step 3,
+start in stages.
 Run each command only after the previous command succeeds. Stop if a readiness
 check fails; do not start Assistant before Mail is ready.
 
@@ -157,14 +179,43 @@ Startup stops, with a message, instead of continuing unsafely:
 
 | Stop | Cause | What to do |
 | --- | --- | --- |
-| Mail does not start | Old Mail commands or sends are still unresolved | If Assistant has not started yet, restore the pre-upgrade database before returning to the old release: Core has already retired routines. Reconcile the sends there (step 3) and upgrade again. If Studio cleanup has begun, never start the old Assistant again: restore the pre-upgrade backups, including RSQL, before returning to the old release |
-| Mail reports a lock timeout | Shared workflow transactions, for example Grids writes, are still settling | Let them finish and restart Mail; this is safe to retry |
-| Assistant: "Unreadable pending HTTP scope" | A pending chat HTTP request cannot be decrypted or read, for example after `APP_SECRET` changed | Restore the previous `APP_SECRET`, or settle the pending request on the old release, then start again |
+| Mail does not start | Old Mail commands or sends are still unresolved | Do not start old workers on the migrated database. Follow the coordinated restore below to the step 3 recovery point, including its matching RSQL data. Use the controlled reconciliation procedure below for unresolved sends in that snapshot, then repeat drain and take a new consistent recovery point before trying the upgrade again |
+| Mail reports a lock timeout | A database session still holds a conflicting lock, possibly a leftover workflow writer | Identify the blocker and stop leftover writers before retrying. Verify that no writes overlapped the recovery backups. If they did, stop: that recovery point is invalid. Recover a verified pre-cut state through the backup procedure and repeat step 3; never take a replacement pre-cut backup from the partly migrated database |
+| Assistant: "Unreadable pending HTTP scope" | A pending chat HTTP request cannot be decrypted or read, for example after `APP_SECRET` changed | Restore the previous `APP_SECRET` and retry on the new release. If returning to the old release is necessary, use a coordinated restore to the step 3 recovery point, including RSQL if an earlier cleanup attempt deleted namespaces; never just start old images on the migrated database |
 | Assistant: RSQL cleanup fails | The RSQL service is unreachable or answers with an error other than "namespace missing" | Make RSQL reachable with the stored URL, token and allowlist, then start again. Local changes roll back for the retry; remote deletions that already happened stay deleted |
 
-A missing RSQL namespace counts as already clean. Rolling back after a
-successful upgrade needs the pre-upgrade backups, including the external RSQL
-backups.
+A missing RSQL namespace counts as already clean.
+
+### Restore the recovery point
+
+For any return to the old release, switch replacement Code off and stop all
+new-version replicas, workers and other writers first. Restore the **whole
+installation database and matching external RSQL backup from the step 3 recovery
+point**, with its matching configuration and `APP_SECRET`. RSQL restoration is
+essential if any cleanup attempt deleted namespaces. Do not combine backups
+from different points or start old software on a partly migrated installation.
+
+Changes after the recovery point are lost. Keep old workers and admission
+stopped while reconciling external effects since that point, especially sent
+mail, against provider evidence. Resolve replay risks before restarting the
+old workers. A later upgrade attempt needs a fresh drain, reconciliation and
+consistent recovery point.
+
+If Mail's drain check found unresolved sends already in the recovery snapshot,
+restoring it does not resolve them. Inspect those commands and provider evidence
+with old workers stopped. **Old Mail starts its outbox and workflow workers with
+its server; there is no worker-free startup promised here.** Use a controlled,
+operator-assisted recovery procedure to record verified outcomes or cancel
+unstarted work before allowing those workers to run. If the installation has no
+validated offline procedure, keep it stopped and arrange that recovery; do not
+start old Mail merely to clear the upgrade check.
+
+Once recovered command state is safe for the old workers and admission remains
+blocked, old Mail may run for the remaining evidence checks. The old release's
+`cld mail operator run reconcile --command <command-id> --wait` checks evidence
+without resending; see [Check delivery after the update](/en/docs/operations/scaling-and-shutdown#check-delivery-after-the-update).
+Keep replacement Code and routine admission off. Repeat the drain and create a
+new recovery point before trying the upgrade again.
 
 ## 5. Read-only history
 
@@ -204,7 +255,8 @@ Gustav checks, tests and submits a version; it never switches Code on. No
 export, grant or enabled flag carries authority into Code. Old routine HTTP
 grants and Studio database grants do not transfer. Studio RSQL is removed.
 Each lasting Code now has its own lazy database, created on its first `db` call.
-Nothing is carried over: export Studio databases before upgrading (step 1).
+Nothing is carried over: export Studio databases on the old version (step 2)
+and create the recovery point after draining (step 3).
 Configure the new Core-owned RSQL URL, secret token and allowed targets in
 **Administration → Code → Limits**; the old `assistant.rsql_*` settings are deleted.
 RSQL 1.1.0 is required for bound writes and atomic batches.
@@ -289,3 +341,10 @@ a new version.
 Paginated Queries expose the shared `page` envelope alongside existing
 domain cursors. Queries with a string `cursor` input must return `page`;
 a declared string `next` or `nextCursor` must match that envelope.
+
+## Code pages and guests
+
+Pages of Code that are not public open for every signed-in member and no
+longer for guest accounts. A guest gets 403 instead, for personal, mailbox
+and app Code alike. Public pages are unchanged. Code that should serve guests
+needs a public route, which receives no visitor identity.

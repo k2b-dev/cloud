@@ -22,7 +22,7 @@ import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
-import { codePolicyRow } from "./policy-contracts";
+import { codePolicyRow, isCodeAiOperation } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { codeSettings } from "./settings";
 import { appendCodeCall, findCode, finishCodeCall } from "./store";
@@ -93,15 +93,7 @@ export async function authorizeCodeCall(call: CodeBridgeCall, db: SQL): Promise<
   const { code, version, manifest } = await lockCall(call, db);
   if (call.kind !== "internet" && call.kind !== "database") requireCodeCapabilityDeclared(call.call, manifest.permissions);
   if (call.kind === "database" && manifest.database !== true) denied("code_db_undeclared", 403);
-  const row =
-    call.kind === "database"
-      ? null
-      : codePolicyRow(
-          call.call.capability.startsWith("core.ai.") && !["core.ai.chat.deliver", "core.ai.chat.run.read"].includes(call.call.capability)
-            ? "ai"
-            : call.kind,
-          call.policy,
-        );
+  const row = call.kind === "database" ? null : codePolicyRow(isCodeAiOperation(call.call.capability) ? "ai" : call.kind, call.policy);
   if (row === "ask_sends" || manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
   if (
     manifest.policyRows.some((row) => row.startsWith("ask_")) ||

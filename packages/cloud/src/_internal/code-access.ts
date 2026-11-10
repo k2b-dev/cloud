@@ -8,7 +8,7 @@ export const validateCodeOwners = (definitions: CapabilityDefinitions): void => 
     if (code.owners && !Array.isArray(code.owners)) throw new Error("code.owners must be a list of declared types");
     for (const [type, page] of Object.entries(code.pages ?? {})) {
       if (!code.owners?.includes(type)) throw new Error(`code.pages: ${type} is not a declared owner`);
-      if (!/^\/[^\\\u0000-\u001f\u007f]*\{id\}/.test(page)) throw new Error(`code.pages: ${type} needs a path with {id}`);
+      if (!/^\/(?!\/)[^\\\u0000-\u001f\u007f]*\{id\}/.test(page)) throw new Error(`code.pages: ${type} needs a path with {id}`);
     }
   }
   for (const [id, type] of Object.entries(definitions.types ?? {})) {

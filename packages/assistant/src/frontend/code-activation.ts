@@ -1,6 +1,16 @@
 import { codeOwnPath } from "@k2b/cloud/contracts/code-routes";
 import { z } from "zod";
 
+/** A target or event place, named as the Code page names it. */
+const TargetSchema = z.object({
+  key: z.string(),
+  ref: z.object({ type: z.string(), id: z.string() }),
+  title: z.string().nullable(),
+  typeTitle: z.string().nullable(),
+  icon: z.string().nullable(),
+  own: z.boolean(),
+  href: z.string().nullable(),
+});
 /** What switching on one version would do for this person, from Core's activation preview. */
 const PreviewSchema = z.object({
   codeId: z.string(),
@@ -12,9 +22,14 @@ const PreviewSchema = z.object({
         entrypoint: z.string(),
         title: z.string().optional(),
         route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
+        event: z.object({ type: z.string(), title: z.string().nullable(), place: TargetSchema }).optional(),
       }),
     )
     .optional(),
+  /** What else the version may do: internet origins, the secrets it sends to them and its own database. */
+  internet: z.array(z.string()).optional(),
+  secrets: z.array(z.object({ name: z.string(), origin: z.string() })).optional(),
+  database: z.boolean().optional(),
   versionId: z.string(),
   number: z.number().int(),
   running: z.number().int().nullable(),
@@ -36,17 +51,7 @@ const PreviewSchema = z.object({
   targets: z
     .array(
       z.object({
-        target: z
-          .object({
-            key: z.string(),
-            ref: z.object({ type: z.string(), id: z.string() }),
-            title: z.string().nullable(),
-            typeTitle: z.string().nullable(),
-            icon: z.string().nullable(),
-            own: z.boolean(),
-            href: z.string().nullable(),
-          })
-          .nullable(),
+        target: TargetSchema.nullable(),
         operations: z.array(z.string()),
         isNew: z.boolean(),
       }),

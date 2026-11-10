@@ -1,4 +1,5 @@
 import type { CodeSecretVersionBinding } from "@k2b/cloud/contracts";
+import type { CodeRouteOwner } from "@k2b/cloud/ssr/code-page/messages";
 import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
@@ -44,6 +45,8 @@ export type CodeApprovalReviewProps = {
   why: string[];
   rights: CodeApprovalRight[];
   automations?: Array<{ entrypoint: string; title?: string; route?: { public: boolean } }>;
+  /** Whose rights the version's pages that are not public run with. */
+  routeOwner: CodeRouteOwner;
   internet: string[];
   database?: boolean;
   secrets: CodeSecretVersionBinding[];
@@ -210,7 +213,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
                 {(entry) => (
                   <li>
                     <bdi>{entry.title ?? entry.entrypoint}</bdi>
-                    <Show when={entry.route}> · {entry.route?.public ? t().routePublic : t().routePrivate}</Show>
+                    <Show when={entry.route}>
+                      {(route) => <> · {route().public ? t().routePublic : t().routePrivate({ owner: props.routeOwner })}</>}
+                    </Show>
                     <Show when={entry.title}>
                       <code class="ml-2 text-xs text-dimmed">{entry.entrypoint}</code>
                     </Show>

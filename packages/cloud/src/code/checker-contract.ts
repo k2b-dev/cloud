@@ -83,33 +83,35 @@ export type CodeCheckResult =
   | {
       ok: true;
       diagnostics: [];
+      /** Hints that never block the version, such as a page every member reaches unchecked; absent from older checkers. */
+      warnings?: CodeCheckDiagnostic[];
       bundle: string;
       manifest: CodeVersionManifest;
       permissions: Array<CodePermission & { status: "new" | "existing" }>;
     };
 
+const CodeCheckDiagnosticSchema = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+    file: z.string(),
+    line: z.number().int().positive(),
+    column: z.number().int().positive(),
+  })
+  .strict();
 /** Strict JSON result returned by the isolated checker and validated again by Core. */
 export const CodeCheckResultSchema = z.discriminatedUnion("ok", [
   z
     .object({
       ok: z.literal(false),
-      diagnostics: z.array(
-        z
-          .object({
-            code: z.string(),
-            message: z.string(),
-            file: z.string(),
-            line: z.number().int().positive(),
-            column: z.number().int().positive(),
-          })
-          .strict(),
-      ),
+      diagnostics: z.array(CodeCheckDiagnosticSchema),
     })
     .strict(),
   z
     .object({
       ok: z.literal(true),
       diagnostics: z.tuple([]),
+      warnings: z.array(CodeCheckDiagnosticSchema).optional(),
       bundle: z.string(),
       manifest: CodeVersionManifestSchema,
       permissions: z.array(CodePermissionSchema.extend({ status: z.enum(["new", "existing"]) }).strict()),

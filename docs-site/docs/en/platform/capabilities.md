@@ -551,7 +551,9 @@ for the shared editor, exact handle lookup and transactional manager checks.
 An app that owns Code declares `code: { owners: ["item"], pages: { item:
 "/app/inventory/{id}/code" } }`. `owners` names local Types with a canonical
 reader; the reader supplies `codeResourceTitle(tx, id)` for the read-only owner
-existence check. `pages` maps those owner Types to their shared Code page.
+existence check. `pages` maps those owner Types to their shared Code page:
+a path on this Cloud that contains `{id}`; a pattern starting with `//` is
+refused.
 The manifest publishes only `owners` and optional `pages`. See
 [Code lifecycle](/en/docs/platform/code-lifecycle).
 

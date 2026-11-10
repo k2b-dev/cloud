@@ -73,6 +73,9 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
             return c.redirect(createLoginRedirectUrl(c.req.url));
           return c.json({ code: "code_sign_in_required" }, 401);
         }
+        // Pages that are not public belong to the Cloud's members, whoever owns the Code: they run with the owner's
+        // rights, which no guest account was given. A guest is refused before the Code is asked.
+        if (!isPublic && actor?.kind === "user" && actor.user.profile === "guest") return c.json({ code: "code_members_only" }, 403);
         if (!isPublic && actor?.kind === "user") {
           const limiter = ratelimit({ id: "code-visitor-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
           if ((await waitCodeRequest(limiter.check(`user:${actor.user.id}`), signal)).limited) {

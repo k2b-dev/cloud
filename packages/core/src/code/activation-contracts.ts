@@ -40,6 +40,18 @@ export const CodeActivationAllowedSchema = z.discriminatedUnion("allowed", [
   z.object({ allowed: z.literal(true) }).strict(),
   z.object({ allowed: z.literal(false), reason: z.enum(["phone", "credential"]) }).strict(),
 ]);
+/** A target or event place as the Code page names it, from registry manifests alone. */
+const PreviewTargetSchema = z
+  .object({
+    key: z.string(),
+    ref: z.object({ type: z.string(), id: z.string() }).strict(),
+    title: z.string().nullable(),
+    typeTitle: z.string().nullable(),
+    icon: z.string().nullable(),
+    own: z.boolean(),
+    href: z.string().nullable(),
+  })
+  .strict();
 /**
  * Version and approval state before switching on. Reading this never checks or changes target rights.
  */
@@ -55,10 +67,18 @@ export const CodeActivationPreviewSchema = z
             entrypoint: z.string(),
             title: z.string().optional(),
             route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).strict().optional(),
+            /** The event it follows: its title from the catalog, null when unknown, and its place named as a target. */
+            event: z.object({ type: z.string(), title: z.string().nullable(), place: PreviewTargetSchema }).strict().optional(),
           })
           .strict(),
       )
       .optional(),
+    /** Every internet origin the version may call, as the Code page lists them. */
+    internet: z.array(z.string()).optional(),
+    /** The names of the secrets the version may send, each only to its own origin. */
+    secrets: z.array(z.object({ name: z.string(), origin: z.string() }).strict()).optional(),
+    /** Whether the version uses its own database. */
+    database: z.boolean().optional(),
     versionId: z.uuid(),
     number: z.number().int().positive(),
     /** The running version's number; null when none runs. */
@@ -89,18 +109,7 @@ export const CodeActivationPreviewSchema = z
       .array(
         z
           .object({
-            target: z
-              .object({
-                key: z.string(),
-                ref: z.object({ type: z.string(), id: z.string() }).strict(),
-                title: z.string().nullable(),
-                typeTitle: z.string().nullable(),
-                icon: z.string().nullable(),
-                own: z.boolean(),
-                href: z.string().nullable(),
-              })
-              .strict()
-              .nullable(),
+            target: PreviewTargetSchema.nullable(),
             operations: z.array(z.string()),
             isNew: z.boolean(),
           })

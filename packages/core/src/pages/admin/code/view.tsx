@@ -186,6 +186,8 @@ export function approvalReviewProps(
       }),
     ),
     automations: detail.automations,
+    routeOwner:
+      detail.code.owner.kind === "person" ? { kind: "person", name: detail.ownerName ?? t.unknownAuthor } : { kind: "account", name: null },
     rights: detail.permissions.map((permission) => {
       const typeTitle = permission.target ? (detail.titles.types[permission.target.type] ?? permission.target.type) : "";
       return {

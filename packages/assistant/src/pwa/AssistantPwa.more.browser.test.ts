@@ -343,7 +343,7 @@ describe("Code in the Cloud app", () => {
       await card.waitFor();
       const text = await card.innerText();
       expect(text).toContain("Version 3 von „Rechnungen ablegen“ ist fertig.");
-      expect(text).toContain("Was diese Version aufruft");
+      expect(text).toContain("Was diese Version darf");
       expect(await card.locator(".assistant-code-version__target").allInnerTexts()).toEqual([
         expect.stringMatching(/^Datei importieren · Dateien\s*an Ordner fo_rechnungen/),
         expect.stringMatching(/^Nachricht lesen · Mail\s*wo der Code es beim Lauf wählt/),
@@ -359,6 +359,28 @@ describe("Code in the Cloud app", () => {
       await page.waitForFunction(() =>
         (window as unknown as { harness: Harness }).harness.requests.some((request) => request.includes("/turns/turn-c/actions/survey")),
       );
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the card names everything a version may do, and nothing is wider than the phone", async () => {
+    const page = await open("screen=chat-x&chat=pflege&code=full");
+    try {
+      const card = page.locator(".assistant-code-version");
+      await card.waitFor();
+      expect(await card.locator(".assistant-code-version__target").allInnerTexts()).toEqual([
+        expect.stringMatching(/^Datei importieren · Dateien\s*an Ordner fo_rechnungen/),
+        expect.stringMatching(/^Nachricht lesen · Mail\s*wo der Code es beim Lauf wählt/),
+        expect.stringMatching(/^Übersicht\s*Alle Angemeldeten \(ohne Gäste\) · läuft mit deinen Rechten$/),
+        expect.stringMatching(/^POST \/eingang\s*Öffentlich · ohne Anmeldung$/),
+        expect.stringMatching(/^Startet bei „Aufgabe fällig“\s*an Bereich Spc001$/),
+        expect.stringMatching(/^https:\/\/api\.lexoffice\.example\s*im Internet, sendet LEXOFFICE_TOKEN$/),
+        expect.stringMatching(/^Liest und schreibt\s*in der eigenen Datenbank$/),
+      ]);
+      expect(await card.innerText()).toContain("Aufgabe fällig · Bereich Spc001");
+      expect(await card.innerText()).not.toContain("event:");
+      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     } finally {
       await page.context().close();
     }

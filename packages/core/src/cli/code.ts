@@ -48,6 +48,8 @@ export function printCodeCheck(ctx: CloudCliContext, data: CodeAuthoringData<"ch
       ctx.print(`${diagnostic.file}:${diagnostic.line}:${diagnostic.column} ${diagnostic.code}: ${diagnostic.message}`);
     return;
   }
+  for (const warning of data.result.warnings ?? [])
+    ctx.print(`${warning.file}:${warning.line}:${warning.column} ${t("warning", "Warnung")} ${warning.code}: ${warning.message}`);
   if (data.result.manifest.entrypoints.length) {
     ctx.print(t("Automations", "Automationen"));
     for (const entry of data.result.manifest.entrypoints)
