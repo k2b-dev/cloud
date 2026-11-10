@@ -31,11 +31,18 @@ export const storageStepLabel = (t: StorageAreaMessages, step: StorageBucketChec
 export const storageBucketName = (t: StorageAreaMessages, bucket: Pick<AdminStorageBucket, "isDefault" | "name">): string =>
   bucket.isDefault ? t.defaultName : bucket.name;
 
-const host = (endpoint: string | null): string => (endpoint ? endpoint.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : "");
+/**
+ * The endpoint's host for a list line. Administrators type the endpoint, so it is parsed, never matched with a
+ * regular expression; an invalid one shows as typed, cut at a sane length.
+ */
+export const storageEndpointHost = (endpoint: string | null): string => {
+  if (!endpoint) return "";
+  return URL.parse(endpoint)?.host || endpoint.slice(0, 80);
+};
 
 /** The list row's second line: where the bucket lives. */
 export const storageBucketLine = (t: StorageAreaMessages, bucket: AdminStorageBucket): string => {
   if (bucket.removedAt) return t.removedLine({ name: bucket.bucket });
-  const where = bucket.access === "inherit" ? t.likeDefault : host(bucket.endpoint);
+  const where = bucket.access === "inherit" ? t.likeDefault : storageEndpointHost(bucket.endpoint);
   return [where, bucket.bucket].filter(Boolean).join(" · ");
 };
