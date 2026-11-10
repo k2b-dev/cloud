@@ -4491,7 +4491,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
     section("drafts", () => {
       /** A small Mail draft API: what the reader and the composer call around one draft, with what they sent. */
-      const draftApi = async (page: Page) => {
+      /** `suggestedBy` names the automated account behind the untouched suggestion `DrfSug`. */
+      const draftApi = async (page: Page, suggestedBy = "Gustav") => {
         const calls: string[] = [];
         const drafts = new Map<string, Record<string, unknown>>();
         const stamp = MAIL_SHELL_NOW;
@@ -4546,9 +4547,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             { body: "Hello,\n\nSaturday at 11 works. The chairs are ready in hall A." },
             {
               suggestion: true,
+              suggestedBy,
               createdBy: { kind: "service_account", serviceAccountId: "00000000-0000-4000-8000-0000000000e1" },
               lastEditedBy: { kind: "service_account", serviceAccountId: "00000000-0000-4000-8000-0000000000e1" },
-              lastEditedByDisplayName: "Gustav",
+              lastEditedByDisplayName: suggestedBy,
             },
           ),
         );
@@ -4799,6 +4801,30 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.locator("[data-mail-inline-draft] .cm-content").click();
           await page.keyboard.type(" Thanks!");
           await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-suggestion"));
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("another automated account's suggestion carries that account's name, in plum, in the draft and its row", async () => {
+        const page = await open(
+          `${boxPath}?conversation=Conv01&identity=1&suggestion=1&suggestionBy=Rechnungseingang`,
+          1440,
+          undefined,
+          "reduce",
+          async (next) => {
+            await draftApi(next, "Rechnungseingang");
+          },
+        );
+        try {
+          await readyDraft(page);
+          const draft = page.locator("[data-mail-inline-draft]");
+          expect(await draft.getAttribute("data-suggestion")).toBe("");
+          expect(await draft.textContent()).toContain("Suggestion from Rechnungseingang");
+          expect(await draft.textContent()).not.toContain("Gustav");
+          const row = page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]');
+          expect(await row.getAttribute("data-suggestion")).toBe("");
+          expect(await row.textContent()).toContain("Suggestion from Rechnungseingang");
         } finally {
           await close(page);
         }

@@ -1182,7 +1182,7 @@ CREATE UNIQUE INDEX drafts_materialization_idempotency_idx ON mail.drafts USING 
 
 CREATE INDEX drafts_open_conversation_idx ON mail.drafts USING btree (mailbox_id, conversation_id) WHERE ((origin = 'user'::text) AND (state = 'draft'::text) AND (conversation_id IS NOT NULL));
 
-CREATE UNIQUE INDEX drafts_untouched_suggestion_idx ON mail.drafts (mailbox_id, conversation_id)
+CREATE UNIQUE INDEX drafts_untouched_suggestion_author_idx ON mail.drafts (mailbox_id, conversation_id, author_id)
 WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL;
 
 CREATE INDEX drafts_origin_state_idx ON mail.drafts USING btree (mailbox_id, origin, state, updated_at DESC);

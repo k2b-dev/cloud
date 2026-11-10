@@ -42,6 +42,7 @@ const draft = (generation: string): MailDraft => ({
   derivationKind: null,
   attachments: [],
   suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada",

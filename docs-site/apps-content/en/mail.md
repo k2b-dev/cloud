@@ -940,15 +940,19 @@ A changed copy saved in another mail client's Drafts folder also adopts the
 suggestion when Mail applies the edit. Reconciling an identical copy and
 retrying an export do not adopt it.
 
-Each conversation has at most one untouched suggestion. Another `draft.create`
-returns the existing suggestion without changing its content or adding the new
-request's inline attachments. This also applies while its send is pending, so
+Each conversation has at most one untouched suggestion per author, the service
+account that created it. Gustav and another automated account can each keep
+their own suggestion in the same conversation; each shows its account's name,
+for example "Suggestion from Gustav". Another `draft.create` by the same
+account returns that account's existing suggestion without changing its
+content or adding the new request's inline attachments; it never returns
+another account's suggestion. This also applies while its send is pending, so
 Undo can restore it. Update it explicitly with its current revision to
 revise it. Every creation key keeps returning its original draft after adoption,
 so retrying an earlier request cannot create another suggestion. Merging two
-conversations with untouched suggestions returns `DRAFT_SUGGESTION_CONFLICT`
-(409) and preserves both conversations. Edit or discard one suggestion before
-merging them.
+conversations that both hold an untouched suggestion from the same account
+returns `DRAFT_SUGGESTION_CONFLICT` (409) and preserves both conversations.
+Edit or discard one of those suggestions before merging them.
 
 ## Check failed synchronization
 

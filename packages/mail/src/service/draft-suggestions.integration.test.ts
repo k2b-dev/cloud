@@ -50,6 +50,9 @@ const editable = (draft: DraftEditableContent): DraftEditableContent => ({
 suite("Mail service-account suggestions", () => {
   let owner: MailRequestContext;
   let gustav: MailRequestContext;
+  /** A second automated author: an account an app or automation writes with, not an agent. */
+  let invoices: MailRequestContext;
+  let invoicesAccountId: string;
   let delegated: MailRequestContext;
   let mailboxId: string;
   let mailboxShortId: string;
@@ -191,6 +194,17 @@ suite("Mail service-account suggestions", () => {
       accessSubject: { type: "user", userId },
     };
     grants.push(unwrap(await grantMailboxAccess({ context: owner, mailboxId, principal: gustav.accessSubject, permission: "write" })).id);
+    const [invoicesAccount] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+      VALUES ('Rechnungseingang', 'standalone') RETURNING id`;
+    invoicesAccountId = invoicesAccount!.id;
+    invoices = {
+      actor: {
+        ...gustav.actor,
+        serviceAccount: { ...gustav.actor.serviceAccount, id: invoicesAccountId, name: "Rechnungseingang", kind: "standalone" },
+      },
+      accessSubject: { type: "service_account", serviceAccountId: invoicesAccountId },
+    };
+    grants.push(unwrap(await grantMailboxAccess({ context: owner, mailboxId, principal: invoices.accessSubject, permission: "write" })).id);
     for (const second of [false, true]) {
       const [sender] = await sql<{ id: string }[]>`INSERT INTO mail.sender_identities
         (short_id, mailbox_id, label, from_address, automation_policy, status)
@@ -210,7 +224,7 @@ suite("Mail service-account suggestions", () => {
     grants.push(...rows.map((row) => row.access_id));
     await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     for (const id of new Set(grants)) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
-    await sql`DELETE FROM auth.service_accounts WHERE id IN (${accountId}::uuid, ${delegatedAccountId}::uuid)`;
+    await sql`DELETE FROM auth.service_accounts WHERE id IN (${accountId}::uuid, ${delegatedAccountId}::uuid, ${invoicesAccountId}::uuid)`;
     await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
@@ -272,6 +286,52 @@ suite("Mail service-account suggestions", () => {
     } finally {
       token.mockRestore();
     }
+  });
+
+  test("each automated author keeps its own suggestion, named after its account, and adoption closes only that one", async () => {
+    const thread = await conversation();
+    const fromGustav = unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread, "From Gustav") }));
+    const fromInvoices = unwrap(await drafts.createDraft({ context: invoices, mailboxId, input: input(thread, "From invoices") }));
+    // Two authors, two suggestions with their own content and their own name; neither gets the other's draft.
+    expect(fromInvoices.id).not.toBe(fromGustav.id);
+    expect([fromGustav.body, fromGustav.suggestion, fromGustav.suggestedBy]).toEqual(["From Gustav", true, "Gustav"]);
+    expect([fromInvoices.body, fromInvoices.suggestion, fromInvoices.suggestedBy]).toEqual(["From invoices", true, "Rechnungseingang"]);
+    // The same author again returns its own untouched suggestion unchanged.
+    const again = unwrap(await drafts.createDraft({ context: invoices, mailboxId, input: input(thread, "Second try") }));
+    expect([again.id, again.body]).toEqual([fromInvoices.id, "From invoices"]);
+    expect(unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread, "Gustav again") })).id).toBe(fromGustav.id);
+    const [open] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM mail.drafts
+      WHERE conversation_id = ${thread.id}::uuid AND state = 'draft'`;
+    expect(open?.count).toBe(2);
+    // The conversation's draft rows name each author.
+    if (owner.actor.kind !== "user") throw new Error("Expected human fixture");
+    const token = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+      kind: "user",
+      payload: {},
+      user: owner.actor.user,
+      scopes: ["read", "write"],
+    });
+    try {
+      const list = await app.request(`/mailboxes/${mailboxShortId}/conversations/${thread.shortId}/drafts`, {
+        headers: { authorization: "Bearer suggestion-test" },
+      });
+      expect(list.status).toBe(200);
+      const rows = (await list.json()) as { createdByDisplayName: string; suggestion: boolean; bodyPreview: string }[];
+      expect(
+        rows.map(({ createdByDisplayName, suggestion, bodyPreview }) => [createdByDisplayName, suggestion, bodyPreview]).sort(),
+      ).toEqual([
+        ["Gustav", true, "From Gustav"],
+        ["Rechnungseingang", true, "From invoices"],
+      ]);
+    } finally {
+      token.mockRestore();
+    }
+    // A person takes over Gustav's suggestion: only that one closes to its author.
+    const taken = unwrap(await save(fromGustav, owner, { body: "Ada's reply" }));
+    expect([taken.suggestion, taken.suggestedBy]).toEqual([false, null]);
+    refused(await save(taken, gustav, { body: "Gustav overrides" }));
+    const revised = unwrap(await save(fromInvoices, invoices, { body: "Invoices revised" }));
+    expect([revised.body, revised.suggestion, revised.suggestedBy]).toEqual(["Invoices revised", true, "Rechnungseingang"]);
   });
 
   for (const mode of ["lock", "shared"] as const)
@@ -566,6 +626,22 @@ suite("Mail service-account suggestions", () => {
     expect(stored).toEqual({ origin: "user", author_kind: "service_account" });
     // The database constraint also rejects bypasses of the transactional creation path.
     await expect(sql`UPDATE mail.drafts SET adopted_at = NULL WHERE id = ${first.id}::uuid`.execute()).rejects.toThrow();
+  });
+
+  test("a creation key that an earlier release mapped to another account's draft creates the caller's own suggestion", async () => {
+    const thread = await conversation();
+    const fromGustav = unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread, "From Gustav") }));
+    const origin = { kind: "compose" as const, input: input(thread, "From invoices") };
+    const key = crypto.randomUUID();
+    const request = { idempotencyKey: key, origin, draft: editableInput(origin.input) };
+    // Before suggestions were per author, this key of the invoices account returned Gustav's draft and was remembered.
+    await sql`INSERT INTO mail.draft_suggestion_requests (mailbox_id, service_account_id, idempotency_key, request_hash, draft_id)
+      VALUES (${mailboxId}::uuid, ${invoicesAccountId}::uuid, ${key}::uuid, ${"0".repeat(64)}, ${fromGustav.id}::uuid)`;
+    const own = unwrap(await drafts.materializeDraftSeed({ context: invoices, mailboxId, input: request }));
+    expect(own.id).not.toBe(fromGustav.id);
+    expect([own.body, own.suggestedBy]).toEqual(["From invoices", "Rechnungseingang"]);
+    // The retry keeps returning the caller's own draft.
+    expect(unwrap(await drafts.materializeDraftSeed({ context: invoices, mailboxId, input: request })).id).toBe(own.id);
   });
 
   test("a pending send keeps its suggestion slot so undo can restore the draft", async () => {

@@ -1070,10 +1070,13 @@ export function createFilesService(
   async function markedEntries(
     actor: RequestActor,
     rows: { base_id: string; path: string; name: string; directory: boolean; marked_at: Date }[],
+    /** Stop once this many entries are authorized; a preview never checks the whole list. */
+    limit = Number.POSITIVE_INFINITY,
   ): Promise<MarkedEntry[]> {
     const state = await context(actor);
     const output: MarkedEntry[] = [];
     for (const row of rows) {
+      if (output.length >= limit) break;
       const binding = await deps.bindings.byId(row.base_id);
       const item = binding && state.candidates.find((candidate) => sameBinding(binding, candidate));
       if (!item || !binding || binding.lifecycle !== "active") continue;
@@ -2663,10 +2666,11 @@ export function createFilesService(
       const { self } = await context(actor);
       return markedEntries(actor, await recent.list(self.user.id));
     },
-    async favorites(call: UserFilesCall): Promise<MarkedEntry[]> {
+    /** Favorites by name; with `limit`, only that many are authorized, for a preview. */
+    async favorites(call: UserFilesCall, options: { limit?: number } = {}): Promise<MarkedEntry[]> {
       const actor = call.actor;
       const { self } = await context(actor);
-      return markedEntries(actor, await favorites.list(self.user.id));
+      return markedEntries(actor, await favorites.list(self.user.id), options.limit);
     },
     async setFavorite(call: UserFilesCall, input: { baseId: string; path: string; favorite: boolean }): Promise<{ favorite: boolean }> {
       const actor = call.actor;

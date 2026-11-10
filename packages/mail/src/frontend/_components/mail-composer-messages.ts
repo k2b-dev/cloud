@@ -315,7 +315,7 @@ export const mailComposerMessages = i18n.define({
       quoteAttached: ({ label }: { label: string }) => `Quote attached: ${label} · collapsed`,
       attachQuote: "Attach",
       removeQuote: "Remove",
-      suggestionFromGustav: "Suggestion from Gustav",
+      suggestionFrom: ({ name }: { name: string }) => `Suggestion from ${name}`,
       suggestionHint: "Type to take it over, or send it as it is",
       writingAlong: ({ names, count }: { names: string; count: number }) =>
         count === 1 ? `${names} is writing too` : `${names} are writing too`,
@@ -636,7 +636,7 @@ export const mailComposerMessages = i18n.define({
       quoteAttached: ({ label }) => `Zitat angehängt: ${label} · eingeklappt`,
       attachQuote: "Anhängen",
       removeQuote: "Entfernen",
-      suggestionFromGustav: "Vorschlag von Gustav",
+      suggestionFrom: ({ name }) => `Vorschlag von ${name}`,
       suggestionHint: "Tippe, um ihn zu übernehmen, oder sende ihn so",
       writingAlong: ({ names, count }) => (count === 1 ? `${names} schreibt mit` : `${names} schreiben mit`),
     },

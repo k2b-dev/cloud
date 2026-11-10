@@ -117,6 +117,46 @@ suite("conversation list draft summaries", () => {
     expect(summaries.get(conversations[1]!)?.count).toBe(1);
   });
 
+  test("a single untouched suggestion names the account that created it, not its latest editor", async () => {
+    const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations (short_id, mailbox_id, subject, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Suggestion fixture', ${at}) RETURNING id`;
+    const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+      (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<${newShortId()}@example.test>`}, 'Original', ${at}, 1, ${"7".repeat(64)}, 'complete')
+      RETURNING id`;
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
+      VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0)`;
+    const [reviser] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+      VALUES ('Reviser', 'standalone') RETURNING id`;
+    try {
+      // Created by one automated account, revised by another, never taken over by a person.
+      await sql`INSERT INTO mail.drafts
+        (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
+          author_kind, author_id, last_editor_kind, last_editor_id, created_at, updated_at)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversation!.id}::uuid, ${message!.id}::uuid, 'reply', ${identityId}::uuid,
+          'service_account', ${accountId}::uuid, 'service_account', ${reviser!.id}::uuid, ${at},
+          ${new Date(Date.parse(at) + 1000)})`;
+      const summaries = unwrap(
+        await listConversationDraftSummaries({ context: owner, mailboxId, conversationIds: [...conversations, conversation!.id] }),
+      );
+      expect(summaries.get(conversation!.id)).toEqual({
+        count: 1,
+        // The latest editor leads the editors; the suggestion still names its creator.
+        editors: [
+          { kind: "service_account", id: reviser!.id, displayName: "Reviser" },
+          { kind: "service_account", id: accountId, displayName: "Draft assistant" },
+        ],
+        suggestedBy: "Draft assistant",
+      });
+      // People's drafts and conversations with several drafts carry no suggestion name.
+      expect(summaries.get(conversations[0]!)?.suggestedBy).toBeNull();
+      expect(summaries.get(conversations[1]!)?.suggestedBy).toBeNull();
+    } finally {
+      await sql`DELETE FROM mail.drafts WHERE conversation_id = ${conversation!.id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${reviser!.id}::uuid`;
+    }
+  });
+
   test("assigned counts match the conversation draft list, including source visibility", async () => {
     const summaries = unwrap(
       await listConversationDraftSummaries({ context: assigned, mailboxId, conversationIds: [...conversations, conversations[0]!] }),
