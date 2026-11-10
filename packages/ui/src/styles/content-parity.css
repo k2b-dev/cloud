@@ -7153,8 +7153,10 @@
   .k2b-ui .k2b-map-dialog__side { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; height: var(--k2b-map-dialog-half); border-radius: 18px 18px 0 0; background: var(--k2b-surface); box-shadow: var(--k2b-shadow-sheet); }
   .k2b-ui .k2b-map-dialog__side[data-sheet-detent="peek"] { height: var(--k2b-map-dialog-peek); }
   .k2b-ui .k2b-map-dialog__side[data-sheet-detent="full"] { height: calc(100% - 64px); }
-  .k2b-ui .k2b-map-dialog__handle { display: grid; place-items: center; flex: none; width: 100%; height: 22px; margin: 0; padding: 0; border: 0; background: none; cursor: grab; }
+  .k2b-ui .k2b-map-dialog__handle { position: relative; display: grid; place-items: center; flex: none; width: 100%; height: 22px; margin: 0; padding: 0; border: 0; background: none; cursor: grab; }
   .k2b-ui .k2b-map-dialog__handle::before { content: ""; width: 38px; height: 4px; border-radius: 2px; background: var(--k2b-border-strong); }
+  /* A 44 px target around the 22 px grip: it reaches above the sheet's edge and into the header's top padding. */
+  .k2b-ui .k2b-map-dialog__handle::after { content: ""; position: absolute; inset: -11px 0; }
   .k2b-ui .k2b-map-dialog__handle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
   .k2b-ui .k2b-map-dialog__head { padding: 2px 8px 8px 16px; }
   .k2b-ui .k2b-map-dialog__title h2 { font-size: 17px; }

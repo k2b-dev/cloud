@@ -185,6 +185,51 @@ test("a reload with the map in the URL opens it again once its places loaded", a
   }
 });
 
+test("an open map survives a reload in its own history entry; closing leaves no entry behind", async () => {
+  const page = await open(desktop, "route", { restoreId: "tour-7" }, "?conversation=c1");
+  try {
+    await tile(page).click();
+    await dialog(page).waitFor();
+    expect(new URL(page.url()).searchParams.get("map")).toBe("tour-7");
+    await page.reload();
+    await page.waitForFunction(() => "mountScene" in window);
+    await page.evaluate(() =>
+      (window as unknown as { mountScene: (n: string, o: object) => void }).mountScene("route", { restoreId: "tour-7" }),
+    );
+    await dialog(page).waitFor();
+    await page.locator(".k2b-map-dialog__close").click();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    await tileFocused(page);
+    expect(new URL(page.url()).searchParams.get("conversation")).toBe("c1");
+    expect(new URL(page.url()).searchParams.has("map")).toBe(false);
+    // The resumed entry was the dialog's own: one Back leaves the page.
+    await page.goBack();
+    expect(page.url()).toBe("about:blank");
+  } finally {
+    await page.context().close();
+  }
+});
+
+test("a tile that goes away takes its dialog along; the remounted tile opens one dialog", async () => {
+  const page = await open(desktop, "route", { restoreId: "tour-7" });
+  try {
+    await tile(page).click();
+    await dialog(page).waitFor();
+    await page.evaluate(() =>
+      (window as unknown as { mountScene: (n: string, o: object) => void }).mountScene("route", { restoreId: "tour-7" }),
+    );
+    await page.waitForFunction(() => document.querySelectorAll("dialog[open] .k2b-map-dialog").length === 1);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    // No second dialog waits behind the closed one.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await page.locator("dialog[open]").count()).toBe(0);
+    expect(new URL(page.url()).searchParams.has("map")).toBe(false);
+  } finally {
+    await page.context().close();
+  }
+});
+
 test("loading, empty and single-place states keep their places", async () => {
   const page = await open(desktop, "empty");
   try {
@@ -237,6 +282,19 @@ test("on a phone the map fills the screen and the list is a sheet with three hei
     // A pin picked behind the lowered sheet raises it again.
     await page.locator('.k2b-map-dialog .k2b-map-view__pin[data-id="c"]').tap();
     await page.waitForFunction(() => document.querySelector(".k2b-map-dialog__side")?.getAttribute("data-sheet-detent") === "half");
+    // Its details show from the top of the sheet, heading included.
+    await page.waitForFunction(() => {
+      const body = document.querySelector(".k2b-map-dialog__body")!.getBoundingClientRect();
+      const name = document.querySelector(".k2b-map-dialog__detail h3");
+      return name?.textContent === "Restaurierung Sedlmayr" && name.getBoundingClientRect().top >= body.top;
+    });
+    // The 22 px grip has a 44 px target.
+    const grip = (await handle.boundingBox())!;
+    const targets = await page.evaluate(
+      ([x, top, bottom]) => [document.elementFromPoint(x!, top!)?.className, document.elementFromPoint(x!, bottom!)?.className],
+      [grip.x + grip.width / 2, grip.y - 9, grip.y + grip.height + 9],
+    );
+    expect(targets).toEqual(["k2b-map-dialog__handle", "k2b-map-dialog__handle"]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     await page.locator(".k2b-map-dialog__close-float").tap();
     await page.waitForFunction(() => !document.querySelector("dialog[open]"));

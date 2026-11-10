@@ -432,6 +432,17 @@ can navigate or open the next dialog right away. Dialogs closed together leave
 the history in one step. After a reload, a leftover entry never reopens a
 dialog or its transient state.
 
+A dialog the URL can name passes `historyUrl` as well, such as the page
+address with `?map=<id>`. Its entry then carries that address, and Back or
+closing returns to the page entry beneath with its own address. After a reload
+on that entry, the host may open the same dialog again with the same
+`historyUrl`; the dialog then resumes the entry instead of adding one, so one
+Back still leaves the dialog. `MapTile` works this way; see
+[MapTile and MapDialog](/en/ui/content/map-dialog#back-and-reload). Like a
+same-address traversal, the move between the dialog's entry and the page
+beneath does not reach application `popstate` listeners when the browser
+supports the Navigation API.
+
 Application `popstate` listeners do not receive a Back or Forward that keeps
 the address and only moves between dialog or sheet entries and the page beneath
 them when the browser supports the Navigation API. Without it, only the

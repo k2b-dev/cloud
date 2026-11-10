@@ -1,4 +1,4 @@
-import { createEffect, type JSX, Show, untrack } from "solid-js";
+import { createEffect, type JSX, onCleanup, Show, untrack } from "solid-js";
 import { dialogCore, type OpenDialogOptions } from "../feedback/dialog-core";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import { panelDialogWorkspacePanelClass } from "../layout/PanelDialog";
@@ -33,11 +33,11 @@ export type MapTileProps = {
 };
 
 const urlParam = () => new URL(location.href).searchParams.get(MAP_DIALOG_PARAM);
-const writeParam = (value: string | undefined) => {
+const urlWith = (value: string | undefined) => {
   const url = new URL(location.href);
   if (value === undefined) url.searchParams.delete(MAP_DIALOG_PARAM);
   else url.searchParams.set(MAP_DIALOG_PARAM, value);
-  if (url.href !== location.href) history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  return url.pathname + url.search + url.hash;
 };
 
 /**
@@ -48,21 +48,26 @@ export function MapTile(props: MapTileProps): JSX.Element {
   const locale = useLocale();
   let button!: HTMLButtonElement;
   let open = false;
+  // The dialog belongs to this tile: a tile that goes away takes its dialog along.
+  const lifetime = new AbortController();
+  onCleanup(() => lifetime.abort());
   const show = async () => {
     if (open || props.loading) return;
     open = true;
     const restore = props.restoreId;
-    // The page's own entry names the map, and the dialog's entry above it copies that URL: Back and close both land
-    // on the page entry, which loses the name once the dialog has closed.
-    if (restore !== undefined) writeParam(restore);
+    // The dialog returns focus to the element focused when it opened; Safari leaves focus where it was on a click.
+    button.focus({ preventScroll: true });
     try {
+      // Only the dialog's own entry names the map, so Back and close land on the page without the name.
       await dialogCore.open<void>(
         (_close, context) => <LocaleProvider locale={locale()}>{props.dialog(() => void context.requestDismiss())}</LocaleProvider>,
-        mapDialogOptions,
+        { ...mapDialogOptions, signal: lifetime.signal, historyUrl: restore === undefined ? undefined : urlWith(restore) },
       );
     } finally {
       open = false;
-      if (restore !== undefined && urlParam() === restore) writeParam(undefined);
+      // Opened from a link that already named the map: its page entry drops the name once the dialog closed.
+      if (restore !== undefined && !lifetime.signal.aborted && urlParam() === restore)
+        history.replaceState(history.state, "", urlWith(undefined));
     }
   };
   // A reload with this map's name in the URL opens the dialog again, once the places have loaded.
@@ -70,8 +75,6 @@ export function MapTile(props: MapTileProps): JSX.Element {
   createEffect(() => {
     if (restored || props.loading || props.restoreId === undefined || urlParam() !== props.restoreId) return;
     restored = true;
-    // The dialog returns focus to the element focused when it opened.
-    button.focus({ preventScroll: true });
     void untrack(show);
   });
   return (

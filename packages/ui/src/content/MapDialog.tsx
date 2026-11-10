@@ -156,7 +156,8 @@ export function MapDialog(props: MapDialogProps): JSX.Element {
         sheet.dataset.sheetDetent = "half";
         setDetent("half");
       }
-      list?.querySelector(`[data-place-id="${CSS.escape(placeId)}"]`)?.scrollIntoView({ block: "nearest" });
+      // On a phone the details come first in the sheet, which shows them from its top; beside the map, the row is shown.
+      if (!matchMedia(PHONE).matches) list?.querySelector(`[data-place-id="${CSS.escape(placeId)}"]`)?.scrollIntoView({ block: "nearest" });
     }
   };
   const markers = createMemo<MapViewMarker[]>(() => [

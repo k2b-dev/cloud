@@ -91,13 +91,17 @@ low sheet raises it to half height.
 
 `mapDialogOptions` opens the dialog with a history entry: Back, Escape, the
 close button, and a click beside the dialog close it, and focus returns to
-the tile. The dialog closes before the person leaves the page.
+the tile. The dialog closes before the person leaves the page, and it closes
+when its tile goes away.
 
-With `restoreId`, the URL carries `?map=<restoreId>` (`MAP_DIALOG_PARAM`)
-while the dialog is open. A reload opens it again once the tile has loaded;
-closing removes the parameter. Give `restoreId` only to maps with an id that
-stays the same across reloads, such as a saved map or an address; a map that
-is only a block in a document stays closed after a reload.
+With `restoreId`, the dialog's history entry carries `?map=<restoreId>`
+(`MAP_DIALOG_PARAM`; dialogCore's `historyUrl`). Back and closing return to
+the page address without it. A reload opens the dialog again once the tile has
+loaded and resumes the same entry, so one Back still closes it. A link that
+already names the map opens it as well; closing then removes the name. Give
+`restoreId` only to maps with an id that stays the same across reloads, such
+as a saved map or an address; a map that is only a block in a document stays
+closed after a reload.
 
 ## States
 

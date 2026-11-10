@@ -68,13 +68,18 @@ describe("contact address map", () => {
     expect(initialAddressMapView(address)).toEqual({ kind: "locating" });
   });
 
-  test("a pending address reserves the map place and the route uses the address text", () => {
+  test("a pending address reserves the map place; the route waits for the lookup so a found point moves nothing", () => {
     const html = render({ availability: configured });
     expect(html).toContain("height:160px");
     expect(html).toContain("Karte lädt …");
-    expect(html).toContain("Route planen");
-    expect(html).toContain("https://www.openstreetmap.org/search?query=Frauenstra%C3%9Fe%2028%2C%2089073%20Ulm%2C%20DE");
+    expect(html).not.toContain("Route planen");
     expect(html).toContain("Bearbeiten");
+    const notFound = render({
+      address: { ...address, location: { status: "not_found", checkedAt: "2026-10-22T10:00:00.000Z" } },
+      availability: configured,
+    });
+    expect(notFound).toContain("Route planen");
+    expect(notFound).toContain("https://www.openstreetmap.org/search?query=Frauenstra%C3%9Fe%2028%2C%2089073%20Ulm%2C%20DE");
   });
 
   test("a found address is one tile that opens the full map; the route lives in that map", () => {

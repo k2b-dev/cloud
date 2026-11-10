@@ -192,8 +192,11 @@ export default function ContactAddressMap(props: Props) {
         </div>
       </Show>
       <div class="mt-2 flex flex-wrap gap-2">
-        {/* Without a point there is no full map; the route goes by the address text. geo: hands over to Android's maps app. */}
-        <Show when={!point()}>
+        {/*
+          Without a point there is no full map; the route goes by the address text. While the lookup runs it waits, so a
+          found point does not remove a button and move the content below. geo: hands over to Android's maps app.
+        */}
+        <Show when={!point() && view().kind !== "locating"}>
           <ButtonLink
             href={href()}
             target={platform() === "android" ? undefined : "_blank"}
