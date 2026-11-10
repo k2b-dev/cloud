@@ -22,7 +22,7 @@ const { Dropdown } = await import("../actions/Dropdown");
 const { FilterChip } = await import("../actions/FilterChip");
 const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
-const { default: PdfPreview } = await import("../content/PdfPreview");
+const { default: PdfViewer } = await import("../content/PdfViewer");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
 const { Section } = await import("../surfaces/Section");
 const { default: Select } = await import("../inputs/Select");
@@ -507,16 +507,12 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     }
   });
 
-  test("keep every edge when the PdfPreview actions wrap", async () => {
-    // A failed preview adds the retry action, which wraps below the open and download actions in a narrow panel.
+  test("keep every edge of the PdfViewer's waiting action in a narrow panel", async () => {
     const markup = html(() =>
-      createComponent(PdfPreview, {
+      createComponent(PdfViewer, {
+        title: "Flyer",
         request: async () => new Blob(),
-        openHref: "/files/flyer.pdf",
-        openButtonLabel: "Open in new tab",
-        buttonLabel: "Try again",
-        onDownload: () => {},
-        children: (parts) => [parts.actions, parts.content],
+        loadLabel: "Render the flyer preview",
       }),
     );
     const page = await browser.newPage(phone);

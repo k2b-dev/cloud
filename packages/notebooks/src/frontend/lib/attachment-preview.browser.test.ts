@@ -214,12 +214,12 @@ describe("Notebook attachment preview layout", () => {
     ["phone", phone],
   ] as const) {
     test(`a PDF fills the frame's height on ${name}`, async () => {
-      const page = await open(context, 1, ".k2b-content-pdf-preview__frame");
+      const page = await open(context, 1, '.k2b-pdf-viewer:is([data-state="shown"], [data-state="undrawable"])');
       try {
         const shown = await layout(page);
         const frame = await page.evaluate(() => {
           const body = document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!;
-          const box = document.querySelector(".k2b-dialog[open] .k2b-content-pdf-preview__frame")!.getBoundingClientRect();
+          const box = document.querySelector(".k2b-dialog[open] .k2b-pdf-viewer")!.getBoundingClientRect();
           return { height: box.height, bottom: box.bottom, inset: Number.parseFloat(getComputedStyle(body).paddingBottom) };
         });
         // The document reaches the body's inset at the bottom, so nothing scrolls around it.
@@ -232,14 +232,14 @@ describe("Notebook attachment preview layout", () => {
     }, 30_000);
   }
 
-  test("on a phone without an inline PDF viewer, a PDF pdf.js cannot draw shows the hint in the document's place", async () => {
+  test("on a phone, a PDF pdf.js cannot draw shows the hint in the document's place", async () => {
     reads.length = 0;
-    const page = await open(phone, 1, '.k2b-content-pdf-preview__placeholder[data-state="empty"]', false);
+    const page = await open(phone, 1, '.k2b-pdf-viewer[data-state="undrawable"]', false);
     try {
       const shown = await layout(page);
       const hint = await page.evaluate(() => {
         const body = document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!;
-        const placeholder = document.querySelector(".k2b-dialog[open] .k2b-content-pdf-preview__placeholder")!;
+        const placeholder = document.querySelector(".k2b-dialog[open] .k2b-pdf-viewer__placeholder")!;
         const box = placeholder.getBoundingClientRect();
         return {
           text: placeholder.textContent,
@@ -250,7 +250,7 @@ describe("Notebook attachment preview layout", () => {
           overflow: placeholder.scrollHeight - placeholder.clientHeight,
         };
       });
-      expect(hint.text).toBe("This PDF cannot be shown hereYour browser cannot show PDFs inside a page. Open the document to view it.");
+      expect(hint.text).toBe("This PDF cannot be shown hereOpen it in a new tab or download it to view it.");
       expect(hint.frames).toBe(0);
       // The same box the document fills with a viewer, and the hint fits it without scrolling.
       expect(hint.bottom).toBeCloseTo(shown.body.bottom - hint.inset, 0);

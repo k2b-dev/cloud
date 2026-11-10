@@ -550,8 +550,10 @@ test("inspector commands retain their permissions and busy state beside history"
     ["Move to trash", true],
   ]);
   const primary = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button")];
-  for (const label of ["Preview", "Download", "Share"])
-    expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
+  // The preview stands in the panel, so Download leads and no second "Preview" repeats it.
+  expect(primary.some((item) => item.textContent?.trim() === "Preview")).toBe(false);
+  expect(primary[0]?.textContent?.trim()).toBe("Download");
+  for (const label of ["Download", "Share"]) expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
   expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")?.disabled).toBe(true);
   setBusy(false);
   dispose();
