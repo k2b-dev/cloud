@@ -82,6 +82,7 @@ const files: Record<string, Classification> = {
   list: base(),
   search: base(),
   folder: base(),
+  folderSearch: base(),
   publiclyShared: base(),
   folderLocation: base(),
   mkdir: { kind: "mutation", coverage: "converted" },

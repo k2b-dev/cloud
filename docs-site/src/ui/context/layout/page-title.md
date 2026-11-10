@@ -162,3 +162,31 @@ const trail: PageTrailState = {
   <FolderRows />
 </PageTrailProvider>
 ```
+
+## Show a folder path inside a dialog or panel
+
+`PageTitle` names a page. For a path that changes inside a dialog or panel,
+such as the folder a file chooser shows, use `Breadcrumbs`:
+
+```tsx
+import { Breadcrumbs } from "@k2b/ui";
+
+<Breadcrumbs
+  label="Folder path"
+  items={[{ label: "Files" }, { label: "Office" }, { label: "Scans" }]}
+  onSelect={(index) => openLevel(index)}
+/>;
+```
+
+- Every level above the current one is a blue text link (`Button
+  variant="link"`); the last item is the current level, plain text with
+  `aria-current="location"`. There is no Up arrow: the link one level up is
+  the way up.
+- `onSelect` receives the index of the activated link; the current level
+  never calls it. `disabled` turns the links off, for example during a
+  transfer.
+- The path stays on one line. A long path scrolls sideways under the shared
+  scroll fade, which shows only on the side where more levels follow, and
+  scrolls to its end after every change, so the current level is in view.
+- The component is a `nav` named by `label` around an ordered list; levels
+  are separated by `/`, hidden from assistive technology.

@@ -76,6 +76,7 @@ export {
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
 export { type BottomSheetProps, bottomSheetAdaptiveOptions, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
+export { type BreadcrumbItem, Breadcrumbs, type BreadcrumbsProps } from "./Breadcrumbs";
 export type { DataPanelProps } from "./DataPanel";
 export { DataPanel } from "./DataPanel";
 export type {
