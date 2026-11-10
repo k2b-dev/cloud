@@ -886,7 +886,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     const src = viewed ? actions.fileUrl?.(viewed.path) : null;
     return viewed && src ? { ...viewed, src } : null;
   };
-  // A failed step shows the error sign instead of the tool's own; its row stays quiet like every failed step.
+  // Every failed step shows the error sign in danger tone in the same icon slot; the row stays folded and quiet.
   const failed = () => !waiting() && props.block.status !== "rejected" && isFailedTool(props.block);
   const icon = () => {
     if (waiting()) return "ti ti-clock";
@@ -910,6 +910,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           .join(" · ")}
         icon={icon()}
         leading={waiting() || check() || failed() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+        tone={failed() ? "danger" : "neutral"}
         busy={props.busy && props.block.status === "running"}
         bodyInset={false}
         renderBody={() => (
