@@ -1183,6 +1183,11 @@
   margin-left: auto;
 }
 
+/* The shared workstation's check box sits in the 1rem icon column, so its label lines up with the other entries. */
+.layout-profile-preferences__panel .menu-item > .cloud-shared-workstation-check {
+  margin-inline: 0.0625rem;
+}
+
 /* A label with a quiet line below, as in the touch menu's choice rows. */
 .layout-profile-preferences__copy {
   display: flex;

@@ -306,8 +306,8 @@ export const installSharedWorkstation = (
 
   const onInput = (event: Event) => {
     if (!event.isTrusted) return;
-    // The warning's own buttons decide themselves; pressing "Abmelden" is no sign of working on.
-    if (event.target instanceof Element && event.target.closest("[data-cloud-idle-warning]")) return;
+    // Inside the warning only its buttons decide: pressing "Abmelden", Tab or Escape there is no sign of working on.
+    if (event.target instanceof Element && event.target.closest("dialog")?.querySelector("[data-cloud-idle-continue]")) return;
     watcher?.input();
   };
   const onWake = () => watcher?.wake();

@@ -45,7 +45,9 @@ because the server keeps one idle clock per session.
 ## What happens at the end
 
 One minute before the end, every open tab warns: **You will be signed out
-soon**, with **Keep working** and **Sign out**. Ten seconds before the end, the
+soon**, with **Keep working**, which has the focus, and **Sign out**. There is
+no close button, and Escape does nothing: only a person's press of **Keep
+working** keeps the session, a script's click does not. Ten seconds before the end, the
 tabs hide their content and open the sign-in page. Leaving the page gives
 applications their usual `pagehide` and `visibilitychange` saves while the
 session is still valid, so drafts that an application saves on the server are

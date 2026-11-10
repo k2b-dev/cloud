@@ -21,6 +21,7 @@ const settingsMiddleware = await import("../server/middleware/settings");
 const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { person } = await import("../_internal/define-app.test-fixture");
+const { sharedWorkstationCookieName } = await import("../services/session/shared-workstation");
 const { server, serverState, TIMEOUT_SECONDS } = await import("./shared-workstation.browser-harness");
 
 const START = Date.UTC(2026, 10, 10, 9, 0, 0);
@@ -80,7 +81,11 @@ render(() => createComponent(ShellRuntime, { browserSession: window.__browserSes
     fetch: async (request) => {
       if (new URL(request.url).pathname === "/shell-runtime.js")
         return new Response(runtime, { headers: { "content-type": "text/javascript" } });
-      const response = await server.fetch(request);
+      // Over plain http a browser refuses `__Host-` cookies; the fixture passes the mark on under the production name.
+      const headers = new Headers(request.headers);
+      if (/(?:^|;\s*)cloud_shared_workstation=1/.test(headers.get("Cookie") ?? ""))
+        headers.set("Cookie", `${headers.get("Cookie")}; ${sharedWorkstationCookieName(false)}=1; ${sharedWorkstationCookieName(true)}=1`);
+      const response = await server.fetch(new Request(request.url, { method: request.method, headers, body: request.body }));
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
       const markup = (await response.text())
         .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
@@ -135,7 +140,7 @@ const forward = async (ms: number, page: Page) => {
   await page.clock.fastForward(ms);
   await sync(page);
 };
-const warning = (page: Page) => page.getByRole("dialog", { name: "You will be signed out soon" });
+const warning = (page: Page) => page.getByRole("alertdialog", { name: "You will be signed out soon" });
 /** The next message the tabs exchange, heard in `page`; a tab announces a new deadline once it has applied it. */
 const nextMessage = (page: Page) =>
   page.evaluate(
@@ -176,6 +181,16 @@ test("background work never extends the session; the warning's Keep working does
     );
     expect(serverState.reports).toBe(0);
     await warning(page).waitFor();
+    // Two clear ways and nothing else: the focus is on Keep working, there is no close button, and Escape,
+    // real or by script, neither closes the question nor keeps the session.
+    const keepWorking = warning(page).getByRole("button", { name: "Keep working" });
+    expect(await keepWorking.evaluate((button) => button === document.activeElement)).toBe(true);
+    expect((await warning(page).getByRole("button").allTextContents()).map((text) => text.trim())).toEqual(["Sign out", "Keep working"]);
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await forward(1_000, page);
+    expect(await warning(page).isVisible()).toBe(true);
+    expect(serverState.reports).toBe(0);
 
     // A second tab of the same browser hears the new deadline once this tab has applied it.
     const listener = await page.context().newPage();
@@ -249,4 +264,39 @@ test("input in one tab keeps the other awake, and the sign-out takes every tab a
   } finally {
     await context.close();
   }
+});
+
+test("the profile menu's switch says on or off to the eye and to screen readers, and switching moves nothing", async () => {
+  const rows: Array<{ checked: string | null; checks: number; row: unknown; label: unknown }> = [];
+  for (const marked of [false, true]) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
+    try {
+      if (marked) await context.addCookies([{ name: "cloud_shared_workstation", value: "1", url: origin }]);
+      const page = await openTab(context, TIMEOUT_SECONDS);
+      // The hover panel stays hidden until hovered, so the role is looked up in the markup, not the accessibility tree.
+      const entry = page.locator('.layout-profile-preferences__panel [role="switch"]', { hasText: "Shared workstation" });
+      rows.push(
+        await entry.evaluate((element) => {
+          const box = (node: Element | null) => {
+            const rect = node?.getBoundingClientRect();
+            return rect && { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+          };
+          return {
+            checked: element.getAttribute("aria-checked"),
+            checks: element.querySelectorAll(".cloud-shared-workstation-check .ti-check").length,
+            row: box(element),
+            label: box(element.querySelector(".layout-profile-preferences__copy")),
+          };
+        }),
+      );
+    } finally {
+      await context.close();
+    }
+  }
+  expect(rows.map(({ checked, checks }) => [checked, checks])).toEqual([
+    ["false", 0],
+    ["true", 1],
+  ]);
+  expect(rows[1]?.row).toEqual(rows[0]?.row);
+  expect(rows[1]?.label).toEqual(rows[0]?.label);
 });

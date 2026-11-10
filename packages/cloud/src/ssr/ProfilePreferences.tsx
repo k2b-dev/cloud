@@ -4,6 +4,7 @@ import { readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../b
 import type { CloudThemePreference } from "../shared/theme";
 import { platformMessages } from "./platform-messages";
 import { createProfileActions } from "./profile-actions";
+import { SharedWorkstationCheck } from "./SharedWorkstationCheck";
 import { useShellData } from "./shell-data";
 
 type ProfilePreferencesProps = {
@@ -107,7 +108,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
               disabled={sharedWorkstation.pending()}
               onClick={() => void sharedWorkstation.toggle()}
             >
-              <i class={sharedWorkstation.shared() ? "ti ti-square-check" : "ti ti-square"} aria-hidden="true" />
+              <SharedWorkstationCheck checked={sharedWorkstation.shared()} />
               <span class="layout-profile-preferences__copy">
                 <span>{sharedWorkstation.messages().label}</span>
                 <small id="cloud-shared-workstation-description">{sharedWorkstation.messages().description}</small>

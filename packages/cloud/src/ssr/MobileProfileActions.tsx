@@ -2,6 +2,7 @@ import { documentNavigate } from "@k2b/ssr/nav";
 import { Button, ButtonLink } from "@k2b/ui";
 import type { CloudThemePreference } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
+import { SharedWorkstationCheck } from "./SharedWorkstationCheck";
 import { ThemeCycleButton } from "./ThemeCycleButton";
 
 export function MobileProfileActions(props: {
@@ -50,7 +51,7 @@ export function MobileProfileActions(props: {
           disabled={sharedWorkstation.pending()}
           onClick={() => void sharedWorkstation.toggle()}
         >
-          <i class={sharedWorkstation.shared() ? "ti ti-square-check" : "ti ti-square"} aria-hidden="true" />
+          <SharedWorkstationCheck checked={sharedWorkstation.shared()} />
           {sharedWorkstation.messages().label}
         </Button>
       )}

@@ -113,7 +113,6 @@ export function createProfileActions(initialTheme: CloudThemePreference, appHref
               {
                 choice: "checkbox" as const,
                 checked: sharedWorkstation.shared,
-                icon: "ti ti-users",
                 label: sharedWorkstation.messages().label,
                 description: sharedWorkstation.messages().description,
                 disabled: sharedWorkstation.pending(),
