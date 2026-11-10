@@ -109,6 +109,12 @@ document is solid, so text that scrolls beneath it never shows through.
 and content scrolls beneath it but still ends above it, so the last line stays
 reachable.
 
+Every pill has the same space between its edge and the round background of its
+controls above, below, and at the sides; it is never taller than its controls
+need. A pill of small icon controls, such as an editor's formatting pill or the
+`PdfViewer` bar, uses `--k2b-pill-control` (24 px) and `--k2b-pill-inset`
+(6 px inside the 1 px edge) and is 38 px high.
+
 For two pills at the edges of one column, such as formatting at the left and
 comments, reading, and details at the right, put both into one `ToolbarDock`
 (see the example below). Each pill moves its own lower-priority actions into

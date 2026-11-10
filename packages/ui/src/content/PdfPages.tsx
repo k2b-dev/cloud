@@ -38,7 +38,7 @@ const LARGEST = PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1] ?? 300;
 /** Horizontal padding of the page stack, both sides together. */
 const INSET = 24;
 /** Vertical padding of the page stack, top and the room for the bar below together (`.k2b-pdf-viewer__stack`). */
-const BLOCK_INSET = 12 + 72;
+const BLOCK_INSET = 12 + 56;
 /** Pages within this distance of the view draw; farther ones keep only their box. */
 const NEAR_MARGIN = "150% 0px";
 /** At most this many drawn pages stay in memory; the ones out of view are released first. */
