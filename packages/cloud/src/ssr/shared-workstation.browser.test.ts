@@ -117,6 +117,8 @@ beforeEach(() => {
 const openTab = async (context: BrowserContext, remaining: number, beside?: Page): Promise<Page> => {
   if (beside) await sync(beside);
   serverState.lastInput = fakeNow - (TIMEOUT_SECONDS - remaining) * 1_000;
+  // The shell reloads a first visit once to store the browser's time zone; the contexts run in UTC, so it is set up front.
+  if (!beside) await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: origin }]);
   const page = await context.newPage();
   if (!beside) await context.clock.install({ time: fakeNow });
   await page.addInitScript((session) => Object.assign(window, { __browserSession: session }), {
@@ -124,8 +126,14 @@ const openTab = async (context: BrowserContext, remaining: number, beside?: Page
     sid: SID,
     idle: { remainingSeconds: remaining, timeoutSeconds: TIMEOUT_SECONDS },
   });
+  // Opening the page is one navigation: a reload meanwhile would run the watcher twice and race the test's reads.
+  let navigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) navigations++;
+  });
   await page.goto(`${origin}/app/desk`);
   await settled(page);
+  expect(navigations).toBe(1);
   return page;
 };
 /** The installed clock keeps running in real time, so the fixture server follows the page's clock. */

@@ -39,7 +39,8 @@ const signIn = async (userId: string, cookie: string) => {
   const { token } = (await response.json()) as { token: string };
   return { token, setCookies: response.headers.getSetCookie() };
 };
-const request = (method: string, path: string, cookie: string, body?: unknown, origin: string | undefined = issuer) =>
+/** `origin: null` sends no Origin header; `undefined` would take the default, the Cloud's own origin. */
+const request = (method: string, path: string, cookie: string, body?: unknown, origin: string | null = issuer) =>
   router.request(path, {
     method,
     headers: {
@@ -108,7 +109,7 @@ suite("shared workstation", () => {
     // Input reports from an unmarked browser record nothing and start no limit.
     expect((await request("POST", "/api/me/browser/activity", `session_token=${token}`)).status).toBe(200);
     expect((await family(token)).last_input_at).toBeNull();
-    const state = await request("GET", "/api/me/browser", `session_token=${token}`, undefined, undefined);
+    const state = await request("GET", "/api/me/browser", `session_token=${token}`, undefined, null);
     expect(await state.json()).toEqual({ sharedWorkstation: false, idle: null });
   });
 
@@ -129,8 +130,8 @@ suite("shared workstation", () => {
     const cookie = `${MARK}=1; session_token=${token}`;
     // What apps do in the background: page and API requests, the shell's state read, stream re-checks.
     for (let attempt = 0; attempt < 3; attempt++) {
-      expect((await request("GET", "/api/me", cookie, undefined, undefined)).status).toBe(200);
-      const state = await request("GET", "/api/me/browser", cookie, undefined, undefined);
+      expect((await request("GET", "/api/me", cookie, undefined, null)).status).toBe(200);
+      const state = await request("GET", "/api/me/browser", cookie, undefined, null);
       expect(((await state.json()) as { idle: { remainingSeconds: number } }).idle.remainingSeconds).toBeLessThanOrEqual(30);
       expect(await session.authenticateUserId(token)).toBe(userId);
     }
@@ -139,7 +140,7 @@ suite("shared workstation", () => {
     await idleFor(token, IDLE_MINUTES * 60 + 1);
     expect(await session.authenticate(token)).toBeNull();
     expect(await family(token)).toMatchObject({ revocation_reason: "idle" });
-    expect((await request("GET", "/api/me", cookie, undefined, undefined)).status).toBe(401);
+    expect((await request("GET", "/api/me", cookie, undefined, null)).status).toBe(401);
     // A late input never revives the session.
     expect((await request("POST", "/api/me/browser/activity", cookie)).status).toBe(401);
     expect(await session.authenticate(token)).toBeNull();
@@ -155,7 +156,7 @@ suite("shared workstation", () => {
       idle: { remainingSeconds: IDLE_MINUTES * 60, timeoutSeconds: IDLE_MINUTES * 60 },
     });
     await idleFor(token, IDLE_MINUTES * 60 - 20);
-    const state = await request("GET", "/api/me/browser", `${MARK}=1; session_token=${token}`, undefined, undefined);
+    const state = await request("GET", "/api/me/browser", `${MARK}=1; session_token=${token}`, undefined, null);
     expect(((await state.json()) as { idle: { remainingSeconds: number } }).idle.remainingSeconds).toBeGreaterThan(0);
   });
 
@@ -194,7 +195,7 @@ suite("shared workstation", () => {
 
   test("another site cannot flip the switch", async () => {
     const { token } = await signIn(userId, "");
-    for (const origin of [undefined, "null", "https://evil.example.test"]) {
+    for (const origin of [null, "null", "https://evil.example.test"]) {
       const response = await request("PUT", "/api/me/browser/shared-workstation", `session_token=${token}`, { shared: true }, origin);
       expect(response.status).toBe(403);
       expect(response.headers.getSetCookie()).toEqual([]);
@@ -230,7 +231,7 @@ suite("shared workstation", () => {
     // For example signed in while another tab marked the browser.
     const { token } = await signIn(userId, "");
     expect((await family(token)).last_input_at).toBeNull();
-    const response = await request("GET", "/api/me", `${MARK}=1; session_token=${token}`, undefined, undefined);
+    const response = await request("GET", "/api/me", `${MARK}=1; session_token=${token}`, undefined, null);
     expect(response.status).toBe(200);
     expect((await family(token)).last_input_at).not.toBeNull();
     // The request does not rewrite the cookie: a late response must not replace a newer sign-in's cookie.
