@@ -45,8 +45,8 @@ export const NOTICE_CARD_CLASSES = {
   actions: "k2b-notice-card__actions",
 } as const;
 
-/** Whether resolved children render something; a Show whose condition is false renders nothing. */
-const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && node !== false && node !== "");
+/** Whether resolved children render something; a Show whose condition is false, or a boolean, renders nothing. */
+const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && typeof node !== "boolean" && node !== "");
 
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
   const [local, articleProps] = splitProps(props, [

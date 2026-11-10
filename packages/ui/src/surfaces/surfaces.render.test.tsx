@@ -75,6 +75,10 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     const line = renderToString(() => createComponent(NoticeCard, { tone: "warning", icon: true, title: "x" }));
     expect(line).toMatch(/data-icon=""/);
     expect(line).not.toMatch(/data-card-icon|data-actions|k2b-notice-card__actions/);
+    // Actions that render nothing, such as `readOnly() || <Button />` while read-only, add no row.
+    expect(renderToString(() => createComponent(NoticeCard, { title: "x", actions: true }))).toBe(
+      renderToString(() => createComponent(NoticeCard, { title: "x" })),
+    );
     // Without an icon the layout changes nothing.
     expect(renderToString(() => createComponent(NoticeCard, { layout: "card", title: "x" }))).toBe(
       renderToString(() => createComponent(NoticeCard, { title: "x" })),
