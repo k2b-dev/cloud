@@ -28,7 +28,7 @@ through Cloud while Code still holds no bytes. The generate loop offers
 | Direction | Operation | Notes |
 | --- | --- | --- |
 | Read | `mail.attachment.content.read({ id })` | A mail attachment, up to Mail's 100 MiB limit. `mail.attachment.read` stays metadata only; `mail.attachment.text.read` returns extracted text. |
-| Read | `filesv2.content.read({ id })` | A file in Files, up to 50 MiB. |
+| Read | `files.content.read({ id })` | A file in Files, up to 50 MiB. |
 | Write | An Action with a write stream and a `file` input | The SDK types `file` as `FileRef` and returns the Action's ordinary data after the transfer. Find these in `code_sdk`; the example below uses a fictional `imports` app. |
 
 Write streams without a `file` input, such as `filesv2.content.create` and
@@ -81,13 +81,13 @@ for mail attachments.
 
 <!-- check: personal -->
 ```ts
-import { app, filesv2, imports } from "@sdk";
+import { app, files, imports } from "@sdk";
 
-// Fictional file ID; read real IDs with filesv2.entry.list.
+// Fictional file ID; read real IDs with files.entry.list.
 const PRICE_LIST = "Fil001";
 
 app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "import-price-list", title: "Import price list" }, async () => {
-  const file = await filesv2.content.read({ id: PRICE_LIST });
+  const file = await files.content.read({ id: PRICE_LIST });
   if (file.mediaType !== "text/csv" || file.size > 5 * 1024 * 1024) throw new Error("Unexpected price list file");
   const day = new Date().toISOString().slice(0, 10);
   await imports.import({ file, idempotencyKey: `price-list:${day}` });

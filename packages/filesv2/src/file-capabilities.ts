@@ -5,6 +5,7 @@ import {
   type CapabilityResult,
   CapabilitySemanticLinkSchema,
   type CapabilityStream,
+  capabilityPage,
   FILE_PROVIDER_NAME_CONFLICT,
   type FileProviderEntry,
   FileProviderListDataSchema,
@@ -259,12 +260,14 @@ export const fileQueries = {
           .sort((a, b) => (a.id < b.id ? -1 : 1))
           .filter((i) => !input.after || i.id > input.after);
         const items = available.slice(0, 100);
+        const next = available.length > items.length ? items.at(-1)!.id : null;
         return ok({
+          page: capabilityPage(next),
           data: {
             items: await Promise.all(
               items.map(async (base) => ({ ...base, ref: { type: "filesv2.entry" as const, id: await entryRef(base.id, { path: "" }) } })),
             ),
-            next: available.length > items.length ? items.at(-1)!.id : null,
+            next,
           },
         });
       }),
@@ -282,6 +285,7 @@ export const fileQueries = {
         const located = await rootInput(input, c);
         const page = await filesService.list(capabilityCall(c), located);
         return ok({
+          page: capabilityPage(page.next),
           data: {
             baseId: located.baseId,
             path: page.path,
@@ -311,6 +315,7 @@ export const fileQueries = {
         const located = await rootInput(input, c);
         const page = await filesService.search(capabilityCall(c), { ...located, scope: "tree", signal: c.signal });
         return ok({
+          page: capabilityPage(page.next),
           data: {
             baseId: located.baseId,
             path: page.path,
@@ -345,7 +350,10 @@ export const fileQueries = {
     }),
     openWorld: false,
     run: async (input: { after?: string }, c: CapabilityExecutionContext) =>
-      domain(c, async () => ok({ data: await filesService.trash(capabilityCall(c), { ...input, baseId: await rootBase(c, c.target) }) })),
+      domain(c, async () => {
+        const data = await filesService.trash(capabilityCall(c), { ...input, baseId: await rootBase(c, c.target) });
+        return ok({ data, page: capabilityPage(data.next) });
+      }),
   },
   "content.read": {
     title: "Read file content",
@@ -413,7 +421,10 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: z.output<typeof FileProviderListInputSchema>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        if (input.parent === undefined) return ok({ data: await providerRoot(c, input) });
+        if (input.parent === undefined) {
+          const data = await providerRoot(c, input);
+          return ok({ data, page: capabilityPage(data.next) });
+        }
         // A Filegate read may join folders and files on one page; half the limit keeps that page within it.
         const page = await filesService.folder(capabilityCall(c), {
           id: input.parent,
@@ -422,6 +433,7 @@ export const fileQueries = {
           pageSize: Math.ceil(input.limit / 2),
         });
         return ok({
+          page: capabilityPage(page.next),
           data: {
             writable: page.writable,
             items: await Promise.all(page.items.map((entry) => providerEntry(page.base.id, entry))),

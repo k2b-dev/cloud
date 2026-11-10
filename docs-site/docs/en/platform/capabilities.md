@@ -1933,6 +1933,13 @@ hints and do not require UI.
 When `hasMore` is true, `nextCursor` is required; on the final page it must be
 absent. Treat cursors as opaque values.
 
+Queries with a string `cursor` input, or a top-level string `next` or
+`nextCursor` in their data, must return the shared `page` envelope. Use
+`page: capabilityPage(next)` for the provider’s continuation cursor. A null cursor means
+`{ hasMore: false }`; a continuation means `{ hasMore: true, nextCursor }`.
+The result validator rejects a missing or inconsistent envelope. Keep the
+declared input name (`cursor` or `after`) when requesting the next page.
+
 When a provider-owned Type advertises a reader, every returned `ref.id` for
 that Type must be accepted by that reader. For a foreign ref, the foreign
 Type's owning app defines whether and how it can be read. A ref never carries

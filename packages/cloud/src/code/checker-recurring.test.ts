@@ -39,7 +39,7 @@ test("imported const timing and omitted zone remain valid; the old string form i
   });
   expect(checked.diagnostics).toEqual([]);
   expect(checked.entrypoints[0]).toMatchObject({ entrypoint: "morning", timeZone: "Europe/Berlin" });
-  expect(analyze('{ cron: "0 9 * * *" }').entrypoints[0]).toMatchObject({ cron: "0 9 * * *" });
+  expect(analyze('{ cron: "0 9 * * *", name: "morning" }').entrypoints[0]).toMatchObject({ cron: "0 9 * * *" });
   expect(analyze('"0 9 * * *"').diagnostics).toContainEqual(expect.objectContaining({ code: "code_static_schedule" }));
   expect(
     CodeVersionEntrypointSchema.safeParse({ kind: "schedule", entrypoint: "old", cron: "0 9 * * *", file: "code.ts", line: 1 }).success,
@@ -47,11 +47,11 @@ test("imported const timing and omitted zone remain valid; the old string form i
 });
 
 test.each([
-  '{ cron: "0 9 * * *", timeZone: "Mars/Olympus" }',
-  '{ cron: "0 9 * * *", timeZone: "" }',
-  '{ cron: "bad", timeZone: "UTC" }',
-  '{ cron: "0 9 * * *", timeZone: new Date().toISOString() }',
-  '{ cron: "0 9 * * *", timeZone: "UTC", at: "2026-12-01T00:00:00Z" }',
+  '{ cron: "0 9 * * *", timeZone: "Mars/Olympus", name: "morning" }',
+  '{ cron: "0 9 * * *", timeZone: "", name: "morning" }',
+  '{ cron: "bad", timeZone: "UTC", name: "morning" }',
+  '{ cron: "0 9 * * *", timeZone: new Date().toISOString(), name: "morning" }',
+  '{ cron: "0 9 * * *", timeZone: "UTC", at: "2026-12-01T00:00:00Z", name: "morning" }',
   '{ cron: "0 9 * * *", timeZone: "UTC", name: String(Date.now()) }',
 ])("checker refuses invalid or dynamic recurring declaration %s", (when) => {
   expect(analyze(when).diagnostics.length).toBeGreaterThan(0);
@@ -99,7 +99,7 @@ test("an event registered before a zoned schedule preserves its kind and the sch
     files: {
       "code.ts": `import { app } from "@sdk";
 app.on("work-shop.changed", () => {});
-app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, () => {});
+app.schedule({ name: "schedule-0", cron: "0 9 * * *", timeZone: "Europe/Berlin" }, () => {});
 export default app;`,
     },
   });
@@ -107,13 +107,13 @@ export default app;`,
   const runtime = await import(`data:text/javascript;base64,${Buffer.from(resourceSdk.runtime).toString("base64")}`);
   let calls = 0;
   runtime.app.on("work-shop.changed", () => {});
-  runtime.app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, () => calls++);
+  runtime.app.schedule({ name: "schedule-0", cron: "0 9 * * *", timeZone: "Europe/Berlin" }, () => calls++);
   expect(runtime.__codeSdk.entries()).toEqual(checked.entrypoints.map(({ file: _file, line: _line, ...entry }) => entry));
   expect(runtime.__codeSdk.entries()[1]).toMatchObject({
     kind: "schedule",
-    entrypoint: "schedule:0",
+    entrypoint: "schedule-0",
     timeZone: "Europe/Berlin",
   });
-  await runtime.__codeSdk.run("schedule:0");
+  await runtime.__codeSdk.run("schedule-0");
   expect(calls).toBe(1);
 });

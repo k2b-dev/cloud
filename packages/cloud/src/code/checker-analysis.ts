@@ -589,7 +589,9 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         const op = request.sdk.manifest.operations.find(
           (op) => op.appId === appId && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === method,
         );
-        const omitted = request.sdk.manifest.omitted.find((op) => op.capability === `${appId}.${method}`);
+        const omitted = request.sdk.manifest.omitted.find(
+          (op) => op.capability.startsWith(`${appId}.`) && (op.target ?? "cloud.app") === target.type && op.methodPath.join(".") === method,
+        );
         if (omitted)
           report(
             node,
@@ -803,12 +805,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
 
             const options = when;
             const timingNames = field("name");
-            const hasTimingName = !!when && !!propertyType(checker.getTypeAtLocation(when), "name", when);
-            const name = hasTimingName
-              ? timingNames?.length === 1
-                ? timingNames[0]
-                : undefined
-              : `schedule:${result.entrypoints.filter((e) => e.kind === "schedule").length}`;
+            const name = timingNames?.length === 1 ? timingNames[0] : undefined;
             const titleType = options && propertyType(checker.getTypeAtLocation(options), "title", options);
             const titleProperty =
               options && ts.isObjectLiteralExpression(options)
@@ -826,14 +823,14 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             if (
               !staticTiming ||
               !name ||
-              (hasTimingName && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) ||
+              !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name) ||
               !ts.isExpressionStatement(node.parent) ||
               !ts.isSourceFile(node.parent.parent)
             )
               report(
                 node,
                 "code_static_schedule",
-                "Deklariere Zeitpläne auf Modulebene als { cron | at, timeZone?, name?, title? } mit konstanten Werten.",
+                "Deklariere Zeitpläne auf Modulebene als { cron | at, timeZone?, name, title? } mit konstanten Werten.",
               );
             else {
               try {
@@ -872,7 +869,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           !(
             declarationOwner &&
             ts.isTypeAliasDeclaration(declarationOwner) &&
-            ["CodeContext", "CodeRequest", "CodePageComponent"].includes(declarationOwner.name.text)
+            ["CodeContext", "CodeRequest", "CodeHttpResult", "CodePageComponent"].includes(declarationOwner.name.text)
           )
         ) {
           report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");

@@ -40,7 +40,7 @@ type TestModule = {
   work_shop: { workshop(id: string): TestHandle; item(id: string): object; catalog: { list(input: object): Promise<unknown> } };
   owner: TestHandle;
   app: {
-    schedule(when: { cron: string; name?: string; title?: string }, fn: () => void | Promise<void>): unknown;
+    schedule(when: { cron: string; name: string; title?: string }, fn: () => void | Promise<void>): unknown;
     on(event: string, fn: (input: unknown) => void | Promise<void>): unknown;
     on(place: TestHandle, event: string, fn: (input: unknown) => void | Promise<void>): unknown;
     get(path: string, fn: () => Response): unknown;
@@ -223,7 +223,7 @@ describe("Code SDK generation", () => {
     await expect(source.item.move({ itemId: "item", destination: loaded._undefined.workshop("destination") })).resolves.toEqual({
       moved: true,
     });
-    loaded.app.schedule({ cron: "0 8 * * 1" }, () => {});
+    loaded.app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, () => {});
     expect(loaded.__codeSdk.entries()).toHaveLength(1);
   });
   test("is deterministic across catalog and contract map ordering", () => {
@@ -254,8 +254,8 @@ describe("Code SDK generation", () => {
       refs: { destination: "work-shop.workshop" },
     });
     expect(manifest.omitted).toEqual([
-      { capability: "work-shop.workshop.readable", reason: "app_only" },
-      { capability: "work-shop.outside.change", reason: "code_false" },
+      { capability: "work-shop.workshop.readable", target: null, methodPath: ["workshop", "readable"], reason: "app_only" },
+      { capability: "work-shop.outside.change", target: "work-shop.workshop", methodPath: ["outside", "change"], reason: "code_false" },
     ]);
     expect(declarations).not.toContain('"outside"');
     expect(manifest.events.map((event) => event.type)).toEqual(["work-shop.changed"]);
@@ -402,12 +402,12 @@ describe("generated runtime through the canonical call seam", () => {
   test("registers schedules without executing them", async () => {
     const sdk = await runtime();
     let calls = 0;
-    sdk.app.schedule({ cron: "0 8 * * 1" }, async () => {
+    sdk.app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => {
       calls += 1;
     });
     expect(calls).toBe(0);
-    expect(sdk.__codeSdk.entries()).toEqual([{ kind: "schedule", entrypoint: "schedule:0", cron: "0 8 * * 1" }]);
-    await sdk.__codeSdk.run("schedule:0");
+    expect(sdk.__codeSdk.entries()).toEqual([{ kind: "schedule", entrypoint: "schedule-0", cron: "0 8 * * 1" }]);
+    await sdk.__codeSdk.run("schedule-0");
     expect(calls).toBe(1);
     sdk.app.schedule({ cron: "0 9 * * 1", name: "weekly-review", title: "  Weekly review  " }, () => {});
     expect(sdk.__codeSdk.entries()[1]).toEqual({
@@ -499,7 +499,7 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
     writeFile(join(dir, "ids.ts"), 'export const workshop = "imported-shop";\n'),
     writeFile(
       join(dir, "valid.ts"),
-      `import { app, work_shop, owner, Chart, type CodeChartDescription, type CodePageTree } from "@sdk";
+      `import { app, work_shop, owner, http, Chart, type CodeChartDescription, type CodePageTree } from "@sdk";
 // @ts-expect-error Button is the only button component
 import { Action } from "@sdk";
 import { work_shop as personal } from "./personal";
@@ -551,6 +551,12 @@ work_shop.item("item").inspect({});
 work_shop.item("item").inspect({ idempotencyKey: "forbidden" });
 const literal: "owner-shop" = owner.id;
 async function typedResult() {
+  const response = await http.fetch("https://example.com");
+  const raw: string = response.bodyBase64;
+  const decoded: string = await response.text();
+  const json: unknown = await response.json();
+  // @ts-expect-error encoded responses use bodyBase64
+  response.body;
   const result = await target.stock.list({});
   const state: "ready" | "empty" = result.data.rows[0]!.state;
   if (result.page?.hasMore) {
@@ -567,7 +573,9 @@ async function typedResult() {
 declare const dynamic: string;
 personal.workshop(dynamic);
 once.workshop(dynamic);
-app.schedule({ cron: "0 8 * * 1" }, async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
+// @ts-expect-error schedules require a stable name
+app.schedule({ cron: "0 8 * * 1" }, () => {});
 app.on("work-shop.changed", async event => { const title: string = event.data.title; });
 app.get("/", c => {
   if (c.user) {

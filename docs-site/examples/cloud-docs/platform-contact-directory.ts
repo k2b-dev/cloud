@@ -7,6 +7,7 @@ import {
   ContactDirectorySuggestInputSchema,
   ContactDirectorySuggestionSchema,
   capabilityContractIssues,
+  capabilityPage,
   contactDirectory,
 } from "@k2b/cloud/contracts";
 import { ok } from "@k2b/stdlib";
@@ -83,7 +84,7 @@ export const crmCapabilities = defineCapabilities({
         const matches = readableCustomers(context.accessSubject)
           .filter((customer) => `${customer.name} ${customer.email}`.toLowerCase().includes(needle))
           .slice(0, limit ?? 8);
-        return ok({ data: matches.map(customerFacts) });
+        return ok({ data: matches.map(customerFacts), page: capabilityPage(null) });
       },
     },
     "customer.match": {
@@ -107,6 +108,7 @@ export const crmCapabilities = defineCapabilities({
             })),
             matchedEmails: [...new Set(matches.map((customer) => customer.email))],
           },
+          page: capabilityPage(null),
         });
       },
     },

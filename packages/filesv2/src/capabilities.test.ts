@@ -559,6 +559,7 @@ test("stable refs pass through listing, universal search and the reader unchange
   const list = filesCapabilities.queries["entry.list"];
   const listed = await list.run(list.input.parse({}), rootContext(base.id, context));
   if (!listed.ok) throw new Error("expected list success");
+  expect(listed.data.page).toEqual({ hasMore: false });
   expect(listed.data.data.items[0]!.ref).toEqual({ type: "filesv2.entry", id: stable });
   expect(listed.data.data.items[0]).not.toHaveProperty("resourceId");
   const found = await filesCapabilities.queries["entry.search"].run({ query: "report", tags: [], limit: 10 }, context);
@@ -588,6 +589,7 @@ for (const query of ["entry.list", "entry.search-in-base"] as const) {
     if (!first.ok || !again.ok) throw new Error("expected success");
     expect(first.data).toEqual(again.data);
     expect(first.data.data.next).toBe(next);
+    expect(first.data.page).toEqual({ hasMore: true, nextCursor: next });
     expect(downloads).toEqual([]);
     expect(capabilityResultSchema(capability.data).safeParse(first.data).success).toBe(true);
     if (query === "entry.search-in-base") {
@@ -764,6 +766,8 @@ describe("Files as a file provider", () => {
     if (!second.ok) throw new Error("expected second page");
     expect(second.data.data.items.map((item) => item.name)).toEqual(["zeta"]);
     expect(second.data.data.next).toBeNull();
+    expect(first.data.page).toEqual({ hasMore: true, nextCursor: "2" });
+    expect(second.data.page).toEqual({ hasMore: false });
 
     const german = await listProvider({ query: "persönlich" }, { ...context, locale: "de" });
     if (!german.ok) throw new Error("expected filtered root");

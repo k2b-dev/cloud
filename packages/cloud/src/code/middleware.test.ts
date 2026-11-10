@@ -123,7 +123,7 @@ app.use("/private", async (c, next) => { await work_shop.catalog.list({}); retur
 app.get("/private/:id", c => c.text("ok"));
 app.get("/public", c => c.text("ok"), { public: true });
 app.post("/private", c => c.text("ok"));
-app.schedule({ cron: "0 8 * * *" }, () => {});`);
+app.schedule({ name: "schedule-0", cron: "0 8 * * *" }, () => {});`);
   expect(checked.diagnostics).toEqual([]);
   expect(checked.permissions).toMatchObject([
     { operation: "work-shop.catalog.list", entrypoints: ["route:GET:/private/:id", "route:POST:/private"] },

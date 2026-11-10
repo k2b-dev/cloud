@@ -2920,8 +2920,11 @@ test("discussion containers continue from the same offset when the limit changes
   if (!first.ok) throw new Error("Expected containers");
   expect(operation.data.safeParse(first.data.data).success).toBeTrue();
   expect(first.data.data).toEqual({ items: [{ ref: { type: "spaces.space", id: spaceId }, title: space.name }], next: expect.any(String) });
+  if (!first.data.data.next) throw new Error("Expected a continuation cursor");
+  expect(first.data.page).toEqual({ hasMore: true, nextCursor: first.data.data.next });
   const last = await operation.run(operation.input.parse({ query: "Product", limit: 2, cursor: first.data.data.next }), userContext);
   if (!last.ok) throw new Error("Expected containers");
+  expect(last.data.page).toEqual({ hasMore: false });
   expect(last.data.data).toEqual({
     items: [
       { ref: { type: "spaces.space", id: otherSpaceId }, title: space.name },

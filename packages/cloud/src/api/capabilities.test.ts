@@ -15,7 +15,7 @@ import * as runTokens from "../code/run-token";
 import { RUNNER_PATHS, type RunnerCallResponse, RunnerCallResponseSchema } from "../code/runner-protocol";
 import type { CodeSdkInvocation } from "../code/types";
 import { env } from "../config/env";
-import { CapabilityCatalogSchema, capabilityResultSchema, defineCapabilities } from "../contracts/capabilities";
+import { CapabilityCatalogSchema, capabilityPage, capabilityResultSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import { stubConnections } from "../runtime/connections.test-fixture";
@@ -1257,7 +1257,7 @@ test("the browser file chooser browses and reads a provider through Core's route
           input: contract.FileProviderListInputSchema,
           data: contract.FileProviderListDataSchema,
           openWorld: false,
-          run: async () => ok({ data: { writable: false, items: [listed], next: null } }),
+          run: async () => ok({ data: { writable: false, items: [listed], next: null }, page: capabilityPage(null) }),
         },
         "file.read": {
           title: "Read",
@@ -2010,7 +2010,7 @@ test("calendar sources are discovered and read through Core's normal capability 
           input: contract.CalendarListInputSchema,
           data: contract.CalendarListDataSchema,
           openWorld: false,
-          run: async () => ok({ data: { items: [descriptor], next: null } }),
+          run: async () => ok({ data: { items: [descriptor], next: null }, page: capabilityPage(null) }),
         },
         events: {
           title: "Events",
@@ -2018,7 +2018,7 @@ test("calendar sources are discovered and read through Core's normal capability 
           input: contract.CalendarEventsInputSchema,
           data: contract.CalendarEventsDataSchema,
           openWorld: false,
-          run: async () => ok({ data: { items: [deadline], next: null } }),
+          run: async () => ok({ data: { items: [deadline], next: null }, page: capabilityPage(null) }),
         },
       },
       calendarSource: { calendars: "calendars", events: "events" },

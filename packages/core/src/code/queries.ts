@@ -1,4 +1,4 @@
-import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, capabilityPage } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
 import { ZodError } from "zod";
 import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./access";
@@ -17,7 +17,9 @@ const contextFor = (context: CapabilityExecutionContext): CodeContext => {
 };
 export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: (context: CodeContext) => Promise<T>) {
   try {
-    return ok({ data: await run(contextFor(context)) });
+    const data = await run(contextFor(context));
+    const next = data && typeof data === "object" && "nextCursor" in data ? data.nextCursor : undefined;
+    return ok({ data, ...(typeof next === "string" || next === null ? { page: capabilityPage(next) } : {}) });
   } catch (error) {
     if (error instanceof CodeJobError)
       return fail({

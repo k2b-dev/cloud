@@ -1371,6 +1371,7 @@ const gqlCapabilityResult = async (
       ? fail(err.badInput(tooLarge.message))
       : ok({
           data: response,
+          page: capabilityPage(),
           summary: gqlCapabilitySummary(response, base, outcome, locale),
           refs: [{ type: "grids.base" as const, id: base.shortId }, ...refs],
           links: [{ rel: "open" as const, href: baseHref(base) }],

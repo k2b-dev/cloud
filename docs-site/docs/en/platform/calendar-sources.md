@@ -295,6 +295,7 @@ import { defineCapabilities } from "@k2b/cloud";
 import { type CapabilityCaller, listCalendarSources, readCalendarEvents } from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
+  capabilityPage,
   CalendarEventsDataSchema,
   CalendarEventsInputSchema,
   type CalendarItem,
@@ -343,6 +344,7 @@ export const absenceCapabilities = defineCapabilities({
             ],
             next: null,
           },
+          page: capabilityPage(null),
         });
       },
     },
@@ -393,12 +395,8 @@ export const absenceCapabilities = defineCapabilities({
           version: row.revision,
         }));
         const nextOffset = offset + items.length;
-        return ok({
-          data: {
-            items,
-            next: nextOffset < matches.length ? Buffer.from(JSON.stringify({ scope, offset: nextOffset })).toString("base64url") : null,
-          },
-        });
+        const next = nextOffset < matches.length ? Buffer.from(JSON.stringify({ scope, offset: nextOffset })).toString("base64url") : null;
+        return ok({ data: { items, next }, page: capabilityPage(next) });
       },
     },
   },

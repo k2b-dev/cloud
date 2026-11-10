@@ -224,7 +224,7 @@ Methods needing additional resource handles are not tool inputs.
 ```ts
 import { app, core, mail } from "@sdk";
 
-app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, async () => {
+app.schedule({ name: "schedule-0", cron: "0 9 * * *", timeZone: "Europe/Berlin" }, async () => {
   // Fictional attachment and mailbox; discover real IDs through authorized reads.
   const file = await mail.attachment.content.read({ id: "Att001" });
   const { data: result } = await core.ai.generate({

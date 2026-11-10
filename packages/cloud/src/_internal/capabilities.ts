@@ -115,6 +115,7 @@ const StrictCapabilityManifestSchema = CapabilityManifestSchema.out.strict();
 type DefinedFields<T> = Readonly<Record<keyof T, true>>;
 const DECLARATION_FIELDS = {
   protocolVersion: true,
+  sdkExportName: true,
   presentation: true,
   code: true,
   types: true,
@@ -1135,6 +1136,7 @@ export const compileCapabilities = (
     ...(resourcePages.length ? { resourcePages } : {}),
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
+    ...(definitions.sdkExportName === undefined ? {} : { sdkExportName: definitions.sdkExportName }),
     types,
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
@@ -1280,6 +1282,7 @@ export const resolveCapabilityManifestPresentation = (
     const manifestBase = {
       protocolVersion: current.protocolVersion,
       appId: current.appId,
+      ...(current.sdkExportName === undefined ? {} : { sdkExportName: current.sdkExportName }),
       types: current.types.map((type) => {
         const copy = translation.types?.[type.localId];
         return copy
@@ -1751,12 +1754,37 @@ export const validateCapabilityResult = (
   const nestedReceipt = field(field(result, "data"), "receipt");
   if (!("idempotency" in operation.manifest) && nestedReceipt !== undefined && capabilityQueryChecksActionOutcome(operation.manifest))
     receiptIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
-  if (!parsed.success || receiptIssues.length > 0) {
+  const paginationIssues: string[] = [];
+  if (!("idempotency" in operation.manifest)) {
+    const properties = field(operation.manifest.dataSchema, "properties");
+    const data = field(result, "data");
+    const stringSchema = (schema: unknown): boolean => {
+      const type = field(schema, "type");
+      if (type === "string" || (Array.isArray(type) && type.includes("string"))) return true;
+      const anyOf = field(schema, "anyOf");
+      return Array.isArray(anyOf) && anyOf.some(stringSchema);
+    };
+    const cursorKey = ["next", "nextCursor"].find((key) => stringSchema(field(properties, key)));
+    const inputCursor = field(field(operation.manifest.inputSchema, "properties"), "cursor");
+    if (cursorKey || stringSchema(inputCursor)) {
+      const next = cursorKey ? field(data, cursorKey) : undefined;
+      const page = field(result, "page");
+      if (page === undefined) paginationIssues.push("Paginated queries must return page");
+      if (
+        (typeof next === "string" && (field(page, "hasMore") !== true || field(page, "nextCursor") !== next)) ||
+        (next === null && field(page, "hasMore") !== false)
+      )
+        paginationIssues.push("Paginated queries must return page matching their continuation cursor");
+    }
+  }
+  if (!parsed.success || receiptIssues.length > 0 || paginationIssues.length > 0) {
     try {
       onInvalidResult?.(
         new Error(
           `Capability ${operation.manifest.localId} returned data outside its registered schema: ${JSON.stringify(
-            parsed.success ? receiptIssues : parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
+            parsed.success
+              ? [...receiptIssues, ...paginationIssues]
+              : parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
           )}`,
         ),
       );

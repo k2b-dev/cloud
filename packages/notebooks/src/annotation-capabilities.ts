@@ -138,7 +138,7 @@ export const annotationQueries = {
     openWorld: false,
     run: async (input: z.output<typeof AnnotationPageSchema> & z.infer<typeof TargetSchema>, context: CapabilityExecutionContext) => {
       const result = await annotations.replies(input.noteId, input.annotationId, { cursor: input.cursor, limit: input.limit }, context);
-      return result.ok ? ok({ data: result.data }) : result;
+      return result.ok ? ok({ data: result.data, page: capabilityPage(result.data.nextCursor) }) : result;
     },
   },
 } satisfies Record<string, CapabilityQueryDefinition>;

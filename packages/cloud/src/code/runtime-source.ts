@@ -143,8 +143,8 @@ app.schedule = (...args) => {
   }
   const timing = { ...(once ? { cron: null, at: when.at } : { cron: when.cron }), ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) };
   const name = when.name;
-  if ((name !== undefined) && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new CodeError("code_sdk_invalid_schedule_name");
-  const entrypoint = name ?? "schedule:" + schedules.filter(value => value.kind === "schedule").length;
+  if (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) throw new CodeError("code_sdk_invalid_schedule_name");
+  const entrypoint = name;
   if (schedules.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_schedule_name");
   const title = typeof when.title === "string" ? when.title.trim() : when.title;
   if (when.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(title))) throw new CodeError("code_sdk_invalid_schedule_title");
@@ -188,7 +188,10 @@ const http = Object.freeze({
   async fetch(url, options = {}) {
     if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
     if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new CodeError("code_sdk_invalid_input");
-    return invoke("http.fetch", { method: "GET", headers: {}, ...options, url });
+    const result = await invoke("http.fetch", { method: "GET", headers: {}, ...options, url });
+    const text = async () => new TextDecoder().decode(Uint8Array.from(atob(result.body), char => char.charCodeAt(0)));
+    return Object.freeze({ status: result.status, headers: result.headers, bodyBase64: result.body,
+      text, json: async () => JSON.parse(await text()) });
   },
 });
 // Pages that the SDK's blocks built; c.page draws only these, never a hand-written description.

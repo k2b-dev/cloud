@@ -103,30 +103,29 @@ app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks"
 export default app;
 ```
 
-Some providers retain a continuation in their domain data. For example,
-`filesv2.entry.list` uses `data.next` and the `after` input; follow that
-declared contract with the same fixed page maximum:
+Files exposes the same `page` envelope and uses `after` as its continuation
+input. Its legacy `data.next` remains available. Keep the same fixed page maximum:
 
 <!-- check: personal -->
 ```ts
-import { app, filesv2 } from "@sdk";
+import { app, files } from "@sdk";
 
 const MAX_PAGES = 5;
 
 app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files", title: "Count files" }, async () => {
-  const [base] = (await filesv2.bases.list({})).data.items;
+  const [base] = (await files.bases.list({})).data.items;
   if (!base) return;
-  const folder = filesv2.entry(base.ref.id);
+  const folder = files.entry(base.ref.id);
   let after: string | undefined;
-  let files = 0;
+  let count = 0;
   let complete = false;
   for (let page = 0; page < MAX_PAGES; page++) {
-    const { data: result } = await folder.list({ type: "files", ...(after ? { after } : {}) });
-    files += result.items.length;
-    if (!result.next) { complete = true; break; }
-    after = result.next;
+    const { data: result, page: continuation } = await folder.list({ type: "files", ...(after ? { after } : {}) });
+    count += result.items.length;
+    if (!continuation?.hasMore) { complete = true; break; }
+    after = continuation.nextCursor;
   }
-  console.log(`Files in the first folder: ${complete ? files : `${files} or more`}`);
+  console.log(`Files in the first folder: ${complete ? count : `${count} or more`}`);
 });
 export default app;
 ```

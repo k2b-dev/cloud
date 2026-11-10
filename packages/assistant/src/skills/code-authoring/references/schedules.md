@@ -1,6 +1,6 @@
 # Schedules
 
-`app.schedule({ cron | at, timeZone?, name?, title? }, handler)` registers a timed automation. Declare
+`app.schedule({ cron | at, timeZone?, name, title? }, handler)` registers a timed automation. Declare
 it at module level with constant values; the checker records the timing in
 the version. A changed time needs a new version that the person switches on.
 Code needs at least one schedule, route or event handler
@@ -65,8 +65,7 @@ or a new version.
 `name` is the stable identity of the automation across versions: letters,
 digits, `.`, `_` and `-`, starting with a letter or digit, unique in the
 module. Put `name` and `title` into the schedule object. `title` (1–200 characters, one line of plain text) is what people see.
-Without a name, entrypoints are `schedule:0`, `schedule:1`, … in registration
-order; they change when you reorder, so always name schedules.
+`name` is required. Reordering schedules keeps their entrypoints and run history stable.
 
 A person can also start a schedule by hand on the Code page or with
 `cld code run`. Code cannot start itself. A manual start blocks an

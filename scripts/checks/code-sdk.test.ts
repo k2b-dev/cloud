@@ -191,3 +191,30 @@ test("the documented Gustav export compiles and runs against the built-in catalo
   expect(parseGridsQueryDsl(query.query).ok).toBe(true);
   expect(chunks).toEqual(["csv"]);
 });
+
+test("built-in SDK paths use camelCase and the Files export while preserving capability IDs", async () => {
+  const sdk = generateCodeSdk(manifests, { mode: "personal" });
+  const loaded = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  expect(sdk.manifest.apps.find((app) => app.appId === "filesv2")?.exportName).toBe("files");
+  expect(loaded.files.id).toBe("filesv2");
+  expect(loaded.filesv2).toBeUndefined();
+  expect(typeof loaded.spaces.space("Space001").task.setCompleted).toBe("function");
+  expect(typeof loaded.grids.table("Table001").record.upsertExternal).toBe("function");
+  expect(typeof loaded.mail.mailbox("Mail001").mailingList.subscription.get).toBe("function");
+  for (const [capability, methodPath] of [
+    ["spaces.task.set-completed", ["task", "setCompleted"]],
+    ["grids.record.upsert-external", ["record", "upsertExternal"]],
+    ["pulse.saved_query.list", ["savedQuery", "list"]],
+  ] as const)
+    expect(sdk.manifest.operations.find((op) => op.capability === capability)?.methodPath).toEqual([...methodPath]);
+  expect(sdk.manifest.events.filter((event) => event.type.startsWith("filesv2.")).length).toBeGreaterThan(0);
+  expect(sdk.manifest.events.some((event) => event.type.startsWith("files."))).toBe(false);
+  for (const suffix of ["", ".batch"]) {
+    expect(sdk.manifest.omitted).toContainEqual(
+      expect.objectContaining({ capability: `mail.conversation.status.update${suffix}`, reason: "code_false" }),
+    );
+    expect(sdk.manifest.operations.some((op) => op.capability === `mail.conversation.status.set${suffix}`)).toBe(true);
+  }
+  // message queues attributable inter-chat communication; deliver/run have different lifecycle contracts.
+  expect(sdk.manifest.operations.some((op) => op.capability === "core.ai.chat.message")).toBe(true);
+});

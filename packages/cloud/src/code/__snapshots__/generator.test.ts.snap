@@ -442,8 +442,14 @@ export declare class CodeError extends Error {
 /** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
 declare const __codeSecret: unique symbol;
 export type CodeSecret = string & { readonly [__codeSecret]: true };
-/** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
-export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
+/** Bounded public HTTPS result. Raw bytes are base64; text/json decode UTF-8 after Core redacts echoed credentials. */
+export type CodeHttpResult = {
+  status: number;
+  headers: Record<string, string>;
+  bodyBase64: string;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+};
 export type CodeHttp = {
   /** Declare exact HTTPS origins for dynamic URLs and redirects. Literal array; never grants runtime authority. */
   allow(origins: readonly string[]): void;
@@ -520,7 +526,7 @@ export type CodeApp<Variables extends object = {}> = {
   /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
   use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
   use<Added extends object = {}>(path: string, middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
-  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
   /** Without a handle, the checked event is scoped to this resource Code owner. An explicit handle binds a readable place. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
@@ -776,8 +782,8 @@ app.schedule = (...args) => {
   }
   const timing = { ...(once ? { cron: null, at: when.at } : { cron: when.cron }), ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) };
   const name = when.name;
-  if ((name !== undefined) && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new CodeError("code_sdk_invalid_schedule_name");
-  const entrypoint = name ?? "schedule:" + schedules.filter(value => value.kind === "schedule").length;
+  if (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) throw new CodeError("code_sdk_invalid_schedule_name");
+  const entrypoint = name;
   if (schedules.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_schedule_name");
   const title = typeof when.title === "string" ? when.title.trim() : when.title;
   if (when.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]/u.test(title))) throw new CodeError("code_sdk_invalid_schedule_title");
@@ -821,7 +827,10 @@ const http = Object.freeze({
   async fetch(url, options = {}) {
     if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
     if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new CodeError("code_sdk_invalid_input");
-    return invoke("http.fetch", { method: "GET", headers: {}, ...options, url });
+    const result = await invoke("http.fetch", { method: "GET", headers: {}, ...options, url });
+    const text = async () => new TextDecoder().decode(Uint8Array.from(atob(result.body), char => char.charCodeAt(0)));
+    return Object.freeze({ status: result.status, headers: result.headers, bodyBase64: result.body,
+      text, json: async () => JSON.parse(await text()) });
   },
 });
 // Pages that the SDK's blocks built; c.page draws only these, never a hand-written description.
@@ -1085,11 +1094,21 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
   "omitted": [
     {
       "capability": "work-shop.workshop.readable",
+      "methodPath": [
+        "workshop",
+        "readable",
+      ],
       "reason": "app_only",
+      "target": null,
     },
     {
       "capability": "work-shop.outside.change",
+      "methodPath": [
+        "outside",
+        "change",
+      ],
       "reason": "code_false",
+      "target": "work-shop.workshop",
     },
   ],
   "operations": [

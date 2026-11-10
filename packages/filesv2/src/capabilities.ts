@@ -48,6 +48,7 @@ const entryHref = (baseId: string, path: string, directory: boolean) =>
   directory ? filesUrl(baseId, path) : filesUrl(baseId, parent(path), null, path);
 
 export const filesCapabilities = defineCapabilities({
+  sdkExportName: "files",
   protocolVersion: 2,
   events: filesEvents,
   subscribes: {

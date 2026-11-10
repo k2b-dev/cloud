@@ -16,6 +16,12 @@ imports as `@sdk` from the apps it runs, including apps your organisation adds.
 A new app or a new version of an app changes the SDK, and third-party apps
 appear exactly like built-in ones.
 
+SDK property segments use camelCase: `spaces.space(id).task.setCompleted`,
+`grids.table(id).record.upsertExternal`, and `mail.mailbox(id).mailingList`.
+This also applies to snake_case segments from Pulse and Venue. Capability
+and event IDs keep their original spelling. Files imports as `files`;
+its app and event IDs stay `filesv2` and `filesv2.*`.
+
 ## Where your installation tells you
 
 | Where | What you get |
@@ -48,8 +54,8 @@ there. To change Code, it uses the same `cld code` commands as a person.
 
 ## How calls work
 
-Every app is one export of `@sdk`. An app ID with a hyphen becomes an
-underscore: `work-shop` is `work_shop`.
+Every app is one export of `@sdk`. Unless the app declares an SDK export
+name, a hyphen in its app ID becomes an underscore: `work-shop` is `work_shop`.
 
 **Handles select what an operation acts on.** `spaces.space("Spc001")` is a
 handle for one Space; its methods are the operations that act on a Space.
@@ -58,9 +64,10 @@ Operations that act on no resource sit directly on the app, such as
 owning resource. A handle grants nothing: the app checks the account's rights
 on every call.
 
-**Queries return `{ data, page }`.** Read fields from `data`. For more,
-pass `page.nextCursor` as the next `cursor`, and stop after a page count you
-chose: every page is one call of the run's budget.
+**Queries return `{ data, page }`.** Read fields from `data`. While
+`page.hasMore` is true, pass `page.nextCursor` using the declared continuation
+input: usually `cursor`, or `after` for Files folder lists. Choose a page limit for the
+loop: every page is one call of the run’s budget.
 
 **Actions return their result directly.** Where an Action requires it, pass an
 `idempotencyKey` derived from the business effect, such as a message ID. A
@@ -69,6 +76,13 @@ repeated key returns the first result instead of acting twice.
 **Files travel as `FileRef`.** A read that returns a file gives the Code an
 opaque reference, never bytes. Pass it to an Action with a `file` input, or to
 `core.ai.generate` as `files`.
+
+**Internet responses decode UTF-8.** `http.fetch()` returns `bodyBase64`
+for binary bytes, `await response.text()` for text, and
+`await response.json()` for parsed JSON.
+
+**Schedules require a stable `name`.** Keep it when reordering registrations
+so the automation keeps its identity.
 
 **Errors are `CodeError`.** Compare `error.code`, such as `code_call_limit`,
 never the message. `error.status` keeps a target's 403 and 404 apart.

@@ -28,7 +28,7 @@ export function sdkFixture(appId = "work-shop") {
           openWorld: false,
           input: z.object({ cursor: z.string().optional().describe("Page cursor.") }).strict(),
           data: z.object({ rows: z.array(z.object({ id: z.string(), state: z.enum(["ready", "empty"]) })), next: z.string().nullable() }),
-          run: () => ({ ok: true, data: { data: { rows: [], next: null } } }),
+          run: () => ({ ok: true, data: { data: { rows: [], next: null }, page: { hasMore: false } } }),
         },
         "catalog.list": {
           title: "Catalog",

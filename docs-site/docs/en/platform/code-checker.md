@@ -79,15 +79,17 @@ change approval or runtime admission. Request-variable keys and values are
 checked against the types declared through `app.use<Variables>()`.
 
 Declare schedules as module-level calls with a constant five-field cron expression
-or a constant `{ at, timeZone }` for a [one-time run](/en/docs/platform/code-sdk#run-once-at-a-chosen-time), and an
-optional constant name and human `title` in the declaration options. Titles follow
-the [SDK title contract](/en/docs/platform/code-sdk#name-an-automation);
-invalid or dynamic titles report `code_static_title`. A name in an imported options object needs a literal
-type, such as `{ name: "weekly" as const }`. Names must be unique. Unnamed
-schedules use the SDK's `schedule:0`, `schedule:1`, … identifiers in runtime module
-evaluation order. Resource-owned and personal Code need at least one schedule, event handler or route;
-otherwise the checker returns `code_no_entrypoint`. The manual
-start and scheduled start invoke the same named runner export.
+or a constant `{ at, timeZone }` for a
+[one-time run](/en/docs/platform/code-sdk#run-once-at-a-chosen-time).
+Each declaration requires a constant, unique `name` and may include a human
+`title`. Titles follow the [SDK title contract](/en/docs/platform/code-sdk#name-an-automation);
+invalid or dynamic titles report `code_static_title`. A name in an imported
+options object needs a literal type, such as `{ name: "weekly" as const }`.
+A missing name reports `code_static_schedule`; reordering schedules preserves
+their identifiers. Resource-owned and personal Code need at least one
+schedule, event handler or route; otherwise the checker returns
+`code_no_entrypoint`. Manual and scheduled starts invoke the same named
+runner export.
 
 ## Consume a checked version
 

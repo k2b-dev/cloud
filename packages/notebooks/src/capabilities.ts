@@ -1248,6 +1248,7 @@ export const notebooksCapabilities = defineCapabilities({
             items: result.data.data.map((container) => ({ ref: container.ref, title: container.name.slice(0, 500) })),
             next: result.data.page?.hasMore ? result.data.page.nextCursor : null,
           },
+          page: result.data.page,
         });
       },
     },
