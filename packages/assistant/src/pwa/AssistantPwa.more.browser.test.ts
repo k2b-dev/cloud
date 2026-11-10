@@ -334,3 +334,33 @@ describe("A recording in the Cloud app", () => {
     }
   }, 30_000);
 });
+
+describe("Code in the Cloud app", () => {
+  test("a submitted Code version shows its card with what it calls, and a question is answered on the phone", async () => {
+    const page = await open("screen=chat-x&chat=pflege&code=1");
+    try {
+      const card = page.locator(".assistant-code-version");
+      await card.waitFor();
+      const text = await card.innerText();
+      expect(text).toContain("Version 3 von „Rechnungen ablegen“ ist fertig.");
+      expect(text).toContain("Was diese Version aufruft");
+      expect(await card.locator(".assistant-code-version__target").allInnerTexts()).toEqual([
+        expect.stringContaining("an Ordner fo_rechnungen"),
+        expect.stringContaining("wo der Code es beim Lauf wählt"),
+      ]);
+      // A phone cannot switch on; the card says where it works instead of hiding the version.
+      expect(text).toContain("Am Telefon lässt sich nicht einschalten.");
+      expect(await card.getByRole("button", { name: "Einschalten" }).isDisabled()).toBe(true);
+      // Nothing on the card is wider than the phone.
+      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+      await page.getByPlaceholder("Ordnername").fill("Rechnungen 2026");
+      await page.getByRole("button", { name: "Antworten" }).click();
+      await page.waitForFunction(() =>
+        (window as unknown as { harness: Harness }).harness.requests.some((request) => request.includes("/turns/turn-c/actions/survey")),
+      );
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});

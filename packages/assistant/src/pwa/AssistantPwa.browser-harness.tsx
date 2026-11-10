@@ -171,6 +171,37 @@ const STREAM_TEXT =
   "| Posten | Menge | Preis |\n|---|---:|---:|\n| Stühle neu beziehen | 12 | 1.140 € |\n| Stoff Samt Moos 14 | 9 m | 486 € |\n| Abholen und Liefern | 1 | 60 € |\n\n" +
   "Für die Lieferzeit schaue ich noch, was in Spaces für die Werkstatt";
 
+/** Core's switch-on preview on a phone: switching on waits for a computer, the targets show here as well. */
+const CODE_VERSION = {
+  codeId: "c_rechnung",
+  title: "Rechnungen ablegen",
+  ownerKind: "person",
+  automations: [{ entrypoint: "morning", title: "Jeden Morgen um 7 Uhr" }],
+  versionId: "33333333-3333-4333-8333-333333333333",
+  number: 3,
+  running: 2,
+  latest: 3,
+  activated: null,
+  allowed: { allowed: false, reason: "phone" },
+  readiness: { state: "ready" },
+  place: null,
+  targets: [
+    {
+      target: {
+        key: "filesv2.folder\u0000fo_rechnungen",
+        ref: { type: "filesv2.folder", id: "fo_rechnungen" },
+        title: null,
+        typeTitle: "Ordner",
+        icon: "ti ti-folder",
+        own: false,
+        href: null,
+      },
+      operations: ["filesv2.file.import"],
+      isNew: true,
+    },
+    { target: null, operations: ["mail.message.read"], isNew: false },
+  ],
+};
 type Detail = NonNullable<AssistantPwaProps["initialDetail"]>;
 const detailOf = (id: string): Detail | null => {
   const conversation = CHATS.find((entry) => entry.id === id);
@@ -180,6 +211,49 @@ const detailOf = (id: string): Detail | null => {
     ? { content: [{ type: "text" as const, text: "Vom Web" }], revision: 2, updatedAt: ago(5) }
     : conversation.draft;
   const base = { conversation: { ...conversation, draft, unreadCompletion: false }, hasMoreMessages: false, timeline: [] };
+  // `code=1`: Gustav submitted a Code version and asks one question before it goes on.
+  if (id === "pflege" && params.get("code"))
+    return {
+      ...base,
+      messages: [
+        stored(id, 1, { role: "user", content: [{ type: "text", text: "Leg Rechnungen aus der Mail jeden Morgen in Dateien ab." }] }, "turn-c"),
+      ],
+      activeTurn: {
+        turnId: "turn-c",
+        attempt: 1,
+        status: "waiting_for_action",
+        seq: 3,
+        modelId: "oss",
+        createdAt: ago(4),
+        waitingSince: ago(1),
+        blocks: [
+          {
+            id: "tool-submit",
+            kind: "tool",
+            callId: "submit",
+            name: "code_submit",
+            args: { codeId: "c_rechnung" },
+            status: "completed",
+            at: ago(2),
+            result: { version: 1, submission: { version: { id: CODE_VERSION.versionId, number: CODE_VERSION.number } } },
+          },
+          text("t1", "Version 3 ist eingereicht. Eine Frage noch:"),
+          {
+            id: "tool-survey",
+            kind: "tool",
+            callId: "survey",
+            name: "survey",
+            frontendMode: "client_interaction",
+            status: "awaiting_client",
+            args: {
+              title: "Ablage",
+              submitLabel: "Antworten",
+              questions: [{ id: "folder", type: "text", label: "In welchen Ordner?", placeholder: "Ordnername" }],
+            },
+          },
+        ],
+      },
+    };
   if (id === "pflege")
     return {
       ...base,
@@ -389,6 +463,7 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     return json({ message: "Invented failure" }, Number(status ?? 500));
   }
   if (url.pathname.endsWith("/stream")) return quietStream();
+  if (url.pathname === "/api/code/activation/preview") return json({ data: CODE_VERSION });
   if (url.pathname === "/api/assistant/workspace/sidebar")
     return json({
       conversations: empty ? [] : CHATS,
