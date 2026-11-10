@@ -404,6 +404,30 @@ describe("@k2b/ui files and media runtime behavior", () => {
     });
   }
 
+  test("keeps a PDF's binary bytes intact through base64", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    // A real PDF header carries a binary comment line; bytes above 0x7f must survive the round trip.
+    const bytes = new Uint8Array([...new TextEncoder().encode("%PDF-1.7\n%"), 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]);
+    opened.length = 0;
+    const dispose = render(
+      () =>
+        createComponent(FileView, {
+          file: { path: "/report.pdf" },
+          load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: btoa(String.fromCharCode(...bytes)) }),
+        }),
+      dom.root,
+    );
+    try {
+      await settle();
+      expect(opened[0]?.type).toBe("application/pdf");
+      expect(new Uint8Array(await opened[0]!.arrayBuffer())).toEqual(bytes);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("previews a host inline PDF URL from that address without loading bytes, and opens that address", async () => {
     const dom = createDomTestHarness();
     const { default: FileView } = await import("../src/content/FileView");

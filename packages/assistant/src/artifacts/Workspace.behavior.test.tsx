@@ -36,14 +36,6 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
       { preconnect: globalThis.fetch.preconnect },
     ),
   );
-  const created: Blob[] = [];
-  const originalCreate = URL.createObjectURL;
-  const originalRevoke = URL.revokeObjectURL;
-  URL.createObjectURL = (blob) => {
-    created.push(blob as Blob);
-    return `blob:assistant-pdf-${created.length}`;
-  };
-  URL.revokeObjectURL = () => {};
   const controller = createArtifactWorkspace(workspaceSelectionHref("/app/assistant", fileTab("chat01", "/report.pdf")));
   const dispose = render(
     () => (
@@ -57,16 +49,14 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
     await tick();
     expect(requests).toEqual(["/api/ai/conversations/chat01/files/content?path=%2Freport.pdf"]);
     expect(dom.root.querySelector("object")).toBeNull();
-    expect(dom.root.querySelector('[role="tabpanel"] iframe')?.getAttribute("src")).toBe("blob:assistant-pdf-1");
+    // The bytes show in @k2b/ui's PdfViewer (its own tests keep binary bytes intact); there is no frame.
+    expect(dom.root.querySelector('[role="tabpanel"] iframe')).toBeNull();
+    expect(dom.root.querySelector('[role="tabpanel"] .k2b-content-file-view .k2b-pdf-viewer')).not.toBeNull();
     // The tab already names the file, so the preview sits in the tab without a second frame.
     expect(dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view')?.getAttribute("data-variant")).toBe("plain");
-    expect(created[0]?.type).toBe("application/pdf");
-    expect(new Uint8Array(await created[0]!.arrayBuffer())).toEqual(pdf);
   } finally {
     dispose();
     fetchMock.mockRestore();
-    URL.createObjectURL = originalCreate;
-    URL.revokeObjectURL = originalRevoke;
     dom.cleanup();
   }
 });
