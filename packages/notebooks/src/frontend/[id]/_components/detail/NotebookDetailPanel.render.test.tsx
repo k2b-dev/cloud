@@ -68,8 +68,9 @@ const inspect = (overrides: Partial<Props>, check: (document: Document) => void)
 const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 /** A panel section by its title, open or closed. */
 const titled = (root: ParentNode | null | undefined, title: string) =>
-  [...(root?.querySelectorAll("section.k2b-detail-panel__section") ?? [])].find((section) => text(section.querySelector("h3")) === title) ??
-  null;
+  [...(root?.querySelectorAll("section.k2b-section") ?? [])].find(
+    (section) => text(section.querySelector(".k2b-section__title")) === title,
+  ) ?? null;
 
 describe("Notebook note detail panel", () => {
   test.each(["write", "readonly", "book"] as const)("graph action preserves the explicit %s presentation", (presentationMode) => {
@@ -118,7 +119,7 @@ describe("Notebook note detail panel", () => {
   }
   test("empty comments read Noch keine with a comment action and no bare zero", () => {
     inspect({}, (document) => {
-      const header = document.querySelector(".k2b-discussion__header");
+      const header = document.querySelector(".k2b-discussion > .k2b-section__header");
       expect(text(header)).toContain("KommentareNoch keine");
       expect(text(header)).toContain("Kommentieren");
       expect(header?.querySelector(".k2b-count-chip")).toBeNull();
@@ -136,7 +137,7 @@ describe("Notebook note detail panel", () => {
   ]) {
     test(`hides Inhalt for ${tocItems.length} headings: ${tocItems.map((item) => item.id)}`, () => {
       inspect({ tocItems }, (document) =>
-        expect([...document.querySelectorAll("h3")].some((heading) => text(heading) === "Inhalt")).toBe(false),
+        expect([...document.querySelectorAll(".k2b-section__title")].some((heading) => text(heading) === "Inhalt")).toBe(false),
       );
     });
   }
@@ -152,18 +153,12 @@ describe("Notebook note detail panel", () => {
       expect(text(document.querySelector(".k2b-detail-panel__kind"))).toBe("Notiz");
       expect(document.querySelector(".k2b-detail-panel__header-icon")).toBeNull();
       // Every section has its icon, so its content starts on the title's text edge (one edge per section).
-      const titles = [...document.querySelectorAll(".k2b-detail-panel__body :is(.k2b-detail-panel__section, .k2b-discussion)")]
-        .filter((section) => !section.closest(".k2b-detail-panel__group"))
-        .map((section) => {
-          expect(
-            section.querySelector(
-              ":scope > header .k2b-detail-panel__section-icon, :scope > header .k2b-discussion__icon, :scope > div > .k2b-button .k2b-detail-panel__section-icon, :scope > div > header .k2b-detail-panel__section-icon",
-            ),
-          ).not.toBeNull();
-          return text(section.querySelector("h3, .k2b-detail-panel__section-title"));
-        });
+      const titles = [...document.querySelectorAll(".k2b-detail-panel__body > .k2b-section")].map((section) => {
+        expect(section.querySelector(":scope > .k2b-section__header .k2b-section__icon")).not.toBeNull();
+        return text(section.querySelector(".k2b-section__title"));
+      });
       expect(titles).toEqual(["Gerade hier", "Kommentare", "Aufgaben", "Inhalt", "Tags", "Verknüpfungen"]);
-      const more = [...document.querySelectorAll(".k2b-detail-panel__group .k2b-detail-panel__section-title")].map((title) => text(title));
+      const more = [...document.querySelectorAll(".k2b-detail-panel__group .k2b-section__title")].map((title) => text(title));
       expect(more).toEqual(["Eigenschaften", "Aktivität"]);
       // "More actions" sits in the action row beside Ansicht; the header's trailing slot keeps only Close.
       expect(document.querySelector('.k2b-detail-panel__primary-actions [role="menu"][aria-label="Weitere Aktionen"]')).not.toBeNull();
@@ -171,17 +166,17 @@ describe("Notebook note detail panel", () => {
       expect(text(group?.querySelector(".k2b-detail-panel__group-title") ?? null)).toBe("Mehr zu dieser Notiz");
       expect(group?.querySelector(".notebook-activity")).not.toBeNull();
       // Closed, the activity says in one line what it holds: here the note's creation, before the log has loaded.
-      const summary = group?.querySelector(".notebook-activity .k2b-detail-panel__section-summary");
+      const summary = group?.querySelector(".notebook-activity .k2b-section__toggle");
       expect(summary?.getAttribute("aria-expanded")).toBe("false");
     });
   });
   test("Zugriff is read-only for members and absent for public-link readers", () => {
     inspect({ accessVisible: true, canManageAccess: false }, (document) => {
       const group = document.querySelector(".k2b-detail-panel__group");
-      const titles = [...(group?.querySelectorAll(".k2b-detail-panel__section-title") ?? [])].map((title) => text(title));
+      const titles = [...(group?.querySelectorAll(".k2b-section__title") ?? [])].map((title) => text(title));
       expect(titles).toEqual(["Zugriff", "Eigenschaften", "Aktivität"]);
       // Closed; the list loads after the first paint, so the server render holds no names.
-      expect(titled(group, "Zugriff")?.querySelector(".k2b-detail-panel__section-summary")?.getAttribute("aria-expanded")).toBe("false");
+      expect(titled(group, "Zugriff")?.querySelector(".k2b-section__toggle")?.getAttribute("aria-expanded")).toBe("false");
       expect(text(group)).not.toContain("Zugriff verwalten");
     });
     inspect({ accessVisible: true, canManageAccess: true }, (document) => expect(text(document.body)).toContain("Zugriff verwalten"));

@@ -1,16 +1,20 @@
 import { expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { brotliDecompressSync } from "node:zlib";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { chartFixtures } from "../../test/charts/fixtures";
+import legacyDemoSvg from "../../test/charts/legacy-demo-svg.json";
 import { lineCompatibilitySpecs } from "../../test/charts/line-compatibility-specs";
 import type ChartComponent from "../content/Chart";
+import { chartSvgWithUiPalette, renderChartSvg } from "./core";
 
 const uiRoot = resolve(import.meta.dir, "../..");
 const repoRoot = resolve(uiRoot, "../..");
-const buildFixture = async (contents: string, legacy = false, hydratable = false) => {
+const frozenDemoSvgs: string[] = JSON.parse(brotliDecompressSync(Buffer.from(legacyDemoSvg.svgBrotli, "base64")).toString());
+const buildFixture = async (contents: string, hydratable = false) => {
   const { transformAsync } = await import("@babel/core");
   const typescript = (await import("@babel/preset-typescript")).default;
   const solid = (await import("babel-preset-solid")).default;
@@ -25,11 +29,6 @@ const buildFixture = async (contents: string, legacy = false, hydratable = false
         setup(builder) {
           builder.onResolve({ filter: /^chart-parity-fixture$/ }, () => ({ path: "fixture", namespace: "chart-parity" }));
           builder.onLoad({ filter: /.*/, namespace: "chart-parity" }, () => ({ contents, loader: "ts", resolveDir: repoRoot }));
-          if (legacy)
-            builder.onLoad({ filter: /\/charts\/core\/svg\.js$/ }, () => ({
-              contents: `export * from "@k2b/stdlib"; export { MAX_AXIS_TICKS, renderHeader } from ${JSON.stringify(resolve(uiRoot, "src/charts/core/svg.ts"))}; export const referenceLineAttributes = () => "";`,
-              loader: "js",
-            }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -66,7 +65,6 @@ test("all registered kinds match server SVG and geometry on the first client ren
     for (let index=0; index<specs.length; index++) render(() => createComponent(Chart, specs[index]), document.querySelector("#chart-"+index));
     document.body.dataset.mounted="true";
   `,
-    false,
     true,
   );
   const browser = await launchBrowser();
@@ -114,24 +112,72 @@ const demoFixture = async () => {
     render(() => createComponent(BarChartStatesDemo,{}), document.querySelector("#bars"));
     render(() => createComponent(ChartExplorerShowcases,{}), document.querySelector("#explorers"));
   `;
-  const beforeBundle = await buildFixture(contents, true);
   const afterBundle = await buildFixture(contents);
   const css = await Bun.file(resolve(uiRoot, "dist/styles.css")).text();
   const docsCss = await Bun.file(resolve(repoRoot, "docs-site/src/ui/cloud-components.css")).text();
-  return { beforeBundle, afterBundle, css, docsCss };
+  return { afterBundle, css, docsCss };
 };
 let demos: ReturnType<typeof demoFixture> | undefined;
+
+test("standalone palette conversion displays all eight UI colors without host chart CSS", async () => {
+  const svg = renderChartSvg(
+    { kind: "pie", data: Array.from({ length: 8 }, (_, index) => ({ label: `Series ${index + 1}`, value: 1 })) },
+    320,
+    280,
+  );
+  const converted = chartSvgWithUiPalette(svg);
+  const browser = await launchBrowser();
+  try {
+    for (const width of [1440, 390]) {
+      for (const [stage, drawing] of [
+        ["before", svg],
+        ["after", converted],
+      ] as const) {
+        const page = await browser.newPage({ viewport: { width, height: 450 } });
+        try {
+          const errors = pageErrors(page);
+          await page.setContent(
+            `<html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:24px;font:16px system-ui;color:#111827;background:white}main{max-width:720px;margin:auto}svg{max-width:100%;height:auto}h1{font-size:20px}</style></head><body><main><h1>Standalone SVG palette</h1><p>Eight equal series, without host chart CSS.</p>${drawing}</main></body></html>`,
+          );
+          await settled(page);
+          const colors = await page.locator(".stdlib-chart-slice").evaluateAll((marks) => marks.map((mark) => getComputedStyle(mark).fill));
+          if (stage === "after")
+            expect(colors).toEqual([
+              "rgb(59, 130, 246)",
+              "rgb(16, 185, 129)",
+              "rgb(245, 158, 11)",
+              "rgb(139, 92, 246)",
+              "rgb(236, 72, 153)",
+              "rgb(6, 182, 212)",
+              "rgb(132, 204, 22)",
+              "rgb(249, 115, 22)",
+            ]);
+          expect(errors).toEqual([]);
+          if (process.env.CHART_SCREENSHOTS) {
+            const output = resolve(process.env.CHART_SCREENSHOTS, stage);
+            mkdirSync(output, { recursive: true });
+            await page.screenshot({ path: resolve(output, `standalone-palette-light-${width}.png`), fullPage: true });
+          }
+        } finally {
+          await page.close();
+        }
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
 
 for (const width of [1440, 390]) {
   for (const theme of ["light", "dark"] as const) {
     test(`existing chart and explorer demos remain pixel-identical: ${theme} ${width}px`, async () => {
       demos ??= demoFixture();
-      const { beforeBundle, afterBundle, css, docsCss } = await demos;
+      const { afterBundle, css, docsCss } = await demos;
       const browser = await launchBrowser();
       try {
         const screenshots: Buffer[] = [];
         for (const [stage, bundle] of [
-          ["before", beforeBundle],
+          ["before", afterBundle],
           ["after", afterBundle],
         ] as const) {
           const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme: theme });
@@ -142,6 +188,21 @@ for (const width of [1440, 390]) {
             );
             await page.addScriptTag({ content: bundle });
             await page.locator("#chart-static .k2b-chart").first().waitFor();
+            await settled(page);
+            // The old drawing is immutable, independent of both stdlib and the current core.
+            // Replace only SVGs in the reference page; the same browser rasterizes both sides.
+            const drawings = page.locator(".k2b-chart__svg > svg");
+            expect(await drawings.count()).toBe(frozenDemoSvgs.length);
+            if (stage === "after")
+              expect(await drawings.evaluateAll((nodes) => nodes.map((node) => node.outerHTML))).toEqual(frozenDemoSvgs);
+            if (stage === "before")
+              await drawings.evaluateAll(
+                (nodes, svgs) =>
+                  nodes.forEach((node, index) => {
+                    node.outerHTML = svgs[index]!;
+                  }),
+                frozenDemoSvgs,
+              );
             await settled(page);
             const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" });
             screenshots.push(screenshot);

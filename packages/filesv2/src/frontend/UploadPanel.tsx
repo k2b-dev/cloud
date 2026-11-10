@@ -1,5 +1,5 @@
 import { text } from "@k2b/stdlib";
-import { Button, IconButton, ProgressRing, Tooltip, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, FileTypeIcon, IconButton, toast, useLocale } from "@k2b/ui";
 import {
   createEffect,
   createMemo,
@@ -13,6 +13,7 @@ import {
   onMount,
   Show,
   Switch,
+  untrack,
 } from "solid-js";
 import { doneFraction, failedFraction, percent, showsFolder, type UploadAnnouncement, type UploadRow } from "./upload-batch";
 import { useUploadMessages } from "./upload-messages";
@@ -21,46 +22,71 @@ import type { UploadQueue } from "./upload-queue";
 const VISIBLE_ROWS = 5;
 /** Rows rendered beyond the visible ones, so scrolling never shows a gap. */
 const OVERSCAN = 4;
-const DISMISS_MS = 5000;
+/** A finished upload with "View" stays like a toast with an action; a cancelled one like a plain toast. Failures stay. */
+const DONE_MS = 8000;
+const CANCELLED_MS = 6000;
+/**
+ * The remaining time shows only for a long upload. The estimate exists after 3 s of transfer (upload-estimate.ts);
+ * the time appears once it first says 10 s or more, and then stays until the batch stops running, also when it later
+ * drops below 10 s, so it never flickers. A short upload never shows it.
+ */
+const LONG_UPLOAD_SECONDS = 10;
 /** The usual double-click interval: the batch action ignores a second press that lands this soon after it changed meaning. */
 const ACTION_SETTLE_MS = 500;
 /** Failures that land this close together are announced as one message. */
 const FAILURE_GATHER_MS = 1500;
+/** On a phone the panel starts as one line, so the running upload covers little of the screen. */
+const PHONE_QUERY = "(max-width: 47.999rem)";
 
 const folderOf = (path: string) => path.slice(0, path.lastIndexOf("/") + 1);
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const onPhone = () => typeof matchMedia === "function" && matchMedia(PHONE_QUERY).matches;
 
 /**
- * Places the upload panel in the toast rail while its queue holds a batch, so it shares the corner with other
- * toasts instead of covering them. Renders nothing in place.
+ * Places the upload panel at the edge of the toast rail while its queue holds a batch: toasts stack in front of it,
+ * and it can be closed only once nothing runs. Renders nothing in place.
  */
 export function UploadSurface<G>(props: { queue: UploadQueue<G> }) {
+  const u = useUploadMessages();
   const visible = createMemo(() => props.queue.batch.rows.length > 0);
   createEffect(() => {
     if (!visible()) return;
-    const slot = toast.custom((<UploadPanel queue={props.queue} />) as HTMLElement);
+    const running = () => props.queue.batch.phase === "running";
+    const slot = toast.custom((<UploadPanel queue={props.queue} />) as HTMLElement, {
+      label: untrack(() => u().name),
+      closable: untrack(() => !running()),
+      onClose: () => props.queue.close(),
+    });
+    createEffect(() => slot.update({ closable: !running(), label: u().name }));
     onCleanup(() => slot.dismiss());
   });
   return null;
 }
 
 /*
- * One calm surface for a whole upload batch: the byte-weighted total first, then the files, then the count and
- * the one batch action. Rows have a fixed height and only the visible ones are rendered, so a folder with
- * thousands of files costs a handful of rows.
+ * One surface for a whole upload batch, in the toast's layout: the icon tile, the title and one summary line, then
+ * the byte-weighted total, the files, and the count with the one batch action. Rows have a fixed height and only the
+ * visible ones are rendered, so a folder with thousands of files costs a handful of rows.
  */
 export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
   const u = useUploadMessages();
+  const locale = useLocale();
+  const bytes = (value: number) => text.pprintBytes(value, { locale: locale() });
   const batch = props.queue.batch;
   const titleId = `filesv2-upload-${createUniqueId()}`;
   const listId = `${titleId}-list`;
-  const [expanded, setExpanded] = createSignal(batch.phase === "running" || batch.phase === "errors");
+  const [expanded, setExpanded] = createSignal((batch.phase === "running" && !onPhone()) || batch.phase === "errors");
   const [live, setLive] = createSignal("");
   const value = () => percent(batch);
+  const [long, setLong] = createSignal(false);
+  createEffect(() => {
+    const seconds = props.queue.remainingSeconds();
+    if (batch.phase === "running" && seconds !== null && seconds >= LONG_UPLOAD_SECONDS) setLong(true);
+  });
   const remaining = () => {
     const seconds = props.queue.remainingSeconds();
     const active = batch.active === null ? null : batch.rows[batch.active];
-    if (!seconds || batch.phase !== "running" || active?.wait || active?.phase) return null;
+    if (!long() || !seconds || batch.phase !== "running" || active?.wait || active?.phase) return null;
     return u().remainingTime(seconds);
   };
   const action = createMemo(() => (batch.phase === "running" ? "cancel" : batch.failed ? "retry" : null));
@@ -79,8 +105,25 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
         return u().cancelled;
     }
   };
+  const count = () => (batch.count || !batch.skipped ? u().count({ done: batch.done, count: batch.count }) : u().allExist(batch.skipped));
+  const sent = () => {
+    const active = batch.active === null ? null : batch.rows[batch.active];
+    return batch.doneBytes + (active ? Math.min(active.sent, active.size) : 0);
+  };
+  /** The line under the title: bytes while the list shows, the count as one line, and the remaining time of a long upload. */
+  const summary = () => {
+    if (batch.phase !== "running") return count();
+    const line = expanded() ? u().transferred({ sent: bytes(sent()), size: bytes(batch.totalBytes) }) : count();
+    const eta = remaining();
+    return eta ? `${line} · ${eta}` : line;
+  };
+  const tone = () => ({ running: "info", done: "success", errors: "danger", cancelled: "info" })[batch.phase];
+  const icon = () => ({ running: "ti-upload", done: "ti-check", errors: "ti-alert-circle", cancelled: "ti-circle-minus" })[batch.phase];
+  const barTone = () => ({ running: undefined, done: "success", errors: "success", cancelled: "muted" })[batch.phase];
+  const view = () => (batch.phase === "done" && batch.count ? (batch.target?.href ?? null) : null);
 
-  // One polite live region. It hears milestones, appends, failures and the summary, never single percent steps.
+  // One polite live region. It hears changes of state (start, files added, a failure, offline and back, the summary),
+  // never progress.
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
   const say = (text: string) => {
     setLive("");
@@ -96,6 +139,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     else if (gathered.length > 1) say(u().announce({ kind: "failures", count: gathered.length }));
   };
   const stop = props.queue.listen((said) => {
+    if (said.kind === "progress") return;
     if (said.kind === "failed") {
       failures.push(said);
       clearTimeout(failureTimer);
@@ -144,8 +188,10 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     on(
       () => batch.phase,
       (phase) => {
-        if (phase === "done") setExpanded(false);
-        if (phase === "running") setExpanded(true);
+        // A new run measures its own remaining time.
+        setLong(false);
+        if (phase === "done" || phase === "cancelled") setExpanded(false);
+        if (phase === "running") setExpanded(!onPhone());
         if (phase !== "errors") return;
         // The batch ends with failures: the list opens on the first of them.
         setExpanded(true);
@@ -156,11 +202,11 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     ),
   );
 
-  // A quiet success leaves after five seconds, unless a pointer or focus is on the panel. Failures stay.
+  // A finished upload leaves after its time, unless a pointer or focus is on the panel. Failures stay.
   const [hot, setHot] = createSignal(false);
   createEffect(() => {
     if (hot() || batch.failed || (batch.phase !== "done" && batch.phase !== "cancelled")) return;
-    const timer = setTimeout(() => props.queue.close(), DISMISS_MS);
+    const timer = setTimeout(() => props.queue.close(), batch.phase === "done" ? DONE_MS : CANCELLED_MS);
     onCleanup(() => clearTimeout(timer));
   });
 
@@ -181,7 +227,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     onCleanup(() => document.removeEventListener("pointerover", pointerOver, true));
   });
 
-  // A double-click on "Try again" must not land its second click on the "Cancel" the first one turned it into.
+  // A double-click on "Try again" must not land its second click on the "Cancel all" the first one turned it into.
   let actionChanged = Number.NEGATIVE_INFINITY;
   createEffect(on(action, () => (actionChanged = performance.now()), { defer: true }));
   const runAction = () => {
@@ -189,7 +235,8 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     if (action() === "cancel") props.queue.cancel();
     else props.queue.retry();
   };
-  let closeButton: HTMLButtonElement | undefined;
+  /** The slot's round close button, which appears once nothing runs. */
+  const closeButton = () => panel?.closest("[data-k2b-toast]")?.querySelector<HTMLButtonElement>(":scope > .k2b-toast__close") ?? null;
 
   const toggle = () => {
     setExpanded(!expanded());
@@ -211,32 +258,46 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
       }}
     >
       <div class="filesv2-upload__head">
-        <Show when={batch.phase === "running"}>
-          <span class="filesv2-upload__percent" aria-hidden="true">
-            {u().percent(value())}
-          </span>
-        </Show>
-        <h2 class="filesv2-upload__title" id={titleId}>
-          {title()}
-        </h2>
-        <IconButton
-          size="sm"
-          class="filesv2-upload__toggle"
-          label={expanded() ? u().hideList : u().showList}
-          aria-expanded={expanded()}
-          aria-controls={listId}
-          onClick={toggle}
-        >
-          <i class="ti ti-chevron-down" aria-hidden="true" />
-        </IconButton>
-        <Show when={batch.phase !== "running"}>
-          <IconButton size="sm" ref={closeButton} label={u().dismiss} onClick={() => props.queue.close()}>
-            <i class="ti ti-x" aria-hidden="true" />
-          </IconButton>
-        </Show>
+        <span class="k2b-toast__icon k2b-icon-tile filesv2-upload__icon" data-tone={tone()} aria-hidden="true">
+          <i class={`ti ${icon()}`} />
+        </span>
+        <div class="filesv2-upload__text">
+          <h2 class="k2b-toast__title filesv2-upload__title" id={titleId}>
+            {title()}
+          </h2>
+          <p class="k2b-toast__description filesv2-upload__summary">{summary()}</p>
+        </div>
+        <div class="filesv2-upload__end">
+          <Show when={view()}>
+            {(href) => (
+              <ButtonLink
+                href={href()}
+                navigation="enhanced"
+                size="sm"
+                variant="secondary"
+                aria-label={batch.target ? u().viewFolder(batch.target.label) : undefined}
+                onClick={() => props.queue.close()}
+              >
+                {u().view}
+              </ButtonLink>
+            )}
+          </Show>
+          <Show when={batch.phase === "running" || batch.phase === "errors"}>
+            <IconButton
+              size="sm"
+              class="filesv2-upload__toggle"
+              label={expanded() ? u().hideList : u().showList}
+              aria-expanded={expanded()}
+              aria-controls={listId}
+              onClick={toggle}
+            >
+              <i class="ti ti-chevron-down" aria-hidden="true" />
+            </IconButton>
+          </Show>
+        </div>
       </div>
       <div
-        class="filesv2-upload__bar"
+        class="k2b-toast__bar filesv2-upload__bar"
         role="progressbar"
         aria-label={u().bar}
         aria-valuemin="0"
@@ -244,8 +305,16 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
         aria-valuenow={value()}
         aria-valuetext={u().valueText({ percent: value(), done: batch.done, count: batch.count })}
       >
-        <span class="filesv2-upload__bar-done" style={{ width: `${doneFraction(batch) * 100}%` }} />
-        <span class="filesv2-upload__bar-failed" style={{ width: `${failedFraction(batch) * 100}%` }} />
+        <span
+          class="k2b-toast__bar-fill filesv2-upload__bar-done"
+          data-tone={barTone()}
+          style={{ "--k2b-toast-bar-value": String(doneFraction(batch)) }}
+        />
+        <span
+          class="k2b-toast__bar-fill filesv2-upload__bar-failed"
+          data-tone="danger"
+          style={{ "--k2b-toast-bar-start": String(doneFraction(batch)), "--k2b-toast-bar-value": String(failedFraction(batch)) }}
+        />
       </div>
       <div
         ref={scroll}
@@ -287,30 +356,27 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
         </ol>
       </div>
       <div class="filesv2-upload__foot">
-        <p class="filesv2-upload__count">
-          {batch.count || !batch.skipped ? u().count({ done: batch.done, count: batch.count }) : u().allExist(batch.skipped)}
-          <span class="filesv2-upload__estimate">{remaining() ? ` (${remaining()})` : ""}</span>
-        </p>
+        <p class="filesv2-upload__count">{count()}</p>
         <Show when={batch.failed && batch.phase !== "errors"}>
           <p class="filesv2-upload__errors">{u().errors(batch.failed)}</p>
         </Show>
         <Show when={action()}>
           {(_) => {
             let button: HTMLButtonElement | undefined;
-            // When the action leaves with focus on it, focus moves to the close button that takes its place, not the page.
+            // When the action leaves with focus on it, focus moves to the close button that appears, not the page.
             onCleanup(() => {
-              if (document.activeElement === button) queueMicrotask(() => closeButton?.isConnected && closeButton.focus());
+              if (document.activeElement === button) queueMicrotask(() => closeButton()?.focus());
             });
             return (
               <Button
                 ref={button}
-                variant="text"
-                size="xs"
+                variant={action() === "cancel" ? "secondary" : "primary"}
+                size="sm"
                 class="filesv2-upload__action"
                 aria-label={action() === "cancel" ? u().cancelUpload : u().retryAll(batch.failed)}
                 onClick={runAction}
               >
-                {action() === "cancel" ? u().cancel : u().retry}
+                {action() === "cancel" ? u().cancelAll : u().retry}
               </Button>
             );
           }}
@@ -332,6 +398,7 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
     props.row.status === "working" && props.row.phase === "finishing" && (!props.row.wait || props.row.wait === "retrying");
   const note = () =>
     props.row.status !== "working" ? props.row.reason : finishing() ? u().finishing : props.row.wait ? u().wait(props.row.wait) : null;
+  const share = () => (props.row.size ? Math.min(1, props.row.sent / props.row.size) : 0);
   const hint = () => (
     <>
       <strong>{props.row.reason}</strong> {u().retryHint}
@@ -347,26 +414,61 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
       aria-posinset={props.row.id + 1}
       aria-setsize={props.total}
     >
+      <FileTypeIcon name={props.row.name} size="sm" class="filesv2-upload-row__icon" />
+      <span class="filesv2-upload-row__text">
+        <span class="filesv2-upload-row__name">
+          <Show when={props.row.path.includes("/")}>
+            <Show when={props.folder} fallback={<span class="k2b-sr-only">{folderOf(props.row.path)}</span>}>
+              <span class="filesv2-upload-row__folder">{folderOf(props.row.path)}</span>
+            </Show>
+          </Show>
+          <span class="filesv2-upload-row__base">{props.row.name}</span>
+          <span class="k2b-sr-only">, {finishing() ? u().finishingStatus : u().status(props.row.status)}</span>
+        </span>
+        {/* Every row has its second line, so a wait or Finishing… replaces the bytes without moving the name. */}
+        <Show
+          when={(props.row.status === "failed" || props.row.status === "working") && note()}
+          fallback={
+            <span class="filesv2-upload-row__progress" aria-hidden="true">
+              {props.row.status === "working"
+                ? u().transferred({ sent: bytes(props.row.sent), size: bytes(props.row.size) })
+                : bytes(props.row.size)}
+            </span>
+          }
+        >
+          <span class="filesv2-upload-row__reason">{note()}</span>
+        </Show>
+      </span>
       <span class="filesv2-upload-row__status">
         <Switch>
           <Match when={props.row.status === "working" && props.row.wait !== null && props.row.wait !== "retrying"}>
             <i class={`ti ${props.row.wait === "network" ? "ti-wifi-off" : "ti-clock-pause"}`} aria-hidden="true" />
           </Match>
           <Match when={props.row.status === "working"}>
-            <ProgressRing value={props.row.size ? (props.row.sent / props.row.size) * 100 : 0} />
+            <span class="k2b-toast__bar filesv2-upload-row__bar" aria-hidden="true">
+              <span class="k2b-toast__bar-fill" style={{ "--k2b-toast-bar-value": String(share()) }} />
+            </span>
+            <span class="filesv2-upload-row__percent" aria-hidden="true">
+              {u().percent(Math.round(share() * 100))}
+            </span>
           </Match>
           <Match when={props.row.status === "failed"}>
-            <Tooltip.Anchor content={hint()}>
-              <i class="ti ti-alert-triangle" aria-hidden="true" />
-            </Tooltip.Anchor>
+            <IconButton size="sm" label={u().retryFile(props.row.name)} tooltip={hint()} onClick={props.onRetry}>
+              <i class="ti ti-refresh" aria-hidden="true" />
+            </IconButton>
+          </Match>
+          <Match when={props.row.status === "pending"}>
+            <span class="filesv2-upload-row__waiting" aria-hidden="true">
+              {u().status("pending")}
+            </span>
           </Match>
           <Match when={props.row.status}>
             {(status) => (
               <i
                 class={`ti ${
                   {
-                    pending: "ti-clock",
-                    success: "ti-circle-check",
+                    pending: "",
+                    success: "ti-check",
                     skipped: "ti-circle-dashed-check",
                     cancelled: "ti-circle-minus",
                     working: "",
@@ -379,35 +481,6 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
           </Match>
         </Switch>
       </span>
-      <span class="filesv2-upload-row__text">
-        <span class="filesv2-upload-row__name">
-          <Show when={props.row.path.includes("/")}>
-            <Show when={props.folder} fallback={<span class="k2b-sr-only">{folderOf(props.row.path)}</span>}>
-              <span class="filesv2-upload-row__folder">{folderOf(props.row.path)}</span>
-            </Show>
-          </Show>
-          <span class="filesv2-upload-row__base">{props.row.name}</span>
-          <span class="k2b-sr-only">, {finishing() ? u().finishingStatus : u().status(props.row.status)}</span>
-        </span>
-        {/* A working row always has its second line, so a wait or Finishing… replaces the bytes without moving the name. */}
-        <Show when={props.row.status === "failed" || props.row.status === "working"}>
-          <Show
-            when={note()}
-            fallback={
-              <span class="filesv2-upload-row__progress" aria-hidden="true">
-                {u().transferred({ sent: bytes(props.row.sent), size: bytes(props.row.size) })}
-              </span>
-            }
-          >
-            <span class="filesv2-upload-row__reason">{note()}</span>
-          </Show>
-        </Show>
-      </span>
-      <Show when={props.row.status === "failed"}>
-        <IconButton size="sm" label={u().retryFile(props.row.name)} tooltip={hint()} onClick={props.onRetry}>
-          <i class="ti ti-refresh" aria-hidden="true" />
-        </IconButton>
-      </Show>
     </li>
   );
 }

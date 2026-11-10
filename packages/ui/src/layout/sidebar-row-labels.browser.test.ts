@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -383,7 +383,7 @@ describe("sidebar row labels in the browser", () => {
         expect(await geometry()).toEqual(rest);
         await page.mouse.move(1200, 700);
         expect(await geometry()).toEqual(rest);
-        await page.locator('[href="#weight"]').hover();
+        await hoverInPlace(page.locator('[href="#weight"]'));
         expect(await geometry()).toEqual(rest);
       } finally {
         await page.close();
@@ -453,7 +453,7 @@ describe("sidebar row labels in the browser", () => {
           });
         const box = await metaBox();
         expect(await meta.evaluate((element) => getComputedStyle(element).visibility)).toBe("hidden");
-        await row.hover();
+        await hoverInPlace(row);
         expect(await meta.evaluate((element) => getComputedStyle(element).visibility)).toBe("visible");
         expect(await metaBox()).toEqual(box);
         expect(await metrics(page, "hover-meta")).toEqual(rest);

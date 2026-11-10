@@ -17,6 +17,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: DetailPanel } = await import("./DetailPanel");
 const { default: Discussion } = await import("./Discussion");
+const { Section } = await import("../surfaces/Section");
 const { Button } = await import("../actions/Button");
 const { TextInput } = await import("../inputs/TextInput");
 const { Avatar } = await import("../surfaces/Avatar");
@@ -38,7 +39,7 @@ afterAll(async () => {
 type Comments = "loading" | "one" | "two";
 
 const section = (title: string, icon: string, meta?: string, children: () => JSX.Element = () => "Content") =>
-  createComponent(DetailPanel.Section, {
+  createComponent(Section, {
     title,
     icon,
     meta,
@@ -249,7 +250,8 @@ const measure = () => {
   const style = (element: Element) => getComputedStyle(element);
   const blocks = (id: string) =>
     Array.from(document.querySelectorAll(`#${id} .k2b-detail-panel__body > *`)).map((element) => ({
-      kind: element.className.split(" ")[0],
+      // A discussion is a section; name it by its own class.
+      kind: element.classList.contains("k2b-discussion") ? "k2b-discussion" : element.className.split(" ")[0],
       left: box(element).left,
       width: box(element).width,
       top: box(element).top,
@@ -259,10 +261,10 @@ const measure = () => {
     }));
   // Every heading row with an icon: the grouped and the lone sections, and the discussion.
   const headings = (id: string) =>
-    Array.from(document.querySelectorAll(`#${id} :is(.k2b-detail-panel__section-header, .k2b-discussion__header)`)).map((header) => {
-      const title = header.querySelector("h3")!;
-      const icon = header.querySelector(":is(.k2b-detail-panel__section-icon, .k2b-discussion__icon)")!;
-      const meta = header.querySelector(":is(.k2b-detail-panel__section-meta, .k2b-count-chip, .k2b-detail-panel__none)");
+    Array.from(document.querySelectorAll(`#${id} .k2b-section__header`)).map((header) => {
+      const title = header.querySelector(".k2b-section__title")!;
+      const icon = header.querySelector(".k2b-section__icon")!;
+      const meta = header.querySelector(":is(.k2b-section__meta, .k2b-count-chip, .k2b-section__none)");
       const titleStyle = style(title);
       return {
         title: title.textContent,
@@ -275,17 +277,17 @@ const measure = () => {
         metaType: meta ? [style(meta).fontSize, style(meta).color, meta.className].join(" ") : null,
       };
     });
-  const discussionHeader = (id: string) => box(document.querySelector(`#${id} .k2b-discussion__header`)!).top;
+  const discussionHeader = (id: string) => box(document.querySelector(`#${id} .k2b-discussion > .k2b-section__header`)!).top;
   const card = (id: string) => {
     const element = document.querySelector(`#${id} .k2b-discussion`)!;
     return { border: style(element).borderTopWidth, background: style(element).backgroundColor, padding: style(element).paddingTop };
   };
   const grouped = Array.from(document.querySelectorAll("#nested .k2b-detail-panel__group > *")).map((element) => {
-    const icon = element.querySelector(":is(.k2b-detail-panel__section-icon, .k2b-discussion__icon)")!;
-    const header = element.querySelector(":is(.k2b-detail-panel__section-header, .k2b-discussion__header)")!;
+    const icon = element.querySelector(".k2b-section__icon")!;
+    const header = element.querySelector(".k2b-section__header")!;
     return { iconLeft: box(icon).left, headerOffset: box(header).top - box(element).top, background: style(element).backgroundColor };
   });
-  const inSection = document.querySelector("#nested .k2b-detail-panel__section-body > .k2b-discussion")!;
+  const inSection = document.querySelector("#nested .k2b-section__body > .k2b-discussion")!;
   const sectionBody = inSection.parentElement!;
   // WCAG relative luminance contrast of the comment action against the frame it sits on.
   const luminance = (color: string) => {
@@ -298,7 +300,7 @@ const measure = () => {
       });
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
   };
-  const action = document.querySelector("#one .k2b-discussion__actions .k2b-button")!;
+  const action = document.querySelector("#one .k2b-discussion .k2b-section__actions .k2b-button")!;
   // The column and panel sections are transparent. Follow their painted ancestors
   // to the workspace surface, rather than reading transparent rgba as black.
   let frame: Element | null = action;
@@ -344,16 +346,16 @@ const measure = () => {
         metaBeside: meta.left >= subtitle.right - 0.5,
       };
     })(),
-    looseIndent: style(document.querySelector("#loose .k2b-detail-panel__section-body")!).paddingInlineStart,
+    looseIndent: style(document.querySelector("#loose .k2b-section__body")!).paddingInlineStart,
     standalone: card("standalone"),
     bare: card("bare"),
     hosted: (() => {
       const well = (selector: string) => style(document.querySelector(`#hosted ${selector}`)!).backgroundColor;
       return {
         tint: style(document.querySelector("#hosted")!).backgroundColor,
-        frame: style(document.querySelector("#hosted .k2b-detail-panel__body > .k2b-detail-panel__section")!).backgroundColor,
+        frame: style(document.querySelector("#hosted .k2b-detail-panel__body > .k2b-section")!).backgroundColor,
         grouped: well(".k2b-detail-panel__group .k2b-input-shell"),
-        lone: well(".k2b-detail-panel__body > .k2b-detail-panel__section .k2b-input-shell"),
+        lone: well(".k2b-detail-panel__body > .k2b-section .k2b-input-shell"),
         composer: well(".k2b-discussion__composer-field .k2b-markdown-editor"),
       };
     })(),
@@ -567,12 +569,12 @@ test("plain panels reuse the workspace rhythm in an independent host", async () 
     await settled(page);
     const painted = await page.evaluate(() => {
       const values = (id: string) =>
-        Array.from(
-          document.querySelectorAll(`#${id} .k2b-detail-panel__group,#${id} .k2b-detail-panel__body > .k2b-detail-panel__section`),
-        ).map((element) => {
-          const style = getComputedStyle(element);
-          return { background: style.backgroundColor, radius: style.borderRadius, padding: style.padding };
-        });
+        Array.from(document.querySelectorAll(`#${id} .k2b-detail-panel__group,#${id} .k2b-detail-panel__body > .k2b-section`)).map(
+          (element) => {
+            const style = getComputedStyle(element);
+            return { background: style.backgroundColor, radius: style.borderRadius, padding: style.padding };
+          },
+        );
       return {
         plain: values("plain"),
         default: values("default"),
@@ -589,3 +591,71 @@ test("plain panels reuse the workspace rhythm in an independent host", async () 
     await page.close();
   }
 });
+
+// Opening a collapsible section in the workspace column moves only what lies below its heading row; the row is one
+// disclosure button, so the keyboard closes it again from the same place.
+test("opening and closing a section moves only what lies below it", async () => {
+  for (const viewport of Object.values(viewports)) {
+    const markup = renderToString(() =>
+      createComponent(DetailPanel, {
+        get children() {
+          return createComponent(DetailPanel.Body, {
+            scrollFade: false,
+            get children() {
+              return [
+                section("Customer", "ti ti-user"),
+                createComponent(Section, {
+                  title: "Activity",
+                  icon: "ti ti-history",
+                  collapsible: true,
+                  summary: "Paul uploaded a new version",
+                  children: "Three entries",
+                }),
+                section("Files", "ti ti-paperclip"),
+              ];
+            },
+          });
+        },
+      }),
+    );
+    const page = await open(
+      viewport,
+      "light",
+      `<div class="k2b-app-workspace" style="height:40rem;--k2b-detail-size:416px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside id="collapsing" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${markup}</aside></div></div>` +
+        // The CSS owns the geometry; this mirrors the component's toggle so the static page can open and close.
+        `<script>const s=document.querySelector("#collapsing [data-collapsible]"),t=s.querySelector(".k2b-section__toggle"),b=s.querySelector(".k2b-section__body");t.addEventListener("click",()=>{const o=t.getAttribute("aria-expanded")!=="true";t.setAttribute("aria-expanded",String(o));s.dataset.open=String(o);b.hidden=!o;});</script>`,
+    );
+    try {
+      const read = () =>
+        page.evaluate(() => {
+          const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+          const sections = document.querySelectorAll("#collapsing .k2b-detail-panel__body > .k2b-section");
+          return {
+            row: box("#collapsing .k2b-section__toggle").top,
+            title: box("#collapsing [data-collapsible] .k2b-section__title").left,
+            chevron: box("#collapsing .k2b-section__chevron").left,
+            above: sections[0]!.getBoundingClientRect().top,
+            below: sections[2]!.getBoundingClientRect().top,
+          };
+        });
+      const closed = await read();
+      await page.locator("#collapsing .k2b-section__toggle").click();
+      await settled(page);
+      const opened = await read();
+      expect(await page.locator("#collapsing .k2b-section__toggle").getAttribute("aria-expanded")).toBe("true");
+      expect({ row: opened.row, title: opened.title, chevron: opened.chevron, above: opened.above }).toEqual({
+        row: closed.row,
+        title: closed.title,
+        chevron: closed.chevron,
+        above: closed.above,
+      });
+      expect(opened.below).toBeGreaterThan(closed.below);
+      await page.keyboard.press("Enter");
+      expect(await page.locator("#collapsing .k2b-section__toggle").getAttribute("aria-expanded")).toBe("false");
+      await settled(page);
+      expect((await read()).below).toBe(closed.below);
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);

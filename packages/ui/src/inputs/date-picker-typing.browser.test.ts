@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 declare global {
   interface Window {
@@ -270,7 +270,7 @@ describe("typed date field", () => {
         });
       };
       const rest = await layout();
-      await input.hover();
+      await hoverInPlace(input);
       expect(await layout()).toEqual(rest);
       await input.click();
       await popover(page).waitFor();

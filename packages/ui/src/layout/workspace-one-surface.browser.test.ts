@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 import { clientFixture, type FixtureOptions, workspaceCss, workspaceFrames, workspaceTree } from "../../test/workspace-host-fixture";
 
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-one-surface-"));
@@ -152,7 +152,7 @@ test("1440: panes have 12px of space; sidebar/pane grips and shadows appear only
       if (!box) throw new Error(`Missing ${kind} resize handle`);
       await expectCue(false);
 
-      await handle.hover();
+      await hoverInPlace(handle);
       await settled(page);
       await expectCue(true);
       expect(await handle.boundingBox()).toEqual(box);

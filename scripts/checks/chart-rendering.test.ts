@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { charts } from "@k2b/stdlib";
+import { charts } from "../../packages/ui/src/charts/core/svg";
 import { rule } from "./chart-rendering";
 
 const findings = async (files: Record<string, string>, packages = ["demo", "ui", "cloud", "ssr"]) => {
@@ -57,13 +57,9 @@ test("reports each offending named import or access once", async () => {
 });
 
 test.each([
-  "import type { charts } from '@k2b/stdlib';",
-  "import { type charts, dates, computeDomain, type DateContext } from '@k2b/stdlib';",
+  "import { dates, type DateContext } from '@k2b/stdlib';",
   "type Context = import('@k2b/stdlib').DateContext;",
-  "import type * as s from '@k2b/stdlib'; type Context = s.charts;",
-  "export type { charts } from '@k2b/stdlib';",
-  "export { type bar, dates } from '@k2b/stdlib';",
-  "export type * from '@k2b/stdlib';",
+  "import type * as s from '@k2b/stdlib'; type Context = s.DateContext;",
   "import * as s from '@k2b/stdlib'; s.dates;",
   "const { dates } = await import('@k2b/stdlib');",
   "import { charts, bar } from '@k2b/stdlib/browser';",
@@ -89,7 +85,7 @@ test.each([
   "packages/demo/scripts/plot.ts",
   "docs-site/scripts/plot.ts",
 ])("skips raw renderers in %s", async (path) => {
-  expect(await findings({ [path]: "import { charts } from '@k2b/stdlib';" })).toEqual([]);
+  expect(await findings({ [path]: "import { charts } from '@k2b/ui/charts/core';" })).toEqual([]);
 });
 
 test.each([
@@ -101,7 +97,42 @@ test.each([
   "packages/assistant/src/artifacts/runtime/other.ts",
   "packages/assistant/src/artifacts/runtime/chart-kind-gauge/other.ts",
 ])("guards raw renderers in %s", async (path) => {
-  expect(await findings({ [path]: "import { bar } from '@k2b/stdlib';" })).toEqual([`${path}:1`]);
+  expect(await findings({ [path]: "import { bar } from '@k2b/ui/charts/core';" })).toEqual([`${path}:1`]);
+});
+
+test.each([
+  "packages/ui/src/content/Chart.tsx",
+  "packages/editor/src/charts.ts",
+  "packages/demo/src/plot.test.ts",
+  "packages/demo/fixture/plot.tsx",
+  "packages/demo/scripts/plot.ts",
+  "pwas/notes/server/preview.ts",
+  "scripts/checks/example.ts",
+  "docs-site/src/ui/chart-data.ts",
+  "docs-site/scripts/example.ts",
+  "packages/assistant/src/chat-code/runtime/lib.ts",
+])("forbids upstream drawing even in previously allowed paths: %s", async (path) => {
+  expect(await findings({ [path]: "import { charts } from '@k2b/stdlib';" })).toEqual([`${path}:1`]);
+});
+
+test.each([
+  "import type { ChartDatum } from '@k2b/stdlib';",
+  "import { type Point, niceStep, computeDomain } from '@k2b/stdlib';",
+  "export type { ReferenceLine } from '@k2b/stdlib';",
+  "export type * from '@k2b/stdlib';",
+  "import { escapeXml } from '@k2b/stdlib';",
+  "type Datum = import('@k2b/stdlib').ChartDatum;",
+  "import type * as s from '@k2b/stdlib'; type Datum = s.ChartDatum;",
+])("forbids upstream chart contracts and helpers: %s", async (source) => {
+  expect((await findings({ "packages/demo/src/plot.ts": source })).length).toBeGreaterThan(0);
+});
+
+test.each([
+  "packages/assistant/src/artifacts/runtime/cloud-lib.test.ts",
+  "packages/assistant/src/artifacts/runtime/lib.ts",
+  "packages/assistant/src/frontend/AssistantWorkspace.island.tsx",
+])("leaves only frozen Studio paths for B3b: %s", async (path) => {
+  expect(await findings({ [path]: "import { charts } from '@k2b/stdlib';" })).toEqual([]);
 });
 
 const panel = "import { Chart } from '@k2b/ui';\nexport const Panel = () => <Chart kind='bar' data={[]} />;";

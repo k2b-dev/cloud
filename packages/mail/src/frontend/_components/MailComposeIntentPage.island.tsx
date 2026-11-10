@@ -8,6 +8,7 @@ import { apiClient } from "../../api/client";
 import { MailComposeCommandInputSchema, mailCommandMessages } from "../../commands";
 import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import { readApiError } from "./api-response";
 import { readContact } from "./contact-capabilities";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
@@ -17,7 +18,6 @@ import { mailComposeDraftSeedInput } from "./mail-compose-seed";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./mail-sender-preference";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 type WritableMailbox = {
   id: string;

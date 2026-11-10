@@ -9,6 +9,7 @@ import {
   Placeholder,
   panelDialogOptions,
   prompts,
+  Section,
   Select,
   TextInput,
   toast,
@@ -325,7 +326,7 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
     }
   });
   return (
-    <DetailPanel.Section title={t.invitations} icon="ti ti-send">
+    <Section title={t.invitations} icon="ti ti-send">
       <Show when={contextQuery.error()}>
         {(error) => (
           <Placeholder
@@ -367,6 +368,6 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
           />
         </Show>
       </div>
-    </DetailPanel.Section>
+    </Section>
   );
 }

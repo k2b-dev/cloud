@@ -1,5 +1,5 @@
 import type { SyncDeadLetterEntry } from "@k2b/cloud/services";
-import { DescriptionList, DetailPanel, IconButtonLink, StatusBadge, useLocale } from "@k2b/ui";
+import { DescriptionList, DetailPanel, IconButtonLink, Section, StatusBadge, useLocale } from "@k2b/ui";
 import { gatewayOpsMessages } from "../../../messages";
 import { syncOpsMessages } from "../ops-messages";
 
@@ -27,7 +27,7 @@ export default function DeadLetterDetail(props: { entry: SyncDeadLetterEntry; cl
           }
         />
         <DetailPanel.Body>
-          <DetailPanel.Section title={t.properties}>
+          <Section title={t.properties}>
             <DescriptionList
               layout="rows"
               size="sm"
@@ -39,18 +39,18 @@ export default function DeadLetterDetail(props: { entry: SyncDeadLetterEntry; cl
                 { term: t.syncReason, description: props.entry.reason },
               ]}
             />
-          </DetailPanel.Section>
+          </Section>
           {props.entry.error ? (
-            <DetailPanel.Section title={t.error}>
+            <Section title={t.error}>
               <pre class="whitespace-pre-wrap break-words text-xs select-all">{props.entry.error}</pre>
-            </DetailPanel.Section>
+            </Section>
           ) : null}
           <DetailPanel.Group title={t.moreAboutDeadLetter}>
-            <DetailPanel.Section title={o.preview}>
+            <Section title={o.preview}>
               <p class="text-xs text-dimmed">{o.previewBounded}</p>
               <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs select-all">{props.entry.dataPreview}</pre>
-            </DetailPanel.Section>
-            <DetailPanel.Section title={t.technicalDetails}>
+            </Section>
+            <Section title={t.technicalDetails}>
               <DescriptionList
                 layout="rows"
                 size="sm"
@@ -59,7 +59,7 @@ export default function DeadLetterDetail(props: { entry: SyncDeadLetterEntry; cl
                   { term: o.event, description: <span class="break-all select-all">{props.entry.eventId ?? "—"}</span> },
                 ]}
               />
-            </DetailPanel.Section>
+            </Section>
           </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>

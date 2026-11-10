@@ -49,6 +49,10 @@ so its sections are a header and a hairline, never cards.
 **No depth inside depth.** Everything inside an island is flat: a `Paper` in
 a `Paper`, a table in a `DashboardFrame`, a card in a `Section`.
 
+**Settings and administration stay flat.** Forms, lists, tables, and sections
+there keep their frame without a shadow. Only charts, dashboard frames and
+panels, and key figures lift, because their depth carries meaning.
+
 ### Do and don't
 
 | Do | Don't |
@@ -127,6 +131,10 @@ inner shadow as a fade is never used. `HoverPreview` floats on layer 3 with
   table beside it; Markdown tables in documents stay flat hairlines.
 - **Mark a dense collection.** Put `data-k2b-layer="flat"` on the element that
   holds a grid or a list of cards that must stay flat.
+- **Mark a settings or admin area.** `AppWorkspace layer="quiet"` sets
+  `data-k2b-layer="quiet"`: islands there stand flat, and `ChartExplorer`,
+  `DashboardFrame`, `DashboardPanel`, and `StatCell` keep the island shadow.
+  Cloud's `AdminLayout` sets it for every admin page.
 - **An app-owned card** that no component expresses, such as a Kanban card,
   reads the hook: `box-shadow: var(--k2b-island-shadow)` and
   `background: var(--k2b-island-surface)`. It then follows every layer and

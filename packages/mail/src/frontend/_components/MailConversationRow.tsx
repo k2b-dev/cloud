@@ -27,8 +27,29 @@ const mailRowShowsParticipants = (item: Pick<MailListItem, "selectionKind" | "pa
  * A row has a fourth line only for its tags, for "Waiting", or for the faces of others who wrote; every other row has
  * the same three-line height.
  */
-export const mailRowHasFourthLine = (item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants">): boolean =>
-  item.localTags.length > 0 || item.workStatus === "waiting" || mailRowShowsParticipants(item);
+export const mailRowHasFourthLine = (
+  item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants" | "drafts">,
+): boolean => item.localTags.length > 0 || item.workStatus === "waiting" || item.drafts.count > 0 || mailRowShowsParticipants(item);
+
+/**
+ * The account behind the conversation's single untouched suggestion, which shows in plum until a person takes it
+ * over; null for every other draft. A pod from before `suggestedBy` only lists editors, so its rows fall back to them.
+ */
+export const mailRowSuggestedBy = (drafts: MailListItem["drafts"]): string | null => {
+  if (drafts.count !== 1) return null;
+  if (drafts.suggestedBy !== undefined) return drafts.suggestedBy;
+  return drafts.editors.length > 0 && drafts.editors.every((editor) => editor.kind === "service_account")
+    ? drafts.editors[0]!.displayName
+    : null;
+};
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
 
 type MailConversationRowState = {
   selectedConversationId: string | null;
@@ -462,6 +483,37 @@ export default function MailConversationRow(props: {
                       +{props.item.localTags.length - MAX_ROW_TAGS}
                     </span>
                   </Tooltip.Anchor>
+                </Show>
+                <Show when={props.item.drafts.count > 0}>
+                  {(() => {
+                    const suggestedBy = () => mailRowSuggestedBy(props.item.drafts);
+                    const suggestion = () => suggestedBy() !== null;
+                    const names = () => props.item.drafts.editors.map((editor) => editor.displayName).join(", ");
+                    const label = () =>
+                      suggestion()
+                        ? t().suggestionFrom({ name: suggestedBy()! })
+                        : props.item.drafts.count === 1
+                          ? t().draftOne
+                          : t().draftMany({ count: props.item.drafts.count });
+                    return (
+                      <span
+                        class="mail-row-draft"
+                        data-suggestion={suggestion() ? "" : undefined}
+                        data-mail-row-draft
+                        role="img"
+                        aria-label={names() ? `${label()}: ${names()}` : label()}
+                        title={names() || undefined}
+                      >
+                        <i class={`ti ${suggestion() ? "ti-sparkles" : "ti-pencil"}`} aria-hidden="true" />
+                        {label()}
+                        <Show when={!suggestion()}>
+                          <For each={props.item.drafts.editors.slice(0, 2)}>
+                            {(editor) => <span class="mail-row-draft-editor">{initials(editor.displayName)}</span>}
+                          </For>
+                        </Show>
+                      </span>
+                    );
+                  })()}
                 </Show>
                 <Show when={props.item.workStatus === "waiting"}>
                   <span class="mail-row-waiting">

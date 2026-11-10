@@ -7,6 +7,8 @@ const settle = async () => {
   await Promise.resolve();
   await Bun.sleep(10);
 };
+/** The toast stack lays itself out in the next animation frame. */
+const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
 describe("@k2b/ui feedback runtime", () => {
   if (isServer) {
@@ -469,10 +471,14 @@ describe("@k2b/ui feedback runtime", () => {
     const card = rail?.querySelector<HTMLElement>("[data-k2b-toast]");
     expect(rail?.className).toBe("");
     expect(rail?.getAttribute("role")).toBe("region");
-    expect(rail?.getAttribute("aria-label")).toBe("Notifications");
+    // The region names the shortcut that focuses it.
+    expect(rail?.getAttribute("aria-label")).toBe("Notifications, Alt+T");
+    expect(rail?.getAttribute("aria-keyshortcuts")).toBe("Alt+T");
     expect(card?.dataset.tone).toBe("success");
     expect(card?.textContent).toContain("Saved");
-    expect(card?.querySelector(".k2b-toast__icon i")?.className).toBe("ti ti-circle-check");
+    expect(card?.querySelector(".k2b-toast__icon i")?.className).toBe("ti ti-check");
+    // The close button is the toast's first control.
+    expect(card?.firstElementChild?.className).toBe("k2b-toast__close");
     // The card is not a live region of its own; the rail's persistent regions announce it.
     expect(card?.querySelector("[role], [aria-live]")).toBeNull();
 
@@ -535,6 +541,42 @@ describe("@k2b/ui feedback runtime", () => {
     await Bun.sleep(220);
     expect(custom.isConnected).toBe(false);
     expect(rail?.childElementCount).toBe(0);
+    dom.cleanup();
+  });
+
+  test("a custom slot gets its round close button only while its owner lets it close, and asks the owner", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const content = dom.document.createElement("section");
+    content.innerHTML = '<button type="button">Cancel all</button>';
+    let closes = 0;
+    const slot = toast.custom(content, { label: "Upload", onClose: () => closes++ });
+    const card = dom.document.querySelector<HTMLElement>("[data-k2b-toast][data-custom]")!;
+    // While work runs: no close button at all, and Escape does not close it.
+    expect(card.dataset.closable).toBe("false");
+    expect(card.querySelector(".k2b-toast__close")).toBeNull();
+    content.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(closes).toBe(0);
+    expect(card.dataset.closing).toBeUndefined();
+
+    slot.update({ closable: true });
+    const close = card.querySelector<HTMLButtonElement>(":scope > .k2b-toast__close")!;
+    expect(card.firstElementChild).toBe(close);
+    expect(close.getAttribute("aria-label")).toBe("Close: Upload");
+    close.click();
+    content.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    // The owner decides; the slot stays until it dismisses it.
+    expect(closes).toBe(2);
+    expect(card.dataset.closing).toBeUndefined();
+
+    // Running again takes the close button away and hands its focus to the content.
+    close.focus();
+    slot.update({ closable: false });
+    expect(card.querySelector(".k2b-toast__close")).toBeNull();
+    expect(dom.document.activeElement?.textContent).toBe("Cancel all");
+    slot.dismiss();
+    expect(card.dataset.closing).toBe("true");
     dom.cleanup();
   });
 
@@ -682,6 +724,114 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("shows a warning, a quiet Undo, two actions under the message, and a link at its end", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    let approved = 0;
+    toast("1.2 GB of 50 GB free.", { title: "Storage almost full", variant: "warning", duration: 0 });
+    toast("3 notes moved to the trash", { duration: 0, action: { label: "Undo", onClick: () => {}, variant: "ghost" } });
+    toast("Request for “Budget 2027”.", {
+      title: "Mara Example wants to collaborate",
+      duration: 0,
+      action: { label: "Share", onClick: () => approved++ },
+      secondaryAction: { label: "Later", href: "#later" },
+    });
+    const [warning, undo, request] = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]"));
+    expect(warning!.dataset.tone).toBe("warning");
+    expect(warning!.querySelector(".k2b-toast__icon i")?.className).toBe("ti ti-alert-triangle");
+    // One action stays beside the message, framed unless it asks to be quiet.
+    expect(undo!.querySelector<HTMLElement>(".k2b-toast__end")!.hidden).toBe(false);
+    expect(undo!.querySelector<HTMLElement>(".k2b-toast__end .k2b-toast__action")!.dataset.variant).toBe("ghost");
+    // Two actions go to the row under the message, the first one primary.
+    expect(request!.querySelector<HTMLElement>(".k2b-toast__end")!.hidden).toBe(true);
+    expect(
+      Array.from(request!.querySelectorAll<HTMLElement>(".k2b-toast__actions .k2b-toast__action"), (action) => [
+        action.textContent,
+        action.dataset.variant,
+      ]),
+    ).toEqual([
+      ["Share", "primary"],
+      ["Later", "secondary"],
+    ]);
+    request!.querySelector<HTMLButtonElement>(".k2b-toast__actions button")!.click();
+    expect(approved).toBe(1);
+    expect(request!.dataset.closing).toBeUndefined();
+    toast.dismissAll();
+    await Bun.sleep(220);
+
+    const shared = toast("Anyone with the link can view “Budget 2027”.", {
+      title: "Share link created",
+      duration: 0,
+      link: { label: "Open settings", href: "/settings" },
+    });
+    const card = dom.document.querySelector<HTMLElement>("[data-k2b-toast]")!;
+    const link = () => card.querySelector<HTMLAnchorElement>(".k2b-toast__description .k2b-toast__link");
+    expect(link()?.textContent).toBe("Open settings");
+    // An update keeps the link unless it names a new one.
+    shared.update("Anyone with the link can edit “Budget 2027”.");
+    expect(link()?.href).toBe("http://localhost/settings");
+    shared.update("Link removed", { link: null });
+    expect(link()).toBeNull();
+    // A script URL never runs from a toast: the link is left out, and such an action only closes the toast.
+    shared.update("Link created", { link: { label: "Open", href: " JavaScript:alert(1)" } });
+    expect(link()).toBeNull();
+    const unsafe = toast("Opened", { duration: 0, action: { label: "Open", href: "javascript:alert(1)" } });
+    const unsafeAction = Array.from(dom.document.querySelectorAll<HTMLElement>(".k2b-toast__action")).at(-1)!;
+    expect(unsafeAction.tagName).toBe("BUTTON");
+    unsafe.dismiss();
+    shared.update("Link created again", { link: { label: "Open settings", href: "/settings" } });
+    link()!.click();
+    expect(card.dataset.closing).toBe("true");
+    dom.cleanup();
+  });
+
+  test("a toast that closes during a swipe, or the shortcut behind a modal, never pauses the other timers for good", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const open = () =>
+      Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing])"), (card) => card.textContent);
+
+    const swiped = toast("Swiped", { duration: 0 });
+    const tile = dom.document.querySelector<HTMLElement>(".k2b-toast__icon")!;
+    tile.dispatchEvent(
+      new dom.window.PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 7, pointerType: "touch" }) as unknown as Event,
+    );
+    // The finger is still down when the toast goes.
+    swiped.dismiss();
+    toast("Saved", { duration: 100 });
+    await Bun.sleep(200);
+    expect(open()).toEqual([]);
+
+    // The shortcut cannot focus a rail that a modal dialog makes inert, so it holds nothing.
+    toast("Still here", { duration: 0 });
+    const rail = dom.document.querySelector<HTMLElement>("[data-k2b-toast-container]")!;
+    rail.focus = () => {};
+    dom.document.body.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { bubbles: true, altKey: true, code: "KeyT", key: "t" }) as unknown as Event,
+    );
+    toast("Saved again", { duration: 100 });
+    await Bun.sleep(200);
+    expect(open()).toEqual(["Still here"]);
+    dom.cleanup();
+  });
+
+  test("an update keeps a focused link in the message and its focus", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const shared = toast("Anyone with the link can view it.", { duration: 0, link: { label: "Open settings", href: "/settings" } });
+    const link = dom.document.querySelector<HTMLAnchorElement>(".k2b-toast__link")!;
+    link.focus();
+    shared.update("Anyone with the link can edit it.");
+    expect(dom.document.activeElement).toBe(link);
+    expect(link.isConnected).toBe(true);
+    shared.update("Link removed", { link: null });
+    expect(dom.document.activeElement?.className).toBe("k2b-toast__close");
+    dom.cleanup();
+  });
+
   test("a toast shows a title only when the caller passes one", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
@@ -802,6 +952,11 @@ describe("@k2b/ui feedback runtime", () => {
     first!.querySelector<HTMLElement>(".k2b-toast__description")!.click();
     expect(first!.dataset.closing).toBeUndefined();
 
+    // Folded, the older toast is out of reach; focus on the front toast fans the stack out.
+    expect(first!.parentElement!.inert).toBe(true);
+    second!.querySelector<HTMLButtonElement>(".k2b-toast__close")!.focus();
+    await frame();
+    expect(first!.parentElement!.inert).toBe(false);
     first!.querySelector<HTMLButtonElement>(".k2b-toast__close")!.focus();
     first!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(first!.dataset.closing).toBe("true");
@@ -815,6 +970,8 @@ describe("@k2b/ui feedback runtime", () => {
     // Focus skips a neighbour that is still closing and goes to the next open toast.
     for (const name of ["One", "Two", "Three"]) toast(name, { duration: 0 });
     const [one, two, three] = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]"));
+    three!.querySelector<HTMLButtonElement>(".k2b-toast__close")!.focus();
+    await frame();
     two!.querySelector<HTMLButtonElement>(".k2b-toast__close")!.focus();
     two!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(dom.document.activeElement).toBe(three!.querySelector(".k2b-toast__close"));
@@ -846,12 +1003,13 @@ describe("@k2b/ui feedback runtime", () => {
     toast.dismissAll();
     await Bun.sleep(220);
 
-    toast.error("Could not save the file", { duration: 400, action: { label: "Try again", onClick: () => {} } });
+    // Focus on the front toast fans the stack out and holds the older one too.
     toast.success("Message archived", { duration: 100 });
+    toast.error("Could not save the file", { duration: 400, action: { label: "Try again", onClick: () => {} } });
     const retry = dom.document.querySelector<HTMLButtonElement>(".k2b-toast__action")!;
     retry.focus();
     await Bun.sleep(200);
-    expect(open()).toEqual(["Could not save the file", "Message archived"]);
+    expect(open()).toEqual(["Message archived", "Could not save the file"]);
     retry.blur();
     await Bun.sleep(150);
     expect(open()).toEqual(["Could not save the file"]);
@@ -986,7 +1144,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
-  test("the toast close button is named in the document locale unless the app names it", async () => {
+  test("the toast close button names its toast in the document locale unless the app names it", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { toast } = await import("../src/feedback/toast");
@@ -997,13 +1155,16 @@ describe("@k2b/ui feedback runtime", () => {
 
     dom.document.documentElement.setAttribute("lang", "en");
     toast("Note", { duration: 0 });
-    expect(closeLabels()).toEqual(["Dismiss notification"]);
+    toast("Exported", { title: "Export finished", duration: 0 });
+    expect(closeLabels()).toEqual(["Close: Note", "Close: Export finished"]);
     toast.dismissAll();
 
     dom.document.documentElement.setAttribute("lang", "de");
-    toast("Hinweis", { duration: 0 });
+    const notice = toast("Hinweis", { duration: 0 });
     toast("Hinweis", { duration: 0, dismissLabel: "Meldung ausblenden" });
-    expect(closeLabels()).toEqual(["Benachrichtigung schließen", "Meldung ausblenden"]);
+    expect(closeLabels()).toEqual(["Schließen: Hinweis", "Meldung ausblenden"]);
+    notice.update("Gespeichert", { title: "Export fertig" });
+    expect(closeLabels()[0]).toBe("Schließen: Export fertig");
     toast.dismissAll();
 
     dom.document.documentElement.removeAttribute("lang");

@@ -89,6 +89,12 @@ const pointAt = async (tab: Page, selector: string) => {
   await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 };
 const active = '.filesv2-upload-row[data-status="working"]';
+/** On a phone the panel starts as one line; tests about the rows open the list first. */
+const expand = async (tab: Page) => {
+  if ((await tab.getAttribute(".filesv2-upload", "data-expanded")) !== "false") return;
+  await tab.click(".filesv2-upload__toggle");
+  await tab.waitForFunction(() => document.querySelector(".filesv2-upload")?.getAttribute("data-expanded") === "true");
+};
 
 /** Invented demo files, sizes in bytes. */
 const demo: [string, number][] = [
@@ -112,8 +118,10 @@ const boxes = (tab: Page) =>
     Object.fromEntries(
       [
         ".filesv2-upload",
-        ".filesv2-upload__percent",
+        ".filesv2-upload__icon",
         ".filesv2-upload__title",
+        ".filesv2-upload__summary",
+        ".filesv2-upload__toggle",
         ".filesv2-upload__bar",
         ".filesv2-upload__scroll",
         ".filesv2-upload__count",
@@ -126,7 +134,7 @@ const boxes = (tab: Page) =>
   );
 
 describe("upload panel in a browser", () => {
-  test("nothing moves while percent, counts, failures and appended files change", async () => {
+  test("nothing moves while bytes, counts, failures and appended files change", async () => {
     const tab = await open(desktop);
     try {
       await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
@@ -139,7 +147,7 @@ describe("upload panel in a browser", () => {
       expect(await boxes(tab)).toEqual(first);
       for (let index = 0; index < 6; index++) await run(tab, "window.uploads.finish()");
       await run(tab, "window.uploads.progress(2_000_000)");
-      expect(await tab.textContent(".filesv2-upload__percent")).toBe("32%");
+      expect(await tab.getAttribute(".filesv2-upload__bar", "aria-valuenow")).toBe("32");
       expect(await boxes(tab)).toEqual(first);
       await run(tab, "window.uploads.fail('Connection lost')");
       expect(await tab.textContent(".filesv2-upload__errors")).toBe("1 error");
@@ -182,7 +190,7 @@ describe("upload panel in a browser", () => {
     }
   });
 
-  test("a finished batch leaves after five seconds once the pointer left, also when its row changed under the pointer", async () => {
+  test("a finished batch leaves after eight seconds once the pointer left, also when its row changed under the pointer", async () => {
     const tab = await open(desktop, "light", "en", true);
     try {
       await run(tab, `window.uploads.add(${JSON.stringify(demo.slice(0, 2))})`);
@@ -193,7 +201,10 @@ describe("upload panel in a browser", () => {
       await tab.mouse.move(10, 10);
       await settle(tab);
       expect(await tab.getAttribute(".filesv2-upload", "data-phase")).toBe("done");
-      await tab.clock.fastForward(5_000);
+      // Done: "View" opens the folder, and the round close button of the slot appears.
+      expect(await tab.getAttribute('a[aria-label="View “Projects”"]', "href")).toBe("#Projects");
+      expect(await tab.locator('button[aria-label="Close: Upload"]').count()).toBe(1);
+      await tab.clock.fastForward(8_000);
       await tab.waitForSelector(".filesv2-upload", { state: "detached", timeout: 2_000 });
     } finally {
       await tab.context().close();
@@ -240,7 +251,7 @@ describe("upload panel in a browser", () => {
       await tab.waitForTimeout(600);
       await tab.dblclick(".filesv2-upload__action");
       await settle(tab);
-      expect(await tab.textContent(".filesv2-upload__action")).toBe("Cancel");
+      expect(await tab.textContent(".filesv2-upload__action")).toBe("Cancel all");
       expect(await tab.$$eval(".filesv2-upload-row", (rows) => rows.map((row) => (row as HTMLElement).dataset.status))).toEqual([
         "working",
         "success",
@@ -260,13 +271,14 @@ describe("upload panel in a browser", () => {
       await tab.keyboard.press("Enter");
       await settle(tab);
       expect(await tab.textContent(".filesv2-upload__title")).toBe("Upload cancelled");
-      expect(await tab.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Dismiss notification");
+      // The slot's round close button appears once nothing runs and takes the focus.
+      expect(await tab.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Close: Upload");
     } finally {
       await tab.context().close();
     }
   });
 
-  test("collapsing keeps the headline, bar and count; the list returns on the active file", async () => {
+  test("collapsing keeps the headline, bar and count in one line; the list returns on the active file", async () => {
     const tab = await open(desktop);
     try {
       await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
@@ -274,9 +286,10 @@ describe("upload panel in a browser", () => {
       await tab.click('button[aria-label="Hide file list"]');
       await settle(tab);
       expect(await tab.isVisible(".filesv2-upload__scroll")).toBeFalse();
-      expect(await tab.isVisible(".filesv2-upload__percent")).toBeTrue();
+      expect(await tab.isVisible(".filesv2-upload__title")).toBeTrue();
       expect(await tab.isVisible(".filesv2-upload__bar")).toBeTrue();
-      expect(await tab.textContent(".filesv2-upload__count")).toBe("8 of 12 files");
+      expect(await tab.isVisible(".filesv2-upload__foot")).toBeFalse();
+      expect(await tab.textContent(".filesv2-upload__summary")).toBe("8 of 12 files");
       expect(await tab.getAttribute('button[aria-label="Show file list"]', "aria-expanded")).toBe("false");
       await tab.click('button[aria-label="Show file list"]');
       await settle(tab);
@@ -351,6 +364,7 @@ describe("upload panel in a browser", () => {
           });
         try {
           await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+          await expand(tab);
           for (let index = 0; index < 3; index++) await run(tab, "window.uploads.finish()");
           await run(tab, "window.uploads.progress(100_000)");
           const first = await boxes(tab);
@@ -429,6 +443,7 @@ describe("upload panel in a browser", () => {
           });
         try {
           await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+          await expand(tab);
           for (let index = 0; index < 3; index++) await run(tab, "window.uploads.finish()");
           await run(tab, "window.uploads.progress(8_600_000)");
           const first = await boxes(tab);
@@ -497,6 +512,9 @@ describe("upload panel in a browser", () => {
       const tab = await open(phone, theme, "de");
       try {
         await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+        // On a phone the panel starts as one line.
+        expect(await tab.getAttribute(".filesv2-upload", "data-expanded")).toBe("false");
+        await expand(tab);
         for (let index = 0; index < 6; index++) await run(tab, "window.uploads.finish()");
         await run(tab, "window.uploads.fail('Verbindung unterbrochen')");
         const layout = await tab.evaluate(() => {
@@ -528,7 +546,7 @@ describe("upload panel in a browser", () => {
             retry: reach('.filesv2-upload-row[data-status="failed"] button'),
             action: reach(".filesv2-upload__action"),
             title: panel.querySelector(".filesv2-upload__title")!.textContent,
-            percentColor: getComputedStyle(panel.querySelector(".filesv2-upload__percent")!).color,
+            summaryColor: getComputedStyle(panel.querySelector(".filesv2-upload__summary")!).color,
             surface: getComputedStyle(panel.closest("[data-k2b-toast]")!).backgroundColor,
           };
         });
@@ -539,7 +557,7 @@ describe("upload panel in a browser", () => {
         expect(layout.retry).toBeTrue();
         expect(layout.action).toBeTrue();
         expect(layout.title).toBe("Hochladen nach „Projects“");
-        expect(layout.percentColor).not.toBe(layout.surface);
+        expect(layout.summaryColor).not.toBe(layout.surface);
         await tab.screenshot({ path: `/tmp/filesv2-upload-phone-${theme}.png` });
       } finally {
         await tab.context().close();
@@ -548,7 +566,7 @@ describe("upload panel in a browser", () => {
   }
 });
 
-test("a byte-based ETA fits beside the count without moving controls and disappears while offline", async () => {
+test("a long upload's byte-based ETA fits in the summary line without moving controls and disappears while offline", async () => {
   const tab = await open(phone, "light", "de", true);
   try {
     await run(
@@ -559,14 +577,30 @@ test("a byte-based ETA fits beside the count without moving controls and disappe
     await run(tab, "window.uploads.progress(0)");
     await tab.clock.runFor(10000);
     await run(tab, "window.uploads.progress(200000)");
-    expect(await tab.locator(".filesv2-upload__count").textContent()).toMatch(/0 von 81 Dateien \(ca\. \d+ Min\.\)/);
+    // The phone shows one line: the count, then the remaining time of a long upload.
+    expect(await tab.locator(".filesv2-upload__summary").textContent()).toMatch(/^0 von 81 Dateien · ca\. \d+ Min\.$/);
     const after = await boxes(tab);
-    expect(after[".filesv2-upload__action"]).toEqual(before[".filesv2-upload__action"]);
+    expect(after[".filesv2-upload__toggle"]).toEqual(before[".filesv2-upload__toggle"]);
     expect(after[".filesv2-upload"]).toEqual(before[".filesv2-upload"]);
-    const fits = await tab.locator(".filesv2-upload__count").evaluate((element) => element.scrollWidth <= element.clientWidth);
+    const fits = await tab.locator(".filesv2-upload__summary").evaluate((element) => element.scrollWidth <= element.clientWidth);
     expect(fits).toBeTrue();
     await run(tab, "window.uploads.interrupt('network')");
-    expect(await tab.locator(".filesv2-upload__estimate").textContent()).toBe("");
+    expect(await tab.locator(".filesv2-upload__summary").textContent()).toBe("0 von 81 Dateien");
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("a short upload never shows a remaining time", async () => {
+  const tab = await open(desktop, "light", "en", true);
+  try {
+    await run(tab, 'window.uploads.add([["Notes.md", 1000000], ["Budget.xlsx", 200000]])');
+    await run(tab, "window.uploads.progress(0)");
+    await tab.clock.runFor(4000);
+    // About 5 s left: below the 10 s from which a remaining time shows.
+    await run(tab, "window.uploads.progress(800000)");
+    expect(await tab.evaluate(() => window.uploads.queue.remainingSeconds())).toBeLessThan(10);
+    expect(await tab.locator(".filesv2-upload__summary").textContent()).not.toContain("·");
   } finally {
     await tab.context().close();
   }

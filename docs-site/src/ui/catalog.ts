@@ -177,6 +177,7 @@ const portableSections = [
         "ti ti-drag-drop-2",
         "Drag rows, tasks, and paragraphs onto targets, with hold-then-drag on touch and a keyboard path.",
       ),
+      page("sortable-list", "SortableList", "ti ti-grip-vertical", "Reorder rows by a grip, by dragging or with the arrow keys."),
       page("filters", "Filters", "ti ti-filter", "Section-aware single and multi-select filtering."),
       page("segmented-control", "SegmentedControl", "ti ti-layout-grid", "A controlled radio-group toolbar with roving focus."),
       page("tabs", "Tabs", "ti ti-folders", "Accessible controlled peer views with compositional or data-driven items."),
@@ -286,6 +287,12 @@ const portableSections = [
         "Classless styles that make a plain HTML page look like the components in light and dark.",
       ),
       page("paper", "Paper", "ti ti-square", "Neutral semantic grouping for application-owned content."),
+      page(
+        "section",
+        "Section and Field",
+        "ti ti-layout-rows",
+        "One topic per card on a page, flat in a panel: named tones, a restricted marker, parts, states, and label-value fields.",
+      ),
       page("empty-states", "Empty states", "ti ti-box-off", "Compact and panel placeholders plus route-level not-found states."),
       page(
         "cards",

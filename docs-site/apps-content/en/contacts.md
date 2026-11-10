@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Contacts
@@ -28,6 +28,12 @@ addresses, work and personal data, notes, tags, and hierarchy links.
 
 The read-only system book projects contacts from the IPA directory. Manual
 books contain records created and maintained by Cloud users.
+
+Select a contact to open its page beside the list, or as a full page on a
+phone. Contact points, addresses, relationships, and notes have their own
+sections; less frequent details sit under **More about …**. Links, reloads,
+and browser back navigation preserve the selected contact. Closing it gives
+the list the full content area again.
 
 ## Enter addresses and plan routes
 

@@ -4,6 +4,7 @@ import type { DraftEditableContent } from "../../contracts";
 import { advanceMailDraftJournalAfterSave, readMailDraftJournal, serializeMailDraftJournal } from "./mail-draft-journal";
 
 const content = (body: string): DraftEditableContent => ({
+  quoteSource: null,
   senderIdentityId: "Send01",
   to: [],
   cc: [],

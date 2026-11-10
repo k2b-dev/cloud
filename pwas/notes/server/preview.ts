@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import fontPath from "@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2" with { type: "file" };
-import { charts } from "@k2b/ui/charts/core";
+import { chartSvgWithUiPalette, charts } from "@k2b/ui/charts/core";
 import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
 import { deriveMeta } from "../shared/metadata";
 import { NotesError } from "./errors";
@@ -48,11 +48,17 @@ export const renderPreview = async (content: string): Promise<Uint8Array> => {
       meta.chart.kind === "line"
         ? charts.line({ ...options, series: [{ data: values.map((y, x) => ({ x, y })) }], smooth: false })
         : charts.bar({ ...options, data: values.map((value, index) => ({ label: String(index + 1), value })) });
+    diagram = chartSvgWithUiPalette(diagram);
     // The chart core emits a viewBox only; a nested SVG otherwise inherits the full image viewport.
     diagram = diagram.replace("<svg ", `<svg width="${options.width}" height="${options.height}" `);
     // SVG rasterizers do not all implement CSS custom properties. Only generated palette references are replaced.
-    const palette = ["#6d28d9", "#047857", "#b45309", "#be123c", "#2563eb", "#a21caf", "#0f766e", "#c2410c"];
-    diagram = diagram.replace(/var\(--stdlib-chart-c([1-8])\)/g, (_whole, index: string) => palette[Number(index) - 1]!);
+    const palette = new Map([...diagram.matchAll(/--stdlib-chart-c([1-8]): (#[0-9a-f]{6});/g)].map((match) => [match[1]!, match[2]!]));
+    diagram = diagram.replace(/var\(--stdlib-chart-c([1-8])\)/g, (_whole, index: string) => palette.get(index)!);
+    // The native rasterizer can also ignore class rules on nested SVGs. Materialize generated series colors.
+    diagram = diagram.replace(/class="([^"]*\bstdlib-chart-series-(\d+)\b[^"]*)"/g, (_whole, classes: string, index: string) => {
+      const color = palette.get(String((Number(index) % 8) + 1))!;
+      return `class="${classes}" fill="${classes.split(" ").includes("stdlib-chart-line") ? "none" : color}" stroke="${color}"`;
+    });
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#ffffff"/><rect x="56" y="62" width="7" height="42" rx="3" fill="#6d28d9"/><g font-family="Notes Preview, sans-serif" fill="#11151b"><text x="82" y="94" font-size="27">k2b notes</text>${title.map((line, index) => `<text x="64" y="${184 + index * 58}" font-size="48" font-weight="400">${escape(line)}</text>`).join("")}${excerpt.map((line, index) => `<text x="64" y="${Math.max(340, 206 + title.length * 58) + index * 32}" font-size="24" fill="#45454e">${escape(line)}</text>`).join("")}<text x="64" y="574" font-size="20" fill="#45454e">Notizen · lokal &amp; gemeinsam</text></g>${diagram ? `<g transform="translate(666,180)" font-family="Notes Preview, sans-serif">${diagram}</g>` : ""}</svg>`;
   const canvas = createCanvas(1200, 630);

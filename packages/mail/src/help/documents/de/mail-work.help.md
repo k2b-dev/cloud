@@ -144,7 +144,7 @@ Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat 
 
 Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung in einer hervorgehobenen Karte erscheinen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Zusammenfassung bearbeiten** oder **Weitere Unterhaltungsaktionen → Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
 
-Enthält die Unterhaltung nicht abgeschlossene Entwürfe, zeigt die Antwortaktion einen Hinweis. Öffne die **Unterhaltungsdetails**, um zu sehen, wer den neuesten Entwurf erstellt hat und wann er sich geändert hat. Dort setzt du ihn fort.
+Enthält die Unterhaltung nicht abgeschlossene Entwürfe, stehen sie über der neuesten Nachricht: der offene an der Stelle der Antwortleiste, die übrigen als Zeilen mit Person und Zeit. Wähle eine Zeile, um den Entwurf an Ort und Stelle fortzusetzen.
 
 In einem Postfach, das mehrere Personen nutzen, zeigt **Gerade hier** oben in den Unterhaltungsdetails, wer die Unterhaltung offen hat und wer gerade eine Antwort schreibt. Mit Zugriff auf das ganze Postfach steht unter **Mehr zu dieser Unterhaltung** › **Zugriff**, wer Zugriff hat und mit welcher Rolle. Wer nur zugewiesene Unterhaltungen sieht, sieht diese Liste nicht.
 

@@ -13,10 +13,10 @@ import {
   materializeDraftSeedInputSchema,
   type SenderIdentity,
 } from "../../contracts";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import MailComposer from "./MailComposer";
 import MailComposerEditor from "./MailComposerEditor";
 import { readMailDraftSeed, storeMailDraftSeed } from "./mail-draft-seed-store";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 export type MailComposerEditorHarnessOptions = {
   locale: "en" | "de";
@@ -155,6 +155,7 @@ const initialDraft: MailDraft = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: "Sign02",
   to: [{ name: null, address: "recipient@example.test" }],
@@ -167,6 +168,8 @@ const initialDraft: MailDraft = {
   requestDeliveryReceipt: false,
   requestReadReceipt: false,
   attachments: [],
+  suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada",
@@ -262,6 +265,7 @@ window.mountComposer = (options) => {
     origin: {
       kind: "compose",
       input: {
+        quoteSource: null,
         senderIdentityId: "Send01",
         to: [],
         cc: [],

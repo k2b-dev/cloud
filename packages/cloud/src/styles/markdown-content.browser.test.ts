@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 import { renderHelpMarkdown, renderMarkdownSync } from "../shared/markdown";
 
 // Cloud's rendered Markdown sits inside `MarkdownView` in Help, legal pages,
@@ -182,7 +182,7 @@ test("Markdown table lines, row hover and column bands share one width", async (
       });
       // Hovering a cell fills its row and column without moving anything.
       const cell = page.locator(`${host} tbody tr`).last().locator("td").nth(1);
-      await cell.hover();
+      await hoverInPlace(cell);
       const fills = await cell.evaluate((element) => [
         getComputedStyle(element.parentElement!).backgroundColor,
         getComputedStyle(element, "::after").backgroundColor,

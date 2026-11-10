@@ -1,3 +1,4 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import { type AuthContext, getDateConfig, getLocale, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server";
 import { appAccessAuthority, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin, readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
@@ -42,11 +43,12 @@ export default ssr<AuthContext>(async (c) => {
     const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
     const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
     // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
-    const [internalData, spacesIntegration, sidebar, appUrl] = await Promise.all([
+    const [internalData, spacesIntegration, sidebar, appUrl, liveDictation] = await Promise.all([
       loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
       getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
       loadMailSidebarData(context),
       coreSettings.get<string>("app.url"),
+      getLiveDictationStatus(c.get("accessSubject")),
     ]);
     if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
     const data = await projectMailboxPageData(internalData.data);
@@ -75,6 +77,7 @@ export default ssr<AuthContext>(async (c) => {
           initialUserPreferences={userPreferences}
           initialTheme={themePreference === "system" ? null : themePreference}
           calendarIntegrationAvailable={spacesIntegration.invitations}
+          liveDictation={liveDictation.available}
           sidebar={sidebar}
         />
       </Layout>

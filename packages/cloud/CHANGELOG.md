@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.64.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.63.0...npm-cloud-v0.64.0) (2026-11-09)
+
+
+### Features
+
+* **cloud:** moving the search shows a dashed drop place and a release chip ([#2977](https://github.com/k2b-dev/cloud/issues/2977)) ([63754a8](https://github.com/k2b-dev/cloud/commit/63754a8ca35e9d28a82e5ec1db40af4092890699))
+* **cloud:** support topic backpressure with Sync 7.1 ([#2996](https://github.com/k2b-dev/cloud/issues/2996)) ([9e7d26c](https://github.com/k2b-dev/cloud/commit/9e7d26cc26d21a6db311bde36a32d62b3d5c0a28))
+* **cloud:** tables in chat answers take the framed view-table look ([#2984](https://github.com/k2b-dev/cloud/issues/2984)) ([42d52b8](https://github.com/k2b-dev/cloud/commit/42d52b841c5495f456813828036be44d9dca8a79))
+* **cloud:** the search preview is a flat column, not a grey box ([#2992](https://github.com/k2b-dev/cloud/issues/2992)) ([6f6ab4c](https://github.com/k2b-dev/cloud/commit/6f6ab4c6a7ff8388775d639f8a29685d6f1292c2))
+* **cloud:** the signed-out header shows help, language, appearance, and sign-in at every width ([#2929](https://github.com/k2b-dev/cloud/issues/2929)) ([df06c4a](https://github.com/k2b-dev/cloud/commit/df06c4a299f91ea332dcc4f75d2b1167da3019e8))
+* **ui:** dot matrix bars for nested counts ([#2743](https://github.com/k2b-dev/cloud/issues/2743)) ([4afc36a](https://github.com/k2b-dev/cloud/commit/4afc36aed51747b16f6f472057dd83282255bd70))
+* **ui:** lines show forecasts, thresholds and today ([#2776](https://github.com/k2b-dev/cloud/issues/2776)) ([0a1b8c1](https://github.com/k2b-dev/cloud/commit/0a1b8c16df200c220abc88f6dda35a65b3b7e3b3))
+* **ui:** one Section for every topic, with Field rows, named tones, and a restricted marker ([#2962](https://github.com/k2b-dev/cloud/issues/2962)) ([1444360](https://github.com/k2b-dev/cloud/commit/1444360ab4f46cbc933f32943db566f581ccaf87))
+* **ui:** sankey charts ([#2772](https://github.com/k2b-dev/cloud/issues/2772)) ([088d8d7](https://github.com/k2b-dev/cloud/commit/088d8d72bfb61c0fe8c29142055964d51c1820fe))
+* **ui:** shadows follow one layer model in every app ([#2973](https://github.com/k2b-dev/cloud/issues/2973)) ([c32ab68](https://github.com/k2b-dev/cloud/commit/c32ab6810b6414a02be40fb651ad968ee0d78997))
+* **ui:** the feat/code sign joins the icon set as ti-feat-code ([#2943](https://github.com/k2b-dev/cloud/issues/2943)) ([3d3aacc](https://github.com/k2b-dev/cloud/commit/3d3aaccce857091e3f18d0677230aa96b629acde))
+
+
+### Bug Fixes
+
+* **ai:** budget reasoning output and explain truncated answers ([#2970](https://github.com/k2b-dev/cloud/issues/2970)) ([56ccaff](https://github.com/k2b-dev/cloud/commit/56ccaff6d28a930310ee86d816222c10138c745f)), closes [#2968](https://github.com/k2b-dev/cloud/issues/2968)
+* **ai:** older services keep reading the AI catalog after 0.71 ([#3032](https://github.com/k2b-dev/cloud/issues/3032)) ([6a481f1](https://github.com/k2b-dev/cloud/commit/6a481f16da9c3ffdda0fa0d882cd5b5f23309063))
+* **ui:** bar rows draw negative values again ([#2964](https://github.com/k2b-dev/cloud/issues/2964)) ([db822b5](https://github.com/k2b-dev/cloud/commit/db822b54bcc7ed94a5cbad4e859ebdbdf5c694c3))
+* **ui:** browser tests that measure around a hover use hoverInPlace ([#3020](https://github.com/k2b-dev/cloud/issues/3020)) ([7b5cf3c](https://github.com/k2b-dev/cloud/commit/7b5cf3ce897e2ffbedbfc5320475bb7fb2af2308))
+* **ui:** calendar heatmaps fill their panel ([#2794](https://github.com/k2b-dev/cloud/issues/2794)) ([757cf86](https://github.com/k2b-dev/cloud/commit/757cf86ea07a1cd4022f5a9b7be32ee4cfbab3ae))
+* **ui:** fit distribution labels and make remainders explicit ([#2784](https://github.com/k2b-dev/cloud/issues/2784)) ([7f2b4b2](https://github.com/k2b-dev/cloud/commit/7f2b4b2f033533df57d871c53d36ff1200ee04ee))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.52.0 to 0.53.0
+    * @k2b/editor bumped from 0.9.0 to 0.10.0
+
 ## [0.63.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.62.0...npm-cloud-v0.63.0) (2026-11-08)
 
 

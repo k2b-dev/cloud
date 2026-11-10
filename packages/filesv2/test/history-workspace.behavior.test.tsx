@@ -156,14 +156,14 @@ describe("Files history in the workspace", () => {
     const activityLink = button(dom.root.querySelector(".k2b-app-workspace__sidebar-section")!, "Activity");
     expect(activityLink?.getAttribute("href")).toBe(source);
 
-    // Resetting the filters writes the address at once; the list reloads in place and keeps the new filters.
-    button(main(), "Reset")!.click();
+    // Resetting the filters writes the address at once and leads back to "Me"; the list reloads in place.
+    main().querySelector<HTMLButtonElement>(".filesv2-history-head__filters > .filesv2-history-link")!.click();
     await flush();
-    expect(dom.window.location.search).toBe("?view=activity");
-    expect(pending("activity").input).toEqual({ query: {} });
+    expect(dom.window.location.search).toBe("?view=activity&who=me");
+    expect(pending("activity").input).toEqual({ query: { actor: "me" } });
     pending("activity").resolve(Response.json(page([])));
     await flush();
-    expect(main().textContent).toContain("No activity yet");
+    expect(main().textContent).toContain("No activity of yours yet");
 
     // Back loads the earlier address and its filters return with it.
     dom.window.history.replaceState(null, "", source);
@@ -769,7 +769,7 @@ describe("Files history in the workspace", () => {
     expect(inspector().textContent).not.toContain("Version 1");
     expect(toggle().getAttribute("aria-controls")).toBe(section().id);
     expect(toggle().textContent?.trim()).toBe("Loading details…");
-    expect(section().querySelector(".k2b-count-chip, .k2b-detail-panel__none")).toBeNull();
+    expect(section().querySelector(".k2b-count-chip, .k2b-section__none")).toBeNull();
     pending("shares").resolve(Response.json({ items: [], next: null }));
     pending("versions").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
     await flush();
@@ -778,7 +778,7 @@ describe("Files history in the workspace", () => {
     expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
     expect(section().textContent).toContain("Versions not loaded.");
     expect(section().textContent).not.toContain("No earlier versions");
-    expect(section().querySelector(".k2b-count-chip, .k2b-detail-panel__none")).toBeNull();
+    expect(section().querySelector(".k2b-count-chip, .k2b-section__none")).toBeNull();
     button(section(), "Try again")!.click();
     await flush();
     pending("versions").resolve(

@@ -374,6 +374,90 @@ test("ToolbarDock keeps two pills at the edges and brings moved actions back whe
   }
 });
 
+test("a danger toolbar is one red pill across the row that announces its message and keeps its first action", async () => {
+  const page = await open();
+  const frame = async () => {
+    await page.waitForFunction(() => !document.querySelector(".k2b-toolbar[data-overflow-pending]"));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  };
+  const pill = page.getByRole("toolbar", { name: "Saving stopped" });
+  const moved = () =>
+    pill
+      .locator('.k2b-toolbar__action[data-overflow="hidden"]')
+      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!));
+  try {
+    await page.evaluate(() => window.toolbarFixture.mountAlert(960));
+    await frame();
+    const layout = await page.evaluate(() => {
+      const column = document.getElementById("dock-column")!.getBoundingClientRect();
+      const toolbar = document.querySelector<HTMLElement>('.k2b-toolbar[data-tone="danger"]')!;
+      const box = toolbar.getBoundingClientRect();
+      return {
+        start: box.left - column.left,
+        end: column.right - box.right,
+        height: box.height,
+        surface: getComputedStyle(toolbar).backgroundColor,
+        compact: toolbar.hasAttribute("data-compact"),
+      };
+    });
+    // The pill spans the dock between its 1rem insets, at the floating height, on the danger surface. The spacer
+    // between message and actions counts with its minimum only, so the labels stay.
+    expect(layout).toEqual({ start: 16, end: 16, height: 54, surface: "rgb(254, 242, 242)", compact: false });
+    // An application's own small control, wrapped in its own element, gets the pill's round control size.
+    expect(await pill.getByRole("button", { name: "Navigation" }).evaluate((button) => button.getBoundingClientRect().height)).toBe(44);
+    const label = () =>
+      pill.locator(".k2b-toolbar__label").evaluate((label) => {
+        const main = label.querySelector<HTMLElement>(".k2b-toolbar__label-main")!;
+        const detail = label.querySelector<HTMLElement>(".k2b-toolbar__label-detail")!;
+        return {
+          mainWhole: main.scrollWidth <= main.clientWidth,
+          // The detail sits on the first line while it fits; otherwise it wraps away and the label clips it.
+          detailShown: detail.getBoundingClientRect().top < label.getBoundingClientRect().bottom,
+        };
+      });
+    expect(await label()).toEqual({ mainWhole: true, detailShown: true });
+    expect(await moved()).toEqual([]);
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[data-k2b-live] [data-politeness="assertive"]')
+        ?.textContent?.includes("Changes not saved. Connection closed"),
+    );
+    // A phone-wide row: the reason drops first, then the action labels, then the lower-priority actions. Copy text
+    // has no priority and stays, and the save state keeps its full width. The row width comes from this engine's own
+    // measurements, because the label's text width differs between engines and fonts: it holds the fixed controls,
+    // the whole save state and More, plus less room than one more icon action, so Keep and Discard cannot both stay.
+    const narrow = await page.evaluate(() => {
+      const dock = document.querySelector<HTMLElement>(".k2b-toolbar-dock")!;
+      const toolbar = dock.querySelector<HTMLElement>('.k2b-toolbar[data-tone="danger"]')!;
+      const px = (value: string) => Number.parseFloat(value) || 0;
+      const inline = (style: CSSStyleDeclaration) =>
+        px(style.paddingLeft) + px(style.paddingRight) + px(style.borderLeftWidth) + px(style.borderRightWidth);
+      const label = toolbar.querySelector<HTMLElement>(".k2b-toolbar__label")!;
+      const labelStyle = getComputedStyle(label);
+      const stateWidth =
+        label.querySelector<HTMLElement>(".k2b-toolbar__label-main")!.scrollWidth +
+        px(labelStyle.paddingLeft) +
+        px(labelStyle.paddingRight);
+      const width = (selector: string) => toolbar.querySelector<HTMLElement>(selector)!.getBoundingClientRect().width;
+      const action = px(getComputedStyle(toolbar.querySelector<HTMLElement>(".k2b-toolbar__action")!).minInlineSize);
+      const gap = px(getComputedStyle(toolbar).columnGap);
+      const spacer = px(getComputedStyle(toolbar.querySelector<HTMLElement>(".k2b-toolbar__spacer")!).minWidth);
+      // Navigation, state, spacer, Copy text and More, with the gaps between them.
+      const fixed = width(".app-toggle") + stateWidth + spacer + action + width(".k2b-toolbar__more") + 4 * gap;
+      return Math.ceil(inline(getComputedStyle(dock)) + inline(getComputedStyle(toolbar)) + fixed + (action + gap) / 2);
+    });
+    await page.evaluate((width) => window.toolbarFixture.resizeDock(width), narrow);
+    await frame();
+    expect(await pill.evaluate((toolbar) => toolbar.hasAttribute("data-compact"))).toBe(true);
+    expect(await moved()).toContain("Discard");
+    expect(await pill.getByRole("button", { name: "Copy text" }).isVisible()).toBe(true);
+    // The reason gave way whole; the save state still reads in full.
+    expect(await label()).toEqual({ mainWhole: true, detailShown: false });
+  } finally {
+    await page.close();
+  }
+});
+
 test("narrowing moves a superset of the least important actions and widening restores the original layout", async () => {
   const page = await openFloating();
   try {

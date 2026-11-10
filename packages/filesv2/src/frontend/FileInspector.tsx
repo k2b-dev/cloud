@@ -15,6 +15,7 @@ import {
   IconButton,
   Placeholder,
   prompts,
+  Section,
   StatusBadge,
   Tooltip,
   toast,
@@ -321,7 +322,7 @@ export default function FileInspector(props: {
                   />
                   <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
                     <Show when={!item().directory && previewKind(item())}>
-                      <DetailPanel.Section
+                      <Section
                         title={t().preview}
                         icon="ti ti-eye"
                         actions={
@@ -358,9 +359,9 @@ export default function FileInspector(props: {
                             <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
                           </button>
                         </Show>
-                      </DetailPanel.Section>
+                      </Section>
                     </Show>
-                    <DetailPanel.Section title={t().properties} icon="ti ti-list-details" class="filesv2-inspector-info">
+                    <Section title={t().properties} icon="ti ti-list-details" class="filesv2-inspector-info">
                       <DescriptionList
                         layout="rows"
                         size="sm"
@@ -410,7 +411,7 @@ export default function FileInspector(props: {
                             : []),
                         ]}
                       />
-                    </DetailPanel.Section>
+                    </Section>
                     <Show when={item().directory}>
                       <FolderContents
                         base={props.base}
@@ -497,7 +498,7 @@ export default function FileInspector(props: {
           }
         />
         <DetailPanel.Body>
-          <DetailPanel.Section title={t().properties} icon="ti ti-list-details">
+          <Section title={t().properties} icon="ti ti-list-details">
             <DescriptionList
               layout="rows"
               size="sm"
@@ -515,7 +516,7 @@ export default function FileInspector(props: {
             <Show when={props.selected.some((entry) => entry.directory)}>
               <p class="filesv2-details-none">{t().unknownFolders}</p>
             </Show>
-          </DetailPanel.Section>
+          </Section>
         </DetailPanel.Body>
       </Show>
     </DetailPanel>
@@ -556,11 +557,7 @@ function FolderContents(props: {
   const meta = (entry: FileEntry) =>
     entry.directory ? t().kindFolder : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
   return (
-    <DetailPanel.Section
-      title={t().contents}
-      icon="ti ti-folder"
-      count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}
-    >
+    <Section title={t().contents} icon="ti ti-folder" count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}>
       <Show
         when={!contents.error()}
         fallback={
@@ -610,7 +607,7 @@ function FolderContents(props: {
           </Show>
         </Show>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 
@@ -960,7 +957,7 @@ function VersionsSection(props: {
       : new Date(iso).toLocaleString(props.locale, { dateStyle: "medium", timeStyle: "short" });
   return (
     <DetailPanel.Group label={t().versions}>
-      <DetailPanel.Section
+      <Section
         title={t().versions}
         icon="ti ti-versions"
         actions={
@@ -1083,7 +1080,7 @@ function VersionsSection(props: {
             </Show>
           </Match>
         </Switch>
-      </DetailPanel.Section>
+      </Section>
     </DetailPanel.Group>
   );
 }

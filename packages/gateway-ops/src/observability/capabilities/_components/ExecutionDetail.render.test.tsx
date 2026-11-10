@@ -69,7 +69,7 @@ test("execution detail shows correlation, shape and the user's AI usage without 
   expect(kind).toContain("Capability call");
   expect(kind).toContain("Failed");
   expect(html).toContain("<h2>contacts · contacts.delete</h2>");
-  expect(html).not.toContain("k2b-detail-panel__section-icon");
+  expect(html).not.toContain("k2b-section__icon");
   const properties = html.indexOf(">Properties<");
   const more = html.indexOf("More about this call");
   expect(properties).toBeGreaterThan(-1);

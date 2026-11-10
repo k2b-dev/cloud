@@ -11,8 +11,15 @@ const messages = (locale?: string) => notebookWorkspaceMessages.resolve(locale ?
 /** A blank note is short, so a long one is never read whole to find out. */
 const BLANK_NOTE_MAX_LENGTH = 1024;
 
-/** Whether the note holds at most its title, so the empty-note offer shows. */
-export const isBlankNoteText = (text: string | Text): boolean => text.length <= BLANK_NOTE_MAX_LENGTH && isBlankPage(text.toString());
+/**
+ * Whether the note holds its title and nothing else, so the empty-note offer shows. Only the line break that ends the
+ * title may follow it: a second line, also an empty one, is where the person writes, and the offer leaves.
+ */
+export const isBlankNoteText = (text: string | Text): boolean => {
+  if (text.length > BLANK_NOTE_MAX_LENGTH) return false;
+  const [title = "", next, ...rest] = text.toString().split("\n");
+  return rest.length === 0 && !next && isBlankPage(title);
+};
 
 /** The templates of the notebook, its own first; the server checks the person may read it. */
 export const loadPageTemplates = async (notebookId: string, signal?: AbortSignal): Promise<PageTemplateSummary[]> => {

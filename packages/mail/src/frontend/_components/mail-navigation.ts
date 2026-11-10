@@ -38,6 +38,8 @@ export const buildMailListHref = (requestUrl: URL, clearSearch = false): string 
   const next = new URL(requestUrl);
   next.searchParams.delete("conversation");
   next.searchParams.delete("message");
+  // An open draft belongs to its conversation: another selection or the list never carries it along.
+  next.searchParams.delete("draft");
   if (clearSearch) {
     for (const parameter of [
       MAIL_SEARCH_FROM_PARAMETER,

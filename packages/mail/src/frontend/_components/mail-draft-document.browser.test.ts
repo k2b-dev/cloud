@@ -9,10 +9,11 @@ import * as Y from "yjs";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { DraftEditableContent, MailDraft } from "../../contracts";
 import { createDraftDocument, DRAFT_BODY, readDraftDocument, writeLocalDraftHeaders } from "../../lib/draft-document";
-import { mailDraftDocumentRequestSchema } from "../../lib/draft-document-protocol";
+import { mailDraftDocumentMessages, mailDraftDocumentRequestSchema } from "../../lib/draft-document-protocol";
 import type {} from "./mail-draft-document.browser-harness";
 
 const base: DraftEditableContent = {
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: null,
   to: [{ name: "Ada", address: "ada@example.test" }],
@@ -37,6 +38,8 @@ const draft = (): MailDraft => ({
   derivedFromMessageId: null,
   derivationKind: null,
   attachments: [],
+  suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId: "11111111-1111-4111-8111-111111111111" },
   lastEditedBy: { kind: "user", userId: "11111111-1111-4111-8111-111111111111" },
   lastEditedByDisplayName: "Ada",
@@ -55,6 +58,7 @@ let generation = "1";
 let revision = 1,
   seq = 1,
   saveFails = false,
+  streamFull = false,
   lifecycle: MailDraft["state"] = "draft",
   denied = false;
 let frozen: Uint8Array | null = null;
@@ -202,6 +206,15 @@ const server = Bun.serve<{ document: boolean }>({
         });
         packet(socket, "replayReady", { docId: "Draft1", generation: "1", cursor: cursor(), peerId: "fixture" });
       } else if (type === "syncPublish") {
+        if (streamFull) {
+          packet(socket, "error", {
+            docId: "Draft1",
+            code: "DRAFT_DOCUMENT_STREAM_FULL",
+            message: mailDraftDocumentMessages.resolve(["de"]).t.streamFull,
+          });
+          socket.close(1012, "DRAFT_DOCUMENT_STREAM_FULL");
+          return;
+        }
         const bytes = encoding.fromBase64(payload.payload);
         Y.applyUpdate(document, bytes);
         publish(bytes);
@@ -232,6 +245,7 @@ const reset = () => {
   revision = 1;
   seq = 1;
   saveFails = false;
+  streamFull = false;
   denied = false;
   lifecycle = "draft";
   frozen = null;
@@ -279,6 +293,7 @@ for (const width of [1440, 390])
       await page.keyboard.type("Local ");
       await page.waitForFunction(() => !window.mailSharedFixture.unsent());
       await waitStored(page, 1); // Echo has arrived, but SQL durability has not.
+      expect(await page.getByTitle("Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
       const vector = Y.encodeStateVector(document);
       const before = readDraftDocument(document);
       writeLocalDraftHeaders(document, before, { ...before, subject: "Peer subject", bcc: [{ name: null, address: "peer@example.test" }] });
@@ -328,6 +343,50 @@ for (const width of [1440, 390])
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
       await waitStored(page, 0);
+      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+for (const width of [1440, 390])
+  test(`rejected proposals offer copy, explicit discard and restoration after reload, width=${width}`, async () => {
+    const { page, context, errors } = await open(width);
+    try {
+      if (width === 390) await page.evaluate(() => (globalThis.document.documentElement.className = "dark"));
+      // WebKit grants no clipboard permissions to Playwright, so both engines record what the copy writes instead.
+      await page.evaluate(() => {
+        const copied: string[] = [];
+        window.copiedTexts = copied;
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText: async (text: string) => void copied.push(text) },
+          configurable: true,
+        });
+      });
+      const proposal = "Keep this rejected body proposal";
+      expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
+      expect(await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).count()).toBe(1);
+      const recovery = page.getByRole("button", { name: "Vorschlag verwerfen", exact: true });
+      expect(
+        await recovery.evaluate((button) => {
+          const notice = button.closest('[role="status"]')!;
+          return notice.scrollWidth <= notice.clientWidth;
+        }),
+      ).toBe(true);
+      await page.getByRole("button", { name: "Entwurf kopieren", exact: true }).click();
+      await page.waitForFunction(() => (window.copiedTexts?.length ?? 0) > 0);
+      expect((await page.evaluate(() => window.copiedTexts ?? [])).join("\n")).toContain(proposal);
+      await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).click();
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.rejectedEdit)).toBeNull();
+      expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
+      await page.reload();
+      await page.waitForFunction(() => window.mailSharedFixture?.state()?.ready);
+      await page.getByRole("button", { name: "Vorschlag übernehmen", exact: true }).click();
+      await page.waitForFunction((body) => window.mailSharedFixture.content().body === body, proposal);
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.rejectedEdit)).toBeNull();
+      await page.getByRole("button", { name: "Speichern", exact: true }).click();
+      await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -345,6 +404,7 @@ test("offline input survives cleanup/reload, then closes as one stable Rest requ
     await page.keyboard.press("Control+Home");
     await page.keyboard.type("Offline ");
     await page.waitForFunction(() => window.mailSharedFixture.state()?.locallySaved);
+    expect(await page.getByTitle("Offline · Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
     await waitStored(page, 1);
     expect(await page.locator(".k2b-ste-status").innerText()).toContain("Offline");
     // The sent boundary excludes the disconnected edit. Re-authorize on reload before reading device bytes.
@@ -382,6 +442,33 @@ test("permission loss preserves readable input; device opt-out prevents local pe
     expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Keep Hello");
     expect(await editor.getAttribute("contenteditable")).toBe("false");
     expect(await page.locator(".k2b-ste-status").innerText()).toContain("Zugriff entzogen");
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("a full stream keeps pending text on device and shows an error with a working retry", async () => {
+  const { page, context, errors } = await open();
+  try {
+    streamFull = true;
+    const editor = page.locator(".cm-content").first();
+    await editor.click();
+    await page.keyboard.press("Control+Home");
+    await page.keyboard.insertText("Unsent ");
+    await page.waitForFunction(() => window.mailSharedFixture.state()?.terminal && window.mailSharedFixture.state()?.error);
+    expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toBe(`Unsent ${base.body}`);
+    expect(await page.evaluate(() => window.mailSharedFixture.unsent())).toBe(true);
+    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Entwurfsspeicher ist voll");
+    expect(readDraftDocument(document).body).toBe(base.body);
+    await waitStored(page, 1);
+    streamFull = false;
+    await page.getByRole("button", { name: "Speichern erneut versuchen", exact: true }).click();
+    await page.waitForFunction(() => window.mailSharedFixture.state()?.ready && !window.mailSharedFixture.unsent());
+    expect(readDraftDocument(document).body).toBe(`Unsent ${base.body}`);
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
+    await waitStored(page, 0);
     expect(errors).toEqual([]);
   } finally {
     await context.close();

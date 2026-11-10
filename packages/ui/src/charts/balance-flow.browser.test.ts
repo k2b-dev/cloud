@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { balanceFlowPage, balanceFlowSpec as spec } from "../../test/charts/balance-flow-page";
 import { renderBalanceFlowSvg } from "./core/balance-flow";
 import { renderBalanceFlowHtml } from "./core/balance-flow-frame";
@@ -124,7 +124,7 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
             .evaluate((e) => getComputedStyle(e).fillOpacity),
         ).toBe(opacity);
         if (width !== 390) {
-          await mark.hover();
+          await hoverInPlace(mark);
           await settled(page);
           expect(
             await chart
@@ -174,7 +174,7 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
         }
         await page.keyboard.press("Escape");
         if (width !== 390) {
-          await chart.locator('[data-balance-period="0"] [data-balance-key="closing"]').hover();
+          await hoverInPlace(chart.locator('[data-balance-period="0"] [data-balance-key="closing"]'));
           await settled(page);
           expect(await chart.locator('[role="tooltip"]').innerText()).toContain("Closing October 2026 = Opening November 2026");
           expect(await chart.locator("[data-chart-datum] title").count()).toBe(0);

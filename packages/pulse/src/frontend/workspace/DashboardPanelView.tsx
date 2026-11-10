@@ -429,9 +429,9 @@ export default function DashboardPanelView(props: {
                   const chart = options();
                   // Pareto labels name its measures, rather than the shared inspector controls.
                   return chart.kind === "pareto" ? (
-                    <Chart {...chart} interactive />
+                    <Chart {...chart} title={props.panel.title} interactive />
                   ) : (
-                    <Chart {...chart} interactive labels={{ interactiveChart: props.panel.title }} />
+                    <Chart {...chart} interactive labels={{ interactiveChart: props.panel.title, interactiveLine: props.panel.title }} />
                   );
                 })()}
               </div>

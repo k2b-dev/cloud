@@ -742,7 +742,7 @@ describe("Venue shift detail and schedule", () => {
     expect(detail).not.toContain("ti-calendar-event");
     expect(detail).toMatch(/class="k2b-button venue-details-main[^"]*"[^>]*>[\s\S]*?Take shift/);
     expect(detail).toMatch(/>Properties<\/h3>[\s\S]*>Staffing<\/dt>[\s\S]*1 of 2–3 staffed[\s\S]*>People<\/h3>/);
-    expect(detail).not.toContain("k2b-detail-panel__section-icon");
+    expect(detail).not.toContain("k2b-section__icon");
     expect(detail).toMatch(/class="k2b-progressive-row[^"]*"[^>]*data-shift-person="Asg002"/);
     expect(detail).toMatch(
       /class="k2b-button k2b-progressive-action[^"]*"[^>]*aria-label="Remove Sam Sample"|aria-label="Remove Sam Sample"[^>]*class="k2b-button k2b-progressive-action/,

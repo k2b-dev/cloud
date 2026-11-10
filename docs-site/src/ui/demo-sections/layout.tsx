@@ -39,6 +39,7 @@ import {
   removePanesItem,
   SaveStatus,
   ScrollArea,
+  Section,
   SegmentedControl,
   Select,
   SelectChip,
@@ -1632,10 +1633,10 @@ const DetailPanelDemo = () => {
       ]}
       description="Two production-shaped inspectors demonstrate the final contract: padded identity headers, one stable scroll gutter absorbed by the trailing host inset, one flat frame for every summary, group, lone section and comment thread, and the same heading, icon and count columns in all of them."
       code={`<DetailPanel.Group label="Customer context">
-  <DetailPanel.Section title="Company" icon="ti ti-building" tone="accent">
+  <Section title="Company" icon="ti ti-building">
     <DescriptionList layout="rows" size="sm" items={companyItems} />
-  </DetailPanel.Section>
-  <DetailPanel.Section title="Contact" icon="ti ti-user" tone="warning">
+  </Section>
+  <Section title="Contact" icon="ti ti-user" tone="warning">
     <DetailPanel.Action
       href="/contacts/ada"
       target="_blank"
@@ -1644,11 +1645,11 @@ const DetailPanelDemo = () => {
       menuLabel="More actions for Ada Lovelace"
       menuItems={[{ label: "Related requests", href: "/requests?contact=ada" }]}
     />
-  </DetailPanel.Section>
-  <DetailPanel.Section title="Recent threads" icon="ti ti-history" tone="success">…</DetailPanel.Section>
+  </Section>
+  <Section title="Recent threads" icon="ti ti-history" tone="success">…</Section>
 </DetailPanel.Group>
 
-<DetailPanel.Section title="Subscription plan details" icon="ti ti-alert-triangle" tone="danger" actions={retry} />
+<Section title="Subscription plan details" icon="ti ti-alert-triangle" tone="danger" actions={retry} />
 
 <Discussion label="Comments" icon="ti ti-messages" count={1}>
   <Discussion.List>…</Discussion.List>
@@ -1684,7 +1685,7 @@ const DetailPanelDemo = () => {
               />
               <DetailPanel.Body>
                 <DetailPanel.Group label="Request context">
-                  <DetailPanel.Section title="Workflow" icon="ti ti-route" tone="accent">
+                  <Section title="Workflow" icon="ti ti-route">
                     <DescriptionList
                       layout="rows"
                       size="sm"
@@ -1756,9 +1757,9 @@ const DetailPanelDemo = () => {
                         { term: "Thread tier", description: "Growth" },
                       ]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Links" icon="ti ti-link" tone="neutral" meta="0">
+                  <Section title="Links" icon="ti ti-link" tone="neutral" meta="0">
                     <div class="ui-detail-panel-grouped__empty-actions">
                       <Button variant="ghost" size="xs">
                         <i class="ti ti-message-circle" aria-hidden="true" /> Discussions
@@ -1767,14 +1768,13 @@ const DetailPanelDemo = () => {
                         <i class="ti ti-link-plus" aria-hidden="true" /> Thread links
                       </Button>
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
                 </DetailPanel.Group>
 
                 <DetailPanel.Group label="Customer context">
-                  <DetailPanel.Section
+                  <Section
                     title="content-mobbin"
                     icon="ti ti-building"
-                    tone="accent"
                     actions={
                       <IconButton variant="ghost" size="xs" label="Company actions">
                         <i class="ti ti-dots" aria-hidden="true" />
@@ -1790,9 +1790,9 @@ const DetailPanelDemo = () => {
                         { term: "Domain", description: "content-mobbin.com" },
                       ]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section
+                  <Section
                     title="alexsmith"
                     icon="ti ti-user"
                     tone="warning"
@@ -1820,9 +1820,9 @@ const DetailPanelDemo = () => {
                       menuLabel="More actions for alexsmith"
                       menuItems={[{ label: "Related requests", icon: "ti ti-message-circle", action: () => {} }]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Recent threads" icon="ti ti-history" tone="success">
+                  <Section title="Recent threads" icon="ti ti-history" tone="success">
                     <div class="ui-detail-panel-grouped__threads">
                       {[
                         ["Bug report", "1h ago"],
@@ -1836,10 +1836,10 @@ const DetailPanelDemo = () => {
                         </button>
                       ))}
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
                 </DetailPanel.Group>
 
-                <DetailPanel.Section
+                <Section
                   title="Subscription plan details"
                   icon="ti ti-alert-triangle"
                   tone="danger"
@@ -1886,7 +1886,7 @@ const DetailPanelDemo = () => {
               />
               <DetailPanel.Body>
                 <DetailPanel.Group label="Document context">
-                  <DetailPanel.Section title="Contents" icon="ti ti-list-tree" tone="accent">
+                  <Section title="Contents" icon="ti ti-list-tree">
                     <ol class="ui-detail-panel-grouped__contents">
                       {[
                         ["H1", "Welcome!"],
@@ -1903,7 +1903,7 @@ const DetailPanelDemo = () => {
                         </li>
                       ))}
                     </ol>
-                  </DetailPanel.Section>
+                  </Section>
                 </DetailPanel.Group>
 
                 <Discussion label="Comments" icon="ti ti-messages" count={1}>
@@ -1931,14 +1931,14 @@ const DetailPanelDemo = () => {
                 </Discussion>
 
                 <DetailPanel.Group label="Collaboration context">
-                  <DetailPanel.Section title="Online" icon="ti ti-users" tone="success" meta="1">
+                  <Section title="Online" icon="ti ti-users" tone="success" meta="1">
                     <div class="ui-detail-panel-grouped__person">
                       <Avatar name="Valentin Kolb" size="xs" />
                       <span>Valentin Kolb</span>
                     </div>
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Info" icon="ti ti-info-circle" tone="neutral" collapsible>
+                  <Section title="Info" icon="ti ti-info-circle" tone="neutral" collapsible>
                     <DescriptionList
                       layout="rows"
                       size="sm"
@@ -1947,9 +1947,9 @@ const DetailPanelDemo = () => {
                         { term: "Updated", description: "Jul 7, 2026" },
                       ]}
                     />
-                  </DetailPanel.Section>
+                  </Section>
 
-                  <DetailPanel.Section title="Versions" icon="ti ti-history" tone="warning" meta="12" />
+                  <Section title="Versions" icon="ti ti-history" tone="warning" meta="12" />
                 </DetailPanel.Group>
               </DetailPanel.Body>
             </DetailPanel>
@@ -2145,7 +2145,7 @@ const DetailPanelTaskRows = () => {
         <DetailPanel class="ui-detail-panel-grouped">
           <DetailPanel.Body>
             <DetailPanel.Group label="Customer tasks">
-              <DetailPanel.Section
+              <Section
                 title="Tasks"
                 icon="ti ti-checkbox"
                 tone="neutral"
@@ -2167,7 +2167,7 @@ const DetailPanelTaskRows = () => {
                     />
                   )}
                 </For>
-              </DetailPanel.Section>
+              </Section>
             </DetailPanel.Group>
           </DetailPanel.Body>
         </DetailPanel>
@@ -2181,7 +2181,7 @@ const DetailPanelActionDemo = () => (
     id="detail-panel-action"
     chip={{ kind: "component", name: "DetailPanel.Action", from: "@k2b/ui" }}
     description="Full-width destinations keep navigation primary while a sibling overflow menu or one direct secondary action holds further commands. A leading checkbox toggles a row's state, such as a task's done, without opening it. Disabled rows preserve unavailable resource context."
-    code={`<DetailPanel.Section title="Related resources" icon="ti ti-link">
+    code={`<Section title="Related resources" icon="ti ti-link">
   <DetailPanel.Action
     href="/app/mail/inbox?conversation=Conv01"
     leading={<i class="ti ti-mail" aria-hidden="true" />}
@@ -2210,7 +2210,7 @@ const DetailPanelActionDemo = () => (
     title="Archived brief"
     description="Resource unavailable or no longer accessible"
   />
-</DetailPanel.Section>`}
+</Section>`}
   >
     <div class="ui-detail-panel-patterns">
       <article class="ui-detail-panel-pattern">
@@ -2222,7 +2222,7 @@ const DetailPanelActionDemo = () => (
           <DetailPanel class="ui-detail-panel-grouped">
             <DetailPanel.Body>
               <DetailPanel.Group label="Resource context">
-                <DetailPanel.Section title="Related resources" icon="ti ti-link" tone="neutral">
+                <Section title="Related resources" icon="ti ti-link" tone="neutral">
                   <DetailPanel.Action
                     href="#detail-panel-action"
                     leading={<i class="ti ti-mail" aria-hidden="true" />}
@@ -2252,7 +2252,7 @@ const DetailPanelActionDemo = () => (
                     title="Archived brief"
                     description="Resource unavailable or no longer accessible"
                   />
-                </DetailPanel.Section>
+                </Section>
               </DetailPanel.Group>
             </DetailPanel.Body>
           </DetailPanel>

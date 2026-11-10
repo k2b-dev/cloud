@@ -3,6 +3,7 @@ import type { MailListItem } from "../../service/workspace";
 import { mailListMessagePendingKey, reconcileMailListOptimisticState } from "./mail-list-optimistic";
 
 const item = (unread: boolean, flagged: boolean, overrides: Partial<MailListItem> = {}): MailListItem => ({
+  drafts: { count: 0, editors: [] },
   id: "00000000-0000-4000-8000-000000000001",
   conversationId: "00000000-0000-4000-8000-000000000001",
   selectionKind: "conversation",

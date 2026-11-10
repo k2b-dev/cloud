@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import {
   type CalendarRange,
   type CalendarSourceRead,
@@ -270,7 +270,7 @@ describe("calendar of all Spaces and apps", () => {
       expect(new URL(page.url()).searchParams.getAll("cal")).toContain("shifts:meine");
       expect(await page.getByRole("button", { name: /Kalender 10/ }).count()).toBe(1);
       // "Only" chooses that calendar alone.
-      await menu.getByRole("menuitemcheckbox", { name: "Werkstatt" }).hover();
+      await hoverInPlace(menu.getByRole("menuitemcheckbox", { name: "Werkstatt" }));
       await menu.getByRole("menuitem", { name: "Nur Werkstatt" }).click();
       expect(new URL(page.url()).searchParams.getAll("cal")).toEqual(["spaces:Werks1"]);
       await page.keyboard.press("Escape");

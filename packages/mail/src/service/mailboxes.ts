@@ -9,8 +9,10 @@ import {
   type DeletedMailbox,
   type DeletedMailboxPage,
   defaultComposeSafetyConfig,
+  draftEditModeSchema,
   type Mailbox,
 } from "../contracts";
+import { mailDraftDocumentMessages } from "../lib/draft-document-protocol";
 import { withShortIdDb } from "../lib/short-id";
 import {
   getMailboxPermission,
@@ -30,6 +32,7 @@ import {
   type MailRequestContext,
   userBackedActor,
 } from "./auth";
+import { sharedDraftsSupported } from "./draft-documents";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
 import { mailLive } from "./live";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
@@ -45,6 +48,7 @@ type DbMailbox = {
   search_backend: Mailbox["searchBackend"];
   automatic_reply_management_permission: Mailbox["automaticReplyManagementPermission"];
   compose_safety: unknown;
+  draft_edit_mode: Mailbox["draftEditMode"];
   deleted_at: Date | string | null;
   deleted_cursor_us: string | null;
   created_at: Date | string;
@@ -75,6 +79,7 @@ const mapMailbox = (row: DbMailbox): Mailbox => ({
   searchBackend: row.search_backend,
   automaticReplyManagementPermission: row.automatic_reply_management_permission,
   composeSafety: composeSafetyConfigSchema.catch(defaultComposeSafetyConfig()).parse(row.compose_safety),
+  draftEditMode: row.draft_edit_mode,
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
 });
@@ -97,7 +102,7 @@ export const getMailboxReceivingAddress = async (mailboxId: string): Promise<str
 const mailboxColumns = () => sql`
   m.id, m.name, m.description, m.health, m.health_reason,
   m.sync_enabled, m.search_backend, m.automatic_reply_management_permission, m.deleted_at,
-  m.compose_safety,
+  m.compose_safety, m.draft_edit_mode,
   CASE
     WHEN m.deleted_at IS NULL THEN NULL
     ELSE (extract(epoch FROM m.deleted_at) * 1000000)::bigint::text
@@ -202,7 +207,7 @@ export const createMailbox = async (context: MailRequestContext, input: CreateMa
             ${context.actor.kind === "service_account" ? context.actor.serviceAccount.id : null}::uuid
           )
           RETURNING id, name, description, health, health_reason, sync_enabled, search_backend,
-            automatic_reply_management_permission, compose_safety, deleted_at, created_at, updated_at
+            automatic_reply_management_permission, compose_safety, draft_edit_mode, deleted_at, created_at, updated_at
         `,
         );
         const [row] = rows;
@@ -410,7 +415,10 @@ export const updateMailbox = async (params: {
   searchBackend?: Mailbox["searchBackend"];
   automaticReplyManagementPermission?: Mailbox["automaticReplyManagementPermission"];
   composeSafety?: Mailbox["composeSafety"];
+  draftEditMode?: Mailbox["draftEditMode"];
 }): Promise<Result<Mailbox>> => {
+  const draftEditMode = params.draftEditMode === undefined ? undefined : draftEditModeSchema.safeParse(params.draftEditMode);
+  if (draftEditMode && !draftEditMode.success) return fail(err.badInput(mailDraftDocumentMessages.resolve([]).t.invalidMode));
   const name = params.name?.trim();
   if (name !== undefined && (name.length < 1 || name.length > 160)) return fail(err.badInput("Mailbox name is invalid"));
   const description = params.description?.trim() || null;
@@ -428,6 +436,9 @@ export const updateMailbox = async (params: {
         `;
         if (!locked) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await requireMailboxPermission(params.context, params.mailboxId, "admin", tx));
+        if (draftEditMode?.success && draftEditMode.data === "shared" && !(await sharedDraftsSupported())) {
+          unwrap(fail({ code: "SHARED_DRAFTS_UNSUPPORTED", status: 409, message: mailDraftDocumentMessages.resolve([]).t.unsupported }));
+        }
         if (composeSafety) {
           unwrap(
             await validateDestructiveIncomingAutomationsForMailbox({
@@ -448,6 +459,7 @@ export const updateMailbox = async (params: {
               ${params.automaticReplyManagementPermission ?? null},
               automatic_reply_management_permission
             ),
+            draft_edit_mode = COALESCE(${draftEditMode?.data ?? null}, draft_edit_mode),
             compose_safety = COALESCE(${composeSafety?.data ?? null}::jsonb, compose_safety),
             health = CASE
               WHEN ${params.syncEnabled === false} THEN 'paused'
@@ -461,7 +473,7 @@ export const updateMailbox = async (params: {
             END
           WHERE id = ${params.mailboxId}::uuid
           RETURNING id, name, description, health, health_reason, sync_enabled, search_backend,
-            automatic_reply_management_permission, compose_safety, deleted_at, created_at, updated_at
+            automatic_reply_management_permission, compose_safety, draft_edit_mode, deleted_at, created_at, updated_at
         `;
         if (!row) throw new Error("Mailbox update returned no row");
         await audit.record(

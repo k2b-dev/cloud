@@ -60,14 +60,19 @@ export const assertAiRevision = async (
 };
 const rows = async (table: Table, id?: string, db = sql, lock = false) => {
   const key = table === "model_assignments" ? "slot" : "id";
+  // Keep ai.models itself readable by older strict to_jsonb(t) catalog readers.
+  const projection = table === "models" ? "to_jsonb(t) || jsonb_build_object('output_token_limit', l.output_token_limit)" : "to_jsonb(t)";
+  const join = table === "models" ? " LEFT JOIN ai.model_output_limits l ON l.model_id=t.id" : "";
   const result = await db.unsafe<{ data: unknown }[]>(
-    `SELECT to_jsonb(t) AS data FROM ai.${table} t${id === undefined ? "" : ` WHERE ${key}=$1`}${lock ? " FOR UPDATE" : ""}`,
+    `SELECT ${projection} AS data FROM ai.${table} t${join}${id === undefined ? "" : ` WHERE t.${key}=$1`}${lock ? " FOR UPDATE OF t" : ""}`,
     id === undefined ? [] : [id],
   );
   return result.map((row) => decode(row.data));
 };
 const write = async (table: Table, value: Record<string, unknown>, actorId: string, db = sql, id?: string) => {
-  const entries = Object.entries(value).filter(([, value]) => value !== undefined);
+  const entries = Object.entries(value).filter(
+    ([key, value]) => value !== undefined && !(table === "models" && key === "outputTokenLimit"),
+  );
   const columns = entries.map(([key]) => snake(key));
   // Bind serialized JSON as text; Bun otherwise encodes the string as a JSON scalar.
   const values = entries.map(([key], index) => `$${index + 1}${jsonColumns.has(key) ? "::text::jsonb" : ""}`);
@@ -82,6 +87,16 @@ const write = async (table: Table, value: Record<string, unknown>, actorId: stri
       `UPDATE ai.${table} SET ${columns.map((key, index) => `${key}=${values[index]}`).join(",")}, revision=revision+1,updated_at=clock_timestamp(),updated_by=$${params.length + 1}::uuid WHERE ${table === "model_assignments" ? "slot" : "id"}=$${params.length + 2}`,
       [...params, actorId, id],
     );
+  }
+  if (table === "models" && value.outputTokenLimit !== undefined) {
+    const modelId = id ?? z.string().parse(value.id);
+    if (value.outputTokenLimit === null) {
+      await db`DELETE FROM ai.model_output_limits WHERE model_id=${modelId}`;
+    } else {
+      const limit = AiModelInputSchema.shape.outputTokenLimit.unwrap().unwrap().parse(value.outputTokenLimit);
+      await db`INSERT INTO ai.model_output_limits(model_id,output_token_limit) VALUES(${modelId},${limit})
+        ON CONFLICT(model_id) DO UPDATE SET output_token_limit=EXCLUDED.output_token_limit`;
+    }
   }
 };
 const requireRow = <T>(value: T | undefined): T => {

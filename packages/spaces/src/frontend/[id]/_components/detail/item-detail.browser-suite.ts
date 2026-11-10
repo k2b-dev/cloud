@@ -11,7 +11,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
 import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
-import { browserName, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -425,7 +425,7 @@ const boxes = (page: Page) =>
       }),
   );
 /** The Properties section, the first in the panel body. */
-const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-detail-panel__section:first-of-type .k2b-description-list__item";
+const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-section:first-of-type .k2b-description-list__item";
 const planningRow = (page: Page, term: string) =>
   page.locator(PROPERTY_ROWS, { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
 const clickLabel = async (page: Page, term: string) => {
@@ -737,13 +737,11 @@ describe("Spaces item detail in a browser", () => {
           const outline = await page.evaluate(() => {
             const visible = (selector: string) =>
               Array.from(window.document.querySelectorAll(selector)).filter((element) => !element.closest("[hidden]"));
-            const headings = visible(
-              ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-discussion h3",
-            );
+            const headings = visible(".k2b-section__title");
             return {
               edges: headings.map((element) => Math.round(element.getBoundingClientRect().left)),
-              sections: visible(".k2b-detail-panel__section, .k2b-discussion").length,
-              icons: visible(".k2b-detail-panel__section-icon i, .k2b-discussion__icon i").length,
+              sections: visible(".k2b-section").length,
+              icons: visible(".k2b-section__icon i").length,
             };
           });
           expect(outline.edges.length).toBeGreaterThan(4);
@@ -763,7 +761,7 @@ describe("Spaces item detail in a browser", () => {
           const remove = blocker.getByRole("button", { name: "Blockierung durch Rename the computers entfernen" });
           if (!view.touch) {
             expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
-            await blocker.hover();
+            await hoverInPlace(blocker);
             expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
             expect(await boxes(page)).toEqual(rest);
           } else expect(await remove.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
@@ -952,7 +950,7 @@ describe("Spaces item detail in a browser", () => {
       expect(await page.locator(".spaces-dependency__remove").count()).toBe(0);
       expect(await page.getByText("Rename the computers").count()).toBe(1);
       const rest = await boxes(page);
-      await planningRow(page, "Priority").hover();
+      await hoverInPlace(planningRow(page, "Priority"));
       expect(await boxes(page)).toEqual(rest);
     } finally {
       await page.context().close();

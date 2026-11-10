@@ -31,6 +31,7 @@ import {
   openSpotlightSearch,
   Placeholder,
   prompts,
+  Section,
   SegmentedControl,
   Skeleton,
   StatusBadge,
@@ -932,11 +933,7 @@ export default function MailDetailsPanel(props: {
   ];
 
   const attachmentsSection = () => (
-    <DetailPanel.Section
-      title={t().attachments}
-      icon="ti ti-paperclip"
-      count={merged().files.length > 0 ? merged().files.length : undefined}
-    >
+    <Section title={t().attachments} icon="ti ti-paperclip" count={merged().files.length > 0 ? merged().files.length : undefined}>
       <Show when={merged().files.length > 0} fallback={<p class="mail-details-none">{details().noAttachments}</p>}>
         <FileGrid
           rows={merged().files}
@@ -1029,7 +1026,7 @@ export default function MailDetailsPanel(props: {
           onOpen={openFile}
         />
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 
   const body = (parts?: MailContextParts) => (
@@ -1073,7 +1070,7 @@ export default function MailDetailsPanel(props: {
 
       <Show when={props.canWrite && props.conversationDrafts[0]}>
         {(draft) => (
-          <DetailPanel.Section
+          <Section
             title={t().draftsAvailable({ count: props.conversationDrafts.length })}
             icon="ti ti-pencil"
             count={props.conversationDrafts.length}
@@ -1087,11 +1084,11 @@ export default function MailDetailsPanel(props: {
                 updated: dates.formatDateTimeRelative(draft().updatedAt, props.dateConfig),
               })}
             />
-          </DetailPanel.Section>
+          </Section>
         )}
       </Show>
 
-      <DetailPanel.Section
+      <Section
         title={details().properties}
         icon="ti ti-list-details"
         actions={
@@ -1197,7 +1194,7 @@ export default function MailDetailsPanel(props: {
             },
           ]}
         />
-      </DetailPanel.Section>
+      </Section>
 
       {/* Order of use (UI-27): fields, then the team's notes, then what belongs to the conversation. */}
       <Show when={props.conversationId} keyed>
@@ -1238,7 +1235,7 @@ export default function MailDetailsPanel(props: {
 
       <Show when={parts}>
         {(context) => (
-          <DetailPanel.Section
+          <Section
             title={details().linked}
             icon="ti ti-arrows-exchange"
             count={
@@ -1269,7 +1266,7 @@ export default function MailDetailsPanel(props: {
               <p class="mail-details-none">{detailPanelNone()}</p>
             </Show>
             {context().spacesAdd}
-          </DetailPanel.Section>
+          </Section>
         )}
       </Show>
 
@@ -1289,7 +1286,7 @@ export default function MailDetailsPanel(props: {
           )}
         </Show>
         <Show when={parts?.showPeople()}>
-          <DetailPanel.Section
+          <Section
             title={details().people}
             icon="ti ti-users"
             count={parts?.peopleNames().length || undefined}
@@ -1297,9 +1294,9 @@ export default function MailDetailsPanel(props: {
             summary={parts?.peopleNames().join(" · ")}
           >
             {parts?.people}
-          </DetailPanel.Section>
+          </Section>
         </Show>
-        <DetailPanel.Section
+        <Section
           title={details().activity}
           icon="ti ti-activity"
           count={activityItems().length || undefined}
@@ -1348,7 +1345,7 @@ export default function MailDetailsPanel(props: {
               </For>
             </div>
           </Show>
-        </DetailPanel.Section>
+        </Section>
         <DetailProperties title={details().technicalDetails} summary={details().technicalSummary} items={technicalItems()}>
           {technicalActions()}
         </DetailProperties>

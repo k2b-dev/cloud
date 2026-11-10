@@ -16,6 +16,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: MailConversationRow } = await import("./MailConversationRow.tsx");
 
 const item: MailListItem = {
+  drafts: { count: 0, editors: [] },
   id: "Msg001",
   conversationId: "Conv01",
   selectionKind: "conversation",

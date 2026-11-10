@@ -257,6 +257,25 @@ WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
 changes `visibility` starts no animation for `settled()` to wait for. See
 `hover()` in `packages/ui/src/layout/sidebar-row-label-room.browser.test.ts`.
 
+A test that reads geometry before and after a hover moves the pointer with
+`hoverInPlace(target, position)` from `packages/ui/test/browser.ts`, not with
+`Locator.hover()`. When an actionability check fails, `hover()` tries again
+and first scrolls the target with `scrollIntoView`, `block: "end"` on the
+first retry. One retry on a busy runner moves the page, and every viewport box
+read after it moves too. `hoverInPlace()` keeps only the first attempt's
+scroll: a target that is not fully in view scrolls in once, and one in view
+stays where it is. It waits until no view transition runs in the target's
+frame, because `<html>` takes all pointer input during one. Then it checks that
+the target is at the point and moves the mouse there. Any other cover fails at
+once. Without a position, it points at the center of the target's first line
+box, as `hover()` does, and it also works for a target in a frame
+([#3013](https://github.com/k2b-dev/cloud/issues/3013)). The `hover-in-place`
+check reports a `hover()` that has a `boundingBox()` or a page callback with
+`getBoundingClientRect()`, `getClientRects()` or `elementFromPoint()` before
+and after it in the same flow. Helpers of the same file count. A line comment
+`// hover: <reason>` on the same line or directly above allows a hover whose
+reads do not depend on the scroll position.
+
 A browser test that opens its own context or page gives itself a budget, as
 the Chat suites do (`test(name, run, 30_000)`), and keeps the page's shorter
 limit for each step (`page.setDefaultTimeout(5_000)`). Bun's default of 5 s

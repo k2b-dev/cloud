@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, setSystemTime, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
-import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import {
   createSharedTextProvider,
+  SHARED_TEXT_ACK_TIMEOUT_MS,
   type SharedTextProviderError,
   type SharedTextProviderMessage,
   type SharedTextProviderOptions,
@@ -91,6 +92,43 @@ const fixture = (options: Partial<SharedTextProviderOptions<string, { name: stri
   return { provider, socket, local, awareness };
 };
 const publishes = (socket: Socket) => socket.sent.filter((request) => request.type === "syncPublish");
+
+test("an unacknowledged update closes a silent socket and reconnects with its original input base", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-09T12:00:00Z"));
+  try {
+    const errors: SharedTextProviderError[] = [];
+    const { provider, socket, local } = fixture({ onError: (error) => errors.push(error) });
+    socket.ready();
+    local.getText("codemirror").insert(0, "Unacknowledged text");
+    const first = publishes(socket)[0]!;
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS / 2);
+    local.getText("codemirror").insert(local.getText("codemirror").length, " with later typing");
+    socket.sync(publishes(socket).at(-1)!.payload.payload);
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS / 2 - 1);
+    expect(socket.readyState).toBe(1);
+    jest.advanceTimersByTime(1);
+    expect(socket.readyState).toBe(3);
+    expect(errors.at(-1)?.code).toBe("SYNC_TIMEOUT");
+    expect(provider.hasUnsentChanges()).toBe(true);
+    jest.advanceTimersByTime(2_000);
+    expect(Socket.instances).toHaveLength(2);
+    const replacement = Socket.instances[1]!;
+    replacement.open();
+    replacement.ready();
+    expect(publishes(replacement)[0]!.payload.baseCursor).toBe(first.payload.baseCursor);
+    expect(provider.recoveryInput().text).toBe("Unacknowledged text with later typing");
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS);
+    expect(replacement.readyState).toBe(3);
+    expect(errors.filter((error) => error.code === "SYNC_TIMEOUT")).toHaveLength(2);
+    expect(provider.hasUnsentChanges()).toBe(true);
+    provider.dispose();
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS * 2);
+    expect(Socket.instances).toHaveLength(2);
+  } finally {
+    jest.useRealTimers();
+  }
+});
 
 test("opaque generations and UUID document IDs preserve replay-before-write ordering and original bases", () => {
   const { provider, socket, local } = fixture();
@@ -294,6 +332,64 @@ test("trusted awareness sends only local state and suppresses its rewritten serv
   const publications = socket.sent.filter((request) => request.type === "awarenessPublish");
   expect(publications).toHaveLength(1);
   expect(awareness.getStates().has(local.clientID)).toBe(true);
+});
+
+test("a burst of cursor moves sends the first and then only the latest state per interval", () => {
+  const timers: { run: () => void; delay: number }[] = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  Object.assign(globalThis, { setTimeout: (run: () => void, delay: number) => timers.push({ run, delay }) });
+  cleanups.push(() => Object.assign(globalThis, { setTimeout: originalSetTimeout }));
+  const { awareness, socket } = fixture();
+  socket.ready();
+  const frames = () => socket.sent.filter((request) => request.type === "awarenessPublish");
+  const before = frames().length;
+  // A selection drag reports every pointer move; each frame would cost the server an access check and a publish.
+  for (let head = 0; head < 60; head++) awareness.setLocalStateField("cursor", { anchor: 0, head });
+  expect(frames()).toHaveLength(before + 1);
+  expect(timers.map((timer) => timer.delay)).toEqual([100]);
+  timers.shift()!.run();
+  expect(frames()).toHaveLength(before + 2);
+  const latest = new Awareness(doc(303));
+  cleanups.push(() => latest.destroy());
+  applyAwarenessUpdate(latest, encoding.fromBase64(frames().at(-1)!.payload.payload), "remote");
+  expect([...latest.getStates().values()].at(-1)?.cursor).toEqual({ anchor: 0, head: 59 });
+  // The trailing frame opens one more interval; without new moves it sends nothing.
+  timers.shift()!.run();
+  expect(frames()).toHaveLength(before + 2);
+  expect(timers).toHaveLength(0);
+});
+
+test("a busy server or proxy reconnects with backoff and keeps unsent input instead of stopping", () => {
+  const timers: { run: () => void; delay: number }[] = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  Object.assign(globalThis, { setTimeout: (run: () => void, delay: number) => timers.push({ run, delay }) });
+  cleanups.push(() => Object.assign(globalThis, { setTimeout: originalSetTimeout }));
+  const fatal: string[] = [];
+  // Even an adapter that maps 1013 or BACKPRESSURE to a terminal error cannot end the session for an overload.
+  const { provider, socket, local } = fixture({
+    onFatal: (error) => fatal.push(error.code),
+    terminalErrorCodes: ["ACCESS_REVOKED", "BACKPRESSURE"],
+    transport: {
+      url: "wss://example.invalid/api/drafts/ws",
+      encode: (request) => request,
+      decode: (packet) => packet as SharedTextProviderMessage<string, { name: string }>,
+      closeError: () => ({ code: "ACCESS_REVOKED", message: "Access revoked" }),
+    },
+  });
+  socket.ready();
+  local.getText("codemirror").insert(0, "busy");
+  const [unsent] = publishes(socket);
+  socket.message({ type: "error", payload: { code: "BACKPRESSURE", message: "Too many messages" } });
+  expect(socket.readyState).toBe(3);
+  socket.onclose?.({ code: 1013, reason: "BACKPRESSURE" });
+  expect(fatal).toEqual([]);
+  expect(provider.hasUnsentChanges()).toBe(true);
+  timers.find((timer) => timer.delay === 2_000)!.run();
+  const next = Socket.instances.at(-1)!;
+  expect(next).not.toBe(socket);
+  next.open();
+  next.ready();
+  expect(publishes(next).map((request) => request.payload.payload)).toEqual([unsent!.payload.payload]);
 });
 
 test("an application-specific closed-generation error keeps input recoverable and cannot be resumed", () => {

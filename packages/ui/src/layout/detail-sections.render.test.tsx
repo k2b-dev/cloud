@@ -180,7 +180,7 @@ describe("DetailLinks, DetailProperties, DetailTags", () => {
         defaultOpen: false,
       }),
     );
-    expect(html).toMatch(/k2b-detail-panel__section-preview[^>]*>Could not load all links</);
+    expect(html).toMatch(/k2b-section__summary[^>]*>Could not load all links</);
   });
   test("link rows carry a description, an external target, a menu, and a disabled state", () => {
     const html = render(() =>

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The edge contract: every field keeps a 2 px edge in every state, drawn
 // inside its box, so the outer box and the text never move. States change the
@@ -409,7 +409,7 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               await page.mouse.move(5, 890);
               await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
               if (state === "focus") await element.evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
-              if (state === "hover") await element.hover();
+              if (state === "hover") await hoverInPlace(element);
               await settled(page);
               seen[state] = await measure(element);
               if (shots) {

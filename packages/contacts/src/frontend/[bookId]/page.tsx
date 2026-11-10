@@ -17,11 +17,9 @@ import {
   resolvePublicId,
 } from "../../service/public-resources";
 import ContactCreateLauncher from "../_components/ContactCreateLauncher.island";
-import ContactDetailPanel from "../_components/ContactDetailPanel.island";
 import ContactsLiveEvents from "../_components/ContactsLiveEvents.island";
 import ContactsSidebar from "../_components/ContactsSidebar";
-import ContactsWorkspaceMain from "../_components/ContactsWorkspaceMain";
-import DesktopDetailLayoutSync from "../_components/DesktopDetailLayoutSync.island";
+import ContactsWorkspace from "../_components/ContactsWorkspace.island";
 import {
   CONTACTS_PER_PAGE,
   loadContactBookPermissions,
@@ -147,7 +145,6 @@ export default ssr<AuthContext>(async (c) => {
   const resultHref = `${requestUrl.pathname}${requestUrl.search}`;
   const initialSelectedContactId = selectedPublicContact?.id ?? selectedContactIdFromUrl ?? null;
   const initialSelectedBookId = selectedPublicContact ? publicBookId : selectedContactIdFromUrl ? publicBookId : null;
-  const hasDesktopDetailSelection = Boolean(selectedPublicContact);
   const geoAvailability = await geoAvailabilityRequest;
   return () => (
     <Layout
@@ -160,65 +157,56 @@ export default ssr<AuthContext>(async (c) => {
         <ContactsSidebar books={books} active={currentBook.id} adminBookIds={adminBookIds} />
 
         <AppWorkspace.Content>
-          <ContactsWorkspaceMain
-            scope="book"
-            title={currentBook.name}
-            description={currentBook.description ?? t.sharedBookDescription}
-            total={contactsResult.data.total}
-            search={search}
-            resultHref={resultHref}
-            bookId={publicBookId}
-            perPage={perPage}
-            searchPlaceholder={t.filterBookPlaceholder({ name: currentBook.name })}
-            contacts={contacts}
-            bookNames={bookNames}
-            initialSelectedContactId={initialSelectedContactId}
-            initialSelectedBookId={initialSelectedBookId}
+          <ContactCreateLauncher
             writableBooks={writableBooks}
-            defaultCreateBookId={canWrite ? currentBook.id : (writableBooks[0]?.id ?? null)}
-            chooseBookOnCreate={!canWrite}
-            currentPage={contactsResult.data.page}
-            totalPages={totalPages}
-            tags={bookTags}
-            activeTagId={activeTagId}
-            filtersBasePath={`/app/contacts/${publicBookId}`}
-            initialFavoriteKeys={favoriteKeys}
+            defaultBookId={canWrite ? currentBook.id : undefined}
+            geoAvailability={geoAvailability}
           />
-
-          <AppWorkspace.Detail
-            id="contacts-detail-panel"
-            open={hasDesktopDetailSelection}
-            width="lg"
-            maxWidth={760}
-            phone={c.req.query("address") ? "page" : "sheet"}
-            viewTransitionName="contacts-detail-panel-shell"
-          >
-            <ContactCreateLauncher
-              writableBooks={writableBooks}
-              defaultBookId={canWrite ? currentBook.id : undefined}
-              geoAvailability={geoAvailability}
-            />
-            <ContactDetailPanel
-              initialContact={selectedPublicContact}
-              initialAddressId={c.req.query("address") ?? null}
-              initialContactId={initialSelectedContactId}
-              initialBookId={initialSelectedBookId}
-              initialNotesPage={initialNotesPage}
-              contacts={contacts}
-              bookNames={bookNames}
-              writableBooks={writableBooks}
-              adminBookIds={adminBookIds}
-              memberBookIds={memberBookIds}
-              currentUserId={user.id}
-              showEmpty={false}
-              initialFavoriteKeys={favoriteKeys}
-              geoAvailability={geoAvailability}
-              timeZone={getTimeZone(c)}
-            />
-          </AppWorkspace.Detail>
+          <ContactsWorkspace
+            list={{
+              scope: "book",
+              title: currentBook.name,
+              description: currentBook.description ?? t.sharedBookDescription,
+              total: contactsResult.data.total,
+              search,
+              resultHref,
+              bookId: publicBookId,
+              perPage,
+              searchPlaceholder: t.filterBookPlaceholder({ name: currentBook.name }),
+              contacts,
+              bookNames,
+              initialSelectedContactId,
+              initialSelectedBookId,
+              writableBooks,
+              defaultCreateBookId: canWrite ? currentBook.id : (writableBooks[0]?.id ?? null),
+              chooseBookOnCreate: !canWrite,
+              currentPage: contactsResult.data.page,
+              totalPages,
+              tags: bookTags,
+              activeTagId,
+              filtersBasePath: `/app/contacts/${publicBookId}`,
+              initialFavoriteKeys: favoriteKeys,
+            }}
+            reader={{
+              initialContact: selectedPublicContact,
+              initialAddressId: c.req.query("address") ?? null,
+              initialContactId: initialSelectedContactId,
+              initialBookId: initialSelectedBookId,
+              initialNotesPage,
+              contacts,
+              bookNames,
+              writableBooks,
+              adminBookIds,
+              memberBookIds,
+              currentUserId: user.id,
+              showEmpty: false,
+              initialFavoriteKeys: favoriteKeys,
+              geoAvailability,
+              timeZone: getTimeZone(c),
+            }}
+          />
         </AppWorkspace.Content>
       </AppWorkspace>
-      <DesktopDetailLayoutSync detailPanelId="contacts-detail-panel" />
     </Layout>
   );
 });

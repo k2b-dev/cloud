@@ -144,7 +144,7 @@ Choose a conversation row to open its thread. Each message has its own sender, r
 
 An optional conversation summary appears in a highlighted card above the messages. To keep it current with Markdown formatting, use **Edit summary** or **More conversation actions → Create summary**. Summaries are shared Mail context, and an automation can also update them.
 
-If the conversation has unfinished drafts, the Reply action shows an indicator. Open **Conversation details** to see who created the newest draft and when it changed. You can continue it there.
+If the conversation has unfinished drafts, they stand above the newest message: the open one in the place of the reply bar, the others as rows with who wrote them and when. Choose a row to continue it in place.
 
 In a mailbox that several people use, **Here now** at the top of Conversation details shows who has the conversation open and who is writing a reply. With access to the whole mailbox, **More about this conversation** › **Access** lists who has access and with which role. People who see only their assigned conversations do not see that list.
 

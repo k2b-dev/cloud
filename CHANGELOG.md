@@ -3,6 +3,68 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.71.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.70.0...cloud-v0.71.0) (2026-11-09)
+
+
+### Features
+
+* **assistant:** an app card in the chat is an island ([#2990](https://github.com/k2b-dev/cloud/issues/2990)) ([c4e784c](https://github.com/k2b-dev/cloud/commit/c4e784c8fcc71f9e52828246489e944a68b45474))
+* **cloud:** moving the search shows a dashed drop place and a release chip ([#2977](https://github.com/k2b-dev/cloud/issues/2977)) ([63754a8](https://github.com/k2b-dev/cloud/commit/63754a8ca35e9d28a82e5ec1db40af4092890699))
+* **cloud:** support topic backpressure with Sync 7.1 ([#2996](https://github.com/k2b-dev/cloud/issues/2996)) ([9e7d26c](https://github.com/k2b-dev/cloud/commit/9e7d26cc26d21a6db311bde36a32d62b3d5c0a28))
+* **cloud:** tables in chat answers take the framed view-table look ([#2984](https://github.com/k2b-dev/cloud/issues/2984)) ([42d52b8](https://github.com/k2b-dev/cloud/commit/42d52b841c5495f456813828036be44d9dca8a79))
+* **cloud:** the search preview is a flat column, not a grey box ([#2992](https://github.com/k2b-dev/cloud/issues/2992)) ([6f6ab4c](https://github.com/k2b-dev/cloud/commit/6f6ab4c6a7ff8388775d639f8a29685d6f1292c2))
+* **cloud:** the signed-out header shows help, language, appearance, and sign-in at every width ([#2929](https://github.com/k2b-dev/cloud/issues/2929)) ([df06c4a](https://github.com/k2b-dev/cloud/commit/df06c4a299f91ea332dcc4f75d2b1167da3019e8))
+* **contacts:** a contact opens as a page with section islands beside the list ([#2980](https://github.com/k2b-dev/cloud/issues/2980)) ([86157a3](https://github.com/k2b-dev/cloud/commit/86157a310837a1dc10918a1a0b1dd064dc4f7e10))
+* **gateway-ops:** log metadata in an open entry is flat text ([#2993](https://github.com/k2b-dev/cloud/issues/2993)) ([7835924](https://github.com/k2b-dev/cloud/commit/78359246b3c59bbabeb12e331cb55522d7cbbe77))
+* **grids:** the form is an island and its context column is flat ([#2991](https://github.com/k2b-dev/cloud/issues/2991)) ([aa2f7f7](https://github.com/k2b-dev/cloud/commit/aa2f7f7d7a23f55029efb054b69c71f95446150c))
+* **mail:** a floating reply pill above the newest message replaces the reply box ([#2976](https://github.com/k2b-dev/cloud/issues/2976)) ([bbac324](https://github.com/k2b-dev/cloud/commit/bbac3244e98b2031972471299ed0179f54cca3f7))
+* **mail:** external images notice as one steady row with load, always-allow, and revoke in place ([#2936](https://github.com/k2b-dev/cloud/issues/2936)) ([e238623](https://github.com/k2b-dev/cloud/commit/e238623052f8b1a01e430beaee62fe61b00b98f2))
+* **mail:** shared drafts behind a per-mailbox switch with a rollback to lock ([#2997](https://github.com/k2b-dev/cloud/issues/2997)) ([fbbe964](https://github.com/k2b-dev/cloud/commit/fbbe964a50837bd447d7cf84dd84b6b12549c627))
+* **mail:** signature block, quote line, and draft summaries for drafts written in the conversation ([#2999](https://github.com/k2b-dev/cloud/issues/2999)) ([527af53](https://github.com/k2b-dev/cloud/commit/527af53de348095149e6265e7fb5013428a58ef5))
+* **mail:** the conversation summary is a Section with the AI tone ([#3025](https://github.com/k2b-dev/cloud/issues/3025)) ([a0e2a11](https://github.com/k2b-dev/cloud/commit/a0e2a1123cbdfa6143a55206c5e710cbd6040c9f))
+* **notebooks:** formatting and page actions float as two pills over the note ([#2975](https://github.com/k2b-dev/cloud/issues/2975)) ([17a7897](https://github.com/k2b-dev/cloud/commit/17a7897e07f5c304936447ce3a5e3df105458b80))
+* **notes:** note cards are islands ([#2994](https://github.com/k2b-dev/cloud/issues/2994)) ([9c5c8e0](https://github.com/k2b-dev/cloud/commit/9c5c8e0ce254f89f109149ebef2f834ec05698fd))
+* **spaces:** Kanban cards stand out as islands with a soft shadow ([#2974](https://github.com/k2b-dev/cloud/issues/2974)) ([03e8635](https://github.com/k2b-dev/cloud/commit/03e863548bb910428284b854db7e229cae696e04))
+* **ui:** a morph motion token for large surfaces that grow or move ([#2985](https://github.com/k2b-dev/cloud/issues/2985)) ([a2b2193](https://github.com/k2b-dev/cloud/commit/a2b21931c7f8341b3110e2b4a0e3fa4e1d18ebc7))
+* **ui:** a plain LinkCard for quiet overviews ([#2926](https://github.com/k2b-dev/cloud/issues/2926)) ([fdb4f52](https://github.com/k2b-dev/cloud/commit/fdb4f52625de5aebaf841385fa8b0aa297a98fb7))
+* **ui:** busy scrollers show their scrollbar only on hover or focus ([#2963](https://github.com/k2b-dev/cloud/issues/2963)) ([7157c41](https://github.com/k2b-dev/cloud/commit/7157c41a9345d638e87cac57f4837f83103f9990))
+* **ui:** Cloud exports standalone and PDF charts with the UI palette ([#3018](https://github.com/k2b-dev/cloud/issues/3018)) ([95ad9d1](https://github.com/k2b-dev/cloud/commit/95ad9d1ac43b2dce1b2bfbc9997a32f66a052894))
+* **ui:** dot matrix bars for nested counts ([#2743](https://github.com/k2b-dev/cloud/issues/2743)) ([4afc36a](https://github.com/k2b-dev/cloud/commit/4afc36aed51747b16f6f472057dd83282255bd70))
+* **ui:** fields show an assistant's suggested value that only becomes the value when someone accepts it ([#2950](https://github.com/k2b-dev/cloud/issues/2950)) ([03b3ba2](https://github.com/k2b-dev/cloud/commit/03b3ba23ee851114ea452cd922bee7dbec68b16f))
+* **ui:** key-figure tiles and dashboard panels are islands ([#2987](https://github.com/k2b-dev/cloud/issues/2987)) ([79f637a](https://github.com/k2b-dev/cloud/commit/79f637afc7dbf014d46006228a14d3de19facd93))
+* **ui:** lines show forecasts, thresholds and today ([#2776](https://github.com/k2b-dev/cloud/issues/2776)) ([0a1b8c1](https://github.com/k2b-dev/cloud/commit/0a1b8c16df200c220abc88f6dda35a65b3b7e3b3))
+* **ui:** NoticeRow for one-line notices with a tile and an end action; split buttons open phone sheets ([#2925](https://github.com/k2b-dev/cloud/issues/2925)) ([7126f02](https://github.com/k2b-dev/cloud/commit/7126f027371dd5f04e87779456c9a9825d43a1c7))
+* **ui:** one Section for every topic, with Field rows, named tones, and a restricted marker ([#2962](https://github.com/k2b-dev/cloud/issues/2962)) ([1444360](https://github.com/k2b-dev/cloud/commit/1444360ab4f46cbc933f32943db566f581ccaf87))
+* **ui:** sankey charts ([#2772](https://github.com/k2b-dev/cloud/issues/2772)) ([088d8d7](https://github.com/k2b-dev/cloud/commit/088d8d72bfb61c0fe8c29142055964d51c1820fe))
+* **ui:** shadows follow one layer model in every app ([#2973](https://github.com/k2b-dev/cloud/issues/2973)) ([c32ab68](https://github.com/k2b-dev/cloud/commit/c32ab6810b6414a02be40fb651ad968ee0d78997))
+* **ui:** the feat/code sign joins the icon set as ti-feat-code ([#2943](https://github.com/k2b-dev/cloud/issues/2943)) ([3d3aacc](https://github.com/k2b-dev/cloud/commit/3d3aaccce857091e3f18d0677230aa96b629acde))
+
+
+### Bug Fixes
+
+* **ai:** budget reasoning output and explain truncated answers ([#2970](https://github.com/k2b-dev/cloud/issues/2970)) ([56ccaff](https://github.com/k2b-dev/cloud/commit/56ccaff6d28a930310ee86d816222c10138c745f)), closes [#2968](https://github.com/k2b-dev/cloud/issues/2968)
+* **ai:** older services keep reading the AI catalog after 0.71 ([#3032](https://github.com/k2b-dev/cloud/issues/3032)) ([6a481f1](https://github.com/k2b-dev/cloud/commit/6a481f16da9c3ffdda0fa0d882cd5b5f23309063))
+* **assistant:** the draft's first save keeps the field usable and the command list open ([#3015](https://github.com/k2b-dev/cloud/issues/3015)) ([d83535a](https://github.com/k2b-dev/cloud/commit/d83535a03fdc58f6c89737aa73dca13dce93f7dd))
+* **chat:** previews show plain text and the notification hint's icon sits on its line ([#3000](https://github.com/k2b-dev/cloud/issues/3000)) ([8deb273](https://github.com/k2b-dev/cloud/commit/8deb273889de3c7d0f89d6835ce3ffab0760f637))
+* **chat:** the 300-chat sidebar test sets up in one transaction, reads with current statistics and never outlives its cleanup ([#3005](https://github.com/k2b-dev/cloud/issues/3005)) ([9d5ea6a](https://github.com/k2b-dev/cloud/commit/9d5ea6af109215b344d76694b42199dfe1a870a1))
+* **chat:** the storage-recovery panel test waits for the composer lock ([#2954](https://github.com/k2b-dev/cloud/issues/2954)) ([5d08d97](https://github.com/k2b-dev/cloud/commit/5d08d97958803abbe15121c0c4c191f53ddd9a32)), closes [#2953](https://github.com/k2b-dev/cloud/issues/2953)
+* **ci:** keep cache export failures from failing image builds ([#2960](https://github.com/k2b-dev/cloud/issues/2960)) ([570ab83](https://github.com/k2b-dev/cloud/commit/570ab8305c11105de97bb72e1ed4a2859e7502e2))
+* **contacts:** address map browser tests get a budget for their page and flow ([#3012](https://github.com/k2b-dev/cloud/issues/3012)) ([72f9c86](https://github.com/k2b-dev/cloud/commit/72f9c86ed3760df9ccd04ac47d97102f961ad5d2)), closes [#2892](https://github.com/k2b-dev/cloud/issues/2892)
+* **core:** account and settings lists are rows with hairlines, not grey tubs ([#2989](https://github.com/k2b-dev/cloud/issues/2989)) ([ce3e2ae](https://github.com/k2b-dev/cloud/commit/ce3e2aef2f822d10bfa9ea3c625247f745ade6a1))
+* **core:** wait for profile picture reloads before teardown ([#2949](https://github.com/k2b-dev/cloud/issues/2949)) ([9f7040a](https://github.com/k2b-dev/cloud/commit/9f7040a65c4b3ccaeb12c391c529b8dddf58d10d)), closes [#2935](https://github.com/k2b-dev/cloud/issues/2935)
+* **filesv2:** measure phone reel themes in one loaded dialog ([#2957](https://github.com/k2b-dev/cloud/issues/2957)) ([01051e2](https://github.com/k2b-dev/cloud/commit/01051e2726d0d7fb9c57efa7f0e1dec9c2a1eb82))
+* **notebooks:** the Notes slash test waits for the image, not CodeMirror's widget buffer ([#2978](https://github.com/k2b-dev/cloud/issues/2978)) ([a1535b6](https://github.com/k2b-dev/cloud/commit/a1535b68ce714576816f1e7a4ffb95fa78c771b5)), closes [#2438](https://github.com/k2b-dev/cloud/issues/2438)
+* **ui:** a dismissed date range sheet never shows its unsaved day in the field ([#2988](https://github.com/k2b-dev/cloud/issues/2988)) ([de62e99](https://github.com/k2b-dev/cloud/commit/de62e990fd604a730bcb9a4b0a0b3340fae90784)), closes [#2986](https://github.com/k2b-dev/cloud/issues/2986)
+* **ui:** a landing point that code focuses draws no browser ring ([#3001](https://github.com/k2b-dev/cloud/issues/3001)) ([1369084](https://github.com/k2b-dev/cloud/commit/13690849faefb482b8d150d586fc733aa702cb9a))
+* **ui:** bar rows draw negative values again ([#2964](https://github.com/k2b-dev/cloud/issues/2964)) ([db822b5](https://github.com/k2b-dev/cloud/commit/db822b54bcc7ed94a5cbad4e859ebdbdf5c694c3))
+* **ui:** browser tests that measure around a hover use hoverInPlace ([#3020](https://github.com/k2b-dev/cloud/issues/3020)) ([7b5cf3c](https://github.com/k2b-dev/cloud/commit/7b5cf3ce897e2ffbedbfc5320475bb7fb2af2308))
+* **ui:** calendar heatmaps fill their panel ([#2794](https://github.com/k2b-dev/cloud/issues/2794)) ([757cf86](https://github.com/k2b-dev/cloud/commit/757cf86ea07a1cd4022f5a9b7be32ee4cfbab3ae))
+* **ui:** fit distribution labels and make remainders explicit ([#2784](https://github.com/k2b-dev/cloud/issues/2784)) ([7f2b4b2](https://github.com/k2b-dev/cloud/commit/7f2b4b2f033533df57d871c53d36ff1200ee04ee))
+* **ui:** the bars family test hovers without Playwright's retry scroll ([#3014](https://github.com/k2b-dev/cloud/issues/3014)) ([b5db37a](https://github.com/k2b-dev/cloud/commit/b5db37a8f17830e9c42454c4a5bab31ea3466741))
+* **ui:** the composer growth test samples every typed line in its own frame ([#2966](https://github.com/k2b-dev/cloud/issues/2966)) ([32259f6](https://github.com/k2b-dev/cloud/commit/32259f607976ceb07c54b4d0586ff820539953e6))
+* **ui:** the field markup guard pins the clock to the day its expectation was recorded ([#3006](https://github.com/k2b-dev/cloud/issues/3006)) ([238b3c7](https://github.com/k2b-dev/cloud/commit/238b3c7b3693c853111f31a37e1da37b4a8b2f7b))
+* **ui:** the icon preset builds and serves Tabler's split fonts ([#2965](https://github.com/k2b-dev/cloud/issues/2965)) ([2b89de7](https://github.com/k2b-dev/cloud/commit/2b89de7543ec1f0b4309f0aa32ebfafaed83baec))
+
 ## [0.70.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.69.0...cloud-v0.70.0) (2026-11-08)
 
 

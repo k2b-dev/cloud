@@ -221,11 +221,17 @@ describe("@k2b/ui focus and color contract", () => {
   test("keeps AI theme tokens inside AI and chat components", () => {
     // The AI palette may only be spent where a selector says it is an AI
     // surface: the `.k2b-ai-*` / `.k2b-chat-*` families, or a component class
-    // whose own name opts in with an `-ai` suffix. Anything else would bleed
+    // whose own name opts in with an `-ai` suffix, an AI button, or a section
+    // whose content the AI delivered (`tone="ai"`). Anything else would bleed
     // the AI accent into general chrome.
     const leaked = rules
       .filter((rule) => rule.body.includes("var(--k2b-ai-"))
-      .filter((rule) => !/\.k2b-(?:ai|chat)-|\.k2b-[\w-]*-ai(?![\w-])|\.k2b-button\[data-variant=["']ai["']\]/.test(rule.selector))
+      .filter(
+        (rule) =>
+          !/\.k2b-(?:ai|chat)-|\.k2b-[\w-]*-ai(?![\w-])|\.k2b-button\[data-variant=["']ai["']\]|\.k2b-section\[data-tone=["']ai["']\]/.test(
+            rule.selector,
+          ),
+      )
       .map((rule) => `${rule.file}: ${rule.selector}`);
 
     expect(leaked).toEqual([]);

@@ -9,6 +9,8 @@ export type MailWorkspacePreferences = {
   /** The person opened the mailbox's Events tab once; until then it is marked new. */
   eventsDiscovered?: boolean;
   detailsOpen: boolean;
+  /** A draft in a conversation opens in full screen: this browser's last choice, never switched on by itself (F7). */
+  draftFullscreen: boolean;
   toolbarActions: MailConversationToolbarActionId[];
   listMode: MailListMode;
   lastMailboxId: string | null;
@@ -35,6 +37,7 @@ const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePrefere
   eventsDiscovered: Boolean(value && typeof value === "object" && (value as { eventsDiscovered?: unknown }).eventsDiscovered === true),
   listCollapsed: Boolean(value && typeof value === "object" && (value as { listCollapsed?: unknown }).listCollapsed === true),
   detailsOpen: Boolean(value && typeof value === "object" && (value as { detailsOpen?: unknown }).detailsOpen === true),
+  draftFullscreen: Boolean(value && typeof value === "object" && (value as { draftFullscreen?: unknown }).draftFullscreen === true),
   toolbarActions: normalizeMailConversationToolbarActions(
     value && typeof value === "object" ? (value as { toolbarActions?: unknown }).toolbarActions : undefined,
   ),

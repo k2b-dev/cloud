@@ -27,6 +27,9 @@ const BASELINE_NAME = "baseline";
 // Schema compatibility marker, independent of Cloud release/package versions.
 const PRINCIPAL_ASSIGNEES_VERSION = 2;
 const PRINCIPAL_ASSIGNEES_NAME = "principal_assignees";
+// Older images would recreate the one-suggestion-per-conversation index and fail on per-author suggestions.
+const SUGGESTIONS_PER_AUTHOR_VERSION = 3;
+const SUGGESTIONS_PER_AUTHOR_NAME = "suggestions_per_author";
 
 const MIGRATION_LOCK_KEY = "cloud.mail.migrations";
 const log = logger("mail:migrate");
@@ -38,7 +41,8 @@ const assertSupportedSchema = (applied: readonly { version: number; name: string
   const foreign = applied.filter(
     (row) =>
       !(row.version === BASELINE_VERSION && row.name === BASELINE_NAME) &&
-      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME),
+      !(row.version === PRINCIPAL_ASSIGNEES_VERSION && row.name === PRINCIPAL_ASSIGNEES_NAME) &&
+      !(row.version === SUGGESTIONS_PER_AUTHOR_VERSION && row.name === SUGGESTIONS_PER_AUTHOR_NAME),
   );
   if (baseline && foreign.length === 0) return;
   const versions = applied.map((row) => `${row.version} (${row.name})`).join(", ");
@@ -76,6 +80,49 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'drafts' AND column_name = 'adopted_at') THEN
+      -- Earlier editor attribution cannot prove that a draft has never been edited by a person.
+      -- A temporary default marks existing rows without rewriting content or firing edit triggers.
+      ALTER TABLE mail.drafts ADD COLUMN adopted_at timestamptz DEFAULT now();
+      ALTER TABLE mail.drafts ALTER COLUMN adopted_at DROP DEFAULT;
+    END IF;
+  END $$`.simple();
+  // One untouched suggestion per conversation and author. The earlier index allowed one per conversation, so a
+  // second automated author received the first author's suggestion; every row it allowed also fits this one.
+  // An image without suggestions (after the documented rollback) can leave several untouched drafts of one account
+  // in a conversation. The newest stays the suggestion; the others become ordinary drafts with their content kept.
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'mail' AND indexname = 'drafts_untouched_suggestion_author_idx') THEN
+      UPDATE mail.drafts d SET adopted_at = now()
+      WHERE d.author_kind = 'service_account' AND d.adopted_at IS NULL AND d.conversation_id IS NOT NULL
+        AND d.state IN ('draft', 'scheduled', 'sending')
+        AND EXISTS (SELECT 1 FROM mail.drafts newer
+          WHERE newer.mailbox_id = d.mailbox_id AND newer.conversation_id = d.conversation_id
+            AND newer.author_kind = 'service_account' AND newer.author_id = d.author_id AND newer.adopted_at IS NULL
+            AND newer.state IN ('draft', 'scheduled', 'sending') AND (newer.created_at, newer.id) > (d.created_at, d.id));
+    END IF;
+  END $$`.simple();
+  await tx`CREATE UNIQUE INDEX IF NOT EXISTS drafts_untouched_suggestion_author_idx
+    ON mail.drafts (mailbox_id, conversation_id, author_id)
+    WHERE state IN ('draft', 'scheduled', 'sending') AND author_kind = 'service_account' AND adopted_at IS NULL AND conversation_id IS NOT NULL`.simple();
+  await tx`DROP INDEX IF EXISTS mail.drafts_untouched_suggestion_idx`.simple();
+  // Older images refuse this marker, so none of them recreates the old index. Stop older processes first.
+  await tx`INSERT INTO mail.schema_migrations (version, name)
+    VALUES (${SUGGESTIONS_PER_AUTHOR_VERSION}, ${SUGGESTIONS_PER_AUTHOR_NAME}) ON CONFLICT (version) DO NOTHING`;
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_suggestion_requests (
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    service_account_id uuid NOT NULL,
+    idempotency_key uuid NOT NULL,
+    request_hash text NOT NULL,
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    PRIMARY KEY (mailbox_id, service_account_id, idempotency_key)
+  )`.simple();
+  // Before suggestions were per author, a second account's creation key could map to another account's draft.
+  // Such a key now creates the caller's own suggestion; its stale mapping would block that.
+  await tx`DELETE FROM mail.draft_suggestion_requests request USING mail.drafts d
+    WHERE d.id = request.draft_id AND (d.author_kind <> 'service_account' OR d.author_id <> request.service_account_id)`.simple();
   // Scheduling state and the latest timing sample stay bounded to one row per mailbox.
   await tx`
     CREATE TABLE IF NOT EXISTS mail.hydration_work (
@@ -100,8 +147,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
     WHERE job_id IS NOT NULL AND published_at IS NULL
   `.simple();
-  // Release N understands both modes; existing and newly created drafts stay
-  // in lock mode until the subsequent activation release. No body is rewritten.
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'lock'
+    CHECK (draft_edit_mode IN ('lock', 'shared'))`.simple();
+  // Existing drafts retain their mode. Defaults stay lock until verified
+  // per-mailbox activation; no body or document history is rewritten.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
     CHECK (edit_mode IN ('lock', 'shared'))`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
@@ -109,6 +158,13 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_idle_through bigint`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS drafts_document_coverage_idx ON mail.drafts
+    (GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id)
+    WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_log_policy (
+    log_id text PRIMARY KEY, recovered_at timestamptz NOT NULL DEFAULT now()
+  )`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`.simple();
@@ -233,6 +289,12 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
   await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
   await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_source boolean NOT NULL DEFAULT false`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_locale text NOT NULL DEFAULT 'en'`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS quote_time_zone text NOT NULL DEFAULT 'UTC'`.simple();
+  // List pages ask for the open drafts of a few conversations; this keeps that lookup independent of all other drafts.
+  await tx`CREATE INDEX IF NOT EXISTS drafts_open_conversation_idx ON mail.drafts (mailbox_id, conversation_id)
+    WHERE origin = 'user' AND state = 'draft' AND conversation_id IS NOT NULL`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`

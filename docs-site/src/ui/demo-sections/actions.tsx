@@ -25,11 +25,13 @@ import {
   SegmentedControl,
   SelectionToolbar,
   SlashCommands,
+  SortableList,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
   Tabs,
   Toolbar,
+  ToolbarDock,
   useKeyboardDrag,
 } from "@k2b/ui";
 import { createSignal, For } from "solid-js";
@@ -702,6 +704,73 @@ const DragAndDropDemo = () => {
   );
 };
 
+const sortableListExample = `import { SortableList } from "@k2b/ui";
+import { createSignal } from "solid-js";
+
+function PinnedEntries() {
+  const [entries, setEntries] = createSignal([
+    { id: "projects", title: "Projects" },
+    { id: "orders", title: "Orders" },
+    { id: "stock", title: "Stock" },
+  ]);
+  const move = (id: string, index: number) => {
+    const next = entries().filter((entry) => entry.id !== id);
+    next.splice(index, 0, entries().find((entry) => entry.id === id)!);
+    setEntries(next);
+  };
+  return (
+    <SortableList items={entries()} itemKey={(entry) => entry.id} itemLabel={(entry) => entry.title} label="Pinned entries" onMove={move}>
+      {(entry, handle) => <div class="row">{handle}<span>{entry().title}</span></div>}
+    </SortableList>
+  );
+}
+`;
+
+const SortableListDemo = () => {
+  const [entries, setEntries] = createSignal([
+    { id: "projects", title: "Projects", icon: "ti ti-briefcase" },
+    { id: "orders", title: "Orders", icon: "ti ti-clipboard-list" },
+    { id: "stock", title: "Stock", icon: "ti ti-building-warehouse" },
+    { id: "invoices", title: "Invoices", icon: "ti ti-file-invoice" },
+  ]);
+  const move = (id: string, index: number) => {
+    const next = entries().filter((entry) => entry.id !== id);
+    next.splice(index, 0, entries().find((entry) => entry.id === id)!);
+    setEntries(next);
+  };
+  return (
+    <DemoCard
+      id="sortable-list"
+      chip={[{ kind: "component", name: "SortableList", from: "@k2b/ui" }]}
+      description="Drag a row by its grip, or focus the grip and use the arrow keys, Home, or End. The line shows where the row lands."
+      code={sortableListExample}
+    >
+      <SortableList
+        items={entries()}
+        itemKey={(entry) => entry.id}
+        itemLabel={(entry) => entry.title}
+        itemIcon={(entry) => entry.icon}
+        label="Pinned entries"
+        onMove={move}
+      >
+        {(entry, handle) => (
+          <div class="ui-sortable-demo__row">
+            {handle}
+            <i class={entry().icon} aria-hidden="true" />
+            <span>{entry().title}</span>
+          </div>
+        )}
+      </SortableList>
+      <p class="ui-dnd-demo__status">
+        Order:{" "}
+        {entries()
+          .map((entry) => entry.title)
+          .join(", ")}
+      </p>
+    </DemoCard>
+  );
+};
+
 const gestureMessages = [
   { id: "nora", author: "Nora Weber", text: "Can you check the draft before noon?", time: "10:42" },
   { id: "tobias", author: "Tobias Brandt", text: "Sure, I will look at it right after the call.", time: "10:44" },
@@ -1005,6 +1074,69 @@ const actions = [
   );
 };
 
+const DangerToolbarDemo = () => {
+  const [lastAction, setLastAction] = createSignal("Select an action");
+  return (
+    <DemoCard
+      id="toolbar-danger"
+      chip={{ kind: "component", name: "Toolbar", from: "@k2b/ui" }}
+      description="When an editor can no longer save, one red pill takes the place of its toolbars: the message first, then the way out. Narrow the column to see the labels go first and the lower-priority actions move into More."
+      code={`<ToolbarDock>
+  <Toolbar label="Saving stopped" variant="floating" tone="danger">
+    <Toolbar.Label detail=". Connection closed">
+      <i class="ti ti-alert-triangle" aria-hidden="true" />
+      Changes not saved
+    </Toolbar.Label>
+    <Toolbar.Spacer />
+    <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={copy} />
+    <Toolbar.Action label="Keep on this device" icon="ti ti-device-floppy" text priority={2} onClick={keep} />
+    <Toolbar.Action label="Discard device changes" icon="ti ti-trash" text priority={3} onClick={discard} />
+  </Toolbar>
+</ToolbarDock>`}
+    >
+      <div
+        style={{
+          display: "flex",
+          "flex-direction": "column",
+          "max-width": "100%",
+          height: "220px",
+          resize: "horizontal",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ flex: "1", "min-height": "0", overflow: "auto", padding: "0.75rem" }}>
+          Wareneingang am Montag: 14 Paletten, zwei davon mit Temperaturlogger.
+        </div>
+        <ToolbarDock>
+          <Toolbar label="Saving stopped" variant="floating" tone="danger">
+            <Toolbar.Label detail=". Connection closed">
+              <i class="ti ti-alert-triangle" aria-hidden="true" />
+              Changes not saved
+            </Toolbar.Label>
+            <Toolbar.Spacer />
+            <Toolbar.Action label="Copy text" icon="ti ti-copy" text onClick={() => setLastAction("Copy text")} />
+            <Toolbar.Action
+              label="Keep on this device"
+              icon="ti ti-device-floppy"
+              text
+              priority={2}
+              onClick={() => setLastAction("Keep on this device")}
+            />
+            <Toolbar.Action
+              label="Discard device changes"
+              icon="ti ti-trash"
+              text
+              priority={3}
+              onClick={() => setLastAction("Discard device changes")}
+            />
+          </Toolbar>
+        </ToolbarDock>
+      </div>
+      <output aria-live="polite">{lastAction()}</output>
+    </DemoCard>
+  );
+};
+
 const SelectionToolbarDemo = () => {
   // A new value for every completed selection, so the toolbar moves to it even when it was open already.
   const [anchor, setAnchor] = createSignal<{ at: number } | undefined>(undefined, { equals: false });
@@ -1300,6 +1432,11 @@ const demos: DemoSection = {
       <DragAndDropDemo />
     </DemoGrid>
   ),
+  "sortable-list": () => (
+    <DemoGrid columns="one">
+      <SortableListDemo />
+    </DemoGrid>
+  ),
   gestures: () => (
     <DemoGrid columns="one">
       <GesturesDemo />
@@ -1329,6 +1466,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ToolbarDemo />
       <FloatingToolbarDemo />
+      <DangerToolbarDemo />
       <SelectionToolbarDemo />
     </DemoGrid>
   ),

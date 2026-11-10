@@ -74,6 +74,8 @@ export default function MailConversationList(props: {
   loading: boolean;
   liveDegraded: boolean;
   onCollapse: () => void;
+  /** A new message in the flow: its draft stands at the top of the list while it is open in the reader. */
+  newMessage?: { subject: string; to: string[] } | null;
   onOpenHealth: () => void;
   onOpenDeliverySettings: () => void;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
@@ -204,7 +206,9 @@ export default function MailConversationList(props: {
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has("search") || props.activeSavedViewId);
   // Day headings follow the person's calendar; a search may sort by relevance, so it shows none.
   /** An empty list after a day with completed work: "All done." takes the placeholder's place. */
-  const allDone = () => props.items.length === 0 && !searchActive() && (props.doneToday?.done ?? 0) > 0;
+  /** A new message is a row of its own: an empty list with one open still shows the list, not the empty state. */
+  const empty = () => props.items.length === 0 && !props.newMessage;
+  const allDone = () => empty() && !searchActive() && (props.doneToday?.done ?? 0) > 0;
   /** Where each of Assigned to me's groups starts; the service lists every row that needs action first. */
   const assignedStarts = createMemo(() => {
     const starts = new Map<number, keyof MailAssignedGroups>();
@@ -438,7 +442,7 @@ export default function MailConversationList(props: {
                 <i class="ti ti-history" aria-hidden="true" /> {messages().allDoneLog}
               </ButtonLink>
             </div>
-          ) : props.items.length === 0 ? (
+          ) : empty() ? (
             <Placeholder
               icon={searchActive() ? "ti ti-search" : props.assignedGroups ? "ti ti-mood-smile" : "ti ti-mail-off"}
               variant="panel"
@@ -520,6 +524,33 @@ export default function MailConversationList(props: {
                     : messages().messageListLabel({ title: props.title })
                 }
               >
+                <Show when={props.newMessage}>
+                  {(next) => (
+                    <div role="listitem" data-mail-new-message-row>
+                      <div class="mail-list-row mail-list-new-row" aria-current="true">
+                        <span class="mail-row-dot" aria-hidden="true" />
+                        <span class="mail-row-lines">
+                          <span class="mail-row-from">
+                            <span class="mail-row-sender">{messages().newMessage}</span>
+                            <span class="mail-list-time mail-row-time">{messages().newMessageNow}</span>
+                          </span>
+                          <span class="mail-row-subject-line">
+                            <span class="mail-row-subject">{next().subject || messages().newMessageNoSubject}</span>
+                          </span>
+                          <span class="mail-list-preview">
+                            {next().to.length > 0 ? messages().newMessageTo({ names: next().to.join(", ") }) : " "}
+                          </span>
+                          <span class="mail-row-extra">
+                            <span class="mail-row-draft">
+                              <i class="ti ti-pencil" aria-hidden="true" />
+                              {messages().newMessageDraft}
+                            </span>
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </Show>
                 <For each={props.items}>
                   {(item, index) => (
                     <>

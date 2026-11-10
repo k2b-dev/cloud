@@ -75,7 +75,7 @@ i.ti { display: none; }
 .notebook-book-chart { margin: 0 0 1em; color: #0f172a; break-inside: avoid; }
 .notebook-book-chart__title { display: block; font-weight: 600; }
 .notebook-book-chart__subtitle { display: block; color: #475569; }
-.notebook-book-chart, .notebook-book-chart .stdlib-chart { --stdlib-chart-c1:#14b8a6; --stdlib-chart-c2:#f97316; --stdlib-chart-c3:#8b5cf6; --stdlib-chart-c4:#ec4899; --stdlib-chart-c5:#22c55e; --stdlib-chart-c6:#eab308; --stdlib-chart-c7:#06b6d4; --stdlib-chart-c8:#ef4444; }
+.notebook-book-chart, .notebook-book-chart .stdlib-chart { --stdlib-chart-c1:#3b82f6; --stdlib-chart-c2:#10b981; --stdlib-chart-c3:#f59e0b; --stdlib-chart-c4:#8b5cf6; --stdlib-chart-c5:#ec4899; --stdlib-chart-c6:#06b6d4; --stdlib-chart-c7:#84cc16; --stdlib-chart-c8:#f97316; }
 .notebook-book-chart .k2b-chart__svg { width:100%; aspect-ratio: 480 / 280; }
 /* A single number or a round chart needs no page width; a smaller box keeps the drawing's proportions. */
 .notebook-book-chart[data-kind="stat"] .k2b-chart__svg { max-width: 20em; }

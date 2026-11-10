@@ -11,7 +11,7 @@ changes, reserves no space, and is disabled in forced-color mode.
 ## Import
 
 ```tsx
-import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
+import { DescriptionList, DetailPanel, NumberInput, Section } from "@k2b/ui";
 ```
 
 ## Use DetailPanel
@@ -69,7 +69,7 @@ spacing as `AppWorkspace.Detail`. Omit it to keep the default section surfaces.
 <DetailPanel surface="plain">
   <DetailPanel.Header title="In this chat" />
   <DetailPanel.Body>
-    <DetailPanel.Section title="Results" count={0} />
+    <Section title="Results" count={0} />
   </DetailPanel.Body>
 </DetailPanel>
 ```
@@ -121,24 +121,28 @@ and summary headings fall back to the theme's action color instead, so they
 keep their contrast in dark mode. A host may map that hook to its own theme
 token; `DetailPanel` does not know how the host derives it.
 
-`DetailPanel.Section` draws no frame of its own. It groups content through
-spacing and a sentence-case title, not a card, divider, or decorative
-background; the group or the body frames it. Pass `icon` for a fixed section icon slot and `tone` to distinguish
-portable `accent`, `neutral`, `success`, `warning`, or `danger` roles through
-text color only. Pass `description` for short supporting context, `count` for
+Every topic of a panel is a [`Section`](/en/ui/surfaces/section), the same
+component that frames the topics of a full page. Inside `DetailPanel` a section
+draws no frame of its own: the panel sets its default `frame` to `"none"`, and
+the section groups content through spacing and a sentence-case title, not a
+card, divider, or decorative background; the group or the body frames it. Do
+not pass `frame="line"` inside a panel. Pass `icon` for a fixed section icon
+slot and `tone` (`neutral`, `success`, `warning`, `danger`, `info`, or `ai`) for
+a status that the heading also says in words; in a panel a tone colors the
+title and icon only. Pass `restricted` with the app's words, such as "Only with
+permission", when only some people see the section. Pass `description` for short supporting context, `count` for
 a numeric count chip, and `meta` for short state text such as “2 of 4 done”.
 Both sit immediately after the title. A zero `count` reads “None yet”,
 localized through the inherited UI locale. A stream such as activity has no
 count. Give a normal section at most one trailing control through `actions`.
 Only the description is muted: a field in `actions` keeps its own description and error styles. A normal section may omit
 its body to represent a compact, actionable empty group. Set `collapsible` for
-secondary content. Closed sections show a compact action row; open sections show
-a heading with a collapse button on the right. Both states share one geometry
-with the other section headings: the icon, title, meta, and chevron keep their
-columns and the row its height when the section opens or closes. Hover colors
-the title and chevron, and its fill bleeds 0.5rem into the panel gutter.
-Keyboard focus adds the
-shared focus ring, drawn inside the row where the panel would clip it. Their
+secondary content. The whole heading row is then one disclosure button inside
+the section's heading: its chevron points down while the section is closed and
+up while it is open. Both states share one geometry with the other section
+headings: the icon, title, meta, and chevron keep their columns and the row its
+height when the section opens or closes. Hover colors the title and chevron.
+Keyboard focus adds the shared focus ring and stays on the same button. Their
 content stays mounted when
 closed, preserving unsaved input and child state. Collapsible sections reserve
 the header action for collapsing.
@@ -146,8 +150,9 @@ the header action for collapsing.
 Use `defaultOpen` for an initially expanded section, or control it with `open`
 and `onOpenChange`. Controlled state is authoritative: the callback requests a
 change but does not open or close the section itself. This lets an editor open
-the relevant section after validation fails. `disabled` disables both toggle
-buttons; it does not disable the child controls. Use a fieldset for that.
+the relevant section after validation fails. When a parent closes the section
+while focus is inside its body, focus returns to its heading button. `disabled`
+disables the toggle; it does not disable the child controls. Use a fieldset for that.
 The content owns its layout: wrap form controls in a column with a gap.
 
 Pass `summary` to a collapsible section for one line that says what it
@@ -203,7 +208,7 @@ with their icons and avatars, comments, properties, and the summary of a
 closed section, which follows the title on its row. Nothing sits under the
 section icon. Only a real sub-level, such as an H3 in an outline, indents
 further. Hover fills may reach past the edge into the panel gutter; text and
-icons never do. `DetailPanel.Section`, `Discussion`, `DetailPanel.Action`,
+icons never do. `Section`, `Discussion`, `DetailPanel.Action`,
 `DetailPanel.Row`, `FileGrid` in a section, and the shared sections below
 keep this edge on their own; app content inside a section must not add an
 indent or step back from it. To check it, measure: the left edge of every
@@ -213,7 +218,7 @@ its title text, at desktop and phone width.
 ### Shared sections
 
 The common sections of an object's panel are shared components on top of
-`DetailPanel.Section`. Apps pass data; the components own the icon, title,
+`Section`. Apps pass data; the components own the icon, title,
 count, states, and the edge. Each keeps its height while its data changes, so
 nothing moves when people come, go, or a list loads.
 
@@ -365,36 +370,7 @@ type DetailPanelGroupProps = {
   children: JSX.Element; label?: string; title?: JSX.Element; class?: string;
 };
 
-type DetailPanelTone = "accent" | "neutral" | "success" | "warning" | "danger";
-
-type DetailPanelSectionBaseProps = {
-  title: JSX.Element; icon?: string; tone?: DetailPanelTone; description?: JSX.Element; count?: number; meta?: JSX.Element;
-  class?: string;
-};
-
-type DetailPanelSectionProps = DetailPanelSectionBaseProps &
-  (
-    | {
-        children?: JSX.Element;
-        actions?: JSX.Element;
-        collapsible?: false;
-        summary?: never;
-        defaultOpen?: never;
-        open?: never;
-        onOpenChange?: never;
-        disabled?: never;
-      }
-    | {
-        children: JSX.Element;
-        actions?: never;
-        collapsible: true;
-        summary?: JSX.Element;
-        defaultOpen?: boolean;
-        open?: boolean;
-        onOpenChange?: (open: boolean) => void;
-        disabled?: boolean;
-      }
-  );
+// The panel's topics are `Section`s; see SectionProps on /en/ui/surfaces/section.
 
 type DetailPanelActionSecondary = {
   icon: string; label: string; onClick: () => void; variant?: "danger";
@@ -594,7 +570,7 @@ state and remain mounted when the section closes.
           ]}
         />
       </DetailPanel.Summary>
-      <DetailPanel.Section
+      <Section
         title="Notes"
         icon="ti ti-notes"
         count={0}
@@ -602,7 +578,7 @@ state and remain mounted when the section closes.
         actions={<Button variant="ghost" size="xs">Add note</Button>}
       />
       <DetailPanel.Group label="Inventory context">
-        <DetailPanel.Section title="Related records" icon="ti ti-link" tone="accent">
+        <Section title="Related records" icon="ti ti-link">
           <DetailPanel.Action
             href="/app/grids/locations/records/st-02"
             leading={<i class="ti ti-building-warehouse" aria-hidden="true" />}
@@ -610,12 +586,12 @@ state and remain mounted when the section closes.
             description="Room · ST-02"
             trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
           />
-        </DetailPanel.Section>
-        <DetailPanel.Section title="Attachments" icon="ti ti-paperclip" tone="neutral" count={2} />
+        </Section>
+        <Section title="Attachments" icon="ti ti-paperclip" count={2} />
       </DetailPanel.Group>
-      <DetailPanel.Section title="History" icon="ti ti-history" collapsible>
+      <Section title="History" icon="ti ti-history" collapsible>
         …
-      </DetailPanel.Section>
+      </Section>
     </DetailPanel.Body>
   </DetailPanel>
 </AppWorkspace.Detail>

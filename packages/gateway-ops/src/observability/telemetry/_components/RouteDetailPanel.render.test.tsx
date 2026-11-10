@@ -74,7 +74,7 @@ describe("RouteDetailPanel", () => {
     expect(html).not.toContain("overflow-y-auto");
     expect(html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"))).toContain("Route");
     expect(html).not.toContain("k2b-detail-panel__header-icon");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-section__icon");
   });
 
   test("preserves the empty retained-request state", () => {

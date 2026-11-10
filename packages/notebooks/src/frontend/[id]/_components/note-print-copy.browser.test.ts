@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../../ui/test/browser";
 import type { PrintCopyHarness } from "./editor/note-print-copy.browser-harness";
 
 declare const window: Window & { printCopyHarness: PrintCopyHarness; printMediaMatches: boolean };
@@ -20,6 +20,19 @@ Bring a notebook.
 :::
 
 ![A blue square](/square.svg)
+
+:::chart
+type: pie
+title: Invented team shares
+columns: [Team, Count]
+rows:
+  - [A, 1]
+  - [B, 2]
+  - [C, 3]
+  - [D, 4]
+label: Team
+value: Count
+:::
 
 :::query
 source: notes
@@ -112,6 +125,12 @@ test("the Book copy prints the whole note; changes at print time replace the sta
     expect(await page.locator(".notebook-note-print").boundingBox()).toBeNull();
     await emulateMedia("print");
     await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
+    await settled(page);
+    const printedChart = page.locator(".notebook-note-print .notebook-book-chart svg");
+    expect(await printedChart.innerHTML()).toContain("--stdlib-chart-c4: #8b5cf6;");
+    expect(await printedChart.locator("path.stdlib-chart-series-3").evaluate((mark) => getComputedStyle(mark).fill)).toBe(
+      "rgb(139, 92, 246)",
+    );
     // Read layout in one browser task instead of 150 sequential protocol round trips.
     const layout = await page.evaluate(() => {
       const box = (element: Element | null) => {
@@ -140,6 +159,18 @@ test("the Book copy prints the whole note; changes at print time replace the sta
     for (const { selector, box } of layout.content) expect({ selector, visible: box !== null }).toEqual({ selector, visible: true });
     expect(await page.locator(".notebook-note-print img").getAttribute("loading")).toBe("eager");
     await page.waitForFunction(() => document.querySelector<HTMLImageElement>(".notebook-note-print img")?.naturalWidth === 4);
+    if (process.env.CHART_SCREENSHOTS) {
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await settled(page);
+        await Bun.write(
+          resolve(process.env.CHART_SCREENSHOTS, `notebooks-print-light-${width}.png`),
+          await page.locator(".notebook-note-print .notebook-book-chart").screenshot(),
+        );
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await settled(page);
+    }
     await emulateMedia("screen");
     await page.evaluate(() => window.printCopyHarness.change("# Updated note\n\nFresh content at print time."));
     await emulateMedia("print");

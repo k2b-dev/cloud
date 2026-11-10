@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { dotMatrixFixtures } from "../../test/chart-dot-matrix-fixtures";
 import { renderBarChartSvg } from "../charts/core/bar-render";
 
@@ -82,10 +82,7 @@ for (const width of [1440, 390])
         expect(await chart.locator(".k2b-chart-dot").count()).toBe(drawn * spec.dots!);
         if (i === 2) expect(await chart.locator("[data-chart-legend-value]").allTextContents()).toEqual(["60%", "25%"]);
         const marks = chart.locator("[data-chart-datum]");
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .hover({ position: { x: 3, y: 3 } });
+        await hoverInPlace(marks.first().locator(".k2b-chart-category-band"), { x: 3, y: 3 });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         if (i === 2) expect(await chart.locator("[data-chart-legend-value]").allTextContents()).toEqual(["45%", "15%"]);
         const first = await chart.locator('[role="tooltip"]').textContent();
@@ -96,10 +93,7 @@ for (const width of [1440, 390])
           nodes.flatMap((g) => [g, ...g.querySelectorAll(".k2b-chart-dot")].map((e) => getComputedStyle(e).opacity)),
         );
         const tipBox = await chart.locator('[role="tooltip"]').boundingBox();
-        await marks
-          .first()
-          .locator(".k2b-chart-category-band")
-          .hover({ position: { x: 5, y: 15 } });
+        await hoverInPlace(marks.first().locator(".k2b-chart-category-band"), { x: 5, y: 15 });
         await settled(page);
         expect(await chart.locator('[role="tooltip"]').textContent()).toBe(first);
         expect(await chart.locator('[role="tooltip"]').boundingBox()).toEqual(tipBox);

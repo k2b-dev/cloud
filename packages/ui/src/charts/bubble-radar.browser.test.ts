@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { renderBubbleSvg } from "./core/bubble";
 import { renderRadarSvg } from "./core/radar";
 
@@ -132,7 +132,7 @@ for (const spec of cases)
             spec.kind === "radar" ? chart.locator("[data-chart-datum]").last() : chart.locator("[data-chart-datum] circle").last();
           if (spec.kind === "radar")
             expect(await mark.locator(".k2b-chart-radar-axis").evaluate((e) => getComputedStyle(e).pointerEvents)).toBe("stroke");
-          await mark.hover();
+          await hoverInPlace(mark);
           await settled(page);
           expect(await chart.locator("[data-inspected]").count()).toBe(1);
           expect(

@@ -47,8 +47,11 @@ describe("Discussion", () => {
       }),
     );
 
-    expect(html).toMatch(/<section[^>]+class="k2b-discussion[^"]*"[^>]+aria-labelledby="k2b-discussion-[^"]+"/);
-    expect(html).toContain("<h3 id=");
+    // A discussion is a Section: the same frame, heading, and region name as the topics beside it.
+    expect(html).toMatch(
+      /<section[^>]+class="k2b-section k2b-discussion[^"]*"[^>]+data-frame="line"[^>]+aria-labelledby="k2b-section-[^"]+"/,
+    );
+    expect(html).toMatch(/<h3[^>]*class="k2b-section__title/);
     expect(html).toContain('class="k2b-discussion__composer');
     expect(html).toContain('class="k2b-discussion__composer-field" data-has-inset-action="true"');
     expect(html).toContain('class="k2b-discussion__composer-inset-action"');
@@ -92,21 +95,20 @@ describe("Discussion", () => {
       }),
     );
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
-    const bareRule = css.match(/\.k2b-ui \.k2b-discussion\[data-surface="bare"\] \{([^}]*)\}/)?.[1];
+    const bareTitle = css.match(
+      /\.k2b-ui \.k2b-discussion\[data-surface="bare"\] > \.k2b-section__header \.k2b-section__title \{([^}]*)\}/,
+    )?.[1];
 
     expect(html).toContain('data-surface="bare"');
-    expect(html).toContain("<h2 id=");
-    expect(bareRule).toContain("padding: 0");
-    expect(bareRule).toContain("border: 0");
-    expect(bareRule).toContain("background: transparent");
-    expect(css).toContain('.k2b-discussion[data-surface="bare"] .k2b-discussion__header :is(h2, h3)');
+    // A bare discussion stands flat on its page with a larger title.
+    expect(html).toContain('data-frame="none"');
+    expect(html).toMatch(/<h2[^>]*>Questions and updates<\/h2>/);
+    expect(bareTitle).toContain("font-size: 1rem");
   });
 
   test("keeps item actions visible on touch and progressive on hovering pointers", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const actionRule = css.match(/\.k2b-ui \.k2b-discussion__item-actions \{([^}]*)\}/)?.[1];
-    const discussionRule = css.match(/\.k2b-ui \.k2b-discussion \{([^}]*)\}/)?.[1];
-    const summaryRule = css.match(/\.k2b-ui \.k2b-detail-panel__summary \{([^}]*)\}/)?.[1];
 
     expect(actionRule).toContain("opacity: 1");
     expect(css).toContain("@media (any-hover: hover)");
@@ -114,8 +116,6 @@ describe("Discussion", () => {
     expect(css).toContain(':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-discussion__item-actions');
     expect(css).toContain('.k2b-discussion__item-actions[data-visibility="progressive"]');
     expect(css).toContain(".k2b-discussion__item:focus-within");
-    expect(discussionRule).toContain("background: var(--k2b-surface)");
-    expect(discussionRule?.match(/background: ([^;]+);/)?.[1]).toBe(summaryRule?.match(/background: ([^;]+);/)?.[1]);
     expect(css).toContain("width: 1.25rem");
     expect(css).toContain("font-size: 0.6875rem");
   });
@@ -132,7 +132,7 @@ describe("Discussion", () => {
         },
       }),
     );
-    expect(empty).toContain('<span class="k2b-detail-panel__none">None yet</span>');
+    expect(empty).toContain('<span class="k2b-section__none">None yet</span>');
     expect(empty).not.toContain(">0<");
 
     const folded = renderToString(() =>

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { Contact } from "../../service";
 import "./ssr-test-plugin";
@@ -38,17 +39,17 @@ beforeEach(() => setSystemTime(new Date(now)));
 afterEach(() => setSystemTime());
 
 test("renders shared selection, call, email, and favorite controls with accessible labels", () => {
-  const html = renderToString(() => (
-    <ContactsList
-      contacts={[contact]}
-      initialSelectedContactId={null}
-      initialSelectedBookId={null}
-      detailBaseHref="/app/contacts/team"
-      initialFavoriteKeys={["team:ada"]}
-      selectionMode
-      selectedIds={[contact.id]}
-    />
-  ));
+  const html = renderToString(() =>
+    createComponent(ContactsList, {
+      contacts: [contact],
+      initialSelectedContactId: null,
+      initialSelectedBookId: null,
+      detailBaseHref: "/app/contacts/team",
+      initialFavoriteKeys: ["team:ada"],
+      selectionMode: true,
+      selectedIds: [contact.id],
+    }),
+  );
 
   const checkbox = html.match(/<label class="k2b-check"[^>]*><input\b[^>]*>/)?.[0];
   expect(checkbox).toContain('type="checkbox"');
@@ -65,6 +66,8 @@ test("renders shared selection, call, email, and favorite controls with accessib
     expect(link).toContain(`aria-label="${label}"`);
   }
   expect(html).not.toContain("focus-ui");
+  expect(html).not.toContain("bg-[var(--ui-surface-subtle)]");
+  expect(html).not.toContain("p-1.5");
   const favorite = html.match(/<button\b[^>]*aria-pressed="true"[^>]*>/)?.[0];
   expect(favorite).toMatch(/class="[^"]*\bk2b-icon-button\b/);
   expect(favorite).toContain('aria-label="Remove from favorites"');

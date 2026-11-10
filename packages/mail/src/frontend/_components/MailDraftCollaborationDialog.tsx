@@ -26,8 +26,8 @@ export const mailDraftCollaborationCopy = (conflict: MailDraftLeaseConflict, cur
     const name = conflict.lease.holder.displayName.trim() || t.anotherCollaborator;
     return {
       title: t.collaboratorTitle({ name }),
-      description: t.collaboratorDescription,
-      status: t.collaboratorStatus({ name }),
+      description: conflict.reason === "lost" ? t.collaboratorLostDescription : t.collaboratorDescription,
+      status: conflict.reason === "lost" ? t.collaboratorLostStatus({ name }) : t.collaboratorStatus({ name }),
       takeoverLabel: t.takeOver,
     };
   }

@@ -19,7 +19,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { TextInput } = await import("../inputs/TextInput");
 const { default: AppOverview } = await import("./AppOverview");
-const { default: DetailPanel } = await import("./DetailPanel");
+const { Section } = await import("../surfaces/Section");
 const { default: PanelDialog } = await import("./PanelDialog");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
@@ -61,16 +61,16 @@ const containers: [string, () => JSX.Element, string][] = [
     ".k2b-app-overview__panel-description",
   ],
   [
-    "detail panel section actions",
+    "section actions",
     () =>
-      createComponent(DetailPanel.Section, {
+      createComponent(Section, {
         title: "Owner",
         description: "Who answers questions.",
         get actions() {
           return field();
         },
       }),
-    ".k2b-detail-panel__section-description",
+    ".k2b-section__description",
   ],
 ];
 

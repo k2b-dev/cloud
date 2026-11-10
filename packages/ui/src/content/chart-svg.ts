@@ -34,7 +34,7 @@ export function responsiveMapSvg(svg: string, width: number, height: number, vie
 }
 
 /** Adapt our generated SVGs to a CSS-sized box without rebuilding their geometry.
- * Only stdlib and the local timeline renderer supply this markup; this is not a
+ * Only UI core renderers supply this markup; this is not a
  * parser for arbitrary SVG. The viewBox remains the interaction coordinate space.
  */
 export function responsiveChartSvg(svg: string): string {

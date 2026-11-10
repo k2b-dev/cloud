@@ -6,6 +6,7 @@ import actionDragAndDrop from "./actions/drag-and-drop.md" with { type: "text" }
 import actionGestures from "./actions/gestures.md" with { type: "text" };
 import actionMenus from "./actions/menus.md" with { type: "text" };
 import actionSegmentedControl from "./actions/segmented-control.md" with { type: "text" };
+import actionSortableList from "./actions/sortable-list.md" with { type: "text" };
 import actionSpotlight from "./actions/spotlight.md" with { type: "text" };
 import actionTabs from "./actions/tabs.md" with { type: "text" };
 import actionToolbar from "./actions/toolbar.md" with { type: "text" };
@@ -111,6 +112,7 @@ import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" 
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
 import surfacePaper from "./surfaces/paper.md" with { type: "text" };
 import surfaceProgress from "./surfaces/progress.md" with { type: "text" };
+import surfaceSection from "./surfaces/section.md" with { type: "text" };
 import surfaceStats from "./surfaces/stats.md" with { type: "text" };
 import surfaceUtilities from "./surfaces/utilities.md" with { type: "text" };
 import inputTextEditor from "./text-editor.md" with { type: "text" };
@@ -157,6 +159,7 @@ const catalogContextSources = {
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
   "actions/command-menu": { file: "actions/command-menu.md", content: actionCommandMenu },
   "actions/drag-and-drop": { file: "actions/drag-and-drop.md", content: actionDragAndDrop },
+  "actions/sortable-list": { file: "actions/sortable-list.md", content: actionSortableList },
   "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },
   "actions/segmented-control": { file: "actions/segmented-control.md", content: actionSegmentedControl },
@@ -187,6 +190,7 @@ const catalogContextSources = {
   "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
+  "surfaces/section": { file: "surfaces/section.md", content: surfaceSection },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },
   "surfaces/details": { file: "surfaces/details.md", content: surfaceDetails },
   "surfaces/avatar-stack": { file: "surfaces/avatar-stack.md", content: surfaceAvatarStack },

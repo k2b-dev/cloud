@@ -7,7 +7,8 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
-import { browserName, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { browserName, hoverInPlace, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { kanbanBrowserPart as selectedPart } from "../../../../../test/kanban-browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -465,7 +466,7 @@ const center = async (locator: ReturnType<Page["locator"]>) => {
 };
 const cardHandle = async (page: Page, title: string) => {
   const card = page.locator("article").filter({ hasText: title });
-  await card.hover();
+  await hoverInPlace(card);
   return (await card.locator("[data-dnd-card-handle]").boundingBox())!;
 };
 const columnTitles = (page: Page) =>
@@ -598,7 +599,17 @@ const expectHitArea = (control: Awaited<ReturnType<typeof cardControls>>["grip"]
   expect(control.bottomEdgeHit).toBe(true);
 };
 
-describe("Spaces Kanban board in a browser", () => {
+// Each `kanban-*.browser.test.ts` runs one part in a child process of its own, so every part keeps its own budget
+// (#3026). Run directly, the suite runs every part.
+const parts = ["board", "keyboard", "head", "columns", "cards"] as const;
+export type KanbanPart = (typeof parts)[number];
+if (selectedPart !== undefined && !parts.some((part) => part === selectedPart))
+  throw new Error(`Unknown SPACES_KANBAN_PART "${selectedPart}"; expected one of ${parts.join(", ")}`);
+const describePart = (part: KanbanPart, title: string, define: () => void) => {
+  if (selectedPart === undefined || selectedPart === part) describe(title, define);
+};
+
+describePart("board", "Spaces Kanban board in a browser", () => {
   for (const [name, view] of [
     ["phone", phone],
     ["tablet", tablet],
@@ -676,7 +687,7 @@ describe("Spaces Kanban board in a browser", () => {
       const released = await cardControls(page, "Collect insurance quotes");
       expect(released.claim.opacity).toBe(1);
       expect(await page.locator('[data-spaces-claim-action="release"]').count()).toBe(1);
-      await card.hover();
+      await hoverInPlace(card);
       await settled(page);
       const hovered = await cardControls(page, "Ask the bakery about a stand");
       expect([hovered.grip.opacity, hovered.claim.opacity]).toEqual([1, 1]);
@@ -1061,9 +1072,9 @@ describe("Spaces Kanban board in a browser", () => {
     const page = await open(desktop, { locale: "en" });
     try {
       const at = await layout(page);
-      await page.locator("article").first().hover();
+      await hoverInPlace(page.locator("article").first());
       expect(await layout(page)).toEqual(at);
-      await page.locator('[data-spaces-kanban-fold="column:Col002"]').hover();
+      await hoverInPlace(page.locator('[data-spaces-kanban-fold="column:Col002"]'));
       expect(await layout(page)).toEqual(at);
     } finally {
       await page.context().close();
@@ -1094,7 +1105,9 @@ describe("Spaces Kanban board in a browser", () => {
       await page.context().close();
     }
   }, 30_000);
+});
 
+describePart("keyboard", "Spaces Kanban board in a browser", () => {
   test("keyboard: Space, ArrowDown, Space on a grip moves a card one slot down, says where, and keeps focus on its grip", async () => {
     const page = await open(desktop, { locale: "en" });
     try {
@@ -1464,7 +1477,9 @@ describe("Spaces Kanban board in a browser", () => {
       await page.context().close();
     }
   }, 30_000);
+});
 
+describePart("head", "Spaces Kanban board in a browser", () => {
   test("a card dropped on a folded column moves to the top of that column, also while a filter hides cards", async () => {
     const page = await open(desktop, { locale: "en", folded: ["column:Col003"], query: "?assignedTo=unassigned" });
     try {
@@ -1629,6 +1644,9 @@ describe("Spaces Kanban board in a browser", () => {
       }
     }, 30_000);
   }
+});
+
+describePart("columns", "Spaces Kanban board in a browser", () => {
   test("automatic columns show blocked and overdue tasks only there, with the status as a badge; Blocked wins", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
     try {
@@ -1673,9 +1691,9 @@ describe("Spaces Kanban board in a browser", () => {
 
       // Hovering a column header or its menu moves nothing.
       const at = await layout(page);
-      await page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-column-handle]').hover();
+      await hoverInPlace(page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-column-handle]'));
       expect(await layout(page)).toEqual(at);
-      await page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]').hover();
+      await hoverInPlace(page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]'));
       expect(await layout(page)).toEqual(at);
 
       // Arrow keys walk through an automatic column like any other.
@@ -1975,7 +1993,9 @@ describe("Spaces Kanban board in a browser", () => {
       }
     }
   }, 30_000);
+});
 
+describePart("cards", "Spaces Kanban board in a browser", () => {
   test("a card previews a Markdown description as plain text and still clamps it to three lines", async () => {
     const raffle = item("Item11", "Col001", "Plan the raffle", {
       description: `**Goal:** sell every ticket before noon
@@ -2017,7 +2037,9 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
       }
     }
   }, 30_000);
+});
 
+describePart("columns", "Spaces Kanban board in a browser", () => {
   test("keyboard: a column header menu moves a column, announces it, and keeps focus", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
     try {
@@ -2104,7 +2126,9 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
       }
     }
   }, 60_000);
+});
 
+describePart("cards", "Spaces Kanban board in a browser", () => {
   test("the assigned worker leads one avatar stack in the server frame, after hydration, and after reload", async () => {
     const scenario: Scenario = { locale: "en" };
     /** The stack of "Book the stage" (Kim works on it, Robin is assigned too): avatar names, rings, overflow, and box. */
@@ -2204,7 +2228,7 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
         expect(stack.sizes[0]).toBe(stack.sizes[1]);
         expect(stack.gap).toBe(0);
         const before = await layout(page);
-        await card.hover();
+        await hoverInPlace(card);
         expect(await layout(page)).toEqual(before);
       } finally {
         await page.context().close();
@@ -2248,7 +2272,7 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
   );
 });
 
-describe("wide Spaces surfaces beside Detail", () => {
+describePart("cards", "wide Spaces surfaces beside Detail", () => {
   for (const [width, height] of [
     [1366, 900],
     [1920, 1080],
@@ -2360,7 +2384,7 @@ const watchReactionNavigation = (page: Page) =>
   });
 const pickedReaction = async (page: Page, id: string) => {
   const card = reactionCard(page, id);
-  await card.hover();
+  await hoverInPlace(card);
   await card.getByRole("button", { name: "Add reaction", exact: true }).click();
   const emoji = page.locator(".k2b-emoji-picker__option").filter({ hasText: /^👍$/ }).first();
   await emoji.click();
@@ -2410,7 +2434,7 @@ const waitForReloadsAfter = async (page: Page, from: number) => {
   });
 };
 
-describe("Spaces Kanban reactions", () => {
+describePart("cards", "Spaces Kanban reactions", () => {
   test("chips are sibling controls, toggle without navigation, and +n and footer background open the item", async () => {
     reactionRequests.splice(0);
     const page = await open(desktop, reactionScenario());
@@ -2571,7 +2595,7 @@ describe("Spaces Kanban reactions", () => {
       await settled(page);
       expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
       const before = await boxes();
-      await card.hover();
+      await hoverInPlace(card);
       await settled(page);
       expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
       expect(await boxes()).toEqual(before);

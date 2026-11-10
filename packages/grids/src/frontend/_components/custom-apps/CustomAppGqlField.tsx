@@ -1,4 +1,4 @@
-import { Button, ButtonLink, DetailPanel, dialogCore, PanelDialog, panelDialogWorkspaceOptions, StatusBadge } from "@k2b/ui";
+import { Button, ButtonLink, dialogCore, PanelDialog, panelDialogWorkspaceOptions, Section, StatusBadge } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { DslQueryContextKey } from "../../../query-dsl/parameters";
 import { GqlSourceEditor } from "../query/GqlSourceEditor";
@@ -113,7 +113,7 @@ export function CustomAppAvailabilitySection(props: CustomAppAvailabilitySection
   };
 
   return (
-    <DetailPanel.Section
+    <Section
       title={text({ value: "Availability" })}
       description={
         props.value().trim()
@@ -162,6 +162,6 @@ export function CustomAppAvailabilitySection(props: CustomAppAvailabilitySection
           </Button>
         </div>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }

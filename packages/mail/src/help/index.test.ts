@@ -186,6 +186,7 @@ describe("mailHelp", () => {
       if (!example) throw new Error("Draft JSON example is missing from compose help");
       const parsed = draftEditableContentInputSchema.parse(JSON.parse(example));
       expect(parsed).toMatchObject({
+        quoteSource: null,
         senderIdentityId: "Ident1",
         to: [{ name: null, address: "recipient@example.com" }],
         cc: [],
@@ -230,7 +231,7 @@ describe("mailHelp", () => {
     const expectedContent = new Map([
       ["mail-start", "Mail organizes email around **mailboxes**"],
       ["mail-work", "Open the magnifier in the head or press `/` to **Search mailbox**"],
-      ["mail-compose", "Only the session that currently holds the editing lease can change the draft"],
+      ["mail-compose", "Your own tabs, separate compose windows, and devices share that reservation"],
       ["mail-collaboration", "Internal comments are visible to people who can read the mailbox"],
       ["mail-security", "Mail keeps uncertain signals quiet"],
       ["mail-admin", "Pause mailbox** stops incoming synchronization"],

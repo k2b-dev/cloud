@@ -104,7 +104,7 @@ test("a source detail follows the K1 outline: kind and state, one main action, p
   expect(html).toMatch(/>Properties<\/h3>[\s\S]*>Target<\/dt>[\s\S]*shop\.example\.test\/metrics[\s\S]*>Newest data<\/dt>/);
   expect(html).toMatch(/>More about this source<\/div>[\s\S]*>Scrape history<\/span>[\s\S]*>Success · /);
   // No section icons, no danger zone section.
-  expect(html).not.toContain("k2b-detail-panel__section-icon");
+  expect(html).not.toContain("k2b-section__icon");
   expect(html).not.toContain("Danger zone");
 });
 

@@ -29,6 +29,7 @@ const { Switch } = await import("../inputs/Switch");
 const { default: TextInput } = await import("../inputs/TextInput");
 const { default: AppWorkspace } = await import("../layout/AppWorkspace");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
+const { Section } = await import("../surfaces/Section");
 const { ScrollArea } = await import("../layout/ScrollArea");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
@@ -230,7 +231,7 @@ const detail = () =>
         createComponent(DetailPanel.Body, {
           get children() {
             return [
-              createComponent(DetailPanel.Section, {
+              createComponent(Section, {
                 title: "Actions",
                 get children() {
                   return [
@@ -240,13 +241,13 @@ const detail = () =>
                 },
               }),
               // Standalone collapsible sections sit flush with the scrolling body, closed and open.
-              createComponent(DetailPanel.Section, {
+              createComponent(Section, {
                 title: "Recent activity",
                 icon: "ti ti-history",
                 collapsible: true,
                 children: "Edited",
               }),
-              createComponent(DetailPanel.Section, {
+              createComponent(Section, {
                 title: "Information",
                 icon: "ti ti-info-circle",
                 collapsible: true,

@@ -8,6 +8,7 @@ import {
   DetailPanel,
   type DropdownItem,
   IconButton,
+  Section,
   StatusBadge,
   Tooltip,
 } from "@k2b/ui";
@@ -62,7 +63,7 @@ export default function SourceDetailView(props: Props) {
   const t = usePulseMessages();
   /** Setup help waits collapsed under "More about this source"; its copy command sits above the code. */
   const renderCodeSection = (params: { title: string; summary: string; code: string; hint?: string }) => (
-    <DetailPanel.Section title={params.title} collapsible summary={params.summary}>
+    <Section title={params.title} collapsible summary={params.summary}>
       <div class="mb-2 flex items-start justify-between gap-3">
         <Show when={params.hint}>
           <p class="text-xs text-secondary">{params.hint}</p>
@@ -80,7 +81,7 @@ export default function SourceDetailView(props: Props) {
       <pre class="max-h-72 overflow-auto rounded-lg bg-zinc-100 p-3 text-[11px] leading-relaxed text-secondary dark:bg-zinc-900/80">
         <code>{params.code}</code>
       </pre>
-    </DetailPanel.Section>
+    </Section>
   );
 
   const cloudId = useCloudIdCopy();
@@ -231,9 +232,9 @@ export default function SourceDetailView(props: Props) {
       />
 
       <DetailPanel.Body>
-        <DetailPanel.Section title={t().properties}>
+        <Section title={t().properties}>
           <DescriptionList items={statusItems()} layout="rows" size="sm" />
-        </DetailPanel.Section>
+        </Section>
 
         <Show when={props.source.kind === "http_ingest"}>
           <ResourceApiKeys
@@ -255,7 +256,7 @@ export default function SourceDetailView(props: Props) {
 
         <DetailPanel.Group title={t().moreAboutSource}>
           <Show when={props.source.kind === "metrics"}>
-            <DetailPanel.Section
+            <Section
               title={t().scrapeHistory}
               count={props.scrapes.length || undefined}
               collapsible
@@ -274,7 +275,7 @@ export default function SourceDetailView(props: Props) {
                 empty={t().noScrapes}
                 renderCell={({ row: scrape, col }) => props.renderScrapeCell(scrape, col)}
               />
-            </DetailPanel.Section>
+            </Section>
           </Show>
           <Show when={httpExample()}>
             {(command) =>

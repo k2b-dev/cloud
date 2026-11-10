@@ -31,6 +31,10 @@ merged. The fixture catalog is excluded from the published UI build.
 <!-- chart-parity:start -->
 | Feature | Proof | Status |
 | --- | --- | --- |
+| Standalone UI palette: opt-in conversion preserves styled renderer bytes | packages/ui/src/charts/core/palette.test.ts: all fourteen raw renderer kinds carry the UI defaults on explicit conversion | Covered |
+| Notebooks PDF and map-print figures and legends use the UI palette | packages/notebooks/src/service/note-pdf.test.ts: note PDF includes the chart, data fallback and Cloud light palette | Covered |
+| Notebooks browser print copy uses UI violet for the fourth series | packages/notebooks/src/frontend/[id]/_components/note-print-copy.browser.test.ts: the Book copy prints the whole note; changes at print time replace the stale copy | Covered |
+| Notes share previews rasterize line and bar charts with the UI palette | pwas/notes/server/preview.test.ts: %s standalone Notes preview rasterizes the UI blue instead of its old private palette | Covered |
 | Line: forecast and first-series band | packages/ui/src/charts/core/line-forecast.test.ts: forecast layout binds ordered bounds to the first series suffix | Covered |
 | Line: negative zone | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
 | Line: warning threshold | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |

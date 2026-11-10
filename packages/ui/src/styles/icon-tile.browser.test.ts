@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 /** The packaged icon font with its file inlined, so centring is measured on drawn glyphs, not empty icon boxes. */
@@ -180,7 +180,7 @@ describe("standalone icon tiles", () => {
               return { width: box.width, height: box.height, background: getComputedStyle(icon).backgroundColor };
             });
           const expected = { width: before[index]!.width, height: before[index]!.height, background: before[index]!.background };
-          await parent.hover();
+          await hoverInPlace(parent);
           expect(await parent.evaluate((element) => element.matches(":hover"))).toBe(true);
           expect(await snapshot(), `${before[index]!.sample} hover`).toEqual(expected);
           await page.mouse.move(0, 0);

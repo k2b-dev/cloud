@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DateContext } from "@k2b/stdlib";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { hoverInPlace, launchBrowser } from "../../test/browser";
 import type { DateRangeValue } from "./date-picker";
 
 type FixtureOptions = {
@@ -213,7 +213,7 @@ describe("locale weekend bands", () => {
           expect(await boxes(panel)).toEqual(painted);
           await hidden.evaluate((style) => style.parentNode?.removeChild(style));
           expect(await boxes(panel)).toEqual(painted);
-          await day(panel, "2026-10-24").hover();
+          await hoverInPlace(day(panel, "2026-10-24"));
           expect(await boxes(panel)).toEqual(painted);
           await page.keyboard.press("Shift");
           await day(panel, "2026-10-24").focus();
@@ -245,7 +245,7 @@ describe("locale weekend bands", () => {
             expect((await contrast(weekday)).text).toBeGreaterThanOrEqual(4.5);
           }
           const target = day(panel, "2026-10-10");
-          await target.hover();
+          await hoverInPlace(target);
           expect(await target.evaluate((element) => element.matches(":hover"))).toBe(true);
           expect((await contrast(target)).text).toBeGreaterThanOrEqual(4.5);
           await page.mouse.move(0, 0);

@@ -10,7 +10,6 @@ import { providerSupportsRequestHeaders } from "../shared/ai-request-options";
 import { getAiCredential, listAiCredentialProviderIds } from "./credentials";
 import { AI_FIRECRAWL_API_KEY_SETTING_KEY } from "./firecrawl-tools";
 import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
-import { aiModelUsesReasoning } from "./output-budget";
 import { createAiProvider } from "./provider";
 import { listProviderModels } from "./provider-connections";
 import { getAiRequestHeaders } from "./request-headers";
@@ -108,8 +107,13 @@ export const resolveAiModelFromState = async (
   const headers = providerSupportsRequestHeaders(profile.provider) ? await getAiRequestHeaders(profile.providerId) : {};
   const provider = createAiProvider(profile, credential?.trim() || undefined, headers);
   // Older catalog rows have no reported output ceiling. Resolve the provider's facts before budgeting, rather than
-  // treating a context window as an output limit. Explicit configuration avoids this lookup, bounded to ten seconds.
-  if (profile.maxOutputTokens === undefined && profile.outputTokenLimit === undefined && aiModelUsesReasoning(profile, provider)) {
+  // treating a context window as an output limit. Only these model listings supply the supported output metadata.
+  // Explicit configuration avoids this lookup, bounded to ten seconds.
+  if (
+    profile.maxOutputTokens === undefined &&
+    profile.outputTokenLimit === undefined &&
+    (profile.provider === "openai-compatible" || profile.provider === "openrouter")
+  ) {
     try {
       const reported = (
         await listProviderModels({ type: profile.provider, baseUrl: profile.baseURL ?? null, apiKey: credential ?? undefined, headers })
