@@ -8,7 +8,11 @@ export function MobileProfileActions(props: {
   profile: { userId?: string; name: string; theme: CloudThemePreference; appHref?: string };
   beforeSelect: () => Promise<boolean>;
 }) {
-  const { preferences, signingOut, signOut } = createProfileActions(props.profile.theme, props.profile.appHref, props.profile.userId);
+  const { preferences, signingOut, signOut, sharedWorkstation } = createProfileActions(
+    props.profile.theme,
+    props.profile.appHref,
+    props.profile.userId,
+  );
   const navigate = (href: string) => (event: MouseEvent) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -38,6 +42,18 @@ export function MobileProfileActions(props: {
         <i class="ti ti-language" aria-hidden="true" />
         {preferences.languageLabel()}
       </Button>
+      {props.profile.userId && (
+        <Button
+          variant="ghost"
+          role="switch"
+          aria-checked={sharedWorkstation.shared()}
+          disabled={sharedWorkstation.pending()}
+          onClick={() => void sharedWorkstation.toggle()}
+        >
+          <i class={sharedWorkstation.shared() ? "ti ti-square-check" : "ti ti-square"} aria-hidden="true" />
+          {sharedWorkstation.messages().label}
+        </Button>
+      )}
       <Button
         variant="ghost"
         disabled={signingOut()}

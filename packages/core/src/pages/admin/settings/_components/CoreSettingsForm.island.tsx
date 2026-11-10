@@ -699,7 +699,7 @@ const sectionIdForEntry = (entry: SettingFieldDef): string => {
     entry.key === "user.abbr_length"
   )
     return "user.registration";
-  if (entry.key === "user.session.expiry_hours") {
+  if (entry.key === "user.session.expiry_hours" || entry.key === "user.session.shared_workstation_idle_minutes") {
     return "user.login";
   }
   if (entry.key.includes("_expires_days")) return "user.expiry";

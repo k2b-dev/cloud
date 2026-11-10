@@ -29,7 +29,11 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
   const locale = useLocale();
   const data = useShellData();
   const t = () => platformMessages.resolve([locale()]).t;
-  const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme, props.appHref, props.userId);
+  const { preferences, items, signOut, signingOut, sharedWorkstation } = createProfileActions(
+    props.initialTheme,
+    props.appHref,
+    props.userId,
+  );
   const [sidebarHidden, setSidebarHidden] = createSignal(false);
   onMount(() => {
     const sync = () => setSidebarHidden(readShellFocus());
@@ -92,6 +96,23 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
               <i class="ti ti-device-mobile" aria-hidden="true" />
               <span>{preferences.messages().app}</span>
             </a>
+          )}
+          {props.userId && (
+            <button
+              type="button"
+              class="menu-item"
+              role="switch"
+              aria-checked={sharedWorkstation.shared()}
+              aria-describedby="cloud-shared-workstation-description"
+              disabled={sharedWorkstation.pending()}
+              onClick={() => void sharedWorkstation.toggle()}
+            >
+              <i class={sharedWorkstation.shared() ? "ti ti-square-check" : "ti ti-square"} aria-hidden="true" />
+              <span class="layout-profile-preferences__copy">
+                <span>{sharedWorkstation.messages().label}</span>
+                <small id="cloud-shared-workstation-description">{sharedWorkstation.messages().description}</small>
+              </span>
+            </button>
           )}
         </div>
         <div class="layout-profile-preferences__section">

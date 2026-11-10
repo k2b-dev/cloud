@@ -1,4 +1,5 @@
 import { apiClient } from "../clients/core";
+import { IDLE_SIGN_OUT_STORAGE_KEY } from "./idle-sign-out";
 
 /** Fence and remove application-owned entries in the authenticated user's browser namespace. */
 const clearUserStorage = (userId: string): void => {
@@ -36,4 +37,20 @@ export const signOutBrowserSession = async (userId: string | undefined, errorMes
     }
   }
   if (!response.ok || cleanupFailed) throw new Error(errorMessage);
+};
+
+/**
+ * On the sign-in page after a shared workstation signed out for lack of input: revokes the session the page left, once
+ * the apps saved their work on `pagehide`, and clears that account's data in this browser. The server ends the idle
+ * session moments later on its own, so a failure needs no retry.
+ */
+export const finishIdleSignOut = async (): Promise<void> => {
+  let userId: string | null;
+  try {
+    userId = window.sessionStorage.getItem(IDLE_SIGN_OUT_STORAGE_KEY);
+    window.sessionStorage.removeItem(IDLE_SIGN_OUT_STORAGE_KEY);
+  } catch {
+    return;
+  }
+  if (userId) await signOutBrowserSession(userId, "Idle sign-out").catch(() => undefined);
 };

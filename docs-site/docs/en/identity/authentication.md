@@ -210,6 +210,11 @@ The cookie is:
 - secure outside development;
 - valid for the configured `user.session.expiry_hours`.
 
+On a browser marked as a [shared workstation](/en/docs/operations/shared-workstations),
+the cookie has no expiry and the session also ends after the configured idle
+minutes without real input. `AuthenticatedSession.data.idle` and the request
+variable `sessionIdle` then carry the seconds left; requests never extend them.
+
 Successful browser sign-ins also set a separate 90-day
 [browser cookie](/en/docs/operations/sign-in-locations#browser-cookie) that is
 kept on sign-out; it does not authenticate requests.

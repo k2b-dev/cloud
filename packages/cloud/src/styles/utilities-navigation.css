@@ -1183,6 +1183,20 @@
   margin-left: auto;
 }
 
+/* A label with a quiet line below, as in the touch menu's choice rows. */
+.layout-profile-preferences__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  text-align: start;
+}
+
+.layout-profile-preferences__copy > small {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
 /* The sidebar entry, the preferences, and sign-out are three sections, each
    below a line, in the hover panel and in the touch menu alike. */
 .layout-profile-preferences__section {

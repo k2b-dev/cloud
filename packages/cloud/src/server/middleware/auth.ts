@@ -18,7 +18,7 @@ import { isReservedWorkloadApiCredential } from "../../services/identity/workloa
 import { oauthTokens } from "../../services/oauth-tokens";
 import { serviceAccountCredentials } from "../../services/service-account-credentials";
 import type { ServiceAccount } from "../../services/service-accounts";
-import { type AuthenticatedSession, isAppPagePath, type SessionKind, session } from "../../services/session";
+import { type AuthenticatedSession, isAppPagePath, type SessionIdle, type SessionKind, session } from "../../services/session";
 import { createLoginRedirectUrl } from "../../shared/redirect";
 import { isAppSessionActor } from "../actor";
 import type { AccessSubject } from "../services/access";
@@ -107,6 +107,8 @@ export type AuthContext = {
     credentialKind?: RequestCredentialKind;
     /** With `credentialKind: "session"`: `"app"` for a paired phone in the mobile app, otherwise `"web"`. */
     sessionKind?: SessionKind;
+    /** A browser session on a shared workstation: seconds left without real input, read when this request authenticated. */
+    sessionIdle?: SessionIdle;
     /** Constraints carried by OAuth/API credentials; absent sessions are unrestricted by transport scope. */
     credentialScopes?: string[];
     credentialProof?: RequestCredentialProof;
@@ -177,6 +179,7 @@ const loadAuthenticatedActorUncached = async (
     c.set("sessionToken", token);
     c.set("credentialKind", "session");
     c.set("sessionKind", authenticatedSession.data.kind);
+    if (authenticatedSession.data.idle) c.set("sessionIdle", authenticatedSession.data.idle);
     c.set("credentialProof", {
       kind: "session",
       userId: user.id,

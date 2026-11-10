@@ -22,6 +22,9 @@ export const authMessages = i18n.define({
       useEmailInstead: "Use an email link instead",
       usePasswordInstead: "Use your FreeIPA password instead",
       noLoginAvailable: "This sign-in option is unavailable. Contact your administrator or use your invitation link.",
+      signedOutIdle: "You were signed out because nobody worked at this shared workstation for a while.",
+      sharedWorkstationHint:
+        "This is a shared workstation: it remembers nothing about your sign-in and signs you out after a while without input.",
       restoreLoginTitle: "Local Login accounts are disabled",
       restoreLoginConfirmation:
         "Re-enable access for all local Login accounts to recover administration. Login visibility remains unchanged.",
@@ -134,6 +137,9 @@ export const authMessages = i18n.define({
       useEmailInstead: "Stattdessen E-Mail-Link nutzen",
       usePasswordInstead: "Stattdessen FreeIPA-Passwort nutzen",
       noLoginAvailable: "Diese Anmeldung ist nicht verfügbar. Wende dich an die Administration oder nutze deinen Einladungslink.",
+      signedOutIdle: "Du wurdest abgemeldet, weil an diesem gemeinsam genutzten Arbeitsplatz eine Weile niemand gearbeitet hat.",
+      sharedWorkstationHint:
+        "Das ist ein gemeinsam genutzter Arbeitsplatz: Er merkt sich nichts von deiner Anmeldung und meldet dich nach einer Weile ohne Eingabe ab.",
       restoreLoginTitle: "Lokale Login-Accounts sind deaktiviert",
       restoreLoginConfirmation:
         "Zugriff für alle lokalen Login-Accounts wieder erlauben, um die Administration wiederherzustellen. Die Sichtbarkeit im Login bleibt unverändert.",

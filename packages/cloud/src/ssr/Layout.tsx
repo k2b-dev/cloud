@@ -13,6 +13,7 @@ import { hasRole, type User } from "../contracts/shared";
 import { isAppSessionActor } from "../server/actor";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
+import { readSharedWorkstationMark } from "../services/session/shared-workstation";
 import { createLoginRedirectUrl, dates, resolveHomePath } from "../shared";
 import { publicCloudOrigin } from "../shared/app-url";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
@@ -219,6 +220,11 @@ export default function Layout(props: LayoutProps) {
   const shellFocus = showRail && readShellFocusCookie(cookie);
   // The profile menu offers the mobile app only while the installation runs it.
   const appHref = user && isPwaShellAvailable(displayApps) ? "/me/app" : undefined;
+  // Browser sessions only: the mobile app's phone is never a shared workstation.
+  const browserSession = !!user && !isAppSessionActor(c.get("actor"));
+  const sharedWorkstation = browserSession && readSharedWorkstationMark(c.req.raw.headers);
+  const sessionIdle = browserSession ? c.get("sessionIdle") : undefined;
+  const signedInBrowser = browserSession && user ? { userId: user.id, ...(sessionIdle ? { idle: sessionIdle } : {}) } : undefined;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id
@@ -270,7 +276,13 @@ export default function Layout(props: LayoutProps) {
       ? {
           rail: c.get("railPreferences") ?? defaultRailPreferences(),
           home: resolveHomePath(settings?.app?.home_path),
-          profile: { userId: user.id, name: profileName, avatarSrc: profileAvatarSrc, appHref },
+          profile: {
+            userId: user.id,
+            name: profileName,
+            avatarSrc: profileAvatarSrc,
+            appHref,
+            ...(sharedWorkstation ? { sharedWorkstation: true as const } : {}),
+          },
         }
       : {}),
     legalLinks,
@@ -323,6 +335,7 @@ export default function Layout(props: LayoutProps) {
             pageTrail
             help={runtimeHelp}
             panel={panel ? true : undefined}
+            browserSession={signedInBrowser}
           />
           <PageTrailProvider trail={pageTrail} onOwnTitle={() => (focusContent.ownTitle = true)}>
             {(() => {
@@ -392,6 +405,7 @@ export default function Layout(props: LayoutProps) {
               : undefined
           }
           banners={user && (swap || announcements?.banners.length) ? true : undefined}
+          browserSession={signedInBrowser}
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} name={appName} />}

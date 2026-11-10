@@ -28,7 +28,10 @@ import {
 } from "../known-browsers";
 import { logger } from "../logging";
 import * as settings from "../settings";
-import { loadJwtSession, loadJwtSessionIdentity } from "./user";
+import { forgetSignInMemory, isSharedWorkstation, setSharedWorkstationCookie, sharedWorkstationIdleSeconds } from "./shared-workstation";
+import { loadJwtSession, loadJwtSessionIdentity, type SessionIdle } from "./user";
+
+export type { SessionIdle } from "./user";
 
 const log = logger("auth:session");
 
@@ -51,6 +54,8 @@ export type SessionData = {
   kind: SessionKind;
   /** The paired phone of an app session. */
   deviceId?: string;
+  /** A browser session on a shared workstation: it ends after the administrator's idle limit without real input. */
+  idle?: SessionIdle;
 };
 
 export type AuthenticatedSession = { data: SessionData; user: User };
@@ -120,7 +125,7 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
     groupsAdmin,
   });
   if (!loaded) return null;
-  const { user, pwaDeviceId } = loaded;
+  const { user, pwaDeviceId, idle } = loaded;
   if (isAccountExpired(user.accountExpires)) {
     await endSessions(sql, user.id);
     return null;
@@ -134,6 +139,7 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
       expiresAt: new Date(credential.exp * 1_000).toISOString(),
       kind: pwaDeviceId ? "app" : "web",
       ...(pwaDeviceId ? { deviceId: pwaDeviceId } : {}),
+      ...(idle ? { idle } : {}),
     },
   };
 };
@@ -190,6 +196,8 @@ export type SessionIssueOptions = {
   appDeviceId?: string;
   /** Web sign-ins update `last_login_local`; app renewals track use per device instead. */
   recordLogin?: boolean;
+  /** A web sign-in on a browser marked as a shared workstation: the family ends after the idle limit without input. */
+  sharedWorkstation?: boolean;
 };
 
 type PreparedFamily = {
@@ -255,9 +263,11 @@ const insertFamily = async (
   if (!activeKey) throw new Error(SIGNER_INACTIVE);
   await tx`
     INSERT INTO auth.session_families (
-      sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending, pwa_device_id, app_device_id
+      sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending, pwa_device_id, app_device_id,
+      last_input_at
     ) VALUES (${sid}, ${userId}, ${epoch}, ${signer.kid}, ${issuedAt}, ${expiresAt}, ${requestId}, ${userAgent},
-      NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null}, ${options.appDeviceId ?? null})
+      NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null}, ${options.appDeviceId ?? null},
+      ${options.sharedWorkstation && !options.pwaDeviceId ? issuedAt : null})
   `;
   const notice = options.knownBrowser
     ? await rememberSignIn(tx, { ...options.knownBrowser, userId, firstName: noticeFirstName(user.given_name), now: issuedAt })
@@ -381,18 +391,76 @@ const revokePhones = async (
     );
 };
 
-/** Copies a web family to a new sid, epoch and signer; sign-in time, expiry, origin and the Cloud Login device
- * that approved it stay the same, so removing that device still ends the copy. */
+/** Copies a web family to a new sid, epoch and signer; sign-in time, expiry, origin, idle limit and the Cloud Login
+ * device that approved it stay the same, so removing that device still ends the copy. */
 const copyFamily = async (tx: SQL, from: string, to: { sid: string; authEpoch: number; kid: string }): Promise<void> => {
   await tx`
     INSERT INTO auth.session_families (
       sid, user_id, auth_epoch, signing_kid, issued_at, expires_at, created_request_id, created_user_agent, legal_pending,
-      pwa_device_id, app_device_id
+      pwa_device_id, app_device_id, last_input_at
     )
     SELECT ${to.sid}::uuid, user_id, ${to.authEpoch}, ${to.kid}, issued_at, expires_at,
-      created_request_id, created_user_agent, legal_pending, pwa_device_id, app_device_id
+      created_request_id, created_user_agent, legal_pending, pwa_device_id, app_device_id, last_input_at
     FROM auth.session_families WHERE sid = ${from}::uuid
   `;
+};
+
+/**
+ * Records real input (typing, clicking, scrolling, touching) for a browser session on a shared workstation.
+ * Only this call moves `last_input_at`; no other request extends the idle limit. A family whose limit already
+ * passed stays ended in the same statement, so a late input never revives it. Null when the session has no
+ * idle limit or is no longer valid.
+ */
+const recordInput = async (signIn: { userId: string; sid: string }): Promise<SessionIdle | null> => {
+  const timeoutSeconds = await sharedWorkstationIdleSeconds();
+  const [row] = await sql<Array<{ sid: string }>>`
+    UPDATE auth.session_families SET last_input_at = now()
+    WHERE sid = ${signIn.sid}::uuid AND user_id = ${signIn.userId}::uuid AND pwa_device_id IS NULL
+      AND revoked_at IS NULL AND expires_at > now()
+      AND last_input_at > now() - ${timeoutSeconds} * interval '1 second'
+    RETURNING sid
+  `;
+  return row ? { remainingSeconds: timeoutSeconds, timeoutSeconds } : null;
+};
+
+/**
+ * Marks or unmarks this browser as a shared workstation and applies it to the browser session that asked. Marking
+ * starts the idle limit for that session, makes its cookie end with the browser and forgets what the sign-in page
+ * remembered; unmarking lifts the limit and restores the cookie's expiry. The mark itself stays across sign-out.
+ */
+const setSharedWorkstation = async (
+  c: Context,
+  signIn: { userId: string; sid: string },
+  shared: boolean,
+): Promise<{ sharedWorkstation: boolean; idle: SessionIdle | null }> => {
+  const timeoutSeconds = await sharedWorkstationIdleSeconds();
+  // A session whose idle limit passed while this request ran stays ended: neither marking nor unmarking revives it.
+  const [family] = await sql<Array<{ expires_at: Date }>>`
+    UPDATE auth.session_families SET last_input_at = CASE WHEN ${shared} THEN now() ELSE NULL END
+    WHERE sid = ${signIn.sid}::uuid AND user_id = ${signIn.userId}::uuid AND pwa_device_id IS NULL
+      AND revoked_at IS NULL AND expires_at > now()
+      AND (last_input_at IS NULL OR last_input_at > now() - ${timeoutSeconds} * interval '1 second')
+    RETURNING expires_at
+  `;
+  if (!family) throw new HTTPException(401, { message: "Authentication required" });
+  setSharedWorkstationCookie(c, shared);
+  if (shared) forgetSignInMemory(c);
+  // Only the browser cookie of this very session changes its lifetime; a bearer caller leaves the cookie alone.
+  const token = session.getWebToken(c);
+  const claims = token ? await verifyCredential(token) : null;
+  if (token && claims?.sid === signIn.sid) writeWebCookie(c, token, new Date(family.expires_at), shared);
+  return { sharedWorkstation: shared, idle: shared ? { remainingSeconds: timeoutSeconds, timeoutSeconds } : null };
+};
+
+/** On a shared workstation the cookie has no max age, so the session also ends when the browser closes. */
+const writeWebCookie = (c: Context, token: string, expiresAt: Date, sharedWorkstation: boolean): void => {
+  setCookie(c, "session_token", token, {
+    httpOnly: true,
+    secure: !env.IS_DEVELOPMENT,
+    sameSite: "Lax",
+    ...(sharedWorkstation ? {} : { maxAge: Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1_000)) }),
+    path: "/",
+  });
 };
 
 /** Ends other sign-ins and moves the chosen browser to a new session id with its sign-in time and expiry.
@@ -603,6 +671,7 @@ export const session = {
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
     if (!Number.isFinite(expiryHours) || expiryHours < 1) throw new Error("user.session.expiry_hours must be a positive number");
     const ttlSeconds = Math.floor(expiryHours * 60 * 60);
+    const sharedWorkstation = isSharedWorkstation(c);
     const cookie = readBrowserCookie(c) ?? newBrowserCookie();
     const { browser, os, country, city } = describeRequest(c);
     const {
@@ -613,6 +682,7 @@ export const session = {
       ttlSeconds,
       authEpoch: signIn.authEpoch,
       appDeviceId: signIn.appDeviceId,
+      sharedWorkstation,
       knownBrowser: {
         cookie,
         browser,
@@ -630,22 +700,26 @@ export const session = {
 
     session.setWebCookie(c, clientToken, expiresAt);
     setBrowserCookie(c, cookie);
+    if (sharedWorkstation) {
+      // Each sign-in renews the mark, and the sign-in page keeps nothing about it.
+      setSharedWorkstationCookie(c, true);
+      forgetSignInMemory(c);
+    }
     return clientToken;
   },
 
   /** Sets the `session_token` cookie the way `create` does. Use it for the token that `endOtherSignIns` keeps:
-   * the max age runs to `expiresAt`, so that browser keeps its original expiry. */
-  setWebCookie: (c: Context, token: string, expiresAt: Date): void => {
-    setCookie(c, "session_token", token, {
-      httpOnly: true,
-      secure: !env.IS_DEVELOPMENT,
-      sameSite: "Lax",
-      maxAge: Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1_000)),
-      path: "/",
-    });
-  },
+   * the max age runs to `expiresAt`, so that browser keeps its original expiry. On a shared workstation the
+   * cookie has no max age and ends with the browser. */
+  setWebCookie: (c: Context, token: string, expiresAt: Date): void => writeWebCookie(c, token, expiresAt, isSharedWorkstation(c)),
 
   endOtherSignIns,
+
+  recordInput,
+
+  setSharedWorkstation,
+
+  isSharedWorkstation: (c: Context): boolean => isSharedWorkstation(c),
 
   revoke: revokeToken,
 

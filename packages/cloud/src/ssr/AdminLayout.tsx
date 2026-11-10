@@ -20,6 +20,7 @@ type AdminLayoutContext = {
   get(key: "runtime"): RuntimeContext;
   get(key: "settings"): Record<string, any>;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
+  get(key: "sessionIdle"): AuthContext["Variables"]["sessionIdle"];
   req: { raw: { headers: Headers; url: string } };
 };
 type Props = {
