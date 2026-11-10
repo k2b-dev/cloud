@@ -1,6 +1,11 @@
+import { createHash } from "node:crypto";
 import { S3Client } from "bun";
 import { z } from "zod";
+import { DEFAULT_STORAGE_BUCKET_ID, type StorageBucketCheckStep, type StorageBucketId } from "../contracts/storage-buckets";
+import { sql } from "../runtime/clients";
+import { decryptValue } from "../services/settings/crypto";
 import { readStates } from "../services/settings/store";
+import { hasDatabaseErrorCode, type StorageBucketRow } from "../services/storage-buckets/rows";
 
 export const objectStoreSettingKeys = [
   "storage.endpoint",
@@ -10,15 +15,14 @@ export const objectStoreSettingKeys = [
   "storage.secret_access_key",
   "storage.max_object_bytes",
 ] as const;
-const bucket = z
-  .string()
-  .min(3)
-  .max(63)
-  .regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/);
 const Config = z.object({
   endpoint: z.string().min(1),
   region: z.string().min(1),
-  bucket,
+  bucket: z
+    .string()
+    .min(3)
+    .max(63)
+    .regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/),
   access_key_id: z.string().min(1),
   secret_access_key: z.string().min(1),
   max_object_bytes: z
@@ -27,58 +31,153 @@ const Config = z.object({
     .min(1)
     .max(5 * 1024 ** 3),
 });
-export class ObjectStoreConfigurationError extends Error {}
-export class ObjectStoreConnectionError extends Error {}
-let cached: { signature: string; client: S3Client } | undefined;
-
-export const objectStoreBackend = async () => {
-  // Read one coherent DB snapshot, including stored-state checks. No local TTL:
-  // changes and secret rotation apply to the next operation in every process.
-  const states = await readStates(objectStoreSettingKeys);
-  if (objectStoreSettingKeys.some((key) => states.get(key)?.stored === "unreadable")) {
-    throw new ObjectStoreConfigurationError(
-      "Storage settings cannot be decrypted. Check this process uses the installation APP_SECRET, then replace unreadable settings in Administration > Settings > Storage.",
-    );
-  }
-  const parsed = Config.safeParse(
-    Object.fromEntries(objectStoreSettingKeys.map((key) => [key.slice("storage.".length), states.get(key)?.value])),
-  );
-  if (!parsed.success)
-    throw new ObjectStoreConfigurationError(
-      "Storage is not configured. Set the Garage endpoint, region, bucket and credentials in Administration > Settings > Storage.",
-    );
-  const config = parsed.data;
-  const endpoint = URL.parse(config.endpoint);
-  if (
-    !endpoint ||
-    !["http:", "https:"].includes(endpoint.protocol) ||
-    endpoint.username ||
-    endpoint.password ||
-    endpoint.search ||
-    endpoint.hash ||
-    endpoint.pathname !== "/"
+const Credentials = z.object({ accessKeyId: z.string().min(1), secretAccessKey: z.string().min(1) });
+export type ObjectStoreErrorCode =
+  | "storage_bucket_invalid"
+  | "storage_bucket_unknown"
+  | "storage_bucket_disconnected"
+  | "storage_not_configured"
+  | "storage_unreadable";
+export class ObjectStoreConfigurationError extends Error {
+  readonly step = "config";
+  signature: string | null = null;
+  constructor(
+    message: string,
+    public readonly code: ObjectStoreErrorCode = "storage_not_configured",
   ) {
-    throw new ObjectStoreConfigurationError("Storage endpoint must be an HTTP(S) origin without credentials, path, query or fragment.");
+    super(message);
   }
-  const signature = JSON.stringify(config);
-  if (cached?.signature !== signature) {
-    const options = {
-      endpoint: endpoint.href,
-      accessKeyId: config.access_key_id,
-      secretAccessKey: config.secret_access_key,
-      region: config.region,
-    };
-    cached = { signature, client: new S3Client({ ...options, bucket: config.bucket }) };
+}
+export class ObjectStoreConnectionError extends Error {
+  constructor(
+    message: string,
+    public readonly step: StorageBucketCheckStep = "config",
+  ) {
+    super(message);
   }
-  return { client: cached.client, limit: config.max_object_bytes };
+}
+const cached = new Map<StorageBucketId, { signature: string; client: S3Client }>();
+
+export const storageEndpointIsValid = (value: string): boolean => {
+  const endpoint = URL.parse(value);
+  return Boolean(
+    endpoint &&
+      ["http:", "https:"].includes(endpoint.protocol) &&
+      !endpoint.username &&
+      !endpoint.password &&
+      !endpoint.search &&
+      !endpoint.hash &&
+      endpoint.pathname === "/",
+  );
+};
+const unreadable = () =>
+  new ObjectStoreConfigurationError(
+    "Storage credentials cannot be decrypted. Check this process uses the installation APP_SECRET, then reconnect the bucket in Administration > Storage.",
+    "storage_unreadable",
+  );
+const notConfigured = () =>
+  new ObjectStoreConfigurationError(
+    "Storage is not configured. Connect it in Administration > Storage and check this process has database read access.",
+  );
+
+/** Read row and inherited settings in one repeatable-read snapshot; never use a process TTL. */
+export const resolveObjectStoreConfig = async (id: StorageBucketId = DEFAULT_STORAGE_BUCKET_ID) => {
+  const read = async (db: typeof sql, row?: StorageBucketRow) => {
+    const keys = row
+      ? row.inherit_access
+        ? objectStoreSettingKeys.filter((key) => key !== "storage.bucket")
+        : ["storage.max_object_bytes"]
+      : objectStoreSettingKeys;
+    const states = await readStates(keys, db);
+    const values: Record<string, unknown> = Object.fromEntries(keys.map((key) => [key.slice("storage.".length), states.get(key)?.value]));
+    const failureSignature = createHash("sha256")
+      .update(
+        JSON.stringify({ values, credentials: row?.credentials_encrypted, states: [...states].map(([key, state]) => [key, state.stored]) }),
+      )
+      .digest("hex");
+    const failure = (error: ObjectStoreConfigurationError) => Object.assign(error, { signature: failureSignature });
+    if (keys.some((key) => states.get(key)?.stored === "unreadable")) throw failure(unreadable());
+    if (row) {
+      values.bucket = row.bucket;
+      if (!row.inherit_access) {
+        values.endpoint = row.endpoint;
+        values.region = row.region;
+        let credentials: z.infer<typeof Credentials>;
+        try {
+          credentials = Credentials.parse(await decryptValue(row.credentials_encrypted ?? ""));
+        } catch {
+          if (row.credentials_encrypted === null) throw failure(notConfigured());
+          throw failure(unreadable());
+        }
+        values.access_key_id = credentials.accessKeyId;
+        values.secret_access_key = credentials.secretAccessKey;
+      }
+    }
+    const parsed = Config.safeParse(values);
+    if (!parsed.success) throw failure(notConfigured());
+    if (!storageEndpointIsValid(parsed.data.endpoint))
+      throw failure(
+        new ObjectStoreConfigurationError(
+          "Storage endpoint must be an HTTP(S) origin without credentials, path, query or fragment. Correct it in Administration > Storage.",
+        ),
+      );
+    return parsed.data;
+  };
+  try {
+    const config =
+      id === DEFAULT_STORAGE_BUCKET_ID
+        ? await read(sql)
+        : await sql.begin(async (tx) => {
+            await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+            const [row] = await tx<StorageBucketRow[]>`SELECT * FROM platform.storage_buckets WHERE id = ${id}::uuid`;
+            if (!row)
+              throw new ObjectStoreConfigurationError(
+                "Storage bucket is unknown. Connect it in Administration > Storage.",
+                "storage_bucket_unknown",
+              );
+            if (row.removed_at !== null)
+              throw new ObjectStoreConfigurationError(
+                "Storage bucket is disconnected. Reconnect it in Administration > Storage.",
+                "storage_bucket_disconnected",
+              );
+            return read(tx, row);
+          });
+    const signature = createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    return { config, signature };
+  } catch (error) {
+    if (error instanceof ObjectStoreConfigurationError) throw error;
+    if (hasDatabaseErrorCode(error, ["42P01", "3F000", "42501"])) throw notConfigured();
+    throw new ObjectStoreConfigurationError(
+      "Storage configuration could not be read. Check database access and reconnect it in Administration > Storage.",
+      "storage_unreadable",
+    );
+  }
 };
 
-/** Internal administrator check; never an application API or a credential response. */
-export const testObjectStoreConnection = async (): Promise<void> => {
-  const backend = await objectStoreBackend();
+export const objectStoreBackend = async (id: StorageBucketId = DEFAULT_STORAGE_BUCKET_ID) => {
+  const { config, signature } = await resolveObjectStoreConfig(id);
+  let backend = cached.get(id);
+  if (backend?.signature !== signature) {
+    backend = {
+      signature,
+      client: new S3Client({
+        endpoint: new URL(config.endpoint).href,
+        region: config.region,
+        bucket: config.bucket,
+        accessKeyId: config.access_key_id,
+        secretAccessKey: config.secret_access_key,
+      }),
+    };
+    cached.set(id, backend);
+  }
+  return { client: backend.client, limit: config.max_object_bytes, signature };
+};
+
+/** Test exactly this resolved client so concurrent edits cannot label a different configuration as tested. */
+export const testObjectStoreBackend = async (backend: Awaited<ReturnType<typeof objectStoreBackend>>): Promise<void> => {
   const file = backend.client.file(`cloud-connection-test/${crypto.randomUUID()}`);
   const content = "Cloud storage connection test";
-  let step = "write";
+  let step: StorageBucketCheckStep = "write";
   try {
     await file.write(content, { type: "text/plain" });
     step = "read";
@@ -92,10 +191,14 @@ export const testObjectStoreConnection = async (): Promise<void> => {
     } catch {
       throw new ObjectStoreConnectionError(
         `Storage test failed at ${step}; cleanup failed. Remove cloud-connection-test/ objects after fixing the connection.`,
+        step,
       );
     }
     throw new ObjectStoreConnectionError(
-      `Storage test failed at ${step}. Check the saved settings, Garage availability and bucket permissions, then retry.`,
+      `Storage test failed at ${step}. Check the saved configuration, service availability and bucket permissions, then retry.`,
+      step,
     );
   }
 };
+export const testObjectStoreConnection = async (id: StorageBucketId = DEFAULT_STORAGE_BUCKET_ID): Promise<void> =>
+  testObjectStoreBackend(await objectStoreBackend(id));

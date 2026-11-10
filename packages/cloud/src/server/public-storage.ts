@@ -1,23 +1,30 @@
 import { objectStoreBackend } from "../_internal/object-store-config";
 import { validateObjectKey } from "../_internal/object-store-key";
+import { DEFAULT_STORAGE_BUCKET_ID, parseStorageBucketId, type StorageBucketId } from "../contracts/storage-buckets";
 import { get } from "../services/settings";
 import { clientIpBucket } from "./client-ip";
 import { ratelimit } from "./ratelimit";
 
 const notFound = () => new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
 
-/** Platform-owned anonymous delivery. Never accepts a bucket, private prefix or listing. */
+/** Platform-owned anonymous delivery by stable bucket ID. Never accepts transport config, private prefixes or listings. */
 export const servePublicStorage = async (request: Request, clientAddress = "unknown"): Promise<Response> => {
   let path: string;
+  let bucketId: StorageBucketId = DEFAULT_STORAGE_BUCKET_ID;
   try {
     // Validate before application decoding; Bun has already resolved transport
     // dot segments. The S3 key below always starts in the public area.
     const raw = request.url.replace(/^[a-z]+:\/\/[^/]+/i, "").split(/[?#]/, 1)[0] ?? "";
     if (/[\\]|%(?:2e|2f|5c)/i.test(raw)) return notFound();
-    const match = /^\/public\/storage\/([a-z][a-z0-9-]{0,79})\/(.+)$/.exec(raw);
-    if (!match || match[1] === "storage") return notFound();
-    const area = `public/${match[1]}/`;
-    path = area + validateObjectKey(decodeURIComponent(match[2] ?? ""), area);
+    const match = /^\/public\/storage\/(?:~([^/]+)\/)?([a-z][a-z0-9-]{0,79})\/(.+)$/.exec(raw);
+    if (!match || match[2] === "storage") return notFound();
+    if (match[1] !== undefined) {
+      const parsed = parseStorageBucketId(match[1]);
+      if (!parsed || parsed === DEFAULT_STORAGE_BUCKET_ID || match[1] !== parsed) return notFound();
+      bucketId = parsed;
+    }
+    const area = `public/${match[2]}/`;
+    path = area + validateObjectKey(decodeURIComponent(match[3] ?? ""), area);
   } catch {
     return notFound();
   }
@@ -30,7 +37,7 @@ export const servePublicStorage = async (request: Request, clientAddress = "unkn
         status: 429,
         headers: { "Cache-Control": "no-store", "Retry-After": String(Math.max(1, Math.ceil(budget.resetIn / 1000))) },
       });
-    const { client, limit } = await objectStoreBackend();
+    const { client, limit } = await objectStoreBackend(bucketId);
     const stat = await client.stat(path);
     if (stat.size > limit) return notFound();
     const headers = new Headers({
@@ -100,7 +107,12 @@ export const servePublicStorage = async (request: Request, clientAddress = "unkn
     );
     return new Response(stream, { headers });
   } catch (error) {
-    if (error instanceof Error && "code" in error && ["NoSuchKey", "NotFound", "ENOENT"].includes(String(error.code))) return notFound();
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      ["NoSuchKey", "NotFound", "ENOENT", "storage_bucket_unknown", "storage_bucket_disconnected"].includes(String(error.code))
+    )
+      return notFound();
     return new Response("Storage is unavailable.", { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 };

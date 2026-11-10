@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { S3Client } from "bun";
 import { objectStoreBackend, testObjectStoreConnection } from "../_internal/object-store-config";
 import { bindProcessApplicationId, clearProcessApplicationId, getProcessApplicationId } from "../_internal/process-identity";
+import { DEFAULT_STORAGE_BUCKET_ID, StorageBucketIdSchema } from "../contracts/storage-buckets";
 import { storage } from "./object-store";
 import * as settingsStore from "./settings/store";
 
@@ -81,6 +82,24 @@ const malicious = [
 ];
 
 describe("object-store key boundary", () => {
+  test("bucket handles validate synchronously, share the default objects and produce stable URLs without I/O", async () => {
+    expect(storage.bucket(DEFAULT_STORAGE_BUCKET_ID).file).toBe(storage.file);
+    expect(storage.bucket(DEFAULT_STORAGE_BUCKET_ID).public).toBe(storage.public);
+    for (const value of ["invalid", null, 42]) {
+      try {
+        Reflect.apply(storage.bucket, storage, [value]);
+        throw new Error("Accepted an invalid ID");
+      } catch (error) {
+        expect(error).toBeInstanceOf(TypeError);
+        expect(error).toMatchObject({ code: "storage_bucket_invalid" });
+      }
+    }
+    const id = StorageBucketIdSchema.parse("12345678-1234-1234-1234-123456789012");
+    expect(await storage.bucket(id).public.file("café/a?b.png").url).toBe(
+      `https://cloud.example.test/public/storage/~${id}/inventory/caf%C3%A9/a%3Fb.png`,
+    );
+    expect(await storage.bucket(DEFAULT_STORAGE_BUCKET_ID).public.file("a.png").url).toBe(await storage.public.file("a.png").url);
+  });
   test.each(malicious)("rejects key %j before issuing an S3 request", (key) => {
     expect(() => storage.file(key)).toThrow();
     expect(() => storage.public.file(key)).toThrow();
