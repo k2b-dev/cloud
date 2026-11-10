@@ -334,6 +334,8 @@ suite("Mail workspace list pages", () => {
         expect(row.drafts).toEqual({
           count: 1,
           editors: [{ kind: "user", id: owner.id, displayName: owner.displayName }],
+          // A person's draft is no suggestion; the named case is covered by conversation-draft-summaries.
+          suggestedBy: null,
         });
     }
   });

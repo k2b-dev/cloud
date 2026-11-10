@@ -1,4 +1,5 @@
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
+import { isolateHistory } from "@codemirror/commands";
 import { Transaction } from "@codemirror/state";
 import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { isolateYjsHistory } from "@k2b/editor/collab";
@@ -14,6 +15,12 @@ import { createMailDraftTableStructure, type UnknownTableAction } from "./mail-d
 
 const liveDictationSource = createLiveDictationSource({ app: "mail" });
 
+/** Edits the composer starts for the person, such as an inserted attachment link. */
+export type MailTextEditorActions = {
+  /** Appends text after a blank line, as one step of the person's undo history, also in a shared draft. */
+  appendText: (text: string) => void;
+};
+
 /** Mail owns templates, attachments and draft replacement; the shared editor owns text and tables. */
 export default function MailTextEditor(props: {
   shared?: MailDraftDocumentClient;
@@ -23,8 +30,10 @@ export default function MailTextEditor(props: {
   body: Accessor<string>;
   onBodyInput: (value: string) => void;
   editable: Accessor<boolean>;
+  /** Input waits for a moment; the text keeps its caret, focus, and toolbar. */
+  paused?: Accessor<boolean>;
   completions: Accessor<Completion[]>;
-  onEditorReady: (editor: TextEditorController) => void;
+  onEditorReady: (editor: TextEditorController, actions: MailTextEditorActions) => void;
   onAttachImages?: () => void;
   onDroppedImages?: (files: File[]) => void;
   /** Live dictation into the body, from the editor toolbar. */
@@ -164,18 +173,14 @@ export default function MailTextEditor(props: {
     if (current.terminal || current.error) return current.message;
     if (current.structuring) return st().tablePending;
     if (current.message === st().retainedColumn) return current.message;
-    return !current.connected
-      ? st().offline.replace("{count}", String(current.changes))
-      : current.dirty
-        ? st().pending
-        : !current.ready
-          ? st().connecting
-          : st().saved;
+    if (!current.ready && current.connected) return st().connecting;
+    const stored = current.dirty ? (current.locallySaved ? st().localSaved : st().pending) : st().saved;
+    return current.connected ? stored : `${st().offline} · ${stored}`;
   };
   const copy = async () => {
     if (!binding) return;
     try {
-      const content = binding.content();
+      const content = binding.state().rejectedEdit ?? binding.content();
       await navigator.clipboard.writeText(
         `${content.to.map((entry) => entry.address).join(", ")}\nCc: ${content.cc.map((entry) => entry.address).join(", ")}\nBcc: ${content.bcc.map((entry) => entry.address).join(", ")}\n${content.subject}\n\n${content.body}`,
       );
@@ -185,6 +190,13 @@ export default function MailTextEditor(props: {
   };
   const retry = () => {
     if (binding) void binding.retry().catch((error: unknown) => controls?.notify(error instanceof Error ? error.message : st().pending));
+  };
+  const restoreProposal = () => {
+    try {
+      binding?.restoreRejectedEdit();
+    } catch (error) {
+      controls?.notify(error instanceof Error ? error.message : st().bodyEditFailed);
+    }
   };
   return (
     <div class={props.inline ? "mail-inline-text-editor relative" : "relative h-full min-h-72"}>
@@ -246,7 +258,8 @@ export default function MailTextEditor(props: {
           onModeChange={(next) => {
             if (next !== "plain") setMode(next);
           }}
-          readOnly={!props.editable()}
+          readOnly={!props.editable() && !props.paused?.()}
+          locked={props.paused?.()}
           dictation={props.liveDictation ? { source: liveDictationSource } : undefined}
           maxLength={2_097_152}
           extensions={[
@@ -276,7 +289,17 @@ export default function MailTextEditor(props: {
               value.view.dom.addEventListener("focusout", blur);
               onCleanup(() => value.view.dom.removeEventListener("focusout", blur));
             }
-            props.onEditorReady(value);
+            props.onEditorReady(value, {
+              appendText: (text) => {
+                const doc = value.view.state.doc;
+                const before = doc.toString();
+                value.view.dispatch({
+                  changes: { from: doc.length, insert: `${before.endsWith("\n") || !before ? "" : "\n\n"}${text}` },
+                  userEvent: "input.paste",
+                  annotations: isolateHistory.of("full"),
+                });
+              },
+            });
           }}
           onAttachImages={props.onAttachImages}
           onDroppedImages={(_count, files) => {
@@ -298,6 +321,14 @@ export default function MailTextEditor(props: {
             when={unknownAction()}
             fallback={
               <>
+                <Show when={props.sharedState?.()?.rejectedEdit}>
+                  <Button size="sm" variant="secondary" disabled={props.sharedState?.()?.terminal} onClick={restoreProposal}>
+                    {st().restoreProposal}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => binding?.discardRejectedEdit()}>
+                    {st().discardProposal}
+                  </Button>
+                </Show>
                 <Button size="sm" variant="secondary" onClick={retry}>
                   {st().retry}
                 </Button>

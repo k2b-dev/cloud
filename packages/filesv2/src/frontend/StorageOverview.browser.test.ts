@@ -63,7 +63,12 @@ afterAll(async () => {
   await browser?.close();
 });
 
-// Recent loads itself after the tiles, as the overview does in Cloud; a failure stays inside its section.
+// Favorites and "Recently by you" load themselves; the storage entries never wait, and a failure stays in its section.
+const favorites = ["Budget.xlsx", "Logo.svg"].map((name) => ({
+  base: { id: "projects", name: "projects", kind: "groups", area: "cloud" },
+  entry: { name, path: `Planung/${name}`, directory: false, size: 0, modified: "2026-10-01T00:00:00Z" },
+  markedAt: "2026-10-01T00:00:00Z",
+}));
 const recent = ["Notes.md", "Notes.md", "Plan.txt"].map((name, index) => ({
   base: {
     id: ["valentin", "accounts", "projects"][index]!,
@@ -77,16 +82,24 @@ const recent = ["Notes.md", "Notes.md", "Plan.txt"].map((name, index) => ({
 type RecentResponse = () => { status: number; body: unknown };
 const recentOk: RecentResponse = () => ({ status: 200, body: recent });
 
-const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "light", lang = "en", recentResponse = recentOk) => {
+const open = async (
+  options: BrowserContextOptions,
+  theme: "light" | "dark" = "light",
+  lang = "en",
+  recentResponse = recentOk,
+  favoritesResponse: RecentResponse = () => ({ status: 200, body: favorites }),
+) => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
   await tab.route("http://storage-overview.test/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/") return route.fulfill({ contentType: "text/html", body: page(theme, lang) });
-    if (path === "/api/filesv2/recent") {
-      const { status, body } = recentResponse();
-      return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
-    }
+    const json = ({ status, body }: { status: number; body: unknown }) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (path === "/api/filesv2/recent") return json(recentResponse());
+    if (path === "/api/filesv2/favorites") return json(favoritesResponse());
+    if (path === "/api/filesv2/activity")
+      return json({ status: 200, body: { items: [], next: null, visibleCount: 0, batches: [], exhausted: true } });
     const asset = assets[path] ?? (path.endsWith(".woff2") ? ["font/woff2", readFileSync(`${ui}dist${path}`)] : null);
     return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
   });
@@ -121,13 +134,26 @@ describe("all storage overview in a browser", () => {
           }
           expect(await cards.first().locator(".k2b-link-card__title").innerText()).toBe(lang === "de" ? "Persönlich" : "Personal");
           expect(await cards.last().locator(".k2b-link-card__meta").innerText()).toContain(lang === "de" ? "Fehlt" : "Missing");
-          expect(await tab.getByRole("heading", { name: lang === "de" ? "Zuletzt" : "Recent", exact: true }).count()).toBe(1);
-          const recent = tab.locator("section").getByRole("button");
+          // Sections in the approved order: favorites, storage, then the last things this person did.
+          expect(await tab.locator(".filesv2-overview__section h2").allInnerTexts()).toEqual(
+            lang === "de" ? ["Favoriten", "Ablagen\n5", "Zuletzt von dir"] : ["Favorites", "Storage\n5", "Recently by you"],
+          );
+          const favoriteCards = tab.locator(".filesv2-overview__favorites .k2b-link-card");
+          await favoriteCards.nth(1).waitFor();
+          expect(await favoriteCards.first().getAttribute("href")).toBe(
+            "/app/filesv2?base=projects&path=Planung&file=Planung%2FBudget.xlsx",
+          );
+          expect(await favoriteCards.first().locator(".k2b-link-card__media .k2b-file-type-icon").count()).toBe(1);
+          const recent = tab.locator(".filesv2-overview__recent article");
           await recent.nth(2).waitFor();
           expect(await recent.count()).toBe(3);
           expect(await recent.first().innerText()).toContain("Plan.txt");
-          await recent.first().click();
-          expect(await tab.locator("#root").getAttribute("data-opened")).toBe("Docs/Plan.txt");
+          await recent.first().locator("a.filesv2-history-target--name").click();
+          await tab.locator("#root[data-navigated]").waitFor({ state: "attached" });
+          expect(await tab.locator("#root").getAttribute("data-navigated")).toBe(
+            "/app/filesv2?base=projects&path=Docs&file=Docs%2FPlan.txt",
+          );
+          await tab.evaluate(() => document.getElementById("root")!.removeAttribute("data-navigated"));
           expect(
             await tab.getByRole("button", { name: /\b(Add|Create|New folder|Upload|Hinzufügen|Neuer Ordner|Hochladen)\b/i }).count(),
           ).toBe(0);
@@ -163,20 +189,22 @@ describe("all storage overview in a browser", () => {
       });
     }
   }
-  test("a failing Recent stays inside its section and retries; the tiles never wait for it", async () => {
+  test("failing favorites stay inside their section and retry; the storage entries never wait or move", async () => {
     let calls = 0;
-    const tab = await open(desktop, "light", "en", () =>
-      ++calls === 1 ? { status: 503, body: { code: "unavailable", message: "Storage unavailable" } } : { status: 200, body: recent },
+    const tab = await open(desktop, "light", "en", recentOk, () =>
+      ++calls === 1 ? { status: 503, body: { code: "unavailable", message: "Storage unavailable" } } : { status: 200, body: favorites },
     );
     try {
-      expect(await tab.getByRole("navigation", { name: "All storage" }).getByRole("link").count()).toBe(5);
-      const section = tab.locator("section");
+      const storage = tab.getByRole("navigation", { name: "All storage" });
+      expect(await storage.getByRole("link").count()).toBe(5);
+      const section = tab.locator(".filesv2-overview__section").first();
       const retry = section.getByRole("button", { name: "Try again" });
       await retry.waitFor();
-      expect(await tab.getByRole("navigation", { name: "All storage" }).getByRole("link").count()).toBe(5);
       await retry.click();
-      await section.getByRole("button", { name: /Plan\.txt/ }).waitFor();
+      await section.locator(".k2b-link-card").nth(1).waitFor();
       expect(calls).toBe(2);
+      expect(await section.getByRole("button", { name: "Try again" }).count()).toBe(0);
+      expect(await storage.getByRole("link").count()).toBe(5);
     } finally {
       await tab.context().close();
     }

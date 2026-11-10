@@ -115,6 +115,7 @@ const materializedDraft = (senderIdentityId: string): MailDraft => ({
   requestReadReceipt: false,
   attachments: [],
   suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId: "user-1" },
   lastEditedBy: { kind: "user", userId: "user-1" },
   lastEditedByDisplayName: "Reader",

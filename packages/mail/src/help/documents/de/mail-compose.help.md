@@ -3,13 +3,13 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-20
+updated: 2026-11-09
 order: 30
 ---
 
 ## Eine Nachricht beginnen {icon="square-plus"}
 
-Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste über der neuesten Nachricht, oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, über der neuesten Nachricht, und die Schreibmarke steht im Text. Am Telefon wartet die Leiste unten, und der Entwurf öffnet oben über die volle Breite. Mail legt den gemeinsamen Entwurf an, bevor du tippst. So liegt nichts nur in deinem Browser.
+Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste über der neuesten Nachricht, oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, über der neuesten Nachricht, und die Schreibmarke steht im Text. Am Telefon wartet die Leiste unten, und der Entwurf öffnet oben über die volle Breite. Mail legt den gemeinsamen Entwurf an, bevor du tippst.
 
 Wähle **Verfassen** für eine neue Nachricht. Sie steht als **Neue Nachricht** oben in der Liste, und rechts steht eine leere Unterhaltung mit dem Entwurf. Nach dem Senden wird daraus eine Unterhaltung.
 
@@ -24,6 +24,10 @@ Der Kopf des Entwurfs zeigt die Empfänger, **Cc, Bcc**, **…**, **Vollbild** u
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
 
 Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte aus dem Kontaktverzeichnis vor. Danach folgen Adressen, an die dieses Postfach geschrieben oder von denen es E-Mails erhalten hat. Diese Vorschläge funktionieren auch ohne die Contacts-App. Ein Briefsymbol kennzeichnet sie. Mit den Pfeiltasten markierst du einen Vorschlag, mit der Eingabetaste fügst du ihn hinzu. Wer nur zugewiesene Unterhaltungen sieht, bekommt keine Vorschläge aus dem Postfach.
+
+Für mehrere Personen auf einmal tippst oder fügst du eine Liste ein, getrennt durch Komma, Semikolon oder Zeilenumbruch, auch in der Form `Name <Adresse>`. Jede Adresse wird ein eigener Empfänger; ein Teil, der keine Adresse ist, bleibt markiert im Feld stehen. Steht beim Senden noch Text in einem Empfängerfeld, geht er mit, wenn er eine vollständige Adresse ist. Sonst sendet Mail nicht, behält den Text und setzt die Schreibmarke in dieses Feld.
+
+**Strg+Enter** (**⌘+Enter** auf dem Mac) sendet aus jedem Feld des Entwurfs, mit denselben Prüfungen wie **Senden**. Während Mail speichert oder sendet, behält der Text Schreibmarke und Werkzeugleiste; Tippen wartet, bis der Schritt fertig ist. Ein Entwurf im eigenen Fenster schließt das Fenster nach dem Senden oder Verwerfen.
 
 Öffnest du mit offenem Entwurf eine andere Unterhaltung oder ein anderes Postfach, speichert Mail die letzten Änderungen, bevor es die Bearbeitungssperre freigibt. Zurück und Neuladen öffnen die Unterhaltung wieder mit offenem Entwurf.
 
@@ -82,21 +86,25 @@ Dein Standardformat steht unter **… → Einstellungen → Schreiben → Format
 
 Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Eine Unterhaltung zeigt ihre Entwürfe: den offenen an der Stelle der Leiste, jeden weiteren als Zeile mit Autor, Änderungszeit und Vorschau. Wähle eine Zeile, um den Entwurf an Ort und Stelle zu öffnen. **Antworten**, **Allen** oder **Weiterleiten** öffnen einen vorhandenen Entwurf mit demselben Zweck, statt einen zweiten zu beginnen. In der Liste zeigt eine Unterhaltung mit Entwürfen **Entwurf** oder die Anzahl der Entwürfe mit den Personen, die daran schreiben.
 
-Ein Vorschlag von Gustav ist ein echter Entwurf, der schon offen in der Unterhaltung steht, in Pflaume, mit **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und Gustav ersetzt ihn nie.
+Ein Vorschlag von Gustav oder einem anderen automatischen Konto ist ein echter Entwurf, der schon offen in der Unterhaltung steht, in Pflaume, mit dem Namen des Kontos, zum Beispiel **Vorschlag von Gustav**, und **Tippe, um ihn zu übernehmen, oder sende ihn so**. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und das Konto ersetzt ihn nie. Jedes Konto hat in einer Unterhaltung höchstens einen solchen Vorschlag.
 
 Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt Mail im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
 
-Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. Mail lehnt Speichern, Änderungen an Anhängen und Verwerfen aus jeder anderen Sitzung, jedem Tab, Agenten oder CLI-Aufruf ab und nennt die bearbeitende Person. Hält niemand die Sperre, kann die nächste Sitzung den Entwurf wieder ändern. Deine eigene abgelaufene Sitzung blockiert dich also nie.
+Der Speicherstatus unterscheidet **Änderungen ausstehend**, **Auf diesem Gerät gesichert** und **Auf dem Server gespeichert**. Eine Gerätekopie übersteht eine kurze Offline-Zeit; sie bestätigt noch nicht, dass der Server den neuesten Text gespeichert hat. Wiederherstellungsprotokolle im Klartext laufen 24 Stunden nach ihrer letzten Änderung ab. Autorisiert Mail in diesem Browser ein anderes Konto, entfernt es die Protokolle des vorherigen Kontos.
 
-Bearbeitet ein anderer Tab oder eine andere Person den Entwurf, nennt Mail diese Sitzung nach Möglichkeit. Du kannst schreibgeschützt weiterarbeiten oder die Bearbeitung gezielt in diesen Tab holen. Nach dem Schließen des Dialogs zeigt der Editor einen ruhigen Hinweis.
+Kann eine Textänderung nicht sicher übernommen werden, hält Mail den Vorschlag getrennt fest. Wähle im Hinweis am Editor **Vorschlag übernehmen**, um es erneut zu versuchen, oder **Vorschlag verwerfen**, um ihn zu entfernen. **Entwurf kopieren** kopiert den ausstehenden Vorschlag. Änderungen anderer Personen und Neuladen verwerfen ihn nicht. Kläre den Vorschlag vor dem Senden. Dauert der Abgleich zu lange, beendet Mail das Warten auf das Speichern. Deine Eingabe bleibt zum erneuten Versuch oder Kopieren erhalten.
 
-Nach einem ausgeblendeten Tab, dem Ruhezustand oder einer langsamen Antwort setzt Mail die Bearbeitung selbst fort. Mail fragt nur nach, wenn ein anderer Tab, ein anderes Gerät oder eine andere Person den Entwurf gerade hält.
+Im Standardmodus reserviert Mail den Entwurf für die Person, die daran schreibt. Öffnen und Lesen reservieren nichts. Deine eigenen Tabs, separaten Schreibfenster und Geräte teilen sich diese Reservierung und sperren dich nie gegenseitig aus. Änderst du gleichzeitig unterschiedliche Fassungen, behält Mail die widersprüchlichen Eingaben zur Wiederherstellung.
+
+Mail verlängert die Reservierung nicht mehr, wenn du nicht mehr tippst oder den Tab in den Hintergrund legst. Sie verfällt spätestens 40 Sekunden nach der letzten Eingabe oder 30 Sekunden nach dem Wechsel in den Hintergrund. Vorschläge von Gustav und Code reservieren den Entwurf nie.
+
+Du kannst offline weiterschreiben. **Auf diesem Gerät gesichert** bedeutet, dass dieser Browser deinen aktuellen Text hält. Nach dem Verbinden speichert Mail automatisch, wenn niemand den Entwurf geändert hat. Hat eine andere Person übernommen oder eine andere Fassung gespeichert, bleibt deine Eingabe zum **Text kopieren** oder Wiederherstellen sichtbar. Mail überschreibt keine der Fassungen stillschweigend.
 
 :::warning Bearbeitung übernehmen macht die andere Sitzung schreibgeschützt
-Wähle **Bearbeitung übernehmen** nur, wenn die andere Sitzung die Bearbeitung verlieren soll.
+Hält eine andere Person die Reservierung, nennt Mail sie und bietet **Bearbeitung übernehmen** an. Ihr Editor erklärt anschließend, wer übernommen hat, und behält ungespeicherte Eingaben zur Wiederherstellung. Übernimm bei einer Antwort zuerst die Bearbeitung und wähle dann **Änderungen wiederherstellen**, um deine Eingabe in derselben Unterhaltung zu behalten. Du kannst auch ohne Übernahme weiterlesen.
 :::
 
-Ein vorübergehendes Verbindungsproblem zeigt Mail getrennt an und fordert dich nicht zur Übernahme auf. Veraltete Speichervorgänge in deiner eigenen Sitzung können Wiederherstellungskopien erzeugen. Mit der Wiederherstellungsaktion im Editor prüfst du sie und stellst sie wieder her.
+Mail fragt nur nach einer Übernahme, wenn eine andere Person die Reservierung hält. Änderungen am Server, Anhänge, Verwerfen, Agenten und CLI-Aufrufe prüfen dieselbe Zuständigkeit und denselben Zugriff. Über die Wiederherstellungsaktion im Editor prüfst und übernimmst du widersprüchliche Fassungen.
 
 Entwürfe liegen in Cloud als gemeinsame Entwürfe.
 

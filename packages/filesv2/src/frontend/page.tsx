@@ -1,6 +1,6 @@
 import { type AuthContext, getLocale, getTimeZone, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
-import { Layout } from "@k2b/cloud/ssr";
+import { hintOpen, Layout, markHintSeen } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import type { Context } from "hono";
 import { filegateErrorCode } from "../api/filegate-error";
@@ -13,8 +13,10 @@ import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
 import { directoryPageCount, directoryPages } from "./directory-pages";
+import { RECENT_MOVED_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
+import { FAVORITES_PREVIEW } from "./StorageOverview";
 import { searchRequest, searchState } from "./search-state";
 import { snapshotTitle } from "./trail";
 import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
@@ -59,6 +61,8 @@ export default ssr<AuthContext>(async (c) => {
   const preferences = parsePreferences(c.req.header("cookie"));
   let browse = browseOptions(new URL(c.req.url).searchParams, viewFor(preferences, requestedBase ?? ""));
   const view = c.req.query("view");
+  // Recent became Activity's "Me" (08.11.2026); old links and bookmarks keep working.
+  if (view === "recent") return c.redirect(activityUrl({ actor: "me" }));
   const activityFilters = view === "activity" ? parseActivityFilters(new URL(c.req.url).searchParams) : undefined;
   if (activityFilters === null) return ssr.error(c, 400);
   const trashView = view === "trash";
@@ -70,7 +74,7 @@ export default ssr<AuthContext>(async (c) => {
     "https://files.invalid",
   );
   if (pages > 1) source.searchParams.set("pages", String(pages));
-  if (view === "trash" || view === "shares" || view === "recent" || view === "favorites" || editView) source.searchParams.set("view", view);
+  if (view === "trash" || view === "shares" || view === "favorites" || editView) source.searchParams.set("view", view);
   if (c.req.query("refreshed") === "true") source.searchParams.set("refreshed", "true");
   const timeZone = getTimeZone(c);
   const now = new Date().toISOString();
@@ -105,13 +109,22 @@ export default ssr<AuthContext>(async (c) => {
     if (activityFilters) {
       // The same request as the client's loader; a failed first page leaves the view to load and report it itself.
       const request = activityRequest(activityFilters, { now, timeZone });
-      initial.activity = await filesService
-        .activity(requestCall(c), request)
-        .then((page) => ({ filters: activityFilters, page }))
-        .catch(() => null);
+      [initial.activity, initial.marks] = await Promise.all([
+        filesService
+          .activity(requestCall(c), request)
+          .then((page) => ({ filters: activityFilters, page }))
+          .catch(() => null),
+        // "Me" also lists the files this person opened; without them it still shows the changes.
+        activityFilters.actor === "me" ? filesService.recent(requestCall(c)).catch(() => undefined) : undefined,
+      ]);
     } else if (view === "shares") initial.shares = await filesService.listShares(requestCall(c));
-    else if (view === "recent") initial.marks = await filesService.recent(requestCall(c));
     else if (view === "favorites") initial.marks = await filesService.favorites(requestCall(c));
+    else if (overview)
+      // Favorites stand above the storage locations, so the first frame holds them and nothing below moves.
+      initial.favoritesPreview = await filesService
+        .favorites(requestCall(c), { limit: FAVORITES_PREVIEW + 1 })
+        .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
+        .catch(() => null);
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
@@ -166,6 +179,9 @@ export default ssr<AuthContext>(async (c) => {
       initial.errorCode = error.status === 404 ? "not_found" : "unavailable";
     } else throw error;
   }
+  // Opening "Me" is using the new place, which counts as having seen the hint.
+  if (activityFilters?.actor === "me") markHintSeen(c, RECENT_MOVED_HINT);
+  else initial.hints = { recentMoved: hintOpen(c, RECENT_MOVED_HINT, { allowed: true }) };
   const locale = getLocale(c);
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   return () => (

@@ -13,10 +13,10 @@ import {
   materializeDraftSeedInputSchema,
   type SenderIdentity,
 } from "../../contracts";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import MailComposer from "./MailComposer";
 import MailComposerEditor from "./MailComposerEditor";
 import { readMailDraftSeed, storeMailDraftSeed } from "./mail-draft-seed-store";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 export type MailComposerEditorHarnessOptions = {
   locale: "en" | "de";
@@ -169,6 +169,7 @@ const initialDraft: MailDraft = {
   requestReadReceipt: false,
   attachments: [],
   suggestion: false,
+  suggestedBy: null,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada",

@@ -23,7 +23,12 @@ render(
           <StorageOverview
             bases={bases}
             issues={[]}
-            onOpenRecent={(item) => host.setAttribute("data-opened", item.entry.path)}
+            favorites={undefined}
+            env={{
+              now: "2026-10-20T12:30:00.000Z",
+              timeZone: "Europe/Berlin",
+              onNavigate: (event) => host.setAttribute("data-navigated", `${event.url.pathname}${event.url.search}`),
+            }}
             onNavigate={(event) => host.setAttribute("data-navigated", `${event.url.pathname}${event.url.search}`)}
           />
         </AppWorkspace.Content>
