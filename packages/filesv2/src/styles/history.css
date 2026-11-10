@@ -414,31 +414,29 @@
   font-weight: inherit;
 }
 
-/* Details: the preview is a compact glimpse of the approved 150px, so versions and history stay in view. Media take
-   that height; a text excerpt, a placeholder and its retry or download keep their natural size inside it. */
+/* Details: the preview leads the panel without a heading. A PDF shows its whole first page, narrower than the panel,
+   in an area of 26rem (at most 60 % of the screen's height); images and video keep their frames. The expand icon
+   floats in the top corner, a small pill like the PDF's bar, beside a centred page rather than over it. */
 .filesv2-inspector-preview {
-  display: grid;
-  place-items: center;
-  min-height: 150px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: var(--k2b-surface-muted);
+  position: relative;
+  min-width: 0;
 }
-.filesv2-inspector-preview > *,
-.filesv2-inspector-preview .filesv2-preview {
-  width: 100%;
+.k2b-ui .filesv2-inspector-preview .k2b-pdf-viewer {
+  height: min(26rem, 60svh);
+  flex: none;
 }
-.filesv2-inspector-preview .filesv2-thumbnail--hero,
-.filesv2-inspector-preview .filesv2-thumbnail--hero img {
-  height: 150px;
-  max-height: 150px;
-}
-.filesv2-inspector-preview .filesv2-preview__pdf {
-  max-height: 150px;
-  overflow: hidden;
-}
-.k2b-ui .filesv2-inspector-preview .filesv2-preview > .k2b-video-player {
-  max-height: 150px;
+.k2b-ui .filesv2-inspector-preview__expand {
+  --k2b-radius-control: 9999px;
+  position: absolute;
+  z-index: 1;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  padding: 0.125rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: 9999px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
 }
 /* The approved order: preview, then the action bar 12px below it; a folder starts with the bar. */
 .filesv2-inspector-lead {
@@ -463,10 +461,9 @@
     display: none;
   }
 }
-/* Phones show the approved short form: no preview, no folder Info, the change date and version count only, and the
-   versions list once the count opens it. The hidden preview may still load; it is never shown. */
+/* Phones show the short form: the preview, no folder Info, the change date and version count only, and the versions
+   list once the count opens it. */
 @container k2b-app-area (max-width: 47.999rem) {
-  .filesv2-inspector-preview,
   .filesv2-inspector-versions:not([data-open]),
   .k2b-ui .k2b-detail-panel__summary.filesv2-inspector-info--folder,
   .k2b-ui .filesv2-inspector-info .k2b-description-list .k2b-description-list__item:has([data-inspector-only="desktop"]) {

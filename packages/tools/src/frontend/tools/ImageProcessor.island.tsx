@@ -1278,7 +1278,6 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       >
         <DetailPanel>
           <DetailPanel.Header
-            kind={activeImage() ? <span>{t().imageKind}</span> : undefined}
             title={activeImage()?.name ?? t().imageControls}
             subtitle={activeImageSubtitle()}
             actions={

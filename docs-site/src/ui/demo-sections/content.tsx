@@ -48,11 +48,9 @@ import {
   type MessageRowStatus,
   MessageSystemRow,
   mapPalette,
-  NoticeCard,
   Pagination,
   PanelDialog,
   Paper,
-  PdfPreview,
   PdfViewer,
   Placeholder,
   panelDialogFixedOptions,
@@ -1652,28 +1650,20 @@ const MediaDemo = () => {
   const openPreview = () =>
     dialogCore.open<void>(
       (close) => (
-        <PdfPreview
-          autoLoad
-          title="Report preview"
-          request={async () => Response.json({ message: "Choose a reporting period before generating this document." }, { status: 400 })}
-          renderError={(message) => (
-            <NoticeCard role="alert" tone="warning" title="Preview is not available yet" detail={message}>
-              <Button variant="secondary" size="sm" onClick={() => close()}>
-                Back to report
-              </Button>
-            </NoticeCard>
-          )}
-        >
-          {(preview) => (
-            <PanelDialog>
-              <PanelDialog.Header title="Report preview" actions={preview.actions} close={close} />
-              <PanelDialog.Body>
-                <InlineGuidance icon="ti ti-info-circle">Preview of your saved report settings.</InlineGuidance>
-                {preview.content}
-              </PanelDialog.Body>
-            </PanelDialog>
-          )}
-        </PdfPreview>
+        <PanelDialog>
+          <PanelDialog.Header title="Report preview" close={close} />
+          <PanelDialog.Body>
+            <InlineGuidance icon="ti ti-info-circle">Preview of your saved report settings.</InlineGuidance>
+            <PdfViewer
+              autoLoad
+              open
+              title="Report preview"
+              request={async () =>
+                Response.json({ message: "Choose a reporting period before generating this document." }, { status: 400 })
+              }
+            />
+          </PanelDialog.Body>
+        </PanelDialog>
       ),
       panelDialogFixedOptions,
     );
@@ -1682,18 +1672,17 @@ const MediaDemo = () => {
       id="media"
       chip={[
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
-        { kind: "component", name: "PdfPreview", from: "@k2b/ui" },
         { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
         { kind: "component", name: "ThumbnailStrip", from: "@k2b/ui" },
       ]}
-      description="Application-owned media with a thumbnail strip from four images, the strip on its own with an unsaved dot and a + tile, a standalone PDF preview drawn by pdf.js, the viewer on its own with zoom and selectable text, and a composed dialog with header actions and an actionable error."
+      description="Application-owned media with a thumbnail strip from four images, the strip on its own with an unsaved dot and a + tile, a PDF rendered on demand, a PDF shown from its bytes with zoom and selectable text, and a dialog whose viewer shows the server's reason with a retry."
       code={`const [open, setOpen] = createSignal(false);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
 <Show when={open()}>
   <Lightbox images={images} initialIndex={0} onClose={() => setOpen(false)} />
 </Show>
-<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />
+<PdfViewer request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." open />
 <PdfViewer data={pdfBlob} title="Report" />
 <ThumbnailStrip label="Images" items={items} currentItem={current()} onSelectItem={setCurrent} onAddItems={pickImages} />`}
     >
@@ -1718,7 +1707,7 @@ const MediaDemo = () => {
         />
       </div>
       <div class="ui-pdf-demo">
-        <PdfPreview request={async () => samplePdf()} title="Sample report" emptyText="Generate the local sample to inspect it." />
+        <PdfViewer request={async () => samplePdf()} title="Sample report" emptyText="Generate the local sample to inspect it." open />
       </div>
       <div class="ui-pdf-viewer-demo">
         <PdfViewer data={samplePdf()} title="Sample report" />

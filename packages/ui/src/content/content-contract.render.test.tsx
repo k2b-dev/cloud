@@ -26,7 +26,7 @@ const { default: FileTree } = await import("./FileTree");
 const { default: LogEntriesTable } = await import("./LogEntriesTable");
 const { default: MarkdownView } = await import("./MarkdownView");
 const { Pagination } = await import("./Pagination");
-const { default: PdfPreview } = await import("./PdfPreview");
+const { default: PdfViewer } = await import("./PdfViewer");
 const { default: RangePicker } = await import("./RangePicker");
 const { default: StructuredDataPreview } = await import("./StructuredDataPreview");
 const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-parity.css")).text();
@@ -712,7 +712,7 @@ describe("@k2b/ui Cloud content contract", () => {
     const largeMarkdown = renderToString(() => createComponent(MarkdownView, { trustedHtml: "<h2>Result</h2>", headingScale: "large" }));
     const data = renderToString(() => createComponent(StructuredDataPreview, { data: { ok: true }, defaultMode: "raw", copy: true }));
     const pdf = renderToString(() =>
-      createComponent(PdfPreview, { request: async () => new Blob([], { type: "application/pdf" }), title: "Report" }),
+      createComponent(PdfViewer, { request: async () => new Blob([], { type: "application/pdf" }), title: "Report" }),
     );
 
     expect(compactMarkdown).toContain("k2b-content-markdown");
@@ -731,31 +731,31 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(contentCss).not.toMatch(/data-heading-scale="compact"[^}]*text-decoration:\s*underline/s);
     expect(data).toContain("View formatted");
     expect(data).toContain("k2b-content-structured-data__action");
-    expect(pdf).toContain("Open preview");
+    // An on-demand viewer waits for the person: one action in its empty state, no frame or toolbar of its own.
+    expect(pdf).toMatch(/class="k2b-pdf-viewer [^"]*"[^>]*data-state="idle"/);
     expect(pdf).toContain("Preview PDF");
+    expect(pdf).not.toContain("Open in new tab");
   });
 
-  test("renders an automatic PDF preview as loading until the browser takes over, with its link already usable", () => {
+  test("renders an automatic PDF viewer as loading before hydration, and a disabled one as waiting", () => {
     const request = async () => new Blob([], { type: "application/pdf" });
-    const auto = renderToString(() =>
-      createComponent(PdfPreview, { request, autoLoad: true, openHref: "/files/report.pdf", buttonLabel: "Retry", title: "Report" }),
-    );
-    const disabled = renderToString(() =>
-      createComponent(PdfPreview, { request, autoLoad: true, disabled: () => true, buttonLabel: "Retry", title: "Report" }),
-    );
+    const auto = renderToString(() => createComponent(PdfViewer, { request, autoLoad: true, open: "/files/report.pdf", title: "Report" }));
+    const address = renderToString(() => createComponent(PdfViewer, { data: "/files/report.pdf", title: "Report" }));
+    const disabled = renderToString(() => createComponent(PdfViewer, { request, autoLoad: true, disabled: true, title: "Report" }));
 
     // Nothing has failed before hydration: no retry action and no invitation to render, only the loading placeholder.
-    expect(auto).toMatch(
-      /<div [^>]*class="k2b-placeholder k2b-content-pdf-preview__placeholder[^"]*"[^>]*data-state="loading"[^>]*role="status"[^>]*>.*Loading\.\.\.<\/p><\/div>/,
-    );
-    expect(auto).not.toContain("Retry");
-    expect(auto).not.toContain("Render a PDF preview");
-    expect(auto).toMatch(/<a [^>]*href="\/files\/report\.pdf"[^>]*target="_blank"/);
-    // A disabled automatic preview never starts, so it keeps its idle state in the same placeholder.
+    for (const html of [auto, address]) {
+      expect(html).toMatch(
+        /<div [^>]*class="k2b-placeholder k2b-pdf-viewer__placeholder[^"]*"[^>]*data-state="loading"[^>]*role="status"[^>]*>.*Loading\.\.\.<\/p><\/div>/,
+      );
+      expect(html).not.toContain("Retry");
+      expect(html).not.toContain("Render a PDF preview");
+    }
+    // A disabled automatic viewer never starts, so it keeps its idle state in the same placeholder, without an action.
     expect(disabled).not.toContain("Loading...");
-    expect(disabled).toMatch(/class="k2b-placeholder k2b-content-pdf-preview__placeholder[^"]*"[^>]*data-state="empty"/);
+    expect(disabled).toMatch(/class="k2b-placeholder k2b-pdf-viewer__placeholder[^"]*"[^>]*data-state="empty"/);
     expect(disabled).toContain("Render a PDF preview");
-    expect(disabled).toContain("Retry");
+    expect(disabled).not.toContain("<button");
   });
 
   test("keeps DataTable density, alignment, sticky and footer geometry hooks", () => {

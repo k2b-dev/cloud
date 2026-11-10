@@ -100,6 +100,113 @@ const imageRuleItems = [
   { label: "Rules for external images…", icon: "ti ti-settings", action: () => {} },
 ];
 
+const NoticeActionsDemo = () => (
+  <DemoCard
+    id="notice-actions"
+    chip={[
+      { kind: "component", name: "NoticeCard", from: "@k2b/ui" },
+      { kind: "component", name: "Button", from: "@k2b/ui" },
+      { kind: "component", name: "ButtonLink", from: "@k2b/ui" },
+    ]}
+    description="A card with its icon beside the text and the direct next step below it. At most one primary action, in the tone's button variant; the actions wrap on narrow cards and share the bottom edge in a grid row."
+    code={`<NoticeCard.Grid items={notices}>
+  {(notice) => <NoticeCard {...notice} layout="card" />}
+</NoticeCard.Grid>
+
+<NoticeCard
+  tone="warning"
+  icon
+  layout="card"
+  title="Review needed"
+  meta="Due Friday"
+  detail="2 rows have no owner."
+  actions={
+    <>
+      <ButtonLink variant="warning" size="sm" href="/import/owners">Assign owners</ButtonLink>
+      <Button variant="secondary" size="sm" onClick={showRows}>Show rows</Button>
+    </>
+  }
+/>
+
+<NoticeCard
+  tone="danger"
+  icon
+  layout="card"
+  title="Source unavailable"
+  detail="Retrying in the background."
+  actions={<Button variant="danger" size="sm" onClick={retry}>Retry now</Button>}
+/>`}
+  >
+    <NoticeCard.Grid
+      items={[
+        {
+          tone: "neutral" as const,
+          icon: "ti ti-news",
+          title: "Release note",
+          detail: "Version 2.4 is available.",
+          actions: (
+            <ButtonLink variant="primary" size="sm" href="#notice-actions">
+              Read what changed
+            </ButtonLink>
+          ),
+        },
+        {
+          tone: "info" as const,
+          icon: "ti ti-file-import",
+          title: "Import ready",
+          detail: "12 rows validated.",
+          actions: (
+            <Button variant="primary" size="sm" onClick={() => toast("Import started")}>
+              Start import
+            </Button>
+          ),
+        },
+        {
+          tone: "success" as const,
+          icon: true as const,
+          title: "Import complete",
+          detail: "12 rows created.",
+          actions: (
+            <ButtonLink variant="success" size="sm" href="#notice-actions">
+              Open table
+            </ButtonLink>
+          ),
+        },
+        {
+          tone: "warning" as const,
+          icon: true as const,
+          title: "Review needed",
+          meta: "Due Friday",
+          detail: "2 rows have no owner.",
+          actions: (
+            <>
+              <ButtonLink variant="warning" size="sm" href="#notice-actions">
+                Assign owners
+              </ButtonLink>
+              <Button variant="secondary" size="sm" onClick={() => toast("Showing 2 rows")}>
+                Show rows
+              </Button>
+            </>
+          ),
+        },
+        {
+          tone: "danger" as const,
+          icon: true as const,
+          title: "Source unavailable",
+          detail: "Retrying in the background.",
+          actions: (
+            <Button variant="danger" size="sm" onClick={() => toast("Retrying now")}>
+              Retry now
+            </Button>
+          ),
+        },
+      ]}
+    >
+      {(notice) => <NoticeCard {...notice} layout="card" />}
+    </NoticeCard.Grid>
+  </DemoCard>
+);
+
 const NoticeRowDemo = () => (
   <DemoCard
     id="notice-row"
@@ -816,6 +923,7 @@ const demos: DemoSection = {
   blocks: () => (
     <DemoGrid columns="one">
       <BlocksDemo />
+      <NoticeActionsDemo />
       <NoticeRowDemo />
     </DemoGrid>
   ),

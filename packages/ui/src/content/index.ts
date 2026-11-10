@@ -175,9 +175,7 @@ export {
   renderMarkdownLink,
 } from "./markdown-links";
 export { Pagination, type PaginationProps } from "./Pagination";
-export type { PdfPreviewProps, PdfPreviewRequest } from "./PdfPreview";
-export { default as PdfPreview } from "./PdfPreview";
-export type { PdfViewerProps } from "./PdfViewer";
+export type { PdfViewerProps, PdfViewerRequest } from "./PdfViewer";
 export { default as PdfViewer } from "./PdfViewer";
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";

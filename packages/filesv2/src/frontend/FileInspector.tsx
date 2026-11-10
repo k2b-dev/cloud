@@ -153,6 +153,8 @@ export default function FileInspector(props: {
   );
   const expand = (item: FileEntry) => props.onPreview(item, () => setNotPdf(revision(item)));
   const readOnly = (item: FileEntry) => item.actions?.write === false;
+  /** The file's preview stands in the panel; Collabora files keep Edit as their main action. */
+  const inlinePreview = (item: FileEntry) => !item.directory && !props.editable?.(item) && Boolean(previewKind(item));
   const metaLine = (item: FileEntry) =>
     item.directory ? t().kindFolder : `${fileKindLabel({ name: item.name }, locale())} · ${formatFileViewSize(item.size, locale())}`;
   // Rarer commands on the entry; Share and Download stay beside the main action.
@@ -250,14 +252,7 @@ export default function FileInspector(props: {
               return (
                 <>
                   <DetailPanel.Header
-                    kind={
-                      <>
-                        <span>{item().directory ? t().kindFolder : t().kindFile}</span>
-                        <Show when={readOnly(item())}>
-                          <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} />
-                        </Show>
-                      </>
-                    }
+                    kind={readOnly(item()) ? <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} /> : undefined}
                     title={<span class="break-all">{item().name}</span>}
                     subtitle={
                       <span>
@@ -271,26 +266,36 @@ export default function FileInspector(props: {
                     actions={close}
                     primaryActions={
                       <>
+                        {/* A file whose preview stands in the panel opens it large from the preview itself, so a second
+                            "Preview" here would only repeat it; Download then leads. */}
+                        <Show when={!inlinePreview(item())}>
+                          <Button
+                            size="sm"
+                            variant="subtle"
+                            class="filesv2-details-main"
+                            disabled={props.busy}
+                            onClick={() => props.onOpen(item())}
+                          >
+                            <i
+                              class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
+                              aria-hidden="true"
+                            />
+                            {item().directory
+                              ? t().open
+                              : props.editable?.(item())
+                                ? props.canEdit === false || readOnly(item())
+                                  ? t().openReadOnly
+                                  : t().edit
+                                : t().preview}
+                          </Button>
+                        </Show>
                         <Button
                           size="sm"
-                          variant="subtle"
-                          class="filesv2-details-main"
+                          variant={inlinePreview(item()) ? "subtle" : "secondary"}
+                          class={inlinePreview(item()) ? "filesv2-details-main" : undefined}
                           disabled={props.busy}
-                          onClick={() => props.onOpen(item())}
+                          onClick={() => props.onDownload([item()])}
                         >
-                          <i
-                            class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
-                            aria-hidden="true"
-                          />
-                          {item().directory
-                            ? t().open
-                            : props.editable?.(item())
-                              ? props.canEdit === false || readOnly(item())
-                                ? t().openReadOnly
-                                : t().edit
-                              : t().preview}
-                        </Button>
-                        <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload([item()])}>
                           <i class="ti ti-download" aria-hidden="true" />
                           {f().download}
                         </Button>
@@ -321,16 +326,10 @@ export default function FileInspector(props: {
                     }
                   />
                   <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
+                    {/* The preview leads the body without a heading of its own: the icon in its corner, or a click on an
+                        image, opens it large. A PDF shows its whole first page. */}
                     <Show when={!item().directory && previewKind(item())}>
-                      <Section
-                        title={t().preview}
-                        icon="ti ti-eye"
-                        actions={
-                          <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
-                            <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                          </IconButton>
-                        }
-                      >
+                      <div class="filesv2-inspector-preview" data-preview={previewKind(item()) || undefined}>
                         <Show
                           keyed
                           when={
@@ -343,6 +342,7 @@ export default function FileInspector(props: {
                               {(key) => (
                                 <FilePreview
                                   variant="plain"
+                                  pdfFit="page"
                                   previewLines={5}
                                   onExpandPreview={() => void expand(item())}
                                   baseId={props.base.id}
@@ -359,7 +359,12 @@ export default function FileInspector(props: {
                             <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
                           </button>
                         </Show>
-                      </Section>
+                        <div class="filesv2-inspector-preview__expand">
+                          <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
+                            <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                          </IconButton>
+                        </div>
+                      </div>
                     </Show>
                     <Section title={t().properties} icon="ti ti-list-details" class="filesv2-inspector-info">
                       <DescriptionList
@@ -481,7 +486,6 @@ export default function FileInspector(props: {
         }
       >
         <DetailPanel.Header
-          kind={<span>{t().selection}</span>}
           title={t().selected(props.paths.length)}
           actions={close}
           primaryActions={

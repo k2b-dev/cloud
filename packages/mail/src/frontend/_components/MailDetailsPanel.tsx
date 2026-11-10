@@ -1359,7 +1359,6 @@ export default function MailDetailsPanel(props: {
         <DetailPanel.Header
           kind={
             <>
-              <span>{details().kind}</span>
               <StatusBadge
                 tone={done() ? "ok" : state().workStatus === "waiting" ? "neutral" : "warning"}
                 label={done() ? t().done : state().workStatus === "waiting" ? t().waitingForReply : t().needsAction}

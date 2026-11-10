@@ -191,7 +191,6 @@ export default function GroupDetailPanel(props: Props) {
   return (
     <DetailPanel>
       <DetailPanel.Header
-        kind={<span>{t().group}</span>}
         title={groupTitle()}
         subtitle={
           props.groupBy.length > 0

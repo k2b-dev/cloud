@@ -104,7 +104,10 @@ describe("DetailPanel", () => {
     );
     expect(actions).not.toContain("ti-dots");
     expect(html).toMatch(/class="k2b-detail-panel__primary-actions">Mark as done.*aria-label="More actions".*ti-dots/s);
-    expect(html).toMatch(/class="k2b-detail-panel__kind">Conversation<\/div>.*<h2/s);
+    // The name comes first; the state leads the line below it.
+    expect(html).toMatch(
+      /<h2[^>]*>Invoice review<\/h2>.*class="k2b-detail-panel__supporting"><div class="k2b-detail-panel__kind">Conversation<\/div>/s,
+    );
   });
 
   test("keeps the panel and its sections free of card-per-group styling", async () => {

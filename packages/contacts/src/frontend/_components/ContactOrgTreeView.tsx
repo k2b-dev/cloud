@@ -67,7 +67,6 @@ export default function ContactOrgTreeView(props: Props) {
   return (
     <DetailPanel>
       <DetailPanel.Header
-        kind={<span>{t().organization}</span>}
         title={t().orgTree}
         subtitle={t().hierarchyOfThisContact}
         actions={

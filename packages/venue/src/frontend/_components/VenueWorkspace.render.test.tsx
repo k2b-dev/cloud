@@ -736,7 +736,7 @@ describe("Venue shift detail and schedule", () => {
     expect(detail).toContain('aria-label="Remove Sam Sample"');
     expect(text(detail)).toContain("Take shift");
     expect(text(detail)).toContain("Also the next 4 weeks");
-    // The K1 outline: kind and state above the title, the main action in the panel accent, then properties and people,
+    // The K1 outline: the title, then kind and state below it, the main action in the panel accent, then properties and people,
     // sections without icons, and the remove action waiting in its row.
     expect(detail).toMatch(/class="k2b-detail-panel__kind"><span>Shift<\/span>[\s\S]*?k2b-status-badge__label">1 missing</);
     expect(detail).not.toContain("ti-calendar-event");

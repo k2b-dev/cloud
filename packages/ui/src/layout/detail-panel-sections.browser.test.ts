@@ -459,7 +459,8 @@ describe("DetailPanel sections and Discussion share one frame", () => {
             expect(new Set(blocks.map((block) => block.width)).size).toBe(1);
             expect(blocks.every((block) => block.background === "rgba(0, 0, 0, 0)")).toBe(true);
             expect(new Set(blocks.map((block) => block.radius)).size).toBe(1);
-            expect(blocks.every((block) => block.border === "0px")).toBe(true);
+            // One hairline separates the topics: every block after the first starts below it, and no block is a box.
+            expect(blocks.map((block) => block.border)).toEqual(blocks.map((_, index) => (index === 0 ? "0px" : "1px")));
             expect(blocks.map((block) => block.kind)).toContain("k2b-discussion");
           }
 
@@ -572,7 +573,12 @@ test("plain panels reuse the workspace rhythm in an independent host", async () 
         Array.from(document.querySelectorAll(`#${id} .k2b-detail-panel__group,#${id} .k2b-detail-panel__body > .k2b-section`)).map(
           (element) => {
             const style = getComputedStyle(element);
-            return { background: style.backgroundColor, radius: style.borderRadius, padding: style.padding };
+            return {
+              background: style.backgroundColor,
+              radius: style.borderRadius,
+              padding: style.padding,
+              line: `${style.borderTopWidth} ${style.borderTopStyle}`,
+            };
           },
         );
       return {
@@ -582,11 +588,15 @@ test("plain panels reuse the workspace rhythm in an independent host", async () 
       };
     });
     expect(painted.plain).toHaveLength(2);
-    expect(
-      painted.plain.every((value) => value.background === "rgba(0, 0, 0, 0)" && value.radius === "0px" && value.padding === "0px"),
-    ).toBe(true);
+    expect(painted.plain.every((value) => value.background === "rgba(0, 0, 0, 0)" && value.radius === "0px")).toBe(true);
+    // The first topic starts flush; the next one starts below one hairline with the body's gap above and below it.
+    expect(painted.plain.map((value) => [value.padding, value.line])).toEqual([
+      ["0px", "0px none"],
+      ["20px 0px 0px", "1px solid"],
+    ]);
     expect(painted.default.every((value) => value.background !== "rgba(0, 0, 0, 0)" && value.radius !== "0px")).toBe(true);
-    expect(painted.gap).toBe("24px");
+    expect(painted.default.every((value) => value.line === "0px none")).toBe(true);
+    expect(painted.gap).toBe("20px");
   } finally {
     await page.close();
   }

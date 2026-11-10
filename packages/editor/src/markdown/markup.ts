@@ -1,4 +1,5 @@
-/** Hide Markdown markers outside the current selection, retaining unchanged blocks. */
+/** Hide Markdown markers outside the current selection, retaining unchanged blocks. Until the person acts in the editor,
+ *  nothing is being edited and every marker stays hidden, also on the title line where the caret starts. */
 import { syntaxTree } from "@codemirror/language";
 import type { EditorSelection, EditorState, Extension, Range } from "@codemirror/state";
 import { StateField } from "@codemirror/state";
@@ -10,7 +11,13 @@ import {
   markdownBlockAt,
   mergeMarkdownSpans,
 } from "./_lib/changed-blocks";
-import { holdsDecorations, refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
+import {
+  holdsDecorations,
+  markdownEditorFocused,
+  placeMarkdownCaret,
+  refreshesMarkdownDecorations,
+  revealedSelection,
+} from "./_lib/cursor-zone-field";
 
 class HorizontalRuleWidget extends WidgetType {
   override toDOM(view: EditorView) {
@@ -20,7 +27,7 @@ class HorizontalRuleWidget extends WidgetType {
     hr.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      view.dispatch({ selection: { anchor: view.posAtDOM(hr) }, scrollIntoView: true });
+      view.dispatch({ selection: { anchor: view.posAtDOM(hr) }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     return hr;
@@ -36,12 +43,13 @@ class HorizontalRuleWidget extends WidgetType {
 const cursorOnLine = (state: EditorState, from: number, to: number): boolean => {
   const first = state.doc.lineAt(from).from;
   const last = state.doc.lineAt(to).to;
-  return state.selection.ranges.some((range) => range.from <= last && range.to >= first);
+  return (revealedSelection(state)?.ranges ?? []).some((range) => range.from <= last && range.to >= first);
 };
 const cursorInRange = (state: EditorState, from: number, to: number): boolean =>
-  state.selection.ranges.some((range) => range.from <= to && range.to >= from);
+  (revealedSelection(state)?.ranges ?? []).some((range) => range.from <= to && range.to >= from);
 
-type MarkupState = { decorations: DecorationSet; atomicDecorations: DecorationSet; selection: EditorSelection };
+/** `selection` is the selection the decorations reveal around: `null` while the person is not editing. */
+type MarkupState = { decorations: DecorationSet; atomicDecorations: DecorationSet; selection: EditorSelection | null };
 const build = (state: EditorState, span?: MarkdownSpan): MarkupState => {
   const decorations: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
@@ -68,7 +76,11 @@ const build = (state: EditorState, span?: MarkdownSpan): MarkupState => {
       }
     },
   });
-  return { decorations: Decoration.set(decorations, true), atomicDecorations: Decoration.set(atomic, true), selection: state.selection };
+  return {
+    decorations: Decoration.set(decorations, true),
+    atomicDecorations: Decoration.set(atomic, true),
+    selection: revealedSelection(state),
+  };
 };
 
 const replaceBlocks = (previous: DecorationSet, additions: readonly DecorationSet[], spans: readonly MarkdownSpan[]): DecorationSet => {
@@ -89,15 +101,16 @@ export const markupExtension = (): Extension => {
   const field = StateField.define<MarkupState>({
     create: build,
     update(value, tr) {
-      const refresh = tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect));
+      // An explicit refresh, or the person starting or stopping to edit, redraws the blocks around the selection too.
+      const refresh = refreshesMarkdownDecorations(tr);
       const spans = [...changedMarkdownBlocks(tr)];
       if ((!holdsDecorations(tr) && tr.selection) || refresh) {
-        for (const range of value.selection.ranges) {
+        for (const range of value.selection?.ranges ?? []) {
           const block = markdownBlockAt(syntaxTree(tr.startState), range.from);
           const end = markdownBlockAt(syntaxTree(tr.startState), range.to);
           spans.push({ from: tr.changes.mapPos(block.from, -1), to: tr.changes.mapPos(end.to, 1) });
         }
-        for (const range of tr.state.selection.ranges) {
+        for (const range of revealedSelection(tr.state)?.ranges ?? []) {
           spans.push({
             from: markdownBlockAt(syntaxTree(tr.state), range.from).from,
             to: markdownBlockAt(syntaxTree(tr.state), range.to).to,
@@ -117,7 +130,7 @@ export const markupExtension = (): Extension => {
           additions.map((next) => next.atomicDecorations),
           merged,
         ),
-        selection: holdsDecorations(tr) ? value.selection.map(tr.changes) : tr.state.selection,
+        selection: holdsDecorations(tr) ? (value.selection?.map(tr.changes) ?? null) : revealedSelection(tr.state),
       };
     },
     provide: (field) => [
@@ -126,6 +139,7 @@ export const markupExtension = (): Extension => {
     ],
   });
   return [
+    markdownEditorFocused,
     field,
     EditorView.theme({
       ".cm-hr-widget": {
