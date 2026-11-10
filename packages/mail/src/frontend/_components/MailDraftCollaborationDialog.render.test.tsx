@@ -43,9 +43,16 @@ describe("MailDraftCollaborationDialog", () => {
   });
 
   test("names another collaborator and explains the safe takeover consequence", () => {
-    const copy = mailDraftCollaborationCopy({ lease, reason: "lost" }, { kind: "user", id: "20000000-0000-4000-8000-000000000002" });
+    const copy = mailDraftCollaborationCopy({ lease, reason: "occupied" }, { kind: "user", id: "20000000-0000-4000-8000-000000000002" });
     expect(copy.title).toBe("Ada Lovelace is editing this draft");
     expect(copy.description).toContain("makes their editor read-only");
+    expect(copy.takeoverLabel).toBe("Take over");
+  });
+
+  test("after takeover, names the writer and explains that local input remains recoverable", () => {
+    const copy = mailDraftCollaborationCopy({ lease, reason: "lost" }, { kind: "user", id: "20000000-0000-4000-8000-000000000002" });
+    expect(copy.status).toContain("Ada Lovelace");
+    expect(copy.description).toContain("Your input stays here for copying or recovery");
     expect(copy.takeoverLabel).toBe("Take over");
   });
 
