@@ -881,7 +881,10 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             </Show>
           </table>
           <Show when={props.onLoadMore}>
-            {(onLoadMore) => <LoadMore hasMore={Boolean(props.hasMore)} loading={props.loadingMore} onLoadMore={onLoadMore()} />}
+            {(onLoadMore) => (
+              // A table that fills its height takes new rows into space it already has, so the row count tells a page.
+              <LoadMore hasMore={Boolean(props.hasMore)} loading={props.loadingMore} count={props.rows.length} onLoadMore={onLoadMore()} />
+            )}
           </Show>
         </div>
         <For each={["y", "x"] as const}>

@@ -128,6 +128,10 @@ window.list = {
   heal() {
     fail = false;
   },
+  /** A loaded item moves to the top, as a conversation with a new message does. */
+  moveUp(key) {
+    setItems((current) => [current.find((item) => item.id === key), ...current.filter((item) => item.id !== key)]);
+  },
   /** Live items arrive above the first loaded one. */
   prepend(count) {
     const page = Array.from({ length: count }, () => ({ ...make(fresh++, "n"), group: -1 }));
@@ -180,6 +184,7 @@ declare const list: {
   release: () => number;
   heal: () => void;
   prepend: (count: number) => void;
+  moveUp: (key: string) => void;
   viewport: () => HTMLElement;
   picture: () => Array<[string, number]>;
   headings: () => Heading[];
@@ -334,6 +339,15 @@ describe(`VirtualFeed anchor="start" in ${browserName}`, () => {
     // Scrolling back to the start sees them.
     await scrollTo(page, 0);
     expect(await button.count()).toBe(0);
+
+    // A loaded item that moves above the first one is new above as well, and what the reader sees stays.
+    await scrollTo(page, 1500);
+    const seen = await page.evaluate(() => list.picture());
+    await page.evaluate(() => list.moveUp("i90"));
+    await frames(page, 3);
+    const moved = new Map(await page.evaluate(() => list.picture()));
+    for (const [key, top] of seen) if (key !== "i90") expect(Math.abs((moved.get(key) ?? Number.NaN) - top)).toBeLessThanOrEqual(1);
+    expect(await button.getAttribute("aria-label")).toBe("New above, 1 new");
     await close(page);
   });
 

@@ -29,9 +29,12 @@ list, so the edge sees the list grow. Pass `hasMore` and `onLoadMore`.
   240 px of the visible area, in its own scroll area or in the window, also
   when a wide table is scrolled sideways. It asks once per approach.
 - A page that arrives while the edge is still in reach asks for the next one,
-  so a short list fills the view. A page that brought nothing (the list did
-  not grow) waits until the reader leaves the edge and comes back, so an owner
-  that keeps answering empty pages is never asked in a loop.
+  so a short list fills the view. A page that brought nothing waits until the
+  reader leaves the edge and comes back, so an owner that keeps answering empty
+  pages is never asked in a loop. Pass the number of loaded items as `count`;
+  without it, the edge judges by whether the list grew in its parent element,
+  which misses rows that fit into space a list already takes, such as a table
+  that fills its height.
 - Return a promise from `onLoadMore` to let the edge show its busy state until
   it settles. A rejection shows the error's message, or `errorLabel`, with
   "Try again"; the edge then waits for the reader instead of retrying. Resolve

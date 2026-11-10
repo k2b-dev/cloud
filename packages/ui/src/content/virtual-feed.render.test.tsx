@@ -33,7 +33,7 @@ describe("VirtualFeed", () => {
   test("renders a sized scrollport, the items at its end in the flow, and a separate log on the server", () => {
     const html = renderToString(() => feed({ class: "activity", busy: true }));
 
-    expect(html).toMatch(/class="k2b-virtual-feed activity"[^>]*data-server=""/);
+    expect(html).toMatch(/class="k2b-virtual-feed activity"[^>]*data-server="end"/);
     expect(html).toMatch(/class="k2b-virtual-feed__viewport"[^>]*tabindex="-1"/);
     expect(html).toContain('role="feed"');
     expect(html).toContain('aria-label="Build activity"');
@@ -60,6 +60,11 @@ describe("VirtualFeed", () => {
     expect(start).toHaveLength(40);
     expect(start[0]).toBe("e0");
     expect(start.at(-1)).toBe("e39");
+    // A conversation whose newer items are not loaded opens at its first loaded item in the browser, so the server
+    // renders from there too.
+    const middle = renderToString(() => feed({ items: many, hasNewer: true }));
+    expect(keysOf(middle)[0]).toBe("e0");
+    expect(middle).toContain('data-server="start"');
   });
 
   test("a list that starts at the top renders its separators and its load-more edge on the server", () => {

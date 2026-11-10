@@ -25,6 +25,11 @@ export type LoadMoreProps = {
   auto?: boolean;
   /** Where the next items appear: below the edge's list (`"end"`, the default) or above it (`"start"`). */
   side?: "end" | "start";
+  /**
+   * Number of loaded items. A page counts as arrived when it changed; without it, when the list grew in its parent
+   * element. Pass it when new items can fit into space the list already takes, such as a table that fills its height.
+   */
+  count?: number;
   /** Text of the button. Defaults to "Load more". */
   label?: string;
   /** Text while loading. Defaults to "Loading more…". */
@@ -53,21 +58,22 @@ export function LoadMore(props: LoadMoreProps): JSX.Element {
   let observer: IntersectionObserver | undefined;
   /** A request the owner has not answered yet. It holds until the owner answers or the edge leaves reach. */
   let requested = false;
-  /** The list's height when the last request went out. */
-  let heightAtRequest = -1;
+  /** The list's progress when the last request went out. */
+  let progressAtRequest = -1;
   let disposed = false;
 
   const loading = () => Boolean(props.loading) || pending();
   const error = () => failure() ?? props.error ?? null;
   const reasonOf = (cause: unknown) => (cause instanceof Error && cause.message ? cause.message : null);
-  const listHeight = () => root?.parentElement?.scrollHeight ?? 0;
+  /** The item count, or else where the edge sits plus how tall its parent's content is: both grow with the list. */
+  const progress = () => props.count ?? (root ? root.offsetTop + (root.parentElement?.scrollHeight ?? 0) : 0);
 
   /**
    * Asks the observer again, so an edge that is still in reach loads once more. Only after the list grew: a page that
    * brought nothing waits for the reader, so an owner that keeps answering empty pages is not asked in a loop.
    */
   const recheck = () => {
-    if (!observer || !reach || listHeight() === heightAtRequest) return;
+    if (!observer || !reach || progress() === progressAtRequest) return;
     requested = false;
     observer.unobserve(reach);
     observer.observe(reach);
@@ -77,7 +83,7 @@ export function LoadMore(props: LoadMoreProps): JSX.Element {
     if (!props.hasMore || loading()) return;
     if (!byReader && (requested || error())) return;
     requested = true;
-    heightAtRequest = listHeight();
+    progressAtRequest = progress();
     setFailure(null);
     let result: unknown;
     try {
@@ -112,7 +118,7 @@ export function LoadMore(props: LoadMoreProps): JSX.Element {
       if (previous[0] && !busy) recheck();
       // More items again, for example after the list was replaced: a new approach.
       else if (!previous[1] && more) {
-        heightAtRequest = -1;
+        progressAtRequest = -1;
         recheck();
       }
     }),

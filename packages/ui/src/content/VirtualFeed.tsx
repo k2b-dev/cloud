@@ -542,12 +542,15 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   };
 
   /** The items at the starting point, which the server renders in the flow: the first ones, or the last ones. */
+  /** Where the browser opens: at the first item for a list, and for a feed whose newer items are not loaded yet. */
+  const opensAtTop = () => fromStart || moreBelow();
   const serverItems = () => {
     const items = props.items;
+    const top = opensAtTop();
     let height = 0;
-    let from = fromStart ? 0 : items.length;
+    let from = top ? 0 : items.length;
     let to = from;
-    if (fromStart) while (to < items.length && height < SERVER_HEIGHT) height += estimate(items[to++]!);
+    if (top) while (to < items.length && height < SERVER_HEIGHT) height += estimate(items[to++]!);
     else while (from > 0 && height < SERVER_HEIGHT) height += estimate(items[--from]!);
     return Array.from({ length: to - from }, (_, offset) => from + offset);
   };
@@ -988,7 +991,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         appendedFrom = -1;
         anchor = { index: survivor(anchor.index), delta: anchor.delta };
         // New items sorted in above the first known one, such as a conversation that moved to the top, are new above.
-        if (fromStart) added = next.slice(0, survivor(0)).filter((_, index) => !known.has(nextKeys[index]!));
+        // Everything now above the item that was first is new there, also a known one that moved up.
+        if (fromStart) added = next.slice(0, survivor(0));
         focusIndex = focusKey === undefined ? -1 : (position.get(focusKey) ?? -1);
         lo = wasAtStart ? 0 : survivor(lo);
         hi = wasAtEnd ? length : survivor(hi - 1) + 1;
@@ -1169,6 +1173,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       () => {
         if (!fromStart && !moreBelow()) endKey = keys[keys.length - 1];
         if (hi <= lo) return;
+        // The first item gains or loses its separator with `hasOlder`; the sticky separator follows.
+        headRun = undefined;
+        placeSticky(logicalTop());
         if (!stick && reachesEnd(logicalTop())) setStick(true);
         // Only newer pages can be followed; with just `onLoadNewest`, "Jump to latest" has to show.
         else if (stick && moreBelow() && !props.onLoadNewer) setStick(false);
@@ -1308,7 +1315,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     <div
       class={props.class ? `k2b-virtual-feed ${props.class}` : "k2b-virtual-feed"}
       data-anchor={fromStart ? "start" : undefined}
-      data-server={isServer ? "" : undefined}
+      data-server={isServer ? (opensAtTop() ? "start" : "end") : undefined}
     >
       <div ref={viewport} class="k2b-virtual-feed__viewport" tabindex="-1" onScroll={onScroll}>
         {/* The browser alone knows which group is at the top; the server's first item shows its own separator there. */}

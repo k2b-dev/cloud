@@ -288,7 +288,9 @@ feed are dropped.
 
 The server renders the items at the starting point without virtualization:
 the last items for a feed that opens at the end, the first items with
-`anchor="start"`, as many as fill about 1,600 px by their `estimateSize`. They
+`anchor="start"` or while `hasNewer` is set (the browser then opens at the
+first loaded item too), as many as fill about 1,600 px by their
+`estimateSize`. They
 sit in the normal flow, at the end of the scroll area or at its top, exactly
 where the browser places them. When the island mounts, the browser renders
 the same rows at the same pixels before it paints, so the server's picture is

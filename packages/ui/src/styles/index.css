@@ -12726,11 +12726,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-y: hidden;
 }
 
-.k2b-ui .k2b-virtual-feed[data-server]:not([data-anchor="start"]) > .k2b-virtual-feed__viewport {
+.k2b-ui .k2b-virtual-feed[data-server="end"] > .k2b-virtual-feed__viewport {
   flex-direction: column-reverse;
 }
 
-.k2b-ui .k2b-virtual-feed[data-server]:not([data-anchor="start"]) .k2b-virtual-feed__feed {
+.k2b-ui .k2b-virtual-feed[data-server="end"] .k2b-virtual-feed__feed {
   margin-bottom: auto;
 }
 

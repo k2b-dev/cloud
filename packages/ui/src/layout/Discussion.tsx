@@ -278,6 +278,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
           side="start"
           class="k2b-discussion__load-more"
           hasMore
+          count={entries().length}
           loading={props.loadingMore}
           onLoadMore={loadEarlier}
           label={props.loadMoreLabel ?? chatMessages().loadEarlier}

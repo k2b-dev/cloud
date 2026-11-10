@@ -104,9 +104,9 @@ async function renderTable(options: { onLoadMore?: (loads: number) => unknown } 
     observer.restore();
     cleanup = () => {};
   };
-  // The list grows with its rows, which is how the edge tells a page that arrived from one that brought nothing.
+  // A table that fills its height keeps one scroll height while short pages arrive; its row count tells them apart.
   const wrap = dom.root.querySelector<HTMLElement>(".k2b-table-wrap")!;
-  Object.defineProperty(wrap, "scrollHeight", { configurable: true, get: () => rows().length * 40 });
+  Object.defineProperty(wrap, "scrollHeight", { configurable: true, get: () => 600 });
   await settle();
   return {
     dom,
