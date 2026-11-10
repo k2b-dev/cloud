@@ -198,6 +198,7 @@ describe("MailComposer signature choice", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         const path = new URL(request.url).pathname;
+        if (path.endsWith("/lease") && request.method === "GET") return Response.json(null);
         if (path.endsWith("/lease"))
           return Response.json({
             token: crypto.randomUUID(),
@@ -557,6 +558,7 @@ describe("MailComposer signature choice", () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
     };
     const fetchWithFixtures = globalThis.fetch;
+    const updated = Promise.withResolvers<void>();
     let finishHeartbeat: ((response: Response) => void) | undefined;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -566,7 +568,9 @@ describe("MailComposer signature choice", () => {
             finishHeartbeat = resolve;
           });
         }
-        return fetchWithFixtures(request);
+        const response = await fetchWithFixtures(request);
+        if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/drafts/Draft1")) updated.resolve();
+        return response;
       },
       { preconnect: originalFetch.preconnect },
     );
@@ -578,6 +582,16 @@ describe("MailComposer signature choice", () => {
       expect(view.state.readOnly).toBe(false);
       editor!.focus();
       expect(dom.document.activeElement).toBe(editor);
+      // Reading does not reserve a draft; the first edit starts this writer's lease.
+      delegateEvents(["input"]);
+      const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
+      subject.value = "Typing";
+      subject.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      jest.advanceTimersByTime(700);
+      await updated.promise;
+      await flush();
+      expect(saves).toHaveLength(1);
       const socket = OfflineWebSocket.instances.at(-1)!;
       socket.open();
       socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
@@ -904,6 +918,7 @@ describe("MailComposer robustness", () => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         const path = new URL(request.url).pathname;
         requests.push(`${request.method} ${path}`);
+        if (path.endsWith("/lease") && request.method === "GET") return Response.json(null);
         if (path.endsWith("/lease")) {
           await lease;
           return Response.json({
@@ -1082,25 +1097,18 @@ describe("MailComposer robustness", () => {
     await waitFor(sent);
   });
 
-  test("an opening draft shows its toolbar at once, and the inline reply takes the caret once the lease arrives", async () => {
-    const granted = Promise.withResolvers<void>();
-    lease = granted.promise;
+  test("an opening reply focuses its writable body without acquiring a lease", async () => {
     await mount({ host: true, ready: false, draft: { ...initialDraft, conversationId: "Conv01", intent: "reply" } });
-    await Bun.sleep(30);
-    expect(dom.document.activeElement).not.toBe(view().contentDOM);
     expect(view().contentDOM.getAttribute("contenteditable")).toBe("true");
-    granted.resolve();
     await waitFor(() => !sendButton().disabled);
     await waitFor(() => dom.document.activeElement === view().contentDOM);
+    expect(requests.some((request) => request.startsWith("POST ") && request.endsWith("/lease"))).toBe(false);
   });
 
-  test("a focus chosen before the lease arrives stays where the person put it", async () => {
-    const granted = Promise.withResolvers<void>();
-    lease = granted.promise;
+  test("a focus chosen after opening stays where the person put it", async () => {
     await mount({ host: true, ready: false, draft: { ...initialDraft, conversationId: "Conv01", intent: "reply" } });
     const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
     subject.focus();
-    granted.resolve();
     await waitFor(() => !sendButton().disabled);
     await Bun.sleep(30);
     expect(dom.document.activeElement).toBe(subject);
