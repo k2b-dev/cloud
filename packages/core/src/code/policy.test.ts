@@ -9,6 +9,7 @@ import {
   codePolicyContracts,
   codePolicyPreset,
   codePolicyRow,
+  isCodeAiOperation,
   normalizeCodePolicy,
   StoredCodePolicyDefinitionSchema,
 } from "./policy-contracts";
@@ -254,4 +255,10 @@ test("public routes require a deliberate policy choice, including historical tab
     definition.rules = definition.rules.filter((rule) => rule.row !== "public_routes");
     expect(effective("public_routes", { kind: "app", appId: "example" }, definition, { groups: [], ancestors: [] }).value).toBe("never");
   }
+});
+
+test("AI inference classification excludes delivery and stored-run reads", () => {
+  for (const capability of ["core.ai.generate", "core.ai.decide", "core.ai.chat.run"]) expect(isCodeAiOperation(capability)).toBe(true);
+  for (const capability of ["core.ai.chat.deliver", "core.ai.chat.run.read", "mail.message.read", "other.ai.generate"])
+    expect(isCodeAiOperation(capability)).toBe(false);
 });
