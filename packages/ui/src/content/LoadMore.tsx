@@ -124,6 +124,9 @@ export function LoadMore(props: LoadMoreProps): JSX.Element {
     }),
   );
 
+  // New items answer a request that returned nothing, also when the owner reports no loading state.
+  createEffect(on(() => props.count, recheck, { defer: true }));
+
   onMount(() => {
     if (props.auto === false || typeof IntersectionObserver === "undefined" || !reach) return;
     // The viewport root sees the edge through every scroll area around it. The reach strip reaches ahead of the edge
