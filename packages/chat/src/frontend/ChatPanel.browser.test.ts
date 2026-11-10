@@ -1384,7 +1384,7 @@ for (const historyFailure of [false, true]) {
       });
       await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
       await panel
-        .getByRole("region", { name: "Notifications", exact: true })
+        .getByRole("region", { name: "Notifications, Alt+T", exact: true })
         .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
         .waitFor();
       expect(

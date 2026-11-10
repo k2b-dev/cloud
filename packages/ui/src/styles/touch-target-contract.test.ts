@@ -18,7 +18,8 @@ describe("@k2b/ui touch targets", () => {
     expect(declarations(":where(.k2b-ui .k2b-button)", `${coarse} > @layer components`).get("position")).toEqual(["relative"]);
     expect(declarations(".k2b-ui .k2b-dialog__close").get("position")).toEqual(["relative"]);
     expect(declarations(".k2b-ui .k2b-toast__action").get("position")).toEqual(["relative"]);
-    expect(declarations(".k2b-ui .k2b-toast__close").get("position")).toEqual(["relative"]);
+    // The toast's round close button is placed over the card's corner at every size.
+    expect(declarations(".k2b-ui .k2b-toast__close", "").get("position")).toEqual(["absolute"]);
 
     const button = declarations(".k2b-ui .k2b-button::after");
     expect(button.get("content")).toEqual(['""']);
@@ -61,7 +62,12 @@ describe("@k2b/ui touch targets", () => {
     const controls = /\.k2b-(?:button|dialog__close|toast__(?:action|close))\b/;
     const pseudo = rules.filter((rule) => controls.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector));
     expect(pseudo.length).toBeGreaterThan(0);
-    expect(pseudo.filter((rule) => rule.context !== coarse).map((rule) => `${rule.file}: ${rule.selector}`)).toEqual([]);
+    // The 24 px round toast close button keeps a 2rem area for a mouse too, the size of every other small control.
+    const mouseArea = ".k2b-ui .k2b-toast__close::after";
+    expect(declarations(mouseArea, "").get("inset")).toEqual(["min(0px, calc((100% - 2rem) / 2))"]);
+    expect(
+      pseudo.filter((rule) => rule.context !== coarse && rule.selector !== mouseArea).map((rule) => `${rule.file}: ${rule.selector}`),
+    ).toEqual([]);
 
     const resized = rules
       .filter((rule) => rule.context === coarse && controls.test(rule.selector))

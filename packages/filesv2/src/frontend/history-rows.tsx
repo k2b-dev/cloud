@@ -3,20 +3,27 @@ import { query } from "@k2b/stdlib/solid";
 import { Avatar, Button, InlineGuidance, prompts, Skeleton, StatusBadge, Tag, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
+import type { MarkedEntry } from "../contracts";
 import {
   type ActorView,
   actorOf,
+  actorParts,
+  fill,
   formatTime,
+  formatWhen,
   type HistoryActions,
   type HistoryEnvironment,
   type HistoryRowModel,
   isDirectory,
   type MetaPart,
   metaParts,
+  noteSentence,
   type Part,
+  plain,
   type RestoreOutcome,
   type RowAction,
   rowAction,
+  runDestination,
   runSentence,
   type SentenceContext,
   sentence,
@@ -24,6 +31,7 @@ import {
   viaLabel,
 } from "./history-actions";
 import { type HistoryMessages, useHistoryMessages } from "./history-messages";
+import { filesUrl } from "./urls";
 
 /* ------------------------------------------------------------------ shared row parts */
 
@@ -300,10 +308,15 @@ export type HistoryRowProps = {
   variant: "list" | "detail" | "compact";
   /** Names and folders of current sides become links, and vanished items say so; only for the viewer's own reader. */
   links?: boolean;
-  /** The previous line names the same actor, so this compact row leaves its avatar out. */
+  /** The previous line names the same actor, so this compact row leaves its avatar and name out. */
   repeat?: boolean;
-  /** A line inside a run, which names the actor already; the sentence names only the change where it can. */
-  member?: boolean;
+  /**
+   * Compact rows only. `all` shows the actor in its own column before the change; `me` is the reader's own activity
+   * and shows no actor at all.
+   */
+  mode?: "me" | "all";
+  /** `short`: a line inside a run whose line names the destination, so a rename shows only its names. */
+  member?: "short";
   directory?: boolean;
   /** Replaces the sentence or meta for rows that describe a state instead of a change. */
   sentence?: readonly Part[];
@@ -343,17 +356,22 @@ export function HistoryRow(props: HistoryRowProps) {
         },
   );
   const actor = createMemo(() => actorOf(props.row.lead, h(), props.env));
+  const compact = () => props.variant === "compact";
+  // Compact rows read in note style, the item first; an action without a note form keeps its full sentence.
+  const note = createMemo(() =>
+    compact() && !props.sentence ? noteSentence(props.row, h(), props.env, { links: props.links, short: props.member === "short" }) : null,
+  );
   const parts = createMemo(
     () =>
       props.sentence ??
+      note() ??
       sentence(props.row, h(), props.env, {
         context: props.context,
         directory: props.directory,
         links: props.links,
-        member: props.member,
       }),
   );
-  const compact = () => props.variant === "compact";
+  const showsActor = () => compact() && props.mode !== "me";
   const meta = createMemo(
     () =>
       props.meta ??
@@ -376,9 +394,22 @@ export function HistoryRow(props: HistoryRowProps) {
   const members = () => (props.row.kind === "batch" ? props.row.entries : []);
   const shown = () => (expanded() ? members() : members().slice(0, 3));
   return (
-    <article class="filesv2-history-row" data-variant={props.variant} data-state={props.row.lead.state}>
-      <Show when={!(compact() && props.repeat)} fallback={<span class="filesv2-history-row__who" data-repeat="" aria-hidden="true" />}>
-        <HistoryAvatar actor={actor()} size={compact() ? "compact" : props.variant === "detail" ? "xs" : "sm"} />
+    <article
+      class="filesv2-history-row"
+      data-variant={props.variant}
+      data-mode={compact() ? (props.mode ?? "all") : undefined}
+      data-state={props.row.lead.state}
+    >
+      <Show when={!compact() || showsActor()}>
+        <Show when={!(compact() && props.repeat)} fallback={<span class="filesv2-history-row__who" data-repeat="" aria-hidden="true" />}>
+          <HistoryAvatar actor={actor()} size={compact() ? "compact" : props.variant === "detail" ? "xs" : "sm"} />
+        </Show>
+      </Show>
+      <Show when={showsActor()}>
+        {/* A full sentence names its actor itself; a repeated actor stays in place for screen readers only. */}
+        <span class="filesv2-history-row__actor" data-repeat={props.repeat ? "" : undefined}>
+          {note() ? plain(actorParts(actor(), h())) : ""}
+        </span>
       </Show>
       <div class="filesv2-history-row__text">
         <p class="filesv2-history-row__sentence">
@@ -461,6 +492,7 @@ export type HistoryRunRowProps = {
   actions?: HistoryActions;
   links?: boolean;
   repeat?: boolean;
+  mode?: "me" | "all";
   expanded: boolean;
   onToggle: (expanded: boolean) => void;
   onChanged?: () => void;
@@ -486,26 +518,50 @@ export function HistoryRunRow(props: HistoryRunRowProps) {
       { kind: "time", iso: lead().time, text: oldest === newest ? newest : `${oldest}–${newest}` },
     ];
   });
+  const showsActor = () => props.mode !== "me";
+  // Lines under a line that names the destination show only what changed besides it.
+  const short = () => (runDestination(props.rows, props.env) ? ("short" as const) : undefined);
   return (
     <div class="filesv2-history-run" data-expanded={props.expanded ? "" : undefined}>
       <button
         type="button"
         class="filesv2-history-row filesv2-history-run__toggle"
         data-variant="compact"
+        data-mode={props.mode ?? "all"}
         aria-expanded={props.expanded}
         aria-controls={rowsId}
         onClick={() => props.onToggle(!props.expanded)}
       >
-        <Show when={!props.repeat} fallback={<span class="filesv2-history-row__who" data-repeat="" aria-hidden="true" />}>
-          <HistoryAvatar actor={actor()} size="compact" />
+        <Show when={showsActor()}>
+          <Show when={!props.repeat} fallback={<span class="filesv2-history-row__who" data-repeat="" aria-hidden="true" />}>
+            <HistoryAvatar actor={actor()} size="compact" />
+          </Show>
+          <span class="filesv2-history-row__actor" data-repeat={props.repeat ? "" : undefined}>
+            {plain(actorParts(actor(), h()))}
+          </span>
         </Show>
         <span class="filesv2-history-row__text">
           <span class="filesv2-history-row__sentence">
+            {/* Inside a button nothing else is interactive, so the destination is named without links. */}
             <Sentence parts={runSentence(props.rows, h(), props.env, locale())} compact />
-            <i class="ti ti-chevron-down filesv2-history-run__chevron" aria-hidden="true" />
           </span>
         </span>
-        <CompactFacts parts={facts()} />
+        <span class="filesv2-history-row__facts">
+          <Show when={facts().find((part) => part.kind === "via")}>
+            {(via) => (
+              <Tag size="sm" class="filesv2-history-via">
+                {via().text}
+              </Tag>
+            )}
+          </Show>
+          <span class="filesv2-history-run__count">
+            {props.rows.length}
+            <i class="ti ti-chevron-down filesv2-history-run__chevron" aria-hidden="true" />
+          </span>
+          <time class="filesv2-history-row__time" datetime={lead().time}>
+            {facts().find((part) => part.kind === "time")?.text}
+          </time>
+        </span>
       </button>
       <ul id={rowsId} class="filesv2-history-run__rows" hidden={!props.expanded}>
         <For each={props.rows}>
@@ -518,9 +574,10 @@ export function HistoryRunRow(props: HistoryRunRowProps) {
                 context="activity"
                 dated
                 variant="compact"
+                mode={props.mode}
                 links={props.links}
                 repeat
-                member
+                member={short()}
                 onChanged={props.onChanged}
               />
             </li>
@@ -528,6 +585,47 @@ export function HistoryRunRow(props: HistoryRunRowProps) {
         </For>
       </ul>
     </div>
+  );
+}
+
+/**
+ * A file the person opened, in their own activity only. The recent list resolves each pointer against current access
+ * on every read, so its name and folders lead there directly.
+ */
+export function OpenedRow(props: {
+  item: MarkedEntry;
+  env: HistoryEnvironment;
+  bases: readonly { id: string; label: string }[];
+  /** `relative` for a list without day headings: "yesterday" or a date instead of the time. */
+  when?: "time" | "relative";
+}) {
+  const h = useHistoryMessages();
+  const locale = useLocale();
+  const parts = createMemo<Part[]>(() => {
+    const { base, entry } = props.item;
+    const folders = entry.path.split("/").filter(Boolean).slice(0, -1);
+    const href = entry.directory ? filesUrl(base.id, entry.path) : filesUrl(base.id, folders.join("/"), null, entry.path);
+    const label = props.bases.find((candidate) => candidate.id === base.id)?.label ?? base.name;
+    const segments = [label, ...folders];
+    return fill(h().memberOpened, {
+      object: [{ kind: "name", text: entry.name, href }],
+      at: [{ kind: "place", segments, hrefs: segments.map((_, index) => filesUrl(base.id, folders.slice(0, index).join("/"))) }],
+    });
+  });
+  // Under a day heading the time alone; in a list without headings the same "today, 14:32" as the change rows.
+  const time = () =>
+    props.when === "relative"
+      ? formatWhen(props.item.markedAt, locale(), h(), props.env)
+      : formatTime(props.item.markedAt, locale(), props.env);
+  return (
+    <article class="filesv2-history-row filesv2-history-row--opened" data-variant="compact" data-mode="me" data-state="done">
+      <div class="filesv2-history-row__text">
+        <p class="filesv2-history-row__sentence">
+          <Sentence parts={parts()} compact onNavigate={props.env.onNavigate} />
+        </p>
+      </div>
+      <CompactFacts parts={[{ kind: "time", iso: props.item.markedAt, text: time() }]} />
+    </article>
   );
 }
 

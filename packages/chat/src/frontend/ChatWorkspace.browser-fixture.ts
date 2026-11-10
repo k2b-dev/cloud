@@ -197,11 +197,13 @@ const messageId = (chat: string, seq: number) => `${chat}${String(seq).padStart(
  * the live socket. Tests add messages from others with `receive`, which the server stores and delivers live like
  * the chat app does, and make the next sends fail with `failSends`.
  */
-export const startChatHarness = async (options: { autoMount?: boolean; renderPage?: (request: Request) => Promise<Response> } = {}) => {
+export const startChatHarness = async (
+  options: { client?: boolean; autoMount?: boolean; renderPage?: (request: Request) => Promise<Response> } = {},
+) => {
   const started = performance.now();
   const now = () => new Date(chatTestNow.getTime() + (performance.now() - started));
   const [harness, css, fontAssets] = await Promise.all([
-    buildHarness(),
+    options.client === false ? new Map<string, string>() : buildHarness(),
     Promise.all([
       // Production order (define-app.ts): the layer statement, the app's stylesheet, then Cloud's global one, so an
       // app selector that only ties with a shared one loses here as it does in production.
@@ -1811,8 +1813,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           // Every weight and the icon font load with the page, so a font swap never moves rows during a test.
           '<div aria-hidden="true" style="position:absolute;visibility:hidden"><b>a</b><b style="font-weight:600">a</b><span style="font-weight:500">a</span><em>a</em>' +
           '<span>a</span><i class="ti ti-check"></i></div>' +
-          '<script type="module" src="/harness.js"></script>' +
-          (options.autoMount
+          (options.client === false ? "" : '<script type="module" src="/harness.js"></script>') +
+          (options.client !== false && options.autoMount
             ? `<script>window.addEventListener('load',async()=>{const props=await(await fetch('/__props?path='+encodeURIComponent(location.pathname+location.search))).json();window.mountChat(props,new URLSearchParams(location.search).get('locale')||'en')})</script>`
             : "") +
           "</body></html>",

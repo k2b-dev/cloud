@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { createLoginRedirectUrl } from "@k2b/cloud/shared";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
-import { Button, IconButton, InlineGuidance, prompts, toast, useLocale } from "@k2b/ui";
+import { prompts, Toolbar, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -11,6 +11,8 @@ import { resolveSameNotebookNoteTarget } from "./note-navigation";
 import { DetailsButton, NavigationButton } from "./workspace-buttons";
 
 export type SyncEnded = { code: YjsProviderError["code"]; unsent: boolean };
+/** Pending text this device still holds for a stopped note: keep it read-only here, or discard it. */
+export type DeviceRecovery = { kept: boolean; canKeep: boolean; keep: () => void; discard: () => void };
 export const signInCodes = new Set<YjsProviderError["code"]>(["SESSION_EXPIRED", "LOGIN_REQUIRED"]);
 
 export function createSyncEnded(opts: {
@@ -101,13 +103,15 @@ export function SyncEndedBar(props: {
   sync: ReturnType<typeof createSyncEnded>;
   markdown: () => string;
   noteHref: () => string;
+  recovery?: DeviceRecovery;
 }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  let primary!: HTMLButtonElement;
+  let row!: HTMLDivElement;
   const signIn = () => signInCodes.has(props.ended.code);
   const title = () => {
     const code = props.ended.code;
+    if (props.recovery) return props.recovery.kept ? t().deviceKeptShort : t().deviceCopyShort;
     if (signInCodes.has(code)) return t().sessionExpired;
     if (code === "NOTE_NOT_FOUND") return t().noteNotFound;
     if (code === "ACCESS_REVOKED" || code === "ACCESS_DENIED") return t().accessChanged;
@@ -170,34 +174,49 @@ export function SyncEndedBar(props: {
     });
   });
   onMount(() => {
-    // Keep keyboard focus reachable when the editor stops accepting input.
-    if (document.activeElement?.closest(".cm-editor") || document.activeElement === document.body) primary.focus();
+    // Keep keyboard focus reachable when the editor stops accepting input. The pill measured itself before this
+    // runs, so its first action (copy or sign in) is visible.
+    if (document.activeElement?.closest(".cm-editor") || document.activeElement === document.body)
+      row.querySelector<HTMLButtonElement>(".k2b-toolbar__action")?.focus();
   });
   return (
-    <div class="notebooks-editor-toolbar text-base text-dimmed" data-sync-ended={props.ended.code}>
-      {/* This bar replaces the toolbar, so it keeps the workspace's navigation and Details buttons. */}
-      <NavigationButton />
-      <InlineGuidance
-        role="alert"
-        tone={props.ended.unsent ? "danger" : "warning"}
-        icon={iconFor(props.ended.code)}
-        class="min-w-0 flex-1 items-center"
-      >
-        {/* The save state leads, so a narrow phone row truncates the reason, never whether text is lost. */}
-        <span class="block truncate">
-          {props.ended.unsent ? t().changesNotSaved : t().allChangesSaved}. {title()}
-        </span>
-      </InlineGuidance>
-      <Show when={!signIn()}>
-        <IconButton size="xs" variant="ghost" class="text-dimmed shrink-0" label={t().reload} onClick={() => void onReload()}>
-          <i class="ti ti-refresh" aria-hidden="true" />
-        </IconButton>
-      </Show>
-      <Button ref={primary} size="xs" variant="primary" class="shrink-0" onClick={onPrimary}>
-        <i class={signIn() ? "ti ti-login-2" : "ti ti-copy"} aria-hidden="true" />
-        {signIn() ? t().signInAgain : t().copyText}
-      </Button>
-      <DetailsButton />
+    // One red pill replaces the toolbar pills; it keeps the workspace's navigation and Details buttons.
+    <div ref={row} class="notebooks-editor-toolbar text-base" data-sync-ended={props.ended.code}>
+      <Toolbar label={t().syncStopped} variant="floating" tone="danger">
+        <NavigationButton />
+        {/* The save state leads; a narrow phone row drops the reason, never whether text is lost. */}
+        <Toolbar.Label detail={`. ${title()}`}>
+          <i class={iconFor(props.ended.code)} aria-hidden="true" />
+          {props.ended.unsent ? t().changesNotSaved : t().allChangesSaved}
+        </Toolbar.Label>
+        <Toolbar.Spacer />
+        <Toolbar.Action
+          label={signIn() ? t().signInAgain : t().copyText}
+          icon={signIn() ? "ti ti-login-2" : "ti ti-copy"}
+          text
+          onClick={onPrimary}
+        />
+        <Show when={props.recovery}>
+          {(recovery) => (
+            <>
+              <Toolbar.Action
+                label={t().deviceKeep}
+                icon="ti ti-device-floppy"
+                text
+                priority={2}
+                disabled={recovery().kept || !recovery().canKeep}
+                onClick={recovery().keep}
+              />
+              <Toolbar.Action label={t().deviceDiscard} icon="ti ti-trash" text priority={3} onClick={recovery().discard} />
+            </>
+          )}
+        </Show>
+        {/* Discarding the device copy reloads the note itself, so the pill needs no second reload. */}
+        <Show when={!signIn() && !props.recovery}>
+          <Toolbar.Action label={t().reload} icon="ti ti-refresh" priority={1} onClick={() => void onReload()} />
+        </Show>
+        <DetailsButton />
+      </Toolbar>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   startRow,
   type UploadAnnouncement,
   type UploadBatch,
+  type UploadTarget,
   waitRow,
 } from "./upload-batch";
 
@@ -48,7 +49,7 @@ export type UploadAdapter<G> = {
 export type UploadQueue<G> = {
   batch: UploadBatch;
   remainingSeconds: () => number | null;
-  add: (group: G, target: { key: string; label: string }, items: readonly UploadItem[]) => void;
+  add: (group: G, target: UploadTarget, items: readonly UploadItem[]) => void;
   cancel: () => void;
   retry: (ids?: readonly number[]) => void;
   /** Forgets a batch that is no longer running. */

@@ -390,7 +390,8 @@ for (const language of [
     try {
       const address = tab.url();
       for (const label of language.filters) {
-        const trigger = tab.getByRole("button", { name: label, exact: true });
+        // "Who" always names its value ("Who: All"), so match the label at the start of the name.
+        const trigger = tab.getByRole("button", { name: new RegExp(`^${label}(:|$)`) });
         await tabTo(tab, trigger);
         await tab.keyboard.press("ArrowDown");
         const menu = tab.getByRole("menu", { name: label, exact: true });
@@ -600,8 +601,8 @@ for (const width of [1440, 768, 390])
         if (width === 1440) {
           expect(Math.round((await metrics(tab)).search.width)).toBe(340);
           expect(Math.round((await metrics(tab)).sidebar.width)).toBe(248);
-          // One-line activity rows take a wider list than the former two-line rows.
-          expect((await metrics(tab)).list.width).toBeLessThanOrEqual(1040);
+          // Activity uses the full width, like every other page of Files (approved 08.11.).
+          expect((await metrics(tab)).list.width).toBeGreaterThan(1040);
         }
         const search = tab.getByPlaceholder("Name oder alter Pfad suchen");
         await search.fill("Angebote 2025");
@@ -703,7 +704,10 @@ test("a bulk API job reads as one line per change, opens by keyboard in place, a
     await toggle.waitFor();
     await tab.evaluate(() => document.fonts.ready);
     await settled(tab);
-    expect(await toggle.innerText()).toContain("Jonas Berger hat 12 Dateien umbenannt und verschoben");
+    expect(await toggle.locator(".filesv2-history-row__actor").innerText()).toBe("Jonas Berger");
+    expect(await toggle.locator(".filesv2-history-row__sentence").innerText()).toBe(
+      "12 Dateien umbenannt und verschoben nach Team Vertrieb › Buchhaltung › Belege › 2026",
+    );
     const lines = async () =>
       tab.evaluate(() =>
         [...document.querySelectorAll<HTMLElement>("article.filesv2-history-row, button.filesv2-history-run__toggle")]
@@ -736,10 +740,8 @@ test("a bulk API job reads as one line per change, opens by keyboard in place, a
     expect(new Set(expanded.map((line) => line.height))).toEqual(new Set([36]));
     // A moved-away result keeps its name plain; every other row leads to its file.
     const rows = tab.locator(".filesv2-history-run__rows article");
-    // Inside the run each line names only the change; the run names the actor.
-    expect(await rows.first().innerText()).toContain(
-      "scan_4810.pdf → Beleg-01.pdf, nach Team Vertrieb › Buchhaltung › Belege › 2026 verschoben",
-    );
+    // The run line names the actor and the destination; its lines name only the new and the old name.
+    expect(await rows.first().locator(".filesv2-history-row__sentence").innerText()).toBe("Beleg-01.pdf, vorher scan_4810.pdf");
     expect(await rows.nth(1).innerText()).toContain("Beleg-02.pdf (nicht mehr verfügbar)");
     expect(await rows.nth(1).locator("a.filesv2-history-target--name").count()).toBe(0);
     await tab.keyboard.press(" ");
@@ -763,9 +765,9 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
   const { context, tab, errors } = await open(390, "light");
   try {
     await tab.locator(".filesv2-history-row").first().waitFor();
-    await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").first().click();
+    await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").filter({ hasText: "Ablage" }).click();
     await tab.locator(".k2b-filter-chip__option").filter({ hasText: "Team Vertrieb" }).click();
-    await tab.locator('.filesv2-history-head__filters .k2b-filter-chip[data-active="true"]').waitFor();
+    await tab.locator('.filesv2-history-head__filters .k2b-filter-chip[data-active="true"]').filter({ hasText: "Ablage" }).waitFor();
     await tab.waitForFunction(
       () =>
         !document
@@ -777,12 +779,12 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
               animation.effect?.getTiming().iterations !== Infinity,
           ),
     );
-    const chipsFit = await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").evaluateAll((chips) =>
-      chips.slice(0, 4).every((chip) => {
-        const rect = chip.getBoundingClientRect();
-        return rect.left >= 15 && rect.right <= 375;
-      }),
-    );
+    // The chips scroll sideways in their own row; the page itself never overflows.
+    const chipsFit = await tab.locator(".filesv2-history-head__filters").evaluate((row) => {
+      const rect = row.getBoundingClientRect();
+      const first = row.querySelector(".k2b-filter-chip")!.getBoundingClientRect();
+      return rect.right <= 390 && first.left >= 15 && document.documentElement.scrollWidth <= innerWidth;
+    });
     expect(chipsFit).toBe(true);
     const head = await tab.evaluate(() => {
       const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();

@@ -227,21 +227,54 @@ const ToastDemo = () => {
     progressToast?.update(message, { title: undefined, progress: null, action: null });
   };
 
+  let savingTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(savingTimer));
+  const startSaving = (succeeds: boolean) => {
+    clearTimeout(savingTimer);
+    const saving = toast("Budget 2027.grid", {
+      title: "Saving …",
+      progress: "indeterminate",
+      action: { label: "Cancel", onClick: () => saving.dismiss() },
+    });
+    savingTimer = setTimeout(
+      () =>
+        saving.update(succeeds ? "Budget 2027.grid" : "The server is not reachable.", {
+          variant: succeeds ? "success" : "error",
+          title: succeeds ? "Saved" : "Not saved",
+          progress: null,
+          action: succeeds ? { label: "Open", href: "#toast" } : { label: "Try again", onClick: () => startSaving(true) },
+        }),
+      1600,
+    );
+  };
+
   return (
     <DemoCard
       id="toast"
       chip={{ kind: "component", name: "toast", from: "@k2b/ui" }}
-      description="One calm line per toast: tone glyph, message, an optional text action, and close. Titles only when passed, longer times for errors and actions, and progress in place."
+      description="A stack: the newest toast in front, up to two older edges behind it. It fans out under the pointer or with focus (Alt+T), and every timer waits meanwhile. Icon tile, title and message, one action beside them or two below, a link, and loading that turns into its result in place."
       code={`toast.success("Contact created");
-toast.success("Message archived", {
-  action: { label: "Undo", onClick: restore },
-});
+toast("1.2 GB of 50 GB free.", { title: "Storage almost full", variant: "warning" });
 toast.error("Could not save the draft. The server is not reachable.");
-toast("Reload the page to use it.", {
-  title: "New version available",
-  action: { label: "Reload", onClick: () => location.reload() },
-  duration: 0,
+toast.success("Budget 2027.xlsx · 48 KB", {
+  title: "Export finished",
+  action: { label: "Open", href: "/files/export" },
 });
+toast("3 notes moved to the trash", {
+  action: { label: "Undo", onClick: restore, variant: "ghost" },
+});
+toast("Request for “Budget 2027”, role Edit.", {
+  title: "Mara Example wants to collaborate",
+  action: { label: "Share", onClick: share },
+  secondaryAction: { label: "Later", onClick: later },
+});
+toast.success("Anyone with the link can view “Budget 2027”.", {
+  title: "Share link created",
+  link: { label: "Open settings", href: "/settings/sharing" },
+});
+
+const saving = toast("Budget 2027.grid", { title: "Saving …", progress: "indeterminate" });
+saving.update("Budget 2027.grid", { variant: "success", title: "Saved", progress: null });
 
 const exportToast = toast("0 of 12 files", {
   title: "Exporting archive",
@@ -262,9 +295,12 @@ exportToast.update("Archive ready", {
         </Button>
         <Button
           variant="secondary"
-          onClick={() => toast.success("Message archived", { action: { label: "Undo", onClick: () => toast("Message restored") } })}
+          onClick={() => toast("Cloud reloads the page the next time you open it.", { title: "New version available" })}
         >
-          With action
+          Info
+        </Button>
+        <Button variant="secondary" onClick={() => toast("1.2 GB of 50 GB free.", { title: "Storage almost full", variant: "warning" })}>
+          Warning
         </Button>
         <Button variant="secondary" onClick={() => toast.error("Could not save the draft. The server is not reachable.")}>
           Error
@@ -272,14 +308,45 @@ exportToast.update("Archive ready", {
         <Button
           variant="secondary"
           onClick={() =>
-            toast("Reload the page to use it.", {
-              title: "New version available",
-              action: { label: "Reload", onClick: () => window.location.reload() },
-              duration: 0,
+            toast.success("Anyone with the link can view “Budget 2027”.", {
+              title: "Share link created",
+              link: { label: "Open settings", href: "#toast" },
             })
           }
         >
-          Title, sticky
+          With link
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => toast.success("Budget 2027.xlsx · 48 KB", { title: "Export finished", action: { label: "Open", href: "#toast" } })}
+        >
+          One action
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            toast("3 notes moved to the trash", { action: { label: "Undo", onClick: () => toast("Notes restored"), variant: "ghost" } })
+          }
+        >
+          Undo
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            toast("Request for “Budget 2027”, role Edit.", {
+              title: "Mara Example wants to collaborate",
+              action: { label: "Share", onClick: () => toast.success("Shared with Mara Example") },
+              secondaryAction: { label: "Later", onClick: () => {} },
+            })
+          }
+        >
+          Two actions
+        </Button>
+        <Button variant="secondary" onClick={() => startSaving(true)}>
+          Loading → success
+        </Button>
+        <Button variant="secondary" onClick={() => startSaving(false)}>
+          Loading → error
         </Button>
         <Button variant="secondary" onClick={startProgress}>
           Progress

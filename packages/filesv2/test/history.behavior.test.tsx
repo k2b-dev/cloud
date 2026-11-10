@@ -248,7 +248,11 @@ describe("Files history components", () => {
     expect(requests).toHaveLength(0);
     const text = () => dom.root.textContent ?? "";
     expect(text()).toContain("Heute");
-    expect(text()).toContain("Mia Schulz hat Proof.pdf überschrieben");
+    // Under "All" the actor has its own column and the change reads in note style, the item first.
+    const proof = () => [...dom.root.querySelectorAll("article")].find((row) => row.textContent?.includes("Proof.pdf"))!;
+    expect(proof().querySelector(".filesv2-history-row__actor")?.textContent).toBe("Mia Schulz");
+    expect(proof().querySelector(".filesv2-history-row__sentence")?.textContent).toBe("Proof.pdf überschrieben in Team Vertrieb");
+    // A batch has no note form and keeps its full sentence, which names the actor itself.
     expect(text()).toContain("Assistant im Auftrag von Lukas Pohl hat 5 Elemente nach Team Vertrieb › Archiv › 2025 verschoben");
     expect(dom.root.querySelectorAll(".filesv2-history-row__members li")).toHaveLength(3);
     const more = buttonNamed(dom.root, "2 weitere")!;
@@ -263,13 +267,13 @@ describe("Files history components", () => {
     requests[0]!.reply.reject(new Error("offline"));
     await flush();
     expect(text()).toContain("Ältere Einträge konnten nicht geladen werden.");
-    expect(text()).toContain("Mia Schulz hat Proof.pdf überschrieben");
+    expect(proof().textContent).toContain("Proof.pdf überschrieben in Team Vertrieb");
     buttonNamed(dom.root, "Erneut versuchen")!.click();
     await flush();
     const older = entry({ action: "item.trash", time: "2026-10-01T08:00:00.000Z", before: gone("vertrieb/Alt.docx") });
     requests.at(-1)!.reply.resolve(page([older]));
     await flush();
-    expect(text()).toContain("Lukas Pohl hat Alt.docx in den Papierkorb verschoben");
+    expect(text()).toContain("Alt.docx in den Papierkorb verschoben");
     expect(text()).not.toContain("Ältere Einträge konnten nicht geladen werden.");
   });
 
@@ -306,7 +310,8 @@ describe("Files history components", () => {
     expect(dom.root.textContent).toContain("In Team Vertrieb gab es in den letzten 7 Tagen nichts dazu.");
     expect(changes).toEqual([]);
     buttonNamed(dom.root, "Filter zurücksetzen")!.click();
-    expect(changes).toEqual([{}]);
+    // Reset leads back to where Activity starts: "Me".
+    expect(changes).toEqual([{ actor: "me" }]);
   });
 
   const searchView = async (

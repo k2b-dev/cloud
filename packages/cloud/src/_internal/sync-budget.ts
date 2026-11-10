@@ -19,6 +19,13 @@
  *   stays usable, and a later start applies the new limit;
  * - a topic is declared synchronously, before its streams can be inspected,
  *   so its declaration keeps reporting the drift until the stream holds less.
+ *
+ * A topic declared with `whenFull: "reject"` and no `maxAgeMs` keeps every
+ * event until its application prunes them. An existing event stream that
+ * still discards old events or ages them out is changed to that policy in
+ * place. This only keeps more, and the stream keeps its sequences. Events that
+ * the old policy already removed stay removed; the application decides what
+ * that means for the documents it had stored.
  */
 import {
   type DeadLetterStore,
@@ -31,7 +38,7 @@ import {
   type Topic,
   type TopicConfig,
 } from "@k2b/sync";
-import { jetstreamManager, RetentionPolicy, type StreamInfo } from "@nats-io/jetstream";
+import { DiscardPolicy, jetstreamManager, RetentionPolicy, type StreamInfo } from "@nats-io/jetstream";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { logger } from "../services/logging";
 
@@ -65,6 +72,25 @@ const byteLimitDrift = (error: unknown): { stream: string; maxBytes: number } | 
   const [difference] = error.differences;
   if (difference?.field !== "max_bytes" || typeof difference.declared !== "number") return undefined;
   return { stream: error.resource, maxBytes: difference.declared };
+};
+
+/** A topic that keeps every event until its application prunes it. */
+const keepsEventsUntilPruned = (config: TopicConfig): boolean => config.whenFull === "reject" && config.retention?.maxAgeMs === undefined;
+
+/**
+ * The stream when Sync refused a topic that keeps every event until pruned
+ * only because its existing event stream discards or ages out events.
+ * Keeping more never deletes an accepted event.
+ */
+const retentionWidening = (config: TopicConfig, error: unknown): string | undefined => {
+  if (!keepsEventsUntilPruned(config)) return undefined;
+  if (!(error instanceof ResourceDriftError) || error.differences.length === 0) return undefined;
+  const widening = error.differences.every(
+    (difference) =>
+      (difference.field === "discard" && difference.declared === DiscardPolicy.New) ||
+      (difference.field === "max_age" && difference.declared === 0),
+  );
+  return widening ? error.resource : undefined;
 };
 
 /** Byte limits a job or queue declares for its work and dead-letter streams. */
@@ -150,14 +176,44 @@ const createStreamLimits = (connection: NatsConnection, namespace: string) => {
    * topic, only the dead-letter stream, whose subjects end in `.dlq.>`, is
    * changed: its event stream keeps Sync's drift check, so applications that
    * declare one topic differently still fail instead of overwriting each
-   * other's limit.
+   * other's limit. The one exception is a topic declared to keep every event
+   * until pruned, whose event stream may stop discarding and expiring events.
    */
-  const adopt = async (kind: Kind, id: string, ready: () => Promise<void>): Promise<void> => {
+  const adopt = async (kind: Kind, id: string, ready: () => Promise<void>, topic?: TopicConfig): Promise<void> => {
     const changed = new Set<string>();
     for (;;) {
       try {
         return await ready();
       } catch (error) {
+        const widened = topic ? retentionWidening(topic, error) : undefined;
+        if (widened && !changed.has(widened)) {
+          changed.add(widened);
+          const jsm = await manager();
+          const info = await jsm.streams.info(widened);
+          if (info.config.subjects.some((subject) => subject.endsWith(".dlq.>"))) throw error;
+          // Sync checks the dead-letter stream only after the event stream. A
+          // dead-letter stream that would still drift afterwards (an age, or a
+          // byte limit it holds too much to lower) keeps the whole topic
+          // unchanged instead of leaving it half changed.
+          const deadLetterAge = (topic?.deadLetterRetention?.maxAgeMs ?? 0) * 1_000_000;
+          const deadLetterBytes = topic?.deadLetterRetention?.maxBytes ?? topic?.retention?.maxBytes;
+          for await (const stream of jsm.streams.list()) {
+            const metadata = stream.config.metadata;
+            if (metadata?.["sync.namespace"] !== namespace || metadata["sync.kind"] !== "topic" || metadata["sync.id"] !== id) continue;
+            if (!stream.config.subjects.some((subject) => subject.endsWith(".dlq.>"))) continue;
+            // Without a declared byte limit the target is Sync's own default; do not guess it.
+            if (stream.config.max_age !== deadLetterAge || deadLetterBytes === undefined) throw error;
+            if (stream.config.max_bytes !== deadLetterBytes && stream.state.bytes > deadLetterBytes) throw error;
+          }
+          // In place: the stream keeps every sequence, so persisted cursors stay valid.
+          await jsm.streams.update(widened, { discard: DiscardPolicy.New, max_age: 0 });
+          log.info("Changed a Sync topic to keep its events until the application prunes them", {
+            id,
+            stream: widened,
+            from: { discard: info.config.discard, maxAge: info.config.max_age },
+          });
+          continue;
+        }
         const drift = byteLimitDrift(error);
         if (!drift || changed.has(drift.stream)) throw error;
         changed.add(drift.stream);
@@ -299,7 +355,7 @@ export const withSyncBudgets = (sync: Sync, { connection, namespace }: { connect
     queue: <T>(config: QueueConfig) => deferQueue(declareWork("queue", config, (declaration) => sync.queue<T>(declaration))),
     topic: <T>(config: TopicConfig) => {
       const topic = sync.topic<T>(config);
-      const ready = once(() => adopt("topic", config.id, () => topic.ready()));
+      const ready = once(() => adopt("topic", config.id, () => topic.ready(), config));
       declared.set(`topic:${config.id}`, ready);
       return deferTopic(topic, ready);
     },

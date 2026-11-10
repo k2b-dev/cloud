@@ -761,6 +761,54 @@
   box-shadow: none;
 }
 
+/* An app bar entry's name. Screen readers read it beside the icon; the wide
+   app bar (global.css) shows it, and the entry's hint appears only while it
+   is hidden or cut off. */
+.rail-item-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.layout-rail .rail-item-keys {
+  display: none;
+}
+
+/* Keyboard focus in the app bar uses Cloud's shared ring, inside the target,
+   so the app list's scroller never cuts it and nothing moves. A pointer only
+   tints the target; it never draws an edge. */
+.layout-rail
+  :is(
+    .rail-item,
+    .layout-rail-logo > a,
+    .layout-profile-preferences__link,
+    .layout-profile-preferences__dropdown-trigger
+  ):focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+  box-shadow: none;
+}
+
+/* Home is a 44 px target like the other entries, so its ring surrounds the logo. */
+.layout-rail-logo > a {
+  display: flex;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ui-radius-surface);
+}
+
+/* Phones have no app bar, so its editor offers the names setting from 768 px. */
+@media not all and (min-width: 768px) {
+  .rail-editor-names {
+    display: none;
+  }
+}
+
 /* An app's count on its icon in the rail and the app grid. It is laid over the
    icon's corner and never takes layout space, so a count appearing, growing to
    "99+", or clearing moves nothing. The fill is the solid action colour, the
