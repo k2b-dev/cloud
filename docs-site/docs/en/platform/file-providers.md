@@ -485,6 +485,11 @@ import { FileProviderListDataSchema, FileProviderTreeListInputSchema } from "@k2
   an outage or a cut-off search with an empty page.
 - Authorize every hit as for listing: list only entries the caller can open,
   and never let a hit's `location` reveal a folder the caller cannot read.
+- A search you cannot run over the whole tree, such as one that meets an
+  unreadable folder below, fails with its own code and message, not 403 or
+  404; Files answers `409 search_unreadable`. The chooser shows the message
+  in the folder and keeps the folder and the provider: only a listing
+  without `query` that answers 403 or 404 means they are gone.
 - `writable` still describes `parent`.
 
 Consumers check `fileProviderSearchesTree(manifest)` before they send
