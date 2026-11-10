@@ -361,7 +361,7 @@ test("1194: a saved 360px sidebar stays an overlay from the server frame through
   }
 });
 
-test("1194: sidebar plus 900px Main minimum uses an overlay and a visible page title in the head", async () => {
+test("1194: sidebar plus 900px Main minimum uses an overlay; the app's root page keeps only its button in the head", async () => {
   const page = await load(1194, { mainMin: 900 });
   try {
     const sidebar = page.locator(".k2b-app-workspace__sidebar");
@@ -371,9 +371,10 @@ test("1194: sidebar plus 900px Main minimum uses an overlay and a visible page t
     expect(await sidebar.isVisible()).toBe(false);
     const head = page.locator(".k2b-app-workspace__head");
     expect(await head.isVisible()).toBe(true);
-    expect(await head.locator(".k2b-page-title").isVisible()).toBe(true);
-    expect(await head.locator(".k2b-page-title__text").innerText()).toBe("Messages");
-    expect((await head.locator(".k2b-page-title").boundingBox())!.width).toBeGreaterThan(1);
+    expect((await head.boundingBox())!.height).toBe(46);
+    // A page without a page above it shows no title beside the overlay; its name stays for assistive technology.
+    expect(await head.locator(".k2b-page-title").isVisible()).toBe(false);
+    expect(await page.getByRole("heading", { level: 1, name: "Messages", exact: true }).count()).toBe(1);
     await head.locator("[data-app-workspace-sidebar-toggle]").click();
     expect(await root(page).getAttribute("data-sidebar-overlay")).toBe("open");
     expect(await sidebar.isVisible()).toBe(true);

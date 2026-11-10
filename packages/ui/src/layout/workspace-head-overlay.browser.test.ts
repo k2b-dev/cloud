@@ -98,8 +98,8 @@ const frame = (page: Page) =>
   );
 
 test("beside the overlay, the list's toolbar takes the sidebar button and the head takes no row", async () => {
-  for (const up of [false, true]) {
-    const page = await load({ up, marked: true, toolbarToggle: true }, TABLET);
+  for (const marked of [true, false]) {
+    const page = await load({ marked, toolbarToggle: true }, TABLET);
     try {
       expect(await headHeight(page)).toBeLessThanOrEqual(1);
       expect(await shown(page, ".k2b-app-workspace__head-toggle")).toBe(false);
@@ -148,30 +148,35 @@ test("without a toolbar button, the head is a compact row with only the sidebar 
   }
 });
 
-test("a page the sidebar does not mark keeps its title and way up beside the overlay", async () => {
-  const page = await load({ up: true, marked: false, toolbarToggle: true }, TABLET);
-  try {
-    expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title")).toBe(true);
-    expect(await shown(page, ".k2b-app-workspace__head-toggle")).toBe(false);
-    expect(await shown(page, ".k2b-app-workspace__sidebar-toggle")).toBe(true);
-  } finally {
-    await page.close();
+test("a deeper page keeps its title and way up beside the closed overlay, marked or not", async () => {
+  for (const marked of [true, false]) {
+    for (const toolbarToggle of [true, false]) {
+      const page = await load({ up: true, marked, toolbarToggle }, TABLET);
+      try {
+        expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title")).toBe(true);
+        expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title__up")).toBe(true);
+        expect(await headHeight(page)).toBe(46);
+        // One sidebar button: in the toolbar when the page has one there, else in the head.
+        expect(await shown(page, ".k2b-app-workspace__head-toggle")).toBe(!toolbarToggle);
+        expect(await shown(page, ".k2b-app-workspace__sidebar-toggle")).toBe(toolbarToggle);
+      } finally {
+        await page.close();
+      }
+    }
   }
 });
 
 test("a head row keeps its views beside the sidebar button, without a title", async () => {
-  for (const up of [false, true]) {
-    const page = await load({ up, marked: true, headRow: true }, TABLET);
-    try {
-      expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title")).toBe(false);
-      const toggle = await box(page, ".k2b-app-workspace__head-toggle");
-      const tabs = await box(page, ".k2b-view-tabs");
-      expect(tabs.x).toBeGreaterThan(toggle.x + toggle.width);
-      expect(tabs.x - (toggle.x + toggle.width)).toBeLessThanOrEqual(16);
-      expect(await page.getByRole("heading", { level: 1, name: "Inbox" }).count()).toBe(1);
-    } finally {
-      await page.close();
-    }
+  const page = await load({ marked: true, headRow: true }, TABLET);
+  try {
+    expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title")).toBe(false);
+    const toggle = await box(page, ".k2b-app-workspace__head-toggle");
+    const tabs = await box(page, ".k2b-view-tabs");
+    expect(tabs.x).toBeGreaterThan(toggle.x + toggle.width);
+    expect(tabs.x - (toggle.x + toggle.width)).toBeLessThanOrEqual(16);
+    expect(await page.getByRole("heading", { level: 1, name: "Inbox" }).count()).toBe(1);
+  } finally {
+    await page.close();
   }
 });
 
@@ -233,17 +238,22 @@ test("a nested workspace's toolbar button leaves the outer head its own", async 
 });
 
 test("from 64 rem, a sidebar without room becomes the overlay and keeps a way to open it", async () => {
-  for (const toolbarToggle of [false, true]) {
-    const page = await load({ up: true, marked: true, toolbarToggle, mainMin: 1000 }, 1100);
-    try {
-      expect(await page.locator(".k2b-app-workspace__sidebar").evaluate((sidebar) => getComputedStyle(sidebar).position)).toBe("absolute");
-      expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title")).toBe(false);
-      expect(await shown(page, ".k2b-app-workspace__head-toggle")).toBe(!toolbarToggle);
-      expect(await shown(page, ".k2b-app-workspace__sidebar-toggle")).toBe(toolbarToggle);
-      if (toolbarToggle) expect(await headHeight(page)).toBeLessThanOrEqual(1);
-      else expect(await headHeight(page)).toBeGreaterThan(40);
-    } finally {
-      await page.close();
+  for (const up of [false, true]) {
+    for (const toolbarToggle of [false, true]) {
+      const page = await load({ up, marked: true, toolbarToggle, mainMin: 1000 }, 1100);
+      try {
+        expect(await page.locator(".k2b-app-workspace__sidebar").evaluate((sidebar) => getComputedStyle(sidebar).position)).toBe(
+          "absolute",
+        );
+        // As beside the overlay below 64 rem: a deeper page keeps its title and way up.
+        expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title")).toBe(up);
+        expect(await shown(page, ".k2b-app-workspace__head-toggle")).toBe(!toolbarToggle);
+        expect(await shown(page, ".k2b-app-workspace__sidebar-toggle")).toBe(toolbarToggle);
+        if (toolbarToggle && !up) expect(await headHeight(page)).toBeLessThanOrEqual(1);
+        else expect(await headHeight(page)).toBeGreaterThan(40);
+      } finally {
+        await page.close();
+      }
     }
   }
 });

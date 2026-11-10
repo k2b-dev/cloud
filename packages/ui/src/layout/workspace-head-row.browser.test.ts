@@ -680,8 +680,7 @@ test("marked desktop objects suppress only the visible title, retaining the head
     { host: 1440, collapsed: false, mainHeading: false, title: false },
     { host: 1440, collapsed: false, mainHeading: true, title: false },
     { host: 1440, collapsed: true, mainHeading: false, title: true },
-    // Beside the overlay, the sidebar marks the page as well.
-    { host: 900, collapsed: false, mainHeading: false, title: false },
+    { host: 900, collapsed: false, mainHeading: false, title: true },
   ]) {
     const page = await load(
       { head: { mainHeading: scenario.mainHeading }, layoutState: { version: 2, sidebarCollapsed: scenario.collapsed } },

@@ -2379,11 +2379,12 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
  * its own first toolbar row. On a page with a page above it, it shows the
  * host's page title with the way up (see `PageTitle`); the page's own
  * `PageTitle` takes its place. The visible title is no heading, because many
- * pages render their own `h1`. A sidebar that marks the current page, or the
- * item a deeper page belongs to, names it already and links the way up, as a
- * column from 64 rem and as the overlay below: the title and the way up hide,
- * and an app's root page shows no title either. On a page without its own
- * `h1` the head's heading stays for assistive technology. With an
+ * pages render their own `h1`. From 64 rem a sidebar that marks the current
+ * page, or the item a deeper page belongs to, names it already and links the
+ * way up: the title and the way up hide. Beside the closed overlay only a
+ * page without a page above it drops its title; a deeper page keeps its title
+ * and way up. On a page without its own `h1` the head's heading stays for
+ * assistive technology where the title hides. With an
  * `AppWorkspace.Head` slot the row is always there and also carries the
  * views, the filters, the result count, and the actions; only its title
  * follows the rules above. It draws no line; CSS decides what shows and when

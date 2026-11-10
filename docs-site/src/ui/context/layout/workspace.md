@@ -60,12 +60,13 @@ Three exceptions:
 
 The head follows these rules as well:
 
-- It shows no title while the sidebar marks the object: as a column from
-  64 rem and as the overlay below it. The title follows the page trail: a
-  page with a page above it shows its title and back link with the sidebar
-  collapsed or hidden, on focus pages that the sidebar does not mark (such
-  as Compose or Preview), and on the phone. An app's root page shows no
-  title in the head. A page without its own `h1` keeps a visually hidden one.
+- It shows no title while the visible sidebar marks the object (from
+  64 rem). The title follows the page trail: a page with a page above it
+  shows its title and back link with the sidebar collapsed or hidden, on
+  focus pages that the sidebar does not mark (such as Compose or Preview),
+  beside the overlay sidebar, and on the phone. A page without a page above
+  it shows no title in the head at any width from 48 rem. Where the title
+  hides, a page without its own `h1` keeps a visually hidden one.
 - Beside the overlay sidebar the head holds its button. A page whose first
   row is its own toolbar puts `AppWorkspace.SidebarToggle` at the start of
   that row instead; a head with nothing else to show then takes no row (see
@@ -200,7 +201,7 @@ The button shows only while the sidebar is an overlay, so from 64 rem the row
 starts with search, as before. The head then gives up its own button, and a
 head without a head row, a waiting Details button, or a title to show takes
 no row; a page that shows its own `PageTitle` counts as having nothing to
-show there. Only the workspace's own content counts: inside a nested
+show there. A deeper page keeps its head row with the title and way up. Only the workspace's own content counts: inside a nested
 `AppWorkspace` the button stays hidden and that workspace's head keeps its
 own. Its heading still names a page without its own `h1` for assistive
 technology. The shared controller opens and closes the overlay and keeps
