@@ -47,7 +47,9 @@ Type at least three characters in **Street and number** for suggestions.
 Choosing one fills the street, postal code, city and country. You can still
 change every field or keep your own entry. When you save a changed address,
 Cloud looks up its location again. A small map shows the location below the
-address, and **Plan route** opens your device's maps app.
+address. Select it to open the map large; its navigation link opens your
+device's maps app. Without a location, **Plan route** below the address uses
+the address text.
 
 If another person changes the contact before you save, the form retains your
 input and asks you to reload. Copy any changes you want to keep before

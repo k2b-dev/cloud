@@ -33,6 +33,9 @@ import {
   LoadMore,
   LocaleProvider,
   LogEntriesTable,
+  MapDialog,
+  type MapPlace,
+  MapTile,
   MapView,
   type MapViewHandle,
   type MapViewMarker,
@@ -292,6 +295,99 @@ const MapViewDemo = () => {
     </DemoCard>
   );
 };
+
+// Fictional stops of a short delivery in the demo geometry; note, source and links come from the host.
+const mapDialogDemoPlaces: MapPlace[] = [
+  {
+    id: "start",
+    mark: "A",
+    name: "Warehouse Lindner",
+    point: { lat: 48.398, lon: 9.982 },
+    subtitle: "Gewerbering 4",
+    trailing: "Start",
+    address: "Gewerbering 4, 89073 Ulm",
+    note: "Load the display cabinet and two chairs.",
+    source: { icon: "ti ti-box", label: "Stock app · Warehouse" },
+  },
+  {
+    id: "cafe",
+    mark: "B",
+    name: "Garden café",
+    point: { lat: 48.403, lon: 9.999 },
+    subtitle: "Am Park 2",
+    trailing: "6 min",
+    trailingDetail: "1.4 km",
+    address: "Am Park 2, 89073 Ulm",
+    note: "Use the side gate. Call 30 minutes ahead.",
+    source: { icon: "ti ti-user", label: "Contacts · Customers" },
+    links: [{ label: "Open contact", href: "#map-dialog", icon: "ti ti-user" }],
+  },
+  {
+    id: "museum",
+    mark: "C",
+    name: "Museum workshop",
+    point: { lat: 48.401, lon: 9.993 },
+    subtitle: "Hafengasse 5",
+    trailing: "4 min",
+    trailingDetail: "0.9 km",
+    address: "Hafengasse 5, 89073 Ulm",
+    source: { label: "Suggested by the assistant", tone: "ai" },
+  },
+];
+const mapDialogDemoLines = [
+  {
+    id: "route",
+    points: [
+      { lat: 48.398, lon: 9.982 },
+      { lat: 48.4005, lon: 9.99 },
+      { lat: 48.403, lon: 9.999 },
+      { lat: 48.401, lon: 9.993 },
+    ],
+  },
+];
+const MapDialogDemo = () => (
+  <DemoCard
+    id="map-dialog"
+    chip={[
+      { kind: "component", name: "MapTile", from: "@k2b/ui" },
+      { kind: "component", name: "MapDialog", from: "@k2b/ui" },
+    ]}
+    description="The tile is one button with a summary pill. It opens the full map: list and map share the selection, the selected stop shows the host's note, source and links, and a navigation link. On a phone the list is a sheet."
+    code={
+      '<MapTile label="Open map: Delivery, 2.3 km, 3 stops" summary="2.3 km · 10 min · A → B → C" dialog={(close) => <MapDialog title="Delivery" places={places} map={(view) => <MapView {...view} style={styles} attribution="Demo data" />} onClose={close} />}>\n  <MapView still height={240} style={styles} markers={markers} attribution="Demo data" />\n</MapTile>'
+    }
+  >
+    <MapTile
+      label="Open map: Delivery, 2.3 km, 3 stops"
+      summary="2.3 km · 10 min · A → B → C"
+      dialog={(close) => (
+        <MapDialog
+          title="Delivery"
+          facts={[
+            { value: "2.3 km", label: "Distance" },
+            { value: "10 min", label: "Driving time" },
+          ]}
+          listLabel="Stops"
+          places={mapDialogDemoPlaces}
+          lines={mapDialogDemoLines}
+          map={(view) => <MapView {...view} style={mapDemoStyles} attribution="Demo data" />}
+          menu={[{ label: "Optimise order", icon: "ti ti-route", onSelect: () => {} }]}
+          provenance="Demo data · times without traffic"
+          onClose={close}
+        />
+      )}
+    >
+      <MapView
+        still
+        height={240}
+        style={mapDemoStyles}
+        attribution="Demo data"
+        markers={mapDialogDemoPlaces.map((place) => ({ id: place.id, mark: place.mark, label: place.name, point: place.point! }))}
+        lines={mapDialogDemoLines}
+      />
+    </MapTile>
+  </DemoCard>
+);
 
 type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
@@ -2206,6 +2302,7 @@ const KbdHintDemo = () => {
 
 const demos: DemoSection = {
   "map-view": () => <MapViewDemo />,
+  "map-dialog": () => <MapDialogDemo />,
   kbd: () => (
     <DemoGrid>
       <DemoCard

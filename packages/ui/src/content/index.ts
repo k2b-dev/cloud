@@ -109,6 +109,17 @@ export { LoadMore } from "./LoadMore";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";
 export { MapAttribution } from "./MapAttribution";
+export {
+  MapDialog,
+  type MapDialogFact,
+  type MapDialogMapView,
+  type MapDialogMenuItem,
+  type MapDialogProps,
+  type MapPlace,
+  type MapPlaceLink,
+  type MapPlaceSource,
+} from "./MapDialog";
+export { MAP_DIALOG_PARAM, MapTile, type MapTileProps, mapDialogOptions } from "./MapTile";
 export { MapView } from "./MapView";
 export { MapViewFrame } from "./MapViewFrame";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
@@ -132,6 +143,7 @@ export type {
   MessageSystemRowProps,
 } from "./MessageRow";
 export { MessageEventGroup, MessageEventRow, MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
+export { type GeoNavigationPlatform, geoNavigationHref, geoNavigationPlatform } from "./map-navigation";
 export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
 export { type MapStyleOptions, mapAttribution, mapStyle } from "./map-style";
 export { MAP_SNAPSHOT_MAX_PIXELS, MapSnapshotError, type MapSnapshotErrorCode } from "./map-view-snapshot";

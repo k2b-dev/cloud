@@ -344,6 +344,12 @@ const portableSections = [
     icon: "ti ti-file-description",
     pages: [
       page("map-view", "MapView", "ti ti-map", "Server-rendered places and routes with a progressively loaded map image."),
+      page(
+        "map-dialog",
+        "MapTile and MapDialog",
+        "ti ti-map-2",
+        "A still map tile that opens the full map with list, details and navigation.",
+      ),
       page("kbd", "Kbd", "ti ti-keyboard", "Accessible platform and locale aware shortcut caps."),
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
@@ -538,6 +544,10 @@ export const documentedOnlyUiCatalogExports = {
   mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
   mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
   MapViewFrame: "Server-only geometry fallback; documented on the MapView page.",
+  geoNavigationHref: "Navigation link into the device's maps app; documented on the MapTile and MapDialog page.",
+  geoNavigationPlatform: "Platform choice for geoNavigationHref; documented on the MapTile and MapDialog page.",
+  mapDialogOptions: "dialogCore options MapTile opens MapDialog with; documented on the MapTile and MapDialog page.",
+  MAP_DIALOG_PARAM: "The URL parameter that names an open map dialog; documented on the MapTile and MapDialog page.",
   MapSnapshotError: "Typed browser capture failures; documented with MapView.snapshot on the MapView page.",
   MAP_SNAPSHOT_MAX_PIXELS: "Decoded pixel budget for browser map capture; documented on the MapView page.",
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",

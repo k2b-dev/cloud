@@ -1,5 +1,5 @@
 import type { MapViewLine, MapViewMarker, MapViewOwnLocation } from "@k2b/ui";
-import { Button, ButtonLink, Checkbox, NumberInput, Select, TextInput, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, Checkbox, geoNavigationHref, geoNavigationPlatform, NumberInput, Select, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { requestSearchNavigation } from "../../browser/search-bridge";
@@ -7,7 +7,6 @@ import type { GeoCategorySchema, GeoPoint } from "../../contracts/geo";
 import type { GeoRouteOptions } from "../../contracts/geo-route";
 import { AddressAutocomplete } from "../../geo/AddressAutocomplete";
 import { CloudMap } from "../../geo/CloudMap";
-import { geoNavigationHref, geoNavigationPlatform } from "../../geo/navigation";
 import { type AiMap, type AiMapCommand, AiMapReferenceSchema, AiMapSchema, AiMapToolResultSchema, aiMapWebsite } from "../map-contracts";
 import { mapOpeningHours } from "../map-opening-hours";
 import type { AiTurnBlock } from "../protocol";

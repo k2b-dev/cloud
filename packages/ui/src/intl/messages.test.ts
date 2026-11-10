@@ -11,6 +11,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const catalogs = {
   MapView: (await import("../content/map-view-messages")).checkMapViewMessages,
+  MapDialog: (await import("../content/map-dialog-messages")).checkMapDialogMessages,
   Shortcut: (await import("./shortcut-messages")).checkShortcutMessages,
   TableOfContents: (await import("../layout/table-of-contents-messages")).checkTableOfContentsMessages,
   Ui: (await import("./messages")).checkUiMessages,

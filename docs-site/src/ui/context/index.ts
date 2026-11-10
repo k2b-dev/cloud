@@ -26,6 +26,7 @@ import contentKbd from "./content/kbd.md" with { type: "text" };
 import contentLabelChip from "./content/label-chip.md" with { type: "text" };
 import contentLoadMore from "./content/load-more.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
+import contentMapDialog from "./content/map-dialog.md" with { type: "text" };
 import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMatchText from "./content/match-text.md" with { type: "text" };
@@ -209,6 +210,7 @@ const catalogContextSources = {
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
   "content/map-view": { file: "content/map-view.md", content: contentMapView },
+  "content/map-dialog": { file: "content/map-dialog.md", content: contentMapDialog },
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
   "content/match-text": { file: "content/match-text.md", content: contentMatchText },
