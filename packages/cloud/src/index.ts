@@ -1,6 +1,7 @@
 export type { AppDefinition, AppOptions, StartOptions, StartResult } from "./_internal/define-app";
 export { defineApp } from "./_internal/define-app";
 export { createHeartbeat } from "./_internal/heartbeat";
+export type { ObjectStoreErrorCode } from "./_internal/object-store-config";
 export type { ProcessSync } from "./_internal/process-sync";
 export {
   bindProcessSync,
@@ -63,6 +64,12 @@ export type {
   NotificationSendInput,
 } from "./contracts/notification-types";
 export { notification } from "./contracts/notification-types";
+export {
+  DEFAULT_STORAGE_BUCKET_ID,
+  parseStorageBucketId,
+  type StorageBucketId,
+  type StorageBucketSummary,
+} from "./contracts/storage-buckets";
 export { createRedis, createSql, redis, type SqlPoolOptions, sql } from "./runtime/clients";
 export {
   type ConnectionSource,

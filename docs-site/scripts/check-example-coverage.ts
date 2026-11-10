@@ -12,7 +12,7 @@ export type RecipeFixture = {
 
 export const recipeFixtures: RecipeFixture[] = [
   { page: "ai/assistant-places.md", fixtures: ["assistant-places.ts"] },
-  { page: "platform/object-store.md", fixtures: ["platform-object-store.ts"] },
+  { page: "platform/object-store.md", fixtures: ["platform-object-store.ts", "platform-object-store-buckets.tsx"] },
   { page: "platform/app-status.md", fixtures: ["platform-app-status.ts"] },
   { page: "platform/calendar-sources.md", fixtures: ["platform-calendar-sources.ts"] },
   { page: "platform/outgoing-mail.md", fixtures: ["platform-outgoing-mail.ts"] },

@@ -14,7 +14,7 @@ const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
 
 const SETUP = [
   { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
-  { href: "/admin/settings?tab=storage", icon: "ti-database", label: "Storage" },
+  { href: "/admin/storage", icon: "ti-database", label: "Storage" },
   { href: "/admin/signin", icon: "ti-shield-lock", label: "Sign-in & security" },
   { href: "/admin/outgoing-mail", icon: "ti-mail", label: "Outgoing mail" },
   { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: "Email templates" },
@@ -23,20 +23,21 @@ const SETUP = [
 ];
 
 describe("buildAdminGroups", () => {
-  it("makes storage settings reachable and preserves their URL selection", () => {
+  it("makes the Storage area reachable and active while a bucket is open", () => {
     for (const [locale, label] of [
       ["en", "Storage"],
       ["de", "Speicher"],
     ] as const) {
       const links = buildAdminGroups([], locale).flatMap((group) => group.links);
-      const href = "/admin/settings?tab=storage";
+      const href = "/admin/storage";
       expect(links).toContainEqual({ href, icon: "ti-database", label });
-      expect(
-        activeAdminHref(
-          href,
-          links.map((link) => link.href),
-        ),
-      ).toBe(href);
+      for (const path of [href, `${href}?bucket=default`, `${href}?bucket=new`])
+        expect(
+          activeAdminHref(
+            path,
+            links.map((link) => link.href),
+          ),
+        ).toBe(href);
     }
   });
   it("makes the Base settings area reachable and active on its sections in both locales", () => {

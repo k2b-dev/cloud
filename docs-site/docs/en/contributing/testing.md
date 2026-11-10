@@ -359,9 +359,12 @@ kept across tests closes with its browser.
 
 `browser.close()` from `launchBrowser()` is bounded. It asks the browser to
 exit and waits up to 2 s, then kills its process group and waits up to 2 s until
-every process is gone. This keeps `afterAll` inside Bun's 5 s hook timeout
-even when exit hangs, so the next file never starts beside a browser still
-shutting down ([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
+no living member remains. Zombies and dead processes awaiting reaping count
+as exited; signal 0 alone cannot distinguish them from living members. A
+living child still counts after its group leader exits. This keeps `afterAll`
+inside Bun's 5 s hook timeout even when exit hangs, so the next file never
+starts beside a browser still shutting down
+([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
 browser from `TEST_BROWSER_ENDPOINT` runs elsewhere and only gets the 2 s
 graceful close.
 A close that needed the kill and a launch still pending after 4 s print a
@@ -369,7 +372,8 @@ A close that needed the kill and a launch still pending after 4 s print a
 launch carries its duration in the error. A process group still alive after
 the kill fails the hook with those timings.
 `packages/ui/test/browser.browser.test.ts` guards a hung close and the next
-launch.
+launch. `packages/ui/scripts/browser-process.test.ts` guards zombie-only groups
+and living orphans with real Linux processes.
 
 `bun run test --browser` first runs `packages/ui/test/browser-warmup.ts`. It
 draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as

@@ -6,6 +6,7 @@ import {
   killProcessGroup,
   launchBrowser,
   pageErrors,
+  processGroupAlive,
   recordTestServer,
   settled,
   viewTransitionEnded,
@@ -603,7 +604,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     try {
       const killMs = await killProcessGroup({ pid: group.pid, kill: () => new Promise(() => {}) }, 0);
       await group.exited;
-      expect(() => process.kill(-group.pid, 0)).toThrow(/ESRCH/);
+      expect(processGroupAlive(group.pid)).toBe(false);
       // It waits a moment for the cleanup, never the whole kill budget, so the rest of the hook keeps its time.
       expect(killMs).toBeLessThan(1000);
       expect(performance.now() - started).toBeLessThan(1000);
@@ -651,7 +652,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
         // It waited the 2 s graceful budget, then killed, all inside Bun's 5 s hook timeout.
         expect(closeMs).toBeGreaterThanOrEqual(1990);
         expect(closeMs).toBeLessThan(5000);
-        expect(() => process.kill(-browserPid, 0)).toThrow(/ESRCH/);
+        expect(processGroupAlive(browserPid)).toBe(false);
         expect(lines).toHaveLength(1);
         expect(lines[0]).toMatch(
           new RegExp(

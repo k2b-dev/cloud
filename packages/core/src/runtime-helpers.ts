@@ -67,6 +67,7 @@ import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "./migrate/core/settings";
+import { migrate as migrateStorageBuckets } from "./migrate/core/storage-buckets";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
@@ -159,6 +160,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
+    { name: "storage-buckets", run: migrateStorageBuckets },
     { name: "app-domains", run: migrateAppDomains },
     { name: "outgoing-mail", run: migrateOutgoingMail },
     { name: "logging", run: migrateLogging },
