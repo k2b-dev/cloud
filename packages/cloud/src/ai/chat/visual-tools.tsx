@@ -230,7 +230,7 @@ export function CloudSurveyBlock(props: {
             size="sm"
             class="ml-auto"
             loading={submission.loading()}
-            loadingLabel={t().surveySubmitting}
+            loadingLabel={t().answerSubmitting}
             onClick={() => void submit()}
           >
             {String(survey()?.submitLabel ?? t().surveySubmit)}
@@ -371,7 +371,13 @@ export function CloudTextEditorBlock(props: {
             <Button variant="secondary" size="sm" disabled={submission.loading()} onClick={() => void requestChanges()}>
               Suggest changes
             </Button>
-            <Button variant="ai" size="sm" loading={submission.loading()} loadingLabel="Submitting" onClick={() => void submit()}>
+            <Button
+              variant="ai"
+              size="sm"
+              loading={submission.loading()}
+              loadingLabel={aiChatMessages(locale()).answerSubmitting}
+              onClick={() => void submit()}
+            >
               {String(editor()?.submitLabel ?? "Continue")}
             </Button>
           </div>

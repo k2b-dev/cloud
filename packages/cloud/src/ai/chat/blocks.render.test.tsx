@@ -715,7 +715,7 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("assistant-markdown-block");
   });
 
-  test("keeps failed steps folded and quiet, and preserves an explicit disclosure choice", () => {
+  test("keeps failed steps folded with their icon in danger, and preserves an explicit disclosure choice", () => {
     const blocks: AiTurnBlock[] = [
       {
         id: "failed-tool",
@@ -728,21 +728,57 @@ describe("capability tool presentation", () => {
       },
       { id: "final-text", kind: "text", text: "I could not finish that." },
     ];
+    /** The step row of one call: its opening tag and its leading icon. */
+    const row = (html: string, label: string) => {
+      const at = html.lastIndexOf("<details", html.indexOf(`<strong>${label}</strong>`));
+      return html.slice(at, html.indexOf("</summary>", at));
+    };
 
     const folded = renderSegment(blocks, { workedMs: 2_000 });
     expect(hasOpenDetails(folded)).toBe(false);
-    expect(folded).not.toContain('data-tone="danger"');
     expect(folded).not.toContain("Mailbox is required");
     expect(folded).toContain("I could not finish that.");
 
     const disclosureState = createAiToolDisclosureState();
     disclosureState.set("work:ai-turn:turn-1:0", true);
+    const listed = renderSegment(blocks, { disclosureState });
+    // The step stays folded and quiet: only its icon, in the same slot, carries the danger tone.
+    const failed = row(listed, "Unknown tool");
+    expect(failed).toContain('data-tone="danger"');
+    expect(failed).toContain('<span class="k2b-chat-activity__leading" aria-hidden="true"><i class="ti ti-alert-circle"></i></span>');
+    expect(failed).not.toMatch(/\sopen(?:=""|(?=[\s>]))/);
+    expect(listed).not.toContain("Mailbox is required");
+
     disclosureState.set("failed-tool", true);
     const expanded = renderSegment(blocks, { disclosureState });
     expect(hasOpenDetailsContaining(expanded, "Unknown tool")).toBe(true);
     expect(expanded).toContain("failed");
-    expect(expanded).not.toContain('data-tone="danger"');
+    expect(row(expanded, "Unknown tool")).toContain('data-tone="danger"');
     expect(expanded).toContain("Mailbox is required");
+  });
+
+  test("a code run or inspection that reported an error is a failed step like any other, with no special case", () => {
+    const step = (name: string, status: "error" | "completed"): AiTurnBlock => ({
+      id: `tool-${name}-${status}`,
+      kind: "tool",
+      callId: `${name}-${status}`,
+      name,
+      args: { title: "report.ts" },
+      status: "completed",
+      result: { status, output: "" },
+    });
+    const disclosureState = createAiToolDisclosureState();
+    disclosureState.set("work:ai-turn:turn-1:0", true);
+    const html = renderSegment(
+      [step("code_run", "error"), step("code_inspect", "error"), step("code_run", "completed"), { id: "t", kind: "text", text: "Done." }],
+      { disclosureState },
+    );
+    const rows = html
+      .split("<details")
+      .slice(2)
+      .map((part) => part.slice(0, part.indexOf("</summary>")));
+    expect(rows.map((part) => part.includes('data-tone="danger"'))).toEqual([true, true, false]);
+    expect(rows.slice(0, 2).every((part) => part.includes("ti-alert-circle") && !/\sopen(?:=""|(?=[\s>]))/.test(part))).toBe(true);
   });
 
   test("shows categorized fetch_file failures as a clear danger activity", () => {
@@ -1999,7 +2035,7 @@ describe("Code check steps", () => {
     expect(broken).not.toMatch(/passed|findings/);
   });
 
-  test("a failed step shows the error sign instead of the feat/code sign and stays quiet; a passed step keeps its sign", () => {
+  test("a failed step shows the error sign in danger instead of the feat/code sign; a passed step keeps its sign", () => {
     const step = (id: string, name: string, result: unknown): AiTurnBlock => ({
       id,
       kind: "tool",
@@ -2021,7 +2057,7 @@ describe("Code check steps", () => {
     const failed = rows.find((row) => row.includes("Testet mit erfundenen Daten"))!;
     const written = rows.find((row) => row.includes("Bearbeitet eine Code-Datei"))!;
     expect(failed).toContain("ti-alert-circle");
-    expect(failed).not.toContain('data-tone="danger"');
+    expect(failed).toContain('data-tone="danger"');
     expect(failed).toContain("fehlgeschlagen");
     expect(failed).not.toContain("cloud-featcode");
     expect(written).not.toContain('data-tone="danger"');

@@ -326,11 +326,12 @@ order:
    Every step stays there, including results and actions, so input and output
    remain reachable. A step that acts on something reads as its sentence: what
    it will do while it runs, what it did once done, such as "Wrote report.md",
-   and what did not happen after a rejection. Failed steps say "failed" in muted text; a rejected approval says
-   "rejected". An app check (`code_check`) reads "Checking the app" while it
-   runs, and its row names the outcome in words with its own icon: "passed",
-   "3 findings", or "not passed", with warnings counted separately, such as
-   "passed · 2 warnings". When the host provides `fileUrl`, an expanded
+   and what did not happen after a rejection. A failed step, of any tool, stays
+   folded, says "failed" in muted text and shows the error icon in the danger
+   tone in its usual icon place; a rejected approval says "rejected". A Code
+   check (`code_check`) reads "Checking the Code" while it runs, and its row
+   names the outcome in words with its own icon: "passed", "3 findings", or
+   "not passed". When the host provides `fileUrl`, an expanded
    `view_image` step of a chat image shows that image below its input and
    output, as a small thumbnail with a fixed box that loads lazily through the
    chat's file route, so it shows only what the reader may open and nothing
