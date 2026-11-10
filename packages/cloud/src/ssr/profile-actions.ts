@@ -44,6 +44,9 @@ export function createSharedWorkstationSwitch(userId: string | undefined, locale
     if (pending() || !userId) return;
     setPending(true);
     const next = !shared();
+    // The switch shows the choice at once and springs back when the server does not take it, so a native checkbox
+    // that already flipped follows the state again.
+    setShared(next);
     try {
       const response = await fetch("/api/me/browser/shared-workstation", {
         method: "PUT",
@@ -64,6 +67,7 @@ export function createSharedWorkstationSwitch(userId: string | undefined, locale
           : messages().unmarked,
       );
     } catch {
+      setShared(!next);
       toast.error(messages().failed);
     } finally {
       setPending(false);

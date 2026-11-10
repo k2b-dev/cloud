@@ -27,10 +27,12 @@ test("At your screen saves the timer at once, says so in place, and offers to tr
   const bodies: unknown[] = [];
   const previous = globalThis.fetch;
   const marks: unknown[] = [];
+  let markFails = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.includes("/me/browser/shared-workstation")) {
       marks.push(JSON.parse(String(init?.body)));
+      if (markFails) return new Response("{}", { status: 503 });
       return Response.json({ sharedWorkstation: true, idle: { remainingSeconds: 600, timeoutSeconds: 600 } });
     }
     bodies.push(JSON.parse(String(init?.body)));
@@ -62,6 +64,18 @@ test("At your screen saves the timer at once, says so in place, and offers to tr
     () => ({ marks }),
   );
   expect(marks).toEqual([{ shared: true }]);
+  await until(
+    () => !workstation.disabled,
+    () => ({ marks }),
+  );
+  // A change the server does not take springs back on the switch.
+  markFails = true;
+  workstation.click();
+  expect(workstation.checked).toBe(false);
+  await until(
+    () => marks.length === 2 && !workstation.disabled && workstation.checked,
+    () => ({ marks, checked: workstation.checked }),
+  );
   const options = () => [...section.querySelectorAll<HTMLButtonElement>(".k2b-segmented-control__option")];
   const checked = () => options().find((option) => option.getAttribute("aria-checked") === "true")?.textContent;
   const status_ = () => section.querySelector('[role="status"]')?.textContent ?? "";
