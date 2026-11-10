@@ -164,9 +164,9 @@ export function FileChooser(props: {
       const restored = focusRestored;
       focusRestored = false;
       const active = document.activeElement;
-      // Focus still rests where the dialog put it on opening, on This device in the sources.
-      const onDevice = restored && active?.matches(".cloud-file-dialog__source");
-      if (!onDevice && active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
+      // Until the person acts, focus rests wherever opening put it: on This device, the dialog itself (Chromium), or
+      // its first control, the close button (WebKit's native dialog focus). The restored folder's rows take it from any.
+      if (!restored && active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
       const first = items()[0]?.id;
       if (location() && first) selection.focus(first);
       else root?.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]')?.focus();
@@ -506,6 +506,12 @@ export function FileChooser(props: {
     <FileDialogFrame
       ref={(element) => {
         root = element;
+        // A key or pointer in the dialog is the person's own move: the restored folder no longer takes focus from it.
+        const acted = () => {
+          focusRestored = false;
+        };
+        element.addEventListener("pointerdown", acted, true);
+        element.addEventListener("keydown", acted, true);
       }}
       title={t().title({ multiple })}
       close={() => props.close([])}

@@ -114,7 +114,10 @@ export const createFileChoosing = (
             ...panelDialogWorkspaceOptions,
             // Only choosing has the preview column, so only it grows on wide screens.
             panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog cloud-file-chooser-dialog--preview`,
-            initialFocus: (dialog) => dialog.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]'),
+            // A remembered folder that already shows its rows keeps focus there; otherwise the open source takes it.
+            initialFocus: (dialog) =>
+              dialog.querySelector<HTMLElement>('.cloud-file-dialog__list [role="gridcell"][tabindex="0"]') ??
+              dialog.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]'),
             signal: options.signal,
             history: true,
           },

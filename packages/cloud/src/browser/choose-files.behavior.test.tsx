@@ -1055,3 +1055,39 @@ domTest("a search that left out unreadable subfolders shows its hits with one ca
     view.cleanup();
   }
 });
+
+domTest("the restored folder takes focus from wherever opening put it, but never from the person's own move", async () => {
+  for (const personActs of [false, true]) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const view = await chooser(
+      {},
+      async () => {
+        await gate;
+        return folderPage([entry("scan", 1)]);
+      },
+      [drive],
+      { appId: "drive", folders: [{ id: "scans", name: "Scans" }] },
+    );
+    try {
+      // WebKit's native dialog focuses its first control, the close button; Chromium focuses the dialog itself.
+      const close = view.dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")!;
+      close.focus();
+      expect(view.dom.document.activeElement).toBe(close);
+      const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+      if (personActs) {
+        filter.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+        filter.focus();
+      }
+      release();
+      await until(() => Boolean(view.row("scan.txt")));
+      await settle();
+      if (personActs) expect(view.dom.document.activeElement).toBe(filter);
+      else expect(view.dom.document.activeElement?.textContent).toContain("scan.txt");
+    } finally {
+      view.cleanup();
+    }
+  }
+});
