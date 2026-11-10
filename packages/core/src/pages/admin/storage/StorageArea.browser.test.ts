@@ -23,10 +23,22 @@ const open = async (query: string, view: { width: number; height: number } = des
   await page.locator('body[data-ready="true"]').waitFor();
   return { page, errors };
 };
-/** The page after a save or test navigated to the bucket's address. */
-const settledOn = async (page: Page, id: string) => {
-  await page.waitForURL((url) => url.searchParams.get("bucket") === id);
-  await page.locator('body[data-ready="true"]').waitFor();
+/**
+ * Runs an action that loads the bucket's page and waits for the new document. A save or test reloads the same address,
+ * where the old document already matches the URL and is ready; a mark on the old document tells the two apart.
+ */
+const loadsBucket = async (page: Page, id: string, action: () => Promise<void>) => {
+  await page.evaluate(() => {
+    document.documentElement.dataset.previousDocument = "true";
+  });
+  await action();
+  await page.waitForFunction(
+    (bucket) =>
+      document.documentElement.dataset.previousDocument === undefined &&
+      new URL(location.href).searchParams.get("bucket") === bucket &&
+      document.body?.dataset.ready === "true",
+    id,
+  );
 };
 const detail = (page: Page) => page.locator("[data-workspace-level-id='detail'], [data-storage-detail]").last();
 const headAction = (page: Page, action: string) => page.locator(`.hidden.md\\:block [data-storage-action="${action}"]`);
@@ -93,8 +105,7 @@ test("renaming keeps the ID, sends no keys and shows the new name in the list", 
     await settled(page);
     // Getting dirty changes paint only: the head buttons stay where they were.
     expect(await save.boundingBox()).toEqual(before);
-    await save.click();
-    await settledOn(page, archive);
+    await loadsBucket(page, archive, () => save.click());
     const put = fixture.control.requests.find((request) => request.method === "PUT");
     expect(put?.path).toBe(`/buckets/${archive}`);
     const body = JSON.parse(put?.body ?? "{}");
@@ -117,8 +128,7 @@ test("adding a bucket like Default tests it at once; a failed test stays visible
     expect(await page.getByText("Pflichtfeld.").count()).toBeGreaterThan(0);
     await field(page, "Name").fill("Rechnungen");
     await field(page, "Bucket").fill("cloud-rechnungen");
-    await headAction(page, "save").click();
-    await settledOn(page, STORAGE_FIXTURE_IDS.created);
+    await loadsBucket(page, STORAGE_FIXTURE_IDS.created, () => headAction(page, "save").click());
     expect(JSON.parse(fixture.control.requests.find((request) => request.method === "POST")?.body ?? "{}")).toEqual({
       access: "inherit",
       name: "Rechnungen",
@@ -128,8 +138,7 @@ test("adding a bucket like Default tests it at once; a failed test stays visible
     expect(await page.locator(`[data-storage-row="${STORAGE_FIXTURE_IDS.created}"]`).innerText()).toBe("Rechnungen");
 
     fixture.control.failingTests.add(STORAGE_FIXTURE_IDS.created);
-    await headAction(page, "test").click();
-    await settledOn(page, STORAGE_FIXTURE_IDS.created);
+    await loadsBucket(page, STORAGE_FIXTURE_IDS.created, () => headAction(page, "test").click());
     expect(await page.locator('[data-storage-check="failed"]').innerText()).toContain("Test fehlgeschlagen beim Schreiben.");
     expect(await headAction(page, "test").innerText()).toBe("Erneut testen");
     expect(errors).toEqual([]);
@@ -212,8 +221,7 @@ test("restoring a bucket whose name a connected bucket took says what to rename"
   try {
     await field(page, "Name").fill("Backup");
     await field(page, "Bucket").fill("cloud-backup-neu");
-    await headAction(page, "save").click();
-    await settledOn(page, STORAGE_FIXTURE_IDS.created);
+    await loadsBucket(page, STORAGE_FIXTURE_IDS.created, () => headAction(page, "save").click());
     await page.goto(`${fixture.url}?bucket=${STORAGE_FIXTURE_IDS.backup}`);
     await page.locator('body[data-ready="true"]').waitFor();
     await field(page, "Access-Key-ID").fill("GKexample");
@@ -247,8 +255,7 @@ test("on a phone the list leads to the bucket and its actions stay at hand below
   fixtureReset();
   const { page, errors } = await open("state=liste", phone);
   try {
-    await page.locator(`[data-storage-row="${archive}"]`).click();
-    await settledOn(page, archive);
+    await loadsBucket(page, archive, () => page.locator(`[data-storage-row="${archive}"]`).click());
     const save = page.locator(`.md\\:hidden [data-storage-action="save"]`);
     expect(await save.isVisible()).toBe(true);
     const box = await save.boundingBox();
