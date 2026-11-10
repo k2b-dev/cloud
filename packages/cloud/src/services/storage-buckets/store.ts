@@ -5,6 +5,7 @@ import {
   ObjectStoreConnectionError,
   objectStoreBackend,
   objectStoreSettingKeys,
+  persistedSignature,
   resolveObjectStoreConfig,
   storageEndpointIsValid,
   testObjectStoreBackend,
@@ -100,9 +101,9 @@ const rowFor = async (db: SQL, id: StorageBucketId) => {
 };
 const effectiveSignature = async (id: StorageBucketId): Promise<string | null> => {
   try {
-    return (await resolveObjectStoreConfig(id)).signature;
+    return persistedSignature((await resolveObjectStoreConfig(id)).signature);
   } catch (error) {
-    if (error instanceof ObjectStoreConfigurationError) return error.signature;
+    if (error instanceof ObjectStoreConfigurationError) return error.signature === null ? null : persistedSignature(error.signature);
     throw error;
   }
 };
@@ -198,7 +199,7 @@ const test = async (value: string, context: StorageBucketAuditContext): Promise<
   await locked(async (tx) => {
     if (id !== DEFAULT_STORAGE_BUCKET_ID) connected(await rowFor(tx, id));
     await tx`INSERT INTO platform.storage_bucket_checks(bucket_id, signature, ok, step, checked_at)
-      VALUES (${id}, ${signature}, ${ok}, ${step}, now()) ON CONFLICT (bucket_id) DO UPDATE
+      VALUES (${id}, ${persistedSignature(signature)}, ${ok}, ${step}, now()) ON CONFLICT (bucket_id) DO UPDATE
       SET signature = EXCLUDED.signature, ok = EXCLUDED.ok, step = EXCLUDED.step, checked_at = EXCLUDED.checked_at`;
     await record(tx, context, "test", id);
   });
@@ -265,6 +266,8 @@ const remove = async (value: string, context: StorageBucketAuditContext): Promis
     connected(await rowFor(tx, id));
     await tx`UPDATE platform.storage_buckets SET removed_at = now(), credentials_encrypted = NULL,
       revision = revision + 1, updated_at = now(), updated_by = ${context.actor.userId ?? null} WHERE id = ${id}::uuid`;
+    // The last test result belongs to the deleted keys; restoring tests again.
+    await tx`DELETE FROM platform.storage_bucket_checks WHERE bucket_id = ${id}`;
     await record(tx, context, "remove", id);
   });
   return get(id);

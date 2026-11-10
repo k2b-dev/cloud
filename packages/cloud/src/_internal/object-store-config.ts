@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { S3Client } from "bun";
 import { z } from "zod";
 import { DEFAULT_STORAGE_BUCKET_ID, type StorageBucketCheckStep, type StorageBucketId } from "../contracts/storage-buckets";
 import { sql } from "../runtime/clients";
-import { decryptValue } from "../services/settings/crypto";
+import { decryptValue, getAppSecret } from "../services/settings/crypto";
 import { readStates } from "../services/settings/store";
 import { hasDatabaseErrorCode, type StorageBucketRow } from "../services/storage-buckets/rows";
 
@@ -58,6 +58,16 @@ export class ObjectStoreConnectionError extends Error {
 }
 const cached = new Map<StorageBucketId, { signature: string; client: S3Client }>();
 
+/** Identifies one effective configuration, keys included. Stays in memory; storage keys it first (`persistedSignature`). */
+const configSignature = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+/**
+ * The form of a signature that may be stored. Keyed with APP_SECRET, so a signature in a database dump never lets
+ * anyone confirm a guessed key offline.
+ */
+export const persistedSignature = (signature: string): string =>
+  createHmac("sha256", `cloud.storage-bucket-check:${getAppSecret()}`).update(signature).digest("hex");
+
 export const storageEndpointIsValid = (value: string): boolean => {
   const endpoint = URL.parse(value);
   return Boolean(
@@ -90,11 +100,11 @@ export const resolveObjectStoreConfig = async (id: StorageBucketId = DEFAULT_STO
       : objectStoreSettingKeys;
     const states = await readStates(keys, db);
     const values: Record<string, unknown> = Object.fromEntries(keys.map((key) => [key.slice("storage.".length), states.get(key)?.value]));
-    const failureSignature = createHash("sha256")
-      .update(
-        JSON.stringify({ values, credentials: row?.credentials_encrypted, states: [...states].map(([key, state]) => [key, state.stored]) }),
-      )
-      .digest("hex");
+    const failureSignature = configSignature({
+      values,
+      credentials: row?.credentials_encrypted,
+      states: [...states].map(([key, state]) => [key, state.stored]),
+    });
     const failure = (error: ObjectStoreConfigurationError) => Object.assign(error, { signature: failureSignature });
     if (keys.some((key) => states.get(key)?.stored === "unreadable")) throw failure(unreadable());
     if (row) {
@@ -142,7 +152,7 @@ export const resolveObjectStoreConfig = async (id: StorageBucketId = DEFAULT_STO
               );
             return read(tx, row);
           });
-    const signature = createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    const signature = configSignature(config);
     return { config, signature };
   } catch (error) {
     if (error instanceof ObjectStoreConfigurationError) throw error;
