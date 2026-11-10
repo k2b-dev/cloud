@@ -119,7 +119,9 @@ Use `renderError(message)` for application-specific recovery, such as a `NoticeC
 
 The pages lie one below the other in one scroll area, as images drawn by pdf.js, with an invisible text layer over each page, so text can be selected, copied, and found with the browser's search. Only pages near the view are drawn and carry text, and at most 24 drawn pages stay in memory; the others keep their size, so the scroll bar is right from the start. The browser's search finds text on those near pages.
 
-The view starts fitted to the width: every page as wide as the area, so a landscape page among portrait ones never scrolls sideways. A small bar at the bottom shows the current page, zooms in steps from 25 % to 300 %, and returns to the width. Ctrl or ⌘ with the mouse wheel, a trackpad pinch, and two fingers zoom freely around the pointer. The bar is solid: text lies under it. `zoom={false}` leaves the bar out and always fits the width; `page` shows a single page (zero-based).
+The view starts fitted to the width: every page as wide as the area, so a landscape page among portrait ones never scrolls sideways. A fitted page never grows past 100 %, so zooming the browser out does not enlarge it. A small pill at the bottom shows the current page as "1 / 6", then −, the percentage, and +, which zoom in steps from 25 % to 300 %, and one icon that returns to the fit. The controls are icons only; the pressed fit is its blue icon without a fill. Ctrl or ⌘ with the mouse wheel, a trackpad pinch, and two fingers zoom freely around the pointer. The pill is solid, and the area keeps room below the pages, so the end of the last page always scrolls clear of it. `zoom={false}` leaves the bar out and always fits; `page` shows a single page (zero-based).
+
+Pass `fit="page"` where the viewer is a preview beside other content, such as a details panel: the whole first page shows in the area's height, narrower than the area and centred, above the pill, and the fit icon returns to that view. Give the area its height; reading views keep the default `fit="width"`. `PdfPreview` passes `fit` on.
 
 `onReady` reports the first drawn page. `onError` reports a document pdf.js cannot open or draw, including one without pages or past the limits (100 MiB, 2,000 pages); show the browser's viewer or a download then, as `PdfPreview` does. Printing and filling forms stay with the browser's viewer: offer an open action next to the viewer.
 
@@ -165,13 +167,14 @@ type PdfPreviewRequest = () => Promise<Response | Blob>;
 
 type PdfPreviewProps = {
   request: PdfPreviewRequest; autoLoad?: boolean; disabled?: () => boolean; title?: string; buttonLabel?: string;
-  openButtonLabel?: string; openHref?: string; onDownload?: () => void; emptyText?: string; class?: string;
+  openButtonLabel?: string; openHref?: string; onDownload?: () => void; emptyText?: string;
+  fit?: "width" | "page"; class?: string;
   children?: (parts: { actions: JSX.Element; content: JSX.Element }) => JSX.Element;
   renderError?: (message: string) => JSX.Element;
 };
 
 type PdfViewerProps = {
-  data: Blob | ArrayBuffer; title: string; zoom?: boolean; page?: number;
+  data: Blob | ArrayBuffer; title: string; zoom?: boolean; fit?: "width" | "page"; page?: number;
   onReady?: () => void; onError?: (error: unknown) => void; class?: string;
 };
 ```

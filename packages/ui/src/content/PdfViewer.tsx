@@ -1,5 +1,4 @@
 import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
-import { Button } from "../actions/Button";
 import { Toolbar } from "../actions/Toolbar";
 import { openPdfDocument, type PdfDocumentHandle, type PdfPageImage, type PdfPageSize, pageImageWidth } from "./pdf-document";
 import { usePdfMessages } from "./pdf-messages";
@@ -9,8 +8,14 @@ export type PdfViewerProps = {
   data: Blob | ArrayBuffer;
   /** The document's name, for the scroll area and the page images. */
   title: string;
-  /** Without the zoom bar, always fit to the width. Defaults to `true`. */
+  /** Without the zoom bar, always fitted. Defaults to `true`. */
   zoom?: boolean;
+  /**
+   * How a fitted document fills the area: `"width"` (the default) fits each page to the area's width, for reading;
+   * `"page"` shows the whole first page in the area's height, narrower, for a preview beside other content.
+   * Fitted pages never grow past 100 %.
+   */
+  fit?: "width" | "page";
   /** Shows only this page (zero-based) instead of all pages one below the other. */
   page?: number;
   /** The first visible page is drawn; a host can drop its loading state. */
@@ -28,6 +33,8 @@ const SMALLEST = PDF_ZOOM_STEPS[0];
 const LARGEST = PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1] ?? 300;
 /** Horizontal padding of the page stack, both sides together. */
 const INSET = 24;
+/** Vertical padding of the page stack, top and the room for the bar below together (`.k2b-pdf-viewer__stack`). */
+const BLOCK_INSET = 12 + 72;
 /** Pages within this distance of the view draw; farther ones keep only their box. */
 const NEAR_MARGIN = "150% 0px";
 /** At most this many drawn pages stay in memory; the ones out of view are released first. */
@@ -38,6 +45,20 @@ export const nextPdfZoomStep = (percent: number, direction: 1 | -1): number =>
   direction === 1
     ? (PDF_ZOOM_STEPS.find((step) => step > percent + 0.5) ?? LARGEST)
     : ([...PDF_ZOOM_STEPS].reverse().find((step) => step < percent - 0.5) ?? SMALLEST);
+
+/**
+ * The width in CSS pixels of a fitted page: as wide as the area, for `"page"` at most as wide as the whole page fits
+ * into the area's height, and never past 100 %, so zooming the browser out does not make the page grow.
+ */
+export const fittedPageWidth = (
+  fit: "width" | "page",
+  area: { width: number; height: number },
+  page: { width: number; height: number },
+): number => {
+  const natural = page.width * POINT;
+  const byHeight = fit === "page" ? (area.height * page.width) / Math.max(1, page.height) : Number.POSITIVE_INFINITY;
+  return Math.max(1, Math.floor(Math.min(area.width, byHeight, natural)));
+};
 
 /**
  * The page width most pages share, at a tie the first page's. "Width" fits every page to the area, so a landscape page
@@ -72,6 +93,7 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   const [fitWidth, setFitWidth] = createSignal(true);
   const [fixed, setFixed] = createSignal(POINT);
   const [inner, setInner] = createSignal(0);
+  const [innerHeight, setInnerHeight] = createSignal(0);
   const [current, setCurrent] = createSignal(0);
   const [ready, setReady] = createSignal(false);
   let area: HTMLDivElement | undefined;
@@ -119,11 +141,21 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   });
 
   const commonWidth = createMemo(() => commonPageWidth(pages()));
-  const areaWidth = () => Math.max(120, inner());
+  const fitMode = () => props.fit ?? "width";
+  /** Every fitted page is this wide, so a landscape page among portrait ones never scrolls sideways. */
+  const fittedWidth = () => {
+    const first = pages()[0] ?? { width: commonWidth(), height: commonWidth() };
+    const height = first.height * (commonWidth() / first.width);
+    return fittedPageWidth(
+      fitMode(),
+      { width: Math.max(120, inner()), height: Math.max(120, innerHeight()) },
+      { width: commonWidth(), height },
+    );
+  };
   /** CSS pixels per point of the common page width; percent, steps, and fixed zoom follow from it. */
-  const factor = () => (fitWidth() ? areaWidth() / commonWidth() : fixed());
+  const factor = () => (fitWidth() ? fittedWidth() / commonWidth() : fixed());
   const percent = () => Math.round((factor() / POINT) * 100);
-  const pageWidth = (page: PdfPageSize) => Math.max(1, Math.floor(fitWidth() ? areaWidth() : page.width * fixed()));
+  const pageWidth = (page: PdfPageSize) => (fitWidth() ? fittedWidth() : Math.max(1, Math.floor(page.width * fixed())));
 
   /**
    * Draws each near page whose image is too small (blurred) or far too large (memory) for its shown size. A new zoom or
@@ -238,8 +270,12 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   onMount(() => {
     if (!area) return;
     const scroller = area;
-    setInner(scroller.clientWidth - INSET);
-    const resize = new ResizeObserver(() => setInner(scroller.clientWidth - INSET));
+    const measureArea = () => {
+      setInner(scroller.clientWidth - INSET);
+      setInnerHeight(scroller.clientHeight - BLOCK_INSET);
+    };
+    measureArea();
+    const resize = new ResizeObserver(measureArea);
     resize.observe(scroller);
     // Pages near the view draw and carry their text; the observer follows every page box as it appears. Without an
     // IntersectionObserver every page counts as near, as MapView does.
@@ -432,16 +468,13 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
             </Toolbar.Label>
             <Toolbar.Action label={messages().pdfZoomIn} icon="ti ti-plus" disabled={percent() >= LARGEST} onClick={() => step(1)} />
             <Toolbar.Separator />
-            <Button
-              variant="ghost"
-              type="button"
-              aria-pressed={fitWidth()}
-              aria-label={messages().pdfFitWidthLabel}
-              title={messages().pdfFitWidthLabel}
+            {/* Icons only; the pressed state is the blue icon without a fill. */}
+            <Toolbar.Action
+              label={fitMode() === "page" ? messages().pdfFitPageLabel : messages().pdfFitWidthLabel}
+              icon={fitMode() === "page" ? "ti ti-arrows-vertical" : "ti ti-arrows-horizontal"}
+              pressed={fitWidth()}
               onClick={fit}
-            >
-              <i class="ti ti-arrows-horizontal" aria-hidden="true" /> {messages().pdfFitWidth}
-            </Button>
+            />
           </Toolbar>
         </div>
       </Show>

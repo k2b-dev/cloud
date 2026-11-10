@@ -5611,7 +5611,8 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Wider than the area the stack grows to the right; narrower, each page stands centred. Room below for the bar. */
+/* Wider than the area the stack grows to the right; narrower, each page stands centred. Room below for the bar, so
+   the end of the last page and a whole fitted page stay clear of it (`BLOCK_INSET` in PdfViewer). */
 .k2b-ui .k2b-pdf-viewer__stack {
   display: flex;
   flex-direction: column;
@@ -5619,7 +5620,7 @@
   width: max-content;
   min-width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem 0.75rem 3.5rem;
+  padding: 0.75rem 0.75rem 4.5rem;
 }
 
 .k2b-ui .k2b-pdf-viewer__page {
@@ -5652,8 +5653,10 @@
   pointer-events: none;
 }
 
+/* Icons only, round like the pill; a pressed fit shows its blue icon without a fill. */
 .k2b-ui .k2b-pdf-viewer__bar > .k2b-toolbar {
   --k2b-radius-control: 9999px;
+  --k2b-selected: transparent;
   padding: 0.25rem;
   border: 1px solid var(--k2b-border);
   border-radius: 9999px;

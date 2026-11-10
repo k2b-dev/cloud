@@ -22,6 +22,8 @@ export type PdfPreviewProps = {
   /** Adds a Download action. The host owns the download, for example a fresh attachment URL. */
   onDownload?: () => void;
   emptyText?: string;
+  /** How the viewer fits a page; `"page"` shows the whole first page, for a preview beside other content. See `PdfViewer`. */
+  fit?: "width" | "page";
   class?: string;
   children?: (parts: { actions: JSX.Element; content: JSX.Element }) => JSX.Element;
   renderError?: (message: string) => JSX.Element;
@@ -266,6 +268,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
         {(data) => (
           <PdfViewer
             data={data()}
+            fit={props.fit}
             title={props.title ?? pdfMessages().pdfPreview}
             onReady={() => {
               const waiting = document.activeElement === viewer;

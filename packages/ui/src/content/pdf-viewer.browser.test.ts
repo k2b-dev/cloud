@@ -25,7 +25,11 @@ const result = await Bun.build({
     // A document of the same shape again, as regenerating a report does; the caller's buffer stays usable.
     window.pdfReplace = () => setShown(data.slice(0));
     window.pdfBufferIntact = () => data.byteLength > 0;
-    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", onError: (error) => window.pdfErrors.push(String(error)) }), document.getElementById("app"));
+    // "?fit=page&height=416" shows the viewer as a short preview beside other content.
+    const query = new URLSearchParams(location.search);
+    const app = document.getElementById("app");
+    if (query.get("height")) app.style.height = query.get("height") + "px";
+    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", fit: query.get("fit") ?? undefined, onError: (error) => window.pdfErrors.push(String(error)) }), app);
   `,
   },
   target: "browser",
@@ -51,8 +55,8 @@ afterAll(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const load = async (): Promise<Page> => {
-  const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
+const load = async (search = "", viewport = { width: 1000, height: 800 }): Promise<Page> => {
+  const page = await browser.newPage({ viewport });
   await page.route(`${origin}**`, (route) => {
     const path = new URL(route.request().url()).pathname.slice(1);
     if (path === "doc.pdf") return route.fulfill({ body: Buffer.from(pdf), contentType: "application/pdf" });
@@ -63,7 +67,7 @@ const load = async (): Promise<Page> => {
       body: `<!doctype html><html><head><style>${css}</style><style>body{margin:0}#app{height:100vh;display:flex;flex-direction:column}</style></head><body class="k2b-ui"><main id="app"></main><script type="module" src="/entry.js"></script></body></html>`,
     });
   });
-  await page.goto(origin);
+  await page.goto(`${origin}${search}`);
   await page.locator('[data-pdf-page="0"] img').waitFor();
   return page;
 };
@@ -158,6 +162,68 @@ describe("@k2b/ui PdfViewer", () => {
       await settled(page);
       expect(await pages.getAttribute("data-fit")).toBe("");
       expect(Number(await pages.getAttribute("data-zoom"))).toBe(fitted);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the bar is icons only: page number, zoom, and a pressed fit without a fill", async () => {
+    const page = await load();
+    try {
+      await settled(page);
+      const bar = page.locator(".k2b-pdf-viewer__bar");
+      expect(await bar.locator(".k2b-pdf-viewer__page-number [aria-hidden]").textContent()).toBe("1 / 40");
+      expect(await bar.locator("button").evaluateAll((buttons) => buttons.map((button) => button.textContent?.trim()))).toEqual([
+        "",
+        "",
+        "",
+      ]);
+      const fit = page.getByRole("button", { name: "Fit to width" });
+      expect(await fit.getAttribute("aria-pressed")).toBe("true");
+      const paint = await fit.evaluate((element) => ({
+        background: getComputedStyle(element).backgroundColor,
+        color: getComputedStyle(element).color,
+        text: getComputedStyle(document.body).color,
+      }));
+      expect(paint.background).toBe("rgba(0, 0, 0, 0)");
+      expect(paint.color).not.toBe(paint.text);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("fitted to the width, a page never grows past 100 % in a wide area", async () => {
+    const page = await load("", { width: 2200, height: 900 });
+    try {
+      await settled(page);
+      expect(await page.locator(".k2b-pdf-viewer__pages").getAttribute("data-zoom")).toBe("100");
+      const width = (await page.locator('[data-pdf-page="0"]').boundingBox())!.width;
+      expect(Math.round(width)).toBe(Math.floor((595 * 96) / 72));
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('fit="page" shows the whole first page above the bar, narrower than the area', async () => {
+    const page = await load("?fit=page&height=416", { width: 420, height: 800 });
+    try {
+      await settled(page);
+      const area = (await page.locator(".k2b-pdf-viewer__pages").boundingBox())!;
+      const first = (await page.locator('[data-pdf-page="0"]').boundingBox())!;
+      const bar = (await page.locator(".k2b-pdf-viewer__bar .k2b-toolbar").boundingBox())!;
+      expect(first.y).toBeGreaterThanOrEqual(area.y);
+      expect(first.y + first.height).toBeLessThanOrEqual(bar.y);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(area.y + area.height);
+      expect(first.width).toBeLessThan(area.width - 24);
+      expect(Math.abs(first.x + first.width / 2 - (area.x + area.width / 2))).toBeLessThan(8);
+      const fit = page.getByRole("button", { name: "Show the whole page" });
+      expect(await fit.getAttribute("aria-pressed")).toBe("true");
+      await page.getByRole("button", { name: "Zoom in" }).click();
+      await settled(page);
+      expect(await fit.getAttribute("aria-pressed")).toBe("false");
+      await fit.click();
+      await settled(page);
+      expect(Math.round((await page.locator('[data-pdf-page="0"]').boundingBox())!.width)).toBe(Math.round(first.width));
     } finally {
       await page.close();
     }

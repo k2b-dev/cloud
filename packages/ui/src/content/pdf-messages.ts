@@ -20,8 +20,8 @@ const pdfMessages = i18n.define({
       pdfZoomOut: "Zoom out",
       pdfZoomIn: "Zoom in",
       pdfZoomPercent: ({ value }: { value: number }) => `${value}%`,
-      pdfFitWidth: "Width",
       pdfFitWidthLabel: "Fit to width",
+      pdfFitPageLabel: "Show the whole page",
     },
     de: {
       openPreview: "Vorschau öffnen",
@@ -39,8 +39,8 @@ const pdfMessages = i18n.define({
       pdfZoomOut: "Verkleinern",
       pdfZoomIn: "Vergrößern",
       pdfZoomPercent: ({ value }) => `${value} %`,
-      pdfFitWidth: "Breite",
       pdfFitWidthLabel: "An die Breite anpassen",
+      pdfFitPageLabel: "Ganze Seite zeigen",
     },
   },
 });

@@ -414,31 +414,30 @@
   font-weight: inherit;
 }
 
-/* Details: the preview is a compact glimpse of the approved 150px, so versions and history stay in view. Media take
-   that height; a text excerpt, a placeholder and its retry or download keep their natural size inside it. */
+/* Details: the preview leads the panel without a heading. A PDF shows its whole first page, narrower than the panel,
+   in an area of 26rem (at most 60 % of the screen's height); images and video keep their frames. The expand icon
+   floats in the top corner, a small pill like the PDF's bar, beside a centred page rather than over it. */
 .filesv2-inspector-preview {
-  display: grid;
-  place-items: center;
-  min-height: 150px;
+  position: relative;
+  min-width: 0;
+}
+.k2b-ui .filesv2-inspector-preview .k2b-content-pdf-preview__viewer {
+  height: min(26rem, 60svh);
   overflow: hidden;
-  border-radius: 12px;
-  background: var(--k2b-surface-muted);
+  border-radius: var(--k2b-radius-surface);
 }
-.filesv2-inspector-preview > *,
-.filesv2-inspector-preview .filesv2-preview {
-  width: 100%;
-}
-.filesv2-inspector-preview .filesv2-thumbnail--hero,
-.filesv2-inspector-preview .filesv2-thumbnail--hero img {
-  height: 150px;
-  max-height: 150px;
-}
-.filesv2-inspector-preview .filesv2-preview__pdf {
-  max-height: 150px;
-  overflow: hidden;
-}
-.k2b-ui .filesv2-inspector-preview .filesv2-preview > .k2b-video-player {
-  max-height: 150px;
+.k2b-ui .filesv2-inspector-preview__expand {
+  --k2b-radius-control: 9999px;
+  position: absolute;
+  z-index: 1;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  padding: 0.125rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: 9999px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
 }
 /* The approved order: preview, then the action bar 12px below it; a folder starts with the bar. */
 .filesv2-inspector-lead {
