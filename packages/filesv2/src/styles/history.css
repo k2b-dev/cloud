@@ -464,10 +464,9 @@
     display: none;
   }
 }
-/* Phones show the approved short form: no preview, no folder Info, the change date and version count only, and the
-   versions list once the count opens it. The hidden preview may still load; it is never shown. */
+/* Phones show the short form: the preview, no folder Info, the change date and version count only, and the versions
+   list once the count opens it. */
 @container k2b-app-area (max-width: 47.999rem) {
-  .filesv2-inspector-preview,
   .filesv2-inspector-versions:not([data-open]),
   .k2b-ui .k2b-detail-panel__summary.filesv2-inspector-info--folder,
   .k2b-ui .filesv2-inspector-info .k2b-description-list .k2b-description-list__item:has([data-inspector-only="desktop"]) {

@@ -287,7 +287,11 @@ describe("Filesv2 interactions", () => {
 
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(pdf.name))!.click();
     await settleLeases();
-    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Preview")!.click();
+    // The preview stands in the panel; its corner icon opens it large, and no "Preview" action repeats it.
+    expect([...dom.root.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent?.trim() === "Preview")).toBe(
+      false,
+    );
+    dom.root.querySelector<HTMLButtonElement>('.filesv2-inspector-preview__expand button[aria-label="Open large preview"]')!.click();
     await settleLeases();
 
     const dialog = dom.document.querySelector("dialog")!;
