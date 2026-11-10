@@ -521,6 +521,12 @@ const openMessageMenu = async (page: Page, name: string, item: Locator) => {
   await menu.waitFor();
   return menu;
 };
+/**
+ * Presses a control the way each device does. A phone taps: a mouse click would leave the pointer resting where a
+ * notice was, and the control that the notice covered there (a header button with a hint) gets hovered once the
+ * notice leaves, so its hint fades in while the next step waits for a still page.
+ */
+const press = (name: string, control: Locator) => (name === "phone" ? control.tap() : control.click());
 const chooseFromMessageMenu = async (page: Page, name: string, item: Locator, entry: string) => {
   const menu = await openMessageMenu(page, name, item);
   await menu.getByRole("menuitem", { name: new RegExp(`^${entry}`) }).click();
@@ -1153,7 +1159,7 @@ describe("ChatWorkspace browser read state", () => {
         await failed.waitFor();
         expect(await marker(page).count()).toBe(0);
         expect(harness.props({ chat }).open!.conversation.read!.unreadFromSeq).toBe(null);
-        await failed.getByRole("button", { name: "Try again", exact: true }).click();
+        await press(name, failed.getByRole("button", { name: "Try again", exact: true }));
         // An action closes its message, so it cannot run twice.
         await failed.waitFor({ state: "detached" });
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
@@ -1167,7 +1173,7 @@ describe("ChatWorkspace browser read state", () => {
         const done = page.locator(".k2b-toast").filter({ hasText: "Unread from Nora’s message" });
         await done.waitFor();
         if (name === "desktop") await row(page, name, chat).locator('[data-unread="count"]').waitFor();
-        await done.getByRole("button", { name: "Undo", exact: true }).click();
+        await press(name, done.getByRole("button", { name: "Undo", exact: true }));
         await done.waitFor({ state: "detached" });
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === null);
         await marker(page).waitFor({ state: "detached" });

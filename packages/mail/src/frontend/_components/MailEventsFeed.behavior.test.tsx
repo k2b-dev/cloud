@@ -229,13 +229,18 @@ test.skipIf(isServer)("loads older events with the feed's filter, and a failed l
   }) as typeof fetch;
   const feed = await renderFeed({ page: page([event("5")], { kind: "comment", actorId: null, mine: false }, "cursor-5") });
   try {
-    const more = () => feed.dom.root.querySelector<HTMLButtonElement>("[data-mail-events-more]");
-    more()!.click();
+    // The list's end is within reach of a short list, so the next page loads by itself.
+    const more = () => feed.dom.root.querySelector<HTMLButtonElement>(".k2b-load-more button");
     await settle();
+    expect(requests).toHaveLength(1);
     expect(new URL(requests[0]!, "http://localhost").searchParams.get("kind")).toBe("comment");
     expect(new URL(requests[0]!, "http://localhost").searchParams.get("cursor")).toBe("cursor-5");
     expect(feed.rows()).toHaveLength(1);
-    expect(feed.text()).toContain("Ältere Ereignisse konnten nicht geladen werden.");
+    expect(feed.dom.root.querySelector(".k2b-load-more [role='alert']")?.textContent).toContain(
+      "Ältere Ereignisse konnten nicht geladen werden.",
+    );
+    // A failed page waits for the reader instead of asking again.
+    expect(requests).toHaveLength(1);
     fail = false;
     Array.from(feed.dom.root.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.trim() === "Erneut versuchen")!
@@ -243,6 +248,8 @@ test.skipIf(isServer)("loads older events with the feed's filter, and a failed l
     await settle();
     expect(feed.rows().map((row) => row.dataset.mailEvent)).toEqual(["5", "1"]);
     expect(more()).toBeNull();
+    // Day headings come from the list itself: one per day, also for the page that loaded later.
+    expect(feed.dom.root.querySelectorAll(".k2b-virtual-feed__item .k2b-virtual-feed__separator").length).toBeGreaterThan(0);
   } finally {
     feed.cleanup();
   }
