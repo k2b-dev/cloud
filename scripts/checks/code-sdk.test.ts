@@ -1,14 +1,18 @@
-import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { expect, setSystemTime, test } from "bun:test";
 import { mkdtemp, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
+import { z } from "zod";
 import { ChunkName, chunkSource } from "../../packages/assistant/src/chat-code/runtime/chunks";
 import { compileScript } from "../../packages/assistant/src/chat-code/runtime/compile";
 import { createServiceCalls, type RuntimeSdkCallOptions } from "../../packages/assistant/src/chat-code/runtime/services";
 import { compileCapabilities } from "../../packages/cloud/src/_internal/capabilities";
-import { generateCodeSdk } from "../../packages/cloud/src/code";
+import { CODE_CHECK_LIMITS, CodeDatabaseRequestSchema, CodeRouteResponseSchema, generateCodeSdk } from "../../packages/cloud/src/code";
+import { CodeHttpRequestSchema } from "../../packages/cloud/src/contracts";
 import type { CapabilityDefinitions, CapabilityManifest } from "../../packages/cloud/src/contracts/capabilities";
+import { acceptanceChecker } from "../../packages/core/src/code/acceptance.test-fixture";
 import { parseGridsQueryDsl } from "../../packages/grids/src/query-dsl/parser";
 import { packageIds } from "../workspace";
 import { declarationOf } from "./capability-presentation";
@@ -218,3 +222,111 @@ test("built-in SDK paths use camelCase and the Files export while preserving cap
   // message queues attributable inter-chat communication; deliver/run have different lifecycle contracts.
   expect(sdk.manifest.operations.some((op) => op.capability === "core.ai.chat.message")).toBe(true);
 });
+
+// Read the published Fibel example itself, then run its checked bundle with real
+// SQLite. Only the remote service and task provider are replaced.
+test("the Fibel webhook keeps shipment claims after receipts expire and fences uncertain task outcomes", async () => {
+  const markdown = await Bun.file(join(workspaceRoot, "docs-site/code-content/en/use-cases.md")).text();
+  const source = markdown.split("## Receive a webhook")[1]!.match(/```ts\n([\s\S]*?)```/)![1]!;
+  const checker = await acceptanceChecker();
+  const database = new Database(":memory:");
+  try {
+    const result = await checker.check({
+      sdk: generateCodeSdk(manifests, { mode: "personal" }),
+      entry: "code.ts",
+      files: { "code.ts": source },
+      aiOperations: ["core.ai.generate", "core.ai.decide", "core.ai.chat.run"],
+      limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 },
+    });
+    expect(result.ok, JSON.stringify(result.ok ? [] : result.diagnostics)).toBe(true);
+    if (!result.ok) return;
+    let tasks = 0;
+    const taskReceipts = new Map<string, number>();
+    let loseTaskResponse = false;
+    let delivered = true;
+    const bridge = {
+      async call(operation: string, input: unknown) {
+        if (operation.startsWith("db.")) {
+          if (!input || typeof input !== "object") throw new Error("Missing database input");
+          const request = CodeDatabaseRequestSchema.parse({ ...input, operation });
+          if (request.operation === "db.batch") throw new Error("Unexpected batch");
+          const parameters = request.params.map((value) => (typeof value === "boolean" ? Number(value) : value));
+          const statement = database.query(request.sql);
+          return request.operation === "db.query" ? statement.all(...parameters) : { changes: statement.run(...parameters).changes };
+        }
+        if (operation === "http.fetch") {
+          const request = CodeHttpRequestSchema.parse(input);
+          expect(request.url).toMatch(/^https:\/\/api\.shipping\.example\/v1\/shipments\/shipment_[12]$/);
+          expect(request.headers).toEqual({ authorization: "Bearer [secret:SHIPPING]" });
+          return {
+            status: 200,
+            headers: {},
+            body: Buffer.from(JSON.stringify({ status: delivered ? "delivered" : "in_transit" })).toString("base64"),
+          };
+        }
+        expect(operation).toBe("spaces.task.create");
+        expect(input).toMatchObject({ call: { target: { type: "spaces.space", id: "Spc001" } } });
+        const { metadata } = z.object({ metadata: z.object({ idempotencyKey: z.string() }) }).parse(input);
+        if ((taskReceipts.get(metadata.idempotencyKey) ?? 0) > Date.now()) return {};
+        tasks++;
+        taskReceipts.set(metadata.idempotencyKey, Date.now() + 24 * 60 * 60 * 1000);
+        if (loseTaskResponse) throw new Error("unknown_task_outcome");
+        return {};
+      },
+    };
+    let load = 0;
+    const invoke = async (shipmentId: string) => {
+      // Each request is a fresh module. Durable state belongs only to the DB.
+      const module = await import(
+        `data:text/javascript;base64,${Buffer.from(`${result.bundle}\n// request ${++load}\n`).toString("base64")}`
+      );
+      const response = await module["route:POST:/hooks/shipments"](
+        {
+          codeId: "c_shipments",
+          method: "POST",
+          path: "/hooks/shipments",
+          query: "",
+          params: {},
+          contentType: "application/json",
+          body: JSON.stringify({ shipmentId }),
+          user: null,
+        },
+        bridge,
+      );
+      return CodeRouteResponseSchema.parse(response);
+    };
+    setSystemTime(new Date("2026-11-10T00:00:00Z"));
+    delivered = false;
+    expect(await invoke("shipment_1")).toMatchObject({ kind: "json", status: 200 });
+    expect(tasks).toBe(0);
+    delivered = true;
+    expect(await invoke("shipment_1")).toMatchObject({ kind: "json", status: 200 });
+    expect(tasks).toBe(1);
+    expect(await invoke("shipment_1")).toMatchObject({ kind: "json", status: 200 });
+    expect(tasks).toBe(1);
+    // The provider's receipt now expires. A fresh request must still find the
+    // durable business claim and never attempt another task.
+    setSystemTime(new Date("2026-11-11T01:00:00Z"));
+    expect(await invoke("shipment_1")).toMatchObject({ kind: "json", status: 200 });
+    expect(tasks).toBe(1);
+    loseTaskResponse = true;
+    await expect(invoke("shipment_2")).rejects.toThrow("unknown_task_outcome");
+    expect(tasks).toBe(2);
+    loseTaskResponse = false;
+    setSystemTime(new Date("2026-11-12T02:00:00Z"));
+    const pending = await invoke("shipment_2");
+    expect(pending).toMatchObject({ kind: "json", status: 409 });
+    if (pending.kind !== "json") throw new Error("Expected JSON reconciliation notice");
+    expect(JSON.parse(pending.body)).toEqual({ ok: false, code: "reconciliation_required" });
+    expect(tasks).toBe(2);
+    expect(result.manifest.database).toBe(true);
+    expect(database.query("SELECT shipment_id, state FROM processed ORDER BY shipment_id").all()).toEqual([
+      { shipment_id: "shipment_1", state: "done" },
+      { shipment_id: "shipment_2", state: "pending" },
+    ]);
+  } finally {
+    setSystemTime();
+    database.close();
+    await checker.close();
+  }
+}, 90_000);
