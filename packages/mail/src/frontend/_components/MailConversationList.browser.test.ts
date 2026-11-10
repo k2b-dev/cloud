@@ -1561,6 +1561,63 @@ describe("Mail rows that an action takes out of the list", () => {
   }, 30_000);
 });
 
+describe("Mail list while the view refreshes in the background", () => {
+  /** Whether the list or anything around it is faded or filtered, and the top of every row. */
+  const look = (page: Page) =>
+    page.evaluate(() => {
+      const faded: string[] = [];
+      const list = document.querySelector('[data-mail-conversation-list] [role="list"]');
+      for (let node = list; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.opacity !== "1" || style.filter !== "none") faded.push(`${node.tagName.toLowerCase()} ${style.opacity} ${style.filter}`);
+      }
+      const tops = Object.fromEntries(
+        [...document.querySelectorAll<HTMLElement>(".mail-list-entry")].map((entry) => [
+          entry.dataset.conversationId ?? "",
+          Math.round(entry.getBoundingClientRect().top * 10) / 10,
+        ]),
+      );
+      return { faded, tops };
+    });
+
+  for (const viewport of [
+    { name: "desktop", context: { viewport: { width: 1440, height: 900 } } },
+    { name: "phone", context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+  ] satisfies { name: string; context: BrowserContextOptions }[]) {
+    test(`${viewport.name}: new mail arrives without fading the list or moving its rows`, async () => {
+      const page = await load({ context: viewport.context });
+      const screenshots = process.env.MAIL_LIST_SCREENSHOTS;
+      // The list announces the refresh for screen readers while it runs.
+      const refreshing = page.locator('[data-mail-conversation-list] [role="status"]', { hasText: "Loading view" });
+      try {
+        await page.locator(row("Cv0002")).waitFor();
+        const idle = await look(page);
+        expect(idle.faded).toEqual([]);
+
+        await page.evaluate(() => window.setMailLoading(true));
+        await refreshing.waitFor({ state: "attached" });
+        if (screenshots) await page.screenshot({ path: `${screenshots}/refreshing-${viewport.context.viewport.width}.png` });
+        expect(await look(page)).toEqual(idle);
+
+        // The new conversation lands on top; the list stays as it was until then.
+        await page.evaluate(
+          (next) => {
+            window.setMailItems(next);
+            window.setMailLoading(false);
+          },
+          [{ ...items[2]!, id: "Cv9000", conversationId: "Cv9000", subject: "Just arrived" }, ...items],
+        );
+        await page.locator(row("Cv9000")).waitFor();
+        await refreshing.waitFor({ state: "detached" });
+        expect((await look(page)).faded).toEqual([]);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
+});
+
 describe("Mail search returns to the view it started from", () => {
   for (const [device, context] of [
     ["desktop", { viewport: { width: 1366, height: 900 } }],
