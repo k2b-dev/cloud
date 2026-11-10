@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, setSystemTime, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import {
   createSharedTextProvider,
+  SHARED_TEXT_ACK_TIMEOUT_MS,
   type SharedTextProviderError,
   type SharedTextProviderMessage,
   type SharedTextProviderOptions,
@@ -91,6 +92,43 @@ const fixture = (options: Partial<SharedTextProviderOptions<string, { name: stri
   return { provider, socket, local, awareness };
 };
 const publishes = (socket: Socket) => socket.sent.filter((request) => request.type === "syncPublish");
+
+test("an unacknowledged update closes a silent socket and reconnects with its original input base", () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-09T12:00:00Z"));
+  try {
+    const errors: SharedTextProviderError[] = [];
+    const { provider, socket, local } = fixture({ onError: (error) => errors.push(error) });
+    socket.ready();
+    local.getText("codemirror").insert(0, "Unacknowledged text");
+    const first = publishes(socket)[0]!;
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS / 2);
+    local.getText("codemirror").insert(local.getText("codemirror").length, " with later typing");
+    socket.sync(publishes(socket).at(-1)!.payload.payload);
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS / 2 - 1);
+    expect(socket.readyState).toBe(1);
+    jest.advanceTimersByTime(1);
+    expect(socket.readyState).toBe(3);
+    expect(errors.at(-1)?.code).toBe("SYNC_TIMEOUT");
+    expect(provider.hasUnsentChanges()).toBe(true);
+    jest.advanceTimersByTime(2_000);
+    expect(Socket.instances).toHaveLength(2);
+    const replacement = Socket.instances[1]!;
+    replacement.open();
+    replacement.ready();
+    expect(publishes(replacement)[0]!.payload.baseCursor).toBe(first.payload.baseCursor);
+    expect(provider.recoveryInput().text).toBe("Unacknowledged text with later typing");
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS);
+    expect(replacement.readyState).toBe(3);
+    expect(errors.filter((error) => error.code === "SYNC_TIMEOUT")).toHaveLength(2);
+    expect(provider.hasUnsentChanges()).toBe(true);
+    provider.dispose();
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS * 2);
+    expect(Socket.instances).toHaveLength(2);
+  } finally {
+    jest.useRealTimers();
+  }
+});
 
 test("opaque generations and UUID document IDs preserve replay-before-write ordering and original bases", () => {
   const { provider, socket, local } = fixture();
@@ -322,9 +360,9 @@ test("a burst of cursor moves sends the first and then only the latest state per
 });
 
 test("a busy server or proxy reconnects with backoff and keeps unsent input instead of stopping", () => {
-  const timers: (() => void)[] = [];
+  const timers: { run: () => void; delay: number }[] = [];
   const originalSetTimeout = globalThis.setTimeout;
-  Object.assign(globalThis, { setTimeout: (run: () => void) => timers.push(run) });
+  Object.assign(globalThis, { setTimeout: (run: () => void, delay: number) => timers.push({ run, delay }) });
   cleanups.push(() => Object.assign(globalThis, { setTimeout: originalSetTimeout }));
   const fatal: string[] = [];
   // Even an adapter that maps 1013 or BACKPRESSURE to a terminal error cannot end the session for an overload.
@@ -346,7 +384,7 @@ test("a busy server or proxy reconnects with backoff and keeps unsent input inst
   socket.onclose?.({ code: 1013, reason: "BACKPRESSURE" });
   expect(fatal).toEqual([]);
   expect(provider.hasUnsentChanges()).toBe(true);
-  timers.shift()!();
+  timers.find((timer) => timer.delay === 2_000)!.run();
   const next = Socket.instances.at(-1)!;
   expect(next).not.toBe(socket);
   next.open();

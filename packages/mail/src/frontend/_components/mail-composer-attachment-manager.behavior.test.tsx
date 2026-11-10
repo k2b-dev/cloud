@@ -94,7 +94,7 @@ describe("Mail composer attachments", () => {
         serializeDraftMutation: (operation) => operation(),
         transition: createMailComposerTransition(),
         format: () => "markdown",
-        setBody: () => undefined,
+        insertText: () => undefined,
         isDisposed: () => false,
         locale: () => "en",
       });
@@ -144,4 +144,93 @@ describe("Mail composer attachments", () => {
     expect(requests).toHaveLength(1);
     expect(manager.uploads()).toEqual([]);
   });
+
+  test.each(["Retry", "Cancel"])(
+    "a finished upload whose answer got lost attaches exactly once on %s and stops blocking Send",
+    async (action) => {
+      const attachment = {
+        id: "Att001",
+        filename: "report.pdf",
+        contentType: "application/pdf",
+        byteLength: 3,
+        contentHash: "c".repeat(64),
+        position: 0,
+        createdAt: now,
+      };
+      let finalizes = 0;
+      let serverAttached = false;
+      respond = () => Response.json({});
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+          const path = new URL(request.url).pathname;
+          requests.push({ method: request.method, url: path });
+          if (request.method === "POST" && path.endsWith("/attachment-uploads")) return Response.json({ id: UPLOAD_ID, chunkSize: 1024 });
+          if (request.method === "PATCH") return Response.json({});
+          if (path.endsWith("/finalize")) {
+            finalizes += 1;
+            serverAttached = true;
+            // The server commits the attachment; only its answer goes missing the first time.
+            if (finalizes === 1) throw new TypeError("Failed to fetch");
+            return Response.json({ ...draft, revision: 4, attachments: [attachment] });
+          }
+          if (request.method === "DELETE")
+            return serverAttached
+              ? Response.json({ code: "CONFLICT", message: "An attached upload cannot be cancelled" }, { status: 409 })
+              : Response.json({ id: UPLOAD_ID, state: "cancelled" });
+          throw new Error(`Unexpected ${request.method} ${path}`);
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const { createMailComposerAttachmentManager } = await import("./mail-composer-attachment-manager");
+      const { createMailComposerTransition } = await import("./mail-composer-transition");
+      const { default: MailComposerAttachments } = await import("./MailComposerAttachments");
+      delegateEvents(["click"]);
+      let manager: ReturnType<typeof createMailComposerAttachmentManager> | undefined;
+      let current: () => MailDraft | null = () => null;
+      dispose = render(() => {
+        const [value, setValue] = createSignal<MailDraft | null>(draft);
+        current = value;
+        manager = createMailComposerAttachmentManager({
+          mailboxId: MAILBOX_ID,
+          draft: value,
+          initialAttachments: () => [],
+          unfinishedUploads: [],
+          setDraft: setValue,
+          editable: () => true,
+          persist: async () => value(),
+          serializeDraftMutation: (operation) => operation(),
+          transition: createMailComposerTransition(),
+          format: () => "markdown",
+          insertText: () => undefined,
+          isDisposed: () => false,
+          locale: () => "en",
+        });
+        return createComponent(MailComposerAttachments, {
+          attachments: () => value()?.attachments ?? [],
+          uploads: manager.uploads,
+          editable: () => true,
+          canShare: false,
+          shareLoading: () => false,
+          onInsertLink: () => undefined,
+          onRemove: () => undefined,
+          onRetryUpload: (upload) => void manager!.retryUpload(upload),
+          onCancelUpload: (upload) => void manager!.cancelUpload(upload),
+        });
+      }, dom.root);
+
+      await manager!.addFiles([new File(["abc"], "report.pdf", { type: "application/pdf" })]);
+      expect(manager!.uploads()).toHaveLength(1);
+      expect(manager!.uploads()[0]?.error).not.toBeNull();
+
+      // Cancel cannot take back what the server attached; the attachment shows and can be removed like any other.
+      dom.root.querySelector<HTMLButtonElement>(`[aria-label="${action} report.pdf"]`)!.click();
+      while (manager!.uploads().length > 0) await Bun.sleep(10);
+
+      expect(manager!.uploads()).toEqual([]);
+      expect(current()?.attachments).toEqual([attachment]);
+      expect(requests.filter((request) => request.method === "POST" && request.url.endsWith("/attachment-uploads"))).toHaveLength(1);
+      expect(requests.filter((request) => request.method === "PATCH")).toHaveLength(1);
+    },
+  );
 });

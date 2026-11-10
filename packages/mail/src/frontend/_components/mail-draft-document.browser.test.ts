@@ -293,6 +293,7 @@ for (const width of [1440, 390])
       await page.keyboard.type("Local ");
       await page.waitForFunction(() => !window.mailSharedFixture.unsent());
       await waitStored(page, 1); // Echo has arrived, but SQL durability has not.
+      expect(await page.getByTitle("Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
       const vector = Y.encodeStateVector(document);
       const before = readDraftDocument(document);
       writeLocalDraftHeaders(document, before, { ...before, subject: "Peer subject", bcc: [{ name: null, address: "peer@example.test" }] });
@@ -342,6 +343,50 @@ for (const width of [1440, 390])
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
       await waitStored(page, 0);
+      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+for (const width of [1440, 390])
+  test(`rejected proposals offer copy, explicit discard and restoration after reload, width=${width}`, async () => {
+    const { page, context, errors } = await open(width);
+    try {
+      if (width === 390) await page.evaluate(() => (globalThis.document.documentElement.className = "dark"));
+      // WebKit grants no clipboard permissions to Playwright, so both engines record what the copy writes instead.
+      await page.evaluate(() => {
+        const copied: string[] = [];
+        window.copiedTexts = copied;
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText: async (text: string) => void copied.push(text) },
+          configurable: true,
+        });
+      });
+      const proposal = "Keep this rejected body proposal";
+      expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
+      expect(await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).count()).toBe(1);
+      const recovery = page.getByRole("button", { name: "Vorschlag verwerfen", exact: true });
+      expect(
+        await recovery.evaluate((button) => {
+          const notice = button.closest('[role="status"]')!;
+          return notice.scrollWidth <= notice.clientWidth;
+        }),
+      ).toBe(true);
+      await page.getByRole("button", { name: "Entwurf kopieren", exact: true }).click();
+      await page.waitForFunction(() => (window.copiedTexts?.length ?? 0) > 0);
+      expect((await page.evaluate(() => window.copiedTexts ?? [])).join("\n")).toContain(proposal);
+      await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).click();
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.rejectedEdit)).toBeNull();
+      expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), proposal)).toBe(true);
+      await page.reload();
+      await page.waitForFunction(() => window.mailSharedFixture?.state()?.ready);
+      await page.getByRole("button", { name: "Vorschlag übernehmen", exact: true }).click();
+      await page.waitForFunction((body) => window.mailSharedFixture.content().body === body, proposal);
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.rejectedEdit)).toBeNull();
+      await page.getByRole("button", { name: "Speichern", exact: true }).click();
+      await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -359,6 +404,7 @@ test("offline input survives cleanup/reload, then closes as one stable Rest requ
     await page.keyboard.press("Control+Home");
     await page.keyboard.type("Offline ");
     await page.waitForFunction(() => window.mailSharedFixture.state()?.locallySaved);
+    expect(await page.getByTitle("Offline · Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
     await waitStored(page, 1);
     expect(await page.locator(".k2b-ste-status").innerText()).toContain("Offline");
     // The sent boundary excludes the disconnected edit. Re-authorize on reload before reading device bytes.

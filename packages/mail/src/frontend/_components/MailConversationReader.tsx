@@ -41,6 +41,7 @@ import type {
   MailDraftSeed,
   SenderIdentity,
 } from "../../contracts";
+import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import { deriveReplyAddressObjects } from "../../reply-recipients";
 import type { MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
@@ -80,7 +81,6 @@ import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import { mailSummaryMessages } from "./mail-summary-messages";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
@@ -209,6 +209,8 @@ export default function MailConversationReader(props: {
   newMessage?: { draftId: string; initialDraft?: MailDraft; fresh: boolean } | null;
   onNewMessageSummary?: (value: { subject: string; to: string[] }) => void;
   onNewMessageClose?: () => void;
+  /** Another draft takes the new message's place, such as the saved rest of a shared draft. */
+  onNewMessageOpenDraft?: (draftId: string) => void;
 }) {
   const locale = useLocale();
   let seedStorage: Storage | undefined;
@@ -1726,7 +1728,7 @@ export default function MailConversationReader(props: {
                             // The sent message arrives as a conversation; a discarded draft leaves Drafts.
                             if (outcome !== "closed") void props.onReconcileAfterWrite().catch(() => undefined);
                           },
-                          openDraft: () => props.onNewMessageClose?.(),
+                          openDraft: (draftId) => props.onNewMessageOpenDraft?.(draftId),
                         }}
                       />
                     </div>

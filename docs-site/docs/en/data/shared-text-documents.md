@@ -392,8 +392,17 @@ input and local awareness are sent. `onReady` runs at that boundary;
 `onConnectionChange` reports the socket connection. `onError` reports errors,
 and `onFatal` means the session has stopped. A generation mismatch retains
 recovery input and requires a fresh editor; `resume()` cannot revive it.
+`resume()` returns `resumed`, `reopen`, or `unavailable`. Clear a terminal UI
+state only after `resumed`; `reopen` requires preserving the input and opening
+a fresh editor. Local queue overflow also requires reopening.
 `isEarlierGeneration` is only for ordered revisions whose retired events
 must advance the replay cursor without applying their bytes.
+
+An update without a transport echo for `SHARED_TEXT_ACK_TIMEOUT_MS` closes
+the socket and reconnects with the original pending input and base cursors.
+The deadline is the awareness expiry window, currently 30 seconds. New edits
+do not extend an older update's deadline. `onError` reports `SYNC_TIMEOUT`;
+the application keeps a visible retry or copy action. Dispose cancels the timer.
 
 The returned handle provides `reconnectNow()` for dropped connections,
 `resume()` for recoverable terminal sessions, `hasUnsentChanges()`,
