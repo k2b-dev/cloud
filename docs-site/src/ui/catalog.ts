@@ -231,7 +231,7 @@ const portableSections = [
         "page-title",
         "PageTitle",
         "ti ti-chevron-left",
-        "A page title with its way up: a back link, or a path whose middle collapses only when it does not fit.",
+        "A page title with its way up, and Breadcrumbs for a folder path inside a dialog or panel.",
       ),
       page(
         "resize-separator",
@@ -628,6 +628,7 @@ export const documentedOnlyUiCatalogExports = {
   sameSettingValue: "Documented Settings dirty-state helper.",
   scanMarkdownInfoBlock: "Documented MarkdownView info-block grammar for renderers that scan Markdown themselves.",
   shouldCollapseAppWorkspaceSidebar: "Documented AppWorkspace responsive-state helper.",
+  createDelayedLoading: "Documented Skeleton helper that shows loading shapes only after a delay and keeps them for a minimum.",
   suppressTextSelection: "Documented AppWorkspace helper that keeps a custom pointer drag from selecting page text.",
   syncThemeColor: "Documented MobileShell status-bar helper that changes the live document.",
   PAGE_TRAIL_EVENT: "Documented PageTitle window event that follows each published page trail.",

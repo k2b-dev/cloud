@@ -61,6 +61,7 @@ import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../s
 import { coreSettings } from "../services/settings/api";
 
 import { lastingAccessApiMessages } from "./lasting-access-messages";
+import { createMeFileChooserRoutes } from "./me-file-chooser";
 import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
@@ -223,6 +224,7 @@ const app = new Hono<AuthContext>()
   .use(auth.requireUser())
   .route("/", mandateRoutes)
   .route("/", createMeRailRoutes())
+  .route("/", createMeFileChooserRoutes())
   .route("/", createMePanelConsentRoutes())
   .route("/", createMeWebVitalsRoutes())
 

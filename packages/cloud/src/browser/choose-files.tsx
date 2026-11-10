@@ -1,8 +1,10 @@
 import { showFileDialog } from "@k2b/stdlib/browser";
 import { dialogCore, panelDialogWorkspaceOptions, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import type { FileChooserPlace } from "../contracts/file-chooser-place";
 import { deviceFilesProblem } from "./choice-limits";
 import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
+import { type FileChooserPlaceState, readFileChooserPlace, rememberFileChooserPlace } from "./file-chooser-place";
 import type { FileProviderCaller, FileProviderSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
 import { importOnDemand } from "./reload";
@@ -14,6 +16,8 @@ export const createFileChoosing = (
   list: ProviderList,
   caller: () => FileProviderCaller = () => ({ locale: document.documentElement.lang || "en" }),
 ) => {
+  // The person's last place, read once per page and kept with every place the chooser remembers afterwards.
+  let knownPlace: FileChooserPlaceState | undefined;
   const chooseFiles = (options: ChooseFilesOptions = {}): Promise<File[]> => {
     const { signal } = options;
     if (signal?.aborted) return Promise.resolve([]);
@@ -60,6 +64,17 @@ export const createFileChoosing = (
     };
     if (known) void settle(list.refresh(discovery.signal));
     else load();
+    const [place, setPlace] = createSignal<FileChooserPlaceState>(knownPlace ?? { state: "loading" });
+    if (!knownPlace)
+      void readFileChooserPlace(caller(), discovery.signal).then((value) => {
+        if (!open) return;
+        knownPlace = { state: "ready", place: value };
+        setPlace(knownPlace);
+      });
+    const remember = (value: FileChooserPlace | null) => {
+      knownPlace = { state: "ready", place: value };
+      rememberFileChooserPlace(caller(), value);
+    };
     return (async () => {
       let abort = () => {};
       const chooser = await Promise.race([
@@ -76,10 +91,21 @@ export const createFileChoosing = (
       }
       return dialogCore
         .open<File[]>(
-          (close) => <chooser.FileChooser options={options} providers={providers} retryProviders={load} caller={caller} close={close} />,
+          (close) => (
+            <chooser.FileChooser
+              options={options}
+              providers={providers}
+              retryProviders={load}
+              caller={caller}
+              place={place}
+              remember={remember}
+              close={close}
+            />
+          ),
           {
             ...panelDialogWorkspaceOptions,
-            panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog`,
+            // Only choosing has the preview column, so only it grows on wide screens.
+            panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog cloud-file-chooser-dialog--preview`,
             initialFocus: (dialog) => dialog.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]'),
             signal: options.signal,
             history: true,

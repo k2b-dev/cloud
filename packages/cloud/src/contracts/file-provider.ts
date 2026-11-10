@@ -54,12 +54,23 @@ export const FileProviderContextListInputSchema = FileProviderListInputSchema.ex
 }).strict();
 export type FileProviderContext = z.output<typeof FileProviderContextSchema>;
 
+/** Where a name filter looks: inside the folder only, or in the folder and every folder below it. */
+export const FileProviderSearchScopeSchema = z.enum(["folder", "tree"]);
+export const FileProviderTreeListInputSchema = FileProviderListInputSchema.extend({
+  scope: FileProviderSearchScopeSchema.optional().describe(
+    'With query: "tree" also finds entries in every folder below parent, each with its location; "folder", the default, filters only inside parent. Keep it unchanged with cursor.',
+  ),
+}).strict();
+export type FileProviderSearchScope = z.output<typeof FileProviderSearchScopeSchema>;
+
 const entryFacts = {
   id: ProviderIdSchema,
   name: z.string().min(1).max(255),
   updatedAt: TimestampSchema.optional(),
   icon: z.string().min(1).max(120).optional(),
   tags: z.array(FileProviderTagSchema).max(3).optional(),
+  /** Where a tree-search hit lies below the searched folder, as people read it, for example `Team / Reports`. */
+  location: z.string().min(1).max(1024).optional(),
 };
 
 export const FileProviderEntrySchema = z.discriminatedUnion("kind", [
@@ -146,8 +157,17 @@ export const fileProvider = {
 /** Optional context-aware list contract; the base provider contract stays unchanged. */
 export const fileProviderContextList = { ...fileProvider.list, input: FileProviderContextListInputSchema } satisfies CapabilityContract;
 
+/** Optional list contract for searching below a folder; the base provider contract stays unchanged. */
+export const fileProviderTreeList = { ...fileProvider.list, input: FileProviderTreeListInputSchema } satisfies CapabilityContract;
+
 /** Only explicitly named, compatible context inputs opt in; open input objects do not. */
-export const fileProviderAcceptsContext = (manifest: CapabilityManifest): boolean => {
+export const fileProviderAcceptsContext = (manifest: CapabilityManifest): boolean =>
+  listInputOptsIn(manifest, "context", fileProviderContextList);
+
+/** Only an explicitly named, compatible `scope` opts in to searching below a folder; open input objects do not. */
+export const fileProviderSearchesTree = (manifest: CapabilityManifest): boolean => listInputOptsIn(manifest, "scope", fileProviderTreeList);
+
+const listInputOptsIn = (manifest: CapabilityManifest, property: string, contract: CapabilityContract): boolean => {
   if (!manifest.fileProvider) return false;
   const operation = manifest.queries.find((query) => query.localId === manifest.fileProvider?.list);
   if (!operation) return false;
@@ -165,8 +185,8 @@ export const fileProviderAcceptsContext = (manifest: CapabilityManifest): boolea
   return (
     object(schema) &&
     object(schema.properties) &&
-    Object.hasOwn(schema.properties, "context") &&
-    capabilityContractIssues(fileProviderContextList, { kind: "query", operation }).length === 0
+    Object.hasOwn(schema.properties, property) &&
+    capabilityContractIssues(contract, { kind: "query", operation }).length === 0
   );
 };
 

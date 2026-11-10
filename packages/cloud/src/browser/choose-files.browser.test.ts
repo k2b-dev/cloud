@@ -12,6 +12,7 @@ import {
   FileProviderListDataSchema,
   FileProviderListInputSchema,
   FileProviderReadInputSchema,
+  FileProviderTreeListInputSchema,
 } from "../contracts/file-provider";
 import { appAccentStyle } from "../ssr/app-appearance";
 
@@ -115,24 +116,92 @@ const file = (id: string, name: string, content: string, extra: Partial<FileProv
     updatedAt: "2026-10-01T10:00:00Z",
     ...extra,
   }) as FileProviderEntry;
-const contents: Record<string, Record<string, string>> = {
-  drive: { notes: "meeting notes", todo: "buy milk", plan: "plan b" },
-  vault: { notes: "vault notes" },
+/** A one-page PDF that pdf.js can draw, with a correct cross-reference table. */
+const onePagePdf = (() => {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 280] >>",
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets = objects.map((object, index) => {
+    const offset = body.length;
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(body);
+})();
+const onePixelPng = Uint8Array.from(
+  atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="),
+  (char) => char.charCodeAt(0),
+);
+// The scan inbox of a warehouse app: its provider names its own source "Scanner" and searches below a folder.
+const scans = {
+  appId: "scans",
+  appName: "Warehouse",
+  appIcon: "ti ti-building-warehouse",
+  appDescription: "Warehouse",
+  manifest: compileCapabilityManifest(
+    "scans",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        "folder.list": { ...listQuery, input: FileProviderTreeListInputSchema },
+        "file.read": { ...readQuery, stream: { direction: "read", maxBytes: 100_000, read: async () => new Response("") } },
+      },
+      fileProvider: { list: "folder.list", read: "file.read", title: "Scanner", icon: "ti ti-scan" },
+    }),
+  ),
+};
+const longNames = {
+  ablage: "Scanner-Ablage im Büro am Eingang",
+  info: "Info-Blätter für alle Standorte",
+  schilder: "Hinweisschilder und Aushänge",
+};
+const scanPlace = (...ids: ("buero" | "ablage" | "intern" | "info" | "schilder")[]) => ({
+  appId: "scans",
+  folders: ids.map((id) => ({ id, name: { buero: "Büro", intern: "Intern", ...longNames }[id] })),
+});
+const driveText = { notes: "meeting notes", todo: "buy milk", plan: "plan b" };
+const vaultText = { notes: "vault notes" };
+const contents: Record<string, Record<string, string | Uint8Array<ArrayBuffer>>> = {
+  drive: driveText,
+  vault: vaultText,
+  scans: { scan: onePagePdf, photo: onePixelPng, memo: "memo", hinweis: onePagePdf },
 };
 const trees: Record<string, Record<string, FileProviderEntry[]>> = {
   drive: {
     "": [folder("home", "Home"), folder("team", "Team"), folder("broken", "Broken")],
     home: [
       folder("reports", "Reports"),
-      file("notes", "notes.txt", contents.drive!.notes!, { tags: [{ label: "Draft", tone: "warning" }] }),
-      file("todo", "todo.txt", contents.drive!.todo!),
-      file("plan", "plan.txt", contents.drive!.plan!),
+      file("notes", "notes.txt", driveText.notes, { tags: [{ label: "Draft", tone: "warning" }] }),
+      file("todo", "todo.txt", driveText.todo),
+      file("plan", "plan.txt", driveText.plan),
       file("huge", "huge.zip", "", { size: 5000, mediaType: "application/zip" }),
     ],
     reports: [],
   },
-  vault: { "": [file("notes", "notes.txt", contents.vault!.notes!)] },
+  vault: { "": [file("notes", "notes.txt", vaultText.notes)] },
+  scans: {
+    "": [folder("buero", "Büro")],
+    buero: [folder("ablage", longNames.ablage)],
+    ablage: [
+      folder("intern", "Intern"),
+      file("scan", "scan.pdf", "", { size: onePagePdf.length, mediaType: "application/pdf" }),
+      file("photo", "photo.png", "", { size: onePixelPng.length, mediaType: "image/png" }),
+      file("memo", "memo.txt", "memo"),
+    ],
+    intern: [folder("info", longNames.info)],
+    info: [folder("schilder", longNames.schilder)],
+    schilder: [file("hinweis", "Hinweis Eingang.pdf", "", { size: onePagePdf.length, mediaType: "application/pdf" })],
+  },
 };
+/** Reads per stream, as `app:id`. */
+const reads = new Map<string, number>();
 
 let catalogApps: unknown[] = [];
 /** A catalog status other than 200 refuses the caller, like Core does for a visitor of a public page. */
@@ -148,10 +217,20 @@ let gatedRead: string | undefined;
 let openReads = 0;
 let peakReads = 0;
 const queries: Record<string, unknown>[] = [];
+/** The place the server remembers for the person, and every place the chooser saved. */
+let serverPlace: unknown = null;
+const placeWrites: unknown[] = [];
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 const answer = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
+  if (url.pathname === "/api/me/file-chooser/place") {
+    if (request.method === "PUT") {
+      placeWrites.push(((await request.json()) as { place: unknown }).place);
+      return new Response(null, { status: 204 });
+    }
+    return json({ place: serverPlace });
+  }
   if (url.pathname === "/api/capabilities/v1/catalog") {
     catalogRequests++;
     await catalogGate;
@@ -171,18 +250,28 @@ const answer = async (request: Request): Promise<Response> => {
     }
     if (input.parent === "team") return json({ code: "FORBIDDEN", message: "No access" }, 403);
     if (input.parent === "broken" && brokenAnswers++ === 0) return json({ code: "APP_UNAVAILABLE", message: "Down" }, 503);
+    if (app === "scans" && input.query && (input as { scope?: string }).scope === "tree") {
+      const hit = { ...trees.scans!.schilder![0]!, location: `Intern / ${longNames.info} / ${longNames.schilder}` };
+      return json({
+        data: { writable: false, items: hit.name.toLowerCase().includes(input.query.toLowerCase()) ? [hit] : [], next: null },
+      });
+    }
     const items = (trees[app]?.[input.parent ?? ""] ?? []).filter((entry) => !input.query || entry.name.includes(input.query));
     return json({ data: { writable: false, items, next: null } });
   }
   if (operation === "file.read") {
     const { input } = (await request.json()) as { input: { id: string } };
     const content = contents[app]?.[input.id] ?? "";
+    // Like Files, the stream reports the type the listing claimed; the chooser checks it against the first bytes.
+    const listed = Object.values(trees[app] ?? {})
+      .flat()
+      .find((entry) => entry.id === input.id);
     return json({
       data: {},
       stream: {
         id: `${app}:${input.id}`,
         direction: "read",
-        mediaType: "text/plain",
+        mediaType: (listed?.kind === "file" && listed.mediaType) || "text/plain",
         size: content.length,
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       },
@@ -192,6 +281,7 @@ const answer = async (request: Request): Promise<Response> => {
     const stream = request.headers.get("x-cloud-stream-id") ?? "";
     const [app = "", id = ""] = stream.split(":");
     openReads++;
+    reads.set(stream, (reads.get(stream) ?? 0) + 1);
     peakReads = Math.max(peakReads, openReads);
     if (!gatedRead || gatedRead === stream) await readGate;
     openReads--;
@@ -278,12 +368,14 @@ const focusedRow = (page: Page) =>
   page.evaluate(() => (document.activeElement?.matches('[role="gridcell"]') ? document.activeElement.textContent : null));
 const focusedSource = (page: Page) =>
   page.evaluate(() => (document.activeElement?.matches(".cloud-file-dialog__source") ? document.activeElement.textContent : null));
-const attach = async (page: Page, loading = false) => {
+/** `restored`: the chooser opens at a remembered folder, whose first row takes focus once it shows. */
+const attach = async (page: Page, loading = false, restored = false) => {
   await page.locator("#attach").click();
   await page.locator("dialog[open]").waitFor();
   if (!loading) await page.waitForFunction(() => !document.querySelector(".cloud-file-dialog__source-skeleton"));
   // The chooser moves focus to This device once it opened; a key pressed before that would reach the page.
-  await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
+  if (restored) await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
+  else await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
 };
 const status = (page: Page) => page.locator(".cloud-file-chooser__status").textContent();
 /** Where the footer buttons are; selecting and adding must not move them. */
@@ -393,7 +485,8 @@ describe("choosing files in a browser", () => {
         expect(await page.locator("dialog .k2b-dropzone").isVisible()).toBe(true);
         const box = await dialogBox(page);
         if (view === phone) expect(box).toEqual([0, 0, phone.width, phone.height]);
-        else expect(box).toEqual([(desktop.width - 680) / 2, (desktop.height - 480) / 2, 680, 480]);
+        // From 75 rem the chooser is 1040 × 640 px, with room for the preview beside the list.
+        else expect(box).toEqual([(desktop.width - 1040) / 2, (desktop.height - 640) / 2, 1040, 640]);
         // No source chosen yet: Add stays in its place, disabled.
         expect(await page.getByRole("button", { name: "Add", exact: true }).isDisabled()).toBe(true);
         let picker = page.waitForEvent("filechooser");
@@ -526,7 +619,14 @@ describe("choosing files in a browser", () => {
       expect(toolbar.top).toBe(firstSource.top);
       expect(filter.top).toBe(firstSource.top);
       expect(filter.height).toBe(firstSource.height);
-      expect(filter.right).toBe(12);
+      // The preview column stands right of the list; its frame starts on the first source's line and ends 12 px
+      // before the dialog edge, like the filter did before it.
+      const aside = (await boxIn(page, ".cloud-file-dialog__aside"))!;
+      const frameBox = (await boxIn(page, ".cloud-file-preview__frame"))!;
+      expect(aside.width).toBe(320);
+      expect(filter.right).toBe(aside.width + 12);
+      expect(frameBox.top).toBe(firstSource.top);
+      expect(frameBox.right).toBe(12);
       const firstRow = (await boxIn(page, 'dialog [role="gridcell"]'))!;
       expect(firstRow.height).toBe(48);
       expect(firstRow.top).toBe(toolbar.top + 36 + 12);
@@ -748,11 +848,13 @@ describe("choosing files in a browser", () => {
         expect(await dialogBox(page)).toEqual(frame);
 
         if (view === desktop) {
-          await page.getByRole("searchbox", { name: "Filter by name" }).fill("zzz");
+          await page.getByRole("searchbox", { name: "Filter this folder" }).fill("zzz");
           await page.getByText("Nothing matches “zzz”").waitFor();
           expect(queries.at(-1)).toEqual({ parent: "home", query: "zzz", limit: 50 });
           expect(await dialogBox(page)).toEqual(frame);
-          await page.getByRole("button", { name: "Clear filter" }).click();
+          // The empty state has no second action; the filter itself clears.
+          expect(await page.getByRole("button", { name: "Clear filter" }).count()).toBe(0);
+          await page.getByRole("searchbox", { name: "Filter this folder" }).fill("");
           await row(page, "notes.txt").waitFor();
         }
 
@@ -831,6 +933,149 @@ describe("choosing files in a browser", () => {
       await close();
     }
   }, 30_000);
+
+  test("a provider's own source opens where the person was and previews a PDF's page, an image, or the icon; Add reuses the read", async () => {
+    catalogApps = [drive, scans];
+    serverPlace = scanPlace("buero", "ablage");
+    placeWrites.length = 0;
+    reads.clear();
+    const { page, close } = await open(desktop);
+    try {
+      await attach(page, false, true);
+      await row(page, "scan.pdf").waitFor();
+      expect(await sourceNames(page)).toEqual(["This device", "Drive", "Scanner"]);
+      expect(await page.locator('dialog .cloud-file-dialog__source[aria-current="true"] i').getAttribute("class")).toBe("ti ti-scan");
+      expect(await page.locator(".cloud-file-chooser__crumbs li").allTextContents()).toEqual(["Scanner", "/Büro", `/${longNames.ablage}`]);
+      // The restored folder takes focus from This device, so the keyboard continues in the list.
+      expect(await focusedRow(page)).toContain("Intern");
+      // Nothing is read before the person uses the list.
+      await page.waitForTimeout(400);
+      expect(reads.size).toBe(0);
+      expect(await page.locator(".cloud-file-preview__frame").getAttribute("data-state")).toBe("empty");
+      const list = await boxIn(page, 'dialog [role="gridcell"]');
+
+      await row(page, "photo.png").click();
+      await page.waitForFunction(() => {
+        const image = document.querySelector<HTMLImageElement>('.cloud-file-preview__frame[data-state="image"] img');
+        return Boolean(image?.complete && image.naturalWidth === 1);
+      });
+      expect(await page.locator(".cloud-file-preview__name").textContent()).toBe("photo.png");
+      await row(page, "scan.pdf").click();
+      // The PDF whose bytes proved it a PDF reaches the shared PdfViewer; drawing pages is PdfViewer's own test, since
+      // this harness bundles no pdf.js engine.
+      await page.locator('.cloud-file-preview__frame[data-state="pdf"] .k2b-pdf-viewer').waitFor();
+      await row(page, "memo.txt").click();
+      await page.locator('.cloud-file-preview__frame[data-state="icon"]').waitFor();
+      // Previews never move the list or the footer.
+      expect(await boxIn(page, 'dialog [role="gridcell"]')).toEqual(list);
+      await page.waitForTimeout(400);
+      expect(Object.fromEntries(reads)).toEqual({ "scans:photo": 1, "scans:scan": 1 });
+
+      await page.getByRole("button", { name: "Add (3)" }).click();
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      const [files] = (await chosen(page)) as { name: string; type: string }[][];
+      expect(files!.map(({ name, type }) => [name, type])).toEqual([
+        ["scan.pdf", "application/pdf"],
+        ["photo.png", "image/png"],
+        ["memo.txt", "text/plain"],
+      ]);
+      // The previewed files were not read a second time.
+      expect(Object.fromEntries(reads)).toEqual({ "scans:photo": 1, "scans:scan": 1, "scans:memo": 1 });
+      // The chooser closed where it opened, so nothing new is remembered.
+      expect(placeWrites).toEqual([]);
+    } finally {
+      serverPlace = null;
+      await close();
+    }
+  }, 60_000);
+
+  test("a deep path stays on one line and scrolls to its end under a fade; the search finds files in subfolders with their place", async () => {
+    catalogApps = [scans];
+    for (const view of [desktop, phone]) {
+      serverPlace = scanPlace("buero", "ablage", "intern", "info", "schilder");
+      reads.clear();
+      const { page, close } = await open(view);
+      try {
+        await attach(page, false, true);
+        await row(page, "Hinweis Eingang.pdf").waitFor();
+        await settled(page);
+        const path = await page.locator(".cloud-file-chooser__crumbs ol").evaluate((list) => {
+          const last = list.lastElementChild!.getBoundingClientRect();
+          const box = list.getBoundingClientRect();
+          return {
+            overflows: list.scrollWidth > list.clientWidth,
+            atEnd: Math.abs(list.scrollWidth - list.clientWidth - list.scrollLeft) <= 1,
+            fade: list.getAttribute("data-scroll-fade"),
+            lastInside: last.right <= box.right + 0.5,
+            fitsRow: box.height <= 36,
+          };
+        });
+        expect(path).toEqual({ overflows: true, atEnd: true, fade: "top", lastInside: true, fitsRow: true });
+        // The levels above are blue text links; the current level is plain text. No Up arrow.
+        expect(await page.locator('.cloud-file-chooser__crumbs [aria-current="location"]').textContent()).toBe(longNames.schilder);
+        expect(await page.locator(".cloud-file-chooser__crumbs .k2b-button").first().getAttribute("data-variant")).toBe("link");
+        expect(await page.locator('.cloud-file-chooser__toolbar [aria-label="Up"]').count()).toBe(0);
+        // Scrolled back to the start, the fade moves to the end.
+        await page.locator(".cloud-file-chooser__crumbs ol").evaluate((list) => {
+          list.scrollLeft = 0;
+        });
+        await page.waitForFunction(
+          () => document.querySelector(".cloud-file-chooser__crumbs ol")?.getAttribute("data-scroll-fade") === "bottom",
+        );
+
+        await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: longNames.ablage }).click();
+        await row(page, "scan.pdf").waitFor();
+        if (view === phone) {
+          // A phone shows no preview column and reads nothing for it.
+          expect(await page.locator(".cloud-file-dialog__aside").count()).toBe(0);
+          await row(page, "scan.pdf").click();
+          await page.waitForTimeout(500);
+          expect(reads.size).toBe(0);
+          await page.getByRole("button", { name: "Search here and in subfolders" }).click();
+        }
+        await page.getByRole("searchbox", { name: "Search here and in subfolders" }).fill("hinweis");
+        await row(page, "Hinweis Eingang.pdf").waitFor();
+        expect(queries.at(-1)).toMatchObject({ parent: "ablage", query: "hinweis", scope: "tree" });
+        expect(await page.locator('dialog [role="gridcell"]').first().textContent()).toContain(
+          `Intern / ${longNames.info} / ${longNames.schilder}`,
+        );
+      } finally {
+        serverPlace = null;
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test("by keyboard, the preview follows the focused row and a path link opens its folder, which the chooser remembers", async () => {
+    catalogApps = [scans];
+    serverPlace = scanPlace("buero", "ablage");
+    placeWrites.length = 0;
+    const { page, close } = await open(desktop);
+    try {
+      await attach(page, false, true);
+      await row(page, "scan.pdf").waitFor();
+      await page.waitForFunction(() => document.activeElement?.matches('[role="gridcell"]'));
+      await page.keyboard.press("ArrowDown");
+      expect(await focusedRow(page)).toContain("scan.pdf");
+      await page.locator('.cloud-file-preview__frame[data-state="pdf"] .k2b-pdf-viewer').waitFor();
+      await page.keyboard.press("ArrowDown");
+      await page.locator('.cloud-file-preview__frame[data-state="image"]').waitFor();
+      await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: "Büro" }).focus();
+      await page.keyboard.press("Enter");
+      await row(page, longNames.ablage).waitFor();
+      await page.keyboard.press("Escape");
+      await page.locator("dialog[open]").waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.activeElement?.id === "attach");
+      expect(placeWrites).toEqual([scanPlace("buero")]);
+      // The same page opens there next time without asking the server again.
+      await attach(page, false, true);
+      await row(page, longNames.ablage).waitFor();
+      expect(await page.locator(".cloud-file-chooser__crumbs li").allTextContents()).toEqual(["Scanner", "/Büro"]);
+    } finally {
+      serverPlace = null;
+      await close();
+    }
+  }, 60_000);
 
   test("a visitor the catalog refuses gets the device's file dialog directly, with no error", async () => {
     catalogApps = [drive];

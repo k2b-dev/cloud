@@ -1,6 +1,6 @@
 import { timed } from "@k2b/stdlib/solid";
-import { announce, Button, IconButton, Placeholder, TextInput } from "@k2b/ui";
-import { batch, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
+import { announce, Breadcrumbs, Button, createDelayedLoading, IconButton, Placeholder, TextInput } from "@k2b/ui";
+import { batch, createEffect, createMemo, createSignal, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import { FILE_PROVIDER_CONTEXT_MAX_REFS, type FileProviderContext, type FileProviderEntry } from "../contracts/file-provider";
 import type { fileChooserMessages } from "./file-chooser-messages";
@@ -8,7 +8,7 @@ import { FileDialogSkeletonRows } from "./file-dialog";
 import { type FileProviderCaller, FileProviderError, type FileProviderSource, listProviderFolder } from "./file-providers";
 
 type Messages = ReturnType<typeof fileChooserMessages.resolve>["t"];
-type Crumb = { id?: string; name: string };
+export type Crumb = { id?: string; name: string };
 /** Where the dialog is: a folder of one provider, or no provider when `null`. */
 export type FolderLocation = { provider: FileProviderSource; trail: readonly Crumb[] } | null;
 
@@ -19,9 +19,13 @@ export const FOLDER_ENTRY_LIMIT = 500;
 
 /**
  * Browsing one provider's folders, shared by choosing and saving: the location, the name filter, the folder's pages,
- * and its load state. `settled` runs after a folder has loaded or the dialog left the provider, so the dialog can move
- * focus. When a provider's root answers 403 or 404, the provider is gone for this person: `gone` receives it and
- * the dialog leaves it, instead of showing a folder error.
+ * and its load state. `settled` runs after a folder has loaded and shows, or the dialog left the provider, so the dialog
+ * can move focus. When a provider's root answers 403 or 404, the provider is gone for this person: `gone` receives it
+ * and the dialog leaves it, instead of showing a folder error. With `tree`, the name filter of a provider that supports
+ * it searches the folders below as well.
+ *
+ * Placeholder rows show only when a folder takes longer than 200 ms and then stay at least 300 ms; until then a new
+ * filter keeps the previous results in place, so typing never flickers.
  */
 export const createProviderFolder = (props: {
   caller: () => FileProviderCaller;
@@ -29,6 +33,9 @@ export const createProviderFolder = (props: {
   settled: () => void;
   gone: (provider: FileProviderSource) => void;
   context?: FileProviderContext | ((signal: AbortSignal) => Promise<FileProviderContext>);
+  tree?: boolean;
+  /** A deeper folder answered 403 or 404; return true when the dialog handled it, such as by opening the root instead. */
+  missing?: (provider: FileProviderSource) => boolean;
 }) => {
   const [location, setLocation] = createSignal<FolderLocation>(null);
   const [filter, setFilter] = createSignal("");
@@ -62,14 +69,25 @@ export const createProviderFolder = (props: {
   onCleanup(() => request?.abort());
 
   const folderName = () => location()?.trail.at(-1)?.name ?? props.t().sources;
+  /** Whether the open provider searches below the folder; the filter says which it does. */
+  const searchesTree = () => props.tree === true && location()?.provider.tree === true;
+  const placeholder = createDelayedLoading(() => status() === "loading");
+  // Focus waits for the rows: a folder that loaded while its placeholder still holds settles once the rows show.
+  const [settling, setSettling] = createSignal(false);
+  createEffect(() => {
+    if (!settling() || placeholder()) return;
+    setSettling(false);
+    props.settled();
+  });
 
-  const load = async (more = false) => {
+  /** `keep` leaves the shown entries in place until the new page arrives, as a new filter does. */
+  const load = async (more = false, keep = false) => {
     const current = location();
     if (!current) return;
     request?.abort();
     const pending = new AbortController();
     request = pending;
-    if (!more) {
+    if (!more && !keep) {
       batch(() => {
         setItems([]);
         setNext(null);
@@ -84,17 +102,22 @@ export const createProviderFolder = (props: {
       setContextual(context !== undefined);
       let cursor = more ? (next() ?? undefined) : undefined;
       let followed = 0;
+      let first = !more;
       for (;;) {
         const page = await listProviderFolder(
           current.provider,
-          { parent: current.trail.at(-1)?.id, query: query() || undefined, cursor, context },
+          { parent: current.trail.at(-1)?.id, query: query() || undefined, cursor, context, tree: props.tree },
           props.caller(),
           pending.signal,
         );
         if (pending.signal.aborted) return;
+        // Kept entries give way to the first page of the new answer, in the same update.
+        const replace = first && keep;
+        first = false;
         batch(() => {
           // An ID names one entry: a repeated one, on this page or an earlier one, is left out.
-          setItems((previous) => {
+          setItems((shown) => {
+            const previous = replace ? [] : shown;
             const seen = new Set(previous.map((entry) => entry.id));
             const fresh = page.items.filter((entry) => {
               if (seen.has(entry.id)) return false;
@@ -113,16 +136,19 @@ export const createProviderFolder = (props: {
       setStatus("ready");
       if (!more) {
         announce(props.t().folderAnnounced({ folder: folderName(), count: items().length, more: Boolean(next()) }));
-        props.settled();
+        setSettling(true);
       }
     } catch (cause) {
       if (pending.signal.aborted) return;
       const failure =
         cause instanceof FileProviderError ? cause : new FileProviderError("INTERNAL", cause instanceof Error ? cause.message : "", 500);
-      if (!more && current.trail.length === 1 && (failure.status === 403 || failure.status === 404)) {
-        navigate(null);
-        props.gone(current.provider);
-        return;
+      if (!more && (failure.status === 403 || failure.status === 404)) {
+        if (current.trail.length === 1) {
+          navigate(null);
+          props.gone(current.provider);
+          return;
+        }
+        if (props.missing?.(current.provider)) return;
       }
       setError(failure);
       setStatus(more ? "ready" : "error");
@@ -131,7 +157,7 @@ export const createProviderFolder = (props: {
 
   const applyQuery = (value: string) => {
     setQuery(value.trim());
-    void load();
+    void load(false, true);
   };
   const { debouncedFn: applyFilter, cancel: cancelFilter } = timed.debounce(applyQuery, 250);
   onCleanup(cancelFilter);
@@ -142,12 +168,19 @@ export const createProviderFolder = (props: {
   };
   const changeFilter = (value: string) => {
     setFilter(value);
-    if (location()) applyFilter(value);
+    if (!location()) return;
+    // A result for what was typed before is no longer wanted: stop it now and keep the shown rows until the next one.
+    if (status() === "loading" && items().length > 0) {
+      request?.abort();
+      setStatus("ready");
+    }
+    applyFilter(value);
   };
 
   const navigate = (target: FolderLocation) => {
     cancelFilter();
     request?.abort();
+    setSettling(false);
     batch(() => {
       setFilter("");
       setQuery("");
@@ -188,6 +221,8 @@ export const createProviderFolder = (props: {
 
   return {
     location,
+    searchesTree,
+    placeholder,
     contextual,
     filter,
     query,
@@ -211,56 +246,36 @@ export const createProviderFolder = (props: {
 export type ProviderFolder = ReturnType<typeof createProviderFolder>;
 
 /**
- * The path row with Up and the name filter. The path starts at the provider, so Up stops there. On a phone the filter
- * hides behind a button and takes the path's place while it is open.
+ * The path row and the name filter. The path starts at the provider; every level above the open folder is a link. On a
+ * phone the filter hides behind a button and takes the path's place while it is open. The filter says whether it
+ * searches the subfolders too.
  */
 export function FolderToolbar(props: { folder: ProviderFolder; t: () => Messages; disabled: boolean }): JSX.Element {
   const [searching, setSearching] = createSignal(false);
-  const top = () => (props.folder.location()?.trail.length ?? 1) <= 1;
   const toggleSearch = () => {
     if (searching()) props.folder.clearFilter();
     setSearching(!searching());
   };
+  const label = () => (props.folder.searchesTree() ? props.t().searchBelow : props.t().filter);
+  const icon = () => (props.folder.searchesTree() ? "ti ti-search" : "ti ti-filter");
   return (
     <div class="cloud-file-chooser__toolbar" data-searching={searching() ? "true" : undefined}>
-      <nav class="cloud-file-chooser__crumbs" aria-label={props.t().breadcrumbs}>
-        <IconButton size="sm" variant="ghost" label={props.t().up} disabled={top() || props.disabled} onClick={props.folder.up}>
-          <i class="ti ti-arrow-up" aria-hidden="true" />
-        </IconButton>
-        <ol>
-          <For each={props.folder.location()?.trail ?? []}>
-            {(crumb, index) => {
-              const last = () => index() === (props.folder.location()?.trail.length ?? 0) - 1;
-              return (
-                <li>
-                  <Show when={index() > 0}>
-                    <span aria-hidden="true">/</span>
-                  </Show>
-                  <Button
-                    size="sm"
-                    variant={last() ? "subtle" : "text"}
-                    aria-current={last() ? "location" : undefined}
-                    disabled={props.disabled}
-                    onClick={() => {
-                      const current = props.folder.location();
-                      if (current && !last())
-                        props.folder.navigate({ provider: current.provider, trail: current.trail.slice(0, index() + 1) });
-                    }}
-                  >
-                    {crumb.name}
-                  </Button>
-                </li>
-              );
-            }}
-          </For>
-        </ol>
-      </nav>
+      <Breadcrumbs
+        class="cloud-file-chooser__crumbs"
+        label={props.t().breadcrumbs}
+        items={(props.folder.location()?.trail ?? []).map((crumb) => ({ label: crumb.name }))}
+        disabled={props.disabled}
+        onSelect={(index: number) => {
+          const current = props.folder.location();
+          if (current) props.folder.navigate({ provider: current.provider, trail: current.trail.slice(0, index + 1) });
+        }}
+      />
       <TextInput
         class="cloud-file-chooser__filter"
         type="search"
-        icon="ti ti-filter"
-        aria-label={props.t().filter}
-        placeholder={props.t().filter}
+        icon={icon()}
+        aria-label={label()}
+        placeholder={label()}
         maxLength={200}
         disabled={props.disabled}
         value={props.folder.filter}
@@ -269,8 +284,8 @@ export function FolderToolbar(props: { folder: ProviderFolder; t: () => Messages
         onClear={props.folder.clearFilter}
       />
       <span class="cloud-file-chooser__filter-toggle">
-        <IconButton size="sm" variant="ghost" label={searching() ? props.t().closeFilter : props.t().filter} onClick={toggleSearch}>
-          <i class={searching() ? "ti ti-x" : "ti ti-filter"} aria-hidden="true" />
+        <IconButton size="sm" variant="ghost" label={searching() ? props.t().closeFilter : label()} onClick={toggleSearch}>
+          <i class={searching() ? "ti ti-x" : icon()} aria-hidden="true" />
         </IconButton>
       </span>
     </div>
@@ -280,19 +295,25 @@ export function FolderToolbar(props: { folder: ProviderFolder; t: () => Messages
 /**
  * One folder in the dialog: placeholder rows while it loads, the error with Try again or Up, the empty folder, no
  * matches, or `children` with Load more below while the folder continues. Past `FOLDER_ENTRY_LIMIT` entries, a hint to
- * filter takes the place of Load more.
+ * filter takes the place of Load more. Before the placeholder shows, a new filter keeps the previous rows and a new
+ * folder keeps its place empty.
  */
 export function FolderContents(props: {
   folder: ProviderFolder;
   t: () => Messages;
   noMatchingFiles?: string;
+  /** The person pointed at or pressed a key in the list, as opposed to focus the dialog moved there. */
+  onUse?: () => void;
   children: JSX.Element;
 }): JSX.Element {
   const folder = props.folder;
   return (
     <Switch>
-      <Match when={folder.status() === "loading"}>
+      <Match when={folder.placeholder()}>
         <FileDialogSkeletonRows label={props.t().loading} />
+      </Match>
+      <Match when={folder.status() === "loading" && folder.items().length === 0}>
+        <div class="cloud-file-dialog__list" aria-busy="true" />
       </Match>
       <Match when={folder.status() === "error" && folder.errorView()}>
         {(view) => (
@@ -334,21 +355,28 @@ export function FolderContents(props: {
             </Show>
           }
         >
+          {/* The filter's own × clears it; the state needs no second action. */}
           <Placeholder
             variant="panel"
             class="cloud-file-chooser__state"
-            icon="ti ti-filter-off"
-            title={props.t().noMatches({ query: folder.query() })}
-            action={
-              <Button size="sm" variant="secondary" onClick={folder.clearFilter}>
-                {props.t().clearFilter}
-              </Button>
+            icon={folder.searchesTree() ? "ti ti-search-off" : "ti ti-filter-off"}
+            title={
+              folder.searchesTree() ? props.t().noMatchesBelow({ query: folder.query() }) : props.t().noMatches({ query: folder.query() })
             }
           />
         </Show>
       </Match>
       <Match when={true}>
-        <div class="cloud-file-dialog__list">
+        <div
+          class="cloud-file-dialog__list"
+          aria-busy={folder.status() === "loading" ? "true" : undefined}
+          ref={(element) => {
+            // Listens only: the rows inside own every interaction, the list just notes that the person used them.
+            const use = () => props.onUse?.();
+            element.addEventListener("pointerdown", use);
+            element.addEventListener("keydown", use);
+          }}
+        >
           {props.children}
           <div class="cloud-file-chooser__more">
             <Show when={folder.error()}>
@@ -359,7 +387,13 @@ export function FolderContents(props: {
                 when={folder.items().length < FOLDER_ENTRY_LIMIT}
                 fallback={<span class="cloud-file-chooser__limit">{props.t().useFilter({ count: FOLDER_ENTRY_LIMIT })}</span>}
               >
-                <Button variant="link" size="sm" loading={folder.status() === "more"} onClick={() => void folder.load(true)}>
+                <Button
+                  variant="link"
+                  size="sm"
+                  loading={folder.status() === "more"}
+                  disabled={folder.status() === "loading"}
+                  onClick={() => void folder.load(true)}
+                >
                   {folder.error() ? props.t().retry : props.t().loadMore}
                   <i class={folder.error() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                 </Button>

@@ -9,8 +9,8 @@ import {
   capabilityResultSchema,
   FILE_PROVIDER_NAME_CONFLICT,
   FileProviderListDataSchema,
-  FileProviderListInputSchema,
   FileProviderSaveDataSchema,
+  FileProviderTreeListInputSchema,
   fileProviderIssues,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
@@ -134,6 +134,13 @@ mock.module("./service", () => ({
       if (!ref) throw new MockFilesError("not_found", 404);
       return { base: { ...base, id: ref.baseId }, writable: folderWritable, items, next };
     },
+    folderSearch: async (_actor: unknown, input: { id: string; q: string; after?: string; pageSize: number }) => {
+      searches.push({ ...input, folder: true });
+      if (serviceFailure) throw serviceFailure;
+      const ref = ids.get(input.id);
+      if (!ref) throw new MockFilesError("not_found", 404);
+      return { base: { ...base, id: ref.baseId }, path: ref.path, writable: folderWritable, items, next, query: input.q, scope: "tree" };
+    },
     folderLocation: async (_actor: unknown, id: string) => {
       const ref = ids.get(id);
       if (!ref) throw new MockFilesError("not_found", 404);
@@ -228,6 +235,7 @@ afterEach(() => {
   downloadFailure = null;
   uploadInputs.length = 0;
   folderCalls.length = 0;
+  searches.length = 0;
   folderWritable = true;
   baseItems = null;
   baseIssues = [];
@@ -683,7 +691,7 @@ for (const [failure, expected] of [
 
 describe("Files as a file provider", () => {
   const listProvider = (input: Record<string, unknown>, caller = context) =>
-    filesCapabilities.queries["provider.list"].run(FileProviderListInputSchema.parse(input), caller);
+    filesCapabilities.queries["provider.list"].run(FileProviderTreeListInputSchema.parse(input), caller);
   const modified = "2026-09-19T08:30:00.123456789Z";
 
   test("Files declares itself as a file provider that matches the shared contract", async () => {
@@ -769,6 +777,65 @@ describe("Files as a file provider", () => {
     });
     expect(capabilityResultSchema(FileProviderListDataSchema).safeParse(result.data).success).toBe(true);
     await expect(listProvider({ parent: "unknown" })).rejects.toMatchObject({ code: "not_found", status: 404 });
+  });
+
+  test("a tree search below a folder finds names in every folder below it, each with its location", async () => {
+    ids.set("folder-id", { baseId: "base", path: "Intern" });
+    folderWritable = true;
+    next = "hits-2";
+    items = [
+      { name: "Hinweis.pdf", path: "Intern/Info-Blätter/Schilder/Hinweis.pdf", directory: false, size: 4, modified },
+      { name: "Hinweise", path: "Intern/Hinweise", directory: true, size: 0, modified },
+    ];
+    const result = await listProvider({ parent: "folder-id", query: "  hinweis a b c d e f g h i ", scope: "tree", limit: 20 });
+    if (!result.ok) throw new Error("expected search page");
+    // Filegate takes at most eight words; the page holds at most the requested limit.
+    expect(searches).toEqual([
+      { id: "folder-id", q: "hinweis a b c d e f g", after: undefined, pageSize: 20, signal: context.signal, folder: true },
+    ]);
+    expect(result.data.data.writable).toBe(true);
+    expect(result.data.data.next).toBe("hits-2");
+    expect(result.data.data.items.map((item) => [item.name, "location" in item ? item.location : undefined])).toEqual([
+      ["Hinweis.pdf", "Info-Blätter / Schilder"],
+      ["Hinweise", undefined],
+    ]);
+    expect(capabilityResultSchema(FileProviderListDataSchema).safeParse(result.data).success).toBe(true);
+    // Without a query, or with the default scope, the folder page answers as before.
+    await listProvider({ parent: "folder-id", scope: "tree" });
+    await listProvider({ parent: "folder-id", query: "hinweis" });
+    expect(searches).toHaveLength(1);
+    expect(folderCalls).toHaveLength(2);
+  });
+
+  test("a tree search at the root walks the storage bases one page at a time and names the base in each location", async () => {
+    const home = { ...base, id: "cloud:users:me", name: "alice" };
+    const team = { ...base, id: "cloud:groups:a", name: "alpha", kind: "groups" as const };
+    baseItems = [team, home];
+    items = [{ name: "plan.pdf", path: "Projekte/plan.pdf", directory: false, size: 4, modified }];
+    next = null;
+    const first = await listProvider({ query: "plan", scope: "tree" });
+    if (!first.ok) throw new Error("expected first base");
+    expect(first.data.data.items.map((item) => ("location" in item ? item.location : undefined))).toEqual(["Personal / Projekte"]);
+    expect(first.data.data.next).toBe("t1");
+    next = "inner";
+    const second = await listProvider({ query: "plan", scope: "tree", cursor: "t1" });
+    if (!second.ok) throw new Error("expected second base");
+    expect(second.data.data.items.map((item) => ("location" in item ? item.location : undefined))).toEqual(["alpha / Projekte"]);
+    expect(second.data.data.next).toBe("t1:inner");
+    expect(searches.map((input) => [input.baseId, input.after])).toEqual([
+      ["cloud:users:me", undefined],
+      ["cloud:groups:a", undefined],
+    ]);
+    await listProvider({ query: "plan", scope: "tree", cursor: "t1:inner" });
+    expect(searches.at(-1)).toMatchObject({ baseId: "cloud:groups:a", after: "inner" });
+    await expect(listProvider({ query: "plan", scope: "tree", cursor: "t7" })).rejects.toMatchObject({
+      code: "cursor_invalid",
+      status: 409,
+    });
+    await expect(listProvider({ query: "plan", scope: "tree", cursor: "2" })).rejects.toMatchObject({
+      code: "cursor_invalid",
+      status: 409,
+    });
   });
 
   test("content.read reports the media type of the file name", async () => {
