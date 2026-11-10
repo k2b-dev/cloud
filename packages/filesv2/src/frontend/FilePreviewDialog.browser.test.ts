@@ -561,13 +561,13 @@ describe("file preview dialog in a browser", () => {
     const tab = await open(desktop);
     try {
       await show(tab, "Report.pdf");
-      await tab.waitForSelector(".k2b-content-pdf-preview__frame");
+      await tab.waitForSelector('.k2b-pdf-viewer:is([data-state="shown"], [data-state="undrawable"])');
       await settle(tab);
       expect(await actionNames(tab)).toEqual(["Open in new tab", "Download", "close dialog"]);
       expect(await tab.getAttribute('[aria-label="Open in new tab"]', "href")).toBe("/app/filesv2/pdf/personal/Summer%20party/Report.pdf");
       expect(await tab.$$eval(".k2b-panel-dialog__body .k2b-button", (buttons) => buttons.length)).toBe(0);
       const body = await box(tab, ".k2b-panel-dialog__body");
-      const frame = await box(tab, ".k2b-content-pdf-preview__frame");
+      const frame = await box(tab, ".k2b-pdf-viewer");
       expect(frame.height).toBeGreaterThan(body.height - 2 * 24);
     } finally {
       await tab.context().close();

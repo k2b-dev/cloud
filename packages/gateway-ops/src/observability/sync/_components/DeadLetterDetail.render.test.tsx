@@ -41,9 +41,10 @@ test("dead-letter detail renders complete identifiers and escaped, selectable bo
   expect(html).toContain("&lt;script");
   expect(html).not.toContain('<script>alert("payload")</script>');
   expect(html).toContain("/admin/observability/nats/sync?app=mail");
-  // K1 outline: kind line with state, properties, the error, then payload and identifiers under "More about this message".
-  const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
-  expect(kind).toContain("Dead letter");
+  // K1 outline: the name, its state below it, properties, the error, then payload and identifiers under "More about this message".
+  expect(html.indexOf("<h2>")).toBeLessThan(html.indexOf('class="k2b-detail-panel__kind"'));
+  const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("</header>"));
+  expect(kind).not.toContain("Dead letter");
   expect(kind).toContain("Failed");
   expect(html).toContain("<h2>handler_error</h2>");
   expect(html).not.toContain("k2b-section__icon");

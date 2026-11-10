@@ -1468,8 +1468,8 @@ html {
 }
 
 /* The panel is the one raised surface: its summary, groups, and sections are
-   separated by space and their headings, not by boxes of their own, and they
-   start where the header's title does. */
+   separated by space, their headings, and one hairline, not by boxes of their
+   own, and they start where the header's title does. */
 .k2b-ui
   :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
   :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
@@ -1496,8 +1496,19 @@ html {
   scrollbar-width: thin;
 }
 
+/* One subtle hairline separates the panel's topics: every section,
+   discussion, or group after the body's first element starts below it. A
+   group's own sections stay together without lines. Apps draw no line. */
+.k2b-ui
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
+  .k2b-detail-panel__body
+  > :is(.k2b-section, .k2b-detail-panel__group):not(:first-child) {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--k2b-border);
+}
+
 .k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
-  gap: 1.5rem;
+  gap: 1.25rem;
   padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
   scrollbar-width: thin;
 }
@@ -4387,6 +4398,11 @@ html[data-k2b-mobile-shell] .k2b-ui,
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.5rem;
+}
+
+/* A card icon stays centred on the taller title line. */
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card[data-card-icon] > .k2b-notice-card__icon {
+  height: 1.5rem;
 }
 
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading p,

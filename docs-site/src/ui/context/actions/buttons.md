@@ -198,7 +198,7 @@ an `xs` button. A tap area that only touches the control above still takes a
 one-pixel strip from its edge, so lines need a little more than that reach. On
 touch devices, @k2b/ui's own button rows that wrap or stack keep 0.625rem
 between lines: `DetailPanel` primary actions (also below the header's identity
-row), `PdfPreview` actions, settings group and collection actions, image input
+row), settings group and collection actions, image input
 actions, wrapping or vertical toolbars, and the chat composer's footer below its
 message field. `DetailPanel.Action` rows sit
 flush, so on touch devices each row grows to 44 px itself and its tap area

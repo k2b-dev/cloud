@@ -104,7 +104,8 @@ describe("Grids group and workflow inspectors", () => {
       }),
     );
     expectSharedPanel(html, "grids-group-detail-table1-[]");
-    expect(html).toContain('class="k2b-detail-panel__kind"><span>Group</span>');
+    // The group is the name; no type word stands above or below it.
+    expect(html).not.toContain('class="k2b-detail-panel__kind"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain("k2b-description-list");

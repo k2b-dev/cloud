@@ -365,7 +365,13 @@ const portableSections = [
         "virtual-feed",
         "VirtualFeed",
         "ti ti-timeline-event-text",
-        "Long feeds that load at both ends, stay at the end, and keep the reading position to the pixel.",
+        "Long feeds and work lists that load as they scroll, keep the reading position to the pixel, and keep group headings in view.",
+      ),
+      page(
+        "load-more",
+        "LoadMore",
+        "ti ti-arrow-bar-to-down",
+        "The edge of a list that loads more by itself, with a button, the busy state, and Try again in one steady row.",
       ),
       page(
         "message-rows",

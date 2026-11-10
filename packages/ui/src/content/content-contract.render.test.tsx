@@ -26,7 +26,7 @@ const { default: FileTree } = await import("./FileTree");
 const { default: LogEntriesTable } = await import("./LogEntriesTable");
 const { default: MarkdownView } = await import("./MarkdownView");
 const { Pagination } = await import("./Pagination");
-const { default: PdfPreview } = await import("./PdfPreview");
+const { default: PdfViewer } = await import("./PdfViewer");
 const { default: RangePicker } = await import("./RangePicker");
 const { default: StructuredDataPreview } = await import("./StructuredDataPreview");
 const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-parity.css")).text();
@@ -538,13 +538,18 @@ describe("@k2b/ui Cloud content contract", () => {
     );
   });
 
-  test("keeps the load-more sentinel observable without creating vertical overflow", () => {
-    expect(uiCss).toMatch(/\.k2b-data-table__sentinel \{[^}]*height: 1px[^}]*margin-top: -1px/s);
+  test("keeps the load-more edge one row of the same height in every state, gone once the list is complete", () => {
+    expect(uiCss).toMatch(/\.k2b-load-more \{[^}]*min-height: 2\.75rem/s);
+    expect(uiCss).toMatch(/\.k2b-load-more\[data-state="done"\] \{[^}]*min-height: 0;[^}]*padding: 0;/s);
+    // The reach strip reaches into the list ahead of the edge without adding scroll space or taking clicks.
+    expect(uiCss).toMatch(
+      /\.k2b-load-more__reach \{[^}]*position: absolute;[^}]*bottom: 0;[^}]*height: calc\(100% \+ var\(--k2b-load-more-reach\)\);[^}]*pointer-events: none;/s,
+    );
   });
 
-  test("keeps the load-more sentinel in view while a wide table is scrolled sideways", () => {
-    // The page-level observer only sees the end of a growing table when the sentinel is not clipped horizontally.
-    expect(uiCss).toMatch(/\.k2b-data-table__sentinel \{[^}]*position: sticky;[^}]*left: 0;[^}]*pointer-events: none;/s);
+  test("keeps the load-more edge in view while a wide table is scrolled sideways", () => {
+    // The page-level observer only sees the end of a growing table when the edge is not clipped horizontally.
+    expect(uiCss).toMatch(/\.k2b-load-more \{[^}]*position: sticky;[^}]*left: 0;/s);
   });
 
   test("composes a labelled professional DataTable panel without component-valued props", () => {
@@ -707,7 +712,7 @@ describe("@k2b/ui Cloud content contract", () => {
     const largeMarkdown = renderToString(() => createComponent(MarkdownView, { trustedHtml: "<h2>Result</h2>", headingScale: "large" }));
     const data = renderToString(() => createComponent(StructuredDataPreview, { data: { ok: true }, defaultMode: "raw", copy: true }));
     const pdf = renderToString(() =>
-      createComponent(PdfPreview, { request: async () => new Blob([], { type: "application/pdf" }), title: "Report" }),
+      createComponent(PdfViewer, { request: async () => new Blob([], { type: "application/pdf" }), title: "Report" }),
     );
 
     expect(compactMarkdown).toContain("k2b-content-markdown");
@@ -726,31 +731,31 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(contentCss).not.toMatch(/data-heading-scale="compact"[^}]*text-decoration:\s*underline/s);
     expect(data).toContain("View formatted");
     expect(data).toContain("k2b-content-structured-data__action");
-    expect(pdf).toContain("Open preview");
+    // An on-demand viewer waits for the person: one action in its empty state, no frame or toolbar of its own.
+    expect(pdf).toMatch(/class="k2b-pdf-viewer [^"]*"[^>]*data-state="idle"/);
     expect(pdf).toContain("Preview PDF");
+    expect(pdf).not.toContain("Open in new tab");
   });
 
-  test("renders an automatic PDF preview as loading until the browser takes over, with its link already usable", () => {
+  test("renders an automatic PDF viewer as loading before hydration, and a disabled one as waiting", () => {
     const request = async () => new Blob([], { type: "application/pdf" });
-    const auto = renderToString(() =>
-      createComponent(PdfPreview, { request, autoLoad: true, openHref: "/files/report.pdf", buttonLabel: "Retry", title: "Report" }),
-    );
-    const disabled = renderToString(() =>
-      createComponent(PdfPreview, { request, autoLoad: true, disabled: () => true, buttonLabel: "Retry", title: "Report" }),
-    );
+    const auto = renderToString(() => createComponent(PdfViewer, { request, autoLoad: true, open: "/files/report.pdf", title: "Report" }));
+    const address = renderToString(() => createComponent(PdfViewer, { data: "/files/report.pdf", title: "Report" }));
+    const disabled = renderToString(() => createComponent(PdfViewer, { request, autoLoad: true, disabled: true, title: "Report" }));
 
     // Nothing has failed before hydration: no retry action and no invitation to render, only the loading placeholder.
-    expect(auto).toMatch(
-      /<div [^>]*class="k2b-placeholder k2b-content-pdf-preview__placeholder[^"]*"[^>]*data-state="loading"[^>]*role="status"[^>]*>.*Loading\.\.\.<\/p><\/div>/,
-    );
-    expect(auto).not.toContain("Retry");
-    expect(auto).not.toContain("Render a PDF preview");
-    expect(auto).toMatch(/<a [^>]*href="\/files\/report\.pdf"[^>]*target="_blank"/);
-    // A disabled automatic preview never starts, so it keeps its idle state in the same placeholder.
+    for (const html of [auto, address]) {
+      expect(html).toMatch(
+        /<div [^>]*class="k2b-placeholder k2b-pdf-viewer__placeholder[^"]*"[^>]*data-state="loading"[^>]*role="status"[^>]*>.*Loading\.\.\.<\/p><\/div>/,
+      );
+      expect(html).not.toContain("Retry");
+      expect(html).not.toContain("Render a PDF preview");
+    }
+    // A disabled automatic viewer never starts, so it keeps its idle state in the same placeholder, without an action.
     expect(disabled).not.toContain("Loading...");
-    expect(disabled).toMatch(/class="k2b-placeholder k2b-content-pdf-preview__placeholder[^"]*"[^>]*data-state="empty"/);
+    expect(disabled).toMatch(/class="k2b-placeholder k2b-pdf-viewer__placeholder[^"]*"[^>]*data-state="empty"/);
     expect(disabled).toContain("Render a PDF preview");
-    expect(disabled).toContain("Retry");
+    expect(disabled).not.toContain("<button");
   });
 
   test("keeps DataTable density, alignment, sticky and footer geometry hooks", () => {
@@ -782,7 +787,7 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain('data-align="center"');
     expect(html).toContain('data-valign="top"');
     expect(html).toContain("k2b-data-table__fill");
-    expect(html).toContain("k2b-data-table__sentinel");
+    expect(html).toContain('class="k2b-load-more"');
     expect(html).toContain("k2b-data-table__cell-text");
     expect(html).toContain('scope="col"');
     expect(html.indexOf("<tbody")).toBeLessThan(html.indexOf("<tfoot"));

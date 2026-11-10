@@ -20,7 +20,15 @@ let server: ReturnType<typeof Bun.serve> | undefined;
 let origin: string;
 beforeAll(async () => {
   browser = await launchBrowser();
-  server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
+  server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const response = await app.fetch(request);
+      if (request.headers.has("x-server-geometry")) response.headers.set("content-security-policy", "script-src 'none'");
+      return response;
+    },
+  });
   origin = `http://127.0.0.1:${server.port}`;
 }, 120_000);
 afterAll(async () => {
@@ -269,12 +277,13 @@ test("both dashboards keep every panel in place in every state", async () => {
 // Geometry comes from the real server document. Keep hydration in open()/the
 // parity tests: starting every overview island is unrelated to these bounds.
 // A script-src 'none' policy keeps the document exactly the server markup while
-// test evaluation (settled, measurements) still runs.
+// test evaluation (settled, measurements) still runs. Set it in the fixture
+// server so navigation needs no Playwright fetch/fulfill round trip.
 const openServerGeometry = async (width: number, height: number, path: string) => {
-  const page = await browser!.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
-  await page.route(`${origin}${path}`, async (route) => {
-    const response = await route.fetch();
-    await route.fulfill({ response, headers: { ...response.headers(), "content-security-policy": "script-src 'none'" } });
+  const page = await browser!.newPage({
+    viewport: { width, height },
+    reducedMotion: "reduce",
+    extraHTTPHeaders: { "x-server-geometry": "true" },
   });
   const response = await page.goto(`${origin}${path}`, { waitUntil: "load" });
   expect(response!.ok()).toBe(true);
@@ -288,22 +297,17 @@ for (const width of [390, 800, 1440, 1920]) {
       const { page, response } = await openServerGeometry(width, 1000, path);
       const errors = pageErrors(page);
       try {
-        const selector = ".k2b-chart__svg > svg[data-calendar]";
+        // Extract in Bun; normalize only the SVG fragment in the browser, not the whole overview again.
+        const fragment = (await response.text()).match(/<svg\b[^>]*\bdata-calendar="true"[^>]*>[\s\S]*?<\/svg>/)?.[0];
+        expect(fragment, path).toBeDefined();
         const serverSvg = await page.evaluate(
-          (html) => new DOMParser().parseFromString(html, "text/html").querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
-          await response!.text(),
+          (html) => new DOMParser().parseFromString(html!, "text/html").querySelector("svg")!.outerHTML,
+          fragment,
         );
-        expect(
-          await page
-            .locator(selector)
-            .first()
-            .evaluate((e) => e.outerHTML),
-        ).toBe(serverSvg);
-        // Native `:has()`: Playwright's `has` filter matches in page script across every chart on the overview, which
-        // took seconds in WebKit for the same element (#3021).
-        const calendar = page.locator(".k2b-chart:has(svg[data-calendar])").first();
-        expect(await calendar.count(), path).toBe(1);
-        const geometry = await calendar.evaluate((element) => {
+        // These are immediate reads of a settled server document. Native DOM queries avoid Playwright's
+        // locator polling and repeated document scans on the large overview (#3021).
+        const geometry = await page.evaluate(() => {
+          const element = document.querySelector(".k2b-chart:has(svg[data-calendar])")!;
           const viewport = element.getBoundingClientRect();
           const drawing = element.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
           const newest = element.querySelectorAll("[data-chart-datum] rect");
@@ -314,6 +318,7 @@ for (const width of [390, 800, 1440, 1920]) {
             .filter((b) => b.left >= label.right - 0.1)
             .sort((a, b) => a.left - b.left)[0]!;
           return {
+            svg: element.querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
             left: element.scrollLeft,
             gap: drawing.width > viewport.width ? drawing.right - viewport.right : drawing.left - viewport.left,
             lastRight: last.right - viewport.right,
@@ -327,6 +332,7 @@ for (const width of [390, 800, 1440, 1920]) {
             viewportHeight: viewport.height,
           };
         });
+        expect(geometry.svg, path).toBe(serverSvg);
         expect(Math.abs(geometry.gap), path).toBeLessThan(1);
         expect(geometry.labelGap, path).toBeGreaterThanOrEqual(0);
         expect(geometry.labelGap, path).toBeLessThanOrEqual(8);
@@ -354,38 +360,49 @@ for (const width of [390, 1440]) {
     const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
     const errors = pageErrors(page);
     try {
-      const pareto = page.locator('[data-chart-kind="pareto"]');
-      expect(await pareto.count()).toBe(1);
-      expect(await pareto.locator("svg > text").count()).toBeGreaterThan(0);
-      const ticks = await pareto.evaluate((e) => {
-        const b = e.getBoundingClientRect();
-        return Array.from(e.querySelectorAll("svg > text")).every((t) => {
-          const r = t.getBoundingClientRect();
-          return r.left >= b.left - 1 && r.right <= b.right + 1;
-        });
+      const geometry = await page.evaluate(() => {
+        const paretos = document.querySelectorAll('[data-chart-kind="pareto"]');
+        const pareto = paretos[0]!;
+        const ticks = [...pareto.querySelectorAll("svg > text")];
+        const bounds = pareto.getBoundingClientRect();
+        const treemaps = document.querySelectorAll('[data-chart-kind="treemap"]');
+        const treemap = treemaps[0]!;
+        return {
+          paretos: paretos.length,
+          ticks: ticks.length,
+          ticksInside: ticks.every((tick) => {
+            const box = tick.getBoundingClientRect();
+            return box.left >= bounds.left - 1 && box.right <= bounds.right + 1;
+          }),
+          treemaps: treemaps.length,
+          names: treemap.querySelectorAll("[data-treemap-name]").length,
+          values: treemap.querySelectorAll("[data-treemap-value]").length,
+          fits: [...treemap.querySelectorAll("[data-chart-datum]")].every((group) => {
+            const text = group.querySelector("[data-treemap-name]");
+            if (!text) return true;
+            const cell = group.querySelector("rect")!.getBoundingClientRect(),
+              name = text.getBoundingClientRect(),
+              value = group.querySelector("[data-treemap-value]")?.getBoundingClientRect();
+            return (
+              name.left >= cell.left - 1 &&
+              name.right <= cell.right + 1 &&
+              name.bottom <= cell.bottom + 1 &&
+              (!value ||
+                (name.bottom <= value.top &&
+                  value.left >= cell.left - 1 &&
+                  value.right <= cell.right + 1 &&
+                  value.bottom <= cell.bottom + 1))
+            );
+          }),
+        };
       });
-      expect(ticks).toBe(true);
-      const treemap = page.locator('[data-chart-kind="treemap"]');
-      expect(await treemap.count()).toBe(1);
-      expect(await treemap.locator("[data-treemap-name]").count()).toBeGreaterThan(0);
-      expect(await treemap.locator("[data-treemap-value]").count()).toBeGreaterThan(0);
-      const fits = await treemap.locator("[data-chart-datum]").evaluateAll((groups) =>
-        groups.every((g) => {
-          const text = g.querySelector("[data-treemap-name]");
-          if (!text) return true;
-          const cell = g.querySelector("rect")!.getBoundingClientRect(),
-            name = text.getBoundingClientRect(),
-            value = g.querySelector("[data-treemap-value]")?.getBoundingClientRect();
-          return (
-            name.left >= cell.left - 1 &&
-            name.right <= cell.right + 1 &&
-            name.bottom <= cell.bottom + 1 &&
-            (!value ||
-              (name.bottom <= value.top && value.left >= cell.left - 1 && value.right <= cell.right + 1 && value.bottom <= cell.bottom + 1))
-          );
-        }),
-      );
-      expect(fits).toBe(true);
+      expect(geometry.paretos).toBe(1);
+      expect(geometry.ticks).toBeGreaterThan(0);
+      expect(geometry.ticksInside).toBe(true);
+      expect(geometry.treemaps).toBe(1);
+      expect(geometry.names).toBeGreaterThan(0);
+      expect(geometry.values).toBeGreaterThan(0);
+      expect(geometry.fits).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -398,26 +415,32 @@ for (const width of [390, 1440]) {
     const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
     const errors = pageErrors(page);
     try {
-      // Native `:has()` as in the calendar test (#3021); the heading still names the card.
-      const card = page.locator('.ui-charts-card:has([data-chart-kind="sankey"])');
-      expect(await card.count()).toBe(1);
-      expect(await card.getByRole("heading").textContent()).toBe("Sankey");
-      const scroller = card.locator(".ui-charts-card__chart");
-      expect(await scroller.evaluate((e) => e.scrollLeft)).toBe(0);
-      const source = card.locator("[data-chart-datum]:has(rect)").first().locator("text");
-      expect(await source.textContent()).toContain("Clicked");
-      const viewport = await scroller.boundingBox(),
-        label = await source.boundingBox();
-      expect(label!.x).toBeGreaterThanOrEqual(viewport!.x);
-      expect(label!.x + label!.width).toBeLessThanOrEqual(viewport!.x + viewport!.width);
-      const inside = await card.locator("[data-chart-datum] text").evaluateAll((nodes) =>
-        nodes.every((e) => {
-          const b = (e as SVGGraphicsElement).getBBox(),
-            svg = e.closest("svg") as SVGSVGElement;
-          return b.x >= 0 && b.x + b.width <= svg.viewBox.baseVal.width;
-        }),
-      );
-      expect(inside).toBe(true);
+      const geometry = await page.evaluate(() => {
+        const cards = document.querySelectorAll('.ui-charts-card:has([data-chart-kind="sankey"])');
+        const card = cards[0]!;
+        const scroller = card.querySelector(".ui-charts-card__chart")!;
+        const source = card.querySelector("[data-chart-datum]:has(rect) text")!;
+        return {
+          cards: cards.length,
+          heading: card.querySelector("h1, h2, h3, h4, h5, h6, [role=heading]")!.textContent,
+          left: scroller.scrollLeft,
+          source: source.textContent,
+          viewport: scroller.getBoundingClientRect().toJSON(),
+          label: source.getBoundingClientRect().toJSON(),
+          inside: [...card.querySelectorAll<SVGGraphicsElement>("[data-chart-datum] text")].every((element) => {
+            const box = element.getBBox(),
+              svg = element.closest("svg")!;
+            return box.x >= 0 && box.x + box.width <= svg.viewBox.baseVal.width;
+          }),
+        };
+      });
+      expect(geometry.cards).toBe(1);
+      expect(geometry.heading).toBe("Sankey");
+      expect(geometry.left).toBe(0);
+      expect(geometry.source).toContain("Clicked");
+      expect(geometry.label.x).toBeGreaterThanOrEqual(geometry.viewport.x);
+      expect(geometry.label.x + geometry.label.width).toBeLessThanOrEqual(geometry.viewport.x + geometry.viewport.width);
+      expect(geometry.inside).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

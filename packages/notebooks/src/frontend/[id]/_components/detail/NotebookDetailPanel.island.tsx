@@ -984,7 +984,6 @@ export default function NotebookDetailPanel(props: Props) {
       <DetailPanel class="notebook-detail-panel">
         <DetailPanel.Header
           class="notebook-detail-panel-header"
-          kind={<span>{t().noteKind}</span>}
           title={noteTitle() || t().untitled}
           subtitle={metaLine()}
           menu={moreItems()}

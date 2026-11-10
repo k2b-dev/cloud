@@ -1,6 +1,22 @@
-import { type Accessor, createEffect, createRoot, createSignal, getOwner, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  For,
+  getOwner,
+  type JSX,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
+import { isServer } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useFeedMessages } from "./feed-messages";
+import { LoadMore } from "./LoadMore";
 
 /**
  * The tallest loaded window in px. Firefox renders an element taller than about 17.9 M px with a height of 0, so the
@@ -24,6 +40,11 @@ const ANNOUNCE_MS = 1_000;
 const HIGHLIGHT_MS = 1_600;
 /** In engines without `scrollend`, the reader's scroll has ended after this long without moving. */
 const QUIET_MS = 300;
+/**
+ * Estimated height in px of the items the server renders at the starting point: taller than the visible area of
+ * almost every screen, so the first picture is full. The browser lays out the rest.
+ */
+const SERVER_HEIGHT = 1_600;
 /** The longest wait for the `scrollend` of the reader's scroll after it last moved, or of a write of the feed. */
 const END_WAIT_MS = 1_000;
 
@@ -42,14 +63,58 @@ export type VirtualFeedController = {
   scrollToKey: (key: string, options?: VirtualFeedScrollOptions) => boolean;
   /**
    * Follows the end again, also when the reader's scroll still coasts. When newer items exist but are not loaded, it
-   * asks `onLoadNewest` for them first.
+   * asks `onLoadNewest` for them first. With `anchor="start"` it shows the last loaded item and follows nothing.
    */
   scrollToEnd: () => void;
-  /** Whether the reader is at the end and new items keep the feed there. */
+  /** Shows the first loaded item, also when the reader's scroll still coasts. */
+  scrollToStart: () => void;
+  /** Whether the reader is at the end and new items keep the feed there. Always false with `anchor="start"`. */
   isAtEnd: () => boolean;
 };
 
-export type VirtualFeedProps<T> = {
+/** A feed that opens at its newest item at the end and follows it, as a conversation does. */
+type EndAnchoredProps = {
+  /** Where the feed opens. `"end"` (the default) opens at the last item and follows new items there. */
+  anchor?: "end";
+  /** Older items exist that `items` does not contain yet. */
+  hasOlder?: boolean;
+  /** Newer items exist that `items` does not contain yet. */
+  hasNewer?: boolean;
+  /** Called near the start of the loaded items while `hasOlder` is true. Prepend the next older page to `items`. */
+  onLoadOlder?: () => unknown;
+  /** Called near the end of the loaded items while `hasNewer` is true. Append the next newer page to `items`. */
+  onLoadNewer?: () => unknown;
+  /** Called by "Jump to latest" while `hasNewer` is true. Replace `items` with the newest page. */
+  onLoadNewest?: () => unknown;
+  /** Called when the reader reaches or leaves the end. */
+  onEndChange?: (atEnd: boolean) => void;
+  hasMore?: never;
+  onLoadMore?: never;
+};
+
+/** A list that opens at its first item, such as an inbox: it loads more below and never follows the end. */
+type StartAnchoredProps = {
+  /**
+   * `"start"` opens at the first item and never follows the end. Items that arrive above keep the reading position
+   * and offer "New above". Read once, when the feed is created.
+   */
+  anchor: "start";
+  /** More items follow the loaded ones, as with `DataTable`. */
+  hasMore?: boolean;
+  /**
+   * Called near the end of the loaded items while `hasMore` is true. Append the next page to `items`. A rejected
+   * promise shows the error with "Try again" at the end of the list.
+   */
+  onLoadMore?: () => unknown;
+  hasOlder?: never;
+  hasNewer?: never;
+  onLoadOlder?: never;
+  onLoadNewer?: never;
+  onLoadNewest?: never;
+  onEndChange?: never;
+};
+
+export type VirtualFeedProps<T> = (EndAnchoredProps | StartAnchoredProps) & {
   /** Loaded items, oldest first. Replace the array to add, remove, or change items. */
   items: readonly T[];
   /** Stable, unique identity of an item across updates. */
@@ -67,20 +132,15 @@ export type VirtualFeedProps<T> = {
    * set, the first loaded item has no known predecessor and gets none.
    */
   separator?: (item: T, previous: T | undefined) => JSX.Element;
+  /**
+   * The separator of the group in view stays at the top of the visible area until the next one pushes it away, also
+   * when its own item is far above and no longer rendered.
+   */
+  stickySeparators?: boolean;
   /** Key of the first item the reader has not seen; a marker appears above it. */
   markerKey?: string | null;
   /** Text of that marker. Defaults to "New". */
   markerLabel?: string;
-  /** Older items exist that `items` does not contain yet. */
-  hasOlder?: boolean;
-  /** Newer items exist that `items` does not contain yet. */
-  hasNewer?: boolean;
-  /** Called near the start of the loaded items while `hasOlder` is true. Prepend the next older page to `items`. */
-  onLoadOlder?: () => unknown;
-  /** Called near the end of the loaded items while `hasNewer` is true. Append the next newer page to `items`. */
-  onLoadNewer?: () => unknown;
-  /** Called by "Jump to latest" while `hasNewer` is true. Replace `items` with the newest page. */
-  onLoadNewest?: () => unknown;
   /** Marks the feed as busy for assistive technology, for example during the first load. */
   busy?: boolean;
   /** Number of items in the whole feed when known. */
@@ -88,14 +148,16 @@ export type VirtualFeedProps<T> = {
   /** One-based position of `items[0]` in the whole feed when known. */
   firstPosition?: number;
   /**
-   * Count shown on "Jump to latest". Defaults to the new items added while the reader was away from the end, which
-   * excludes pages of older history loaded toward the end.
+   * Count shown on "Jump to latest", or on "New above" with `anchor="start"`. Defaults to the new items added while
+   * the reader was away from the end, which excludes pages of older history loaded toward the end; with
+   * `anchor="start"`, to the items added above the first loaded one since the reader was last at the start.
    */
   newCount?: number;
-  /** Text announced for new items added at the end, bundled per second. Return nothing to stay silent. */
+  /**
+   * Text announced for new items, bundled per second: added at the end, or above with `anchor="start"`. Return
+   * nothing to stay silent.
+   */
   announce?: (added: readonly T[]) => string | undefined;
-  /** Called when the reader reaches or leaves the end. */
-  onEndChange?: (atEnd: boolean) => void;
   /**
    * Called when the items in view change: the first and last item whose whole height is in view. An item taller
    * than the view counts while it covers the view. `null` while no item is in view.
@@ -140,6 +202,16 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let viewport!: HTMLDivElement;
   let feed!: HTMLDivElement;
   let log!: HTMLDivElement;
+  /** The load-more edge below the items of a feed that starts at the top. */
+  let tailBox: HTMLDivElement | undefined;
+  let stickyBox: HTMLDivElement | undefined;
+
+  // A feed that starts at the top never follows an edge: `stick` stays false and the anchor keeps the reading position.
+  const fromStart = untrack(() => props.anchor === "start");
+  const moreAbove = () => !fromStart && Boolean(props.hasOlder);
+  const moreBelow = () => Boolean(fromStart ? props.hasMore : props.hasNewer);
+  /** Height of the load-more edge below the items; the reader can scroll it into view. */
+  let tail = 0;
 
   // Layout: one size per item and prefix sums over the loaded window [lo, hi).
   let list: readonly T[] = [];
@@ -151,7 +223,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let dirtyFrom = 0;
 
   // Reading position: follow the end, or keep one item (index) at a pixel distance (delta) below the visible top.
-  let stick = true;
+  let stick = !fromStart;
   let anchor = { index: 0, delta: 0 };
   /** Key of the last item while no newer items existed; items appended after it are new. */
   let endKey: string | undefined;
@@ -208,11 +280,18 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const [tabStop, setTabStop] = createSignal(-1);
   // Known on the server too, so the empty slot never flashes for a feed that has items.
   const [count, setCount] = createSignal(untrack(() => props.items.length));
-  const [atEnd, setAtEnd] = createSignal(true);
+  const [atEnd, setAtEnd] = createSignal(!fromStart);
   const [unseen, setUnseen] = createSignal(0);
   const [highlighted, setHighlighted] = createSignal<string>();
   const [loadingOlder, setLoadingOlder] = createSignal(false);
   const [loadingNewer, setLoadingNewer] = createSignal(false);
+  /** The last load below failed; a feed that starts at the top shows it and waits for "Try again". */
+  const [failedBelow, setFailedBelow] = createSignal<string | null>(null);
+  /** The separator that stays at the top, and how far the next one pushes it up. */
+  const [sticky, setSticky] = createSignal<{ item: T; previous: T | undefined } | undefined>(undefined, {
+    equals: (a, b) => a?.item === b?.item && a?.previous === b?.previous,
+  });
+  const [stickyShift, setStickyShift] = createSignal(0);
 
   const estimate = (item: T) => {
     const size = props.estimateSize(item);
@@ -229,6 +308,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     dirtyFrom = length;
   };
   const total = () => offsets[hi - lo]!;
+  /** The farthest position the reader can scroll to, at this viewport height. */
+  const maxTop = (height: number) => Math.max(0, total() + tail - height);
   const offsetOf = (index: number) => offsets[Math.min(hi - lo, Math.max(0, index - lo))]!;
   /** The loaded item whose bottom edge lies below `y`. */
   const indexAt = (y: number) => {
@@ -248,20 +329,29 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   };
   const logicalTop = () => viewport.scrollTop + deferred;
   const setStick = (value: boolean) => {
+    // A feed that starts at the top follows no edge.
+    if (fromStart) value = false;
     // The anchor is not maintained while following the end; leaving the end keeps what is visible now.
     if (stick && !value && hi > lo) anchor = anchorAt(logicalTop());
     stick = value;
     if (value) setUnseen(0);
     if (atEnd() === value) return;
     setAtEnd(value);
-    props.onEndChange?.(value);
+    if (!fromStart) props.onEndChange?.(value);
   };
   /**
    * Whether `top` shows the end. It is judged in the geometry the position was last applied to: a viewport resize
    * not yet handled, and items appended while the reader scrolls away from the end, do not count yet.
    */
   const reachesEnd = (top: number) =>
-    hi === list.length && !props.hasNewer && (appendedFrom >= 0 ? offsetOf(appendedFrom) : total()) - (top + lastHeight) <= END_TOLERANCE;
+    !fromStart &&
+    hi === list.length &&
+    !moreBelow() &&
+    (appendedFrom >= 0 ? offsetOf(appendedFrom) : total()) - (top + lastHeight) <= END_TOLERANCE;
+  /** The reader of a feed that starts at the top sees its first item: what was new above is seen. */
+  const noteStart = (top: number) => {
+    if (fromStart && lo === 0 && top <= END_TOLERANCE) setUnseen(0);
+  };
 
   const deferring = () => fingers.size > 0 || scrolling;
   /**
@@ -272,7 +362,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const mayDefer = (top: number, physicalTop?: number) => deferring() && Math.min(physicalTop ?? viewport.scrollTop, top) > OVERSCAN;
   /** Scrolls to `target`, within what the layout can reach, and returns the position the reader gets. */
   const writeTop = (target: number, immediate: boolean, height: number) => {
-    const next = Math.min(Math.max(0, total() - height), Math.max(0, target));
+    const next = Math.min(maxTop(height), Math.max(0, target));
     const from = viewport.scrollTop;
     if (!immediate && mayDefer(next, from)) {
       // The rows move instead; the scroll range stays the same, so the engine clamps nothing.
@@ -312,6 +402,63 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     props.onVisibleChange(first < 0 ? null : { first: list[first]!, last: list[last]! });
   };
 
+  /** Whether an item shows a separator. Cached per item and predecessor, which are all that a separator reads. */
+  const heads = new Map<string, { item: T; previous: T | undefined; head: boolean }>();
+  const isHead = (index: number) => {
+    if (index === 0 && moreAbove()) return false;
+    const key = keys[index]!;
+    const item = list[index]!;
+    const previous = list[index - 1];
+    const known = heads.get(key);
+    if (known && known.item === item && known.previous === previous) return known.head;
+    // Only asked whether there is one: the separator is created and disposed at once.
+    const head = createRoot((dispose) => {
+      const shown = Boolean(untrack(() => props.separator?.(item, previous)));
+      dispose();
+      return shown;
+    }, owner);
+    heads.set(key, { item, previous, head });
+    return head;
+  };
+  /** The head at `at` starts the group that reaches at least to `upTo`; reset whenever the items change. */
+  let headRun: { at: number; upTo: number } | undefined;
+  const headAtOrBefore = (index: number) => {
+    const run = headRun;
+    if (run && index >= run.at) {
+      if (index <= run.upTo) return run.at;
+      for (let at = index; at > run.upTo; at--)
+        if (isHead(at)) {
+          headRun = { at, upTo: index };
+          return at;
+        }
+      run.upTo = index;
+      return run.at;
+    }
+    let at = index;
+    while (at >= 0 && !isHead(at)) at--;
+    headRun = { at, upTo: index };
+    return at;
+  };
+  let stickyHeight = 0;
+  /** Puts the separator of the group at `top` at the top of the visible area, pushed up by the next one. */
+  const placeSticky = (top: number) => {
+    if (!props.stickySeparators || !props.separator || hi <= lo) return setSticky(undefined);
+    const first = indexAt(top);
+    const head = headAtOrBefore(first);
+    if (head < 0) return setSticky(undefined);
+    const before = sticky()?.item;
+    setSticky({ item: list[head]!, previous: list[head - 1] });
+    // Measured when it changes; the next separator pushes it from the moment it touches its lower edge.
+    if (stickyBox && (sticky()?.item !== before || stickyHeight === 0)) stickyHeight = stickyBox.getBoundingClientRect().height;
+    let shift = 0;
+    for (let index = first + 1; index < hi && offsetOf(index) < top + stickyHeight; index++)
+      if (isHead(index)) {
+        shift = Math.min(0, offsetOf(index) - top - stickyHeight);
+        break;
+      }
+    setStickyShift(shift);
+  };
+
   const updateRange = (top = logicalTop(), height = viewport.clientHeight) => {
     const indices: number[] = [];
     if (hi > lo) {
@@ -324,7 +471,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       if (focused && focusIndex > end) indices.push(focusIndex);
     }
     renderRows(indices);
-    setTabStop(focusIndex >= lo && focusIndex < hi ? focusIndex : hi > lo ? indexAt(top + height - 1) : -1);
+    placeSticky(top);
+    // Tab enters at the item nearest the edge the feed reads from.
+    setTabStop(focusIndex >= lo && focusIndex < hi ? focusIndex : hi > lo ? indexAt(fromStart ? top : top + height - 1) : -1);
     // Newly mounted rows still have estimates; report only after their heights are measured.
     if (!restoring && !fresh.some((node) => node.isConnected)) reportVisible(top, height);
   };
@@ -350,44 +499,73 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   };
 
   const position = (index: number) =>
-    props.firstPosition !== undefined ? props.firstPosition + index : props.hasOlder ? undefined : index + 1;
-  const setSize = () => props.totalCount ?? (props.hasOlder || props.hasNewer ? -1 : count());
+    props.firstPosition !== undefined ? props.firstPosition + index : moreAbove() ? undefined : index + 1;
+  const setSize = () => props.totalCount ?? (moreAbove() || moreBelow() ? -1 : count());
+
+  /**
+   * One item with its separator and marker. The browser places it at its offset (`at`); the server leaves it in the
+   * flow, where it lands on the same pixels.
+   */
+  const itemView = (item: T, key: string, index: Accessor<number>, previous: () => T | undefined, at?: () => number) => {
+    // While older items may come, the first loaded item's predecessor is unknown, so it gets no separator yet.
+    const separator = () => (index() === 0 && moreAbove() ? undefined : props.separator?.(item, previous()));
+    // Created once, as Solid's For does, so signals that the content reads while rendering never rebuild it.
+    const content = untrack(() => props.children(item, index));
+    return (
+      <div
+        class="k2b-virtual-feed__item"
+        role="article"
+        data-index={index()}
+        data-key={key}
+        data-server={at ? undefined : ""}
+        data-highlighted={highlighted() === key ? "" : undefined}
+        tabindex={index() === tabStop() ? 0 : -1}
+        aria-label={props.itemLabel?.(item)}
+        aria-posinset={position(index())}
+        aria-setsize={setSize()}
+        style={at ? { transform: `translateY(${at()}px)` } : undefined}
+      >
+        <Show when={separator()}>
+          {(content) => (
+            <div class="k2b-virtual-feed__separator">
+              <span>{content()}</span>
+            </div>
+          )}
+        </Show>
+        <Show when={props.markerKey === key}>
+          <div class="k2b-virtual-feed__marker">
+            <span>{props.markerLabel ?? feedMessages().feedNewMarker}</span>
+          </div>
+        </Show>
+        {content}
+      </div>
+    ) as HTMLElement;
+  };
+
+  /** The items at the starting point, which the server renders in the flow: the first ones, or the last ones. */
+  /** Where the browser opens: at the first item for a list, and for a feed whose newer items are not loaded yet. */
+  const opensAtTop = () => fromStart || moreBelow();
+  const serverItems = () => {
+    const items = props.items;
+    const top = opensAtTop();
+    let height = 0;
+    let from = top ? 0 : items.length;
+    let to = from;
+    if (top) while (to < items.length && height < SERVER_HEIGHT) height += estimate(items[to++]!);
+    else while (from > 0 && height < SERVER_HEIGHT) height += estimate(items[--from]!);
+    return Array.from({ length: to - from }, (_, offset) => from + offset);
+  };
 
   const createRow = (item: T, key: string, at: number): Row<T> =>
     createRoot((dispose) => {
       const [index, setIndex] = createSignal(at);
-      // While older items may come, the first loaded item's predecessor is unknown, so it gets no separator yet.
-      const separator = () => (listVersion(), index() === 0 && props.hasOlder ? undefined : props.separator?.(item, list[index() - 1]));
-      // Created once, as Solid's For does, so signals that the content reads while rendering never rebuild it.
-      const content = untrack(() => props.children(item, index));
-      const node = (
-        <div
-          class="k2b-virtual-feed__item"
-          role="article"
-          data-index={index()}
-          data-key={key}
-          data-highlighted={highlighted() === key ? "" : undefined}
-          tabindex={index() === tabStop() ? 0 : -1}
-          aria-label={props.itemLabel?.(item)}
-          aria-posinset={position(index())}
-          aria-setsize={setSize()}
-          style={{ transform: `translateY(${(version(), offsetOf(index()) - deferred)}px)` }}
-        >
-          <Show when={separator()}>
-            {(content) => (
-              <div class="k2b-virtual-feed__separator">
-                <span>{content()}</span>
-              </div>
-            )}
-          </Show>
-          <Show when={props.markerKey === key}>
-            <div class="k2b-virtual-feed__marker">
-              <span>{props.markerLabel ?? feedMessages().feedNewMarker}</span>
-            </div>
-          </Show>
-          {content}
-        </div>
-      ) as HTMLElement;
+      const node = itemView(
+        item,
+        key,
+        index,
+        () => (listVersion(), list[index() - 1]),
+        () => (version(), offsetOf(index()) - deferred),
+      );
       const row: Row<T> = {
         item,
         node,
@@ -453,6 +631,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     restoring = true;
     const restored = ++restoreVersion;
     const height = viewport.clientHeight;
+    tail = tailBox ? tailBox.getBoundingClientRect().height : 0;
     let target = 0;
     let top = 0;
     // Following the end shows the end of all items from now on, so later moves are judged against it.
@@ -462,7 +641,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         restoreAgain = false;
         recompute();
         target = stick ? total() : offsetOf(anchor.index) - anchor.delta;
-        top = Math.min(Math.max(0, total() - height), Math.max(0, target));
+        top = Math.min(maxTop(height), Math.max(0, target));
         // Row heights do not depend on their translation or the feed's scroll position. Mount and measure the
         // logical range first; writing the final geometry once avoids a layout flush on every correction pass.
         updateRange(top, height);
@@ -478,6 +657,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       // A position the layout cannot reach, above its start or past its end, becomes the one the reader sees, so a
       // page that loads there later keeps it instead of moving to it.
       if (!stick && Math.abs(top - target) > 0.5) anchor = { index: anchor.index, delta: offsetOf(anchor.index) - top };
+      noteStart(top);
     } finally {
       restoring = false;
     }
@@ -494,6 +674,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const captureAnchor = (from: number) => {
     const top = logicalTop();
     setStick(reachesEnd(top));
+    noteStart(top);
     const seen = indexAt(from);
     anchor =
       offsetOf(seen + 1) > top && offsetOf(seen) < top + viewport.clientHeight
@@ -631,23 +812,38 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
 
   const load = (direction: "older" | "newer" | "newest") => {
     const setLoading = direction === "older" ? setLoadingOlder : setLoadingNewer;
-    const callback = direction === "older" ? props.onLoadOlder : direction === "newer" ? props.onLoadNewer : props.onLoadNewest;
+    const callback =
+      direction === "older"
+        ? props.onLoadOlder
+        : direction === "newer"
+          ? fromStart
+            ? props.onLoadMore
+            : props.onLoadNewer
+          : props.onLoadNewest;
     if (!callback) return;
     // A load succeeded when its edge moved; other changes to `items` meanwhile do not count.
     const edge = () => (direction === "older" ? keys[0] : keys[keys.length - 1]);
     const before = edge();
+    if (direction === "newer") setFailedBelow(null);
     setLoading(true);
     let result: unknown;
+    let failure: { cause: unknown } | undefined;
     try {
       result = callback();
-    } catch {
+    } catch (cause) {
+      failure = { cause };
       result = undefined;
     }
     void Promise.resolve(result)
-      .catch(() => undefined)
+      .catch((cause: unknown) => {
+        failure = { cause };
+      })
       .then(() => {
         setLoading(false);
         if (disposed) return;
+        // A list shows the failure at its end and waits for "Try again"; a conversation retries when the reader scrolls.
+        if (fromStart && direction === "newer" && failure)
+          setFailedBelow(failure.cause instanceof Error && failure.cause.message ? failure.cause.message : feedMessages().loadMoreFailed);
         if (direction === "newest") newest = undefined;
         if (newest === "waiting") {
           if (!loadingOlder() && !loadingNewer()) loadNewest();
@@ -655,7 +851,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         }
         const arrived = edge() !== before;
         // A failed or empty load toward the end shows "Jump to latest" again instead of following an end that never came.
-        if (direction !== "older" && !arrived && stick && props.hasNewer) setStick(false);
+        if (direction !== "older" && !arrived && stick && moreBelow()) setStick(false);
         // Keep loading while the reader still sits at the edge and the last page arrived.
         if (arrived) checkEdges();
       });
@@ -681,7 +877,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         restore(true);
         return;
       }
-      if (props.hasOlder && !loadingOlder() && !newest) load("older");
+      if (moreAbove() && !loadingOlder() && !newest) load("older");
     }
     if (total() - top - height < margin) {
       if (hi < list.length) {
@@ -692,7 +888,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         restore(true);
         return;
       }
-      if (props.hasNewer && !loadingNewer() && !newest) load("newer");
+      if (moreBelow() && !loadingNewer() && !newest && !failedBelow()) load("newer");
     }
   };
 
@@ -703,7 +899,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       announceTimer = undefined;
       const batch = pendingAnnouncement;
       pendingAnnouncement = [];
-      const text = props.announce ? props.announce(batch) : feedMessages().feedNewItems({ count: batch.length });
+      const text = props.announce
+        ? props.announce(batch)
+        : fromStart
+          ? feedMessages().feedNewAboveItems({ count: batch.length })
+          : feedMessages().feedNewItems({ count: batch.length });
       if (!text) return;
       const line = document.createElement("p");
       line.textContent = text;
@@ -722,14 +922,16 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     const focusKey = focusIndex >= 0 ? keys[focusIndex] : undefined;
     let added: readonly T[] = [];
     let appended = false;
-    /** A new feed, or one that shares no item with the last: start at its end. */
+    /** A new feed, or one that shares no item with the last: start at its end, or at its first item. */
     const reset = () => {
       sizes = Float64Array.from(next, estimate);
       focusIndex = -1;
       appendedFrom = -1;
-      setStick(!props.hasNewer);
+      setStick(!moreBelow());
       anchor = { index: 0, delta: 0 };
       setUnseen(0);
+      setFailedBelow(null);
+      heads.clear();
       // Pending announcements describe the items that are gone.
       clearTimeout(announceTimer);
       announceTimer = undefined;
@@ -738,7 +940,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       if (sizes.reduce((sum, size) => sum + size, 0) <= MAX_WINDOW) {
         lo = 0;
         hi = length;
-      } else windowAround(length - 1);
+      } else windowAround(fromStart ? 0 : length - 1);
     };
     if (previous === 0 || length === 0) reset();
     else if (length >= previous && runsMatch(keys, nextKeys, 0)) {
@@ -759,6 +961,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       grown.set(sizes, shift);
       for (let index = 0; index < shift; index++) grown[index] = estimate(next[index]!);
       sizes = grown;
+      // A list that starts at the top gets new items there; a conversation gets older history.
+      if (fromStart) added = next.slice(0, shift);
       anchor = { index: anchor.index + shift, delta: anchor.delta };
       if (focusIndex >= 0) focusIndex += shift;
       if (appendedFrom >= 0) appendedFrom += shift;
@@ -787,6 +991,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         const wasAtEnd = hi === previous;
         appendedFrom = -1;
         anchor = { index: survivor(anchor.index), delta: anchor.delta };
+        // New items sorted in above the first known one, such as a conversation that moved to the top, are new above.
+        // Everything now above the item that was first is new there, also a known one that moved up.
+        if (fromStart) added = next.slice(0, survivor(0));
         focusIndex = focusKey === undefined ? -1 : (position.get(focusKey) ?? -1);
         lo = wasAtStart ? 0 : survivor(lo);
         hi = wasAtEnd ? length : survivor(hi - 1) + 1;
@@ -801,7 +1008,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     dirtyFrom = 0;
     setCount(length);
     setListVersion((value) => value + 1);
-    if (!props.hasNewer) endKey = nextKeys[length - 1];
+    headRun = undefined;
+    if (!fromStart && !moreBelow()) endKey = nextKeys[length - 1];
     recompute();
     const center = stick ? hi - 1 : anchor.index;
     const trimmed = total() > MAX_WINDOW && trimWindow(center - lo > hi - 1 - center ? "start" : "end");
@@ -819,10 +1027,28 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
    * it, following the end keeps `onLoadNewer` paging until the newest item arrives or the reader scrolls away.
    */
   const scrollToEnd = () => {
+    if (fromStart) {
+      if (list.length === 0) return;
+      takeOver();
+      if (hi < list.length) windowAround(list.length - 1);
+      // The last item at the top of the visible area lands as far down as the feed reaches.
+      anchor = { index: list.length - 1, delta: 0 };
+      restore(true);
+      return;
+    }
     takeOver();
     setStick(!props.hasNewer || Boolean(props.onLoadNewer || props.onLoadNewest));
     if (props.hasNewer && props.onLoadNewest) loadNewest();
     if (hi < list.length) windowAround(list.length - 1);
+    restore(true);
+  };
+
+  const scrollToStart = () => {
+    if (list.length === 0) return;
+    takeOver();
+    setStick(false);
+    if (lo > 0) windowAround(0);
+    anchor = { index: 0, delta: 0 };
     restore(true);
   };
 
@@ -863,7 +1089,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     const height = viewport.clientHeight;
     const start = offsetOf(index);
     const size = sizes[index]!;
-    if (index === list.length - 1 && hi === list.length && !props.hasNewer) setStick(true);
+    if (!fromStart && index === list.length - 1 && hi === list.length && !moreBelow()) setStick(true);
     else if (outside) {
       setStick(false);
       anchor = { index, delta: 0 };
@@ -935,6 +1161,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const controller: VirtualFeedController = {
     scrollToKey,
     scrollToEnd,
+    scrollToStart,
     isAtEnd: () => stick,
   };
 
@@ -943,13 +1170,16 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   // More items can appear at an edge without new items, for example when a live update reports newer ones.
   createEffect(
     on(
-      [() => props.hasOlder, () => props.hasNewer],
+      [moreAbove, moreBelow],
       () => {
-        if (!props.hasNewer) endKey = keys[keys.length - 1];
+        if (!fromStart && !moreBelow()) endKey = keys[keys.length - 1];
         if (hi <= lo) return;
+        // The first item gains or loses its separator with `hasOlder`; the sticky separator follows.
+        headRun = undefined;
+        placeSticky(logicalTop());
         if (!stick && reachesEnd(logicalTop())) setStick(true);
         // Only newer pages can be followed; with just `onLoadNewest`, "Jump to latest" has to show.
-        else if (stick && props.hasNewer && !props.onLoadNewer) setStick(false);
+        else if (stick && moreBelow() && !props.onLoadNewer) setStick(false);
         checkEdges();
       },
       { defer: true },
@@ -969,12 +1199,14 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         const measured: Array<readonly [HTMLElement, number]> = [];
         for (const entry of entries) {
           if (entry.target === viewport) {
-            // A shorter viewport (a growing footer or keyboard) keeps what is at its bottom in place.
+            // A shorter viewport (a growing footer or keyboard) keeps what is at its bottom in place; a list that
+            // starts at the top keeps its top.
             const height = viewport.clientHeight;
-            if (!stick) anchor = { index: anchor.index, delta: anchor.delta + height - lastHeight };
+            if (!stick && !fromStart) anchor = { index: anchor.index, delta: anchor.delta + height - lastHeight };
             lastHeight = height;
             resized = true;
-          } else if (entry.target.isConnected) {
+          } else if (entry.target === tailBox) resized = true;
+          else if (entry.target.isConnected) {
             const row = entry.target as HTMLElement;
             measured.push([row, entry.borderBoxSize?.[0]?.blockSize ?? row.getBoundingClientRect().height]);
           }
@@ -986,6 +1218,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       }
     });
     observer.observe(viewport);
+    if (tailBox) observer.observe(tailBox);
     // Rows observed inside the observer's own callback miss its first notification, which raises a window error.
     // They were measured while mounting, so they are observed from the next frame on.
     let later: HTMLElement[] = [];
@@ -1059,9 +1292,48 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
 
   const shownCount = () => props.newCount ?? unseen();
 
+  // The server renders the items at the starting point in the flow; the browser replaces them with placed rows
+  // before its first paint, on the same pixels.
+  const rendered = isServer ? (
+    <For each={serverItems()}>
+      {(index) => {
+        const item = props.items[index]!;
+        return itemView(
+          item,
+          props.getKey(item),
+          () => index,
+          () => props.items[index - 1],
+        );
+      }}
+    </For>
+  ) : undefined;
+
+  const loadBelow = () => {
+    if (!loadingNewer() && moreBelow()) load("newer");
+  };
+  // The edge reads the owner's `hasMore` through the feed's own memo, never through a chain of getters into the
+  // owner's markup, so it never reads an owner's value that the owner has just removed.
+  const edgeHasMore = createMemo(moreBelow);
+
   return (
-    <div class={props.class ? `k2b-virtual-feed ${props.class}` : "k2b-virtual-feed"}>
+    <div
+      class={props.class ? `k2b-virtual-feed ${props.class}` : "k2b-virtual-feed"}
+      data-anchor={fromStart ? "start" : undefined}
+      data-server={isServer ? (opensAtTop() ? "start" : "end") : undefined}
+    >
       <div ref={viewport} class="k2b-virtual-feed__viewport" tabindex="-1" onScroll={onScroll}>
+        {/* The browser alone knows which group is at the top; the server's first item shows its own separator there. */}
+        <Show when={!isServer && props.stickySeparators && props.separator}>
+          <div class="k2b-virtual-feed__sticky" aria-hidden="true">
+            <Show when={sticky()} keyed>
+              {(head) => (
+                <div ref={stickyBox} class="k2b-virtual-feed__separator" style={{ transform: `translateY(${stickyShift()}px)` }}>
+                  <span>{props.separator?.(head.item, head.previous)}</span>
+                </div>
+              )}
+            </Show>
+          </div>
+        </Show>
         <div
           ref={feed}
           class="k2b-virtual-feed__feed"
@@ -1081,7 +1353,14 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
             const next = event.relatedTarget as Node | null;
             if (next && !feed.contains(next)) focusIndex = -1;
           }}
-        />
+        >
+          {rendered}
+        </div>
+        <Show when={fromStart && props.onLoadMore}>
+          <div ref={tailBox} class="k2b-virtual-feed__more">
+            <LoadMore auto={false} hasMore={edgeHasMore()} loading={loadingNewer()} error={failedBelow()} onLoadMore={loadBelow} />
+          </div>
+        </Show>
       </div>
       <Show when={count() === 0 && props.empty}>
         <div class="k2b-virtual-feed__empty">{props.empty}</div>
@@ -1092,7 +1371,26 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
           {messages().loading}
         </div>
       </Show>
-      <Show when={!atEnd() && count() > 0}>
+      <Show when={fromStart && shownCount() > 0 && count() > 0}>
+        <button
+          type="button"
+          class="k2b-virtual-feed__end"
+          data-edge="start"
+          aria-label={feedMessages().feedNewAboveCount({ count: shownCount() })}
+          onClick={() => {
+            scrollToStart();
+            // The button disappears at the start; focus moves to the first item instead of the document.
+            focusRow(0);
+          }}
+        >
+          <i class="ti ti-arrow-up" aria-hidden="true" />
+          {feedMessages().feedNewAbove}
+          <span class="k2b-virtual-feed__count" aria-hidden="true">
+            {shownCount()}
+          </span>
+        </button>
+      </Show>
+      <Show when={!fromStart && !atEnd() && count() > 0}>
         <button
           type="button"
           class="k2b-virtual-feed__end"

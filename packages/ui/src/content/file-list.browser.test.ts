@@ -299,7 +299,7 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
     }
   }, 30_000);
 
-  test("the kind line shares the first row with the close button, above the title and subtitle", async () => {
+  test("the name shares the first row with the close button; the kind leads the line below it", async () => {
     const page = await load(1440, "light");
     try {
       const box = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
@@ -307,10 +307,10 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       const close = await box('button[aria-label="Close details"]');
       const title = await box(".k2b-detail-panel__heading h2");
       const subtitle = await box(".k2b-detail-panel__supporting");
-      expect(Math.abs(kind.y + kind.height / 2 - (close.y + close.height / 2))).toBeLessThan(1);
-      expect(title.y).toBeGreaterThanOrEqual(kind.y + kind.height);
+      expect(Math.abs(title.y + title.height / 2 - (close.y + close.height / 2))).toBeLessThan(1);
       expect(subtitle.y).toBeGreaterThanOrEqual(title.y + title.height);
-      expect(title.x).toBe(kind.x);
+      expect(Math.abs(kind.y + kind.height / 2 - (subtitle.y + subtitle.height / 2))).toBeLessThan(1);
+      expect(kind.x).toBe(title.x);
     } finally {
       await page.close();
     }

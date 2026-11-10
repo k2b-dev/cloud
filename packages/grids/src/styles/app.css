@@ -694,8 +694,7 @@
   gap: 1rem;
 }
 
-.k2b-ui .grids-document-preview > .k2b-inline-guidance,
-.k2b-ui .grids-document-preview > .k2b-notice-card {
+.k2b-ui .grids-document-preview > .k2b-inline-guidance {
   flex-shrink: 0;
 }
 
