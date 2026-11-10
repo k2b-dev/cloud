@@ -1,12 +1,14 @@
 import { type JSX, mergeProps } from "solid-js";
 import { chartKinds } from "../charts/core/registry";
 import { renderChartSvg } from "../charts/core/render";
+import { ChartBalanceFlow } from "./ChartBalanceFlow";
 import { type ChartKind, type ChartProps, renderChartRoot } from "./ChartRoot";
 
 export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../charts/core/render";
 export type { ChartKind, ChartLabels, ChartProps } from "./ChartRoot";
 
-const ChartRoot = (props: ChartProps) => renderChartRoot(props, renderChartSvg);
+const ChartRoot = (props: ChartProps) =>
+  props.kind === "balanceFlow" ? <ChartBalanceFlow {...props} /> : renderChartRoot(props, renderChartSvg);
 
 type KindProps<T> = T extends unknown ? Omit<T, "kind"> : never;
 export type ChartKindProps<K extends ChartKind> = KindProps<Extract<ChartProps, { kind: K }>>;

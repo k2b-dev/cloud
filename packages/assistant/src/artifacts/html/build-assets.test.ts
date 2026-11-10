@@ -47,20 +47,22 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   }
   // Dependencies are restricted to the one local shared blob; never an external URL.
   expect(parts.shared.code).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
-  for (const part of Object.values(parts.kinds)) {
-    expect([...moduleSpecifiers(part.code)].map((specifier) => specifier.value)).toEqual([CHART_SHARED_IMPORT]);
+  for (const [kind, part] of Object.entries(parts.kinds)) {
+    expect([...moduleSpecifiers(part.code)].map((specifier) => specifier.value)).toEqual(
+      kind === "balanceFlow:interaction" ? [] : [CHART_SHARED_IMPORT],
+    );
   }
   const sizes = Object.fromEntries(Object.entries(parts.kinds).map(([kind, part]) => [kind, Buffer.byteLength(part.code)]));
   const shared = Buffer.byteLength(parts.shared.code);
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // Main includes the line, calendar, distribution and Sankey parts; dots adds one part (7,167 B).
+  // BalanceFlow paint and interaction each retain the same per-part ceiling.
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  // Main's 89,376 B ceiling plus exactly the dots part.
-  expect(total).toBeLessThan(96_543);
+  // Main's 96,543 B ceiling plus BalanceFlow paint 14,468 B and interaction 8,386 B.
+  expect(total).toBeLessThan(119_397);
   expect(parts.kinds.dots!.code).not.toContain("k2b-chart-ranked");
   expect(parts.kinds.dots!.code).not.toContain("Bar series must have the same length as x");
   expect(parts.kinds.dots!.code).not.toContain("stdlib-chart-empty-text");
@@ -82,9 +84,11 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
     boxplot: "stdlib-chart-box-whisker",
     scatter: "stdlib-chart-trendline",
     sankey: "k2b-chart-sankey-link",
+    balanceFlow: "data-balance-flow-svg",
   } satisfies Record<RareChart["kind"], string>;
-  expect(Object.keys(parts.kinds).sort()).toEqual(Object.keys(markers).sort());
-  for (const [kind, marker] of Object.entries(markers)) {
+  const allMarkers = { ...markers, "balanceFlow:interaction": "data-balance-scrolling" };
+  expect(Object.keys(parts.kinds).sort()).toEqual(Object.keys(allMarkers).sort());
+  for (const [kind, marker] of Object.entries(allMarkers)) {
     expect(normal).not.toContain(marker);
     expect(parts.shared.code).not.toContain(marker);
     for (const [other, part] of Object.entries(parts.kinds)) {
@@ -92,6 +96,13 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
       else expect(part.code).not.toContain(marker);
     }
   }
+  // Only reconciliation, initial height reservation and lazy dispatch belong to every frame.
+  for (const marker of ["balancePrevious", "balanceKeyboard", "No periods to show.", "Invalid period."]) {
+    expect(normal).not.toContain(marker);
+    expect(rare).toContain(marker);
+  }
+  expect(normal).toContain("opening + inflows − outflows must equal closing.");
+  expect(parts.kinds["balanceFlow:interaction"]!.code).not.toContain("k2b-chart-tooltip-");
   for (const part of [parts.shared, ...Object.values(parts.kinds)]) {
     expect(part.hash).toBe(new Bun.CryptoHasher("sha256").update(part.code).digest("hex"));
   }

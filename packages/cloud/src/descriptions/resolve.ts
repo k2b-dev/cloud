@@ -6,6 +6,7 @@ import {
   chartReferenceMark,
   chartRenderOptions,
   chartRows,
+  chartTable,
   chartTooltip,
 } from "@k2b/editor/charts";
 import {
@@ -210,6 +211,17 @@ export function resolveDescription(spec: JsonValue, locale = "en"): DescriptionD
   const lost = lostKeys(spec, parsed.data);
   if (lost.length) return { mode: "slot", kind, reason: `This build does not know ${lost.join(", ")} yet.` };
   const input: ChartInput = parsed.data;
+  if (input.kind === "balanceFlow") {
+    const drawing = chartRenderOptions(input, locale);
+    if (drawing.kind !== "balanceFlow") throw new Error("Expected a balance flow drawing");
+    const table = chartTable(input, locale);
+    return {
+      mode: "live",
+      props: { ...drawing, title: input.title, subtitle: input.subtitle },
+      rows: table.rows,
+      columns: columnsOf(table.columns),
+    };
+  }
   const table = chartRows(input, locale);
   const snapshot = prepareChartSnapshot(
     chartRenderOptions(input, locale, { legend: "outside" }),

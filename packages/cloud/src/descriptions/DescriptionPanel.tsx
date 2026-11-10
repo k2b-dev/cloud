@@ -154,13 +154,33 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
         }}
       </Match>
       <Match when={drawing().mode === "live" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "live" }>)}>
-        {(live) =>
-          explorer(
-            () => live().rows,
-            () => live().columns,
-            () => <Chart {...live().props} style={{ height: "100%" }} />,
-          )
-        }
+        {(live) => (
+          <Show
+            when={(() => {
+              const drawing = live().props;
+              return drawing.kind === "balanceFlow" ? drawing : undefined;
+            })()}
+            fallback={explorer(
+              () => live().rows,
+              () => live().columns,
+              () => <Chart {...live().props} style={{ height: "100%" }} />,
+            )}
+          >
+            {(drawing) => (
+              <DashboardFrame width={props.width}>
+                <Chart
+                  {...drawing()}
+                  title={title()}
+                  subtitle={subtitle()}
+                  state={props.state === undefined || props.state === "ready" ? "data" : props.state}
+                  view={props.view}
+                  onViewChange={props.onViewChange}
+                  onRetry={props.onRetry}
+                />
+              </DashboardFrame>
+            )}
+          </Show>
+        )}
       </Match>
       <Match when={drawing().mode === "empty" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "empty" }>)}>
         {(nothing) => (

@@ -18,10 +18,26 @@ export {
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { calendarTimeLabel, calendarTimeTicks, chartTimeStep } from "../../content/chart-time-calendar";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
+export { balanceFlowColors, balanceFlowLayout, renderBalanceFlowSvg } from "./balance-flow";
+export * from "./balance-flow-data";
+export { balanceFlowFields } from "./balance-flow-fields";
+export * from "./balance-flow-frame";
+export { balanceFlowWords } from "./balance-flow-messages";
+export * from "./balance-flow-size";
 export { renderBarBaseSvg } from "./bar-base-render";
 export { renderBarChartSvg } from "./bar-render";
 export * from "./bubble";
-export * from "./calendar";
+export { renderCalendarSvg, renderHeatmapSvg } from "./calendar";
+export {
+  CALENDAR_MAX_DAYS,
+  type CalendarHeatmapOptions,
+  calendarDay,
+  calendarLayout,
+  calendarViewportHeight,
+  calendarWeekStart,
+  calendarWords,
+  type HeatmapChartOptions,
+} from "./calendar-layout";
 export { nestedDotOptions } from "./dot-options";
 export { renderDotMatrixLayoutSvg } from "./dots";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
@@ -32,6 +48,7 @@ export { lineBase } from "./line-base";
 export { renderLineDetailsSvg } from "./line-details";
 export { lineDetailsEnabled, lineForecastLayout } from "./line-options";
 export { map } from "./map";
+export { balanceFlowRenderOptions, type ChartRenderSettings, chartNumberFormatters } from "./number-format";
 export { chartSvgWithUiPalette } from "./palette";
 export * from "./pareto";
 

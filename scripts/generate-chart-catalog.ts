@@ -87,6 +87,9 @@ const shorten = (value: JsonValue): JsonValue =>
 
 /** Keep Sankey endpoints together when shortening its independently sized lists. */
 const shortenExample = (value: JsonValue): JsonValue => {
+  // Reconciled period totals depend on every movement; shorten periods, never their ledgers.
+  if (value && !Array.isArray(value) && typeof value === "object" && value.kind === "balanceFlow" && Array.isArray(value.periods))
+    return { ...value, periods: value.periods.slice(0, KEEP) };
   const spec = shorten(value);
   if (
     value &&

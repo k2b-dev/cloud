@@ -28,6 +28,18 @@ type Series<N> = { label?: string; data: { x: N | string; y: N }[]; role?: "refe
 type Common = { title: string; subtitle?: string; tooltip?: { label?: string; format?: ChartNumberFormat } };
 type Variants<N> =
   | {
+      kind: "balanceFlow";
+      currency: string;
+      locale?: string;
+      periods: {
+        label: string;
+        opening: number;
+        inflows: { label: string; value: number }[];
+        outflows: { label: string; value: number }[];
+        closing: number;
+      }[];
+    }
+  | {
       kind: "waterfall";
       start: { label: string; value: number };
       steps: { label: string; value: number }[];

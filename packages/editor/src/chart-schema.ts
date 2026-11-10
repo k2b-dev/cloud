@@ -1,5 +1,13 @@
 import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
-import { CALENDAR_MAX_DAYS, calendarDay, lineDetailsEnabled, nestedDotOptions, sankeyGraph } from "@k2b/ui/charts/core";
+import {
+  BalanceFlowError,
+  CALENDAR_MAX_DAYS,
+  calendarDay,
+  lineDetailsEnabled,
+  nestedDotOptions,
+  sankeyGraph,
+  validateBalanceFlow,
+} from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { chartLocaleSchema } from "./chart-locale";
 
@@ -52,6 +60,7 @@ export const chartKindSchema = () =>
     "bubble",
     "radar",
     "sankey",
+    "balanceFlow",
   ]);
 
 export const chartParts = (limits?: ChartLimits) => {
@@ -529,6 +538,35 @@ export const chartKinds = (limits?: ChartLimits) => {
       .superRefine((spec, ctx) => {
         if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
           ctx.addIssue({ code: "custom", message: "Pareto total must be finite." });
+      }),
+    z
+      .object({
+        kind: z.literal("balanceFlow"),
+        ...ChartKindCommon,
+        currency: z.string().regex(/^[A-Z]{3}$/),
+        locale: chartLocaleSchema().optional(),
+        periods: list(
+          z.object({
+            label: ChartLabel,
+            opening: z.number(),
+            inflows: list(z.object({ label: ChartLabel, value: z.number().min(0) }), 0, limits?.maxValues),
+            outflows: list(z.object({ label: ChartLabel, value: z.number().min(0) }), 0, limits?.maxValues),
+            closing: z.number(),
+          }),
+          0,
+          limits?.maxValues,
+        ),
+      })
+      .superRefine((spec, ctx) => {
+        try {
+          validateBalanceFlow(spec.periods);
+        } catch (error) {
+          ctx.addIssue({
+            code: "custom",
+            path: error instanceof BalanceFlowError ? ["periods", error.period] : ["periods"],
+            message: error instanceof Error ? error.message : "Invalid balance flow.",
+          });
+        }
       }),
     z
       .object({
