@@ -12711,9 +12711,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: auto;
 }
 
-/* "New above" floats at the top, over the heading that stays there. */
+/* "New above" floats over the first rows, below a group heading that stays at the top, so it never covers its name. */
 .k2b-ui .k2b-virtual-feed__end[data-edge="start"] {
-  top: 0.5rem;
+  top: 2.5rem;
   bottom: auto;
 }
 
