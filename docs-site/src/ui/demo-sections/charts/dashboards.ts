@@ -1,3 +1,4 @@
+import { balanceFlowExamples } from "./examples/balanceFlow";
 import type { JsonValue } from "./examples/types";
 import { liquidityForecastSpec } from "./liquidity-forecast";
 
@@ -458,6 +459,14 @@ export const liquidityDashboard: ShowcaseDashboard = {
               { label: "Other", value: 1920 },
             ],
           },
+        },
+        {
+          id: "balance-flow",
+          intended: "Balance flow",
+          width: "full",
+          height: 540,
+          empty: "No settlement periods.",
+          spec: balanceFlowExamples[0].spec,
         },
         {
           id: "sankey",

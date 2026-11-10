@@ -104,7 +104,8 @@ touch screens it sits below the selection, where the system's own menu does not
 cover it. Children after the actions hold extra controls, such as **Comment**.
 
 `<SlashMenu>` opens when a person types `/` at the start of a line or after a
-space. Exact names and aliases come first, then fuzzy matches. A slash action
+space, outside fenced, indented and inline code. Exact names and aliases come
+first, then fuzzy matches. A slash action
 adds `name`, optional `aliases`, `description`, and `params`: with
 `params: /^(\d+)x(\d+)$/`, typing `/table2x4` passes the match to `run`. A
 block action typed after text starts on a new line; set `inline: true` to

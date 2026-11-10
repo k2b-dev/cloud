@@ -57,13 +57,7 @@ export function inferenceProvider(
       for (;;) {
         request.signal?.throwIfAborted();
         try {
-          return await lifecycle.begin(
-            profile,
-            ctx,
-            inputTokens,
-            aiOutputBudget(profile, provider, inputTokens, request),
-            provider.contextWindow,
-          );
+          return await lifecycle.begin(profile, ctx, inputTokens, aiOutputBudget(profile, inputTokens, request), provider.contextWindow);
         } catch (error) {
           if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;
           await delay(1_000, undefined, { signal: request.signal });

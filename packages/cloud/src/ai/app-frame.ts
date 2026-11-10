@@ -1,4 +1,10 @@
 // Lightweight chart, view and text-AI contracts for the chat runner SDK, without the full browser entrypoint.
+
+// Self-contained BalanceFlow frames map and format inside their lazy asset.
+export {
+  chartBaseRenderOptions as cloudAiBaseChartRenderOptions,
+  chartBaseRows as cloudAiBaseChartRows,
+} from "@k2b/editor/charts";
 export {
   type CloudAiChartTable,
   cloudAiChartMarkKey,

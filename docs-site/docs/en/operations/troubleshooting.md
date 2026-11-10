@@ -5,7 +5,7 @@ section: Operations
 order: 1180
 description: Diagnose common application registration, request, data, and runtime failures.
 tags: [troubleshooting, health, diagnostics]
-updated: 2026-10-18
+updated: 2026-11-10
 ---
 
 # Troubleshooting
@@ -153,6 +153,33 @@ active, and whether the latest trace is failed or stuck.
 Confirm that the process calls the matching lifecycle start method.
 
 See [Lifecycle background work](/en/docs/automation/lifecycle-background-work).
+
+## Remove an output-limit workaround
+
+Cloud 0.71.0 can reduce a reasoning model's reported output limit using an
+adapter fallback window, or omit the limit when the transport does not
+advertise thinking. After upgrading the services that run inference to a
+release containing the fix for [#3103](https://github.com/k2b-dev/cloud/issues/3103),
+you can remove a `maxOutputTokens` override used only for this problem:
+
+1. Inspect the model in **Administration → AI → Models**, or with
+   `cld admin ai models show <model-id> --json`. Confirm that `outputTokenLimit`
+   contains the provider's reported maximum. Set `contextWindow` only to a
+   documented model value; leaving it empty preserves the full reported maximum.
+2. Clear the workaround on the model and any variant that overrides it. A
+   model or variant update with `{ "maxOutputTokens": null }` clears that field;
+   a variant then inherits its model's value.
+3. Repeat a representative long request in Assistant or
+   `cld assistant -p --model <model-id>`. Check that the answer completes and
+   inspect **AI → Usage** if it still reaches its output limit. Usage allowances,
+   explicit request limits and provider-side limits can still reduce output.
+   If the provider rejects the request for exceeding its context window, set
+   the model's documented `contextWindow` and retry.
+
+Keep intentional cost or response-size limits. Without a reported maximum,
+Cloud keeps the provider's default. Application services bundled with an older
+`@k2b/cloud` need a library update and redeployment to use this fix for their
+own inference calls. See [Set the output budget](/en/docs/ai/models-and-providers#set-the-output-budget).
 
 ## AI turns end with a provider error
 
