@@ -10,6 +10,7 @@ import {
   CalendarListInputSchema,
   type CapabilityExecutionContext,
   calendarSourceIssues,
+  capabilityPage,
 } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -51,6 +52,7 @@ export const absenceCapabilities = defineCapabilities({
             ],
             next: null,
           },
+          page: capabilityPage(null),
         });
       },
     },
@@ -101,12 +103,8 @@ export const absenceCapabilities = defineCapabilities({
           version: row.revision,
         }));
         const nextOffset = offset + items.length;
-        return ok({
-          data: {
-            items,
-            next: nextOffset < matches.length ? Buffer.from(JSON.stringify({ scope, offset: nextOffset })).toString("base64url") : null,
-          },
-        });
+        const next = nextOffset < matches.length ? Buffer.from(JSON.stringify({ scope, offset: nextOffset })).toString("base64url") : null;
+        return ok({ data: { items, next }, page: capabilityPage(next) });
       },
     },
   },

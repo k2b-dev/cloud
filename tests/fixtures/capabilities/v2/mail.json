@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "mail",
-  "manifestHash": "e9b3c2fb5fc094cd9c4def56f8c868f1f64432512daf53f1d8e7aaef956c71d7",
+  "manifestHash": "ee1b8f46eb99dd29b85d4fca6c4f5aa802e0d0b9e15e5bef7b51c349ca5ec878",
   "types": [
     {
       "localId": "attachment",
@@ -6826,7 +6826,8 @@
         "required": ["conversationId", "assignees", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
-      "schemaHash": "ffe94db49f88ef4a3753f6c9638c9abe197a62ce8c150b040e42e20b05de4dff",
+      "schemaHash": "eb673c0f8ca9fb884897f0252e65df402ae5e28a3ab3c8303dccb959186d8a2d",
+      "code": false,
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",

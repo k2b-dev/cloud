@@ -221,7 +221,7 @@ test("runner SDK HTTP keeps personal secret references and the turn approval dec
   try {
     const source = `import {http} from "@sdk"; export default async () => {
       const result = await http.fetch("https://api.example.com/data", {method:"POST",body:"test",headers:{authorization:"Bearer [secret:TOKEN]"}});
-      return result.body;
+      return result.bodyBase64;
     }`;
     expect(await f.execute("code_run", { code: source })).toMatchObject({ status: "ready", output: JSON.stringify(btoa("response")) });
     expect(f.httpRequests).toMatchObject([

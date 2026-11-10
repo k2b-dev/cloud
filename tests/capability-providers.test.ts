@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildAiCapabilityCatalog, buildAiToolCatalog, searchAiTools } from "../packages/cloud/src/ai/capabilities";
 import { assertCapabilityManifestEvolution, compileCapabilityManifest } from "../packages/cloud/src/capabilities/testing";
+import { generateCodeSdk } from "../packages/cloud/src/code/generator";
 import {
   type CapabilityDefinitions,
   type CapabilityManifest,
@@ -121,6 +122,20 @@ describe("Capability v2 provider conformance", () => {
       }
     });
   }
+
+  test("Mail status aliases remain in the manifest while only the set paths appear in the SDK", () => {
+    const manifest = compileCapabilityManifest("mail", mailCapabilities);
+    const sdk = generateCodeSdk([manifest], { mode: "personal" });
+    for (const suffix of ["", ".batch"]) {
+      const alias = `conversation.status.update${suffix}`;
+      const preferred = `conversation.status.set${suffix}`;
+      expect(manifest.actions.find((operation) => operation.localId === alias)?.code).toBe(false);
+      expect(manifest.actions.some((operation) => operation.localId === preferred)).toBe(true);
+      expect(sdk.manifest.omitted).toContainEqual(expect.objectContaining({ capability: `mail.${alias}`, reason: "code_false" }));
+      expect(sdk.manifest.operations.some((operation) => operation.capability === `mail.${preferred}`)).toBe(true);
+      expect(sdk.manifest.operations.some((operation) => operation.capability === `mail.${alias}`)).toBe(false);
+    }
+  });
 
   test("required-idempotency Actions remain an explicit inventory", () => {
     const required = providers.flatMap(({ appId, definitions }) =>

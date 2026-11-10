@@ -4,3 +4,8 @@
 - **Root cause:** Queries returned continuation cursors in domain data but omitted the shared `page` envelope that generated SDK consumers follow.
 - **Error class:** Pagination metadata lost at an application transport boundary.
 - **Guard:** `sdk-contract.test.ts` verifies that `validateCapabilityResult` rejects a Query with a string `cursor` input if `page` is missing, and verifies that a declared string `next` or `nextCursor` agrees with `page`. Date filters named `after` do not imply pagination. Application tests cover continuation and final pages. Domain cursor fields remain available to existing consumers.
+
+Provider fixtures need the same envelope as deployed applications: a terminal page
+returns `capabilityPage(null)`, including when a test provider has only one page.
+Transport assertions keep the domain projection unchanged and assert `page`
+separately. Run the consumer tests as well as each provider's own tests.
