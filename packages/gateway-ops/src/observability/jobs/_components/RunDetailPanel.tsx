@@ -33,12 +33,7 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
     <aside class="paper min-h-0 p-3" aria-label={t.runDetail}>
       <DetailPanel>
         <DetailPanel.Header
-          kind={
-            <>
-              <span>{t.run}</span>
-              {props.status}
-            </>
-          }
+          kind={props.status}
           title={props.span.name}
           subtitle={props.span.spanKey ?? props.span.spanId}
           actions={

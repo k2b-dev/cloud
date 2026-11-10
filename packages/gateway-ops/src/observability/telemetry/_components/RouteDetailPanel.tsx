@@ -33,7 +33,6 @@ export default function RouteDetailPanel(props: RouteDetailPanelProps) {
     <aside class="paper min-h-0 p-3" aria-label={t.routeDetail}>
       <DetailPanel>
         <DetailPanel.Header
-          kind={<span>{t.route}</span>}
           title={<code class="font-mono">{props.route}</code>}
           subtitle={t.lastRequestsInRange({ count: props.eventLimit })}
           actions={

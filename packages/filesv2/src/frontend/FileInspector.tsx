@@ -250,14 +250,7 @@ export default function FileInspector(props: {
               return (
                 <>
                   <DetailPanel.Header
-                    kind={
-                      <>
-                        <span>{item().directory ? t().kindFolder : t().kindFile}</span>
-                        <Show when={readOnly(item())}>
-                          <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} />
-                        </Show>
-                      </>
-                    }
+                    kind={readOnly(item()) ? <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} /> : undefined}
                     title={<span class="break-all">{item().name}</span>}
                     subtitle={
                       <span>
@@ -481,7 +474,6 @@ export default function FileInspector(props: {
         }
       >
         <DetailPanel.Header
-          kind={<span>{t().selection}</span>}
           title={t().selected(props.paths.length)}
           actions={close}
           primaryActions={

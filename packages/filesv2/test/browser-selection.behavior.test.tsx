@@ -198,7 +198,9 @@ test("a folder lists its contents, files before images, and keeps rarer commands
     dom.cleanup();
   };
   await flush();
-  expect(dom.root.querySelector(".k2b-detail-panel__header")?.textContent).toContain("Folder");
+  // The header starts with the folder's name; no type word stands above it.
+  expect(dom.root.querySelector(".k2b-detail-panel__heading h2")?.textContent).toBe("Fotos");
+  expect(dom.root.querySelector(".k2b-detail-panel__kind")).toBeNull();
   // The first page fails: the section says so and retries; the rest of the panel stays usable.
   expect(branchRequests).toHaveLength(1);
   expect(branchRequests[0]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Fotos" } });

@@ -104,7 +104,8 @@ describe("Capabilities workspace detail panel", () => {
     const html = renderWorkspace(actionSelection);
 
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
-    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+    expect(html.indexOf("<h2>")).toBeLessThan(html.indexOf('class="k2b-detail-panel__kind"'));
+    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("</header>"));
     expect(kind).toContain("Action");
     expect(kind).toContain("Destructive");
     expect(html).toContain(">Effect<");

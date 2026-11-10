@@ -148,9 +148,10 @@ describe("Notebook note detail panel", () => {
       expect(rows.some((row) => /\bH[1-6]\b/.test(text(row)))).toBe(false);
     });
   });
-  test("follows the shared outline: kind line, section icons, order of use, more under Mehr zu dieser Notiz", () => {
+  test("follows the shared outline: the name first, section icons, order of use, more under Mehr zu dieser Notiz", () => {
     inspect({}, (document) => {
-      expect(text(document.querySelector(".k2b-detail-panel__kind"))).toBe("Notiz");
+      // The name comes first; no type word such as "Notiz" stands above or below it.
+      expect(document.querySelector(".k2b-detail-panel__kind")).toBeNull();
       expect(document.querySelector(".k2b-detail-panel__header-icon")).toBeNull();
       // Every section has its icon, so its content starts on the title's text edge (one edge per section).
       const titles = [...document.querySelectorAll(".k2b-detail-panel__body > .k2b-section")].map((section) => {

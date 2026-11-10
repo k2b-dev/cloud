@@ -22,6 +22,15 @@ is a [`Section`](/en/ui/surfaces/section): in the panel it stands flat, and on
 a full page, such as a customer file, the same component draws one light card
 per topic.
 
+## Start with the name
+
+The header starts with the object's name, beside the close button. Nothing
+stands above it: the person opened the object from a list that already says
+what it is, so a type such as "File" or "Task" above the name only delays it.
+A state such as "Done" or "Read only" leads the line below the name, before
+facts such as size and date. See
+[DetailPanel](/en/ui/layout/detail-panel#use-detailpanel).
+
 ## Put sections in the order of use
 
 Show what people work with first and let context wait:
@@ -61,6 +70,9 @@ such as an H3 in an outline, indents further. The shared sections, rows, and
 `FileGrid` keep this edge on their own: do not add padding or negative
 margins around them. See
 [One edge per section](/en/ui/layout/detail-panel#one-edge-per-section).
+The panel draws one subtle hairline between its topics; do not add a border
+or divider of your own
+([One hairline between topics](/en/ui/layout/detail-panel#one-hairline-between-topics)).
 
 Each section keeps its height while its data changes. "Here now" is always
 two lines tall: people coming, going, or moving between headings change only
