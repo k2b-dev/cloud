@@ -5,7 +5,7 @@ section: Start
 order: 20
 description: Create a Code project, read its folder, then check, test, submit and switch it on with cld or in a Gustav chat.
 tags: [code, cli, gustav, project]
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 
 # Your first Code
@@ -106,11 +106,6 @@ real data. See [Test Code](/en/docs/platform/test-code) for the case format.
 $ cld code submit
 ✓ v1 uploaded, not switched on yet. No version is running.
   It waits for approval by a Cloud administrator.
-# A Cloud administrator approves v1 because it uses AI.
-$ cld code activate
-Switch on version 1 of “Invoice desk”. The Code runs as its service account with its current target grants.
-Switch on? [y/N] y
-✓ v1 switched on by you · Nov 9, 2026, 4:20 PM
 ```
 
 `submit` saves an immutable version. The running version, if any, keeps running
@@ -118,11 +113,24 @@ until a person switches on the new one. If someone else saved a newer version
 first, `submit` stops with `code_version_conflict` and shows the difference;
 nothing is overwritten.
 
-One step is still missing: the mailbox's service account has no rights yet.
-A manager of the mailbox shares it with the Code account (**Edit**, because the
-Code changes tags). From then on, each new message starts one run. Read runs
-and their calls on the mailbox's **Code** page or with `cld code runs`, and
-stop new runs with `cld code pause`.
+Before activation, a manager shares the **mailbox** with the Code's service
+account by the handle shown on its Code page. Choose **Edit**, because this
+Code changes tags. Activation checks current read access at the mailbox event
+place; without that share it fails with `FORBIDDEN`. A Cloud administrator must
+also approve v1 because it uses AI.
+
+Once the share and approval are in place:
+
+```terminal ~/work/code/mail/Mbx001
+$ cld code activate
+Switch on version 1 of “Invoice desk”. The Code runs as its service account with its current target grants.
+Switch on? [y/N] y
+✓ v1 switched on by you · Nov 9, 2026, 4:20 PM
+```
+
+From then on, each new message starts one run. Read runs and their calls on
+the mailbox's **Code** page or with `cld code runs`, and stop new runs with
+`cld code pause`.
 
 Personal Code runs as you, so it needs no share. You switch it on in the
 browser: on the version card in Gustav or on its Code page.
