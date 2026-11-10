@@ -71,7 +71,9 @@ transparent does not change its role.
 
 Do not add these separators between list rows, cards, settings, detail
 sections, menu items, form sections, metadata groups, empty states, or
-pagination. Use whitespace, alignment, a quiet shared surface, or a short
+pagination. The one exception belongs to the library: `DetailPanel` draws a
+subtle hairline between its topics itself, so app code adds none there either
+([DetailPanel](/en/ui/layout/detail-panel#one-hairline-between-topics)). Use whitespace, alignment, a quiet shared surface, or a short
 semantic section label. Prefer one clear group over nested papers; do not
 replace a removed line with a box or hover fill around every row.
 

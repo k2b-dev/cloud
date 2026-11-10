@@ -58,7 +58,15 @@ import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "
 import { i18n } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import { type EvalContext, type EvalResult, evaluateFormula, isFormula } from "../formula";
-import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange, treeOrDocChanged } from "./_lib/cursor-zone-field";
+import {
+  holdsDecorations,
+  markdownEditorFocused,
+  placeMarkdownCaret,
+  refreshesMarkdownDecorations,
+  revealedSelection,
+  selectionIntersectsRange,
+  treeOrDocChanged,
+} from "./_lib/cursor-zone-field";
 import { splitTableLineCells, tableCellText } from "./_lib/table-cell";
 import { isNamedBlockHandle } from "./lib/named-blocks";
 import { applyLigatures } from "./ligatures";
@@ -322,7 +330,7 @@ class TableWidget extends WidgetType {
       }
       event.preventDefault();
       event.stopPropagation();
-      view.dispatch({ selection: { anchor: this.fromPos } });
+      view.dispatch({ selection: { anchor: this.fromPos }, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     // CM's default `dblclick` handler runs INDEPENDENTLY of mousedown.
@@ -423,8 +431,8 @@ type TablesState = {
  *  This makes the table behave consistently regardless of approach
  *  direction. */
 const cursorTableKey = (state: EditorState, ranges: TableRange[]): string | null => {
-  if (ranges.length === 0) return null;
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
+  if (ranges.length === 0 || !cursor) return null;
   const hits: number[] = [];
   for (const r of ranges) {
     const prevLineStart = state.doc.lineAt(Math.max(r.from - 1, 0)).from;
@@ -444,7 +452,7 @@ const scanTables = (state: EditorState, presentation: PrettyTableOptions): Table
   const decorations: Range<Decoration>[] = [];
   const blockWidgetDecorations: Range<Decoration>[] = [];
   const tableRanges: TableRange[] = [];
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
 
   syntaxTree(state).iterate({
     enter: (node) => {
@@ -504,7 +512,7 @@ export const tablesExtension = (presentation: PrettyTableOptions = {}): Extensio
       return scanTables(state, presentation);
     },
     update(value, tr) {
-      if (tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) {
+      if (refreshesMarkdownDecorations(tr)) {
         return scanTables(tr.state, presentation);
       }
       // Doc or syntax tree changed → tables may have appeared /
@@ -677,7 +685,7 @@ export const tablesExtension = (presentation: PrettyTableOptions = {}): Extensio
   // No view-level mousedown handler — the widget's own onmousedown
   // captures the click + stopPropagation prevents CM's internal
   // logic from running posAtDOM against widget-DOM targets.
-  return [stateField, theme, tableNavKeymap];
+  return [markdownEditorFocused, stateField, theme, tableNavKeymap];
 };
 
 /** Check whether the document range [from, to] is covered by a

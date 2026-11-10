@@ -198,7 +198,9 @@ test("a folder lists its contents, files before images, and keeps rarer commands
     dom.cleanup();
   };
   await flush();
-  expect(dom.root.querySelector(".k2b-detail-panel__header")?.textContent).toContain("Folder");
+  // The header starts with the folder's name; no type word stands above it.
+  expect(dom.root.querySelector(".k2b-detail-panel__heading h2")?.textContent).toBe("Fotos");
+  expect(dom.root.querySelector(".k2b-detail-panel__kind")).toBeNull();
   // The first page fails: the section says so and retries; the rest of the panel stays usable.
   expect(branchRequests).toHaveLength(1);
   expect(branchRequests[0]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Fotos" } });
@@ -548,8 +550,10 @@ test("inspector commands retain their permissions and busy state beside history"
     ["Move to trash", true],
   ]);
   const primary = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button")];
-  for (const label of ["Preview", "Download", "Share"])
-    expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
+  // The preview stands in the panel, so Download leads and no second "Preview" repeats it.
+  expect(primary.some((item) => item.textContent?.trim() === "Preview")).toBe(false);
+  expect(primary[0]?.textContent?.trim()).toBe("Download");
+  for (const label of ["Download", "Share"]) expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
   expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")?.disabled).toBe(true);
   setBusy(false);
   dispose();

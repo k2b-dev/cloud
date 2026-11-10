@@ -227,6 +227,7 @@ describe("Mail conversation detail panel", () => {
   test("follows the shared outline: header, here now, properties, notes, linked, attachments, then More about", () => {
     const html = renderPanel();
     const order = [
+      "<h2>",
       'class="k2b-detail-panel__kind"',
       ">Here now<",
       ">Properties<",
@@ -252,7 +253,9 @@ describe("Mail conversation detail panel", () => {
   test("the header names the conversation, its state, and offers Mark as done with more actions", () => {
     const html = renderPanel({ conversationHref: `/app/mail/${mailboxId}?conversation=${conversationId}` });
     const header = html.slice(0, html.indexOf('class="k2b-detail-panel__body"'));
-    expect(header).toContain(">Conversation<");
+    // The name comes first; the state follows below it without a type word.
+    expect(header).not.toContain(">Conversation<");
+    expect(header.indexOf("<h2>Quarterly review</h2>")).toBeLessThan(header.indexOf("Needs action"));
     expect(header).toContain("Needs action");
     expect(header).toContain("<h2>Quarterly review</h2>");
     expect(header).toContain("Ada Lovelace · 1 message · latest");

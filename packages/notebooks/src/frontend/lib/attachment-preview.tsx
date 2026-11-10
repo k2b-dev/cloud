@@ -17,7 +17,7 @@ import {
   IconButtonLink,
   Lightbox,
   PanelDialog,
-  PdfPreview,
+  PdfViewer,
   panelDialogWorkspaceOptions,
   useLocale,
 } from "@k2b/ui";
@@ -244,9 +244,9 @@ function AttachmentPreviewDialog(props: {
             }
           >
             {/* The header owns the viewer actions, so the preview is only the document. */}
-            <PdfPreview autoLoad title={filename()} buttonLabel={t().retry} request={() => read(inlineUrl())}>
-              {(parts) => <div class="notebooks-attachment-dialog__pdf">{parts.content}</div>}
-            </PdfPreview>
+            <div class="notebooks-attachment-dialog__pdf">
+              <PdfViewer autoLoad title={filename()} request={() => read(inlineUrl())} />
+            </div>
           </Show>
         </div>
       </PanelDialog.Body>

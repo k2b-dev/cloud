@@ -1,4 +1,4 @@
-import { Panes, type PanesLayout, PdfPreview, TemplateEditor, type TemplateVariable, useLocale } from "@k2b/ui";
+import { Panes, type PanesLayout, PdfViewer, TemplateEditor, type TemplateVariable, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal } from "solid-js";
 import type { DocumentPreviewResponse } from "../../../contracts";
 import { documentMessages } from "../documents/messages";
@@ -116,15 +116,14 @@ export function DocumentTemplateEditorPanes(props: Props) {
       icon: "ti ti-file-type-pdf",
       render: () => (
         <section class="flex h-full min-h-0 flex-col overflow-hidden">
-          <PdfPreview
+          <PdfViewer
             title={t().gotenbergPreview}
             class="min-h-0 flex-1"
-            buttonLabel={t().renderPreview}
+            loadLabel={t().renderPreview}
             emptyText={t().unsavedPreview}
-            disabled={() =>
-              Boolean(props.disabled?.()) || !props.source().trim() || !props.body().trim() || !props.previewRecordId().trim()
-            }
+            disabled={Boolean(props.disabled?.()) || !props.source().trim() || !props.body().trim() || !props.previewRecordId().trim()}
             request={props.previewPdf}
+            open
           />
         </section>
       ),

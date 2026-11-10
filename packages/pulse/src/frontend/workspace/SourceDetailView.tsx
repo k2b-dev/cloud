@@ -197,14 +197,11 @@ export default function SourceDetailView(props: Props) {
     <DetailPanel>
       <DetailPanel.Header
         kind={
-          <>
-            <span>{t().source}</span>
-            <StatusBadge
-              tone={props.source.enabled ? "ok" : "neutral"}
-              icon={props.source.enabled ? "ti ti-circle-check" : "ti ti-player-pause"}
-              label={props.source.enabled ? t().enabled : t().paused}
-            />
-          </>
+          <StatusBadge
+            tone={props.source.enabled ? "ok" : "neutral"}
+            icon={props.source.enabled ? "ti ti-circle-check" : "ti ti-player-pause"}
+            label={props.source.enabled ? t().enabled : t().paused}
+          />
         }
         title={props.source.name}
         subtitle={

@@ -97,11 +97,7 @@ export const DetailPanelOutlineDemo = () => {
         <div style={{ width: "min(25rem, 100%)", height: "52rem", display: "flex" }}>
           <DetailPanel surface="plain">
             <DetailPanel.Header
-              kind={
-                <>
-                  Conversation <StatusBadge tone="warning" label="Open" />
-                </>
-              }
+              kind={<StatusBadge tone="warning" label="Open" />}
               title="Brochure approval"
               subtitle="Northern Light Print · 3 messages · today, 09:15"
               actions={

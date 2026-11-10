@@ -238,7 +238,7 @@ function useShiftDetail(props: ShiftDetailProps) {
   );
 
   const state = () => (props.selection.kind === "slot" ? slotState(props.selection.slot, t()) : null);
-  /** The kind and its state, for the header's first row: "Shift · 1 missing · You're in". */
+  /** The kind and its state, for the line below the header's title: "Shift · 1 missing · You're in". */
   const kind = () => (
     <>
       <span>{props.selection.kind === "slot" ? t().shift : t().signUpKind}</span>

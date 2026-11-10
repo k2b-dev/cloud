@@ -21,8 +21,8 @@ import { DescriptionList, DetailPanel, NumberInput, Section } from "@k2b/ui";
 A details panel follows one order of use, so it reads the same in every app.
 Each app leaves out what its object does not have:
 
-1. **Header** with the title, a short meta line, and the actions on the
-   item.
+1. **Header** with the name first, beside close, then a short meta line
+   and the actions on the item. Nothing stands above the name.
 2. **Here now** (`DetailPresence`), only for objects several people have
    open live, such as a note: who is here, who writes where, and you.
 3. **Fields people edit** as quiet rows: name, then value. A click on an
@@ -55,7 +55,7 @@ groups have no boxes of their own.
 
 A detail panel is a docked column (layer 0 of
 [Layers and shadows](/en/ui/surfaces/elevation)) and flat inside: sections are
-a header and a hairline, never cards, and a `Paper`, `ResourceCard`, or framed
+a heading and one subtle hairline between topics, never cards, and a `Paper`, `ResourceCard`, or framed
 `Section` inside casts no shadow. The panel sets this itself; an application
 adds no shadow and no frame. The application owns data, permissions,
 mutations, and which sections are present. See
@@ -74,10 +74,14 @@ spacing as `AppWorkspace.Detail`. Omit it to keep the default section surfaces.
 </DetailPanel>
 ```
 
-`DetailPanel.Header` keeps identity and actions in one compact region. Pass
-`kind` for a short line above the title that names what the panel shows, such
-as "Conversation" or "Task", followed by its state badge; it shares the first
-row with the compact `actions`. Pass
+`DetailPanel.Header` keeps identity and actions in one compact region. The
+name is the first line and shares its row with the compact `actions`, such as
+close; nothing stands above it. Pass `kind` for the item's state, such as a
+"Done" or "Read only" badge: it leads the line below the title, before the
+subtitle. Do not repeat the object's type there: the person opened the item
+from a list that already says what it is, and the subtitle's facts ("PDF ·
+248 KB") say the rest. Name a type only where one list mixes types that the
+title and subtitle do not tell apart, such as "Query" and "Action". Pass
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
 or another custom identity; they are mutually exclusive. Pass the resource's
 less frequent commands as `menu` (`DropdownItem[]`): the header shows one
@@ -125,7 +129,8 @@ Every topic of a panel is a [`Section`](/en/ui/surfaces/section), the same
 component that frames the topics of a full page. Inside `DetailPanel` a section
 draws no frame of its own: the panel sets its default `frame` to `"none"`, and
 the section groups content through spacing and a sentence-case title, not a
-card, divider, or decorative background; the group or the body frames it. Do
+card or decorative background; the group or the body frames it, and the
+panel draws one hairline between topics. Do
 not pass `frame="line"` inside a panel. Pass `icon` for a fixed section icon
 slot and `tone` (`neutral`, `success`, `warning`, `danger`, `info`, or `ai`) for
 a status that the heading also says in words; in a panel a tone colors the
@@ -165,8 +170,8 @@ its body.
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
 adjacent sections when they belong to that same context. Outside
-`AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, or with `surface="plain"`, the group is transparent. Spacing and section headings
-separate its sections without borders or lines. Pass `label` when the
+`AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, or with `surface="plain"`, the group is transparent. Its sections
+stand together, separated by spacing and their headings, without lines. Pass `label` when the
 shared context benefits from an accessible group name. Pass `title` for a
 visible quiet title, such as "More about this conversation": it names the
 group, and its sections stand flush below it as rows. Use it for collapsed
@@ -199,6 +204,17 @@ that are not `DetailPanel.Action`, such as a static address or an empty
 message, start at the content edge without their own horizontal padding. A
 left-aligned `Placeholder` in a section does the same on its own. Do not
 add domain variants such as `record`, `mail`, or `workflow` to `DetailPanel`.
+
+### One hairline between topics
+
+Inside `AppWorkspace.Detail` and with `surface="plain"`, the panel separates
+its topics with one subtle hairline in `--k2b-border`: every section,
+discussion, or group after the first element of the body starts below a line
+with space above and below it. The line spans the body's content width. A
+group's own sections stay together without lines, so related sections read as
+one topic. The panel draws the line itself; an application adds no border,
+divider, box, or shadow around or between its sections. With the default
+surface, sections keep their own surfaces and draw no line.
 
 ### One edge per section
 

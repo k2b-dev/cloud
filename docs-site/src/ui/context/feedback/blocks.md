@@ -27,7 +27,7 @@ import { Button, ButtonLink, InlineGuidance, NoticeCard, NoticeRow, SplitButton 
 ## Composition
 
 `NoticeCard` accepts `title`, optional `detail`, optional `meta`, `tone`,
-optional `icon`, `class`, and `bodyClass`. Children render below the title and detail, for
+optional `icon` and `layout`, optional `actions`, `class`, and `bodyClass`. Children render below the title and detail, for
 example a list or the controls for the next step. Without a title, the
 children are the whole notice. Children that render nothing, such as a `Show`
 whose condition is false, add no body and no space.
@@ -49,7 +49,7 @@ keep anything longer in `detail`.
 one, two, or three responsive columns from the item count.
 
 A notice is calm by design: a light tint of its tone, no border, a generous
-radius and padding, and no icon. The title is semibold in the primary text
+radius and padding, and no icon unless it receives one. The title is semibold in the primary text
 color; detail and body use the secondary text color at the normal 14 px
 reading size. Only the `meta` pill repeats the tone color. There is one
 appearance for every tone and every application; do not color the text to
@@ -88,8 +88,51 @@ lighter share of the tone surface so notices stay calm. The neutral tone is a
 translucent tint that stays visible on white and muted surfaces. In
 forced-colors mode a system border outlines every notice.
 
-Controls for the next step, such as **Retry** or **Open settings**, can sit
-in the notice body below the text. Keep them to one row of buttons.
+### Icon and actions in a card
+
+`layout="card"` keeps the calm card for an icon notice instead of the compact
+status line: the icon sits in the tone colour beside the title, and title,
+detail, body, and actions share one text edge. Title and text keep their calm
+ink. Use it when a finding stands on its own, such as a card in a
+`NoticeCard.Grid`, and the icon helps to tell several cards apart at a glance.
+Keep the compact status line for a notice directly above the form or list it
+is about. `icon` set to `true` names the tone for screen readers here too.
+
+`actions` holds the direct next step for the finding: one or two `Button`s or
+`ButtonLink`s with `size="sm"`, in one row below the text. Offer an action only
+when the notice leads straight to it, such as **Assign owners** or **Retry
+now**; a notice that only informs has none. Use at most one primary action. It
+takes the button variant of the tone, so it adds no colour of its own:
+`primary` for `neutral` and `info`, and `success`, `warning`, or `danger` for
+those tones. A second action is `secondary`. The row wraps on a narrow card,
+and in a `NoticeCard.Grid` row, where the cards have one height, every card's
+actions share the bottom edge. `actions` works with `meta`, `icon`, and both
+layouts.
+
+```tsx
+<NoticeCard
+  tone="warning"
+  icon
+  layout="card"
+  title="Review needed"
+  meta="Due Friday"
+  detail="2 rows have no owner."
+  actions={
+    <>
+      <ButtonLink variant="warning" size="sm" href="/import/owners">Assign owners</ButtonLink>
+      <Button variant="secondary" size="sm" onClick={showRows}>Show rows</Button>
+    </>
+  }
+/>
+<NoticeCard
+  tone="info"
+  icon="ti ti-file-import"
+  layout="card"
+  title="Import ready"
+  detail="12 rows validated."
+  actions={<Button size="sm" onClick={startImport}>Start import</Button>}
+/>
+```
 
 ### One row with an action
 

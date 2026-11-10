@@ -4983,18 +4983,9 @@
   @apply min-h-0 w-full flex-1 rounded-md;
 }
 
-/* A PDF from loaded bytes or a same-origin inline address: the preview with its actions above the
-   document, without the standalone viewer's heading and toolbar line. */
+/* A PDF from loaded bytes or a same-origin inline address: the viewer fills the file view, its ground the only frame. */
 .k2b-ui .k2b-content-file-view__pdf-viewer {
-  @apply flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md;
-  box-sizing: border-box;
-  border: 1px solid var(--k2b-border);
-  background: var(--k2b-surface);
-}
-
-.k2b-ui .k2b-content-file-view__pdf-viewer > .k2b-content-pdf-preview__actions {
-  justify-content: flex-end;
-  padding: 0.5rem 0.75rem;
+  width: 100%;
 }
 
 .k2b-ui .k2b-content-file-view img {
@@ -5669,100 +5660,72 @@
    the column's GFM alignment, which marked writes as `align` on every cell. */
 .k2b-ui .k2b-content-markdown th:not([align]) { text-align: start; }
 
-/* Cloud composes `paper flex min-h-0 flex-col overflow-hidden`; Cloud pins
-   `--ui-shadow-surface: none`, so the paper edge is the border alone. */
-.k2b-ui .k2b-content-pdf-preview {
-  @apply flex min-h-0 flex-col overflow-hidden;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
-}
-
-/* Spacing, not a divider line, separates the toolbar from the document. */
-.k2b-ui .k2b-content-pdf-preview__toolbar {
-  @apply flex items-center justify-between gap-2 px-3 py-2;
-}
-
-.k2b-ui .k2b-content-pdf-preview__heading {
-  @apply min-w-0;
-}
-
-.k2b-ui .k2b-content-pdf-preview__title {
-  @apply truncate text-sm font-semibold;
-  margin: 0;
-  color: var(--k2b-text);
-}
-
-.k2b-ui .k2b-content-pdf-preview__actions {
-  @apply flex shrink-0 flex-wrap items-center gap-2;
-}
-
-.k2b-ui .k2b-content-pdf-preview__notice {
-  @apply text-sm;
-  color: var(--k2b-danger-text);
-}
-
-/* Every state draws in one box: an iframe's default height where nothing
-   sizes the viewer, the remaining height of a sized column. */
-.k2b-ui .k2b-content-pdf-preview__viewer {
-  position: relative;
-  flex: 1 1 auto;
-  box-sizing: border-box;
-  width: 100%;
-  height: 150px;
+/* PdfViewer: one grey, rounded ground for every state. The drawn pages, the placeholder of the empty, loading, or
+   error state, and the pill all lie in it, so the area never moves. Without a size from its host it is 12.5rem tall,
+   enough for every state with its actions, and grows in a flex column; any host class or rule that sizes it wins,
+   also a smaller one, because this default has no specificity. */
+:where(.k2b-ui) :where(.k2b-pdf-viewer) {
+  height: 12.5rem;
   min-height: 0;
+  flex: 1 1 auto;
 }
 
-/* The placeholder lies over the frame until the frame has loaded its document. */
-.k2b-ui :is(.k2b-content-pdf-preview__placeholder, .k2b-content-pdf-preview__frame) {
-  position: absolute;
-  inset: 0;
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-}
-
-/* A long error scrolls from its top instead of overflowing above the box. */
-.k2b-ui .k2b-content-pdf-preview__placeholder {
-  justify-content: safe center;
-  overflow: auto;
-}
-
-.k2b-ui .k2b-content-pdf-preview__frame {
-  display: block;
-  border: 0;
-  background: #fff;
-}
-
-/* Transparent and inert, not hidden: the frame still loads its document. */
-.k2b-ui .k2b-content-pdf-preview__frame:not([data-drawn]) {
-  opacity: 0;
-}
-
-/* The pdf.js viewer fills the same box; until its first page is drawn the loading placeholder lies over it. */
-.k2b-ui .k2b-content-pdf-preview__viewer > .k2b-pdf-viewer {
-  position: absolute;
-  inset: 0;
-}
-
-.k2b-ui .k2b-content-pdf-preview__viewer > .k2b-pdf-viewer:not([data-drawn]) {
-  opacity: 0;
-}
-
-/* PdfViewer: pages as images in one scroll area, a solid zoom bar floating at the bottom. */
 .k2b-ui .k2b-pdf-viewer {
   position: relative;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-pdf-viewer:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* The pages fill the ground; until the first page is drawn, the loading placeholder lies over them. */
+.k2b-ui .k2b-pdf-viewer__document {
+  position: absolute;
+  inset: 0;
+  display: flex;
   min-height: 0;
-  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-pdf-viewer__document:not([data-drawn]) {
+  opacity: 0;
+}
+
+/* A long error scrolls from its top instead of overflowing above the area. */
+.k2b-ui .k2b-pdf-viewer__placeholder {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  justify-content: safe center;
+  overflow: auto;
+}
+
+/* A blocked tab: a short alert above the pages that keeps the document in view. */
+.k2b-ui .k2b-pdf-viewer__notice {
+  position: absolute;
+  z-index: 1;
+  inset-inline: 0.75rem;
+  top: 0.75rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
+  color: var(--k2b-danger-text);
+  font-size: 0.875rem;
 }
 
 .k2b-ui .k2b-pdf-viewer__pages {
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  background: var(--k2b-surface-muted);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--k2b-text) 22%, transparent) transparent;
   scrollbar-gutter: stable;
@@ -5778,7 +5741,8 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Wider than the area the stack grows to the right; narrower, each page stands centred. Room below for the bar. */
+/* Wider than the area the stack grows to the right; narrower, each page stands centred. Room below for the bar, so
+   the end of the last page and a whole fitted page stay clear of it (`BLOCK_INSET` in PdfViewer). */
 .k2b-ui .k2b-pdf-viewer__stack {
   display: flex;
   flex-direction: column;
@@ -5786,7 +5750,7 @@
   width: max-content;
   min-width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem 0.75rem 3.5rem;
+  padding: 0.75rem 0.75rem 4.5rem;
 }
 
 .k2b-ui .k2b-pdf-viewer__page {
@@ -5819,8 +5783,10 @@
   pointer-events: none;
 }
 
+/* Icons only, round like the pill; a pressed fit shows its blue icon without a fill. */
 .k2b-ui .k2b-pdf-viewer__bar > .k2b-toolbar {
   --k2b-radius-control: 9999px;
+  --k2b-selected: transparent;
   padding: 0.25rem;
   border: 1px solid var(--k2b-border);
   border-radius: 9999px;
@@ -6220,14 +6186,6 @@
 }
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__media {
   padding: 0;
-}
-.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__pdf-viewer {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__pdf-viewer > .k2b-content-pdf-preview__actions {
-  padding: 0 0 0.5rem;
 }
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__document {
   padding: 0;
@@ -6962,7 +6920,7 @@
     .k2b-content-doc-code,
     .k2b-content-file-browser__tree,
     .k2b-content-file-view__preview,
-    .k2b-content-pdf-preview,
+    .k2b-pdf-viewer,
     .k2b-content-markdown__table,
     .k2b-content-markdown pre,
     .k2b-timeline__viewport
@@ -6978,7 +6936,7 @@
     .k2b-content-doc-code,
     .k2b-content-file-browser__tree,
     .k2b-content-file-view__preview,
-    .k2b-content-pdf-preview,
+    .k2b-pdf-viewer,
     .k2b-content-markdown__table,
     .k2b-content-markdown pre,
     .k2b-timeline__viewport

@@ -72,7 +72,8 @@ describe("RouteDetailPanel", () => {
     expect(html).toContain("text-amber-600 dark:text-amber-400");
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
     expect(html).not.toContain("overflow-y-auto");
-    expect(html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"))).toContain("Route");
+    // The route is the name; no type word stands above or below it.
+    expect(html).not.toContain('class="k2b-detail-panel__kind"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).not.toContain("k2b-section__icon");
   });

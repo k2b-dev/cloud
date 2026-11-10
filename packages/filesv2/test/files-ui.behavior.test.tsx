@@ -287,11 +287,17 @@ describe("Filesv2 interactions", () => {
 
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(pdf.name))!.click();
     await settleLeases();
-    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Preview")!.click();
+    // The preview stands in the panel; its corner icon opens it large, and no "Preview" action repeats it.
+    expect([...dom.root.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent?.trim() === "Preview")).toBe(
+      false,
+    );
+    dom.root.querySelector<HTMLButtonElement>('.filesv2-inspector-preview__expand button[aria-label="Open large preview"]')!.click();
     await settleLeases();
 
     const dialog = dom.document.querySelector("dialog")!;
-    expect(dialog.querySelector("iframe")?.getAttribute("src")).toMatch(/^blob:preview-/);
+    // pdf.js draws only in a real browser; here the viewer reaches its end state in its own area, without a frame.
+    expect(dialog.querySelector("iframe")).toBeNull();
+    expect(dialog.querySelector(".filesv2-preview .k2b-pdf-viewer")?.getAttribute("data-state")).toBe("undrawable");
     // The dialog header owns the viewer actions; the preview below is only the document.
     expect(dialog.querySelectorAll(".filesv2-preview :is(a, button)")).toHaveLength(0);
     const [open, download] = [...dialog.querySelectorAll<HTMLElement>(".k2b-panel-dialog__actions :is(a, button)")];

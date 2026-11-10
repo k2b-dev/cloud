@@ -717,14 +717,12 @@ branch:
   in the Notebooks attachment preview, the target carries `autofocus`, and the
   test reads focus in the same `page.evaluate` that opens the dialog, before
   any frame can pass.
-- Neither engine shows a PDF in a frame. Chromium's headless shell reports
-  `navigator.pdfViewerEnabled === false`, so `PdfPreview` shows its
-  missing-viewer hint instead of the frame, and an automatic preview requests
-  nothing; Playwright's WebKit reports a viewer but never loads the document,
-  so the loading state stays over the frame. A test therefore defines
-  `pdfViewerEnabled` on `Navigator.prototype` in an init script: `true` where
-  it measures the frame, `false` where it checks the hint. Where it needs the
-  loaded document, it dispatches the frame's `load` event itself.
+- `PdfViewer` draws with pdf.js in both engines, so a browser test that needs
+  pages gives it a real PDF, such as `pdfFixture()` from
+  `packages/ui/test/pdf-fixture.ts`. A few bytes that only start with
+  `%PDF` end in the viewer's "This PDF cannot be shown here" state, which
+  suits a test of the area's states. Behavior tests in happy-dom mock
+  `pdf-document` instead, because pdf.js needs a real browser.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
 - Playwright's WebKit on Linux can stop a video for good when `play()` arrives

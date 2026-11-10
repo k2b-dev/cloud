@@ -6,6 +6,8 @@ import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
+  placeMarkdownCaret,
+  revealedSelection,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 import { literalMarkdownLines, NOTEBOOK_DIRECTIVE_START } from "./lib/markdown-context";
@@ -49,7 +51,7 @@ class InfoBlockWidget extends WidgetType {
     container.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true });
+      view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true, effects: placeMarkdownCaret.of() });
       view.focus();
     };
     container.ondblclick = (event) => {
@@ -96,7 +98,7 @@ class InfoBlockWidget extends WidgetType {
 const findInfoBlocks = (state: EditorState, locale: string): CursorZoneState => {
   const decorations: Range<Decoration>[] = [];
   const ranges: { from: number; to: number }[] = [];
-  const cursor = state.selection.main;
+  const cursor = revealedSelection(state)?.main;
   const text = state.doc.toString();
   if (!text.includes(":::")) return { decorations: Decoration.none, atomicDecorations: Decoration.none, ranges };
   const literal = literalMarkdownLines(text);

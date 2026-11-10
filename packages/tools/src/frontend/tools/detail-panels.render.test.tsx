@@ -76,8 +76,9 @@ describe("Tools detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Stripe test</h2>");
     expect(html).toContain('data-scroll-preserve="webhook-request-detail-request-1"');
-    // K1 outline: kind line with the response state, properties, the bodies, then headers under "More about this request".
-    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+    // K1 outline: the name, then the direction and response state below it, properties, the bodies, then headers under "More about this request".
+    expect(html.indexOf("<h2>")).toBeLessThan(html.indexOf('class="k2b-detail-panel__kind"'));
+    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("</header>"));
     expect(kind).toContain("Incoming request");
     expect(kind).toContain("202");
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
@@ -123,7 +124,8 @@ describe("Tools detail panels", () => {
     const html = renderImageProcessorView({ initialImages: [image] });
 
     expect(html).toContain("<h2>invoice.png</h2>");
-    expect(html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"))).toContain("Image");
+    // The name says what it is; no type word stands above or below it.
+    expect(html).not.toContain('class="k2b-detail-panel__kind"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).not.toContain("k2b-section__icon");
     expect(html).toContain('aria-label="More image actions"');
