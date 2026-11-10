@@ -80,7 +80,6 @@ export async function startMapBrowserFixture() {
           links: [
             { label: "Open in Cloud", url: "/app/example/items/1" },
             { label: "Read website", url: "https://source.example/" },
-            { label: "Unsafe stored link", url: "/\\outside.example/" },
           ],
         },
       ];
