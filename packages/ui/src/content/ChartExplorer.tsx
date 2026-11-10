@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, 
 import { Dynamic } from "solid-js/web";
 import { Button, IconButton } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
-import { calendarViewportHeight } from "../charts/core/calendar";
+import { calendarViewportHeight } from "../charts/core/calendar-layout";
 import { SelectChip } from "../inputs/SelectChip";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";

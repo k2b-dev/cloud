@@ -1,4 +1,4 @@
-import { calendarLayout } from "./calendar";
+import { calendarLayout } from "./calendar-layout";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
 import { sankeyWidth } from "./sankey-size";
@@ -83,10 +83,10 @@ export function prepareChartSnapshot(
   return {
     kind: options.kind,
     svg: formattedSvg,
-    width,
+    width: options.kind === "balanceFlow" ? width * Math.max(1, options.periods.length) : width,
     height,
     ...(calendar ? { minWidth: calendar.minWidth, maxWidth: calendar.maxWidth } : {}),
-    stretch: !calendar && !["map", "pie", "donut", "gauge", "radar"].includes(options.kind),
+    stretch: !calendar && !["map", "pie", "donut", "gauge", "radar", "balanceFlow"].includes(options.kind),
     marks,
   };
 }

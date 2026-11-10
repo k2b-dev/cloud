@@ -9,6 +9,7 @@ import {
 } from "@k2b/editor/markdown/lib/chart-blocks";
 import * as prettyTable from "@k2b/editor/markdown/pretty-table";
 import { evaluatePrettyTable, renderPrettyTableHtml } from "@k2b/editor/markdown/pretty-table";
+import { notebookBlockDiagnosticMessage } from "./book-renderer-messages";
 import { CHART_MAX_BLOCKS, notebookChartOptions } from "./chart-options";
 
 const chart = (body: string) => `:::chart\n${body}\n:::`;
@@ -461,4 +462,18 @@ y: Revenue`),
   expect(payload).toEqual(parsed);
   expect(payload.title).toBe(title);
   expect(payload.data[0].label).toBe(label);
+});
+
+test("balance flow Notebook diagnostics name the offending period in both languages", () => {
+  const result = parseNotebookChartBlocks(
+    chart(
+      'type: balanceFlow\ntitle: Settlement\ncurrency: EUR\nperiods: [{"label":"Oktober","opening":10,"inflows":[],"outflows":[],"closing":20}]',
+    ),
+    notebookChartOptions,
+  );
+  expect(result.blocks).toEqual([]);
+  const issue = result.diagnostics.find((d) => d.code === "chart-balance-period")!;
+  expect(issue.params?.name).toBe("Oktober");
+  expect(notebookBlockDiagnosticMessage(issue, "en")).toContain("amounts for Oktober");
+  expect(notebookBlockDiagnosticMessage(issue, "de")).toContain("Beträge für Oktober");
 });

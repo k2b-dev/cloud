@@ -3,7 +3,9 @@
 // named kind exports and bundles each chart-kind-<kind>.ts independently.
 // Scripts and PDF workers get the real renderers synchronously through lib.ts.
 
+import { balanceFlowRenderOptions } from "@k2b/ui/charts/core";
 import { area } from "./chart-kind-area";
+import { balanceFlow } from "./chart-kind-balanceFlow";
 import { barGauge } from "./chart-kind-barGauge";
 import { boxplot } from "./chart-kind-boxplot";
 import { bubble } from "./chart-kind-bubble";
@@ -24,6 +26,7 @@ import type { RareChartRenderer } from "./chart-renderer-types";
 
 export {
   area,
+  balanceFlow,
   barGauge,
   boxplot,
   bubble,
@@ -44,6 +47,13 @@ export {
 
 export const rareChartSvg: RareChartRenderer = (mapped, common, locale) => {
   switch (mapped.kind) {
+    case "balanceFlow":
+      return balanceFlow(
+        common.balanceFlow
+          ? balanceFlowRenderOptions(common.balanceFlow.input, locale ?? "en", { width: common.width, formats: common.balanceFlow.formats })
+          : mapped,
+        common,
+      );
     case "dots":
       return dots(mapped, common);
     case "line":

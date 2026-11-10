@@ -6,7 +6,7 @@ import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
 import { renderBarChartSvg } from "./bar-render";
-import { calendarLayout } from "./calendar";
+import { calendarLayout } from "./calendar-layout";
 import { type FunnelOptions, renderFunnelSvg } from "./funnel";
 import { type HorizontalBarOptions, renderHbarSvg } from "./hbar";
 import { lineDetailsEnabled } from "./line-options";
@@ -63,6 +63,8 @@ export const renderChartSvg = (
     );
 
   if (props.kind === "sankey") return responsiveChartSvg(chartRenderers.sankey({ ...props, width, height, inspect: true }));
+  if (props.kind === "balanceFlow")
+    return chartRenderers.balanceFlow({ ...props, locale: props.locale ?? renderLocale, width, height, inspect: true });
   if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,

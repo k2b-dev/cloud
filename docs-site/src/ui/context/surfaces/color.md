@@ -210,6 +210,7 @@ Drop targets and other control states keep the platform fill.
 | Files over a page or region | `FileDropTarget` | `k2b-file-drop` |
 | Item over a folder | `FileTree` | `k2b-content-file-tree` |
 | Event over a day while it moves | `Calendar` | `k2b-calendar-month` |
+| Insertion line where a moved row lands | `SortableList` | `k2b-sortable-list` |
 
 ### Links
 

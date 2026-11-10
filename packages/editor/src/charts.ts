@@ -3,13 +3,19 @@ import { i18n } from "@k2b/stdlib";
 import {
   type AreaOptions,
   autoBin,
+  type BalanceFlowOptions,
   type BarChartOptions,
   type BubbleOptions,
+  balanceFlowDatums,
+  balanceFlowFields,
+  balanceFlowRenderOptions,
   barChartLayout,
   barGauge,
   boxplot,
   type ChartDatum,
+  type ChartRenderSettings,
   calendarWords,
+  chartNumberFormatters,
   type charts,
   computeDomain,
   donut,
@@ -29,6 +35,7 @@ import {
   type RadarOptions,
   rankedBarLayout,
   renderAreaSvg,
+  renderBalanceFlowSvg,
   renderBarChartSvg,
   renderBubbleSvg,
   renderFunnelSvg,
@@ -48,6 +55,9 @@ import {
   type WaterfallOptions,
 } from "@k2b/ui/charts/core";
 import { z } from "zod";
+
+export { balanceFlowRenderOptions, chartNumberFormatters } from "@k2b/ui/charts/core";
+
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
 
 export * from "./chart-schema";
@@ -55,30 +65,34 @@ export * from "./chart-schema";
 type RenderOptions = {
   [K in ChartInput["kind"]]: { kind: K } & (K extends "funnel"
     ? FunnelOptions
-    : K extends "hbar"
-      ? HorizontalBarOptions
-      : K extends "waterfall"
-        ? WaterfallOptions
-        : K extends "area"
-          ? AreaOptions
-          : K extends "treemap"
-            ? TreemapOptions
-            : K extends "pareto"
-              ? ParetoOptions
-              : K extends "bubble"
-                ? BubbleOptions
-                : K extends "radar"
-                  ? RadarOptions
-                  : K extends "sankey"
-                    ? SankeyOptions
-                    : K extends "heatmap"
-                      ? HeatmapChartOptions
-                      : K extends "bar"
-                        ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
-                        : K extends keyof typeof charts
-                          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-                          : never);
+    : K extends "balanceFlow"
+      ? BalanceFlowOptions
+      : K extends "hbar"
+        ? HorizontalBarOptions
+        : K extends "waterfall"
+          ? WaterfallOptions
+          : K extends "area"
+            ? AreaOptions
+            : K extends "treemap"
+              ? TreemapOptions
+              : K extends "pareto"
+                ? ParetoOptions
+                : K extends "bubble"
+                  ? BubbleOptions
+                  : K extends "radar"
+                    ? RadarOptions
+                    : K extends "sankey"
+                      ? SankeyOptions
+                      : K extends "heatmap"
+                        ? HeatmapChartOptions
+                        : K extends "bar"
+                          ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                          : K extends keyof typeof charts
+                            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                            : never);
 }[ChartInput["kind"]];
+type BalanceFlowInput = Extract<ChartInput, { kind: "balanceFlow" }>;
+type BaseChartInput = Exclude<ChartInput, BalanceFlowInput>;
 
 /**
  * Plain-data chart options become the options of the shared
@@ -307,45 +321,9 @@ type Formats = {
   x: { tick: (value: number) => string; value: (value: number) => string };
 };
 
-/**
- * Value precision and tick precision share the same style and units; ticks must remain distinct. A currency without
- * `decimals` or compact notation writes cents only when one of the formatted `values` has them: 418,000 € rather than
- * 418,000.00 €.
- */
-export const chartNumberFormatters = (format: ChartNumberFormat | undefined, locale: string, values?: readonly number[]) => {
-  const common: Intl.NumberFormatOptions = {
-    style: format?.style === "number" ? "decimal" : format?.style,
-    currency: format?.currency,
-  };
-  // Compact notation keeps its fraction: 1.2K and 1.4K must not both read 1K.
-  const decimals =
-    format?.decimals ??
-    (format?.style === "currency" && !format.compact && values?.length && values.every(Number.isInteger) ? 0 : undefined);
-  const value = new Intl.NumberFormat(
-    locale,
-    format
-      ? {
-          ...common,
-          ...(decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
-          ...(format.compact ? { notation: "compact" } : {}),
-        }
-      : { maximumSignificantDigits: 15 },
-  );
-  let tick: Intl.NumberFormat | undefined;
-  const tickValue = (v: number) => {
-    tick ??= new Intl.NumberFormat(locale, {
-      ...common,
-      notation: !format || format.compact ? "compact" : "standard",
-      maximumSignificantDigits: 15,
-    });
-    return tick.format(v);
-  };
-  const unit = format?.unit ? ` ${format.unit}` : "";
-  return { value: (v: number) => `${value.format(v)}${unit}`, tick: (v: number) => `${tickValue(v)}${unit}` };
-};
 const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in format) ? format : undefined);
 /** The values a chart writes with its value format, for whole-number currency. */
-const formattedValues = (input: ChartInput): number[] => {
+const formattedValues = (input: BaseChartInput): number[] => {
   switch (input.kind) {
     case "sankey":
       return input.links.map((link) => link.value);
@@ -395,7 +373,7 @@ const formattedValues = (input: ChartInput): number[] => {
       return [];
   }
 };
-const formats = (input: ChartInput, locale: string): Formats => {
+const formats = (input: BaseChartInput, locale: string): Formats => {
   const yFormat = ("yAxis" in input ? numberFormat(input.yAxis?.format) : undefined) ?? ("format" in input ? input.format : undefined);
   const y = chartNumberFormatters(yFormat, locale, formattedValues(input));
   const xFormat = "xAxis" in input && input.kind !== "bar" ? input.xAxis?.format : undefined;
@@ -419,7 +397,8 @@ const formats = (input: ChartInput, locale: string): Formats => {
 };
 
 /** The table's x formatter also titles the shared cursor. */
-export const chartXValueFormat = (input: ChartInput, locale: string): ((x: number) => string) => formats(input, locale).x.value;
+export const chartXValueFormat = (input: ChartInput, locale: string): ((x: number) => string) =>
+  input.kind === "balanceFlow" ? chartNumberFormatters(undefined, locale).value : formats(input, locale).x.value;
 
 /** Room for the longest y tick label, so values like 1.2M never run past the left edge on a phone. */
 const leftPadding = (values: number[], value: ChartAxisInput | undefined, tick: (value: number) => string, factor = NARROW) => {
@@ -469,15 +448,16 @@ export const chartReferenceMark = (input: ChartInput, datum: ChartDatum): boolea
   input.kind === "scatter" && input.series[datum.seriesIndex ?? 0]?.role === "reference";
 
 /** Options for the shared renderer; the chat block draws the title itself. */
-export function chartRenderOptions(
-  input: ChartInput,
+export function chartRenderOptions(input: ChartInput, locale: string, options: ChartRenderSettings = {}): RenderOptions {
+  return input.kind === "balanceFlow" ? balanceFlowRenderOptions(input, locale, options) : chartBaseRenderOptions(input, locale, options);
+}
+
+/** Plain-chart mapping; hosts that defer the self-contained BalanceFlow frame keep its formatter lazy. */
+export function chartBaseRenderOptions(
+  input: BaseChartInput,
   locale: string,
-  options: {
-    width?: number;
-    legend?: "svg" | "outside";
-    formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
-  } = {},
-): RenderOptions {
+  options: ChartRenderSettings = {},
+): Exclude<RenderOptions, { kind: "balanceFlow" }> {
   if ("locale" in input && input.locale) locale = input.locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
@@ -788,6 +768,8 @@ export const drawChart = (options: RenderOptions): string => {
       return renderTreemapSvg({ ...options, ...common });
     case "pareto":
       return renderParetoSvg({ ...options, ...common });
+    case "balanceFlow":
+      return renderBalanceFlowSvg({ ...options, ...common });
     case "sankey":
       return renderSankeySvg({ ...options, ...common });
     case "bubble":
@@ -886,6 +868,49 @@ export function chartTooltip(
  */
 export function chartRows(
   input: ChartInput,
+  locale: string,
+  options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
+): ReturnType<typeof chartBaseRows> {
+  return input.kind === "balanceFlow" ? balanceFlowChartRows(input, locale) : chartBaseRows(input, locale, options);
+}
+
+function balanceFlowChartRows(input: BalanceFlowInput, locale: string): ReturnType<typeof chartBaseRows> {
+  const words = balanceFlowFields(input.locale ?? locale);
+  const columns = new Map<string, ChartColumn>();
+  const rows: ChartRow[] = [];
+  return {
+    add(datum) {
+      columns.set("label", { id: "label", label: words.chartFields({ key: "detail" }), numeric: false });
+      const cells: Record<string, string> = { label: datum.label ?? "" };
+      const values: Record<string, string | number> = { label: datum.label ?? "" };
+      for (const field of datum.values) {
+        if (!columns.has(field.key))
+          columns.set(field.key, {
+            id: field.key,
+            label:
+              field.label ??
+              (field.key === "period"
+                ? words.balancePeriod
+                : field.key === "direction"
+                  ? words.balanceDirection
+                  : words.chartFields({ key: field.key })),
+            numeric: typeof field.value === "number",
+          });
+        cells[field.key] = field.formatted ?? String(field.value);
+        values[field.key] = field.value;
+      }
+      const row = { key: chartMarkKey(datum), cells, values };
+      rows.push(row);
+      return row;
+    },
+    columns: () => [...columns.values()],
+    table: () => ({ columns: [...columns.values()], rows }),
+  };
+}
+
+/** Table builder for ordinary SVG charts; the BalanceFlow asset owns its complete table. */
+export function chartBaseRows(
+  input: BaseChartInput,
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
@@ -1120,7 +1145,7 @@ export function chartRows(
         rows.some((row) => row.values.rank !== undefined)
       ) {
         const source = { ...input, limit: undefined };
-        const all = chartRows(source, locale, options);
+        const all = chartBaseRows(source, locale, options);
         const layout = rankedBarLayout({ data: source.data, title: source.title, subtitle: source.subtitle, valueFormat, locale });
         for (const row of layout.rows) {
           const value = Number.isFinite(row.value) ? row.value : null;
@@ -1167,7 +1192,8 @@ export function chartRows(
 /** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */
 export function chartTable(input: ChartInput, locale: string): ChartTable {
   const rows = chartRows(input, locale);
-  for (const datum of chartSvgMarks(drawChart(chartRenderOptions(input, locale)))) rows.add(datum);
+  const drawing = chartRenderOptions(input, locale);
+  for (const datum of drawing.kind === "balanceFlow" ? balanceFlowDatums(drawing) : chartSvgMarks(drawChart(drawing))) rows.add(datum);
   return rows.table();
 }
 
@@ -1176,6 +1202,8 @@ export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
     case "pareto":
       return input.data.length * 3;
+    case "balanceFlow":
+      return input.periods.reduce((total, p) => total + p.inflows.length + p.outflows.length + 3, 0);
     case "sankey": {
       const graph = sankeyGraph(input);
       return (
