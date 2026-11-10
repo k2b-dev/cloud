@@ -701,13 +701,18 @@ Callers can attach a note, a source label with an optional generic symbol, and u
 to three labeled links to each place or route stop. The selected place shows these
 details; route legs show the destination stop's note below its label. Use
 `describe` with `details`, `web`, or both, or pass stop `details` with `route`.
-Each detail's `id` is a returned place mark or stable stop ID. Notes allow 600
-characters, source labels 120, link labels 80, and link URLs 2,000. At most 66
-entries are retained (two groups of 20 places plus 26 route stops); new details
-replace the entry for that ID, and replacing places or stops drops stale entries.
-External HTTP(S) links require a source already read in the conversation and open
-in a new tab. Root-relative Cloud paths beginning with a single `/` open in place
-without fetching; other link forms are rejected. These fields are caller-supplied
+Each detail's `id` is a returned place mark or a stop ID; an ID that names both a
+stop and a place mark is rejected. Notes allow 600 characters, source labels 120,
+link labels 80, and link URLs 2,000. A map keeps details only for what it shows:
+up to two groups of 20 places, five results to pick a stop from, and 26 route
+stops (71 entries), so a live entry is never dropped for room. A new entry
+replaces the whole earlier entry for that ID; send the ID alone to clear it.
+Replacing places drops their details, a new route replaces all stop details even
+where it reuses a stop ID, and changing a stop's address drops that stop's
+details. External HTTP(S) links require a source already read in the
+conversation and open in a new tab. Root-relative Cloud paths beginning with a
+single `/` open in place without fetching and are not checked, so they should
+name pages the person may open; dot segments and other link forms are rejected. These fields are caller-supplied
 display information; the map has no application-specific knowledge.
 
 Follow-up searches reuse `mapId` and the current revision. A second group uses

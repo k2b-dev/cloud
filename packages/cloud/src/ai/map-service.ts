@@ -52,10 +52,28 @@ const readWeb = async (map: AiMap, web: AiMap["web"], ctx: AiMapContext) => {
   const fresh = new Set(resolved.map((w) => w.placeId));
   return [...map.web.filter((w) => !fresh.has(w.placeId)), ...resolved].slice(-40);
 };
+/** Every place and stop on the map now; details for anything else are stale. */
+const liveIds = (map: AiMap) =>
+  new Set([
+    ...map.groups.flatMap((g) => g.places.map((p) => p.id)),
+    ...(map.picker ?? []).map((p) => p.id),
+    ...(map.route?.stops ?? map.plan?.stops ?? []).map((s) => s.id),
+  ]);
 const readDetails = async (map: AiMap, details: NonNullable<AiMap["details"]>, ctx: AiMapContext, stopsOnly = false) => {
   const stops = new Set((map.route?.stops ?? map.plan?.stops ?? []).map((s) => s.id));
+  const place = (id: string) => {
+    try {
+      return placeById(map, id, ctx);
+    } catch {
+      return undefined;
+    }
+  };
   const resolved = details.map((item) => {
-    if (stops.has(item.id)) return item;
+    if (stops.has(item.id)) {
+      // A stop named like a place mark could mean either; the caller says which by using an unambiguous id.
+      if (!stopsOnly && place(item.id)) throw new Error("MAP_DETAIL_ID_AMBIGUOUS");
+      return item;
+    }
     if (stopsOnly) throw new Error("MAP_STOP_NOT_FOUND");
     return { ...item, id: placeById(map, item.id, ctx).id };
   });
@@ -70,16 +88,20 @@ const readDetails = async (map: AiMap, details: NonNullable<AiMap["details"]>, c
     merged.delete(item.id);
     merged.set(item.id, item);
   }
-  return [...merged.values()].slice(-AI_MAP_MAX_DETAILS);
+  // Only live entries count against the bound, which covers every place and stop a map can hold at once.
+  const ids = liveIds(map);
+  return [...merged.values()].filter((item) => ids.has(item.id)).slice(-AI_MAP_MAX_DETAILS);
 };
 const dropStaleDetails = (map: AiMap) => {
   if (!map.details) return;
-  const ids = new Set([
-    ...map.groups.flatMap((g) => g.places.map((p) => p.id)),
-    ...(map.picker ?? []).map((p) => p.id),
-    ...(map.route?.stops ?? map.plan?.stops ?? []).map((s) => s.id),
-  ]);
+  const ids = liveIds(map);
   map.details = map.details.filter((item) => ids.has(item.id));
+};
+/** New stops replace the old ones wholesale, including their details, even where a stop id is reused. */
+const dropStopDetails = (map: AiMap, stopIds: Iterable<string>) => {
+  if (!map.details) return;
+  const stops = new Set(stopIds);
+  map.details = map.details.filter((item) => !stops.has(item.id));
 };
 const searchPlaces = async (map: AiMap, search: Extract<AiMapCommand, { type: "places" }>["search"], ctx: AiMapContext, limit = 20) => {
   const geo = ctx.geo ?? geoClient;
@@ -119,6 +141,12 @@ export async function createAiMap(
 ): Promise<AiMapStored> {
   const command = input.command;
   if (command.type !== "places" && command.type !== "route") throw new Error("MAP_CREATE_REQUIRED");
+  // An unread link fails before the map is announced, so no pending map waits on a retry that cannot succeed.
+  for (const link of command.type === "route" ? (command.details ?? []).flatMap((detail) => detail.links ?? []) : []) {
+    const href = aiMapDetailLink(link.url);
+    if (!href) throw new Error("MAP_DETAIL_LINK_INVALID");
+    if (!href.startsWith("/") && !(await ctx.verifyWeb(href))) throw new Error("MAP_WEB_SOURCE_NOT_READ");
+  }
   const availability = data(await (ctx.geo ?? geoClient).availability(ctx.caller));
   const map: AiMap = {
     id: input.id ?? crypto.randomUUID(),
@@ -186,6 +214,8 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       if (command.web) map.web = await readWeb(map, command.web, ctx);
     } else if (command.type === "repair") {
       if (!map.plan || map.route || !map.plan.stops.some((s) => s.id === command.stopId)) throw new Error("MAP_STOP_NOT_FOUND");
+      // Another address is another place: what the caller said about the old one does not carry over.
+      dropStopDetails(map, [command.stopId]);
       map.plan.stops = map.plan.stops.map((s) =>
         s.id === command.stopId
           ? { id: s.id, label: command.address, ...(command.point ? { point: command.point } : { address: { text: command.address } }) }
@@ -199,6 +229,10 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       const place = placeById(map, command.destinationId, ctx);
       map.kind = "route";
       map.title = place.name.slice(0, 160);
+      dropStopDetails(
+        map,
+        (map.plan?.stops ?? []).map((s) => s.id),
+      );
       map.plan = {
         stops: [
           { id: "location", label: ctx.caller.locale?.startsWith("de") ? "Mein Standort" : "My location", point: command.point },
@@ -219,6 +253,10 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
         }),
         options: command.options,
       };
+      dropStopDetails(
+        map,
+        (map.plan?.stops ?? []).map((s) => s.id),
+      );
       map.plan = plan;
       map.kind = "route";
       map.title = command.title;

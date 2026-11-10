@@ -29,7 +29,11 @@ export const aiMapWebsite = (value: string | undefined): string | undefined => {
 
 /** Browser-safe root-relative Cloud paths or absolute HTTP(S) links. */
 export const aiMapDetailLink = (value: string): string | undefined => {
-  if (/^\/(?!\/)[^\\\u0000-\u001f\u007f]*$/.test(value)) return value;
+  if (value.startsWith("/")) {
+    if (!/^\/(?!\/)[^\\\u0000-\u001f\u007f]*$/.test(value)) return undefined;
+    // A link names its target directly: dot segments, also encoded, could resolve to a `//host` path.
+    return /(?:^|\/)(?:\.|%2e){1,2}(?=\/|\?|#|$)/i.test(value) ? undefined : value;
+  }
   return /^https?:\/\//.test(value) ? aiMapWebsite(value) : undefined;
 };
 
@@ -37,7 +41,10 @@ const label = z.string().trim().min(1).max(160);
 const web = z.object({ placeId: z.string().max(2048), description: z.string().max(600), url: z.url().max(2000) }).strict();
 const maxGroups = 2;
 const maxPlaces = 20;
-export const AI_MAP_MAX_DETAILS = maxGroups * maxPlaces + GEO_ROUTE_MAX_STOPS;
+/** Insert-stop search results a person picks from. */
+const maxPicker = 5;
+/** Every place and stop a map can hold at once, so the bound never drops a live entry. */
+export const AI_MAP_MAX_DETAILS = maxGroups * maxPlaces + maxPicker + GEO_ROUTE_MAX_STOPS;
 const details = z
   .array(
     z
@@ -52,7 +59,18 @@ const details = z
           .strict()
           .optional(),
         links: z
-          .array(z.object({ label: z.string().trim().min(1).max(80), url: z.string().min(1).max(2000) }).strict())
+          .array(
+            z
+              .object({
+                label: z.string().trim().min(1).max(80),
+                url: z
+                  .string()
+                  .min(1)
+                  .max(2000)
+                  .refine((url) => aiMapDetailLink(url) !== undefined, "Use an http(s) URL or a root-relative Cloud path"),
+              })
+              .strict(),
+          )
           .max(3)
           .optional(),
       })
@@ -98,7 +116,7 @@ export const AiMapSchema = z
     receipt: z.object({ title: label, at: z.iso.datetime() }).strict().optional(),
     candidates: z.array(GeoAddressSchema).max(5).optional(),
     ambiguousStopId: z.string().optional(),
-    picker: z.array(GeoPlaceSchema).max(5).optional(),
+    picker: z.array(GeoPlaceSchema).max(maxPicker).optional(),
     retryInsertStopId: z.uuid().optional(),
     issue: z
       .object({
@@ -157,7 +175,11 @@ export const AiMapCommandSchema = z.discriminatedUnion("type", [
       title: label,
       details: details.optional(),
     })
-    .strict(),
+    .strict()
+    .refine(
+      (value) => (value.details ?? []).every((detail) => value.stops.some((stop) => stop.id === detail.id)),
+      "Route details name this route's stop IDs",
+    ),
   z.object({ type: z.literal("search"), search, insert: z.boolean().optional(), web: z.array(web).max(20).optional() }).strict(),
   z
     .object({ type: z.literal("describe"), web: z.array(web).max(40).optional(), details: details.optional() })

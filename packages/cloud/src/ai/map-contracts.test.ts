@@ -11,7 +11,7 @@ describe("Assistant map details contract", () => {
   };
   test("old maps remain valid and details accept the complete bounded shape", () => {
     expect(AiMapSchema.parse(mapFixture()).details).toBeUndefined();
-    expect(AI_MAP_MAX_DETAILS).toBe(66);
+    expect(AI_MAP_MAX_DETAILS).toBe(71);
     const details = Array.from({ length: AI_MAP_MAX_DETAILS }, (_, i) => ({ ...detail, id: String(i) }));
     expect(AiMapSchema.parse({ ...mapFixture(), details }).details).toEqual(details);
     for (const command of [
@@ -30,6 +30,20 @@ describe("Assistant map details contract", () => {
     ])
       expect(AiMapToolInputSchema.safeParse({ command }).success).toBe(true);
     expect(AiMapToolInputSchema.safeParse({ command: { type: "describe" } }).success).toBe(false);
+    // A route's details name its own stops, so a typo fails before anything is calculated or announced.
+    expect(
+      AiMapToolInputSchema.safeParse({
+        command: {
+          type: "route",
+          title: "Tour",
+          stops: [
+            { id: "a", address: "Ulm" },
+            { id: "b", address: "Blaubeuren" },
+          ],
+          details: [{ id: "c", note: "Nowhere" }],
+        },
+      }).success,
+    ).toBe(false);
   });
   test("rejects excess lengths, arbitrary icons and app-specific fields", () => {
     for (const invalid of [
@@ -41,6 +55,8 @@ describe("Assistant map details contract", () => {
       { ...detail, links: [...detail.links, detail.links[0]] },
       { ...detail, links: [{ label: "l".repeat(81), url: "/path" }] },
       { ...detail, links: [{ label: "Open", url: `/${"p".repeat(2000)}` }] },
+      { ...detail, links: [{ label: "Open", url: "javascript:alert(1)" }] },
+      { ...detail, links: [{ label: "Open", url: "/..//example.com" }] },
       { ...detail, appId: "some-app" },
     ])
       expect(AiMapToolInputSchema.safeParse({ command: { type: "describe", details: [invalid] } }).success).toBe(false);
@@ -63,6 +79,11 @@ describe("Assistant map details contract", () => {
   });
   test.each([
     "//example.com",
+    "/..//example.com",
+    "/.//example.com",
+    "/%2e%2e//example.com",
+    "/%2E.//example.com",
+    "/a/../..//example.com",
     "/\\example.com",
     "/\n/example.com",
     "/\t/example.com",
