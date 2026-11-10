@@ -31,7 +31,7 @@ function DrawingBoundary(props: {
   const locale = useLocale();
   const key = drawingKey(props.name, props.input);
   const retained = chartHandoff()(key);
-  const frames = [...(retained?.querySelectorAll<HTMLElement>(".k2b-chart-explorer") ?? [])];
+  const frames = [...(retained?.querySelectorAll<HTMLElement>(".k2b-chart-explorer, [data-balance-flow]") ?? [])];
   for (const frame of frames) {
     frame.style.position = "relative";
     // The drawing remains readable by assistive technology; only its inspection and controls wait for code.
@@ -233,15 +233,31 @@ export function CloudChartBlock(props: ComponentProps<Drawing["CloudChartBlock"]
           >
             {(input) => {
               const value = input();
+              const height =
+                value.view === "group" ? 0 : chartRenderHeight(cloudAiChartRenderOptions(value, locale(), { legend: "outside" }));
               return value.view === "group" ? (
                 <GroupPlaceholder summary={{ ...value, linkX: value.linkX ?? false, layout: value.layout ?? "stack" }} failed={failed()} />
+              ) : value.kind === "balanceFlow" ? (
+                <div
+                  class="k2b-chart k2b-ui"
+                  data-balance-pending
+                  style={{
+                    "--k2b-balance-flow-height": `${height}px`,
+                    "--k2b-balance-flow-phone-height": `${(180 * (height - 46)) / height + 2}px`,
+                    "--k2b-balance-flow-rows": Math.min(6, ...value.periods.map((p) => p.inflows.length + p.outflows.length + 3)),
+                  }}
+                >
+                  <div class="k2b-chart__svg" aria-busy="true">
+                    <Status failed={failed()} />
+                  </div>
+                </div>
               ) : (
                 <ChartFrame
                   title={value.title}
                   subtitle={value.subtitle}
                   kind={value.kind}
                   chart={null}
-                  height={chartRenderHeight(cloudAiChartRenderOptions(value, locale(), { legend: "outside" }))}
+                  height={height}
                   empty={<Status failed={failed()} />}
                 />
               );

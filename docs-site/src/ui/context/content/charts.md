@@ -1346,3 +1346,62 @@ A missing nested observation leaves the category drawing as a gap. Zero counts r
 The DOM-free `nestedDotOptions` helper from `@k2b/ui/charts/core` shares these checks with the portable schema and returns the resolved capacity and dot count. Direct calls throw on invalid options; schema hosts can pass an issue callback as the second argument to collect validation errors.
 
 Percentage bar and dot-matrix descriptions show the latest category in their legend until inspection shows the category at the cursor. They never sum percentages across periods. For direct `Chart.Bar` calls with a custom percentage formatter, set `legendValues="latest"`; count series keep summed totals by default.
+
+## Balance flows across periods
+
+`Chart.BalanceFlow` and `kind="balanceFlow"` explain a settlement balance in one
+currency. Supply `currency` and ordered `periods`, each with `label`, `opening`,
+`inflows: {label,value}[]`, `outflows: {label,value}[]`, and `closing`.
+The JSON entry rejects a period unless opening + inflows − outflows = closing,
+and rejects a boundary unless its closing equals the next opening. Decimal input
+values are compared exactly; the chart never rounds an inconsistent ledger into
+balance. Flows are nonnegative; a negative balance is labelled **owed**.
+
+Opening and closing share blue. Receipts use the turquoise money-in tokens,
+deductions the violet money-out tokens, with direction arrows and unsigned
+currency values. The available node stays neutral. Red and green have no role.
+Every desktop bar keeps a caption; closely spaced flows use staggered captions with leaders.
+Long labels keep their full text in the tooltip and table. Narrow panels show the
+complete name and amount rows below the drawing, with wrapping names and tabular
+numbers; they do not squeeze or cut labels inside the bands.
+
+All periods share one horizontally scrollable canvas and one amount scale. Opening
+and closing stay at the bottom; the blue closing band continues directly into the
+next opening with identical thickness. The boundary has one balance caption and
+one shared node in normal width; other inflow/outflow nodes sit inside their month with a clear
+gap. The shared tooltip names the closing and following opening together;
+accessible names replace native browser tooltips. Month names stay above their part of the flow. The newest period is visible in the server frame, before any script runs.
+Touch or trackpad scrolls through earlier months with snap points at boundaries.
+On phones, adjacent months peek beside the current month. Compact amount rows
+with hairline separators sit directly below the drawing; names wrap beside
+right-aligned tabular amounts. The list shows up to six rows, using the shortest
+period to set a shared viewport height. Longer lists scroll inside it. Scroll
+edges fade softly.
+Previous/Next or Left/Right scroll one period, timed by `--k2b-motion-base`;
+either the operating system preference or `html[data-k2b-motion="reduced"]`
+removes animated scrolling. Up/Down inspect amounts, Enter pins and Escape
+dismisses. The buttons disable at the ends. Accessible summaries cover every
+period's opening, total inflows, total outflows and closing. Diagram/Table
+switches between the continuous flow and complete tables for all periods.
+
+The drawing uses the largest period to keep a common scale. On phones, the frame
+uses the compact list viewport and crops the unused SVG caption space.
+`state` is a Solid-only prop: `loading`, `empty`, `error`, `stale` or `data`.
+`onRetry` handles retry; `error` can supply a load-failure explanation. Invalid
+accounting names the offending period in the frame and Notebook diagnostic. A stale
+notice occupies the subtitle line. Changing period, view, hover or state keeps the
+frame height. `view`/`onViewChange` optionally control the Diagram/Table switch.
+The JSON form carries the data, currency and optional validated
+BCP 47 `locale`; it uses the inherited UI locale by default. Assistant frames load
+paint and interaction from separate cached offline assets when this kind is first
+drawn. Other app frames retain only validation, initial sizing and lazy loading.
+Hosts with an existing inspector can call `mountBalanceFlowController(root, options,
+inspectChart)` from `@k2b/ui/charts`; `mountBalanceFlow` supplies that dependency
+for ordinary hosts. Initial mounting keeps the full server frame intact; the
+shared tooltip mounts when a person first interacts with the drawing.
+`chartNumberFormatters` in `@k2b/ui/charts/core` also serves
+the portable table adapter, preserving one number-formatting contract.
+
+In Notebook chart directives, use `type: balanceFlow`, `currency: EUR` and
+`periods: [...]` with the period array as one line of JSON. The note reserves the
+same frame while loading and prints every period's complete value table.

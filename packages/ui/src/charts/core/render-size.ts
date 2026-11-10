@@ -1,5 +1,6 @@
 import { barChartLayout } from "../../content/chart-bar";
 import { stateTimelineHeight } from "../../content/chart-state-timeline";
+import { balanceFlowHeight } from "./balance-flow-size";
 // Import the layout leaf: sharing its renderer module can promote drawing into an eager island chunk.
 import { hbarLayout } from "./hbar-layout";
 import type { ChartRenderOptions } from "./render";
@@ -9,6 +10,7 @@ import type { ChartKind } from "./types";
 
 /** Standard logical height, or compact bar-gauge rows for a host without an explicit height. */
 export const chartRenderHeight = (props: ChartRenderOptions, sizing: { contentHeight?: boolean } = {}): number => {
+  if (props.kind === "balanceFlow") return balanceFlowHeight(props.periods);
   if (props.kind === "sankey") return sankeyFrame(props).height;
   if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
   if (props.kind === "pareto") return Math.max(280, props.data.length * 34 + renderHeader(480, props.title, props.subtitle).height + 72);

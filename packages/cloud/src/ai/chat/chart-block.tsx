@@ -1,4 +1,4 @@
-import { createChartCursor, prepareChartSnapshot, useLocale } from "@k2b/ui";
+import { Chart, createChartCursor, prepareChartSnapshot, useLocale } from "@k2b/ui";
 import { createMemo, createUniqueId, Index, type JSX, Show } from "solid-js";
 import {
   cloudAiChartLegend,
@@ -11,10 +11,25 @@ import {
 } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
 import { type CloudGroupDescription, parseCloudAiChartToolView } from "../view-block";
-import { ChartFrame, type DrawnChart, type GroupSummary } from "./chart-frame";
+import { type DrawnChart, type GroupSummary, ChartFrame as SharedChartFrame } from "./chart-frame";
 import { aiChatMessages } from "./messages";
 
 type Kind = CloudAiChartInput["kind"];
+
+// This module is the lazy Chat drawing boundary; the shared placeholder never imports a renderer.
+function ChartFrame(props: Parameters<typeof SharedChartFrame>[0]) {
+  const locale = useLocale();
+  const balance = createMemo(() => {
+    if (props.chart?.input.kind !== "balanceFlow") return undefined;
+    const drawing = cloudAiChartRenderOptions(props.chart.input, locale());
+    return drawing.kind === "balanceFlow" ? drawing : undefined;
+  });
+  return (
+    <Show when={balance()} fallback={<SharedChartFrame {...props} />}>
+      {(drawing) => <Chart {...drawing()} title={props.title} subtitle={props.subtitle} />}
+    </Show>
+  );
+}
 
 /** Draws a chart for display and fills its table from that drawing; null when nothing can be drawn. */
 const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null => {
@@ -29,7 +44,9 @@ const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null 
       },
       reference: ({ datum }) => cloudAiChartReferenceMark(input, datum),
     });
-    return snapshot.marks.length > 0 ? { input, table: rows.table(), snapshot, legend: cloudAiChartLegend(input, locale) } : null;
+    return snapshot.marks.length > 0 || input.kind === "balanceFlow"
+      ? { input, table: rows.table(), snapshot, legend: cloudAiChartLegend(input, locale) }
+      : null;
   } catch {
     return null;
   }

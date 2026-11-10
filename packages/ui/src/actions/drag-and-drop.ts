@@ -127,7 +127,8 @@ const announcerFor = (origin: HTMLElement): Announcer => {
   }
   return announcer;
 };
-const announce = (origin: HTMLElement, text: string) => {
+/** Speaks through the drag live region of `origin`'s container; SortableList shares it for keyboard moves. */
+export const announce = (origin: HTMLElement, text: string) => {
   const announcer = announcerFor(origin);
   const write = (next: string) => {
     announcer.region.textContent = announcer.region.textContent === next ? `${next}\u00a0` : next;

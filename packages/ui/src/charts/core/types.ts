@@ -13,7 +13,7 @@ export type ChartDatum = {
   label?: string;
   anchor: [number, number];
   grid?: [number, number];
-  values: { key: string; value: string | number; formatted?: string }[];
+  values: { key: string; value: string | number; formatted?: string; label?: string }[];
 };
 
 export type { ChartDateFormat, ChartFormat, ChartNumberFormat } from "../description";

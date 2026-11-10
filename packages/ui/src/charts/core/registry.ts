@@ -1,5 +1,6 @@
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
+import { renderBalanceFlowSvg } from "./balance-flow";
 import { renderBarChartSvg } from "./bar-render";
 import { renderBubbleSvg } from "./bubble";
 import { renderHeatmapSvg } from "./calendar";
@@ -41,6 +42,7 @@ const createChartRenderers = () => ({
   bubble: renderBubbleSvg,
   radar: renderRadarSvg,
   sankey: renderSankeySvg,
+  balanceFlow: renderBalanceFlowSvg,
 });
 export const chartRenderers = /* @__PURE__ */ createChartRenderers();
 type Kind = keyof typeof chartRenderers;

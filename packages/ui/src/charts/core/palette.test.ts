@@ -13,8 +13,8 @@ test.each(Object.values(chartFixtures))("$kind standalone palette matches base.c
   const original = renderChartSvg(spec, 480, chartRenderHeight(spec));
   const svg = chartSvgWithUiPalette(original);
   const definitions = [...svg.matchAll(/--stdlib-chart-c([1-8]): (#[0-9a-f]{6});/g)];
-  // Area supplies inline numeric fallbacks; waterfall uses semantic money colors.
-  expect(definitions).toHaveLength(spec.kind === "area" || spec.kind === "waterfall" ? 0 : 8);
+  // Area supplies inline numeric fallbacks; waterfall and balance flow use semantic money colors.
+  expect(definitions).toHaveLength(spec.kind === "area" || spec.kind === "waterfall" || spec.kind === "balanceFlow" ? 0 : 8);
   for (const [, index, color] of definitions) expect(color).toBe(palette[Number(index) - 1]);
   for (const [, index, color] of svg.matchAll(/var\(--stdlib-chart-c([1-8]),\s*(#[0-9a-f]{3,8})\)/g))
     expect(color).toBe(palette[Number(index) - 1]);

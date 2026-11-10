@@ -3,7 +3,7 @@ import { basename, resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { renderMarkdownSync } from "../../shared/markdown";
 import { cloudAiNumberFormatters } from "../chart-block";
@@ -84,10 +84,15 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
           "/charts/core/pareto.js",
           "/charts/core/treemap.js",
           "/charts/core/sankey.js",
+          "/charts/core/balance-flow.js",
+          "/charts/core/calendar.js",
+          "/content/ChartBalanceFlow.js",
+          "/content/chart-balance-flow-controller.js",
+          "/content/chart-inspection-mount.js",
         ].some((kind) => path.endsWith(kind)) &&
         input.bytesInOutput > 0
       )
-        throw new Error("Catalog drawing belongs to the lazy Chat module");
+        throw new Error(`Catalog drawing belongs to the lazy Chat module: ${path}`);
     }
     for (const dependency of output.imports)
       if (dependency.kind !== "dynamic-import" && outputs.has(basename(dependency.path))) initial.add(basename(dependency.path));
@@ -1917,6 +1922,50 @@ test("removing a chart while drawing code loads leaves the mounted chat usable",
     await context.close();
   }
 });
+
+for (const width of [1280, 390])
+  test(`a first-use balance flow keeps its real card height while drawing code loads (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const code = hold(chartModulePath);
+    try {
+      const page = await context.newPage();
+      const errors = pageErrors(page);
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      await page.evaluate(() =>
+        window.showCharts([
+          {
+            kind: "balanceFlow",
+            title: "Marketplace balance",
+            currency: "EUR",
+            periods: [
+              {
+                label: "October",
+                opening: 1000,
+                inflows: [{ label: "Orders", value: 2000 }],
+                outflows: [
+                  { label: "Fees", value: 400 },
+                  { label: "Payouts", value: 600 },
+                ],
+                closing: 2000,
+              },
+            ],
+          },
+        ]),
+      );
+      await page.locator("[data-tool-chart] [data-balance-pending]").waitFor();
+      await settled(page);
+      const box = () => page.locator("[data-tool-chart]").boundingBox();
+      const pending = await box();
+      code();
+      await page.locator("[data-tool-chart] [data-balance-flow]").waitFor();
+      await settled(page);
+      expect(await box()).toEqual(pending);
+      expect(errors).toEqual([]);
+    } finally {
+      code();
+      await context.close();
+    }
+  });
 
 for (const width of [1280, 390])
   test(`a first-use chart tool reserves tall, compact and grouped drawings (${width})`, async () => {

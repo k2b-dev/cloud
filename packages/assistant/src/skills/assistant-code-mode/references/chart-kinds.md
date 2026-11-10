@@ -384,3 +384,17 @@ Avoid for: Cycles or unrelated measures; use bars for unrelated categories.
 ```json
 {"kind":"sankey","title":"Paths after the click","nodes":[{"id":"click","label":"Clicked","tone":"blue"},{"id":"article","label":"Article","tone":"green"},{"id":"offer","label":"Offer","tone":"violet"},{"id":"signup","label":"Signed up","tone":"in"}],"links":[{"source":"click","target":"article","value":520},{"source":"click","target":"offer","value":280},{"source":"article","target":"signup","value":140}]}
 ```
+
+## balanceFlow
+
+Use for: Reconciled balances across consecutive settlement periods. Showing how receipts, deductions and payouts explain the remaining balance.
+
+Avoid for: Unreconciled or missing balances. Unrelated measures or conversions between currencies.
+
+- `periods` ({label,opening,inflows,outflows,closing}[]): In chronological order. Every equation must balance, and closing must equal the next opening exactly as decimal inputs.
+- `currency` (ISO 4217 string): One currency for every amount, formatted without a sign. Negative balances explicitly say owed.
+- `locale` (BCP 47 string): Optional override of the inherited UI locale.
+
+```json
+{"kind":"balanceFlow","title":"Marketplace settlements","subtitle":"Fictional data · EUR","currency":"EUR","locale":"en-GB","periods":[{"label":"October 2026","opening":1200,"inflows":[{"label":"Marketplace orders","value":8400}],"outflows":[{"label":"Cases","value":120},{"label":"Refunds","value":320},{"label":"Marketplace fees","value":760},{"label":"Shipping labels","value":400},{"label":"Payouts","value":6000}],"closing":2000},{"label":"November 2026","opening":2000,"inflows":[{"label":"Marketplace orders","value":7200}],"outflows":[{"label":"Fees and shipping","value":1200},{"label":"Payouts","value":6500}],"closing":1500},{"label":"December 2026","opening":1500,"inflows":[{"label":"Marketplace orders","value":10300}],"outflows":[{"label":"Fees and shipping","value":1800},{"label":"Payouts","value":7000}],"closing":3000}]}
+```
