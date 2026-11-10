@@ -93,16 +93,20 @@ test("places open from a still tile; keyboard, list and map share the selection;
 });
 
 test("Back closes the map onto the tile; a reload with the map open opens it again", async () => {
+  // An older map of a long conversation: its address also names the message, so a reload loads that part.
+  fixture.get("places-history").map.anchorSeq = 12;
   const { page, context } = await open("places-history");
   try {
     await openDialog(page);
     const mapId = fixture.get("places-history").map.id;
     expect(new URL(page.url()).searchParams.get("map")).toBe(mapId);
+    expect(new URL(page.url()).searchParams.get("message")).toBe("12");
     await page.goBack();
     await page.waitForFunction(() => !document.querySelector("dialog[open]"));
     await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-map-tile__open"));
     expect(new URL(page.url()).searchParams.get("scenario")).toBe("places-history");
     expect(new URL(page.url()).searchParams.has("map")).toBe(false);
+    expect(new URL(page.url()).searchParams.has("message")).toBe(false);
     await openDialog(page);
     await page.reload();
     await dialog(page).locator(".k2b-map-dialog__place").first().waitFor();
@@ -241,9 +245,13 @@ describe.each([1440, 390])("named place search at %i", (width) => {
     // The map stays open in its own history entry through the reload.
     await page.reload();
     await dialog(page).locator(".k2b-map-dialog").waitFor();
-    await menu(page, "Stopp einfügen");
+    // The results to pick from bring their form back; the other tools wait meanwhile.
     expect(await dialog(page).getByLabel("Ortsname (optional)", { exact: true }).inputValue()).toBe("Wasserfall");
     await option(page, /^Fiktiver Wasserfall 3/).click();
+    await dialog(page).getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+    expect(await page.getByRole("menuitem", { name: "Unterwegs essen", exact: true }).getAttribute("aria-disabled")).toBe("true");
+    await page.keyboard.press("Escape");
+    await dialog(page).getByRole("button", { name: "Vorschau für Fiktiver Wasserfall 3", exact: true }).waitFor();
   });
 });
 
@@ -305,6 +313,8 @@ test("ambiguity calculates only after choosing a server candidate; options prese
     await dialog(page).getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor();
     await option(page, /^2 Beispielgasse/).click();
     expect(fixture.geo.calls.length).toBe(calls);
+    // A candidate is not a destination yet: its one main action takes it as the stop.
+    expect(await dialog(page).locator(".k2b-map-dialog__detail").getByRole("link", { name: "In OpenStreetMap öffnen" }).count()).toBe(0);
     await dialog(page)
       .getByRole("button", { name: /2 Beispielgasse.*Als Stopp übernehmen/ })
       .click();
@@ -373,7 +383,7 @@ test("empty search widens, a failure retries, and the tile keeps its size in dar
   }
 });
 
-describe.each([1440, 390, 768])("SSR and first browser render at %i", (width) => {
+describe.each([1440, 390, 768])("server render and mounted browser render at %i", (width) => {
   let opened: Awaited<ReturnType<typeof open>>;
   beforeAll(async () => {
     opened = await open(`places-ssr-${width}`, width, "&ssr=1");
@@ -461,6 +471,9 @@ test("whole and per-leg preferences calculate a real preview and retain the leg 
     await dialog(page).getByLabel("Autobahn", { exact: true }).click();
     await dialog(page).getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
     await dialog(page).getByRole("button", { name: "Etappe ohne Autobahn", exact: true }).waitFor();
+    // The proposal shows the proposed leg in C's row and marks it as changed; B's leg stays as it is.
+    expect(await dialog(page).locator(".k2b-map-dialog__place").nth(2).innerText()).toMatch(/ohne Autobahn · geändert/);
+    expect(await dialog(page).locator(".k2b-map-dialog__place").nth(1).innerText()).not.toContain("geändert");
     expect(fixture.commands.at(-1)).toMatchObject({
       type: "preview",
       change: { type: "options", leg: { fromStopId: "stop-1", toStopId: "stop-2" } },
@@ -519,10 +532,12 @@ test("along-route window reaches server search; the stop's navigation link keeps
     expect(await along.innerText()).toContain("0,3 km");
     expect(fixture.get("route-along").map.groups).toHaveLength(1);
     expect(fixture.commands.at(-1)).toMatchObject({ type: "search", search: { along: { fromKm: 40, toKm: 80 } } });
-    await dialog(page).locator(".k2b-map-dialog__place").first().click();
+    // The selected result's navigation link leads to that result.
+    await along.click();
+    const result = fixture.get("route-along").map.groups[0]!.places.find((place) => Math.round((place.atMeters ?? 0) / 1000) === 44)!;
     expect(
       await dialog(page).locator(".k2b-map-dialog__detail").getByRole("link", { name: "In OpenStreetMap öffnen" }).getAttribute("href"),
-    ).toContain("openstreetmap.org");
+    ).toBe(`https://www.openstreetmap.org/directions?route=%3B${encodeURIComponent(`${result.point.lat},${result.point.lon}`)}`);
     expect(await dialog(page).locator(".k2b-map-dialog__provenance").innerText()).toContain("Zeiten ohne Verkehr");
   } finally {
     await context.close();

@@ -35,6 +35,7 @@ import {
 | `loading` | The places are still loading: the pill shows progress and the tile cannot open yet. |
 | `dialog` | `(close) => JSX.Element`, normally a `MapDialog`. |
 | `restoreId` | A stable id of this map on the page; see [Back and reload](#back-and-reload). |
+| `restoreQuery` | More query parameters the dialog's address carries, so a reload reaches the tile again, such as the message of a long conversation that holds the map. |
 | `children` | The map in the size of the tile: `MapView` with `still`, or a host wrapper such as Cloud's `CloudMap`. |
 
 `MapView` with `still` loads the map image but has no controls, gestures, pin
@@ -54,7 +55,7 @@ its details show below the list (on a phone, above it).
 | `title` | Heading of the dialog. |
 | `facts` | Large figures under the title, such as distance and driving time. |
 | `count` | A chip instead of facts, such as `12 places` or an address label. |
-| `places` | `MapPlace[]`, see below. One place shows its details without a list. |
+| `places` | `MapPlace[]`, see below. One place shows its details without a list; its name heading appears when it differs from the title. |
 | `lines`, `markers`, `fit` | Route lines, extra pins that are not listed (such as a proposed stop), and the fit mode. |
 | `selectedId`, `onSelect` | Optional controlled selection; otherwise the first place. |
 | `listLabel` | Name of the list for assistive technology, such as `Stops`. |
@@ -78,7 +79,9 @@ marks a suggestion that an account without a person made), and `links`
 open beside the page; links on the same site open in place; any scheme other
 than `http` and `https` is dropped.
 
-Every place gets a navigation link as its first action:
+Every place gets a navigation link as its first action, unless it sets
+`navigate: false` because it is not a destination yet, such as a candidate to
+choose:
 **Open in OpenStreetMap** on a computer, **Open in Apple Maps** on an iPhone or
 iPad, and **Open in maps app** (`geo:`) on Android. `geoNavigationHref(target,
 platform)` and `geoNavigationPlatform(userAgent)` build the same link for a

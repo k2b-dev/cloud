@@ -180,6 +180,10 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
     setMap(value);
   };
   createEffect(() => update(props.initial));
+  // Results to pick a stop from belong to the insert form; after a reload the form opens with them again.
+  createEffect(() => {
+    if (map().picker?.length && mode() === "ready") setMode("insert");
+  });
   const publish = (value: AiMap) => {
     update(value);
     window.dispatchEvent(new CustomEvent(eventName, { detail: value }));
@@ -275,10 +279,6 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
   const ambiguous = () => Boolean(map().candidates?.length && map().issue?.code === "GEO_ADDRESS_AMBIGUOUS");
   const selection = () => selected() || (map().candidates?.length ? "candidate-0" : choices()[0]?.id || places()[0]?.place.id || "");
   const selectedPlace = () => [...choices(), ...places().map((p) => p.place)].find((p) => p.id === selection());
-  const candidateIndex = () => {
-    const index = Number(/^candidate-(\d)$/.exec(selection())?.[1] ?? 0);
-    return index < (map().candidates?.length ?? 0) ? index : 0;
-  };
   const waiting = () => busy() || (map().pending && props.loading);
   const categoryLabel = (categories: string[]) =>
     categories
@@ -376,30 +376,40 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
         mark: i + 1,
         tone: "second",
         address: candidate.formatted,
+        navigate: false,
       }));
     if (choices().length) return choices().map((place, i) => placeEntry(place, i + 1, true, map().lastSearch?.title));
     const route = map().route;
-    const legs = route?.legs ?? [];
+    // During a proposal, each row shows the proposed leg that reaches its stop; the letters stay until it is accepted.
+    const legs = changedRoute()?.legs ?? [];
+    const legFacts = (stopId: string, first: boolean) => {
+      const leg = legs.find((l) => l.toStopId === stopId);
+      if (!leg) return { trailing: first ? t().startStop : undefined };
+      const before = route?.legs.find((old) => old.fromStopId === leg.fromStopId && old.toStopId === leg.toStopId);
+      const changed =
+        !!map().preview &&
+        (!before ||
+          before.polyline6 !== leg.polyline6 ||
+          before.durationSeconds !== leg.durationSeconds ||
+          before.distanceMeters !== leg.distanceMeters ||
+          JSON.stringify(before.options) !== JSON.stringify(leg.options));
+      return {
+        subtitle: `${legOptions(leg.options)}${changed ? ` · ${t().changed}` : ""}`,
+        trailing: minutes(leg.durationSeconds),
+        trailingDetail: km(leg.distanceMeters),
+      };
+    };
     const stops: MapPlace[] = (route?.stops ?? map().plan?.stops ?? []).map((stop, i) => {
-      const leg = legs.find((l) => l.toStopId === stop.id);
       const point = "point" in stop ? stop.point : undefined;
       const known = "address" in stop ? stop.address : undefined;
       const address = known ? ("formatted" in known ? known.formatted : known.text) : undefined;
-      return {
-        id: stop.id,
-        name: stop.label ?? address ?? stop.id,
-        point,
-        mark: letter(i),
-        subtitle: leg ? legOptions(leg.options) : undefined,
-        trailing: leg ? minutes(leg.durationSeconds) : i === 0 ? t().startStop : undefined,
-        trailingDetail: leg ? km(leg.distanceMeters) : undefined,
-        address,
-      };
+      return { id: stop.id, name: stop.label ?? address ?? stop.id, point, mark: letter(i), address, ...legFacts(stop.id, i === 0) };
     });
     const preview = map().preview;
     if (preview?.changes.type === "insert") {
       const inserted = preview.result.route.stops.find((s) => !route?.stops.some((old) => old.id === s.id));
-      if (inserted) stops.push({ id: inserted.id, name: inserted.label ?? "+", point: inserted.point, mark: "+", subtitle: preview.title });
+      if (inserted)
+        stops.push({ id: inserted.id, name: inserted.label ?? "+", point: inserted.point, mark: "+", ...legFacts(inserted.id, false) });
     }
     return [
       ...stops,
@@ -543,7 +553,16 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
   );
   const menu = (): MapDialogMenuItem[] | undefined => {
     if (map().kind !== "route") return undefined;
-    const idle = busy() || !map().route || !!waiting();
+    // One tool at a time: an open form, results to pick from, a proposal, a question, or a recovery comes first.
+    const idle =
+      busy() ||
+      !map().route ||
+      !!waiting() ||
+      mode() !== "ready" ||
+      !!map().preview ||
+      !!map().picker?.length ||
+      ambiguous() ||
+      !!map().issue;
     return [
       {
         label: t().insert,
@@ -920,6 +939,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
           summary={summary()}
           loading={!!(map().pending && props.loading)}
           restoreId={map().id}
+          restoreQuery={map().anchorSeq ? { message: String(map().anchorSeq) } : undefined}
           dialog={(close) => (
             <MapDialog
               title={map().title}

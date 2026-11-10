@@ -718,12 +718,15 @@ shows the distance and duration of the leg that reaches it. An ambiguous
 address lists up to five server candidates before route calculation continues.
 
 The dialog's **More actions** menu holds **Insert stop**, **Optimize stop
-order**, **Options**, and **Eat along the route**. They produce a calculated
-proposal, shown as a dashed line and a `+` pin for a new stop. The map keeps
-the original route until the person accepts it. **Discard** preserves the
-route; an accepted change has a timestamp and **Undo**. Options can apply to
-the entire tour or one leg. Along-route place searches use the saved route and
-an explicit kilometer window. The search form accepts an optional place name
+order**, **Options**, and **Eat along the route**, one at a time: while a form,
+results to choose from, a proposal, a question, or a recovery is open, the menu
+waits. Inserting a stop, optimizing the order, and changing options produce a
+calculated proposal, shown as a dashed line and a `+` pin for a new stop; each
+stop's row shows the proposed leg that reaches it and marks changed legs. The
+map keeps the original route until the person accepts it. **Discard**
+preserves the route; an accepted change has a timestamp and **Undo**. Options
+can apply to the entire tour or one leg. **Eat along the route** lists places
+near the route; it uses the saved route and an explicit kilometer window. The search form accepts an optional place name
 alongside the category controls; the provider searches for that name within
 the selected category and route corridor. Navigation opens the destination in
 an external navigation app; Cloud does not provide live turn-by-turn
@@ -749,7 +752,7 @@ still needs a smaller reservation. Resolve the remaining stops the same way;
 editing a selected address clears its old coordinates. Suggestions consume the
 same Core budget, so recovery requires credits to remain available.
 
-Map reads, exports, and changes check the conversation's current owner. Writes
+Map reads and changes check the conversation's current owner. Writes
 also check the saved revision before provider work. A conflict offers the current
 state instead of overwriting it. A fork receives independent copies of the maps
 in its copied history. The server and browser use the same saved snapshot;

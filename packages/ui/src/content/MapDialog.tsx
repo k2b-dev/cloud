@@ -33,6 +33,8 @@ export type MapPlace = {
   note?: string;
   source?: MapPlaceSource;
   links?: MapPlaceLink[];
+  /** `false` for a place that is not a destination yet, such as a candidate to choose: no navigation link. */
+  navigate?: boolean;
 };
 export type MapDialogFact = { value: string; label: string };
 export type MapDialogMenuItem = { label: string; icon?: string; disabled?: boolean; onSelect: () => void };
@@ -232,7 +234,8 @@ export function MapDialog(props: MapDialogProps): JSX.Element {
 
   const detail = (place: MapPlace) => (
     <>
-      <Show when={!single()}>
+      {/* One place whose name is the dialog's title needs no second heading; any other name stays visible. */}
+      <Show when={!single() || place.name !== props.title}>
         <h3 class="k2b-map-dialog__place-name">{place.name}</h3>
       </Show>
       <Show when={place.source}>
@@ -261,15 +264,17 @@ export function MapDialog(props: MapDialogProps): JSX.Element {
         <p class="k2b-map-dialog__note">{place.note}</p>
       </Show>
       <div class="k2b-map-dialog__actions">
-        <ButtonLink
-          variant="primary"
-          size="sm"
-          href={navigation(place)}
-          target={platform() === "android" ? undefined : "_blank"}
-          rel="noopener noreferrer"
-        >
-          <i class="ti ti-navigation" aria-hidden="true" /> {t().navigate({ platform: platform() })}
-        </ButtonLink>
+        <Show when={place.navigate !== false}>
+          <ButtonLink
+            variant="primary"
+            size="sm"
+            href={navigation(place)}
+            target={platform() === "android" ? undefined : "_blank"}
+            rel="noopener noreferrer"
+          >
+            <i class="ti ti-navigation" aria-hidden="true" /> {t().navigate({ platform: platform() })}
+          </ButtonLink>
+        </Show>
         {props.placeActions?.(place)}
         <For each={links(place)}>
           {(link) => (

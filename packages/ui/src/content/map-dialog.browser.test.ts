@@ -241,6 +241,8 @@ test("loading, empty and single-place states keep their places", async () => {
     await tile(page).click();
     await dialog(page).waitFor();
     expect(await page.locator(".k2b-map-dialog[data-single]").count()).toBe(1);
+    // The place's name is the dialog's title, so no second heading repeats it.
+    expect(await page.locator(".k2b-map-dialog__place-name").count()).toBe(0);
     expect(await page.locator(".k2b-map-dialog__list").count()).toBe(0);
     expect(await page.locator(".k2b-map-dialog__detail").textContent()).toContain("Schlossallee 7, 91790 Sandberg");
     expect(await page.locator(".k2b-map-dialog__count").textContent()).toBe("Privatadresse");
