@@ -519,7 +519,7 @@ export const codePageFixture = (
                   { kind: "same", text: 'import { app, owner, spaces } from "@sdk";' },
                   { kind: "add", text: 'const logistik = spaces.space("sp_2lg8");' },
                   { kind: "same", text: "" },
-                  { kind: "same", text: 'app.schedule({ cron: "*/15 * * * *" }, async () => {' },
+                  { kind: "same", text: 'app.schedule({ name: "schedule-0", cron: "*/15 * * * *" }, async () => {' },
                   { kind: "del", text: '  await owner.conversation.tag({ tag: "Anfrage" });' },
                   { kind: "add", text: '  await owner.conversation.move({ folder: "Lieferungen" });' },
                   { kind: "add", text: '  await logistik.task.create({ title: "Lieferung", idempotencyKey: "lieferung:m_81k2" });' },

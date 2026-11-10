@@ -374,3 +374,17 @@ test("Code CLI run payload keeps version 1 and the additive refused-call summary
   expect(codeAuthoringContracts.runRead.data.parse({ version: 1, run, contents })).toEqual({ version: 1, run, contents });
   expect(codeAuthoringContracts.runRead.data.parse({ version: 1, run, contents: null })).toEqual({ version: 1, run, contents: null });
 });
+
+test("Code list adapters expose their domain cursor through the shared page envelope", async () => {
+  for (const nextCursor of ["c_next", null]) {
+    const result = await runCodeQuery(context, async () => ({ items: [], nextCursor }));
+    expect(result).toEqual({
+      ok: true,
+      data: { data: { items: [], nextCursor }, page: nextCursor === null ? { hasMore: false } : { hasMore: true, nextCursor } },
+    });
+  }
+  expect(await runCodeQuery(context, async () => ({ title: "Non-paginated" }))).toEqual({
+    ok: true,
+    data: { data: { title: "Non-paginated" } },
+  });
+});

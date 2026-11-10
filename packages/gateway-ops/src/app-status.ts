@@ -6,6 +6,7 @@ import {
   type AppStatusSummaryData,
   AppStatusSummaryInputSchema,
   type CapabilityExecutionContext,
+  capabilityPage,
 } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/cloud/server";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
@@ -138,7 +139,7 @@ export const readGatewayAppStatusDetail = async (
     nextCursor:
       events.length > 50 && last ? Buffer.from(JSON.stringify({ at: last.at, id: last.id, appId, window })).toString("base64url") : null,
   };
-  return ok({ data });
+  return ok({ data, page: capabilityPage(data.nextCursor) });
 };
 
 export const forgetGatewayAppStatus = async (input: z.infer<typeof AppStatusForgetInputSchema>, context: CapabilityExecutionContext) => {

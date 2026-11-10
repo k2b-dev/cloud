@@ -28,8 +28,7 @@ never reaches a real app. Nothing is sent, saved or charged.
 - `now` is Unix milliseconds; `Date.now()` and `new Date()` return it, also
   while the module loads. A run may set its own `now`. `Math.random()` uses
   `seed`. Cron does not tick: a run names the entrypoint to start.
-- Entrypoints are schedule names (`weekly-review`, or `schedule:0` without a
-  name) and `event:<type>@<version>` for events, such as
+- Entrypoints are the required schedule names (`weekly-review`) and `event:<type>@<version>` for events, such as
   `event:mail.message.received@1`. An event run takes the envelope as `input`.
   Page handlers use `route:<METHOD>:<path>`, such as `route:POST:/save`;
   pass their request (method, path, query, params, contentType, body and user)

@@ -131,19 +131,20 @@ calls from older approved versions.
 ```ts
 import { app, http, secrets } from "@sdk";
 
-app.schedule({ cron: "0 8 * * 1" }, async () => {
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => {
   const response = await http.fetch(
     "https://api.example.com:8443/v1/items",
     { headers: { authorization: `Bearer ${secrets.API}` } },
   );
-  // response.status, response.headers, response.body (base64 bytes)
+  // response.status, response.headers, response.bodyBase64; await response.text() or response.json()
 });
 ```
 
 `secrets.API` is the opaque string `[secret:API]`. It never contains the
 credential. `http.fetch` accepts a URL and optional `method`, `headers` and
-UTF-8 `body`. Its result is `{ status, headers, body }`, with a base64 body so
-binary responses survive the JSON bridge.
+UTF-8 `body`. Its result exposes `status`, `headers` and `bodyBase64` for
+binary responses. Use `await response.text()` to decode UTF-8, including
+umlauts and emoji, or `await response.json()` to parse JSON as `unknown`.
 
 Every version, including personal Code, declares its exact HTTPS origins in
 `manifest.internet`. The checker reads literal URLs and literal origins before

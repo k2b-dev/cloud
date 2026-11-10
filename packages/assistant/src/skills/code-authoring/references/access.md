@@ -230,7 +230,9 @@ and DELETE requests send `X-Code-CSRF` from a preceding GET.
 ## Internet requests and secrets
 
 `http.fetch(url, { method?, headers?, body? })` sends a bounded public HTTPS
-request and returns `{ status, headers, body }` with a base64 `body`. The
+request and returns `{ status, headers, bodyBase64, text, json }`. `bodyBase64`
+preserves binary bytes. Use `await response.text()` for UTF-8 text or
+`await response.json()` for parsed JSON (`unknown`). The
 checker records every literal origin in the version; declare dynamic or
 redirect origins with a literal `http.allow([...])`. A version with internet
 origins needs a Cloud administrator's approval by default, and an internet
@@ -254,7 +256,7 @@ app.schedule({ cron: "0 8 * * *", timeZone: "Europe/Berlin", name: "status-check
     headers: { authorization: `Bearer ${secrets.STATUS_API}` },
   });
   if (response.status !== 200) throw new Error(`Status service answered ${response.status}`);
-  const incidents: unknown = JSON.parse(atob(response.body));
+  const incidents: unknown = await response.json();
   if (!Array.isArray(incidents) || incidents.length === 0) return;
   const day = new Date().toISOString().slice(0, 10);
   await team.task.create({ title: `Check ${incidents.length} open incidents`, priority: "high", idempotencyKey: `incidents:${day}` });
@@ -344,8 +346,7 @@ app.post("/hooks/events", async c => {
   if (response.status !== 200) return c.json({ error: "service_unavailable" }, 502);
   let event: unknown;
   try {
-    const bytes = Uint8Array.from(atob(response.body), character => character.charCodeAt(0));
-    event = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    event = await response.json();
   } catch {
     return c.json({ error: "invalid_service_response" }, 502);
   }

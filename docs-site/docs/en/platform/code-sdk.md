@@ -30,6 +30,23 @@ Read [Code secrets](/en/docs/platform/code-secrets) for approved destinations an
 The SDK registers routes and schedules. Core owns hosting, scheduling,
 authorization and execution.
 
+SDK property segments use camelCase: `spaces.space(id).task.setCompleted`,
+`grids.table(id).record.upsertExternal`, and `mail.mailbox(id).mailingList`.
+Snake_case segments from Pulse and Venue follow the same rule. Capability
+and event IDs keep their original spelling. Files imports as `files`;
+its app and event IDs stay `filesv2` and `filesv2.*`.
+
+Application authors may set `sdkExportName` in `defineCapabilities()` to
+choose a module export. The optional manifest field accepts a JavaScript
+identifier starting with a lowercase letter. Reserved names, duplicate
+exports and segments that produce the same camelCase path are rejected.
+The checker and runtime share these generated paths.
+
+`http.fetch()` returns `status`, `headers`, `bodyBase64`, `text()` and `json()`.
+Use `await response.text()` for UTF-8 or `await response.json()` for JSON;
+`bodyBase64` preserves binary bytes. Invalid JSON rejects `json()`.
+Schedules require a unique stable `name`; keep it when reordering registrations.
+
 ## Mail invoices to an app
 
 For mailbox-owned Code, discover the destination app's write capability with
@@ -408,7 +425,7 @@ app.schedule({ cron: "0 8 * * 1", name: "weekly-review" }, async () => {
 export default app;
 ```
 
-`work_shop` is the export for an application ID of `work-shop`. Hyphens become
+Without `sdkExportName`, `work_shop` is the export for app ID `work-shop`. Hyphens become
 underscores; reserved export names receive an underscore prefix, such as
 `default` → `_default`. The generation manifest records the mapping.
 
@@ -552,7 +569,7 @@ app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-repor
 });
 ```
 
-Use one schedule object: `{ cron | at, timeZone?, name?, title? }`. Without
+Use one schedule object: `{ cron | at, timeZone?, name, title? }`. Without
 `timeZone`, Core uses the Cloud instance's default time zone (`app.timezone`,
 configured in Administration). Put `name` and `title` in this same object. A local minute skipped by the spring clock
 change does not run, and a repeated autumn minute runs once, at its first
@@ -1045,8 +1062,9 @@ unresolved or external references fail generation.
 - `handles`: target Types, factory property paths and app export names;
 - `operations`: qualified IDs, method paths, targets, refs, input/data schemas,
   schema hashes and idempotency policy;
-- `events`, `omitted`, and `appMethods`: eligible events, excluded operations
-  and supported app registration methods;
+- `omitted`: excluded operation IDs, targets, mapped method paths and reasons,
+  so the checker can explain unavailable camelCase calls;
+- `events` and `appMethods`: eligible events and supported app registration methods;
 - `mode` and optional `owner`: the execution mode and fixed owner.
 
 The checker uses these paths with the user's source to resolve handle literals and
@@ -1066,9 +1084,8 @@ identity and credentials outside the sandbox. The checker must reserve
 from declarations alone does not enforce that rule.
 
 `__codeSdk.entries()` returns schedule and route descriptors. Schedules carry `kind`, `cron`, optional `at` and `timeZone`, and
-an `entrypoint` equal to the explicit schedule name, plus `title` when declared. For unnamed schedules,
-entrypoints use registration order (`schedule:0`, `schedule:1`, …); these are
-version-local and change when registrations are reordered.
+an `entrypoint` equal to the required schedule name, plus `title` when declared.
+Reordering registrations preserves each schedule’s identity across versions.
 Registration does not execute callbacks. The checker must import Code once
 to collect its registrations. Core uses those descriptors to schedule work;
 the trusted bundle wrapper invokes
@@ -1416,8 +1433,7 @@ app.post("/hooks/events", async c => {
   if (response.status !== 200) return c.json({ error: "service_unavailable" }, 502);
   let event: unknown;
   try {
-    const bytes = Uint8Array.from(atob(response.body), character => character.charCodeAt(0));
-    event = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    event = await response.json();
   } catch {
     return c.json({ error: "invalid_service_response" }, 502);
   }

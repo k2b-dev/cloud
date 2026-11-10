@@ -275,3 +275,17 @@ one run for it with the expected effect.
 - [Mail automations with Code](/en/docs/platform/mail-code-automations)
 - [Activate a Code version](/en/docs/platform/code-activation)
 - [Removed in the Gustav release](/en/docs/reference/code-release-removals)
+
+## Code SDK names and response bodies
+
+Before activating Code, check it against the current installation SDK. SDK
+property segments use camelCase, Files exports as `files`, and schedules
+require a stable `name`. Capability IDs and `filesv2.*` event names retain
+their spelling. Use `await response.text()` or `await response.json()` for
+HTTP response content; the raw bytes are in `response.bodyBase64`. Existing
+checked versions keep their embedded SDK. Apply this contract when checking
+a new version.
+
+Paginated Queries expose the shared `page` envelope alongside existing
+domain cursors. Queries with a string `cursor` input must return `page`;
+a declared string `next` or `nextCursor` must match that envelope.

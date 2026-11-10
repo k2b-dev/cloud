@@ -2476,13 +2476,16 @@ export const spacesCapabilities = defineCapabilities({
         });
         const containers = await spacesPublicResources.projectSpaces(page.items);
         const nextOffset = offset + containers.length;
+        const next =
+          nextOffset < page.total ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url") : null;
         return ok({
+          page: capabilityPage(next),
           data: {
             items: containers.map((container) => ({
               ref: { type: "spaces.space", id: container.id },
               title: container.name.slice(0, 500),
             })),
-            next: nextOffset < page.total ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url") : null,
+            next,
           },
         });
       },
@@ -2574,7 +2577,8 @@ export const spacesCapabilities = defineCapabilities({
         const access = await workQueryContext({ assignedTo: "all" }, context, true);
         if (!access.ok) return access;
         try {
-          return ok({ data: await listSourceCalendars(input, access.data) });
+          const data = await listSourceCalendars(input, access.data);
+          return ok({ data, page: capabilityPage(data.next) });
         } catch (error) {
           if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Invalid calendar cursor"), code: error.code });
           throw error;
@@ -2592,7 +2596,8 @@ export const spacesCapabilities = defineCapabilities({
         const access = await workQueryContext({ assignedTo: "all" }, context, true);
         if (!access.ok) return access;
         try {
-          return ok({ data: await readSourceEvents(input, access.data) });
+          const data = await readSourceEvents(input, access.data);
+          return ok({ data, page: capabilityPage(data.next) });
         } catch (error) {
           if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Calendar data could not be read"), code: error.code });
           if (error instanceof CalendarReadLimitError)

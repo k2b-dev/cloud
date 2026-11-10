@@ -118,7 +118,7 @@ test("target methods omit their repeated type path while preserving capability I
       entry: "code.ts",
       aiOperations: [],
       files: {
-        "code.ts": `import { app, core } from "@sdk"; app.schedule({ cron: "0 8 * * *" }, async () => { ${body} });`,
+        "code.ts": `import { app, core } from "@sdk"; app.schedule({ cron: "0 8 * * *", name: "ai-tools" }, async () => { ${body} });`,
       },
     });
   expect(check('await core.ai.chat("chat-1").run({}); await core.ai.skill("skill-1").update({});').diagnostics).toEqual([]);

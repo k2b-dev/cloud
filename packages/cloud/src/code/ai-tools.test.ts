@@ -30,7 +30,7 @@ const analyze = (code: string) =>
     entry: "code.ts",
     aiOperations: ["core.ai.generate"],
     files: {
-      "code.ts": `import { app, core, work_shop, http } from "@sdk"; app.schedule({ cron: "0 0 * * *" }, async () => { ${code} }); export default app;`,
+      "code.ts": `import { app, core, work_shop, http } from "@sdk"; app.schedule({ name: "schedule-0", cron: "0 0 * * *" }, async () => { ${code} }); export default app;`,
     },
   });
 

@@ -1463,8 +1463,11 @@ test("discussion containers preserve authorized list pagination", async () => {
     items: [{ ref: { type: "notebooks.notebook", id: notebook.shortId }, title: notebook.name }],
     next: expect.any(String),
   });
+  if (!first.data.data.next) throw new Error("Expected a continuation cursor");
+  expect(first.data.page).toEqual({ hasMore: true, nextCursor: first.data.data.next });
   const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
   expect(last.ok && last.data.data.next).toBeNull();
+  expect(last.ok && last.data.page).toEqual({ hasMore: false });
 });
 
 test("notebook targets reject a note, parent or annotation from another notebook in review and execution", async () => {

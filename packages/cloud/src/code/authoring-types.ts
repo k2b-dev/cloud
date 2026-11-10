@@ -80,8 +80,14 @@ export declare class CodeError extends Error {
 /** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
 declare const __codeSecret: unique symbol;
 export type CodeSecret = string & { readonly [__codeSecret]: true };
-/** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
-export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
+/** Bounded public HTTPS result. Raw bytes are base64; text/json decode UTF-8 after Core redacts echoed credentials. */
+export type CodeHttpResult = {
+  status: number;
+  headers: Record<string, string>;
+  bodyBase64: string;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+};
 export type CodeHttp = {
   /** Declare exact HTTPS origins for dynamic URLs and redirects. Literal array; never grants runtime authority. */
   allow(origins: readonly string[]): void;

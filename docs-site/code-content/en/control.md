@@ -124,11 +124,11 @@ that the secret is bound to:
 ```ts
 import { app, http, secrets } from "@sdk";
 
-app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin" }, async () => {
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1", timeZone: "Europe/Berlin" }, async () => {
   const response = await http.fetch("https://api.example.com/v1/items", {
     headers: { authorization: `Bearer ${secrets.API}` },
   });
-  // response.status, response.headers, response.body (base64)
+  // response.status, response.headers, response.bodyBase64; await response.json()
 });
 
 export default app;

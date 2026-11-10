@@ -8,6 +8,7 @@ import {
   CLOUD_RESOURCE_ID_MAX_LENGTH,
   CloudResourceRefSchema,
 } from "../contracts/capabilities";
+import { CodeSdkExportNameSchema, reservedCodeSdkExports } from "../contracts/code-sdk-names";
 import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
 import { CODE_DATABASE_MESSAGES } from "./database-contract";
 import { hasFileInput } from "./file-ref";
@@ -27,6 +28,7 @@ const sdkOperationNames = sdkLocalName.extend({
   refs: z.record(z.string().min(1).max(100), sdkLocalId).optional(),
 });
 const sdkManifestNames = z.object({
+  sdkExportName: CodeSdkExportNameSchema.refine((name) => !reservedCodeSdkExports.has(name), "Reserved SDK export name").optional(),
   appId: CapabilityAppIdSchema.refine((value) => !/\s/.test(value), "Use an SDK app ID without whitespace"),
   types: z.array(sdkLocalName),
   queries: z.array(sdkOperationNames),
@@ -37,93 +39,17 @@ const sdkManifestNames = z.object({
 
 type Tree = { values: string[]; children: Map<string, Tree> };
 const tree = (): Tree => ({ values: [], children: new Map() });
-const path = (value: string): string[] => value.split(".");
+const path = (value: string): string[] =>
+  value.split(".").map((segment) => {
+    if (forbiddenProperties.has(segment)) throw new Error(`SDK path collision at ${segment}`);
+    return segment.replace(/[-_]+([a-zA-Z0-9])/g, (_, char: string) => char.toUpperCase());
+  });
 const quote = JSON.stringify;
 const forbiddenProperties = new Set(["__proto__", "prototype", "constructor"]);
-const reservedExports = new Set([
-  "FileRef",
-  "CodeAiTool",
-  "Page",
-  "Section",
-  "Text",
-  "Heading",
-  "Table",
-  "Form",
-  "Detail",
-  "Chart",
-  "Link",
-  "Button",
-  "Notice",
-  "Stats",
-  "Stat",
-  "Column",
-  "Item",
-  "Field",
-  "Option",
-  "jsx",
-  "undefined",
-  "eval",
-  "arguments",
-  "ai",
-  "db",
-  "secrets",
-  "http",
-  "sheet",
-  "app",
-  "owner",
-  "__codeSdk",
-  "CodeError",
-  "await",
-  "break",
-  "case",
-  "catch",
-  "class",
-  "const",
-  "continue",
-  "debugger",
-  "default",
-  "delete",
-  "do",
-  "else",
-  "enum",
-  "export",
-  "extends",
-  "false",
-  "finally",
-  "for",
-  "function",
-  "if",
-  "implements",
-  "import",
-  "in",
-  "instanceof",
-  "interface",
-  "let",
-  "new",
-  "null",
-  "package",
-  "private",
-  "protected",
-  "public",
-  "return",
-  "static",
-  "super",
-  "switch",
-  "this",
-  "throw",
-  "true",
-  "try",
-  "typeof",
-  "var",
-  "void",
-  "while",
-  "with",
-  "yield",
-]);
 const exportName = (appId: string): string => {
   const name = appId.replaceAll("-", "_");
   if (!/^[a-z][a-z0-9_]*$(?![\s\S])/.test(name)) throw new Error("Use a valid SDK app identifier");
-  return reservedExports.has(name) ? `_${name}` : name;
+  return reservedCodeSdkExports.has(name) ? `_${name}` : name;
 };
 const insert = (root: Tree, segments: string[], value: string, label: string): void => {
   let branch = root;
@@ -193,20 +119,40 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     }
   }
   for (const app of apps) {
-    const name = exportName(app.appId);
+    const name = app.sdkExportName ?? exportName(app.appId);
+    if (manifest.apps.some((other) => other.exportName === name)) throw new Error(`${app.appId}: SDK export name collision`);
+    // Compare each raw prefix in a namespace, including method/factory intersections.
+    const mapped = new Map<string, string>();
+    const registerPath = (namespace: string | null, raw: string) => {
+      const rawSegments = raw.split(".");
+      const segments = path(raw);
+      for (let length = 1; length <= segments.length; length++) {
+        const key = JSON.stringify([namespace, segments.slice(0, length)]);
+        const original = rawSegments.slice(0, length).join(".");
+        if (mapped.has(key) && mapped.get(key) !== original) throw new Error(`${app.appId}.${raw}: SDK path collision`);
+        mapped.set(key, original);
+      }
+    };
     const ids = [...app.types, ...app.queries, ...app.actions, ...app.commands].map((entry) => entry.localId);
     const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
     if (duplicate) throw new Error(`${app.appId}.${duplicate}: SDK path collision (duplicate capability local ID)`);
     manifest.apps.push({ appId: app.appId, exportName: name, manifestHash: app.manifestHash });
     manifest.handles.push({ appId: app.appId, exportName: name, type: null, factoryPath: [] });
-    for (const type of byId(app.types))
+    for (const type of byId(app.types)) {
+      registerPath(null, type.localId);
       manifest.handles.push({ appId: app.appId, exportName: name, type: `${app.appId}.${type.localId}`, factoryPath: path(type.localId) });
+    }
     for (const [kind, entries] of [
       ["query", app.queries],
       ["action", app.actions],
     ] as const) {
       for (const operation of byId(entries)) {
         const capability = `${app.appId}.${operation.localId}`;
+        const rawPath =
+          operation.target && operation.localId.startsWith(`${operation.target}.`)
+            ? operation.localId.slice(operation.target.length + 1)
+            : operation.localId;
+        const methodPath = path(rawPath);
         const reason =
           operation.stream?.direction === "write" && !hasFileInput(operation.inputSchema)
             ? "stream"
@@ -216,7 +162,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
                 ? "app_only"
                 : null;
         if (reason) {
-          manifest.omitted.push({ capability, reason });
+          manifest.omitted.push({ capability, target: operation.target ? `${app.appId}.${operation.target}` : null, methodPath, reason });
           continue;
         }
         const refs = Object.fromEntries(
@@ -231,6 +177,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
           if (forbiddenProperties.has(field) || (properties && typeof properties === "object" && Object.hasOwn(properties, field)))
             throw new Error(`${capability}: reserved SDK input field ${field}`);
         }
+        registerPath(operation.target ?? null, rawPath);
         manifest.operations.push({
           capability,
           appId: app.appId,
@@ -238,11 +185,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
           kind,
           target: operation.target ? `${app.appId}.${operation.target}` : null,
           refs,
-          methodPath: path(
-            operation.target && operation.localId.startsWith(`${operation.target}.`)
-              ? operation.localId.slice(operation.target.length + 1)
-              : operation.localId,
-          ),
+          methodPath,
           inputSchema: structuredClone(operation.inputSchema),
           dataSchema: structuredClone(operation.dataSchema),
           schemaHash: operation.schemaHash,
@@ -360,7 +303,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
   /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
   use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
   use<Added extends object = {}>(path: string, middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;
-  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name?: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
+  schedule(when: ({ cron: string; at?: never } | { at: string; cron?: never }) & { timeZone?: string; name: string; title?: string }, handler: CodeScheduleHandler): CodeApp<Variables>;
   /** Without a handle, the checked event is scoped to this resource Code owner. An explicit handle binds a readable place. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp<Variables>;

@@ -486,20 +486,20 @@ test("records a dynamic personal target without inventing a literal", async () =
   if (result.ok) expect(result.manifest.permissions[0]?.target).toEqual({ type: "work-shop.workshop", id: null });
 });
 
-test("preserves unnamed schedule order across imported modules and bundles nested entry paths", async () => {
+test("preserves named schedule order across imported modules and bundles nested entry paths", async () => {
   const result = await check("", {
     entry: "nested/code.ts",
     files: {
-      "nested/code.ts": 'import "./first"; import { app } from "@sdk"; app.schedule({ cron: "0 9 * * *" }, () => {});',
-      "nested/first.ts": 'import { app } from "@sdk"; app.schedule({ cron: "0 8 * * *" }, () => {});',
-      "unused.ts": 'import { app } from "@sdk"; app.schedule({ cron: "0 10 * * *" }, () => {});',
+      "nested/code.ts": 'import "./first"; import { app } from "@sdk"; app.schedule({ name: "schedule-1", cron: "0 9 * * *" }, () => {});',
+      "nested/first.ts": 'import { app } from "@sdk"; app.schedule({ name: "schedule-0", cron: "0 8 * * *" }, () => {});',
+      "unused.ts": 'import { app } from "@sdk"; app.schedule({ name: "schedule-0", cron: "0 10 * * *" }, () => {});',
     },
   });
   expect(result).toMatchObject({ ok: true });
   if (result.ok)
     expect(result.manifest.entrypoints.map((e) => [e.entrypoint, e.cron])).toEqual([
-      ["schedule:0", "0 8 * * *"],
-      ["schedule:1", "0 9 * * *"],
+      ["schedule-0", "0 8 * * *"],
+      ["schedule-1", "0 9 * * *"],
     ]);
 });
 
@@ -533,7 +533,7 @@ test("an entry imported back through a cycle is evaluated once", async () => {
 });
 
 test.each(["jeden Montag", "61 8 * * *", "0 8 31 2 *"])("rejects invalid cron %s", async (cron) => {
-  const result = await check(`import {app} from "@sdk"; app.schedule({ cron: ${JSON.stringify(cron)} }, () => {});`);
+  const result = await check(`import {app} from "@sdk"; app.schedule({ name: "schedule-0", cron: ${JSON.stringify(cron)} }, () => {});`);
   expect(result).toMatchObject({
     ok: false,
     diagnostics: expect.arrayContaining([expect.objectContaining({ code: "code_invalid_cron" })]),
@@ -579,39 +579,39 @@ test("type-only imports do not reorder runtime schedule registration", async () 
   const result = await check("", {
     files: {
       "code.ts": 'import type {T} from "./b"; import "./a"; import "./b"; const value:T = {};',
-      "a.ts": 'import {app} from "@sdk"; app.schedule({ cron: "0 8 * * *" }, () => {});',
-      "b.ts": 'import {app} from "@sdk"; export interface T {} app.schedule({ cron: "0 9 * * *" }, () => {});',
+      "a.ts": 'import {app} from "@sdk"; app.schedule({ name: "schedule-0", cron: "0 8 * * *" }, () => {});',
+      "b.ts": 'import {app} from "@sdk"; export interface T {} app.schedule({ name: "schedule-1", cron: "0 9 * * *" }, () => {});',
     },
   });
   expect(result).toMatchObject({ ok: true });
   if (!result.ok) return;
   expect(result.manifest.entrypoints.map((e) => [e.entrypoint, e.cron])).toEqual([
-    ["schedule:0", "0 8 * * *"],
-    ["schedule:1", "0 9 * * *"],
+    ["schedule-0", "0 8 * * *"],
+    ["schedule-1", "0 9 * * *"],
   ]);
   await writeFile(join(directory, "order.mjs"), result.bundle);
   const module = await import(join(directory, "order.mjs"));
-  await module["schedule:0"](null, { call: async () => null });
+  await module["schedule-0"](null, { call: async () => null });
 });
 
 test("unused value imports preserve schedule order even when a later module also imports the dependency", async () => {
   const result = await check("", {
     files: {
       "code.ts": 'import {x} from "./b"; import "./a"; import "./c";',
-      "a.ts": 'import {app} from "@sdk"; app.schedule({ cron: "0 8 * * *" }, () => {});',
-      "b.ts": 'import {app} from "@sdk"; export const x = 1; app.schedule({ cron: "0 9 * * *" }, () => {});',
+      "a.ts": 'import {app} from "@sdk"; app.schedule({ name: "schedule-0", cron: "0 8 * * *" }, () => {});',
+      "b.ts": 'import {app} from "@sdk"; export const x = 1; app.schedule({ name: "schedule-1", cron: "0 9 * * *" }, () => {});',
       "c.ts": 'import "./b";',
     },
   });
   expect(result).toMatchObject({ ok: true });
   if (!result.ok) return;
   expect(result.manifest.entrypoints.map((e) => [e.entrypoint, e.cron])).toEqual([
-    ["schedule:0", "0 9 * * *"],
-    ["schedule:1", "0 8 * * *"],
+    ["schedule-1", "0 9 * * *"],
+    ["schedule-0", "0 8 * * *"],
   ]);
   await writeFile(join(directory, "unused-order.mjs"), result.bundle);
   const module = await import(join(directory, "unused-order.mjs"));
-  await module["schedule:0"](null, { call: async () => null });
+  await module["schedule-1"](null, { call: async () => null });
 });
 
 for (const [label, statement] of [
@@ -624,14 +624,15 @@ for (const [label, statement] of [
     const result = await check("", {
       files: {
         "code.ts": statement!,
-        "b.ts": 'import {app} from "@sdk"; export const x = 1; export interface X {} app.schedule({ cron: "0 9 * * *" }, () => {});',
+        "b.ts":
+          'import {app} from "@sdk"; export const x = 1; export interface X {} app.schedule({ name: "schedule-1", cron: "0 9 * * *" }, () => {});',
       },
     });
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) return;
     await writeFile(join(directory, `${label}.mjs`), result.bundle);
     const module = await import(join(directory, `${label}.mjs`));
-    await module["schedule:0"](null, { call: async () => null });
+    await module["schedule-1"](null, { call: async () => null });
   });
 
 test("types must use explicit import type so runtime modules stay predictable", async () => {
@@ -682,8 +683,8 @@ test("checked resource events and zoned schedules execute through the bundle reg
     `import { app, owner } from "@sdk";
 app.get("/health", c => c.text("Ready"));
 app.on("work-shop.changed", async event => { await owner.stock.list({ cursor: event.subject.id }); });
-app.schedule({ at: "2030-01-02T09:00:00Z", timeZone: "UTC" }, async () => { await owner.stock.list({ cursor: "once" }); });
-app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, async () => { await owner.stock.list({ cursor: "daily" }); });
+app.schedule({ name: "schedule-0", at: "2030-01-02T09:00:00Z", timeZone: "UTC" }, async () => { await owner.stock.list({ cursor: "once" }); });
+app.schedule({ name: "schedule-1", cron: "0 9 * * *", timeZone: "Europe/Berlin" }, async () => { await owner.stock.list({ cursor: "daily" }); });
 export default app;`,
     {
       sdk: generateCodeSdk([manifest], {
@@ -701,8 +702,8 @@ export default app;`,
       entrypoint: "event:work-shop.changed@1",
       event: { type: "work-shop.changed", version: 1, place: { type: "work-shop.workshop", id: "owner-shop" } },
     },
-    { kind: "schedule", entrypoint: "schedule:0", cron: null, at: "2030-01-02T09:00:00Z", timeZone: "UTC" },
-    { kind: "schedule", entrypoint: "schedule:1", cron: "0 9 * * *", timeZone: "Europe/Berlin" },
+    { kind: "schedule", entrypoint: "schedule-0", cron: null, at: "2030-01-02T09:00:00Z", timeZone: "UTC" },
+    { kind: "schedule", entrypoint: "schedule-1", cron: "0 9 * * *", timeZone: "Europe/Berlin" },
   ]);
   const file = join(directory, "event-bundle.mjs");
   await writeFile(file, result.bundle);
@@ -746,7 +747,7 @@ export default app;`,
   expect(calls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "item-a" } } } }]);
   const onceModule = await import(`${file}?once`);
   const onceCalls: unknown[] = [];
-  await onceModule["schedule:0"](null, {
+  await onceModule["schedule-0"](null, {
     call: async (operation: string, value: unknown) => {
       onceCalls.push({ operation, value });
       return { rows: [], next: null };
@@ -755,7 +756,7 @@ export default app;`,
   expect(onceCalls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "once" } } } }]);
   const dailyModule = await import(`${file}?daily`);
   const dailyCalls: unknown[] = [];
-  await dailyModule["schedule:1"](null, {
+  await dailyModule["schedule-1"](null, {
     call: async (operation: string, value: unknown) => {
       dailyCalls.push({ operation, value });
       return { rows: [], next: null };
@@ -877,7 +878,7 @@ test("HTTP and secret placeholders compile and mark internet use without grantin
 
 test("HTTP methods cannot be detached to hide their internet use from checking", async () => {
   const result = await check(
-    'import { app, http } from "@sdk"; const send = http.fetch; app.schedule({ cron: "0 8 * * 1" }, async () => { await send("https://api.example/v1"); }); export default app;',
+    'import { app, http } from "@sdk"; const send = http.fetch; app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { await send("https://api.example/v1"); }); export default app;',
   );
   expect(result.ok).toBe(false);
   expect(result.diagnostics.some((diagnostic) => diagnostic.code === "code_detached_sdk_method")).toBe(true);
@@ -885,7 +886,7 @@ test("HTTP methods cannot be detached to hide their internet use from checking",
 
 test("destructured HTTP methods retain internet evidence through their SDK signature", async () => {
   const result = await check(
-    'import { app, http } from "@sdk"; const { fetch: send } = http; app.schedule({ cron: "0 8 * * 1" }, async () => { await send("https://api.example/v1"); }); export default app;',
+    'import { app, http } from "@sdk"; const { fetch: send } = http; app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { await send("https://api.example/v1"); }); export default app;',
   );
   expect(result).toMatchObject({ ok: true });
   if (result.ok) expect(result.manifest.internet).toEqual(["https://api.example"]);
@@ -1354,7 +1355,7 @@ test("flat SDK methods cannot be detached or reached through the removed app fac
   ]) {
     const checked = await check(
       `import { app, core } from "@sdk";
-app.schedule({ cron: "0 8 * * 1" }, async () => { ${body} }); export default app;`,
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { ${body} }); export default app;`,
       { sdk, aiOperations: ["core.ai.generate"] },
     );
     expect(checked.ok).toBe(false);
@@ -1379,7 +1380,7 @@ test("flat namespaces retain SDK identity through inferred const aliases only", 
   ]) {
     const checked = await check(
       `import { app, alpha, beta } from "@sdk";
-app.schedule({ cron: "0 8 * * 1" }, async () => { ${body} }); export default app;`,
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { ${body} }); export default app;`,
       { sdk, aiOperations: ["beta.ai.generate"] },
     );
     expect(checked.ok).toBe(false);
@@ -1431,7 +1432,7 @@ app.schedule({ cron: "0 8 * * 1", name: "weekly" }, async () => { ${body} }); ex
     ]) {
       const rejected = await check(
         `import { app, core, owner } from "@sdk";
-app.schedule({ cron: "0 8 * * 1" }, async () => { ${escape} }); export default app;`,
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { ${escape} }); export default app;`,
         { sdk },
       );
       expect(rejected.ok).toBe(false);
@@ -1454,7 +1455,7 @@ test("typed app(id) stays a resource factory and app() is a checker type diagnos
   );
   const checked = await check(
     `import { app, capabilities } from "@sdk";
-app.schedule({ cron: "0 8 * * 1" }, async () => {
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => {
   const h = capabilities.app("App001");
   const type: "capabilities.app" = h.type;
   const id: "App001" = h.id;
@@ -1466,7 +1467,7 @@ app.schedule({ cron: "0 8 * * 1" }, async () => {
   expect(checked.manifest.permissions.map((p) => p.operation)).toEqual(["capabilities.search"]);
   const rejected = await check(
     `import { app, capabilities } from "@sdk";
-app.schedule({ cron: "0 8 * * 1" }, () => { capabilities.app(); }); export default app;`,
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, () => { capabilities.app(); }); export default app;`,
     { sdk },
   );
   expect(rejected.ok).toBe(false);
@@ -1505,7 +1506,7 @@ test("SDK property keys and resource values preserve their declaration identity"
   ]) {
     const checked = await check(
       `import { app, core, owner, work_shop } from "@sdk";
-app.schedule({ cron: "0 8 * * 1" }, async () => { ${body} }); export default app;`,
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { ${body} }); export default app;`,
       { sdk, aiOperations: ["core.ai.generate"] },
     );
     if (checked.ok) accepted.push(body);

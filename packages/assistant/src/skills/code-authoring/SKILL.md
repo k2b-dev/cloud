@@ -81,7 +81,7 @@ and start with the [database template](references/template-database.md).
 | React to a Space, notebook or another readable place | `app.on(handle, event, handler)` | [Events](references/events.md), [task due tomorrow](references/template-task-due-tomorrow.md) |
 | React to each incoming message of a mailbox | `app.on("mail.message.received", …)` in mailbox Code | [Events](references/events.md) |
 | Sort, tag, assign, set status, summarise, draft a reply | Mail Actions on `owner` | [Capabilities](references/capabilities.md), [mail template](references/template-mail-automation.md) |
-| Run at a local time, weekly or once | `app.schedule({ cron | at, timeZone?, name?, title? }, handler)` | [Schedules](references/schedules.md) |
+| Run at a local time, weekly or once | `app.schedule({ cron | at, timeZone?, name, title? }, handler)` | [Schedules](references/schedules.md) |
 | Run a model loop with bound SDK tools or FileRefs | `core.ai.generate({ tools: […], files: […] })` | [AI](references/ai.md), [FileRef](references/file-ref.md) |
 | Summarise or extract fields with AI | `core.ai.generate` | [AI](references/ai.md) |
 | Classify with probabilities, such as category and urgency | `core.ai.decide` | [AI](references/ai.md) |

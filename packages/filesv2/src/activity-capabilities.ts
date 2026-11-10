@@ -1,4 +1,4 @@
-import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, capabilityPage } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
 import { ActivityInput, ShareAccessInput } from "./activity-contracts";
 import {
@@ -16,7 +16,9 @@ import { filesService } from "./service";
 async function read<T>(context: CapabilityExecutionContext, run: () => Promise<T>) {
   if (context.actor.kind !== "user") return fail(err.forbidden("File history requires a signed-in user."));
   try {
-    const result = { data: await run() };
+    const data = await run();
+    const next = data && typeof data === "object" && "next" in data ? data.next : undefined;
+    const result = { data, ...(typeof next === "string" || next === null ? { page: capabilityPage(next) } : {}) };
     // Never truncate fields or advance a page cursor past omitted entries. The caller can request a smaller page.
     if (Buffer.byteLength(JSON.stringify(result), "utf8") > CAPABILITY_MAX_RESULT_BYTES)
       return fail({

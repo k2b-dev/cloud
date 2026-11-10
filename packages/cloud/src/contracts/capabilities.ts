@@ -1,3 +1,4 @@
+import { CodeSdkExportNameSchema } from "./code-sdk-names";
 import {
   CapabilityQualifiedIdSchema,
   type CloudResourceRef,
@@ -1151,6 +1152,8 @@ export type CapabilityDiscussionsDeclaration = { item: string; containers: strin
 
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
+  /** Optional SDK module export; capability and event IDs keep the app ID. */
+  sdkExportName?: string;
   presentation?: CapabilityPresentationCatalog;
   code?: CapabilityCodeDefinition;
   types?: CapabilityDefinitionCatalog<CapabilityResourceTypeDefinition>;
@@ -1511,6 +1514,7 @@ export const CapabilityManifestSchema = z.preprocess(
   z.object({
     protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
     appId: CapabilityAppIdSchema,
+    sdkExportName: CodeSdkExportNameSchema.optional(),
     manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
     types: z.array(CapabilityResourceTypeManifestSchema).max(MAX_MANIFEST_ENTRIES),
     queries: z.array(CapabilityQueryManifestSchema).max(MAX_MANIFEST_ENTRIES),

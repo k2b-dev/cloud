@@ -33,7 +33,7 @@ for (const mode of ["personal", "resource"] as const) {
         files: {
           "code.ts": `
       import { app, db } from "@sdk";
-      app.schedule({ cron: "0 8 * * *" }, async () => {
+      app.schedule({ name: "schedule-0", cron: "0 8 * * *" }, async () => {
         await db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT)");
         const injection = "x'); DROP TABLE notes; --";
         await db.batch([{ sql: "INSERT INTO notes(body) VALUES (?)", params: [injection] }]);
@@ -112,7 +112,7 @@ test("database evidence follows aliased typed calls", async () => {
       files: {
         "code.ts": `import { app, db as store } from "@sdk";
 
-      app.schedule({ cron: "0 8 * * *" }, async () => { await store.query("SELECT ? AS value", ["bound"]); });
+      app.schedule({ name: "schedule-0", cron: "0 8 * * *" }, async () => { await store.query("SELECT ? AS value", ["bound"]); });
       export default app;`,
       },
     },

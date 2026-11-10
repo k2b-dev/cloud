@@ -10,6 +10,11 @@ read fields from `data`. Actions return domain data directly, and streaming
 reads return `FileRef`. A handle grants nothing: each call checks the policy,
 the version approval and the current access of the account.
 
+SDK properties use camelCase, including hyphenated and snake_case path segments:
+`spaces.space(id).task.setCompleted`, `grids.table(id).record.upsertExternal`,
+and `mail.mailbox(id).mailingList`. The capability IDs listed below keep their
+original spelling. Files imports as `files`; events keep `filesv2.*`.
+
 ## Read Mail content
 
 | Operation | Result |
@@ -96,8 +101,8 @@ Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachmen
 | `mail.conversation.snooze` | Show conversation later | mail.mailbox | — | admin approval |
 | `mail.conversation.status.set` | Update conversation status | mail.mailbox | — | admin approval |
 | `mail.conversation.status.set.batch` | Update the status of conversations | mail.mailbox | — | admin approval |
-| `mail.conversation.status.update` | Update conversation status | mail.mailbox | — | admin approval |
-| `mail.conversation.status.update.batch` | Update the status of conversations | mail.mailbox | — | admin approval |
+| `mail.conversation.status.update` | Update conversation status | mail.mailbox | — | not in the SDK |
+| `mail.conversation.status.update.batch` | Update the status of conversations | mail.mailbox | — | not in the SDK |
 | `mail.conversation.summary.write` | Write automated conversation summary | mail.mailbox | required | admin approval |
 | `mail.conversation.tag.update` | Update conversation tags | mail.mailbox | — | admin approval |
 | `mail.delivery.cancel` | Cancel delivery | mail.mailbox | required | never |
@@ -286,8 +291,9 @@ Queries: `filesv2.activity.chain`, `filesv2.activity.get`, `filesv2.activity.lis
 | `filesv2.provider.save` | Save a new file | — | — | not in the SDK |
 | `filesv2.trash.restore` | Restore entry from trash | filesv2.entry | required | never |
 
-The Files app is `filesv2`. Code can list, search and read entry metadata,
-and `filesv2.content.read` returns a file as a [FileRef](file-ref.md) to pass
+The Files SDK export is `files`; its app, capability and event IDs keep
+`filesv2` (including `filesv2.*` events). Code can list, search and read entry metadata,
+and `files.content.read` returns a file as a [FileRef](file-ref.md) to pass
 to another app. Code cannot write file content, and no Files Action runs
 unattended yet.
 
@@ -295,19 +301,19 @@ Reading from several apps in one personal page:
 
 <!-- check: personal -->
 ```tsx
-import { app, contacts, filesv2, jsx, notebooks, Page, Table, Column } from "@sdk";
+import { app, contacts, files, jsx, notebooks, Page, Table, Column } from "@sdk";
 
 // Fictional Cloud user ID allowed to read these personal resources.
 const ALLOWED_USER = "00000000-0000-4000-8000-0000000000aa";
 app.get("/", async c => {
   if (c.user?.id !== ALLOWED_USER) return c.json({ error: "forbidden" }, 403);
-  const [base] = (await filesv2.bases.list({})).data.items;
-  const files = base ? (await filesv2.entry(base.ref.id).list({ sort: "modified", order: "desc" })).data.items.slice(0, 10) : [];
+  const [base] = (await files.bases.list({})).data.items;
+  const entries = base ? (await files.entry(base.ref.id).list({ sort: "modified", order: "desc" })).data.items.slice(0, 10) : [];
   const { data: people } = await contacts.contact.search({ query: "supplier", tags: [], limit: 10 });
   const { data: notes } = await notebooks.note.search({ query: "supplier", tags: [], limit: 10 });
   return c.page(
     <Page title="Suppliers">
-      <Table width="third" title="Recent files" rows={files.map(file => ({ name: file.name, modified: file.modified }))}>
+      <Table width="third" title="Recent files" rows={entries.map(file => ({ name: file.name, modified: file.modified }))}>
         <Column key="name" label="Name" />
         <Column key="modified" label="Changed" />
       </Table>

@@ -1222,6 +1222,22 @@ describe("Grids capabilities", () => {
         expect(savedView.data.refs).toContainEqual({ type: "grids.view", id: viewPublicId, title: "All items" });
       }
 
+      for (const operation of ["gql.preview", "gql.execute"] as const) {
+        const invalid = await invoke(
+          "query",
+          operation,
+          { query: "not valid GQL" },
+          {
+            ...context,
+            target: { type: "grids.base", id: basePublicId },
+          },
+        );
+        expect(invalid.ok).toBeTrue();
+        if (!invalid.ok) throw new Error("Expected GQL diagnostics");
+        expect(invalid.data.data.ok).toBeFalse();
+        expect(invalid.data.page).toEqual({ hasMore: false });
+      }
+
       for (const [operation, args] of [
         ["gql.preview", { query: `from table {${tablePublicId}}` }],
         ["gql.execute", { query: `from table {${tablePublicId}}` }],

@@ -4235,6 +4235,7 @@ const actionDefinitions = {
   ...conversationStatusSetActions,
   "conversation.status.update.batch": {
     ...conversationStatusSetActions["conversation.status.set.batch"],
+    code: false,
     description:
       "Mark up to 50 conversations of one mailbox done or reopen them. Every conversation must belong to the mailbox target. Optional expectedRevisions fences every item.",
     input: c.ConversationStatusUpdateBatchInputSchema,
@@ -4242,6 +4243,7 @@ const actionDefinitions = {
   },
   "conversation.status.update": {
     ...conversationStatusSetActions["conversation.status.set"],
+    code: false,
     description: "Mark a conversation done or reopen it using the latest message direction, with a revision fence.",
     input: c.ConversationStatusUpdateInputSchema,
   },

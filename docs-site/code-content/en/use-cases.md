@@ -162,7 +162,6 @@ import { app, http, secrets, spaces } from "@sdk";
 
 const space = spaces.space("Spc001"); // fictional
 const teamGroupIds = ["grp_team"]; // fictional
-const text = (base64: string) => new TextDecoder().decode(Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)));
 
 // The access check covers /team only, so /hooks stays reachable.
 app.use("/team", async (c, next) => {
@@ -182,7 +181,7 @@ app.post("/hooks/shipments", async (c) => {
   });
   if (response.status === 404) return c.json({ ok: true }); // unknown shipment: nothing to do
   if (response.status !== 200) return c.json({ ok: false }, 502);
-  const shipment: unknown = JSON.parse(text(response.body));
+  const shipment: unknown = await response.json();
   const delivered = shipment && typeof shipment === "object" && "status" in shipment && shipment.status === "delivered";
   if (!delivered) return c.json({ ok: true });
 

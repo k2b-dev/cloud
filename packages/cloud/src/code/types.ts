@@ -25,7 +25,7 @@ export type CodeSdkBridge = {
   call(operation: "http.fetch", input: CodeHttpRequest): Promise<unknown>;
 };
 
-/** One named export and its originating manifest hash; export names replace hyphens with underscores. */
+/** One named export and its originating manifest hash; an optional manifest name overrides the app-ID default. */
 export type CodeSdkApp = { appId: string; exportName: string; manifestHash: string };
 
 /** Factory and method paths are literal property segments, for the checker's handle/permission analysis. Null type means app-wide: an empty factoryPath binds methods directly to the export; only non-null types have factories. */
@@ -58,7 +58,12 @@ export type CodeSdkEvent = {
 };
 
 /** Excluded entries remain visible to the checker so it can explain a forbidden call instead of suggesting a spelling fix. */
-export type CodeSdkOmission = { capability: string; reason: "stream" | "code_false" | "app_only" };
+export type CodeSdkOmission = {
+  capability: string;
+  target: string | null;
+  methodPath: string[];
+  reason: "stream" | "code_false" | "app_only";
+};
 
 /** Supported app registration methods, consumed by generation and analysis. */
 export const CODE_SDK_APP_PHASES = {
