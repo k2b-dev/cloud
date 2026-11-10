@@ -10,6 +10,8 @@ import type { CodeSdkOperation } from "./types";
 
 export type CodeAnalysis = {
   diagnostics: CodeCheckDiagnostic[];
+  /** Hints that never block a version, such as a page that admits every member without checking who visits. */
+  warnings: CodeCheckDiagnostic[];
   permissions: CodePermission[];
   entrypoints: CodeVersionManifest["entrypoints"];
   ai: boolean;
@@ -81,6 +83,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   const checker = program.getTypeChecker();
   const result: CodeAnalysis = {
     diagnostics: [],
+    warnings: [],
     permissions: [],
     entrypoints: [],
     ai: false,
@@ -88,10 +91,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     internet: [],
     modules: [...reachable],
   };
-  const report = (node: ts.Node, code: string, message: string) => {
+  const report = (node: ts.Node, code: string, message: string, list: CodeCheckDiagnostic[] = result.diagnostics) => {
     const sf = node.getSourceFile();
     const location = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-    result.diagnostics.push({
+    list.push({
       code,
       message,
       file: sf.fileName.slice(root.length),
@@ -427,7 +430,9 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   // Permission calls and schedule handlers, joined after all files are visited: a handler may be declared anywhere.
   const placed: { index: number; node: ts.Node }[] = [];
   const handlers: { handler: ts.Expression; name: string }[] = [];
-  const middleware: { path: string; handler: ts.Expression }[] = [];
+  const middleware: { path: string; handler: ts.Expression; node: ts.Node }[] = [];
+  /** Routes that are not public, with the middleware registered before them that matches their path. */
+  const privateRoutes: { node: ts.Node; path: string; handler: ts.Expression | undefined; middleware: ts.Expression[] }[] = [];
   const validMiddlewarePath = (path: string) => path.length <= 200 && /^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?)?$/.test(path);
   /** The SDK block a JSX tag names, such as `Form` or `Field.Select`, also under an import alias; null otherwise. */
   const sdkFile = root + "sdk.d.ts";
@@ -646,7 +651,20 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               (!statement && !binding)
             )
               report(node, "code_static_middleware", "Deklariere app.use auf Modulebene mit optionalem konstantem Pfadpräfix.");
-            else middleware.push({ path: paths[0] === "/" ? "/" : paths[0]!.replace(/\/$/, ""), handler });
+            else {
+              const prefix = paths[0] === "/" ? "/" : paths[0]!.replace(/\/$/, "");
+              middleware.push({ path: prefix, handler, node });
+              // A route registered earlier never runs this middleware, whatever it checks.
+              const line = node.getSourceFile().getLineAndCharacterOfPosition(node.getStart(node.getSourceFile())).line + 1;
+              for (const route of privateRoutes)
+                if (routeUnder(prefix, route.path))
+                  report(
+                    route.node,
+                    "code_route_before_middleware",
+                    `Diese Route steht vor app.use in ${node.getSourceFile().fileName.slice(root.length)}:${line} und läuft ohne diese Middleware. Registriere sie danach.`,
+                    result.warnings,
+                  );
+            }
           }
           if (method === "on" && collecting) {
             const explicit = node.arguments.length === 3;
@@ -731,15 +749,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               entryNames.add(name);
               if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
               // A parameterized route may overlap a literal middleware prefix. Attribute conservatively.
-              const segments = route.data.path.replace(/\/$/, "").split("/");
-              for (const item of middleware) {
-                const prefix = item.path === "/" ? [] : item.path.split("/");
-                if (
-                  prefix.length <= segments.length &&
-                  prefix.every((part, index) => segments[index]?.startsWith(":") || segments[index] === part)
-                )
-                  handlers.push({ handler: item.handler, name });
-              }
+              const matching = middleware.filter((item) => routeUnder(item.path, route.data.path));
+              for (const item of matching) handlers.push({ handler: item.handler, name });
+              if (!route.data.public)
+                privateRoutes.push({ node, path: route.data.path, handler: node.arguments[1], middleware: matching.map((item) => item.handler) });
               const sf = node.getSourceFile();
               result.entrypoints.push({
                 kind: "route",
@@ -902,6 +915,36 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     }
   }
   attributeEntrypoints(checker, result.permissions, placed, handlers);
+  // Every member may open a page that is not public; one that never reads c.user serves them all alike.
+  const sdkUser = (symbol: ts.Symbol | undefined) =>
+    !!symbol?.declarations?.some((declaration) => declaration.getSourceFile().fileName === sdkFile);
+  const readsUser = (fn: ts.Node): boolean => {
+    let found = false;
+    const walk = (node: ts.Node) => {
+      if (found) return;
+      if (ts.isPropertyAccessExpression(node) && node.name.text === "user" && sdkUser(checker.getSymbolAtLocation(node.name))) found = true;
+      else if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === "user")
+        found = sdkUser(checker.getTypeAtLocation(node.expression).getProperty("user"));
+      else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+        const key = node.propertyName ?? node.name;
+        if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === "user")
+          found = sdkUser(checker.getTypeAtLocation(node.parent).getProperty("user"));
+      }
+      if (!found) ts.forEachChild(node, walk);
+    };
+    walk(fn);
+    return found;
+  };
+  for (const route of privateRoutes) {
+    const chain = [route.handler, ...route.middleware].map((handler) => (handler ? handlerFunction(checker, handler) : undefined));
+    if (!chain.some((fn) => fn && readsUser(fn)))
+      report(
+        route.node,
+        "code_route_unchecked",
+        "Diese Seite öffnet sich für alle Angemeldeten ohne Gäste und läuft mit den Rechten des Besitzers. Prüfe c.user im Handler oder in app.use davor, wenn nicht alle sie sehen sollen.",
+        result.warnings,
+      );
+  }
   if (!allowedOrigins.size && request.sdk.manifest.mode !== "code_run")
     for (const node of dynamicHttp)
       report(node, "code_http_origin_dynamic", 'Der Ursprung ist dynamisch. Deklariere ihn mit http.allow(["https://api.example.com"]).');
@@ -932,6 +975,13 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       "Lege mindestens einen Zeitplan oder eine Route auf Modulebene an.",
     );
   return result;
+}
+
+/** Whether middleware registered for `prefix` may run on `path`; a parameter segment may match any literal. */
+function routeUnder(prefix: string, path: string): boolean {
+  const segments = path.replace(/\/$/, "").split("/");
+  const parts = prefix === "/" ? [] : prefix.split("/");
+  return parts.length <= segments.length && parts.every((part, index) => segments[index]?.startsWith(":") || segments[index] === part);
 }
 
 /** The function a schedule runs: an inline function, or a function or const function the handler names directly. */

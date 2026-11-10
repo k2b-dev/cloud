@@ -128,8 +128,8 @@ test("a browser visitor without a session goes to sign-in and comes back to the 
   expect((await privatePage.router.request(`/code/${codeId}/`, { method: "POST", headers: { Accept: "text/html" } })).status).toBe(401);
   expect(privatePage.calls).toHaveLength(0);
 });
-test("each account profile and provider reaches the handler as a stable, minimal visitor identity", async () => {
-  for (const profile of ["user", "guest"] as const) {
+test("each member provider reaches the handler as a stable, minimal visitor identity", async () => {
+  for (const profile of ["user"] as const) {
     for (const provider of ["local", "ipa"] as const) {
       const visitor = UserSchema.parse({
         ...person,
@@ -170,6 +170,31 @@ test("each account profile and provider reaches the handler as a stable, minimal
         expect(payload).not.toContain(secret);
     }
   }
+});
+test("guests are refused on every page that is not public, for every method and owner, before the Code is asked", async () => {
+  const guest = UserSchema.parse({ ...person, profile: "guest", roles: ["guest"] });
+  for (const personalOwner of [id, null]) {
+    const page = hosting(false, true, undefined, personalOwner, guest);
+    for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      for (const headers of [{}, { Accept: "text/html" }, { Accept: "text/html", "X-Code-Page": "tree" }]) {
+        const response = await page.router.request(`/code/${codeId}/`, {
+          method,
+          headers: { ...headers, "X-Code-CSRF": codeCsrf("fixture-session", codeId) },
+        });
+        expect(response.status).toBe(403);
+        if (method !== "HEAD") expect(await response.json()).toEqual({ code: "code_members_only" });
+      }
+    }
+    expect(page.calls).toHaveLength(0);
+    // A member on the same page reaches the handler.
+    const member = hosting(false, true, undefined, personalOwner);
+    expect((await member.router.request(`/code/${codeId}/`)).status).toBe(200);
+    expect(member.calls).toHaveLength(1);
+  }
+  // A public route stays open to a guest, anonymous as for everyone.
+  const publicPage = hosting(true, true, undefined, null, guest);
+  expect((await publicPage.router.request(`/code/${codeId}/`)).status).toBe(200);
+  expect(publicPage.calls[0]?.request.user).toBeNull();
 });
 test("service accounts and agents cannot become page visitors", async () => {
   for (const kind of ["user_delegated", "resource_bound", "standalone", "agent", "code"] as const) {
