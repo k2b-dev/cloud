@@ -9,6 +9,7 @@ import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capa
 import { PANEL_HELP_ID_MAX_LENGTH, PanelPageContextSchema } from "../contracts/panel-context";
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
+import { defaultScreenPreferences } from "../contracts/screen-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { isAppSessionActor } from "../server/actor";
 import { getLocale } from "../server/locale";
@@ -219,6 +220,7 @@ export default function Layout(props: LayoutProps) {
   const shellFocus = showRail && readShellFocusCookie(cookie);
   // The profile menu offers the mobile app only while the installation runs it.
   const appHref = user && isPwaShellAvailable(displayApps) ? "/me/app" : undefined;
+  const privacyTimerSeconds = (c.get("page").screen ?? defaultScreenPreferences()).privacyTimerSeconds;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id
@@ -269,6 +271,7 @@ export default function Layout(props: LayoutProps) {
     ...(user
       ? {
           rail: c.get("railPreferences") ?? defaultRailPreferences(),
+          privacyTimerSeconds,
           home: resolveHomePath(settings?.app?.home_path),
           profile: { userId: user.id, name: profileName, avatarSrc: profileAvatarSrc, appHref },
         }
@@ -392,6 +395,7 @@ export default function Layout(props: LayoutProps) {
               : undefined
           }
           banners={user && (swap || announcements?.banners.length) ? true : undefined}
+          privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} name={appName} />}

@@ -1145,14 +1145,14 @@
   box-shadow: var(--ui-focus);
 }
 
-/* Beside the rail, growing upward from the avatar. */
+/* Beside the rail, growing upward from the avatar. Wide enough for the privacy timer's five choices in one row. */
 .layout-profile-preferences__panel {
   position: absolute;
   z-index: 100;
   bottom: 0;
   left: 100%;
   display: none;
-  width: min(17rem, calc(100vw - 1rem));
+  width: min(20rem, calc(100vw - 1rem));
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.25rem;

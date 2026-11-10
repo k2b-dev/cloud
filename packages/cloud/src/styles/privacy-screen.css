@@ -1,0 +1,269 @@
+/* Privacy screen: only content blurs; the app bar stays recognizable but unusable, its counts and the avatar blur
+   with the content. Blur and inert never change layout: positions, sizes and scroll stay as they were. The hint is a
+   floating card (layer 3) over the middle of the app area. `browser/privacy-screen.tsx` owns the attributes. */
+[data-cloud-privacy-covered]:not([data-cloud-privacy-covered="rail"]) {
+  filter: blur(14px) saturate(0.7);
+  opacity: 0.66;
+  transition:
+    filter 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+[data-cloud-privacy-covered="rail"] {
+  opacity: 0.85;
+
+  & :is(.cloud-app-badge, .layout-profile-preferences) {
+    filter: blur(5px);
+  }
+  & .cloud-app-badge {
+    opacity: 0.6;
+  }
+}
+
+/* The runtime sets the countdown's remaining share and the app area's middle; these are the values before it does. */
+:root {
+  --cloud-privacy-rest: 1;
+}
+
+.cloud-privacy-hint {
+  --cloud-privacy-hint-x: 50vw;
+  --cloud-privacy-hint-y: 50vh;
+  position: fixed;
+  z-index: 1000;
+  top: var(--cloud-privacy-hint-y);
+  left: var(--cloud-privacy-hint-x);
+  display: flex;
+  width: min(22.5rem, calc(100vw - 2rem));
+  flex-direction: column;
+  align-items: center;
+  padding: 1.125rem 1.125rem 1rem;
+  border-radius: var(--k2b-radius-dialog);
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-shadow-float);
+  color: var(--k2b-text-secondary);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  transition: box-shadow 160ms ease-out;
+}
+
+/* A mouse movement, a scroll, or a right click lights the hint up: the way back is a click or a key. */
+.cloud-privacy-hint[data-wake] {
+  box-shadow:
+    var(--k2b-shadow-float),
+    0 0 0 3px color-mix(in srgb, var(--k2b-focus-ring) 30%, transparent);
+}
+
+.cloud-privacy-hint__icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.625rem;
+  place-items: center;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+  font-size: 1.3125rem;
+}
+
+.cloud-privacy-hint__title {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.cloud-privacy-hint__body {
+  margin: 0.25rem 0 0.875rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.cloud-privacy-hint__note {
+  display: flex;
+  margin: 0.75rem 0 0;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+/* The profile panel's privacy section: a quiet label, "Privacy screen now", and the timer as a segmented row that
+   starts at the entries' text column. */
+.layout-profile-preferences__label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* A label with a quiet line below, as in the touch menu's choice rows. */
+.layout-profile-preferences__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  text-align: start;
+}
+
+.layout-profile-preferences__copy > small {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.layout-profile-preferences__timer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem 0.5rem 2.5rem;
+}
+
+.layout-profile-preferences__caption {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+/* The countdown before the timer covers the content: a fixed place above the profile, only while the timer is on,
+   so it never pushes anything; only the app list scrolls. The ring empties over ten seconds without counting
+   aloud; reduced motion shows the seconds instead. It is decoration: the screen reader hears one sentence. */
+.cloud-privacy-countdown {
+  position: relative;
+  display: flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--k2b-text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease-out;
+}
+
+:root[data-cloud-privacy-countdown] .cloud-privacy-countdown {
+  opacity: 1;
+}
+
+.cloud-privacy-countdown__icon {
+  position: relative;
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  place-items: center;
+  font-size: 1.1875rem;
+}
+
+.cloud-privacy-countdown__ring {
+  position: absolute;
+  inset: 0.125rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  fill: none;
+  stroke-width: 2.5;
+  transform: rotate(-90deg);
+
+  & .cloud-privacy-countdown__track {
+    stroke: var(--k2b-surface-muted);
+  }
+  & .cloud-privacy-countdown__arc {
+    stroke: var(--k2b-border-strong);
+    stroke-dasharray: 1;
+    stroke-dashoffset: calc(1 - var(--cloud-privacy-rest));
+    stroke-linecap: round;
+  }
+}
+
+.cloud-privacy-countdown__seconds {
+  position: absolute;
+  right: 0.125rem;
+  bottom: 0.125rem;
+  display: none;
+  min-width: 1.0625rem;
+  height: 1.0625rem;
+  padding: 0 0.25rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--k2b-surface);
+  box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong);
+  color: var(--k2b-text-secondary);
+  font-size: 0.65625rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.cloud-privacy-countdown__label {
+  display: none;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 1680px) {
+  .cloud-app-canvas[data-layout-authenticated]:not([data-shell-focus]) > .layout-rail[data-rail-names] .cloud-privacy-countdown {
+    width: auto;
+    margin-inline: 0.375rem 0.5rem;
+  }
+  .cloud-app-canvas[data-layout-authenticated]:not([data-shell-focus]) > .layout-rail[data-rail-names] .cloud-privacy-countdown__label {
+    display: block;
+  }
+}
+
+/* The app bar hidden: the countdown floats as a pill above the floating avatar. Its window-dependent corner follows
+   the avatar's in global.css. */
+@media (min-width: 768px) {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-actions > .cloud-privacy-countdown[aria-hidden] {
+    position: absolute;
+    z-index: 15;
+    left: calc(env(safe-area-inset-left, 0px) + 0.75rem);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 4rem);
+    display: flex;
+    width: auto;
+    padding-inline-end: 0.875rem;
+    border-radius: 999px;
+    background: var(--k2b-surface);
+    box-shadow: var(--k2b-shadow-float);
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .cloud-privacy-countdown__label {
+    display: block;
+  }
+}
+
+/* Phones and touch-only tablets have no privacy screen: the countdown keeps no place there, and the settings page
+   offers no "Try it". The timer setting stays, because it is the person's for their computers. */
+@media not (any-pointer: fine) {
+  .cloud-privacy-countdown,
+  .cloud-privacy-try {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-privacy-countdown__ring {
+    display: none;
+  }
+  .cloud-privacy-countdown__seconds {
+    display: grid;
+  }
+  .cloud-privacy-countdown,
+  .cloud-privacy-hint,
+  [data-cloud-privacy-covered] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-cloud-privacy-covered]:not([data-cloud-privacy-covered="rail"]) {
+    /* Where the system colours replace the blur's look, an opaque ground still hides the content. */
+    background: Canvas;
+  }
+  .cloud-privacy-hint {
+    border: 2px solid CanvasText;
+  }
+  .cloud-privacy-countdown__arc {
+    stroke: CanvasText;
+  }
+}

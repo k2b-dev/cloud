@@ -1,8 +1,13 @@
-import { Avatar, Dropdown, type DropdownItem, Kbd, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Avatar, Dropdown, type DropdownItem, Kbd, SegmentedControl, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, createUniqueId, onCleanup, onMount } from "solid-js";
+import { requestPrivacyScreen } from "../browser/privacy-timer";
 import { readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../browser/shell-focus";
+import { DEFAULT_PRIVACY_TIMER_SECONDS, PRIVACY_TIMER_CHOICES } from "../contracts/screen-preferences";
 import type { CloudThemePreference } from "../shared/theme";
 import { platformMessages } from "./platform-messages";
+import { PRIVACY_SHORTCUT } from "./privacy-screen-constants";
+import { privacyTimerLabel } from "./privacy-screen-messages";
+import { createPrivacyTimerChoice, parsePrivacyTimer } from "./privacy-timer-choice";
 import { createProfileActions } from "./profile-actions";
 import { useShellData } from "./shell-data";
 
@@ -38,6 +43,39 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
     onCleanup(() => window.removeEventListener(SHELL_FOCUS_CHANGE_EVENT, sync));
   });
   const shortcut = () => <Kbd keys={"mod+\\"} platform={data?.platform} />;
+  // The privacy screen exists only on computers with a mouse or touchpad; the touch menu shows it there too.
+  const privacy = createPrivacyTimerChoice(data?.privacyTimerSeconds ?? DEFAULT_PRIVACY_TIMER_SECONDS, locale);
+  const [finePointer, setFinePointer] = createSignal(false);
+  onMount(() => setFinePointer(window.matchMedia("(any-pointer: fine)").matches));
+  const privacyKeys = () => <Kbd keys={PRIVACY_SHORTCUT} platform={data?.platform} />;
+  const privacySections = (): DropdownItem[] =>
+    finePointer()
+      ? [
+          {
+            sectionLabel: privacy.messages().section,
+            items: [
+              {
+                icon: "ti ti-eye-off",
+                label: privacy.messages().now,
+                description: privacy.messages().nowDescription,
+                trailing: privacyKeys(),
+                action: requestPrivacyScreen,
+              },
+            ],
+          },
+          {
+            sectionLabel: privacy.messages().timer,
+            layout: "row",
+            items: PRIVACY_TIMER_CHOICES.map((seconds) => ({
+              choice: "radio" as const,
+              label: privacyTimerLabel(privacy.messages(), seconds),
+              checked: () => privacy.value() === seconds,
+              closeOnSelect: false,
+              action: () => void privacy.choose(seconds),
+            })),
+          },
+        ]
+      : [];
   const menuItems = createMemo<DropdownItem[]>(() => [
     {
       items: [
@@ -49,8 +87,10 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
         },
       ],
     },
+    ...privacySections(),
     ...items(),
   ]);
+  const timerLabelId = `cloud-privacy-timer-${createUniqueId()}`;
 
   // The person's name shows beside the avatar on wide windows, so it is also part of the spoken name.
   const avatar = () => [<Avatar name={props.name} src={props.avatarSrc} size="sm" />, <span class="rail-item-label">{props.name}</span>];
@@ -73,6 +113,45 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
             <span>{t().showSidebar}</span>
             {shortcut()}
           </button>
+        </div>
+        <div class="layout-profile-preferences__section" role="group" aria-labelledby={`${timerLabelId}-section`}>
+          <span class="layout-profile-preferences__label" id={`${timerLabelId}-section`}>
+            <i class="ti ti-user" aria-hidden="true" />
+            {privacy.messages().section}
+          </span>
+          <button
+            type="button"
+            class="menu-item"
+            aria-keyshortcuts={data?.platform === "apple" ? "Meta+Period" : "Control+Period"}
+            onClick={(event) => {
+              // The open panel would show again around a focused entry once the content is back.
+              event.currentTarget.blur();
+              requestPrivacyScreen();
+            }}
+          >
+            <i class="ti ti-eye-off" aria-hidden="true" />
+            <span class="layout-profile-preferences__copy">
+              <span>{privacy.messages().now}</span>
+              <small>{privacy.messages().nowDescription}</small>
+            </span>
+            {privacyKeys()}
+          </button>
+          <div class="layout-profile-preferences__timer">
+            <span class="layout-profile-preferences__caption" id={timerLabelId}>
+              {privacy.messages().timer}
+            </span>
+            <SegmentedControl
+              size="sm"
+              class="layout-profile-preferences__segments"
+              options={privacy.options()}
+              value={() => String(privacy.value())}
+              ariaLabel={privacy.messages().timer}
+              onValueChange={(value) => {
+                const seconds = parsePrivacyTimer(value);
+                if (seconds !== undefined) void privacy.choose(seconds);
+              }}
+            />
+          </div>
         </div>
         <div class="layout-profile-preferences__section">
           <button type="button" class="menu-item" aria-label={preferences.themeCycleLabel()} onClick={preferences.cycleTheme}>
@@ -107,7 +186,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
         items={menuItems()}
         label={preferences.messages().menuLabel}
         position="right-start"
-        width="17rem"
+        width="20rem"
       >
         <Dropdown.Trigger
           appearance="plain"
