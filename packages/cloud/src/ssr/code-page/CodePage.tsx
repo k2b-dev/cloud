@@ -47,6 +47,7 @@ import {
 } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
+import { codeTargetLabel, codeTargetName } from "./targets";
 
 export { CodeNavStatus, codeNavAttentionLabel } from "./CodeNavStatus";
 export type { CodeAttention, CodePageData, CodePageTab } from "./data";
@@ -136,19 +137,8 @@ function usePageText(data: () => CodePageData) {
     date: date(iso),
     time: dates.formatTime(iso, context()),
   });
-  /** A foreign target is never named: its type and ID only, like cron names a path. */
-  const targetName = (target: CodePageTarget): string => {
-    if (target.own) return data().owner.title;
-    if (target.ref.type === "app") return target.title ?? target.ref.id;
-    return [target.typeTitle, target.ref.id].filter(Boolean).join(" ");
-  };
-  const targetLabel = (target: CodePageTarget): string => {
-    const current = t();
-    if (target.own) return current.atOwn({ name: data().owner.title });
-    if (target.ref.type === "app") return current.atApp({ name: target.title ?? target.ref.id });
-    if (target.typeTitle) return current.atTarget({ name: targetName(target) });
-    return current.unknownTarget({ id: target.ref.id });
-  };
+  const targetName = (target: CodePageTarget): string => codeTargetName(target, data().owner.title);
+  const targetLabel = (target: CodePageTarget): string => codeTargetLabel(target, data().owner.title, t());
   /** The service account a place's Code runs as; personal Code has none. */
   const account = () => (data().owner.kind === "resource" ? t().accountName({ name: data().owner.title }) : null);
   return { t, locale, date, when, moment, targetName, targetLabel, account };

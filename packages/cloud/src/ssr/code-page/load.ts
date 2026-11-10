@@ -39,6 +39,7 @@ import {
   VersionListSchema,
   VersionReadSchema,
 } from "./data";
+import { codeActivationRows, codeTargetsOf, permissionRef, targetKey } from "./targets";
 
 /** Core pages run metadata and versions in pages of 20. */
 const PAGE = 20;
@@ -51,11 +52,11 @@ const SECRET_NOTICES = ["replaced", "submitted", "saved", "submit-failed"] as co
 /** The owning resource, or null for personal Code. */
 const ownerRefOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.ref : null);
 const ownerTitleOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.title : "");
+export { permissionRef, targetKey };
 const isOwnRef = (ref: { type: string; id: string }, owner: LoadCodePageOptions["owner"]) => {
   const own = ownerRefOf(owner);
   return own !== null && sameRef(ref, own);
 };
-export const targetKey = (ref: { type: string; id: string }) => `${ref.type}\u0000${ref.id}`;
 const sameRef = (a: { type: string; id: string }, b: { type: string; id: string }) => a.type === b.type && a.id === b.id;
 
 export type LoadCodePageOptions = {
@@ -195,14 +196,6 @@ const loadManifest = async (invoke: CodePageInvoke, codeId: string, versionId: s
   }
 };
 
-/** Core turns a permission without a target into a grant at the receiving app; dynamic personal IDs have none. */
-export const permissionRef = (permission: { operation: string; target: { type: string; id: string | null } | null }) =>
-  permission.target === null
-    ? { type: "app", id: permission.operation.split(".")[0]! }
-    : permission.target.id === null
-      ? null
-      : { type: permission.target.type, id: permission.target.id };
-
 const versionView = (
   receipt: Pick<z.infer<typeof VersionListSchema>["items"][number], "version"> &
     Partial<Pick<z.infer<typeof VersionListSchema>["items"][number], "status" | "decision">>,
@@ -311,19 +304,8 @@ const loadReady = async (
   for (const version of [olderActive, olderSelected]) if (version) numbers.set(version.id, version.number);
 
   // Targets: what the running version calls, plus what the waiting version would add, as the checker read them.
-  const byTarget = (manifest: z.infer<typeof ManifestSchema> | null) => {
-    const map = new Map<string, { ref: { type: string; id: string }; operations: Set<string> }>();
-    for (const permission of manifest?.permissions ?? []) {
-      const ref = permissionRef(permission);
-      if (!ref) continue;
-      const entry = map.get(targetKey(ref)) ?? { ref, operations: new Set<string>() };
-      entry.operations.add(permission.operation);
-      map.set(targetKey(ref), entry);
-    }
-    return map;
-  };
-  const activeByTarget = byTarget(activeManifest);
-  const waitingByTarget = byTarget(waitingManifest);
+  const activeByTarget = codeTargetsOf(activeManifest);
+  const waitingByTarget = codeTargetsOf(waitingManifest);
   const diffPermissions = diffResult?.ok ? diffResult.data.data.permissions : [];
   const ownerRef = ownerRefOf(options.owner);
   /** The refused call of a failed run: the target refusal Core recorded, else the first policy or approval refusal loaded. */
@@ -418,20 +400,11 @@ const loadReady = async (
 
   const waitingTargets =
     waitingReceipt && waitingManifest
-      ? [
-          // A resource owner is checked on every switch-on, also when the Code only works on itself.
-          ...(!ownerRef || waitingByTarget.has(targetKey(ownerRef))
-            ? []
-            : [{ target: targetOf(ownerRef), operations: [] as string[], isNew: false }]),
-          ...[...waitingByTarget.values()].map((entry) => {
-            const present = activeByTarget.get(targetKey(entry.ref))?.operations;
-            return {
-              target: targetOf(entry.ref),
-              operations: [...entry.operations],
-              isNew: !present || [...entry.operations].some((operation) => !present.has(operation)),
-            };
-          }),
-        ]
+      ? codeActivationRows(activeManifest, waitingManifest, ownerRef).map((row) => ({
+          target: targetOf(row.ref),
+          operations: row.operations,
+          isNew: row.isNew,
+        }))
       : null;
   // A skipped tick or a cancelled start is not a run's result.
   const nextRuns = new Map(automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : []);

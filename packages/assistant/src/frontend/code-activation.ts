@@ -20,6 +20,26 @@ const PreviewSchema = z.object({
     z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }),
   ]),
   place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).nullable(),
+  /** What switching on this version calls where, as the Code page lists it; a null target is picked while the Code runs. */
+  targets: z
+    .array(
+      z.object({
+        target: z
+          .object({
+            key: z.string(),
+            ref: z.object({ type: z.string(), id: z.string() }),
+            title: z.string().nullable(),
+            typeTitle: z.string().nullable(),
+            icon: z.string().nullable(),
+            own: z.boolean(),
+            href: z.string().nullable(),
+          })
+          .nullable(),
+        operations: z.array(z.string()),
+        isNew: z.boolean(),
+      }),
+    )
+    .optional(),
 });
 export type CodeVersionPreview = z.infer<typeof PreviewSchema>;
 

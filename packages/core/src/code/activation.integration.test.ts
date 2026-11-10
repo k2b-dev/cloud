@@ -481,6 +481,15 @@ databaseSuite()("durable Code activation", () => {
     try {
       const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner);
       expect(preview).not.toHaveProperty("rows");
+      // The card lists the Code page's targets from registry manifests: the own place first, every target new.
+      if (code.owner.kind !== "resource") throw new Error("Expected resource Code");
+      const target = (id: string, own: boolean) =>
+        expect.objectContaining({ ref: { type: "example.item", id }, typeTitle: "Item", own, href: null });
+      expect(preview.targets).toEqual([
+        { target: target(code.owner.ref.id, true), operations: [], isNew: false },
+        { target: target("A", false), operations: ["example.item.change"], isNew: true },
+        { target: target("B", false), operations: ["example.item.change"], isNew: true },
+      ]);
       const activation = await start(code, submitted.version.id);
       await run(activation.id);
       expect((await status(code, activation.id)).state).toBe("active");

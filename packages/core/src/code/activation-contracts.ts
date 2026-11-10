@@ -76,6 +76,33 @@ export const CodeActivationPreviewSchema = z
     ]),
     /** The resource that holds this Code, as far as this person may read it; null otherwise and for personal Code. */
     place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).strict().nullable(),
+    /**
+     * For the version that would switch on next: each target its checked manifest calls, with the operations there and
+     * whether that is new compared with the running version, as the Code page lists them. A null target collects the
+     * calls whose target the Code picks while it runs. Review evidence, never a grant: each call checks current access.
+     */
+    targets: z
+      .array(
+        z
+          .object({
+            target: z
+              .object({
+                key: z.string(),
+                ref: z.object({ type: z.string(), id: z.string() }).strict(),
+                title: z.string().nullable(),
+                typeTitle: z.string().nullable(),
+                icon: z.string().nullable(),
+                own: z.boolean(),
+                href: z.string().nullable(),
+              })
+              .strict()
+              .nullable(),
+            operations: z.array(z.string()),
+            isNew: z.boolean(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 export type CodeActivationPreview = z.infer<typeof CodeActivationPreviewSchema>;

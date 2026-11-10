@@ -68,6 +68,40 @@ test("version preview offers switching on without inspecting or granting target 
   expect(calls.map((call) => call.route)).toEqual(["activation/preview"]);
 });
 
+test("the card lists what the version calls where, as the Code page does, and marks what is new", async () => {
+  const target = (id: string, own = false) => ({
+    key: `mail.mailbox\u0000${id}`,
+    ref: { type: "mail.mailbox", id },
+    title: null,
+    typeTitle: "Mailbox",
+    icon: "ti ti-mail",
+    own,
+    href: null,
+  });
+  const targets = [
+    { target: target("m_info", true), operations: [], isNew: false },
+    { target: target("m_billing"), operations: ["mail.message.read", "mail.message.move"], isNew: true },
+    { target: null, operations: ["spaces.task.create"], isNew: false },
+  ];
+  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ targets }) } }) });
+  const rows = [...dom.root.querySelectorAll(".assistant-code-version__target")].map((row) => row.textContent);
+  expect(dom.root.textContent).toContain("What this version calls");
+  expect(rows).toEqual([
+    "at info@example.test itself",
+    "mail.message.readmail.message.moveat Mailbox m_billingnew",
+    "spaces.task.createwhere the Code picks it while running",
+  ]);
+
+  // A place this person may not read is named like any target, by type and ID.
+  restore.splice(0).forEach((undo) => undo());
+  const hidden = await mount({ "activation/preview": () => ({ json: { data: preview({ targets, place: null }) } }) });
+  expect(hidden.dom.root.querySelector(".assistant-code-version__target")?.textContent).toBe("at Mailbox m_info itself");
+
+  restore.splice(0).forEach((undo) => undo());
+  const none = await mount({ "activation/preview": () => ({ json: { data: preview({ targets: [] }) } }) });
+  expect(none.dom.root.textContent).toContain("Calls no app.");
+});
+
 test("switching on runs Core's activation and the card becomes one line, the same after a reload", async () => {
   let on = false;
   const { dom, calls, activated } = await mount({

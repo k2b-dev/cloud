@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import type { AiRuntimeTool } from "@k2b/cloud/ai";
 import { checkCode, generateCodeSdk } from "@k2b/cloud/code";
+import type { RequestActor } from "@k2b/cloud/server";
 import { z } from "zod";
 import { codeCheckOutcome, isFeatCodeTool } from "../../../cloud/src/ai/chat/message-utils";
 import { isFailedTool } from "../../../cloud/src/ai/chat/tool-groups";
@@ -63,15 +65,38 @@ test("stable read/write/check names accept lasting Code and reject Studio overlo
 });
 
 const codeId = "c_1234";
+const actor: RequestActor = {
+  kind: "user",
+  user: {
+    id: "11111111-1111-4111-8111-111111111111",
+    uid: "person",
+    roles: ["user"],
+    provider: "local",
+    profile: "user",
+    givenname: "Test",
+    sn: "User",
+    displayName: "Test User",
+    mail: null,
+    avatarHash: null,
+    ipa: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+  },
+};
 const block = (name: string, result: unknown) =>
   ({ id: `tool-${name}`, kind: "tool", callId: name, name, args: { codeId }, status: "completed", result }) as const;
 
 test("a lasting Code command that answered with its error reads as a failed step in the chat", async () => {
-  const write = tools.find((item) => item.def.name === "code_write");
-  if (!write || write.location !== "server") throw new Error("Expected the server tool code_write");
+  const runtimeTools: AiRuntimeTool[] = tools;
+  const write = runtimeTools.find((item) => item.def.name === "code_write");
+  if (!write || !("location" in write) || write.location !== "server") throw new Error("Expected the server tool code_write");
   // Without an interactive turn Core refuses the command; the chat tool returns Core's error body, not a thrown error.
   const refused = await write.run(write.def.inputSchema.parse({ project, path: "code.ts", content: "changed" }), {
-    actor: { kind: "user", user: { id: "11111111-1111-4111-8111-111111111111", uid: "fixture", roles: [] } },
+    actor,
     signal: new AbortController().signal,
     requestApproval: async () => false,
     requestClientTool: async () => {

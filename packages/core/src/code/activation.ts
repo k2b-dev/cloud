@@ -1,5 +1,7 @@
 import { sql } from "@k2b/cloud";
-import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { catalogCache, describeTarget } from "@k2b/cloud/ssr/code-page/load";
+import { codeActivationRows, codeDynamicOperations } from "@k2b/cloud/ssr/code-page/targets";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
@@ -204,7 +206,34 @@ export async function previewCodeActivation(
         ? { state: "approval_pending" }
         : { state: "refused", code: error.code, message: error.message };
   }
-  return { ...base, activated: null, readiness, place };
+  const targets = manifest.success ? await previewTargets(code, manifest.data, catalogCache(context.locale ?? "en")) : undefined;
+  return { ...base, activated: null, readiness, place, ...(targets ? { targets } : {}) };
+}
+/**
+ * The targets the Code page lists for switching on this version, through the same grouping and naming from registry
+ * manifests: no target or owner app is asked. The owner row is marked as the Code's own place, unnamed.
+ */
+async function previewTargets(
+  code: Code,
+  waiting: CodeCheckedVersionManifest,
+  catalog: ReturnType<typeof catalogCache>,
+): Promise<NonNullable<CodeActivationPreview["targets"]>> {
+  const [active] = code.activeVersionId
+    ? await sql<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${code.activeVersionId}::uuid AND code_id=${code.id}`
+    : [];
+  const activeManifest = active ? CodeCheckedVersionManifestSchema.safeParse(active.manifest) : null;
+  const ownerRef = code.owner.kind === "resource" ? code.owner.ref : null;
+  const owner = ownerRef ? { ref: ownerRef, title: "" } : { codeId: code.id };
+  const running = activeManifest?.success ? activeManifest.data : null;
+  const rows = await Promise.all(
+    codeActivationRows(running, waiting, ownerRef).map(async (row) => ({
+      target: await describeTarget(row.ref, owner, catalog),
+      operations: row.operations,
+      isNew: row.isNew,
+    })),
+  );
+  const dynamic = codeDynamicOperations(running, waiting);
+  return dynamic ? [...rows, { target: null, ...dynamic }] : rows;
 }
 /** Enqueue once without waiting on owner reads. The unique process identity fences duplicate requests. */
 export async function activateCodeVersion(

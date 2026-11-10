@@ -1,8 +1,11 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
+import { codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import {
   type CodeVersionActivation,
+  type CodeVersionPreview,
   codeVersionPageHref,
   loadCodeVersionPreview,
   pendingCodeVersionActivation,
@@ -48,6 +51,11 @@ export default function AssistantCodeVersionCard(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => assistantMessages.resolve([locale()]).t);
+  // Targets read exactly as on the Code page.
+  const pageT = createMemo(() => codePageMessages.resolve([locale()]).t);
+  /** The own place by its title where this person may read it, else by its type and ID, as foreign targets are. */
+  const targetLabel = (target: NonNullable<NonNullable<CodeVersionPreview["targets"]>[number]["target"]>, place: string | null) =>
+    codeTargetLabel(target, place ?? codeTargetName({ ...target, own: false }, ""), pageT());
   const [loaded, setLoaded] = createSignal<Loaded>(null);
   const [activation, setActivation] = createSignal<Activation>({ kind: "idle" });
   let disposed = false;
@@ -239,6 +247,42 @@ export default function AssistantCodeVersionCard(props: {
             <p class="assistant-code-version__note">
               {current().ownerKind === "person" ? t().codeVersionRunsAsYou : t().codeVersionRunsAsAccount}
             </p>
+            <Show when={current().targets}>
+              {(targets) => (
+                <div class="assistant-code-version__targets">
+                  <p class="assistant-code-version__label">{t().codeVersionTargets}</p>
+                  <Show when={targets().length > 0} fallback={<p class="assistant-code-version__note">{t().codeVersionNoTargets}</p>}>
+                    <ul class="assistant-code-version__list">
+                      <For each={targets()}>
+                        {(row) => (
+                          <li class="assistant-code-version__target">
+                            <i
+                              class={
+                                row.target?.icon ?? (!row.target ? "ti ti-arrows-shuffle" : row.target.own ? "ti ti-home" : "ti ti-target-arrow")
+                              }
+                              aria-hidden="true"
+                            />
+                            <span class="assistant-code-version__calls">
+                              <Show when={row.operations.length > 0}>
+                                <span class="assistant-code-version__ops">
+                                  <For each={row.operations}>{(operation) => <code>{operation}</code>}</For>
+                                </span>
+                              </Show>
+                              <span class="assistant-code-version__where">
+                                {row.target ? targetLabel(row.target, current().place?.title ?? null) : t().codeVersionDynamicTarget}
+                              </span>
+                            </span>
+                            <Show when={row.isNew}>
+                              <span class="assistant-code-version__new">{pageT().newAccess}</span>
+                            </Show>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                </div>
+              )}
+            </Show>
             <Show when={current().readiness.state === "approval_pending"}>
               <p class="assistant-code-version__note">
                 <i class="ti ti-hourglass" aria-hidden="true" />
