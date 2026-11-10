@@ -5,7 +5,7 @@ import { DEFAULT_STORAGE_BUCKET_ID, type StorageBucketCheckStep, type StorageBuc
 import { sql } from "../runtime/clients";
 import { decryptValue, getAppSecret } from "../services/settings/crypto";
 import { readStates } from "../services/settings/store";
-import { hasDatabaseErrorCode, type StorageBucketRow } from "../services/storage-buckets/rows";
+import { bucketTableUnavailable, type StorageBucketRow } from "../services/storage-buckets/rows";
 
 export const objectStoreSettingKeys = [
   "storage.endpoint",
@@ -156,7 +156,7 @@ export const resolveObjectStoreConfig = async (id: StorageBucketId = DEFAULT_STO
     return { config, signature };
   } catch (error) {
     if (error instanceof ObjectStoreConfigurationError) throw error;
-    if (hasDatabaseErrorCode(error, ["42P01", "3F000", "42501"])) throw notConfigured();
+    if (bucketTableUnavailable(error)) throw notConfigured();
     throw new ObjectStoreConfigurationError(
       "Storage configuration could not be read. Check database access and reconnect it in Administration > Storage.",
       "storage_unreadable",

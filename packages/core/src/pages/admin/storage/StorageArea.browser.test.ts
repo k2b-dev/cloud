@@ -206,6 +206,27 @@ test("removing names the apps with data; restoring needs the keys again", async 
   }
 });
 
+test("restoring a bucket whose name a connected bucket took says what to rename", async () => {
+  fixtureReset();
+  const { page, errors } = await open("state=liste&bucket=new");
+  try {
+    await field(page, "Name").fill("Backup");
+    await field(page, "Bucket").fill("cloud-backup-neu");
+    await headAction(page, "save").click();
+    await settledOn(page, STORAGE_FIXTURE_IDS.created);
+    await page.goto(`${fixture.url}?bucket=${STORAGE_FIXTURE_IDS.backup}`);
+    await page.locator('body[data-ready="true"]').waitFor();
+    await field(page, "Access-Key-ID").fill("GKexample");
+    await field(page, "Secret-Access-Key").fill("not-a-real-secret");
+    await headAction(page, "restore").click();
+    await page.getByText("Ein verbundener Bucket hat schon diesen Namen.", { exact: false }).waitFor();
+    expect(page.url()).toContain(`bucket=${STORAGE_FIXTURE_IDS.backup}`);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
 test("usage that cannot be read says so and reads again on request", async () => {
   fixtureReset();
   fixture.control.failUsage = true;

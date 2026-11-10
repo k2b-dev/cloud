@@ -22,6 +22,12 @@ export const hasDatabaseErrorCode = (error: unknown, codes: readonly string[]): 
   (("code" in error && typeof error.code === "string" && codes.includes(error.code)) ||
     ("errno" in error && typeof error.errno === "string" && codes.includes(error.errno)));
 
+/**
+ * The bucket table is missing, or this process has no read grant on it. Every reader treats this the same way: the
+ * default bucket keeps working and further buckets are unavailable.
+ */
+export const bucketTableUnavailable = (error: unknown): boolean => hasDatabaseErrorCode(error, ["42P01", "3F000", "42501"]);
+
 export const readStorageBucketRows = (db: SQL = sql): Promise<StorageBucketRow[]> =>
   db<StorageBucketRow[]>`SELECT id, name, inherit_access, endpoint, region, bucket, credentials_encrypted,
     removed_at, revision, updated_at, updated_by FROM platform.storage_buckets
@@ -32,7 +38,7 @@ export const listStorageBuckets = async (): Promise<StorageBucketSummary[]> => {
   try {
     rows = await readStorageBucketRows();
   } catch (error) {
-    if (!hasDatabaseErrorCode(error, ["42P01", "3F000"])) throw new Error("Storage buckets could not be read. Check database access.");
+    if (!bucketTableUnavailable(error)) throw new Error("Storage buckets could not be read. Check database access.");
     rows = [];
   }
   return [

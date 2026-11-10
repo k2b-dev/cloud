@@ -105,7 +105,9 @@ export default function StorageBucketDetail(props: { bucket: AdminStorageBucket 
       return;
     }
     if (failure instanceof StorageAdminError && failure.code === "storage_bucket_name_taken") {
-      setFieldErrors({ ...fieldErrors(), name: t().nameTaken });
+      // A removed bucket shows no name field; restoring says what to rename first.
+      if (removed()) setError(t().nameTakenRestore);
+      else setFieldErrors({ ...fieldErrors(), name: t().nameTaken });
       return;
     }
     setError(failure instanceof Error && failure.message ? failure.message : fallback);

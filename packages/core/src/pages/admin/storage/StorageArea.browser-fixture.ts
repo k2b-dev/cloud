@@ -295,6 +295,7 @@ export async function storageAreaBrowserFixture(options: { port?: number } = {})
       const input = StorageBucketRestoreSchema.parse(JSON.parse(body || "{}"));
       if (current.access === "own" && !(input.accessKeyId && input.secretAccessKey))
         return error("storage_bucket_invalid", "Keys required", 400);
+      if (nameTaken(current.name, current.id)) return error("storage_bucket_name_taken", "Name taken", 409);
       return replace(checked({ ...current, removedAt: null, hasCredentials: current.access === "own" }));
     }
     return error("storage_bucket_invalid", "Synthetic fixture: unsupported", 400);
