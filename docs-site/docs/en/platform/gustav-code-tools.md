@@ -26,7 +26,7 @@ background tasks cannot use these tools to edit lasting Code.
 | --- | --- |
 | `code_init` | Creates Code and returns its initial editable project. Omit `owner` for personal Code. |
 | `code_pull` or `code_read({codeId})` | Returns the latest submitted files and `code.json` metadata, including `baseVersionId`. |
-| `code_sdk` | Returns generated `@sdk` declarations, runtime, manifest and TypeScript configuration. |
+| `code_sdk` | Without `apps`, returns an index of every app export, method path, policy row and automation event, one line each. With `apps` (at most two per call), returns the generated `@sdk` declarations of those apps and of the shared `app`, page, `db`, `http` and event types. |
 | `code_write({project,path,content})` | Replaces one file in the supplied project and returns the complete replacement project. |
 | `code_check` | Checks `{codeId,files,entry}` and lists permissions with source file and line. |
 | `code_test` | Checks source and runs the supplied `test/NAME.json` fixtures against fake data. |

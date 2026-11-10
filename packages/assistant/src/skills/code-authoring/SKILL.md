@@ -20,8 +20,13 @@ name **feat/code**: a person who says feat/code means Code.
    gives resource Code that runs as the mailbox's service account and can react to
    incoming mail; creating it needs **Manage** access to the mailbox. For
    existing Code, `code_pull({codeId})` returns the project and its `baseVersionId`.
-2. **Read the SDK.** `code_sdk({codeId})` returns the generated `sdk.d.ts`.
-   Use only operations, inputs, results and events that it declares. Never
+2. **Read the SDK in two steps.** `code_sdk({codeId})` returns an index: every
+   app export with its method paths, policy row and one line each, plus every
+   automation event. Pick the apps you need, then `code_sdk({codeId, apps:["mail"]})`
+   (at most two per call) returns their `sdk.d.ts` declarations together with
+   `app`, page, `db`, `http` and event types. The complete SDK is too large for
+   one result. Use only operations, inputs, results and events that the
+   declarations show. Never
    guess a capability, field or resource ID; read IDs through queries or ask.
    Domain Queries return `{ data, page? }`: read fields from `data` and pass
    `page.nextCursor` as input `cursor` in bounded loops ([Data](references/data.md)).

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { codeAuthoringFailure } from "../api/code-authoring";
 import { type CodeContext, CodeDataError, requireCodePermission } from "./access";
 import { codeAuthoringServices } from "./authoring";
+import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
 import { CODE_AUTHORING_REQUEST_BYTES, CodeAuthoringErrorSchema, codeAuthoringContracts } from "./authoring-contracts";
 import { CodeSourceFilesSchema } from "./contracts";
 import { readCode } from "./store";
@@ -94,9 +95,9 @@ export function createCodeAuthoringChatTools() {
     ),
     tool(
       "sdk",
-      codeAuthoringContracts.sdk,
-      codeAuthoringServices.sdk,
-      "Read this Code's generated @sdk types, runtime and manifest from the live authorized catalog. Resource handles accept dynamic IDs; review records their type, and each call checks current access.",
+      { input: CodeChatSdkInputSchema, data: CodeChatSdkDataSchema },
+      readCodeChatSdk,
+      `Read this Code's @sdk from the live authorized catalog in two steps. Without apps: an index of every app export, method path, policy row and automation event, one line each. Then with apps (at most ${CODE_CHAT_SDK_APPS} per call, [] for only the shared types): the TypeScript declarations of those apps plus app, page, db, http and event types. Resource handles accept dynamic IDs; review records their type, and each call checks current access.`,
     ),
     tool(
       "test",

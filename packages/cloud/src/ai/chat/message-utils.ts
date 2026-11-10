@@ -367,14 +367,14 @@ const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["read_cloud_resource", "ti ti-ai-gateway"],
 ]);
 
-/** What an app check found: errors stop it from passing, warnings are counted separately. */
-export type AiCodeCheckOutcome = { passed: boolean; errors: number; warnings: number };
+/** What a Code check found: any diagnostic stops it from passing. */
+export type AiCodeCheckOutcome = { passed: boolean; errors: number };
 
+/** Reads Core's check result `{ result: { ok, diagnostics } }`; a failed command has no `result` and reads as a failed step. */
 export const codeCheckOutcome = (name: string, result: unknown): AiCodeCheckOutcome | null => {
-  if (name !== "code_check" || !isRecord(result) || typeof result.passed !== "boolean") return null;
-  const issues = Array.isArray(result.issues) ? result.issues.filter(isRecord) : [];
-  const warnings = issues.filter((issue) => issue.severity === "warning").length;
-  return { passed: result.passed, errors: issues.length - warnings, warnings };
+  if (name !== "code_check" || !isRecord(result) || !isRecord(result.result) || typeof result.result.ok !== "boolean") return null;
+  const diagnostics = Array.isArray(result.result.diagnostics) ? result.result.diagnostics : [];
+  return { passed: result.result.ok, errors: diagnostics.length };
 };
 
 /** The chat image a view_image call looked at. Project and skill files are not chat files and have no preview here. */
