@@ -5,6 +5,7 @@ import type { OpenDialogOptions } from "../feedback/dialog-core";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
+import { SuccessCheck } from "../feedback/success-check";
 import { useUiMessages } from "../intl/messages";
 import { usePanelDialogMessages } from "./panel-dialog-messages";
 import { createScrollFade } from "./scroll-fade";
@@ -16,6 +17,11 @@ export type PanelDialogProps = {
   surface?: PanelDialogSurface;
   /** A 2 px edge in the tone's colour inside the dialog frame; the header shows the tone's icon instead of its own. */
   tone?: DialogTone;
+  /**
+   * With `tone="success"`, a finished success such as an issued document: the header draws its check once when it
+   * appears. Leave it off for routine saves; other tones ignore it.
+   */
+  celebrate?: boolean;
   /**
    * The body shows a picture or a video edge to edge, and the header floats over it as glass chips: the title and
    * subtitle in one chip, the actions in a group, and the close button. For documents, text, and tables leave it off.
@@ -80,6 +86,7 @@ type PanelDialogComponent = ((props: PanelDialogProps) => JSX.Element) & {
 const PanelDialogSurfaceContext = createContext<PanelDialogSurface>("contained");
 const usePanelDialogSurface = () => useContext(PanelDialogSurfaceContext);
 const PanelDialogToneContext = createContext<() => DialogTone | undefined>(() => undefined);
+const PanelDialogCelebrateContext = createContext<() => boolean>(() => false);
 const PanelDialogMediaContext = createContext(false);
 
 const panelDialogBasePanelClass = "k2b-dialog k2b-panel-dialog-frame";
@@ -123,6 +130,7 @@ export const confirmDiscardIfDirty = async (dirty: boolean | (() => boolean)): P
 const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
   const messages = useUiMessages();
   const tone = useContext(PanelDialogToneContext);
+  const celebrate = useContext(PanelDialogCelebrateContext);
   const icon = () => {
     const value = tone();
     return value ? dialogToneIcon(value) : props.icon;
@@ -134,7 +142,9 @@ const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
     <header class="k2b-panel-dialog__header" data-surface={usePanelDialogSurface()} data-has-subtitle={Boolean(props.subtitle)}>
       <Show when={icon() && !media}>
         <span class="k2b-panel-dialog__icon k2b-icon-tile" data-tone={tone()} aria-hidden="true">
-          <i class={icon()} />
+          <Show when={celebrate() && tone() === "success"} fallback={<i class={icon()} />}>
+            <SuccessCheck />
+          </Show>
         </span>
       </Show>
       <div class={`k2b-panel-dialog__heading${layer}`}>
@@ -307,11 +317,13 @@ const PanelDialog = ((props: PanelDialogProps): JSX.Element => {
   return (
     <PanelDialogSurfaceContext.Provider value={surface}>
       <PanelDialogToneContext.Provider value={() => props.tone}>
-        <PanelDialogMediaContext.Provider value={Boolean(props.media)}>
-          <div class="k2b-panel-dialog" data-surface={surface} data-tone={props.tone} data-media={props.media ? "" : undefined}>
-            {props.children}
-          </div>
-        </PanelDialogMediaContext.Provider>
+        <PanelDialogCelebrateContext.Provider value={() => Boolean(props.celebrate)}>
+          <PanelDialogMediaContext.Provider value={Boolean(props.media)}>
+            <div class="k2b-panel-dialog" data-surface={surface} data-tone={props.tone} data-media={props.media ? "" : undefined}>
+              {props.children}
+            </div>
+          </PanelDialogMediaContext.Provider>
+        </PanelDialogCelebrateContext.Provider>
       </PanelDialogToneContext.Provider>
     </PanelDialogSurfaceContext.Provider>
   );

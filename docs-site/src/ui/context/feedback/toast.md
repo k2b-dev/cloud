@@ -2,7 +2,7 @@
 
 `toast` shows transient feedback in a responsive stack. The application supplies the message and decides whether the result is informational, successful, or failed. `announce` tells screen readers about an outcome without showing anything, through the same live regions.
 
-A toast is a small card: the tone's glyph in an icon tile, the message (with an optional title above it), and an optional action beside it. Each tone has its own glyph shape (`ti-info-circle`, `ti-check`, `ti-alert-triangle`, `ti-alert-circle`), so tones differ by more than colour. A message without a title reads as one line in the body size; with a title, the title is semibold and the message is the smaller, muted line under it. Like dialogs and the Files upload panel, a toast is a floating layer (layer 3): it has a hairline border and the soft `--k2b-shadow-toast`. Only the front toast of a folded stack casts it.
+A toast is a small card: the tone's glyph in an icon tile, the message (with an optional title above it), and an optional action beside it. Each tone has its own glyph shape (`ti-info-circle`, `ti-check`, `ti-alert-triangle`, `ti-alert-circle`), so tones differ by more than colour. A [celebrated](#celebrate-a-finished-result) success draws a circled check instead. A message without a title reads as one line in the body size; with a title, the title is semibold and the message is the smaller, muted line under it. Like dialogs and the Files upload panel, a toast is a floating layer (layer 3): it has a hairline border and the soft `--k2b-shadow-toast`. Only the front toast of a folded stack casts it.
 
 ## Use toast
 
@@ -91,6 +91,7 @@ Text is never cut off, so it stays readable and can be selected and copied. Aim 
 | `title` | `string` | none | Adds a line of context above the message. |
 | `duration` | `number` | by variant, length, and action | Sets auto-dismiss time in milliseconds. `0` keeps the toast until it is closed. |
 | `iconClass` | `string` | variant icon | Overrides the Tabler icon class. |
+| `celebrate` | `boolean` | `false` | With the success variant, draws the check once for a finished result; see [Celebrate a finished result](#celebrate-a-finished-result). Other variants and running progress ignore it. |
 | `action` | `ToastAction`, or `null` | none | Adds one link or callback action beside the message; `null` removes it. |
 | `secondaryAction` | `ToastAction`, or `null` | none | Adds a second action. Both then sit in a row under the message, `action` first as the primary button. |
 | `link` | `{ label: string; href: string }`, or `null` | none | Adds a link at the end of the message, such as "Open settings". Following it closes the toast. |
@@ -98,6 +99,22 @@ Text is never cut off, so it stays readable and can be selected and copied. Aim 
 | `dismissLabel` | `string` | "Close: {title or message}" / "Schließen: {…}" from the document locale | Names the close button. |
 
 `ToastAction` is `{ label: string; variant?: "secondary" | "ghost" } & ({ href: string } | { onClick: () => void })`. A single action is a framed button (`secondary`); pass `variant: "ghost"` for a quiet text button, as for Undo. Next to a `secondaryAction`, the variants are fixed: primary, then secondary.
+
+## Celebrate a finished result
+
+Some successes end a piece of work for good: an invoice is issued, a customer is created, a SEPA file is written. Pass `celebrate: true`, and the toast draws its check once as it appears: the ring closes, the check follows, and the mark springs up a little, in under a second, without sound. The circled check takes the glyph's place at the same size and colour, and it moves only by transform, so nothing around it shifts. It plays once: a later `update` that keeps the success, a hover, or a re-render leaves it still. With reduced motion, the check is finished at once.
+
+Leave it off for routine results such as "Saved". A celebration on every save soon means nothing. Screen readers hear the same message with or without it.
+
+```ts
+toast.success("RE-2026-0142 · 1,480.00 EUR", { title: "Invoice issued", celebrate: true });
+
+// Running work keeps its spinner; the check draws when the result arrives.
+const sepa = toast("14 payments", { title: "Creating SEPA file …", progress: "indeterminate" });
+sepa.update("14 payments · 18,240.00 EUR", { variant: "success", title: "SEPA file created", progress: null, celebrate: true });
+```
+
+`prompts.success` and a `PanelDialog` with `tone="success"` take the same option for a result that needs acknowledgement; see [Prompts](/en/ui/feedback/prompts) and [PanelDialog](/en/ui/layout/panel-dialog#tone).
 
 ## Timing
 

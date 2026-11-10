@@ -21,6 +21,7 @@ export type {
   PromptSearchInput,
   PromptSearchItem,
   PromptSearchOptions,
+  SuccessDialogOptions,
 } from "./prompts";
 export { createFormState, DialogHeader, prompts } from "./prompts";
 export type { TooltipAnchorProps, TooltipPlacement, TooltipProps, TooltipTriggerProps } from "./Tooltip";
