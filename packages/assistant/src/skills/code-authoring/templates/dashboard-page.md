@@ -1,6 +1,6 @@
 # Template: dashboard page
 
-Dashboard page of a mailbox's Code: open work by status and the conversations that need action. The page reads live data on each request and changes nothing. Pages of resource Code open for every signed-in person, so it shows mailbox data only to members of one group. `follow` reloads it after new mail once the event service delivers to open pages; until then it reloads when its tab becomes visible again.
+Dashboard page of a mailbox's Code: open work by status and the conversations that need action. The page reads live data on each request and changes nothing. Pages of resource Code open for every signed-in member, so it shows mailbox data only to members of one group. `follow` reloads it after new mail once the event service delivers to open pages; until then it reloads when its tab becomes visible again.
 
 Owner: the Code of a mailbox. Copy it into `code.tsx`, replace the fictional IDs and names, then check, test and submit as usual.
 

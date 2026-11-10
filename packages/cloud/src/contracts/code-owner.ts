@@ -15,7 +15,8 @@ export const CapabilityCodeManifestSchema = z
         z
           .string()
           .max(500)
-          .regex(/^\/[^\\\u0000-\u001f\u007f]*\{id\}[^\\\u0000-\u001f\u007f]*$/),
+          // One path on this Cloud: a leading "//" would name another host.
+          .regex(/^\/(?!\/)[^\\\u0000-\u001f\u007f]*\{id\}[^\\\u0000-\u001f\u007f]*$/),
       )
       .optional(),
   })

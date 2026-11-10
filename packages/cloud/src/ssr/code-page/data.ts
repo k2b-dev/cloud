@@ -64,6 +64,7 @@ export const ManifestSchema = z.object({
     z.object({
       kind: z.enum(["schedule", "manual", "event", "route"]),
       route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
+      event: z.object({ type: z.string(), version: z.number(), place: z.object({ type: z.string(), id: z.string() }) }).optional(),
       entrypoint: z.string(),
       title: z.string().optional(),
       cron: z.string().nullable(),
@@ -250,12 +251,15 @@ export type CodePageRunDetail = {
   /** The input is too large to carry along; "Run again" points to cld code instead. */
   inputTooLarge: boolean;
 };
+/** The event an automation follows: its title from its app's catalog, null when unknown, and its place as a target. */
+export type CodePageEvent = { type: string; title: string | null; place: CodePageTarget };
 export type CodePageAutomation = {
   entrypoint: string;
   /** Reviewed human title; absent on older versions. */
   title?: string;
   kind: "schedule" | "manual" | "event" | "route";
   route?: { method: string; path: string; public: boolean };
+  event?: CodePageEvent;
   cron: string | null;
   at?: string;
   timeZone?: string;

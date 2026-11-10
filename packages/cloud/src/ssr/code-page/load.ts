@@ -17,6 +17,7 @@ import {
   type CodePageAutomation,
   type CodePageData,
   type CodePageDiff,
+  type CodePageEvent,
   type CodePageInvoke,
   type CodePagePerson,
   type CodePageReady,
@@ -164,6 +165,20 @@ export const describeTarget = async (
   } catch {
     return base;
   }
+};
+
+/** The event an automation follows: its title from its app's registry entry and its place, named as a target is. */
+export const describeEvent = async (
+  event: { type: string; version: number; place: { type: string; id: string } },
+  owner: LoadCodePageOptions["owner"],
+  catalog: ReturnType<typeof catalogCache>,
+): Promise<CodePageEvent> => {
+  const app = await catalog(event.type.split(".")[0]!);
+  const title =
+    app?.ok && app.data
+      ? (app.data.events?.find((entry) => entry.type === event.type && entry.version === event.version)?.title ?? null)
+      : null;
+  return { type: event.type, title, place: await describeTarget(event.place, owner, catalog) };
 };
 
 /** Titles and app names of called operations in the caller's locale, from registry manifests; unknown ones are left out. */
@@ -440,12 +455,25 @@ const loadReady = async (
   const lastRunOf = (entrypoint: string) =>
     runs?.find((run) => run.entrypoint === entrypoint && run.state !== "skipped" && run.state !== "cancelled") ?? null;
   const defaultTimeZone = c.get("settings")?.app?.timezone ?? CORE_SETTINGS["app.timezone"].default;
+  const events = new Map(
+    await Promise.all(
+      [activeManifest, waitingManifest]
+        .flatMap((manifest) => manifest?.entrypoints ?? [])
+        .flatMap((entry) => (entry.event ? [entry.event] : []))
+        .map(async (event) => [JSON.stringify(event), await describeEvent(event, options.owner, catalog)] as const),
+    ),
+  );
+  const eventOf = (event: { type: string; version: number; place: { type: string; id: string } } | undefined) => {
+    const described = event && events.get(JSON.stringify(event));
+    return described ? { event: described } : {};
+  };
   const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
     manifest.entrypoints.map((entry) => ({
       entrypoint: entry.entrypoint,
       ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
       ...(entry.route ? { route: entry.route } : {}),
+      ...eventOf(entry.event),
       cron: entry.cron,
       ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone ?? defaultTimeZone }),
       isNew: isNew(entry.entrypoint),

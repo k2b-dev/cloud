@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { z } from "zod";
 import type { CapabilityDefinitions } from "../contracts/capabilities";
 import { CloudResourceReaderViewSchema } from "../contracts/capabilities";
+import { CapabilityCodeManifestSchema } from "../contracts/code-owner";
 import { compileCapabilities } from "./capabilities";
 import { validateCodeOwners } from "./code-access";
 
@@ -37,6 +38,12 @@ test("owners must have a local reader with the read-only lifecycle projection", 
   expect(() => validateCodeOwners({ ...definitions, code: { owners: ["item"], pages: { item: "https://elsewhere/{id}" } } })).toThrow(
     "needs a path",
   );
+  // A protocol-relative pattern names another host; the registry refuses it as well.
+  for (const page of ["//elsewhere.example/{id}", "///elsewhere/{id}"]) {
+    expect(() => validateCodeOwners({ ...definitions, code: { owners: ["item"], pages: { item: page } } })).toThrow("needs a path");
+    expect(CapabilityCodeManifestSchema.safeParse({ owners: ["item"], pages: { item: page } }).success).toBe(false);
+  }
+  expect(CapabilityCodeManifestSchema.safeParse({ owners: ["item"], pages: { item: "/app/inventory/{id}/code" } }).success).toBe(true);
 });
 test("obsolete adapter fields are rejected even in dynamically assembled declarations", () => {
   expect(() => validateCodeOwners({ ...definitions, code: { owners: ["item"], ...{ access: {} } } })).toThrow("unsupported field access");

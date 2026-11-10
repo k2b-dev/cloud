@@ -47,7 +47,7 @@ import {
 } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
-import { type CodeOperationLabels, codeOperationText, codeTargetLabel, codeTargetName } from "./targets";
+import { type CodeOperationLabels, codeAutomationName, codeOperationText, codeTargetLabel, codeTargetName } from "./targets";
 
 export { CodeNavStatus, codeNavAttentionLabel } from "./CodeNavStatus";
 export type { CodeAttention, CodePageData, CodePageTab } from "./data";
@@ -141,7 +141,12 @@ function usePageText(data: () => CodePageData) {
   const targetLabel = (target: CodePageTarget): string => codeTargetLabel(target, data().owner.title, t());
   /** The service account a place's Code runs as; personal Code has none. */
   const account = () => (data().owner.kind === "resource" ? t().accountName({ name: data().owner.title }) : null);
-  return { t, locale, date, when, moment, targetName, targetLabel, account };
+  /** Who a page that is not public admits, and whose rights it runs with. */
+  const routeAudience = (route: { public: boolean }) =>
+    route.public
+      ? t().routePublic
+      : t().routePrivate({ owner: account() === null ? { kind: "you" } : { kind: "account", name: account() } });
+  return { t, locale, date, when, moment, targetName, targetLabel, account, routeAudience };
 }
 type PageText = ReturnType<typeof usePageText>;
 
@@ -779,7 +784,10 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
         : props.automation.kind === "event"
           ? t().triggerEvent
           : props.automation.kind === "route"
-            ? props.automation.entrypoint.replace(/^route:/, "")
+            ? // An untitled page is already named by its method and path.
+              props.automation.title
+              ? props.automation.entrypoint.replace(/^route:/, "")
+              : ""
             : t().manualStart;
   return (
     <div class="cloud-code__row cloud-code__row--automation" role="row">
@@ -798,14 +806,21 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
       </span>
       <span class="cloud-code__cell" role="cell">
         <span class="cloud-code__title">
-          {props.automation.title ?? props.automation.entrypoint}
+          {codeAutomationName(props.automation, props.data.owner.title)}
           <Show when={props.automation.isNew}>
             <Tag>{t().newTag}</Tag>
           </Show>
         </span>
         <span class="cloud-code__sub">
           {schedule()}
-          <Show when={props.automation.route}> · {props.automation.route?.public ? t().routePublic : t().routePrivate}</Show>
+          <Show when={props.automation.route}>
+            {(route) => (
+              <>
+                {schedule() ? " · " : ""}
+                {props.text.routeAudience(route())}
+              </>
+            )}
+          </Show>
           <Show when={props.automation.nextRunAt}>{(at) => <> · {t().nextRun({ when: props.text.when(at()) })}</>}</Show>
         </span>
         <span class="cloud-code__sub cloud-code__narrow">{status().label}</span>
@@ -1457,7 +1472,7 @@ function ActivationDialog(props: {
       .filter((automation) => automation.isNew)
       .map(
         (automation) =>
-          `„${automation.title ?? automation.entrypoint}“${automation.route ? ` · ${automation.route.public ? t().routePublic : t().routePrivate}` : ""}`,
+          `„${codeAutomationName(automation, props.data.owner.title)}“${automation.route ? ` · ${props.text.routeAudience(automation.route)}` : ""}`,
       );
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   // Only a confirmed terminal result or a refusal starts a new identity.

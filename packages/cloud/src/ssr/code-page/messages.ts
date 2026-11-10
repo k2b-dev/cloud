@@ -1,6 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 
 type Name = { name: string };
+/** Whose rights a page that is not public runs with: the reader's own, a named person's, or a service account's. */
+export type CodeRouteOwner = { kind: "you" } | { kind: "person"; name: string } | { kind: "account"; name: string | null };
 /** What the refused call tried: the action's title from the registry, else its ID. */
 type Action = { action: string };
 type Version = { version: number };
@@ -233,7 +235,8 @@ export const codePageMessages = i18n.define({
       runStarted: "Run started",
       manualStart: "Started by hand",
       routePublic: "Public · no sign-in",
-      routePrivate: "Sign-in required",
+      routePrivate: ({ owner }: { owner: CodeRouteOwner }) =>
+        `All signed-in people (no guests) · runs with ${owner.kind === "you" ? "your rights" : owner.kind === "person" ? `the rights of ${owner.name}` : owner.name ? `the rights of the service account “${owner.name}”` : "its service account’s rights"}`,
       nextRun: ({ when }: { when: string }) => `next run ${when}`,
       newTag: "new",
       statusOn: "On",
@@ -537,7 +540,8 @@ export const codePageMessages = i18n.define({
       runStarted: "Lauf gestartet",
       manualStart: "Start von Hand",
       routePublic: "Öffentlich · ohne Anmeldung",
-      routePrivate: "Anmeldung erforderlich",
+      routePrivate: ({ owner }: { owner: CodeRouteOwner }) =>
+        `Alle Angemeldeten (ohne Gäste) · läuft mit ${owner.kind === "you" ? "deinen Rechten" : owner.kind === "person" ? `den Rechten von ${owner.name}` : owner.name ? `den Rechten des Dienstkontos „${owner.name}“` : "den Rechten seines Dienstkontos"}`,
       nextRun: ({ when }) => `nächster Lauf ${when}`,
       newTag: "neu",
       statusOn: "An",

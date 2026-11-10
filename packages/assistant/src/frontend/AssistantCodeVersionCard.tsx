@@ -1,6 +1,6 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
-import { codeOperationText, codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
+import { codeAutomationName, codeOperationText, codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { loadCodeNextRun } from "../code-summary";
@@ -39,6 +39,28 @@ const switchedOnWhen = (at: string, locale: string, timeZone: string, now: Date)
     return formatCodeTime(at, locale, timeZone);
   }
 };
+
+/** Whether the version may do more than call apps: pages, events, the internet or its own database. */
+const mayDoMore = (preview: CodeVersionPreview): boolean =>
+  !!preview.automations?.some((entry) => entry.route || entry.event) ||
+  !!preview.internet?.length ||
+  !!preview.secrets?.length ||
+  !!preview.database;
+
+/** One thing the version may do besides calling an app, laid out like a target row. */
+function MayDoRow(props: { icon: string; what: string; where: string }) {
+  return (
+    <li class="assistant-code-version__target">
+      <i class={props.icon} aria-hidden="true" />
+      <span class="assistant-code-version__calls">
+        <span class="assistant-code-version__ops">
+          <span>{props.what}</span>
+        </span>
+        <span class="assistant-code-version__where">{props.where}</span>
+      </span>
+    </li>
+  );
+}
 
 /**
  * The saved version and its approval/credential state. Switching on creates no target rights.
@@ -301,7 +323,7 @@ export default function AssistantCodeVersionCard(props: {
             <Show when={current().automations?.length}>
               <p class="assistant-code-version__note">
                 {current()
-                  .automations?.map((entry) => entry.title ?? entry.entrypoint)
+                  .automations?.map((entry) => codeAutomationName(entry, current().place?.title ?? ""))
                   .join(" · ")}
               </p>
             </Show>
@@ -312,7 +334,10 @@ export default function AssistantCodeVersionCard(props: {
               {(targets) => (
                 <div class="assistant-code-version__targets">
                   <p class="assistant-code-version__label">{t().codeVersionTargets}</p>
-                  <Show when={targets().length > 0} fallback={<p class="assistant-code-version__note">{t().codeVersionNoTargets}</p>}>
+                  <Show
+                    when={targets().length > 0 || mayDoMore(current())}
+                    fallback={<p class="assistant-code-version__note">{t().codeVersionNoTargets}</p>}
+                  >
                     <ul class="assistant-code-version__list">
                       <For each={targets()}>
                         {(row) => (
@@ -346,6 +371,51 @@ export default function AssistantCodeVersionCard(props: {
                           </li>
                         )}
                       </For>
+                      <For each={(current().automations ?? []).filter((entry) => entry.route)}>
+                        {(entry) => (
+                          <MayDoRow
+                            icon={entry.route?.public ? "ti ti-lock-open" : "ti ti-lock"}
+                            what={codeAutomationName(entry, current().place?.title ?? "")}
+                            where={
+                              entry.route?.public
+                                ? pageT().routePublic
+                                : pageT().routePrivate({
+                                    owner: current().ownerKind === "person" ? { kind: "you" } : { kind: "account", name: null },
+                                  })
+                            }
+                          />
+                        )}
+                      </For>
+                      <For each={(current().automations ?? []).flatMap((entry) => (entry.event ? [entry.event] : []))}>
+                        {(event) => (
+                          <MayDoRow
+                            icon="ti ti-bolt"
+                            what={t().codeVersionEvent({ event: event.title ?? event.type })}
+                            where={targetLabel(event.place, current().place?.title ?? null)}
+                          />
+                        )}
+                      </For>
+                      <For
+                        each={[...new Set([...(current().internet ?? []), ...(current().secrets ?? []).map((secret) => secret.origin)])]}
+                      >
+                        {(origin) => {
+                          const sent = () =>
+                            (current().secrets ?? [])
+                              .filter((secret) => secret.origin === origin)
+                              .map((secret) => secret.name)
+                              .join(", ");
+                          return (
+                            <MayDoRow
+                              icon="ti ti-world-www"
+                              what={origin}
+                              where={sent() ? t().codeVersionInternetSecrets({ names: sent() }) : t().codeVersionInternet}
+                            />
+                          );
+                        }}
+                      </For>
+                      <Show when={current().database}>
+                        <MayDoRow icon="ti ti-database" what={t().codeVersionDatabase} where={t().codeVersionDatabaseWhere} />
+                      </Show>
                     </ul>
                   </Show>
                 </div>

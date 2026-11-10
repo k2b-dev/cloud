@@ -217,6 +217,35 @@ const CODE_VERSION = {
     { target: null, operations: ["mail.message.read"], isNew: false },
   ],
 };
+/** `code=full`: a version that also serves pages, follows an event elsewhere, calls the internet with a secret and keeps a database. */
+const CODE_VERSION_FULL = {
+  ...CODE_VERSION,
+  allowed: { allowed: true },
+  automations: [
+    ...CODE_VERSION.automations,
+    { entrypoint: "route:GET:/", title: "Übersicht", route: { method: "GET", path: "/", public: false } },
+    { entrypoint: "route:POST:/eingang", route: { method: "POST", path: "/eingang", public: true } },
+    {
+      entrypoint: "event:spaces.item.due@1:place:0",
+      event: {
+        type: "spaces.item.due",
+        title: "Aufgabe fällig",
+        place: {
+          key: "spaces.space\u0000Spc001",
+          ref: { type: "spaces.space", id: "Spc001" },
+          title: null,
+          typeTitle: "Bereich",
+          icon: "ti ti-layout-board",
+          own: false,
+          href: null,
+        },
+      },
+    },
+  ],
+  internet: ["https://api.lexoffice.example"],
+  secrets: [{ name: "LEXOFFICE_TOKEN", origin: "https://api.lexoffice.example" }],
+  database: true,
+};
 type Detail = NonNullable<AssistantPwaProps["initialDetail"]>;
 const detailOf = (id: string): Detail | null => {
   const conversation = CHATS.find((entry) => entry.id === id);
@@ -506,7 +535,9 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
               activated: { at: ago(1), byYou: true, byName: null },
               automations: [...CODE_VERSION.automations, { entrypoint: "GET /", route: { method: "GET", path: "/", public: false } }],
             }
-          : CODE_VERSION,
+          : params.get("code") === "full"
+            ? CODE_VERSION_FULL
+            : CODE_VERSION,
     });
   if (url.pathname === "/api/capabilities/v1/queries/core/code.automation.list")
     return json({

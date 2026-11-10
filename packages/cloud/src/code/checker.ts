@@ -187,6 +187,7 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
     return {
       ok: true,
       diagnostics: [],
+      warnings: analysis.warnings,
       bundle,
       manifest,
       permissions: manifest.permissions.map((p) => ({ ...p, status: existing.has(permissionKey(p)) ? "existing" : "new" })),

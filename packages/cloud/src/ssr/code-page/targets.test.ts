@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { codePageMessages } from "./messages";
-import { codeActivationRows, codeDynamicOperations, codeOperationText, codeTargetLabel } from "./targets";
+import { codeActivationRows, codeAutomationName, codeDynamicOperations, codeOperationText, codeTargetLabel } from "./targets";
 
 const call = (operation: string, id: string | null, type = "spaces.space") => ({ operation, target: { type, id } });
 const owner = { type: "mail.mailbox", id: "m_info" };
@@ -55,4 +55,27 @@ test("operations read by their title and app, as the registry names them; unname
   expect(codeOperationText("core.ai.generate", labels)).toBe("Text erzeugen");
   expect(codeOperationText("mail.message.read", labels)).toBe("mail.message.read");
   expect(codeOperationText("mail.message.read", undefined)).toBe("mail.message.read");
+});
+
+test("an automation reads by its title, an event by its title and place, a page by method and path", () => {
+  const place = {
+    key: "spaces.space\u0000Spc001",
+    ref: { type: "spaces.space", id: "Spc001" },
+    title: null,
+    typeTitle: "Space",
+    icon: null,
+    own: false,
+    href: null,
+  };
+  const event = { type: "spaces.item.due", title: "Item due", place };
+  expect(codeAutomationName({ entrypoint: "event:spaces.item.due@1:place:0", event }, "info@")).toBe("Item due · Space Spc001");
+  expect(codeAutomationName({ entrypoint: "event:spaces.item.due@1", event: { ...event, place: { ...place, own: true } } }, "info@")).toBe(
+    "Item due · info@",
+  );
+  expect(codeAutomationName({ entrypoint: "event:x.y@1", event: { ...event, title: null } }, "info@")).toBe(
+    "spaces.item.due · Space Spc001",
+  );
+  expect(codeAutomationName({ entrypoint: "route:POST:/in", route: { method: "POST", path: "/in" } }, "")).toBe("POST /in");
+  expect(codeAutomationName({ entrypoint: "deliver", title: "Deliveries" }, "")).toBe("Deliveries");
+  expect(codeAutomationName({ entrypoint: "legacyJob" }, "")).toBe("legacyJob");
 });

@@ -153,7 +153,7 @@ export function createCodeAuthoringChatTools() {
       "check",
       codeAuthoringContracts.check,
       codeAuthoringServices.check,
-      "Check lasting Code with {codeId,files,entry}. Returns diagnostics and operation/target permissions at file/line locations. Fix errors before test and submit.",
+      "Check lasting Code with {codeId,files,entry}. Returns diagnostics, warnings and operation/target permissions at file/line locations. Fix errors before test and submit; address each warning or know why it is fine.",
     ),
   ];
 }
