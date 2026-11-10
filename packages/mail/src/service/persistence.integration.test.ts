@@ -1323,7 +1323,10 @@ suite("mail PostgreSQL foundation", () => {
     const lease = await acquireDraftLease({ context, mailboxId: mailbox.data.id, draftId: emptyDraft.data.id });
     expect(lease.ok).toBe(true);
     if (!lease.ok) return;
-    expect((await acquireDraftLease({ context, mailboxId: mailbox.data.id, draftId: emptyDraft.data.id })).ok).toBe(false);
+    expect(await acquireDraftLease({ context, mailboxId: mailbox.data.id, draftId: emptyDraft.data.id })).toMatchObject({
+      ok: true,
+      data: { token: lease.data.token },
+    });
     expect(
       (
         await heartbeatDraftLease({

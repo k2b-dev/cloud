@@ -3223,6 +3223,11 @@ export const updateMailboxComposeStyleInputSchema = z
   .strict();
 export type UpdateMailboxComposeStyleInput = z.infer<typeof updateMailboxComposeStyleInputSchema>;
 
+/** Writing activity is checked once per heartbeat in every Mail editor. */
+export const DRAFT_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
+/** Three missed heartbeats end the server's writing reservation. */
+export const DRAFT_LEASE_TTL_MS = 3 * DRAFT_LEASE_HEARTBEAT_INTERVAL_MS;
+
 /** Stable lease outcomes shared by interactive and automated editors. */
 export const DRAFT_LEASE_ERROR_CODES = {
   HELD: "DRAFT_LEASE_HELD",
