@@ -14,23 +14,11 @@ import { CountryMap } from "@k2b/ui/country-map";
 import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
+// This gallery backs the frozen existing-demo parity fixture. BalanceFlow has
+// its own catalog showcase in charts/examples/balanceFlow.ts.
+type DemoKind = Exclude<ChartKind, "balanceFlow">;
+
 const examples = {
-  balanceFlow: {
-    description: "Balance flow · Reconciled periods carry closing into the next opening.",
-    chart: {
-      kind: "balanceFlow",
-      currency: "EUR",
-      periods: [
-        {
-          label: "October",
-          opening: 100,
-          inflows: [{ label: "Orders", value: 300 }],
-          outflows: [{ label: "Fees", value: 50 }],
-          closing: 350,
-        },
-      ],
-    },
-  },
   funnel: {
     description: "Funnel · Share of the start and previous step.",
     chart: {
@@ -382,16 +370,12 @@ const examples = {
       ],
     },
   },
-} satisfies { [K in ChartKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
+} satisfies { [K in DemoKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
 
 type TooltipField = { label: string; unit?: string; names?: Record<string, string> };
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
-const tooltipExamples: Record<ChartKind, TooltipExample> = {
-  balanceFlow: {
-    title: "Settlements",
-    fields: { period: { label: "Period" }, direction: { label: "Direction" }, value: { label: "Amount" } },
-  },
+const tooltipExamples: Record<DemoKind, TooltipExample> = {
   bubble: {
     title: "Campaign",
     fields: { group: { label: "Group" }, x: { label: "Visits" }, y: { label: "Opens" }, size: { label: "Audience" } },
