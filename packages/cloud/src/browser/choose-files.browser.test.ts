@@ -989,6 +989,30 @@ describe("choosing files in a browser", () => {
     }
   }, 60_000);
 
+  test("a previewed file that grew since it was listed is read again within the choice's total limit", async () => {
+    catalogApps = [scans];
+    serverPlace = scanPlace("buero", "ablage");
+    const listed = trees.scans!.ablage!;
+    // Listed at 10 bytes, the stored image has grown to its real size since.
+    trees.scans!.ablage = listed.map((entry) => (entry.id === "photo" ? { ...entry, size: 10 } : entry));
+    reads.clear();
+    const { page, close } = await open(desktop, `?maxTotal=${onePixelPng.length + 5}`);
+    try {
+      await attach(page, false, true);
+      await row(page, "photo.png").click();
+      await page.locator('.cloud-file-preview__frame[data-state="image"] img').waitFor();
+      await page.getByRole("button", { name: "Add (1)" }).click();
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      // The preview's bytes did not stand in for the listed size: Add read the file again and took it within budget.
+      expect(reads.get("scans:photo")).toBe(2);
+      expect(((await chosen(page)) as { name: string }[][])[0]!.map((file) => file.name)).toEqual(["photo.png"]);
+    } finally {
+      trees.scans!.ablage = listed;
+      serverPlace = null;
+      await close();
+    }
+  }, 60_000);
+
   test("a deep path stays on one line and scrolls to its end under a fade; the search finds files in subfolders with their place", async () => {
     catalogApps = [scans];
     for (const view of [desktop, phone]) {

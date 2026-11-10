@@ -166,8 +166,6 @@ const providerRoot = async (c: CapabilityExecutionContext, input: ProviderListIn
   };
 };
 
-/** A tree search below the root walks the same storage bases as global search, one base per page. */
-const TREE_SEARCH_BASE_LIMIT = 10;
 const LOCATION_LIMIT = 1024;
 /** Filegate takes at most eight words; the first eight still find what the rest would narrow. */
 const searchWords = (query: string) => query.trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_WORD_LIMIT).join(" ");
@@ -182,8 +180,9 @@ const providerHit = async (baseId: string, hit: FileEntry, searched: string, pre
 };
 
 /**
- * A name search in a folder and every folder below it. Without a parent it searches the storage bases one after the
- * other: the cursor names the base and that base's own cursor, and each hit's location starts with the base's name.
+ * A name search in a folder and every folder below it. Without a parent it searches every storage base of the caller,
+ * one search page per call: the cursor names the base and that base's own cursor, and each hit's location starts with
+ * the base's name.
  */
 const providerTreeSearch = async (c: CapabilityExecutionContext, input: ProviderListInput & { query: string }) => {
   const q = searchWords(input.query);
@@ -201,9 +200,9 @@ const providerTreeSearch = async (c: CapabilityExecutionContext, input: Provider
       next: page.next,
     };
   }
-  const cursor = /^t(\d{1,2})(?::(.+))?$/s.exec(input.cursor ?? "t0");
+  const cursor = /^t(\d{1,6})(?::(.+))?$/s.exec(input.cursor ?? "t0");
   const index = cursor ? Number(cursor[1]) : -1;
-  const bases = (await rootBases(c)).slice(0, TREE_SEARCH_BASE_LIMIT);
+  const bases = await rootBases(c);
   if (index < 0 || index >= Math.max(1, bases.length)) throw new FilesError("cursor_invalid", 409);
   const current = bases[index];
   if (!current) return { writable: false, items: [], next: null };

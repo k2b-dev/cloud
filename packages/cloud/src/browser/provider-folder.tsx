@@ -94,6 +94,8 @@ export const createProviderFolder = (props: {
         setWritable(false);
       });
     }
+    // Kept rows belong to the earlier query: its cursor must not continue the new one.
+    if (keep) setNext(null);
     setStatus(more ? "more" : "loading");
     if (!more) setError(null);
     try {

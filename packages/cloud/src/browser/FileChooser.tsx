@@ -199,7 +199,9 @@ export function FileChooser(props: {
   // Open where the person was last, once both the place and the providers are known. A provider that is gone, or a
   // place that cannot be read, leaves This device open; a folder that is gone opens the provider's root instead.
   const [restoring, setRestoring] = createSignal(true);
+  /** The stored place, once known, and the location the chooser opened with: This device or the restored folder. */
   let initialPlace: string | undefined;
+  let openedAt: FolderLocation = null;
   createEffect(() => {
     if (!restoring()) return;
     const place = props.place();
@@ -215,13 +217,15 @@ export function FileChooser(props: {
       focusRestored = true;
       folder.navigate({ provider, trail: [{ name: provider.name }, ...remembered.folders] });
       restored = location();
+      openedAt = restored;
     });
   });
   const restoringPlaceholder = createDelayedLoading(restoring);
   onCleanup(() => {
-    // A chooser closed before it knew the place leaves it as it was.
-    if (initialPlace === undefined) return;
+    // Only a place the person moved to is remembered. Closing where the chooser opened keeps the stored place, also
+    // when it could not be opened, such as while the apps were still loading or a provider was briefly unavailable.
     const open = location();
+    if (open === openedAt) return;
     const place = open ? placeOf(open.provider.appId, open.trail) : null;
     if (JSON.stringify(place) !== initialPlace) props.remember(place);
   });
@@ -313,8 +317,6 @@ export function FileChooser(props: {
     // The person chose a place before the remembered one was known; it is no longer opened for them.
     setRestoring(false);
     focusRestored = false;
-    // A place chosen before the remembered one was known is remembered too.
-    initialPlace ??= "";
     setGoneNote(undefined);
     setDeviceNote(undefined);
     const open = location();
@@ -345,6 +347,9 @@ export function FileChooser(props: {
   let lastPreview: string | undefined;
   const keepPreviews = () => {
     for (const id of previews.keys()) if (id !== lastPreview && !selection.selected().has(id)) previews.delete(id);
+    // The browser holds no more previews than one choice may hold; past that only the one shown stays.
+    const held = [...previews.values()].reduce((sum, file) => sum + file.size, 0);
+    if (maxTotal !== undefined && held > maxTotal) for (const id of previews.keys()) if (id !== lastPreview) previews.delete(id);
   };
   createEffect(on(() => selection.selected(), keepPreviews, { defer: true }));
   createEffect(
@@ -380,9 +385,10 @@ export function FileChooser(props: {
       files.map((entry): Download => {
         const kept = previous.get(entry.id);
         if (kept) return kept;
-        // A file the preview read already counts like a finished download; it was read with the same limits.
+        // A file the preview read counts like a finished download: it was read with the same limits, and only when it
+        // still has the listed size, which the selection's limits counted.
         const read = knownRead(entry);
-        return read
+        return read && read.size === entry.size
           ? { entry, loaded: read.size, total: read.size, state: "done", file: read }
           : { entry, loaded: 0, total: entry.size, state: "waiting" };
       }),

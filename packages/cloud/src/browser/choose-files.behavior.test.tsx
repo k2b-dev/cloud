@@ -793,7 +793,8 @@ domTest("a remembered folder that is gone opens the provider's root quietly; a g
   } finally {
     gone.cleanup();
   }
-  expect(gone.remembered).toEqual([null]);
+  // The provider may only be unavailable for now: closing where it opened keeps the stored place.
+  expect(gone.remembered).toEqual([]);
 });
 
 domTest("a provider that searches below the folder shows where each hit lies; typing stops the earlier search and keeps rows", async () => {
@@ -921,6 +922,73 @@ domTest("placeholder rows wait 200 ms before they show and then stay at least 30
     release();
     await until(() => Boolean(view.row("late.txt")));
     expect(performance.now() - shown).toBeGreaterThanOrEqual(290);
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("closing while the apps still load, or where it opened, keeps the remembered place", async () => {
+  const dom = createDomTestHarness();
+  const [{ FileChooser }, { LocaleProvider }] = await Promise.all([import("./FileChooser"), import("@k2b/ui")]);
+  const remembered: unknown[] = [];
+  const dispose = render(
+    () => (
+      <LocaleProvider locale="en">
+        <FileChooser
+          options={{}}
+          providers={() => ({ state: "loading" })}
+          retryProviders={() => {}}
+          place={() => ({ state: "ready", place: { appId: "drive", folders: [{ id: "scans", name: "Scans" }] } })}
+          remember={(value) => remembered.push(value)}
+          caller={() => ({ locale: "en", fetch: async () => folderPage([]) })}
+          close={() => {}}
+        />
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  await settle();
+  dispose();
+  dom.cleanup();
+  expect(remembered).toEqual([]);
+
+  // A provider that failed to load leaves This device open without forgetting the place either.
+  const failed = await chooser({}, () => folderPage([]), [], { appId: "drive", folders: [] });
+  await settle();
+  failed.cleanup();
+  expect(failed.remembered).toEqual([]);
+});
+
+domTest("a new filter hides Load more of the earlier results until its own first page", async () => {
+  let gate: Promise<void> | undefined;
+  const view = await chooser(
+    {},
+    async (_path, input) => {
+      await gate;
+      return Response.json({ data: { writable: false, items: [entry(input?.query ?? "first", 1)], next: "more" } });
+    },
+    [drive],
+    { appId: "drive", folders: [] },
+  );
+  try {
+    await until(() => Boolean(view.button("Load more")));
+    let release!: () => void;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    filter.value = "second";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await until(() => view.requests.length === 2);
+    // The earlier rows stay, but their cursor no longer continues anything.
+    expect(view.row("first.txt")).toBeDefined();
+    expect(view.button("Load more")).toBeUndefined();
+    filter.value = "third";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(view.button("Load more")).toBeUndefined();
+    release();
+    gate = undefined;
+    await until(() => Boolean(view.row("third.txt")) && Boolean(view.button("Load more")));
   } finally {
     view.cleanup();
   }

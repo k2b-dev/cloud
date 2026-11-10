@@ -79,7 +79,8 @@ list is shared by choosing and saving for this document.
   and up to 16 folder IDs with their names, never access: the provider
   authorizes each folder again. A folder that is gone opens the provider's
   root, and a provider that is gone leaves **This device** open, both
-  without an error. If the place cannot be read or saved, the chooser opens
+  without an error. Only a place the person moved to replaces the stored
+  one; closing where the chooser opened keeps it. If the place cannot be read or saved, the chooser opens
   on **This device** and works as before.
 - **`accept`** (`<input accept>` syntax) limits what can be chosen. Provider
   files that do not match are shown disabled with the reason.
@@ -136,8 +137,10 @@ list is shared by choosing and saving for this document.
 - **Previews** of PDFs and raster images read the file through the same
   read stream, with the same limits, `accept`, and type proof, after the
   focus rested 250 ms; only a file whose first bytes prove a PDF or an image
-  is drawn. **Add** reuses what a preview read. The browser keeps previews
-  of the selected files and the one shown last, and drops them when the
+  is drawn. **Add** reuses what a preview read when it still has the listed
+  size; otherwise it reads the file again within the choice's limits. The
+  browser keeps previews of the selected files and the one shown last, at
+  most `maxTotalBytes` together beyond that one, and drops them when the
   folder changes or the dialog closes. Small screens show no preview and
   read nothing for one.
 - **A provider that is gone:** when a provider's root answers 403 or 404, it
@@ -474,7 +477,8 @@ import { FileProviderListDataSchema, FileProviderTreeListInputSchema } from "@k2
 - `scope: "tree"` comes only with a `query`. Return the matching entries in
   `parent` and every folder below it, folders and files, best matches first,
   each with its `location` below `parent`. Without `parent`, search your
-  root as you choose; Files walks the person's storage bases one per page.
+  root as you choose; Files walks every storage base of the person, one
+  search page per call.
 - `scope: "folder"`, or no `scope`, filters inside `parent` only, as before.
 - Keep pages bounded like any other: up to `limit` entries, `next` until the
   last page, and the same `scope` with every cursor. Fail rather than answer

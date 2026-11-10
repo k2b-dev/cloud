@@ -838,6 +838,25 @@ describe("Files as a file provider", () => {
     });
   });
 
+  test("a tree search at the root reaches every base, also past the ten that global search names", async () => {
+    baseItems = Array.from({ length: 12 }, (_, index) => ({
+      ...base,
+      id: `cloud:groups:g${String(index).padStart(2, "0")}`,
+      name: `group ${String(index).padStart(2, "0")}`,
+      kind: "groups" as const,
+    }));
+    items = [{ name: "plan.pdf", path: "plan.pdf", directory: false, size: 4, modified }];
+    next = null;
+    const eleventh = await listProvider({ query: "plan", scope: "tree", cursor: "t10" });
+    if (!eleventh.ok) throw new Error("expected the eleventh base");
+    expect(searches.at(-1)).toMatchObject({ baseId: "cloud:groups:g10" });
+    expect(eleventh.data.data.next).toBe("t11");
+    const last = await listProvider({ query: "plan", scope: "tree", cursor: "t11" });
+    if (!last.ok) throw new Error("expected the last base");
+    expect(last.data.data.next).toBeNull();
+    await expect(listProvider({ query: "plan", scope: "tree", cursor: "t12" })).rejects.toMatchObject({ code: "cursor_invalid" });
+  });
+
   test("content.read reports the media type of the file name", async () => {
     ids.set("pdf-id", { baseId: "base", path: "Q3 report.PDF" });
     readName = "Q3 report.PDF";

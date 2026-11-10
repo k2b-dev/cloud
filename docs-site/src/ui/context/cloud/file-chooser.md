@@ -84,8 +84,9 @@ moves it.
   While the place loads, the content stays empty, with loading rows after
   200 ms, so **This device** never flashes first. A folder that is gone
   opens the provider's root without an error; a provider that is gone
-  leaves **This device** open. The chooser remembers the place as it closes:
-  a provider folder, or **This device** after a choice from the device.
+  leaves **This device** open. The chooser remembers the place the person
+  moved to as it closes, a provider folder or **This device**; closing where
+  it opened keeps the stored place, also when it could not be opened yet.
 - **This device** shows a drop zone that fills the content. A click on the
   zone or on **This device** opens the device's dialog in the same click;
   arrow keys in the sources only move focus.
@@ -112,7 +113,7 @@ moves it.
   icon in the same frame, with the name and facts below. Only PDFs and
   images are read, through the provider's read stream after the focus
   rested 250 ms, and only when their first bytes prove the type; **Add**
-  reuses what a preview read. Below 75 rem there is no preview and nothing
+  reuses what a preview read while it still has the listed size. Below 75 rem there is no preview and nothing
   is read for one.
 - **Pages:** 50 entries per page with **Load more**. Past 500 entries, a hint
   to filter by name takes its place.
