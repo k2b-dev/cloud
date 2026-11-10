@@ -220,4 +220,63 @@ describe("@k2b/ui LoadMore in DataTable", () => {
     // Focus stays on the one button in every state.
     expect(table.edge()!.querySelector("button")).toBe(retry);
   });
+
+  test("waits for the first rows, and needs only observe and disconnect from the observer", async () => {
+    const dom = createDomTestHarness();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "IntersectionObserver");
+    // The smallest observer double the apps' tests use: the end is always in view.
+    Object.defineProperty(globalThis, "IntersectionObserver", {
+      configurable: true,
+      writable: true,
+      value: class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(target: Element) {
+          queueMicrotask(() =>
+            this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver),
+          );
+        }
+        disconnect() {}
+      },
+    });
+    const { DataTable } = modules!;
+    const [rows, setRows] = createSignal<Row[]>([]);
+    const [loading, setLoading] = createSignal(true);
+    let loads = 0;
+    const dispose = render(
+      () => (
+        <DataTable
+          rows={rows()}
+          columns={[{ id: "name", header: "Name", value: "name" }]}
+          getRowId={(row) => row.id}
+          loading={loading()}
+          hasMore
+          onLoadMore={() => {
+            loads++;
+          }}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      await settle();
+      // The first read runs: no second page, and no Load more under the placeholder rows.
+      expect(loads).toBe(0);
+      expect(dom.root.querySelector(".k2b-load-more")?.getAttribute("data-state")).toBe("done");
+
+      setRows(rowsUpTo(3));
+      setLoading(false);
+      await settle();
+      expect(loads).toBe(1);
+
+      // The next page arrives while the end is still in view: the edge asks again without unobserve().
+      setRows(rowsUpTo(6));
+      await settle();
+      expect(loads).toBe(2);
+    } finally {
+      dispose();
+      dom.cleanup();
+      if (previous) Object.defineProperty(globalThis, "IntersectionObserver", previous);
+      else delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
+    }
+  });
 });

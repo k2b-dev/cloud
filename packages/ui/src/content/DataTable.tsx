@@ -883,7 +883,13 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           <Show when={props.onLoadMore}>
             {(onLoadMore) => (
               // A table that fills its height takes new rows into space it already has, so the row count tells a page.
-              <LoadMore hasMore={Boolean(props.hasMore)} loading={props.loadingMore} count={props.rows.length} onLoadMore={onLoadMore()} />
+              // While the first rows load, there is no end to load beyond: the edge waits for them.
+              <LoadMore
+                hasMore={Boolean(props.hasMore) && !props.loading}
+                loading={props.loadingMore}
+                count={props.rows.length}
+                onLoadMore={onLoadMore()}
+              />
             )}
           </Show>
         </div>

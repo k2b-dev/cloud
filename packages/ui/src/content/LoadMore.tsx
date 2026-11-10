@@ -75,7 +75,9 @@ export function LoadMore(props: LoadMoreProps): JSX.Element {
   const recheck = () => {
     if (!observer || !reach || progress() === progressAtRequest) return;
     requested = false;
-    observer.unobserve(reach);
+    // The observer watches only this strip; observing it anew delivers its current state. Only `observe` and
+    // `disconnect` are used, the part of the observer that every engine and every test double offers.
+    observer.disconnect();
     observer.observe(reach);
   };
 
