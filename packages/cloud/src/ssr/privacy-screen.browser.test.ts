@@ -509,13 +509,16 @@ describe("privacy screen", () => {
       });
       await shortcut(page);
       expect(await page.locator("#menu-popover").getAttribute("data-cloud-privacy-covered")).toBe("");
-      // Closing the popover and opening it again while covered keeps it covered.
+      // A popover that opens while covered, inside covered content, covers on its own: opening changes no attribute.
       await page.evaluate(() => {
-        const popover = document.getElementById("menu-popover") as HTMLElement;
-        popover.hidePopover();
-        popover.showPopover();
+        const late = document.createElement("div");
+        late.id = "late-popover";
+        late.popover = "manual";
+        late.textContent = "Gehaltsübersicht";
+        document.querySelector("#subject")!.append(late);
       });
-      await page.waitForFunction(() => document.getElementById("menu-popover")?.hasAttribute("data-cloud-privacy-covered"));
+      await page.evaluate(() => (document.getElementById("late-popover") as HTMLElement).showPopover());
+      await page.waitForFunction(() => document.getElementById("late-popover")?.hasAttribute("data-cloud-privacy-covered"));
     } finally {
       await context.close();
     }
@@ -544,6 +547,12 @@ describe("privacy screen", () => {
       // The subject holds text of its own, so the dictation inside it stays covered rather than showing the subject.
       await page.waitForFunction(() => document.getElementById("late")?.closest("[data-cloud-privacy-covered]"));
       expect(await page.locator("#upload").getAttribute("data-cloud-privacy-covered")).toBeNull();
+      // Text that arrives beside an island later covers its container too.
+      await page.evaluate(() => {
+        const upload = document.getElementById("upload")!;
+        upload.parentElement!.insertBefore(document.createTextNode("Kündigung Mietvertrag"), upload);
+      });
+      await page.waitForFunction(() => document.getElementById("upload")?.closest("[data-cloud-privacy-covered]"));
     } finally {
       await context.close();
     }
@@ -590,11 +599,17 @@ describe("privacy screen", () => {
     }
   });
 
-  test("a page without the command menu, such as a pop-out editor, still covers with the shortcut", async () => {
-    timer = 0;
-    const { context, page } = await open({ search: "?popout" });
+  test("a pop-out editor shows the countdown as a pill and covers with the shortcut", async () => {
+    timer = 30;
+    // The fixture runs the runtime without the command menu, as the pop-out's own Layout does.
+    const { context, page } = await open({ search: "/popout?popout" });
     try {
       await ready(page);
+      await page.clock.runFor(22_000);
+      expect(await counting(page)).toBe(true);
+      expect(await page.locator(".cloud-privacy-float .cloud-privacy-countdown__label").isVisible()).toBe(true);
+      await page.locator("#draft").click();
+      expect(await counting(page)).toBe(false);
       await shortcut(page);
       expect(await covered(page)).toBe(true);
       await page.keyboard.press("x");

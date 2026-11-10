@@ -243,6 +243,23 @@
   }
 }
 
+/* Pop-out pages have no app bar: the countdown floats as the same pill at the bottom start corner. */
+.cloud-privacy-float > .cloud-privacy-countdown {
+  position: fixed;
+  z-index: 15;
+  left: calc(env(safe-area-inset-left, 0px) + 0.75rem);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+  width: auto;
+  padding-inline-end: 0.875rem;
+  border-radius: 999px;
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-shadow-float);
+}
+
+.cloud-privacy-float .cloud-privacy-countdown__label {
+  display: block;
+}
+
 /* Phones and touch-only tablets have no privacy screen: the countdown keeps no place there, and the settings page
    offers no "Try it". The timer setting stays, because it is the person's for their computers. */
 @media not (any-pointer: fine) {

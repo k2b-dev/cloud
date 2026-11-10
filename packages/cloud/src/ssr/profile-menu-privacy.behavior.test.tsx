@@ -170,6 +170,28 @@ test("quick choices save one after another and the last one wins, also when an e
   expect(menu.checked()).toBe("5 min");
 });
 
+test("when an earlier choice saved and the last one fails, every listener hears the saved one", async () => {
+  const answers: ((status: number) => void)[] = [];
+  const previous = globalThis.fetch;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const status = await new Promise<number>((done) => answers.push(done));
+    return new Response(String(init?.body), { status, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  restoreFetch = () => (globalThis.fetch = previous);
+  const menu = await mount();
+  const heard: number[] = [];
+  window.addEventListener("cloud.privacy.timer", (event) => heard.push((event as CustomEvent<number>).detail));
+  menu.options()[1]!.click();
+  menu.options()[4]!.click();
+  await until(() => answers.length === 1);
+  answers.shift()!(200);
+  await until(() => answers.length === 1);
+  answers.shift()!(503);
+  await until(() => heard.length === 1);
+  expect(heard).toEqual([30]);
+  expect(menu.checked()).toBe("30 s");
+});
+
 test("arrow keys move through the timer", async () => {
   const bodies = serve(() => 200);
   const menu = await mount();

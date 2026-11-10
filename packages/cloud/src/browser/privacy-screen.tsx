@@ -170,7 +170,9 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   const mark = (element: Element, kind: string) => {
     element.setAttribute(COVERED, kind);
     covered.add(element);
-    if (!element.hasAttribute("inert")) {
+    // A dialog that hosts the hint blurs but stays usable: the hint in the top layer escapes the blur, not an inert
+    // ancestor. Its other input lifts the screen like any click or key.
+    if (!element.hasAttribute("inert") && !element.contains(hint)) {
       element.setAttribute("inert", "");
       madeInert.add(element);
     }
@@ -251,27 +253,9 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   };
   let arrived = false;
   let reconciling = false;
-  const observer = new MutationObserver((records) => {
-    if (!active) return;
-    const relevant = records.some((record) => {
-      if (record.type === "attributes") return true;
-      const nodes = [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)].filter(
-        (node): node is Element => node instanceof Element && node !== hint,
-      );
-      if (!nodes.length) return false;
-      // Changes deep inside covered content stay covered; only new islands, warnings or uncovered places matter.
-      const inside = record.target instanceof Element && Boolean(record.target.closest(`[${COVERED}]`));
-      return !inside || nodes.some((node) => node.matches(`${ISLAND}, ${SESSION_WARNING_ACTION}`) || holdsIsland(node));
-    });
-    if (!relevant || reconciling) return;
-    const fresh = records.some((record) =>
-      Array.from(record.addedNodes).some(
-        (node) =>
-          node instanceof Element &&
-          record.target === document.body &&
-          Boolean(node.querySelector(".k2b-toast, [role=alert], [role=status]")),
-      ),
-    );
+  let fresh = false;
+  const scheduleReconcile = () => {
+    if (reconciling) return;
     reconciling = true;
     queueMicrotask(() => {
       reconciling = false;
@@ -283,8 +267,40 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
         arrived = true;
         say(options.text().newMessages);
       }
+      fresh = false;
     });
+  };
+  const observer = new MutationObserver((records) => {
+    if (!active) return;
+    const relevant = records.some((record) => {
+      if (record.type === "attributes") return true;
+      // Changes deep inside covered content stay covered; only new islands, warnings, or anything outside matter,
+      // text included: text beside an island covers its container.
+      const target = record.target instanceof Element ? record.target : record.target.parentElement;
+      const inside = Boolean(target?.closest(`[${COVERED}]`));
+      if (record.type === "characterData") return !inside;
+      const nodes = [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)].filter((node) => node !== hint);
+      if (!nodes.length) return false;
+      return (
+        !inside ||
+        nodes.some((node) => node instanceof Element && (node.matches(`${ISLAND}, ${SESSION_WARNING_ACTION}`) || holdsIsland(node)))
+      );
+    });
+    if (!relevant) return;
+    fresh ||= records.some((record) =>
+      Array.from(record.addedNodes).some(
+        (node) =>
+          node instanceof Element &&
+          record.target === document.body &&
+          Boolean(node.querySelector(".k2b-toast, [role=alert], [role=status]")),
+      ),
+    );
+    scheduleReconcile();
   });
+  /** Showing a popover changes no attribute; its toggle event says so. */
+  const toggled = (event: Event) => {
+    if (active && event.target !== hint) scheduleReconcile();
+  };
   const titleObserver = new MutationObserver(() => {
     if (!active || document.title === options.text().tabTitle) return;
     savedTitle = document.title;
@@ -311,6 +327,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
       attributes: true,
       attributeFilter: ["open", "popover", "data-cloud-privacy"],
     });
@@ -516,6 +533,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   window.addEventListener("click", click, true);
   window.addEventListener("blur", blur);
   window.addEventListener("resize", resize);
+  document.addEventListener("toggle", toggled, true);
   window.addEventListener(PRIVACY_REQUEST_EVENT, request);
   channel?.addEventListener("message", message);
   channel?.postMessage({ type: "hello" } satisfies PrivacyChannelMessage);
@@ -539,6 +557,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     window.removeEventListener("click", click, true);
     window.removeEventListener("blur", blur);
     window.removeEventListener("resize", resize);
+    document.removeEventListener("toggle", toggled, true);
     window.removeEventListener(PRIVACY_REQUEST_EVENT, request);
     channel?.close();
     disposeHint();

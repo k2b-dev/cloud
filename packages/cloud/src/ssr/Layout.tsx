@@ -29,6 +29,7 @@ import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PageTrailRow from "./PageTrailRow";
 import PanelSlot from "./PanelSlot";
+import PrivacyCountdown from "./PrivacyCountdown";
 import { getPageSwapBuild, pageSwapSignature } from "./page-swap";
 import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
@@ -328,6 +329,12 @@ export default function Layout(props: LayoutProps) {
             panel={panel ? true : undefined}
             privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
           />
+          {/* Without an app bar, the privacy screen's countdown floats at the bottom start corner. */}
+          {user && (
+            <div class="cloud-privacy-float">
+              <PrivacyCountdown timerSeconds={privacyTimerSeconds} />
+            </div>
+          )}
           <PageTrailProvider trail={pageTrail} onOwnTitle={() => (focusContent.ownTitle = true)}>
             {(() => {
               // As in the full shell: the page renders first, so its area can say whether it shows its own title.
@@ -349,7 +356,18 @@ export default function Layout(props: LayoutProps) {
             })()}
           </PageTrailProvider>
           {/* Focus pages also expose the canonical origin to their islands. */}
-          <ShellDataProvider data={{ cloudOrigin, panel, platform: shellData.platform, theme, apps: [], legalLinks: [], searchLinks: {} }}>
+          <ShellDataProvider
+            data={{
+              cloudOrigin,
+              panel,
+              platform: shellData.platform,
+              theme,
+              apps: [],
+              legalLinks: [],
+              searchLinks: {},
+              ...(user ? { privacyTimerSeconds } : {}),
+            }}
+          >
             {panel && <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />}
           </ShellDataProvider>
           <div data-print-fallback="">

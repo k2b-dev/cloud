@@ -14,6 +14,12 @@ const probe = defineApp({
   baseUrl: "http://privacy-probe:3000",
   routes: ["/app/privacy"],
 });
+/** A pop-out editor: focus mode, without the app bar and the command menu. */
+const popout = (c: Parameters<typeof Layout>[0]["c"]) => (
+  <Layout c={c} focusMode title="Neue Mail">
+    <textarea id="draft" aria-label="Entwurf" />
+  </Layout>
+);
 type Environment = { Variables: { runtime: RuntimeContext; user: User } };
 
 /** A Mail-like page with fictional data: a list, a reader with an editor, a counter button, and two islands. */
@@ -34,6 +40,7 @@ export const server = new Hono<Environment>()
     c.set("user", person);
     await next();
   })
+  .get("/app/privacy/popout", ...probe.ssr<Environment>((c) => () => popout(c)))
   .get(
     "/app/privacy",
     ...probe.ssr<Environment>((c) => () => (

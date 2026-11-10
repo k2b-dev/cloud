@@ -14,6 +14,8 @@ export function createPrivacyTimerChoice(initial: PrivacyTimerSeconds, locale: (
   const [failed, setFailed] = createSignal<PrivacyTimerSeconds | null>(null);
   const [saved, setSaved] = createSignal(false);
   let confirmed = initial;
+  /** The value the runtime and the other tabs last heard. */
+  let announced = initial;
   let pending: { seconds: PrivacyTimerSeconds; toast: boolean } | null = null;
   let saving = false;
   const t = () => privacyScreenMessages.resolve([locale()]).t;
@@ -21,10 +23,15 @@ export function createPrivacyTimerChoice(initial: PrivacyTimerSeconds, locale: (
     onCleanup(
       onPrivacyTimer((seconds) => {
         confirmed = seconds;
+        announced = seconds;
         if (!saving && pending === null) setValue(seconds);
       }),
     ),
   );
+  const announce = (seconds: PrivacyTimerSeconds) => {
+    announced = seconds;
+    announceSavedPrivacyTimer(seconds);
+  };
   const flush = async () => {
     saving = true;
     while (pending) {
@@ -36,10 +43,12 @@ export function createPrivacyTimerChoice(initial: PrivacyTimerSeconds, locale: (
       if (pending) continue;
       saving = false;
       if (ok) {
-        announceSavedPrivacyTimer(seconds);
+        announce(seconds);
         setSaved(true);
         return;
       }
+      // An earlier choice may have saved meanwhile; the runtime and the other tabs follow the saved value.
+      if (confirmed !== announced) announce(confirmed);
       setValue(confirmed);
       setFailed(seconds);
       if (tell) {
