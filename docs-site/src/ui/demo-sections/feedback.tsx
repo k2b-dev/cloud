@@ -470,14 +470,22 @@ exportToast.update("Archive ready", {
 
 const SuccessCheckDemo = () => {
   let sepaTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(sepaTimer));
-  const createSepaFile = () => {
+  // A run still in progress when the demo restarts or unmounts closes with its timer, so no spinner stays behind.
+  let pending: ReturnType<typeof toast> | undefined;
+  const cancelPending = () => {
     clearTimeout(sepaTimer);
+    pending?.dismiss();
+    pending = undefined;
+  };
+  onCleanup(cancelPending);
+  const createSepaFile = () => {
+    cancelPending();
     const sepa = toast("14 payments", { title: "Creating SEPA file …", progress: "indeterminate" });
-    sepaTimer = setTimeout(
-      () => sepa.update("14 payments · 18,240.00 EUR", { variant: "success", title: "SEPA file created", progress: null, celebrate: true }),
-      1200,
-    );
+    pending = sepa;
+    sepaTimer = setTimeout(() => {
+      pending = undefined;
+      sepa.update("14 payments · 18,240.00 EUR", { variant: "success", title: "SEPA file created", progress: null, celebrate: true });
+    }, 1200);
   };
   const openCustomer = () =>
     dialogCore.open<void>(
