@@ -9,6 +9,7 @@ import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin
 import { resolveAccountExpires } from "../accounts/model";
 import { toPgTextArray } from "../postgres";
 import { setRailCacheVersion } from "../rail-snapshot";
+import { sharedWorkstationIdleSeconds } from "./shared-workstation";
 
 type DbRow = Record<string, unknown>;
 
@@ -125,10 +126,48 @@ type SessionUserParams = {
   allowPendingLegalConsent?: boolean;
 };
 
+/** A browser session on a shared workstation: seconds left until it ends without input, and the administrator's limit. */
+export type SessionIdle = { remainingSeconds: number; timeoutSeconds: number };
+
+/**
+ * Ends a shared-workstation family whose last real input lies beyond the idle limit. The condition repeats inside the
+ * update, so an input recorded meanwhile keeps the session, and a family revoked meanwhile stays ended. True when the
+ * family is ended.
+ */
+const endIdleFamily = async (sid: string, timeoutSeconds: number, query: typeof sql): Promise<boolean> => {
+  const [ended] = await query<Array<{ sid: string }>>`
+    UPDATE auth.session_families
+    SET revoked_at = COALESCE(revoked_at, now()), revocation_reason = COALESCE(revocation_reason, 'idle')
+    WHERE sid = ${sid}::uuid
+      AND (revoked_at IS NOT NULL OR last_input_at <= now() - ${timeoutSeconds} * interval '1 second')
+    RETURNING sid
+  `;
+  return Boolean(ended);
+};
+
+/** The idle state of a loaded row; null when the family has no idle limit. Ends the family once its limit passed. */
+const checkIdle = async (
+  row: DbRow,
+  sid: string,
+  query: typeof sql,
+): Promise<{ ended: true } | { ended: false; idle: SessionIdle | null }> => {
+  if (row.idle_seconds === null || row.idle_seconds === undefined) return { ended: false, idle: null };
+  const timeoutSeconds = await sharedWorkstationIdleSeconds();
+  const idleSeconds = Math.max(0, Number(row.idle_seconds));
+  if (idleSeconds >= timeoutSeconds && (await endIdleFamily(sid, timeoutSeconds, query))) return { ended: true };
+  return { ended: false, idle: { remainingSeconds: Math.max(0, Math.floor(timeoutSeconds - idleSeconds)), timeoutSeconds } };
+};
+
 // Both projections use the same live validity checks. Neither caches authorization.
-const loadSessionRow = async (params: SessionUserParams, projection: SQLQuery, join: SQLQuery, query: typeof sql) => {
+const loadSessionRow = async (
+  params: SessionUserParams,
+  projection: SQLQuery,
+  join: SQLQuery,
+  query: typeof sql,
+): Promise<{ row: DbRow; idle: SessionIdle | null } | null> => {
   const [row] = await query<DbRow[]>`
-    SELECT ${projection}, sf.pwa_device_id AS pwa_device_id, (
+    SELECT ${projection}, sf.pwa_device_id AS pwa_device_id,
+      EXTRACT(EPOCH FROM now() - sf.last_input_at)::float8 AS idle_seconds, (
       SELECT value FROM settings.entries WHERE key = 'user.category.' ||
         CASE WHEN u.provider = 'ipa' THEN 'freeipa' WHEN u.profile = 'guest' THEN 'guest' ELSE 'login' END || '.enabled'
     ) AS category_enabled
@@ -146,16 +185,24 @@ const loadSessionRow = async (params: SessionUserParams, projection: SQLQuery, j
         SELECT 1 FROM auth.legal_acceptances la WHERE la.user_id = u.id
       ))
   `;
-  return row && (await decodeAccountCategoryEnabled(row.category_enabled)) ? row : null;
+  if (!row || !(await decodeAccountCategoryEnabled(row.category_enabled))) return null;
+  const idle = await checkIdle(row, params.sid, query);
+  return idle.ended ? null : { row, idle: idle.idle };
 };
 
 /** The user of a valid session family and, for an app session of the mobile app, its device. */
 export const loadJwtSession = async (
   params: SessionUserParams & { groupsAdmin: string[] },
   query: typeof sql = sql,
-): Promise<{ user: User; pwaDeviceId: string | null } | null> => {
-  const row = await loadSessionRow(params, userProjectionSql(params.groupsAdmin), userProjectionJoin(), query);
-  return row ? { user: buildProjectedUser(row), pwaDeviceId: row.pwa_device_id ? String(row.pwa_device_id) : null } : null;
+): Promise<{ user: User; pwaDeviceId: string | null; idle: SessionIdle | null } | null> => {
+  const loaded = await loadSessionRow(params, userProjectionSql(params.groupsAdmin), userProjectionJoin(), query);
+  return loaded
+    ? {
+        user: buildProjectedUser(loaded.row),
+        pwaDeviceId: loaded.row.pwa_device_id ? String(loaded.row.pwa_device_id) : null,
+        idle: loaded.idle,
+      }
+    : null;
 };
 
 export const loadJwtSessionUser = async (
@@ -165,8 +212,8 @@ export const loadJwtSessionUser = async (
 
 /** Identity-only consumers must not pay for group, IPA, role and rail projections. */
 export const loadJwtSessionIdentity = async (params: SessionUserParams, query: typeof sql = sql) => {
-  const row = await loadSessionRow(params, sql`u.id, u.account_expires`, sql``, query);
-  return row ? { userId: String(row.id), accountExpires: resolveAccountExpires(row)?.toISOString() ?? null } : null;
+  const loaded = await loadSessionRow(params, sql`u.id, u.account_expires`, sql``, query);
+  return loaded ? { userId: String(loaded.row.id), accountExpires: resolveAccountExpires(loaded.row)?.toISOString() ?? null } : null;
 };
 
 export const loadCurrentUser = async (params: { userId: string; groupsAdmin: string[] }, query: typeof sql = sql): Promise<User | null> => {

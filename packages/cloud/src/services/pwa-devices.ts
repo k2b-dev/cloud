@@ -10,6 +10,7 @@ import { logger } from "./logging";
 import { pairingSecret } from "./pairing-secret";
 import { type AuthenticatedSession, session } from "./session";
 import { requireRecentWebSession } from "./session/recent";
+import { sharedWorkstationIdleSeconds, withinIdleLimit } from "./session/shared-workstation";
 
 /**
  * Paired phones of the mobile app (preview). A phone holds a device key that only Core
@@ -168,6 +169,7 @@ const initiatorValid = async (tx: SQL, pairing: PairingRow): Promise<boolean> =>
     JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid AND sk.state <> 'revoked'
     WHERE sf.sid = ${pairing.initiator_sid}::uuid AND sf.user_id = ${pairing.initiator_user_id ?? pairing.user_id}::uuid
       AND sf.revoked_at IS NULL AND sf.expires_at > now() AND sf.auth_epoch = u.auth_epoch AND sf.pwa_device_id IS NULL
+      AND ${withinIdleLimit(sql`sf.last_input_at`, await sharedWorkstationIdleSeconds())}
       AND (${pairing.initiator_user_id === null} OR u.admin = true)
       AND (${pairing.initiator_user_id === null} OR u.account_expires IS NULL OR u.account_expires > now())
   `;

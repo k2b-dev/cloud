@@ -210,6 +210,11 @@ The cookie is:
 - secure outside development;
 - valid for the configured `user.session.expiry_hours`.
 
+On a browser marked as a [shared workstation](/en/docs/operations/shared-workstations),
+the cookie has no expiry and the session also ends after the configured idle
+minutes without real input. `AuthenticatedSession.data.idle` and the request
+variable `sessionIdle` then carry the seconds left; requests never extend them.
+
 Successful browser sign-ins also set a separate 90-day
 [browser cookie](/en/docs/operations/sign-in-locations#browser-cookie) that is
 kept on sign-out; it does not authenticate requests.
@@ -219,8 +224,10 @@ from `@k2b/cloud/browser/session` to clear that user's local draft storage as we
 as their credential. Keep failures visible until the user can retry. Its
 `POST /api/auth/logout` request supplies `X-Cloud-Logout-User` with the rendered
 user UUID, or `none` for an anonymous page. A changed account answers `409`;
-the page must refresh before retrying. Without this optional header, the API
-retains its idempotent current-credential logout behavior.
+the page must refresh before retrying. With it, `X-Cloud-Logout-Session` can
+also bind revocation to one session id; a newer sign-in answers `409`. Without
+these optional headers, the API retains its idempotent current-credential
+logout behavior.
 
 Server handlers can pass the same expectation to
 `auth.session.delete(c, expectedUserId)`: it returns `false` on an account
