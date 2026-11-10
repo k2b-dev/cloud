@@ -5,7 +5,7 @@ section: Guides
 order: 30
 description: Things to build with feat/code, from mail sorting to AI loops that read invoices, each with the code to start from.
 tags: [code, templates, examples, automation, ai]
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 
 # Use cases and templates
@@ -141,8 +141,9 @@ export default app;
 ```
 
 The page lives at `/code/<id>/`. A form keeps its input when something fails,
-and Cloud never repeats a POST on its own. The token in the address makes a
-repeated submit file one task, not two.
+and Cloud never repeats a POST on its own. The token in the address deduplicates
+repeated submissions within the 24-hour idempotency receipt window; it does not
+prevent duplicates after that window expires.
 
 Reference: [Return a page](/en/docs/platform/code-sdk#return-a-page),
 [Middleware and access checks](/en/docs/platform/code-sdk#zugriff-prufen).
@@ -176,10 +177,11 @@ request, but no request headers. A webhook therefore arrives only with a JSON,
 plain text or form body.
 
 A fictional shipping service calls `/hooks/shipments` with a shipment ID.
-When the service confirms the delivery, the Code files one Space task:
+When the service confirms delivery, the Code records the shipment in its
+database before attempting to create a Space task:
 
 ```ts
-import { app, http, secrets, spaces } from "@sdk";
+import { app, db, http, secrets, spaces } from "@sdk";
 
 const space = spaces.space("Spc001"); // fictional
 const teamGroupIds = ["grp_team"]; // fictional
@@ -206,7 +208,19 @@ app.post("/hooks/shipments", async (c) => {
   const delivered = shipment && typeof shipment === "object" && "status" in shipment && shipment.status === "delivered";
   if (!delivered) return c.json({ ok: true });
 
+  await db.exec("CREATE TABLE IF NOT EXISTS processed (shipment_id TEXT PRIMARY KEY, state TEXT NOT NULL)");
+  const claimed = await db.exec(
+    "INSERT INTO processed(shipment_id, state) VALUES (?, ?) ON CONFLICT(shipment_id) DO NOTHING",
+    [id, "pending"],
+  );
+  if (claimed.changes === 0) {
+    const rows = await db.query<{ state: string }>("SELECT state FROM processed WHERE shipment_id = ?", [id]);
+    if (rows[0]?.state === "done") return c.json({ ok: true });
+    // An earlier attempt may have created the task. Reconcile before retrying.
+    return c.json({ ok: false, code: "reconciliation_required" }, 409);
+  }
   await space.task.create({ title: `Unpack shipment ${id}`, idempotencyKey: `shipment-delivered:${id}` });
+  await db.exec("UPDATE processed SET state = ? WHERE shipment_id = ?", ["done", id]);
   return c.json({ ok: true });
 }, { public: true });
 
@@ -217,7 +231,21 @@ Why this stays safe without a signature:
 
 - A made-up call can only make the Code ask the service. The Code acts only
   on what the service itself answers, with your secret.
-- The idempotency key turns repeated calls into one task.
+- The database's primary key claims each shipment once, even after the
+  **24-hour** task idempotency receipt expires. Keep these rows for as long as
+  duplicate delivery must be prevented; deleting the Code also deletes its DB.
+- The task call and DB update are not one transaction. A failure or interruption
+  can leave a `pending` row, including after the task was created. A later call
+  returns `409 reconciliation_required` and does not attempt another task.
+  A concurrent request can see `pending` while the first is still running;
+  wait for active requests to finish before reconciling. Check the shipment
+  and Space tasks, then reconcile the row: mark it `done`
+  when the task exists; release the claim only after confirming no task was
+  created. To write the correction, submit a reviewed maintenance version with
+  a private `/team/reconcile` route protected by the group check above. Have it
+  update only the verified shipment row through `db.exec` with bound parameters,
+  then remove that route in the next version. The CLI has no Code-DB write
+  command. Do not blindly clear pending rows or rely on an expired receipt.
 - If your access check runs for every route, it must let the webhook path
   through. A private prefix such as `/team`, as above, does that.
 
