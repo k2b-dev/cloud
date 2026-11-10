@@ -76,6 +76,18 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
     if (saved) return saved;
     const map = mapFixture(name.startsWith("route") ? "route" : "places");
     map.conversationId = name;
+    if (name.includes("details"))
+      map.details = [
+        {
+          id: map.kind === "route" ? "stop-1" : "museum-0",
+          note: "Meet at the main entrance.",
+          source: { label: "Visit notes", icon: "notebook" },
+          links: [
+            { label: "Open in Cloud", url: "/app/example/items/1" },
+            { label: "Read website", url: "https://source.example/" },
+          ],
+        },
+      ];
     if (name.includes("unconfigured")) {
       map.availability.configured = false;
       map.groups = [];

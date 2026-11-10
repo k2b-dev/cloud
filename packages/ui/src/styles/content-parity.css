@@ -6993,6 +6993,7 @@
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), var(--k2b-shadow-toolbar);
 }
 .k2b-ui .k2b-map-view__controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; }
+.k2b-ui .k2b-map-view__controls[hidden] { display: none; }
 .k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate-group) { display: flex; flex-direction: column; border-radius: 9px; }
 .k2b-ui .k2b-map-view__controls .k2b-icon-button { width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 9px; }
 .k2b-ui .k2b-map-view__controls .k2b-icon-button:hover { transform: none; }
@@ -7047,6 +7048,136 @@
   .k2b-ui .k2b-map-view__zoom > .k2b-icon-button:last-child::after { top: 0; bottom: calc(32px - 2.75rem); }
   /* Room above for the zoom-in hit area inside the map, and between the stack's and the locate button's hit areas. */
   .k2b-ui .k2b-map-view__controls { top: 12px; gap: 18px; }
+}
+
+/* MapTile: a still map that is one button. The summary is a solid pill on it; messages and credits stay above. */
+.k2b-ui .k2b-map-tile { position: relative; isolation: isolate; border-radius: var(--k2b-radius-surface); }
+/* The map joins the tile's stacking: its messages and credits rise above the button, its pins stay below. */
+.k2b-ui .k2b-map-tile .k2b-map-view { isolation: auto; border-radius: inherit; }
+.k2b-ui .k2b-map-tile :is(.k2b-map-view__messages, .k2b-map-view__foot) { z-index: 2; }
+.k2b-ui .k2b-map-tile .k2b-map-view__messages { top: 30px; max-width: calc(100% - 20px); }
+.k2b-ui .k2b-map-tile .k2b-map-view__foot { top: 0; bottom: auto; }
+.k2b-ui .k2b-map-tile .k2b-map-view__attribution { border-radius: 0 0 0 7px; }
+.k2b-ui .k2b-map-tile .k2b-map-view__scale { display: none; }
+.k2b-ui .k2b-map-tile__open { position: absolute; inset: 0; z-index: 1; display: block; margin: 0; padding: 0; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.k2b-ui .k2b-map-tile__open:disabled { cursor: default; }
+.k2b-ui .k2b-map-tile__open:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.k2b-ui .k2b-map-tile__summary { position: absolute; left: 10px; bottom: 10px; box-sizing: border-box; max-width: calc(100% - 20px); height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 12px; border-radius: 17px; background: var(--k2b-surface); color: var(--k2b-text); box-shadow: var(--k2b-shadow-toolbar); font-size: 13.5px; font-weight: 500; font-variant-numeric: tabular-nums; transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .k2b-map-tile__summary > span { min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.k2b-ui .k2b-map-tile__summary > i { flex: none; font-size: 16px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-tile__open:not(:disabled):hover .k2b-map-tile__summary { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-map-tile__open:not(:disabled):hover .k2b-map-tile__summary > i { color: var(--k2b-action); }
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-tile__summary,
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-tile__summary {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), var(--k2b-shadow-toolbar);
+}
+
+/* MapDialog: map and list side by side; below 48rem the map fills the screen and the list is a sheet. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-panel-dialog-frame.is-workspace.k2b-map-dialog-frame {
+    width: min(80rem, calc(100vw - 5rem), var(--k2b-dialog-available-width));
+    height: min(52.5rem, calc(100dvh - 3rem), var(--k2b-dialog-available-height));
+  }
+}
+.k2b-ui .k2b-map-dialog {
+  --k2b-map-dialog-tone: var(--k2b-action-solid);
+  --k2b-map-dialog-peek: 8.5rem;
+  --k2b-map-dialog-half: 52%;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 25.5rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--k2b-surface);
+  color: var(--k2b-text);
+}
+.k2b-ui .k2b-map-dialog__map { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.k2b-ui .k2b-map-dialog__map .k2b-map-view { border-radius: 0; }
+.k2b-ui .k2b-map-dialog__side { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.k2b-ui :is(.k2b-map-dialog__handle, .k2b-map-dialog__close-float) { display: none; }
+.k2b-ui .k2b-map-dialog__head { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 16px 12px 12px 20px; }
+.k2b-ui .k2b-map-dialog__title { display: flex; align-items: flex-start; gap: 4px; }
+.k2b-ui .k2b-map-dialog__title h2 { flex: 1; min-width: 0; margin: 4px 0 0; font-size: 18px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__facts { display: flex; gap: 28px; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-map-dialog__facts > div { display: flex; flex-direction: column; }
+.k2b-ui .k2b-map-dialog__facts strong { font-size: 22px; font-weight: 600; line-height: 1.2; }
+.k2b-ui :is(.k2b-map-dialog__facts, .k2b-map-dialog__place-text, .k2b-map-dialog__trailing) small { font-size: 12.5px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__count { display: inline-flex; align-items: center; height: 26px; padding: 0 9px; border-radius: 7px; background: var(--k2b-surface-muted); font-size: 13px; }
+.k2b-ui .k2b-map-dialog__body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.k2b-ui .k2b-map-dialog__notice { flex: none; margin: 0 20px 10px; }
+.k2b-ui .k2b-map-dialog__list { flex: 1; min-height: 0; overflow: auto; padding: 0 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.k2b-ui .k2b-map-dialog__list:focus-visible { outline: 0; }
+.k2b-ui .k2b-map-dialog__list:focus-visible .k2b-map-dialog__place[aria-selected="true"] { box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring); }
+@media (forced-colors: active) {
+  .k2b-ui .k2b-map-dialog__list:focus-visible .k2b-map-dialog__place[aria-selected="true"] { outline: var(--k2b-focus-width) solid Highlight; outline-offset: calc(-1 * var(--k2b-focus-width)); }
+}
+.k2b-ui .k2b-map-dialog__group { flex: none; height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 12.5px; font-weight: 500; color: var(--k2b-action-solid); }
+.k2b-ui .k2b-map-dialog__group::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.k2b-ui .k2b-map-dialog__place { flex: none; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 54px; box-sizing: border-box; padding: 6px 10px; border-radius: 10px; cursor: pointer; }
+.k2b-ui .k2b-map-dialog__place[data-tone="second"] { --k2b-map-dialog-tone: #0f766e; }
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-dialog__place[data-tone="second"],
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-dialog__place[data-tone="second"] { --k2b-map-dialog-tone: #14b8a6; }
+@media (hover: hover) {
+  .k2b-ui .k2b-map-dialog__place:hover { background: var(--k2b-surface-muted); }
+}
+.k2b-ui .k2b-map-dialog__place[aria-selected="true"] { background: color-mix(in srgb, var(--k2b-action-solid) 12%, transparent); }
+.k2b-ui .k2b-map-dialog__mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--k2b-map-dialog-tone); color: var(--k2b-map-dialog-tone); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-map-dialog__place[aria-selected="true"] .k2b-map-dialog__mark { background: var(--k2b-map-dialog-tone); color: #fff; box-shadow: none; }
+.k2b-ui .k2b-map-dialog__mark[data-empty] { width: 10px; height: 10px; margin-inline: 7px; background: var(--k2b-map-dialog-tone); box-shadow: none; }
+.k2b-ui .k2b-map-dialog__place-text { min-width: 0; display: flex; flex-direction: column; }
+.k2b-ui .k2b-map-dialog__place-text > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.k2b-ui .k2b-map-dialog__trailing { display: flex; flex-direction: column; align-items: flex-end; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k2b-ui .k2b-map-dialog__loading { margin: 0; padding: 6px 10px; font-size: 13px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__skeleton { flex: none; height: 38px; margin: 8px 10px; border-radius: 8px; background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-map-dialog__empty { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 28px 20px; }
+.k2b-ui .k2b-map-dialog__empty p { margin: 0; }
+.k2b-ui .k2b-map-dialog__empty-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 18px; }
+/* A fixed height: choosing another place never moves the list above it. */
+.k2b-ui .k2b-map-dialog__detail { flex: none; height: min(19.5rem, 45%); box-sizing: border-box; margin: 0 20px; padding: 14px 0 16px; border-top: 1px solid var(--k2b-border); display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.k2b-ui .k2b-map-dialog[data-single] .k2b-map-dialog__detail { flex: 1; height: auto; border-top: 0; padding-top: 0; }
+.k2b-ui .k2b-map-dialog[data-single] .k2b-map-dialog__actions { margin-top: 10px; }
+.k2b-ui .k2b-map-dialog__place-name { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__source { display: flex; align-items: center; gap: 6px; min-height: 18px; font-size: 12.5px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__source-ai { color: var(--k2b-ai-accent); }
+.k2b-ui .k2b-map-dialog__address { display: flex; align-items: center; gap: 4px; min-height: 32px; font-size: 14px; }
+.k2b-ui .k2b-map-dialog__address > span { min-width: 0; overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__hours { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.k2b-ui .k2b-map-dialog__hours > i { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__note { margin: 0; font-size: 13.5px; color: var(--k2b-text-secondary); overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 8px; }
+.k2b-ui .k2b-map-dialog__provenance { flex: none; padding: 0 20px 12px; font-size: 12px; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-map-dialog__provenance a { color: inherit; text-decoration: underline; }
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-map-dialog { display: block; }
+  /* The map fills the screen above the resting sheet, so its fitted pins are never under the list. */
+  .k2b-ui .k2b-map-dialog__map { position: absolute; inset: 0 0 calc(var(--k2b-map-dialog-half) - 18px); }
+  .k2b-ui .k2b-map-dialog:has(.k2b-map-dialog__side[data-sheet-detent="peek"]) .k2b-map-dialog__map { bottom: calc(var(--k2b-map-dialog-peek) - 18px); }
+  .k2b-ui .k2b-map-dialog .k2b-map-view__messages { top: 60px; }
+  /* The sheet's rounded top overlaps the map; scale and credits stay above it. */
+  .k2b-ui .k2b-map-dialog .k2b-map-view__foot { bottom: 18px; }
+  .k2b-ui .k2b-map-dialog__close-float { display: grid; position: absolute; top: 10px; left: 10px; z-index: 3; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; }
+  .k2b-ui .k2b-map-dialog__close { display: none; }
+  .k2b-ui .k2b-map-dialog__side { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; height: var(--k2b-map-dialog-half); border-radius: 18px 18px 0 0; background: var(--k2b-surface); box-shadow: var(--k2b-shadow-sheet); }
+  .k2b-ui .k2b-map-dialog__side[data-sheet-detent="peek"] { height: var(--k2b-map-dialog-peek); }
+  .k2b-ui .k2b-map-dialog__side[data-sheet-detent="full"] { height: calc(100% - 64px); }
+  .k2b-ui .k2b-map-dialog__handle { position: relative; display: grid; place-items: center; flex: none; width: 100%; height: 22px; margin: 0; padding: 0; border: 0; background: none; cursor: grab; }
+  .k2b-ui .k2b-map-dialog__handle::before { content: ""; width: 38px; height: 4px; border-radius: 2px; background: var(--k2b-border-strong); }
+  /* A 44 px target around the 22 px grip: it reaches above the sheet's edge and into the header's top padding. */
+  .k2b-ui .k2b-map-dialog__handle::after { content: ""; position: absolute; inset: -11px 0; }
+  .k2b-ui .k2b-map-dialog__handle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+  .k2b-ui .k2b-map-dialog__head { padding: 2px 8px 8px 16px; }
+  .k2b-ui .k2b-map-dialog__title h2 { font-size: 17px; }
+  .k2b-ui .k2b-map-dialog__facts strong { font-size: 19px; }
+  .k2b-ui .k2b-map-dialog__body { overflow-y: auto; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .k2b-ui .k2b-map-dialog__detail { order: 1; height: auto; margin: 0 16px; padding-top: 2px; border-top: 0; overflow: visible; }
+  .k2b-ui .k2b-map-dialog__list { order: 2; flex: none; overflow: visible; margin-top: 4px; padding: 8px 6px; border-top: 1px solid var(--k2b-border); }
+  .k2b-ui .k2b-map-dialog__provenance { order: 3; padding: 0 16px 14px; }
+  .k2b-ui .k2b-map-dialog__notice { margin-inline: 16px; }
+  .k2b-ui .k2b-map-dialog__actions > .k2b-button { min-height: 44px; }
+  .k2b-ui .k2b-map-dialog__actions > .k2b-button:first-child { flex: 1 1 100%; }
+  .k2b-ui .k2b-map-dialog__place { min-height: 56px; }
 }
 
 /* ------------------------------------------------------------ FlowAmount --

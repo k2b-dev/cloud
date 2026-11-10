@@ -38,7 +38,7 @@ export type { ResourceCardColor, ResourceCardProps, ResourceCardState } from "./
 export { ResourceCard } from "./ResourceCard";
 export type { SectionFrame, SectionPartProps, SectionProps, SectionSize, SectionState, SectionTone } from "./Section";
 export { Section } from "./Section";
-export { Skeleton, type SkeletonProps } from "./Skeleton";
+export { createDelayedLoading, type DelayedLoadingOptions, Skeleton, type SkeletonProps } from "./Skeleton";
 export type { StatCellAccent, StatCellCompare, StatCellDelta, StatCellProps, StatCellSize, StatCellTone } from "./StatCell";
 export { StatCell } from "./StatCell";
 export type {

@@ -15,6 +15,7 @@ import {
   FileProviderSaveInputSchema,
   fileProviderAcceptsContext,
   fileProviderIssues,
+  fileProviderSearchesTree,
 } from "../contracts/file-provider";
 import { LOCALE_HEADER } from "../shared/locale";
 import { beginAppAction } from "./app-actions";
@@ -29,6 +30,8 @@ export type FileProviderSource = {
   icon: string;
   list: string;
   context: boolean;
+  /** Whether a name filter can also search every folder below the open one (`scope: "tree"`). */
+  tree: boolean;
   read: string;
   /** The provider's read limit; a consumer combines it with its own. */
   maxBytes: number;
@@ -72,6 +75,10 @@ export const safeFileName = (name: string): string => {
   return `${stem.trimEnd()}${extension}`;
 };
 
+/** A tree-search hit's location without control characters and bidi controls; `/` stays, it separates the levels. */
+const safeLocation = (location: string): string =>
+  location.replace(/[\u0000-\u001f\u007f-\u009f\\\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim();
+
 const ICON = /^ti(?: ti-[a-z0-9-]{1,60}){1,2}$/;
 /** Icons come from other applications; only a Tabler icon class may reach the DOM, never arbitrary classes. */
 export const providerIcon = (icon: string | undefined, fallback: string): string => (icon && ICON.test(icon) ? icon : fallback);
@@ -94,9 +101,9 @@ const issuesOf = (app: CapabilityCatalogApp): FileProviderIssue[] | null => {
   }
 };
 
-const acceptsContext = (app: CapabilityCatalogApp): boolean => {
+const optsIn = (app: CapabilityCatalogApp, check: (manifest: CapabilityCatalogApp["manifest"]) => boolean): boolean => {
   try {
-    return fileProviderAcceptsContext(app.manifest);
+    return check(app.manifest);
   } catch {
     return false;
   }
@@ -119,10 +126,12 @@ export const fileProviderSources = (apps: readonly CapabilityCatalogApp[], local
       return [
         {
           appId: app.appId,
-          name: app.appName,
-          icon: providerIcon(app.appIcon, "ti ti-folders"),
+          // A provider may name its own source, such as "Scanner"; Core already localized it like the app name.
+          name: declaration.title ?? app.appName,
+          icon: providerIcon(declaration.icon, providerIcon(app.appIcon, "ti ti-folders")),
           list: declaration.list,
-          context: acceptsContext(app),
+          context: optsIn(app, fileProviderAcceptsContext),
+          tree: optsIn(app, fileProviderSearchesTree),
           read: declaration.read,
           maxBytes: read.stream.maxBytes,
           ...(save?.stream ? { save: { id: save.localId, maxBytes: save.stream.maxBytes } } : {}),
@@ -149,12 +158,13 @@ export const loadFileProviders = async (caller: FileProviderCaller, signal?: Abo
   return fileProviderSources(apps, caller.locale);
 };
 
-export type FileProviderPage = { items: FileProviderEntry[]; next: string | null; writable: boolean };
+/** `incomplete`: a tree search left out folders it could not search; see `FileProviderListDataSchema`. */
+export type FileProviderPage = { items: FileProviderEntry[]; next: string | null; writable: boolean; incomplete: boolean };
 
 /** One folder page. Without `parent` it is the provider's root. */
 export const listProviderFolder = async (
   provider: FileProviderSource,
-  input: { parent?: string; query?: string; cursor?: string; context?: FileProviderContext },
+  input: { parent?: string; query?: string; cursor?: string; context?: FileProviderContext; tree?: boolean },
   caller: FileProviderCaller,
   signal?: AbortSignal,
 ): Promise<FileProviderPage> => {
@@ -168,6 +178,7 @@ export const listProviderFolder = async (
         ...(input.query ? { query: input.query } : {}),
         ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
         ...(provider.context === true && input.context !== undefined ? { context: input.context } : {}),
+        ...(provider.tree === true && input.tree === true && input.query ? { scope: "tree" } : {}),
         limit: FILE_PROVIDER_PAGE_SIZE,
       },
       signal,
@@ -176,8 +187,12 @@ export const listProviderFolder = async (
     options(caller),
   );
   if (!result.ok) throw failure(result.error);
-  const items = result.data.data.items.map((entry) => ({ ...entry, name: safeFileName(entry.name) }));
-  return { items, next: result.data.data.next, writable: result.data.data.writable };
+  // A location is display text from another application, cleaned like a name but keeping its " / " separators.
+  const items = result.data.data.items.map(({ location, ...entry }) => {
+    const where = location === undefined ? "" : safeLocation(location);
+    return { ...entry, name: safeFileName(entry.name), ...(where ? { location: where } : {}) };
+  });
+  return { items, next: result.data.data.next, writable: result.data.data.writable, incomplete: result.data.data.incomplete === true };
 };
 
 export type EntryProblem = "type" | "size";

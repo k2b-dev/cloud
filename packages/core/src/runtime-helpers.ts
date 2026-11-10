@@ -42,6 +42,7 @@ import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
 import { migrate as migrateExtensions } from "./migrate/core/extensions";
+import { migrate as migrateFileChooserPlaces } from "./migrate/core/file-chooser-places";
 import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrateKnownApps } from "./migrate/core/known-apps";
 import { migrate as migrateLogging } from "./migrate/core/logging";
@@ -126,6 +127,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
     { name: "panel-context-consent", run: migratePanelContextConsent },
+    { name: "file-chooser-places", run: migrateFileChooserPlaces },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "screen-preferences", run: migrateScreenPreferences },
     { name: "app-approval", run: migrateAppApproval },

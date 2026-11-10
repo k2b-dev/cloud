@@ -17,6 +17,7 @@ import {
   FileProviderReadInputSchema,
   FileProviderSaveDataSchema,
   FileProviderSaveInputSchema,
+  FileProviderTreeListInputSchema,
 } from "../contracts/file-provider";
 import { hasAppActions } from "./app-actions";
 import {
@@ -80,6 +81,7 @@ const provider: FileProviderSource = {
   icon: "ti ti-folders",
   list: "folder.list",
   context: false,
+  tree: false,
   read: "file.read",
   maxBytes: 1024,
 };
@@ -108,8 +110,26 @@ describe("file provider discovery", () => {
     broken.manifest = { ...broken.manifest, queries: broken.manifest.queries.filter((query) => query.localId !== "file.read") };
     const sources = fileProviderSources([providerApp("zeta", "Zeta", 2048), plain, broken, providerApp("alpha", "Alpha")], "en");
     expect(sources).toEqual([
-      { appId: "alpha", name: "Alpha", icon: "ti ti-folders", list: "folder.list", context: false, read: "file.read", maxBytes: 1024 },
-      { appId: "zeta", name: "Zeta", icon: "ti ti-folders", list: "folder.list", context: false, read: "file.read", maxBytes: 2048 },
+      {
+        appId: "alpha",
+        name: "Alpha",
+        icon: "ti ti-folders",
+        list: "folder.list",
+        context: false,
+        tree: false,
+        read: "file.read",
+        maxBytes: 1024,
+      },
+      {
+        appId: "zeta",
+        name: "Zeta",
+        icon: "ti ti-folders",
+        list: "folder.list",
+        context: false,
+        tree: false,
+        read: "file.read",
+        maxBytes: 2048,
+      },
     ]);
   });
 
@@ -641,7 +661,7 @@ describe("browsing a provider", () => {
       },
     );
     expect(body).toEqual({ input: { parent: "f1", query: "inv", cursor: "c1", limit: 50 } });
-    expect(page).toEqual({ items: [file("a", 3)], next: "c2", writable: false });
+    expect(page).toEqual({ items: [file("a", 3)], next: "c2", writable: false, incomplete: false });
   });
 
   test("keeps the provider's status, so the chooser can tell no access from an outage", async () => {
@@ -806,6 +826,96 @@ test("provider discovery detects explicit context support", () => {
     { appId: "drive", context: false },
     { appId: "invoices", context: true },
   ]);
+});
+
+test("a provider's own source name and icon replace the app's; an icon that is no Tabler class falls back", () => {
+  const named = (icon: string) =>
+    app(
+      "warehouse",
+      "Warehouse",
+      defineCapabilities({
+        protocolVersion: 2,
+        queries: { "folder.list": list, "file.read": read(1024) },
+        fileProvider: { list: "folder.list", read: "file.read", title: "Scanner", icon },
+      }),
+    );
+  expect(fileProviderSources([named("ti ti-scan")], "en").map(({ name, icon }) => ({ name, icon }))).toEqual([
+    { name: "Scanner", icon: "ti ti-scan" },
+  ]);
+  expect(fileProviderSources([named("evil other-class")], "en").map(({ name, icon }) => ({ name, icon }))).toEqual([
+    { name: "Scanner", icon: "ti ti-folders" },
+  ]);
+  expect(fileProviderSources([providerApp("drive", "Drive")], "en").map(({ name, icon }) => ({ name, icon }))).toEqual([
+    { name: "Drive", icon: "ti ti-folders" },
+  ]);
+});
+
+test("provider discovery detects explicit tree search support", () => {
+  const searching = app(
+    "drive",
+    "Drive",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: { "folder.list": { ...list, input: FileProviderTreeListInputSchema }, "file.read": read(1024) },
+      fileProvider: { list: "folder.list", read: "file.read" },
+    }),
+  );
+  // A `scope` that cannot take "tree" does not opt in.
+  const loose = app(
+    "vault",
+    "Vault",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        "folder.list": {
+          ...list,
+          input: FileProviderListInputSchema.extend({ scope: z.literal("folder").optional().describe("Only this folder.") }).strict(),
+        },
+        "file.read": read(1024),
+      },
+      fileProvider: { list: "folder.list", read: "file.read" },
+    }),
+  );
+  expect(fileProviderSources([searching, loose, providerApp("alpha", "Alpha")], "en").map(({ appId, tree }) => ({ appId, tree }))).toEqual([
+    { appId: "alpha", tree: false },
+    { appId: "drive", tree: true },
+    { appId: "vault", tree: false },
+  ]);
+});
+
+test("asks for a tree search only from a supporting provider and only with a query, and cleans hit locations", async () => {
+  for (const supports of [true, false]) {
+    const calls: unknown[] = [];
+    const caller = {
+      locale: "en",
+      fetch: async (_url: string | URL | Request, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)).input);
+        const hit = { kind: "file", id: "f1", name: "plan.pdf", size: 3, location: "Team\u202e / \u0007Reports" };
+        return json({ data: { writable: false, items: [hit, { ...hit, id: "f2", location: "\u200e" }], next: null } });
+      },
+    };
+    const source = { ...provider, tree: supports };
+    const page = await listProviderFolder(source, { parent: "docs", query: "plan", tree: true }, caller);
+    await listProviderFolder(source, { parent: "docs", tree: true }, caller);
+    expect(calls).toEqual([
+      { parent: "docs", query: "plan", limit: 50, ...(supports ? { scope: "tree" } : {}) },
+      { parent: "docs", limit: 50 },
+    ]);
+    expect(page.items.map((entry) => entry.location)).toEqual(["Team / Reports", undefined]);
+    expect(page.incomplete).toBe(false);
+  }
+});
+
+test("passes on that a tree search left out folders, and nothing else", async () => {
+  const answer = (data: Record<string, unknown>) => ({
+    locale: "en",
+    fetch: async () => json({ data: { writable: false, items: [], next: null, ...data } }),
+  });
+  const source = { ...provider, tree: true };
+  expect((await listProviderFolder(source, { parent: "docs", query: "x", tree: true }, answer({ incomplete: true }))).incomplete).toBe(
+    true,
+  );
+  expect((await listProviderFolder(source, { parent: "docs", query: "x", tree: true }, answer({}))).incomplete).toBe(false);
 });
 
 test("sends context on every supporting provider page and never sends it to another provider", async () => {
