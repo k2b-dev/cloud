@@ -38,6 +38,8 @@ import { TextEditor } from "@k2b/ui/text-editor";
 ## Edit text and tables
 
 The toolbar formats text and inserts links, lists, quotes, rules and tables.
+Numbered lists count up across the selected lines and continue a numbered list
+immediately above them.
 It has no Formatted/Markdown switch: people edit formatted. Only a source view,
 set through `mode="source"` or opened by **Check Markdown**, shows a switch
 back to the formatted view. Neither view rewrites the document.
@@ -95,10 +97,15 @@ application attached the images itself, so the hint stays hidden. Otherwise
 the editor shows **Add images as attachments**. Supply `onAttachImages` to make
 that hint a button opening the application's attachment picker.
 
-The HTML sanitizer loads on the first HTML paste. If the text, selection,
-focus or editability changes while it loads, or loading fails, the editor
-keeps the pasted text in its copyable recovery surface. Plain text paste does
-not load the sanitizer.
+HTML paste preserves paragraphs, nested lists and literal Markdown characters
+from the copied text. Ordinary lists stay compact; multiple paragraphs within
+one item retain their paragraph breaks. The cursor scrolls into view after paste.
+
+The HTML sanitizer starts loading when the editor receives focus. A paste that
+arrives before loading finishes follows its original position through typing
+and unrelated edits. If its selected text is replaced, the person moves the
+selection or focus, editing becomes unavailable, or loading fails, the editor
+keeps the pasted text in its copyable recovery surface.
 
 Pasting code into a fenced,
 indented or inline code region preserves the clipboard's plain text, including
