@@ -2798,26 +2798,30 @@ html {
      so the head shows neither the title nor the way up beside it; Alt+Up
      still goes up.
      On a page without its own `h1` the head's heading stays for assistive
-     technology. A collapsed sidebar shows no names and keeps the head. */
-  .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
-    > :is(
-      .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
-        ),
-      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
-    )[data-trail="up"] {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    min-height: 0;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+     technology. A collapsed sidebar shows no names and keeps the head. Where
+     the sidebar does not fit and is the overlay (see below), the head keeps
+     its row for the overlay's button. */
+  @container k2b-workspace (width >= 20rem) {
+    .k2b-ui
+      .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+      > :is(
+        .k2b-app-workspace__head:has(
+            ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+            ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+          ),
+        .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+        :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+      )[data-trail="up"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      min-height: 0;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
 
   .k2b-ui
@@ -2937,7 +2941,7 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > :is(.k2b-app-workspace__content, solid-island, solid-client)
-      .k2b-app-workspace__sidebar-toggle {
+      .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)) {
       display: inline-flex;
     }
 
@@ -2946,7 +2950,7 @@ html {
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
-      > .k2b-app-workspace__head:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle)
+      > .k2b-app-workspace__head:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)))
       > .k2b-app-workspace__head-lead
       > .k2b-app-workspace__head-toggle {
       display: none;
@@ -3000,16 +3004,26 @@ html {
       white-space: nowrap;
     }
 
-    /* With the button in the page's toolbar and no title to show, the head
-       takes no row. A head row keeps its views; a waiting detail's Details
-       button keeps its row (see the waiting blocks below, which win). */
+    /* With the button in the page's toolbar and no title to show, or a page
+       that shows its own, the head takes no row. A head row keeps its views;
+       a waiting detail's Details button keeps its row (see the waiting blocks
+       below, which win). Only the workspace's own toolbar counts: a nested
+       workspace keeps the button in its head. */
     .k2b-ui
       .k2b-app-workspace:has(
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head:not([data-row], [data-trail="up"]):has(
-        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
+      ),
+    :where(.k2b-ui[data-k2b-own-title], .k2b-ui [data-k2b-own-title])
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head.k2b-app-workspace__head:not([data-row]):has(
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
       ),
     .k2b-ui
       .k2b-app-workspace
@@ -3021,7 +3035,7 @@ html {
         .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
         :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
       )[data-trail="up"]:not([data-row]):where(
-        :has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle)
+        :has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)))
       ) {
       position: absolute;
       width: 1px;
@@ -3955,7 +3969,7 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > :is(.k2b-app-workspace__content, solid-island, solid-client)
-      .k2b-app-workspace__sidebar-toggle {
+      .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)) {
       display: inline-flex;
     }
 
@@ -3964,7 +3978,7 @@ html {
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
-      > .k2b-app-workspace__head:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle)
+      > .k2b-app-workspace__head:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)))
       > .k2b-app-workspace__head-lead
       > .k2b-app-workspace__head-toggle {
       display: none;
@@ -4018,7 +4032,15 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head:not([data-row], [data-trail="up"]):has(
-        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
+      ),
+    :where(.k2b-ui[data-k2b-own-title], .k2b-ui [data-k2b-own-title])
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head.k2b-app-workspace__head:not([data-row]):has(
+        ~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *))
       ),
     .k2b-ui
       .k2b-app-workspace
@@ -4030,7 +4052,7 @@ html {
         .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
         :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
       )[data-trail="up"]:not([data-row]):where(
-        :has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle)
+        :has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__sidebar-toggle:where(:not(.k2b-app-workspace__content .k2b-app-workspace *)))
       ) {
       position: absolute;
       width: 1px;

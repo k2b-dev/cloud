@@ -199,7 +199,10 @@ the page's own toolbar (search, a view pill, "…"), put
 The button shows only while the sidebar is an overlay, so from 64 rem the row
 starts with search, as before. The head then gives up its own button, and a
 head without a head row, a waiting Details button, or a title to show takes
-no row. Its heading still names a page without its own `h1` for assistive
+no row; a page that shows its own `PageTitle` counts as having nothing to
+show there. Only the workspace's own content counts: inside a nested
+`AppWorkspace` the button stays hidden and that workspace's head keeps its
+own. Its heading still names a page without its own `h1` for assistive
 technology. The shared controller opens and closes the overlay and keeps
 `aria-expanded` current. On the phone the button stays hidden; the host's
 menu opens the navigation there. Set `size` to match the row's other icon

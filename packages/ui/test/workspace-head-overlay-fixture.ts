@@ -23,6 +23,10 @@ export type HeadOverlayOptions = {
   headRow?: boolean;
   /** Main renders its own `h1`. */
   mainHeading?: boolean;
+  /** Main's minimum width in px; a wide one leaves the sidebar no room from 64 rem. */
+  mainMin?: number;
+  /** The reader holds a nested workspace whose toolbar has its own `SidebarToggle`. */
+  nested?: boolean;
 };
 
 /**
@@ -119,6 +123,7 @@ export function headOverlayTree(
             get children() {
               return createComponent(AppWorkspace.Main, {
                 scroll: false,
+                minWidth: options.mainMin,
                 get children() {
                   return [
                     createComponent(AppWorkspace.MainPane, {
@@ -137,6 +142,34 @@ export function headOverlayTree(
                       id: "reader",
                       label: "Conversation",
                       get children() {
+                        if (options.nested)
+                          return createComponent(AppWorkspace, {
+                            get children() {
+                              return [
+                                createComponent(AppWorkspace.Sidebar, {
+                                  id: "attachments",
+                                  label: "Attachments",
+                                  get children() {
+                                    return createComponent(AppWorkspace.SidebarItem, { href: "#offer", children: "Offer.pdf" });
+                                  },
+                                }),
+                                createComponent(AppWorkspace.Content, {
+                                  get children() {
+                                    return createComponent(AppWorkspace.Main, {
+                                      get children() {
+                                        return el("div", {
+                                          "data-nested-toolbar": "",
+                                          get children() {
+                                            return createComponent(AppWorkspace.SidebarToggle, { size: "sm" });
+                                          },
+                                        });
+                                      },
+                                    });
+                                  },
+                                }),
+                              ];
+                            },
+                          });
                         return el("p", {
                           style: "padding:16px;font:14px/1.5 system-ui",
                           children: "Kirsten Sanmann asked about the delivery date.",

@@ -208,6 +208,46 @@ test("on a phone the toolbar button stays hidden and a deeper page keeps its tit
   }
 });
 
+test("a page with its own title and a toolbar button leaves no empty head row", async () => {
+  const page = await load({ up: true, marked: false, toolbarToggle: true }, TABLET);
+  try {
+    await page.evaluate(() => document.body.setAttribute("data-k2b-own-title", ""));
+    await settled(page);
+    expect(await headHeight(page)).toBeLessThanOrEqual(1);
+    expect(await shown(page, ".k2b-app-workspace__sidebar-toggle")).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a nested workspace's toolbar button leaves the outer head its own", async () => {
+  const page = await load({ marked: true, nested: true }, TABLET);
+  try {
+    const outerHead = page.locator(".k2b-app-workspace__head").first();
+    expect(await outerHead.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
+    expect(await outerHead.evaluate((head) => head.getBoundingClientRect().height)).toBeGreaterThan(40);
+    expect(await shown(page, "[data-nested-toolbar] .k2b-app-workspace__sidebar-toggle")).toBe(false);
+  } finally {
+    await page.close();
+  }
+});
+
+test("from 64 rem, a sidebar without room becomes the overlay and keeps a way to open it", async () => {
+  for (const toolbarToggle of [false, true]) {
+    const page = await load({ up: true, marked: true, toolbarToggle, mainMin: 1000 }, 1100);
+    try {
+      expect(await page.locator(".k2b-app-workspace__sidebar").evaluate((sidebar) => getComputedStyle(sidebar).position)).toBe("absolute");
+      expect(await shown(page, ".k2b-app-workspace__head .k2b-page-title")).toBe(false);
+      expect(await shown(page, ".k2b-app-workspace__head-toggle")).toBe(!toolbarToggle);
+      expect(await shown(page, ".k2b-app-workspace__sidebar-toggle")).toBe(toolbarToggle);
+      if (toolbarToggle) expect(await headHeight(page)).toBeLessThanOrEqual(1);
+      else expect(await headHeight(page)).toBeGreaterThan(40);
+    } finally {
+      await page.close();
+    }
+  }
+});
+
 for (const width of [PHONE, TABLET, DESKTOP]) {
   test(`server and mounted frames agree at ${width}px`, async () => {
     for (const options of [
