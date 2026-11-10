@@ -5,7 +5,7 @@ section: Platform services
 order: 559
 description: Find addresses, places, and routes through Core with shared budgets, caching, and attribution.
 tags: [geo, addresses, places, capabilities, maps]
-updated: 2026-10-22
+updated: 2026-11-10
 ---
 
 # Places and maps
@@ -510,6 +510,10 @@ Assistant's native places and route maps use these same permission-aware
 Queries, `CloudMap`, `MapTile`, and `MapDialog`. The conversation owns saved
 map state and proposals; Core remains stateless for routes. Follow-ups update
 the first map. The chat map does not write to Notebooks.
+Callers may add per-place or per-stop notes, source labels with generic symbols,
+and links, which the map dialog shows with the selected place or stop; external
+HTTP(S) links require an already-read source, while root-relative Cloud paths
+need no fetch.
 See [Explore places and routes](/en/docs/ai/chat-interface#explore-places-and-routes)
 for selection, editing, recovery, and persistence behavior.
 ## Suggest addresses in forms

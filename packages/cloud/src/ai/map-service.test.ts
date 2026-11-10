@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mapAddress, mapAvailability, mapFixture, mapGeoFixture, mapPlaces, mapSuccess, mapTime } from "./map.test-fixture";
-import { AiMapSchema, AiMapToolInputSchema, aiMapToolResult } from "./map-contracts";
+import { AI_MAP_MAX_DETAILS, AiMapSchema, AiMapToolInputSchema, aiMapToolResult } from "./map-contracts";
 import { applyAiMap, createAiMap } from "./map-service";
 
 const context = () => {
@@ -8,6 +8,318 @@ const context = () => {
   return { ...f, ctx: { geo: f.geo, caller: {}, now: () => new Date(mapTime), verifyWeb: async () => true } };
 };
 describe("native Assistant map transitions", () => {
+  test("details replace each ID, keep the latest duplicate and leave web and input untouched", async () => {
+    const f = context();
+    const original = mapFixture();
+    original.details = [
+      { id: "museum-0", note: "Old", source: { label: "Old source" } },
+      { id: "museum-1", note: "Keep" },
+    ];
+    const details = [
+      { id: "museum-0", note: "First" },
+      { id: "museum-0", note: "Newest" },
+    ];
+    const next = await applyAiMap({ map: original }, { type: "describe", details }, f.ctx);
+    expect(next.map.details).toEqual([
+      { id: "museum-1", note: "Keep" },
+      { id: "museum-0", note: "Newest" },
+    ]);
+    expect(next.map.web).toEqual(original.web);
+    expect(original.details[0]?.note).toBe("Old");
+    expect(details[0]?.note).toBe("First");
+    expect(f.calls).toEqual([]);
+    const both = await applyAiMap(
+      next,
+      {
+        type: "describe",
+        web: [{ placeId: "museum-0", description: "Read", url: "https://source.example/" }],
+        details: [{ id: "museum-0", source: { label: "New source", icon: "file-text" } }],
+      },
+      f.ctx,
+    );
+    expect(both.map.web[0]?.description).toBe("Read");
+    expect(both.map.details?.at(-1)).toEqual({ id: "museum-0", source: { label: "New source", icon: "file-text" } });
+  });
+  test("details resolve exact places, numbered/lettered/picker marks and stable stop IDs", async () => {
+    const f = context();
+    const original = mapFixture();
+    original.groups[0]!.places[1]!.id = "1";
+    original.groups.push({ title: "Cafés", places: mapPlaces(2, "cafe") });
+    original.picker = mapPlaces(2, "pick");
+    original.route = mapFixture("route").route;
+    const details = ["1", "A", "pick-1", "stop-1"].map((id) => ({ id, note: id }));
+    const next = await applyAiMap({ map: original }, { type: "describe", details }, { ...f.ctx, placeReferences: "marks" });
+    expect(next.map.details?.map((item) => item.id)).toEqual(["museum-0", "cafe-0", "pick-0", "stop-1"]);
+    expect(details.map((item) => item.id)).toEqual(["1", "A", "pick-1", "stop-1"]);
+    const exact = await applyAiMap(next, { type: "describe", details: [{ id: "1", note: "Exact" }] }, f.ctx);
+    expect(exact.map.details?.at(-1)?.id).toBe("1");
+    await expect(applyAiMap(next, { type: "describe", details: [{ id: "missing" }] }, f.ctx)).rejects.toThrow("MAP_PLACE_NOT_FOUND");
+    await expect(
+      applyAiMap(next, { type: "describe", details: [{ id: "museum-0" }] }, { ...f.ctx, placeReferences: "marks" }),
+    ).rejects.toThrow("MAP_PLACE_NOT_FOUND");
+  });
+  test("the detail bound covers every place, picked result and stop at once, so live details are never evicted", async () => {
+    const f = context();
+    const map = mapFixture();
+    map.groups = [
+      { title: "First", places: mapPlaces(20) },
+      { title: "Second", places: mapPlaces(20, "cafe") },
+    ];
+    const route = mapFixture("route").route!;
+    route.stops = Array.from({ length: 26 }, (_, i) => ({ ...route.stops[i % 4]!, id: `stop-${i}` }));
+    route.legs = route.stops.slice(1).map((stop, i) => ({ ...route.legs[i % 3]!, fromStopId: route.stops[i]!.id, toStopId: stop.id }));
+    map.route = route;
+    map.picker = mapPlaces(5, "picker");
+    // A stale entry from an earlier search must not take a live entry's room.
+    map.details = [
+      { id: "gone-0", note: "Stale" },
+      ...[...map.groups.flatMap((g) => g.places), ...route.stops].map(({ id }) => ({ id, note: "Old" })),
+    ];
+    const next = await applyAiMap(
+      { map },
+      { type: "describe", details: [{ id: "museum-0", note: "Newest" }, ...map.picker.map(({ id }) => ({ id }))] },
+      f.ctx,
+    );
+    expect(AI_MAP_MAX_DETAILS).toBe(71);
+    expect(next.map.details).toHaveLength(AI_MAP_MAX_DETAILS);
+    expect(next.map.details?.some((item) => item.id === "gone-0")).toBe(false);
+    expect(next.map.details?.find((item) => item.id === "museum-1")).toEqual({ id: "museum-1", note: "Old" });
+    expect(next.map.details?.slice(-6)).toEqual([{ id: "museum-0", note: "Newest" }, ...map.picker.map(({ id }) => ({ id }))]);
+  });
+  test("a new route replaces stop details even where it reuses a stop id; a changed address drops its stop's details", async () => {
+    const f = context();
+    f.geo.calculateRoute = async () => ({
+      ok: false,
+      error: { code: "GEO_ADDRESS_AMBIGUOUS", status: 409, message: "Choose", details: { stopId: "b", candidates: [mapAddress()] } },
+    });
+    const route = (b: string) => ({
+      type: "route" as const,
+      title: "Tour",
+      stops: [
+        { id: "a", address: "Ulm" },
+        { id: "b", address: b },
+      ],
+    });
+    const first = await applyAiMap({ map: mapFixture() }, { ...route("Blaubeuren"), details: [{ id: "b", note: "Main entrance" }] }, f.ctx);
+    expect(first.map.details).toEqual([{ id: "b", note: "Main entrance" }]);
+    const replaced = await applyAiMap(first, route("München"), f.ctx);
+    expect(replaced.map.details ?? []).toEqual([]);
+    const described = await applyAiMap(replaced, { type: "describe", details: [{ id: "a", note: "Start" }] }, f.ctx);
+    const repaired = await applyAiMap(described, { type: "repair", stopId: "a", address: "Neu-Ulm" }, f.ctx);
+    expect(repaired.map.details ?? []).toEqual([]);
+  });
+  test("an id that names both a stop and a place mark is rejected instead of guessed", async () => {
+    const f = context();
+    const map = mapFixture();
+    map.route = mapFixture("route").route;
+    map.route!.stops[1] = { ...map.route!.stops[1]!, id: "1" };
+    await expect(
+      applyAiMap({ map }, { type: "describe", details: [{ id: "1", note: "Which?" }] }, { ...f.ctx, placeReferences: "marks" }),
+    ).rejects.toThrow("MAP_DETAIL_ID_AMBIGUOUS");
+  });
+  test("a new route with an unread link fails before the map is announced", async () => {
+    const f = context();
+    let prepared = 0;
+    await expect(
+      createAiMap(
+        {
+          conversationId: "c1",
+          command: {
+            type: "route",
+            title: "Tour",
+            stops: [
+              { id: "a", address: "Ulm" },
+              { id: "b", address: "Blaubeuren" },
+            ],
+            details: [{ id: "b", links: [{ label: "Order", url: "https://unread.example/order" }] }],
+          },
+        },
+        {
+          ...f.ctx,
+          verifyWeb: async () => false,
+          onPrepared: async () => {
+            prepared++;
+          },
+        },
+      ),
+    ).rejects.toThrow("MAP_WEB_SOURCE_NOT_READ");
+    expect(prepared).toBe(0);
+  });
+  test.each(["search", "places"] as const)("%s drops details for replaced groups while retaining live stops and places", async (type) => {
+    const f = context();
+    const map = mapFixture();
+    map.groups.push({ title: "Old", places: mapPlaces(2, "old") });
+    map.route = mapFixture("route").route;
+    map.details = [
+      { id: "museum-0", note: "Original" },
+      { id: "old-0", note: "Stale" },
+      { id: "stop-0", note: "Stop" },
+    ];
+    const next = await applyAiMap({ map }, { type, search: { title: "New", categories: ["cafe"], near: "Ulm" } }, f.ctx);
+    expect(next.map.details).toEqual([
+      ...(type === "search" ? [{ id: "museum-0", note: "Original" }] : []),
+      { id: "stop-0", note: "Stop" },
+    ]);
+  });
+  test("replacing a picker drops its details and discarding it retains group details", async () => {
+    const f = context();
+    const map = mapFixture("route");
+    map.groups = mapFixture().groups;
+    map.picker = mapPlaces(1, "old");
+    map.details = [{ id: "old-0" }, { id: "museum-0" }];
+    const next = await applyAiMap(
+      { map },
+      { type: "search", insert: true, search: { title: "Stops", categories: ["cafe"], near: "Ulm" } },
+      f.ctx,
+    );
+    expect(next.map.details).toEqual([{ id: "museum-0" }]);
+    const described = await applyAiMap(next, { type: "describe", details: [{ id: "cafe-0", note: "Candidate" }] }, f.ctx);
+    const discarded = await applyAiMap(described, { type: "discard" }, f.ctx);
+    expect(discarded.map.details).toEqual([{ id: "museum-0" }]);
+  });
+  test("route details survive unresolved plans and stale stops disappear on replacement", async () => {
+    const f = context();
+    f.geo.calculateRoute = async () => ({
+      ok: false,
+      error: { code: "GEO_ADDRESS_AMBIGUOUS", status: 409, message: "Choose", details: { stopId: "b", candidates: [mapAddress()] } },
+    });
+    const map = mapFixture();
+    map.plan = {
+      stops: [
+        { id: "old-a", address: { text: "Old start" } },
+        { id: "old-b", address: { text: "Old end" } },
+      ],
+    };
+    map.details = [
+      { id: "old-a", note: "Stale" },
+      { id: "museum-0", note: "Keep" },
+    ];
+    const command = {
+      type: "route" as const,
+      title: "Tour",
+      stops: [
+        { id: "a", address: "Ulm" },
+        { id: "b", address: "Blaubeuren" },
+      ],
+      details: [{ id: "b", note: "Meet here" }],
+    };
+    const next = await applyAiMap({ map }, command, f.ctx);
+    expect(next.map.issue?.code).toBe("GEO_ADDRESS_AMBIGUOUS");
+    expect(next.map.details).toEqual([
+      { id: "museum-0", note: "Keep" },
+      { id: "b", note: "Meet here" },
+    ]);
+    const described = await applyAiMap(next, { type: "describe", details: [{ id: "a", note: "Start" }] }, f.ctx);
+    expect(described.map.details?.at(-1)).toEqual({ id: "a", note: "Start" });
+    await expect(applyAiMap({ map }, { ...command, details: [{ id: "museum-0" }] }, f.ctx)).rejects.toThrow("MAP_STOP_NOT_FOUND");
+  });
+  test("route details attach to resolved stops and undo drops details of removed inserted stops", async () => {
+    const f = context();
+    const original = mapFixture();
+    const routed = await applyAiMap(
+      { map: original },
+      {
+        type: "route",
+        title: "Tour",
+        stops: mapFixture("route").route!.stops.map((stop) => ({ id: stop.id, address: stop.label! })),
+        details: [{ id: "stop-1", note: "Keep with stop" }],
+      },
+      f.ctx,
+    );
+    expect(routed.map.details).toEqual([{ id: "stop-1", note: "Keep with stop" }]);
+    routed.map.plan = { stops: routed.map.route!.stops };
+    const preview = await applyAiMap(routed, { type: "preview", change: { type: "insert", placeId: "museum-0" } }, f.ctx);
+    const accepted = await applyAiMap(preview, { type: "accept" }, f.ctx);
+    const insertedId = accepted.map.route!.stops[2]!.id;
+    const described = await applyAiMap(accepted, { type: "describe", details: [{ id: insertedId, note: "Inserted" }] }, f.ctx);
+    described.map.plan = { stops: described.map.route!.stops };
+    const undone = await applyAiMap(described, { type: "undo" }, f.ctx);
+    expect(undone.map.details).toEqual([{ id: "stop-1", note: "Keep with stop" }]);
+  });
+  test("route details reject unread external links before paid route calculation", async () => {
+    const f = context();
+    await expect(
+      applyAiMap(
+        { map: mapFixture() },
+        {
+          type: "route",
+          title: "Tour",
+          stops: [
+            { id: "a", address: "Ulm" },
+            { id: "b", address: "Blaubeuren" },
+          ],
+          details: [{ id: "b", links: [{ label: "Website", url: "https://unread.example/" }] }],
+        },
+        { ...f.ctx, verifyWeb: async () => false },
+      ),
+    ).rejects.toThrow("MAP_WEB_SOURCE_NOT_READ");
+    expect(f.calls).toEqual(["availability"]);
+  });
+  test("detail links verify every external URL but never fetch same-origin Cloud paths", async () => {
+    const f = context();
+    const verified: string[] = [];
+    const links = [
+      { label: "Open", url: "/app/example/items/1?tab=details#note" },
+      { label: "HTTPS", url: "https://source.example/" },
+      { label: "HTTP", url: "http://source.example/" },
+    ];
+    const next = await applyAiMap(
+      { map: mapFixture() },
+      { type: "describe", details: [{ id: "museum-0", links }] },
+      {
+        ...f.ctx,
+        verifyWeb: async (url) => {
+          verified.push(url);
+          return true;
+        },
+      },
+    );
+    expect(verified).toEqual(links.slice(1).map((link) => link.url));
+    expect(next.map.details?.[0]?.links).toEqual(links);
+    expect(f.calls).toEqual([]);
+    await expect(
+      applyAiMap(next, { type: "describe", details: [{ id: "museum-0", links: [links[1]!] }] }, { ...f.ctx, verifyWeb: async () => false }),
+    ).rejects.toThrow("MAP_WEB_SOURCE_NOT_READ");
+    const local = await applyAiMap(
+      next,
+      { type: "describe", details: [{ id: "museum-0", links: [links[0]!] }] },
+      {
+        ...f.ctx,
+        verifyWeb: async () => {
+          throw new Error("Must not fetch");
+        },
+      },
+    );
+    expect(local.map.details?.[0]?.links).toEqual([links[0]!]);
+  });
+  test.each([
+    "//outside.example/",
+    "/\\outside.example/",
+    "/\n/outside.example/",
+    "/\t/outside.example/",
+    "javascript:alert(1)",
+    "data:text/html,hi",
+    "mailto:test@example.com",
+    "relative/path",
+    "https:example.com",
+    "https://[",
+  ])("rejects unsupported detail link %s before verification", async (url) => {
+    const f = context();
+    const original = mapFixture();
+    await expect(
+      applyAiMap(
+        { map: original },
+        { type: "describe", details: [{ id: "museum-0", links: [{ label: "Open", url }] }] },
+        {
+          ...f.ctx,
+          verifyWeb: async () => {
+            throw new Error("Must not fetch");
+          },
+        },
+      ),
+    ).rejects.toThrow("MAP_DETAIL_LINK_INVALID");
+    expect(original.details).toBeUndefined();
+  });
   test("unconfigured snapshot never geocodes, searches or routes", async () => {
     const f = context();
     f.geo.availability = async () => mapSuccess({ ...mapAvailability, configured: false });

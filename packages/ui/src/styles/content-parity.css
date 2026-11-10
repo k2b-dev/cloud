@@ -7139,7 +7139,7 @@
 .k2b-ui .k2b-map-dialog__address > span { min-width: 0; overflow-wrap: anywhere; }
 .k2b-ui .k2b-map-dialog__hours { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
 .k2b-ui .k2b-map-dialog__hours > i { color: var(--k2b-text-muted); }
-.k2b-ui .k2b-map-dialog__note { margin: 0; font-size: 13.5px; color: var(--k2b-text-secondary); overflow-wrap: anywhere; }
+.k2b-ui .k2b-map-dialog__note { margin: 0; font-size: 13.5px; color: var(--k2b-text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
 .k2b-ui .k2b-map-dialog__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 8px; }
 .k2b-ui .k2b-map-dialog__hint { margin: 0; font-size: 12.5px; color: var(--k2b-text-muted); }
 .k2b-ui .k2b-map-dialog__provenance { flex: none; padding: 0 20px 12px; font-size: 12px; color: var(--k2b-text-muted); }

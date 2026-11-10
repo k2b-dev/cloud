@@ -59,6 +59,41 @@ const menu = async (page: Page, name: string) => {
 };
 const option = (page: Page, name: string | RegExp) => dialog(page).getByRole("option", { name });
 
+test.each([1440, 390])("a place's note, symbol and safe links show in the dialog, also after reload, at %i", async (width) => {
+  const { page, context } = await open(`places-details-${width}`, width);
+  const errors = pageErrors(page);
+  try {
+    await openDialog(page);
+    for (const reload of [false, true]) {
+      // The open map comes back with the reload.
+      if (reload) await page.reload();
+      const detail = dialog(page).locator(".k2b-map-dialog__detail");
+      await detail.getByText("Meet at the main entrance.").waitFor();
+      expect(await detail.innerText()).toContain("Visit notes");
+      expect(await detail.locator(".ti-notebook").count()).toBe(1);
+      const local = detail.getByRole("link", { name: "Open in Cloud" });
+      expect(new URL((await local.getAttribute("href"))!).pathname).toBe("/app/example/items/1");
+      expect(await local.getAttribute("target")).toBeNull();
+      const external = detail.getByRole("link", { name: "Read website" });
+      expect(await external.getAttribute("target")).toBe("_blank");
+      expect(await external.getAttribute("rel")).toBe("noopener noreferrer");
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+test("a route stop shows its note with the stop's details", async () => {
+  const { page, context } = await open("route-details");
+  try {
+    await openDialog(page);
+    await dialog(page).locator('.k2b-map-dialog__place[data-place-id="stop-1"]').click();
+    expect(await dialog(page).locator(".k2b-map-dialog__detail").innerText()).toContain("Meet at the main entrance.");
+  } finally {
+    await context.close();
+  }
+});
+
 test("places open from a still tile; keyboard, list and map share the selection; unknown hours", async () => {
   fixture.get("places-keyboard").map.groups[0]!.places[5]!.website = "https://[";
   const { page, context } = await open("places-keyboard");

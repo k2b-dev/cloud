@@ -7,7 +7,15 @@ import type { GeoCategorySchema, GeoPlace, GeoPoint } from "../../contracts/geo"
 import type { GeoRouteOptions } from "../../contracts/geo-route";
 import { AddressAutocomplete } from "../../geo/AddressAutocomplete";
 import { CloudMap } from "../../geo/CloudMap";
-import { type AiMap, type AiMapCommand, AiMapReferenceSchema, AiMapSchema, AiMapToolResultSchema, aiMapWebsite } from "../map-contracts";
+import {
+  type AiMap,
+  type AiMapCommand,
+  AiMapReferenceSchema,
+  AiMapSchema,
+  AiMapToolResultSchema,
+  aiMapDetailLink,
+  aiMapWebsite,
+} from "../map-contracts";
 import { mapOpeningHours } from "../map-opening-hours";
 import type { AiTurnBlock } from "../protocol";
 import { mapMessages } from "./map-messages";
@@ -337,9 +345,22 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
   const changedRoute = () => map().preview?.result.route ?? map().route;
   const legOptions = (options: GeoRouteOptions) =>
     `${options.mode ? t()[options.mode] : ""}${options.avoid?.length ? ` · ${t().without} ${options.avoid.map((a) => t()[a]).join(", ")}` : ""}`;
+  /** The caller's note, source and links for a place or stop; the map only shows them. */
+  const details = (id: string) => {
+    const detail = map().details?.find((item) => item.id === id);
+    return {
+      note: detail?.note,
+      source: detail?.source ? { label: detail.source.label, icon: detail.source.icon ? `ti ti-${detail.source.icon}` : undefined } : undefined,
+      links: (detail?.links ?? []).flatMap((link) => {
+        const href = aiMapDetailLink(link.url);
+        return href ? [{ label: link.label, href }] : [];
+      }),
+    };
+  };
   const placeEntry = (place: GeoPlace, mark: string | number, second: boolean, group?: string): MapPlace => {
     const website = aiMapWebsite(place.website);
     const description = web(place.id);
+    const own = details(place.id);
     return {
       id: place.id,
       name: place.name,
@@ -357,9 +378,10 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
       trailingDetail: place.distanceToRouteMeters !== undefined ? `${t().corridor} ${km(place.distanceToRouteMeters)}` : undefined,
       address: place.address.formatted,
       hours: hours(place),
-      note: description?.description,
-      source: { icon: "ti ti-world", label: `${t().source}: ${place.provenance.attribution.text}` },
+      note: [own.note, description?.description].filter(Boolean).join("\n\n") || undefined,
+      source: own.source ?? { icon: "ti ti-world", label: `${t().source}: ${place.provenance.attribution.text}` },
       links: [
+        ...own.links,
         ...(website ? [{ label: new URL(website).hostname, href: website, icon: "ti ti-world" }] : []),
         ...(description ? [{ label: `${t().description}: ${new URL(description.url).hostname}`, href: description.url }] : []),
       ],
@@ -403,7 +425,15 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
       const point = "point" in stop ? stop.point : undefined;
       const known = "address" in stop ? stop.address : undefined;
       const address = known ? ("formatted" in known ? known.formatted : known.text) : undefined;
-      return { id: stop.id, name: stop.label ?? address ?? stop.id, point, mark: letter(i), address, ...legFacts(stop.id, i === 0) };
+      return {
+        id: stop.id,
+        name: stop.label ?? address ?? stop.id,
+        point,
+        mark: letter(i),
+        address,
+        ...legFacts(stop.id, i === 0),
+        ...details(stop.id),
+      };
     });
     const preview = map().preview;
     if (preview?.changes.type === "insert") {
