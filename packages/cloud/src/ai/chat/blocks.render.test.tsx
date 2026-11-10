@@ -1824,18 +1824,33 @@ describe("turn places in the reader's language", () => {
   });
 });
 
-describe("Studio check steps", () => {
+describe("Code check steps", () => {
   const check = (id: string, result: unknown, isError = false): AiTurnBlock => ({
     id,
     kind: "tool",
     callId: id,
     name: "code_check",
-    args: { id: "app-1" },
+    args: { codeId: "c_1234" },
     status: "completed",
     result,
     isError,
   });
-  const issue = (severity: "error" | "warning") => ({ severity, kind: "layout", message: "Row is misaligned" });
+  /** Core's check result: the checker's result with no manifest while it has diagnostics. */
+  const checked = (diagnostics: number) => ({
+    version: 1,
+    result: {
+      ok: diagnostics === 0,
+      diagnostics: Array.from({ length: diagnostics }, (_, index) => ({
+        code: "TS2339",
+        message: "Property does not exist.",
+        file: "code.ts",
+        line: index + 1,
+        column: 1,
+      })),
+    },
+    manifest: null,
+    permissions: [],
+  });
   const viewed = (path: string, mediaType = "image/png", status: "completed" | "failed" = "completed"): AiTurnBlock => ({
     id: `view-${path}`,
     kind: "tool",
@@ -1920,36 +1935,30 @@ describe("Studio check steps", () => {
   });
 
   test("names the outcome of a check in words and with its own icon", () => {
-    const blocks = [
-      check("check-failed", { passed: false, issues: [issue("error"), issue("error"), issue("error"), issue("warning")] }),
-      check("check-passed", { passed: true, issues: [issue("warning"), issue("warning")] }),
-      check("check-clean", { passed: true, issues: [] }),
-      { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
-    ];
+    const blocks = [check("check-failed", checked(3)), check("check-passed", checked(0)), { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
-    expect(english).toContain("App check");
-    expect(english).toContain("3 findings · 1 warning");
-    expect(english).toContain("passed · 2 warnings");
-    expect(english).toContain("<strong>App check</strong><small>passed</small>");
+    expect(english).toContain("3 findings");
+    expect(english).toContain("<strong>Checks the Code</strong><small>passed</small>");
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');
 
     const german = renderExpanded(blocks, { locale: "de", open: ["group:check-failed"] });
-    expect(german).toContain("App-Prüfung");
-    expect(german).toContain("3 Befunde · 1 Warnung");
-    expect(german).toContain("bestanden · 2 Warnungen");
-    expect(german).not.toMatch(/App check|findings|passed/);
+    expect(german).toContain("Prüft den Code");
+    expect(german).toContain("3 Befunde");
+    expect(german).toContain("bestanden");
+    expect(german).not.toMatch(/Checks the Code|findings|passed/);
 
-    // A check that did not pass without a counted finding still says so; a check that failed to run is a failed step.
-    expect(renderExpanded([check("check-steps", { passed: false, issues: [] })])).toContain("not passed");
-    const broken = renderExpanded([check("check-broken", { failed: true, error: "Host unavailable" }, true)]);
+    // A check that could not run answers with Core's error and is a failed step, not a passed or failed check.
+    const broken = renderExpanded([
+      check("check-broken", { version: 1, error: { code: "BAD_INPUT", message: "Code request exceeds the checker budget.", details: null } }),
+    ]);
     expect(broken).toContain("failed");
     expect(broken).not.toMatch(/passed|findings/);
   });
 
-  test("names every Studio step in the reader's language", () => {
-    const blocks: AiTurnBlock[] = ["code_write", "code_import", "code_check", "code_present"].map((name) => ({
+  test("names every Code step by what happens in the reader's language", () => {
+    const blocks: AiTurnBlock[] = ["code_init", "code_sdk", "code_write", "code_test", "code_check"].map((name) => ({
       id: `tool-${name}`,
       kind: "tool",
       callId: name,
@@ -1958,10 +1967,30 @@ describe("Studio check steps", () => {
       status: "completed",
       result: {},
     }));
-    const german = renderExpanded([...blocks, viewed("/checks/abc/desktop.png")], { locale: "de", open: ["group:tool-code_write"] });
-    for (const label of ["App-Datei speichern", "App-Dateien importieren", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"])
+    const submit: AiTurnBlock = {
+      id: "tool-submit",
+      kind: "tool",
+      callId: "submit",
+      name: "code_submit",
+      args: { codeId: "c_1234" },
+      status: "completed",
+      result: { version: 1, submission: { version: { id: "v-3", number: 3 } } },
+    };
+    const german = renderExpanded([...blocks, submit, viewed("/checks/abc/desktop.png")], {
+      locale: "de",
+      open: ["group:tool-code_init"],
+    });
+    for (const label of [
+      "Legt neuen Code an",
+      "Schlägt nach, was Apps anbieten",
+      "Bearbeitet eine Code-Datei",
+      "Testet mit erfundenen Daten",
+      "Prüft den Code",
+      "Reicht Version 3 ein",
+      "Bild ansehen",
+    ])
       expect(german).toContain(label);
-    expect(german).not.toMatch(/Code write|Code check|Code present|View image/);
+    expect(german).not.toMatch(/Code init|Code sdk|Code write|Code submit|App-Prüfung|View image/);
   });
 
   test("names built-in tools a tool search found in the reader's language and keeps capability titles", () => {
@@ -1987,7 +2016,7 @@ describe("Studio check steps", () => {
         },
       }),
     );
-    expect(german).toContain("App-Prüfung");
+    expect(german).toContain("Prüft den Code");
     expect(german).toContain("Kontakte suchen");
     expect(german).not.toContain("Code Check");
   });

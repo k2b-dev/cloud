@@ -457,14 +457,11 @@ for (const view of [
         await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
-        const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { id: "budget" } };
-        const issues = [
-          { severity: "error", kind: "layout", message: "Row is misaligned" },
-          { severity: "warning", kind: "layout", message: "Value is cut off" },
-        ];
+        const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+        const diagnostics = [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 1 }];
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "block_set", block: { ...check, status: "running" } });
-        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft die App" : "Checking the app");
+        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft den Code" : "Checking the Code");
         await page.locator(".ai-turn-work > summary").click();
         await frames(page);
         // Without its shimmer, a busy label keeps a visible text colour, in the work line and in the steps below it.
@@ -480,13 +477,13 @@ for (const view of [
           ...base,
           seq: 3,
           type: "block_set",
-          block: { ...check, status: "completed", result: { passed: false, issues } },
+          block: { ...check, status: "completed", result: { version: 1, result: { ok: false, diagnostics }, manifest: null, permissions: [] } },
         });
         const checked = await layout(page);
         expect(checked.nodes.map(({ box }) => box)).toEqual(before.nodes.map(({ box }) => box));
         const row = page.locator(".ai-turn-steps .k2b-chat-activity").first();
-        expect(await row.innerText()).toContain(de ? "App-Prüfung" : "App check");
-        expect(await row.innerText()).toContain(de ? "1 Befund · 1 Warnung" : "1 finding · 1 warning");
+        expect(await row.innerText()).toContain(de ? "Prüft den Code" : "Checks the Code");
+        expect(await row.innerText()).toContain(de ? "1 Befund" : "1 finding");
         expect(await row.locator(".ti-alert-triangle").count()).toBe(1);
         expect(checked.overflowX).toBeLessThanOrEqual(0);
 

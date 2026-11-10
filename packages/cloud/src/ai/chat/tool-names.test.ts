@@ -65,12 +65,13 @@ test("shows built-in tools by their localized name and other tools by their name
   // Old transcripts retain their labels even though Studio actions are no longer offered.
   expect(displayToolName("code_action", "en")).toBe("Run app action");
   expect(displayToolName("code_action", "de")).toBe("App-Aktion ausführen");
-  expect(displayToolName("code_write", "en")).toBe("Save app file");
-  expect(displayToolName("code_write", "de")).toBe("App-Datei speichern");
+  // Lasting Code took over code_write and code_check; their names say what happens.
+  expect(displayToolName("code_write", "en")).toBe("Edits a Code file");
+  expect(displayToolName("code_write", "de")).toBe("Bearbeitet eine Code-Datei");
   expect(displayToolName("code_import", "en")).toBe("Import app files");
   expect(displayToolName("code_import", "de")).toBe("App-Dateien importieren");
-  expect(displayToolName("code_check", "en")).toBe("App check");
-  expect(displayToolName("code_check", "de")).toBe("App-Prüfung");
+  expect(displayToolName("code_check", "en")).toBe("Checks the Code");
+  expect(displayToolName("code_check", "de")).toBe("Prüft den Code");
   expect(displayToolName("view_image", "de-AT")).toBe("Bild ansehen");
   expect(displayToolName("suggest_next_message", "en")).toBe("Suggest next message");
   expect(displayToolName("suggest_next_message", "de")).toBe("Nächste Nachricht vorschlagen");

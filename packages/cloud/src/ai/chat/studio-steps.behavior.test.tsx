@@ -64,33 +64,34 @@ const mount = async (blocks: () => AiTurnBlock[], options: { locale?: string; op
 if (isServer) test.skip("requires browser conditions and DOM transform", () => {});
 else {
   test("a check's outcome replaces its running state in the same row, in words and with its own icon", async () => {
-    const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { id: "budget" } };
+    const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+    const diagnostic = (line: number) => ({ code: "TS2339", message: "Property does not exist.", file: "code.ts", line, column: 1 });
     const [blocks, setBlocks] = createSignal<AiTurnBlock[]>([{ ...check, status: "running" }]);
     const view = await mount(blocks, { locale: "de" });
     try {
       const row = view.work.querySelector(".ai-turn-steps details")!;
-      expect(row.querySelector("strong")!.textContent).toBe("App-Prüfung");
+      expect(row.querySelector("strong")!.textContent).toBe("Prüft den Code");
       expect(row.querySelector("small")).toBeNull();
 
       setBlocks([
         {
           ...check,
           status: "completed",
-          result: {
-            passed: false,
-            issues: [
-              { severity: "error", kind: "layout", message: "Row is misaligned" },
-              { severity: "error", kind: "contrast", message: "Low contrast" },
-              { severity: "warning", kind: "layout", message: "Value is cut off" },
-            ],
-          },
+          result: { version: 1, result: { ok: false, diagnostics: [diagnostic(3), diagnostic(9)] }, manifest: null, permissions: [] },
         },
       ]);
       expect(view.work.querySelector(".ai-turn-steps details")).toBe(row);
-      expect(row.querySelector("small")!.textContent).toBe("2 Befunde · 1 Warnung");
+      expect(row.querySelector("small")!.textContent).toBe("2 Befunde");
       expect(row.querySelector(".ti-alert-triangle")).not.toBeNull();
 
-      setBlocks([{ ...check, callId: "check", status: "completed", result: { passed: true, issues: [] } }]);
+      setBlocks([
+        {
+          ...check,
+          callId: "check",
+          status: "completed",
+          result: { version: 1, result: { ok: true, diagnostics: [] }, manifest: null, permissions: [] },
+        },
+      ]);
       expect(row.querySelector("small")!.textContent).toBe("bestanden");
       expect(row.querySelector(".ti-circle-check")).not.toBeNull();
       expect(row.querySelector(".ti-alert-triangle")).toBeNull();
