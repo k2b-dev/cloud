@@ -3,6 +3,61 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.72.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.71.0...cloud-v0.72.0) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** `PdfPreview`, `PdfPreviewProps`, and `PdfPreviewRequest` are removed from `@k2b/ui`. Migrate to `PdfViewer`: keep `request`, `autoLoad`, and `emptyText`; pass `title`; rename `buttonLabel` to `loadLabel`; pass `disabled` as a boolean; replace `openHref` with `open` (`true` or the address); drop `children`, `renderError`, `openButtonLabel`, and `onDownload` and place the viewer in your own container.
+
+### Features
+
+* **cloud:** apps store files in additional buckets the admin connects ([#3126](https://github.com/k2b-dev/cloud/issues/3126)) ([cec2624](https://github.com/k2b-dev/cloud/commit/cec2624f4185823e59648ce1dcf7dbc56b285bea))
+* **cloud:** the app bar editor saves each change in one ordered list ([#3073](https://github.com/k2b-dev/cloud/issues/3073)) ([487da82](https://github.com/k2b-dev/cloud/commit/487da823121c68c27e6bf1bf94d0b00f45938d85))
+* **cloud:** the app bar shows names beside icons on wide screens ([#3061](https://github.com/k2b-dev/cloud/issues/3061)) ([24f518d](https://github.com/k2b-dev/cloud/commit/24f518d1c21183416bd572f167f9ef8d7b9ea9e9))
+* **filesv2:** Activity becomes the place for your recent files, with a calmer start page ([#2939](https://github.com/k2b-dev/cloud/issues/2939)) ([8bb2389](https://github.com/k2b-dev/cloud/commit/8bb2389b3707bdf800eae7c2aa3579000c3750bf))
+* **filesv2:** uploads sit as a socket at the toast rail's edge ([#2982](https://github.com/k2b-dev/cloud/issues/2982)) ([7a6e871](https://github.com/k2b-dev/cloud/commit/7a6e8719ff26599663f1491c20faba94c00e2fad))
+* **mail:** drafts keep working offline and lock only when someone else is writing ([#3101](https://github.com/k2b-dev/cloud/issues/3101)) ([7859e28](https://github.com/k2b-dev/cloud/commit/7859e283e2596d3643a5a24a117e272db9a5202b))
+* **mail:** drafts stay visible in conversations and the list, Gustav suggestions open in plum, and new messages start in the flow ([#3004](https://github.com/k2b-dev/cloud/issues/3004)) ([f3d4c0d](https://github.com/k2b-dev/cloud/commit/f3d4c0d1058894898366a1d55a0a10285189ec24))
+* **mail:** Gustav suggestions are real drafts that Gustav never replaces once a person took them over ([#3003](https://github.com/k2b-dev/cloud/issues/3003)) ([5d24bec](https://github.com/k2b-dev/cloud/commit/5d24bec43926bb13521eb47f9018ca0d4796018e))
+* **mail:** replies grow from the pill into a draft inside the conversation ([#2998](https://github.com/k2b-dev/cloud/issues/2998)) ([c98c2b5](https://github.com/k2b-dev/cloud/commit/c98c2b54c8b9d999136e82fc3b8e3f7be170d618))
+* **mail:** shared drafts keep every edit until a snapshot covers it ([#3008](https://github.com/k2b-dev/cloud/issues/3008)) ([a26d37a](https://github.com/k2b-dev/cloud/commit/a26d37aa3afd1eb893fabc1f1204c47dae10a8d3))
+* **mail:** the composer never sends to fewer people than typed and stays calm while it works ([#3084](https://github.com/k2b-dev/cloud/issues/3084)) ([3f90cda](https://github.com/k2b-dev/cloud/commit/3f90cdaf11b479024944acff2e8844eb239d09b5))
+* **pulse:** dashboards draw every chart kind from SQL results ([#3019](https://github.com/k2b-dev/cloud/issues/3019)) ([1dc07c0](https://github.com/k2b-dev/cloud/commit/1dc07c06dcb443a349bb49a1219a302ab821613c))
+* **ui:** a finished success can draw its check ([#3134](https://github.com/k2b-dev/cloud/issues/3134)) ([4d363f3](https://github.com/k2b-dev/cloud/commit/4d363f395cf20eec8ebd17f2945a5bb3995b71f5))
+* **ui:** a stopped editor shows one red toolbar pill with its way out ([#3046](https://github.com/k2b-dev/cloud/issues/3046)) ([e16c670](https://github.com/k2b-dev/cloud/commit/e16c67081e7b887a779a9470a00275623eac353a))
+* **ui:** balance flows carry each month's closing into the next ([#2824](https://github.com/k2b-dev/cloud/issues/2824)) ([3b4452e](https://github.com/k2b-dev/cloud/commit/3b4452e2551f40a8ea1705e76838cbde446c5b14))
+* **ui:** bottom sheets follow the finger and move by transform only ([#2981](https://github.com/k2b-dev/cloud/issues/2981)) ([6265239](https://github.com/k2b-dev/cloud/commit/626523920d32bad6877e644429ef175ec3b976cb))
+* **ui:** detail panels start with the name and separate topics with a hairline ([#3116](https://github.com/k2b-dev/cloud/issues/3116)) ([a9ad7d0](https://github.com/k2b-dev/cloud/commit/a9ad7d099dc2a16527b2f9b330805e3dd1f72740))
+* **ui:** notice cards carry an icon and a call to action ([#3115](https://github.com/k2b-dev/cloud/issues/3115)) ([d3c60bd](https://github.com/k2b-dev/cloud/commit/d3c60bde3dfeafa249785019b733ab95f39652b3))
+* **ui:** one PdfViewer shows every PDF on a rounded grey ground, and the file detail shows its whole first page ([#3117](https://github.com/k2b-dev/cloud/issues/3117)) ([b15842b](https://github.com/k2b-dev/cloud/commit/b15842b2bd39f1104ebe1e74f7db8520f27e2284))
+* **ui:** settings and admin pages stay flat; only charts, dashboard frames, and key figures lift ([#3034](https://github.com/k2b-dev/cloud/issues/3034)) ([dfa954d](https://github.com/k2b-dev/cloud/commit/dfa954d8ae2d7c81f1537a7d132a6d133e09b6f0))
+* **ui:** the workspace head shows no separate title row while the sidebar is an overlay ([#3119](https://github.com/k2b-dev/cloud/issues/3119)) ([b1600b7](https://github.com/k2b-dev/cloud/commit/b1600b7be9e5109f951e511bd4b64cea1615faa8))
+* **ui:** toasts stack with icon tiles, a round close button, and more variants ([#2979](https://github.com/k2b-dev/cloud/issues/2979)) ([621c21b](https://github.com/k2b-dev/cloud/commit/621c21b4a8684324ff156203e194e45a9015a263))
+* **ui:** virtual lists can start at the top with sticky group heads ([#3120](https://github.com/k2b-dev/cloud/issues/3120)) ([dc1a72f](https://github.com/k2b-dev/cloud/commit/dc1a72fe47746b8b7011b81936c82e8a04eca981))
+
+
+### Bug Fixes
+
+* **ai:** reasoning models use their reported output limit when no context window is known ([#3107](https://github.com/k2b-dev/cloud/issues/3107)) ([ede53d5](https://github.com/k2b-dev/cloud/commit/ede53d55821f66904e8a228aacceb457fc9dc228))
+* **cloud:** pinned items open the app launcher as ordinary first tiles ([#3059](https://github.com/k2b-dev/cloud/issues/3059)) ([ef23139](https://github.com/k2b-dev/cloud/commit/ef231399dc8aced6e0d13c70c514dbc47ad726aa))
+* **cloud:** shared editing reconnects when the server is busy instead of stopping with "Connection closed" ([#3044](https://github.com/k2b-dev/cloud/issues/3044)) ([ea9192d](https://github.com/k2b-dev/cloud/commit/ea9192d14ee33d2f2b36c30aa9e774bd4ded521e))
+* **docs:** chart overview geometry tests stay inside the WebKit budget ([#3129](https://github.com/k2b-dev/cloud/issues/3129)) ([146ac71](https://github.com/k2b-dev/cloud/commit/146ac714094ed67f0bd82cbeedb15648e7950da3)), closes [#3021](https://github.com/k2b-dev/cloud/issues/3021)
+* **docs:** the charts overview tests find their chart with native :has ([#3022](https://github.com/k2b-dev/cloud/issues/3022)) ([57f8f2e](https://github.com/k2b-dev/cloud/commit/57f8f2ee9b6056bcea613078c9cbbcc14158c9bc))
+* **editor:** Markdown source, the bubble menu and the shared caret follow focus ([#3086](https://github.com/k2b-dev/cloud/issues/3086)) ([a9b3b65](https://github.com/k2b-dev/cloud/commit/a9b3b656c5754b19da2828de33b1b0fac592414d))
+* **editor:** preserve pasted content and speed up long notes ([#3088](https://github.com/k2b-dev/cloud/issues/3088)) ([4a5b296](https://github.com/k2b-dev/cloud/commit/4a5b2968808ae8aaf94aa6d3b2602b840616e418)), closes [#3077](https://github.com/k2b-dev/cloud/issues/3077) [#3078](https://github.com/k2b-dev/cloud/issues/3078) [#3079](https://github.com/k2b-dev/cloud/issues/3079)
+* **mail:** drafts retain every edit through closing and reconnects ([#3081](https://github.com/k2b-dev/cloud/issues/3081)) ([70d4c4f](https://github.com/k2b-dev/cloud/commit/70d4c4f05ddc8215e784ab9245743d5352704cf5))
+* **mail:** each automated author keeps its own draft suggestion ([#3056](https://github.com/k2b-dev/cloud/issues/3056)) ([3050e62](https://github.com/k2b-dev/cloud/commit/3050e62366d15abe4bee3eae5f328e4ec3209a14))
+* **mail:** stopping a document socket always rolls back its database transaction ([#3040](https://github.com/k2b-dev/cloud/issues/3040)) ([634bf9a](https://github.com/k2b-dev/cloud/commit/634bf9a62ef992cc17c3ede4a0f4c1bdcdf8977d))
+* **mail:** the rejected-proposal test keeps working after its pinned date ([#3125](https://github.com/k2b-dev/cloud/issues/3125)) ([7806e69](https://github.com/k2b-dev/cloud/commit/7806e69868203cac64cfaed09a12603aa304fa75))
+* **notebooks:** an empty note's template offer leaves with its second line ([#3082](https://github.com/k2b-dev/cloud/issues/3082)) ([31526c3](https://github.com/k2b-dev/cloud/commit/31526c3055cfe0844fd7251c55ff483c17b0c427)), closes [#3080](https://github.com/k2b-dev/cloud/issues/3080)
+* **notebooks:** cursor bursts never fill a connection's queue ([#3048](https://github.com/k2b-dev/cloud/issues/3048)) ([8375fce](https://github.com/k2b-dev/cloud/commit/8375fce7b6b7079437a6b5b1747e805b09f17d63)), closes [#3047](https://github.com/k2b-dev/cloud/issues/3047)
+* **spaces:** the Kanban browser suite runs in five parts with their own budgets ([#3027](https://github.com/k2b-dev/cloud/issues/3027)) ([d488fab](https://github.com/k2b-dev/cloud/commit/d488fab142d8fabd1405acdf41fd55b052afb0b8))
+* **tools:** the catalog test waits for the search to reach the URL ([#3068](https://github.com/k2b-dev/cloud/issues/3068)) ([475bd68](https://github.com/k2b-dev/cloud/commit/475bd682a1a6a9eab4d369823997331c56b18dc5)), closes [#3066](https://github.com/k2b-dev/cloud/issues/3066)
+* **ui:** a section heading's action moves under the title before the title truncates ([#3024](https://github.com/k2b-dev/cloud/issues/3024)) ([9a86f1c](https://github.com/k2b-dev/cloud/commit/9a86f1c4de617414adb2a25d91d89d310267cfb7))
+* **ui:** browser test cleanup counts only living processes ([#3132](https://github.com/k2b-dev/cloud/issues/3132)) ([6761e98](https://github.com/k2b-dev/cloud/commit/6761e98d37142ef81b950656d15b0eb81dc66f6e)), closes [#2871](https://github.com/k2b-dev/cloud/issues/2871)
+* **ui:** the detail float test times its slide by the animation, not the wall clock ([#3135](https://github.com/k2b-dev/cloud/issues/3135)) ([4ab807a](https://github.com/k2b-dev/cloud/commit/4ab807a0342a5eb7cec6510b06e46fe364e6fae2)), closes [#1622](https://github.com/k2b-dev/cloud/issues/1622)
+
 ## [0.71.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.70.0...cloud-v0.71.0) (2026-11-09)
 
 
