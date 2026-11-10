@@ -1331,7 +1331,8 @@
 }
 .k2b-ui .notebooks-editor-pill .k2b-button {
   border-radius: 999px;
-}/* On a phone the formatting pill fades at its end into the surface, so it reads as "scrolls on". */
+}
+/* On a phone the formatting pill fades at its end into the surface, so it reads as "scrolls on". */
 @media not all and (min-width: 48rem) {
   .k2b-ui .notebooks-editor-toolbar {
     padding-inline: 0.5rem;
