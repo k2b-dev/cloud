@@ -24,6 +24,7 @@ import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } fr
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversation-keep-rules";
+import { withDraftDocumentCommit } from "./draft-document-log";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
 import { resolveMailExecution } from "./execution";
@@ -917,7 +918,7 @@ const invalidateSentDraftLeases = async (commands: MailCommand[]): Promise<void>
 
 const createActorCommandWithActor = async (params: CreateActorCommandInternalParams): Promise<Result<MailCommand>> => {
   try {
-    const result = await sql.begin((tx) => createActorCommandInTransaction(params, tx));
+    const result = await withDraftDocumentCommit((tx) => createActorCommandInTransaction(params, tx));
     if (result.ok) mailLive.wake();
     if (result.ok) await invalidateSentDraftLeases([result.data]);
     if (result.ok && params.enqueue !== false) await enqueueMailCommand(result.data.id, result.data.kind).catch(() => undefined);

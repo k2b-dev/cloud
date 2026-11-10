@@ -101,7 +101,15 @@ beforeEach(() => {
   spies.push(codeInvoke);
   mockCodeQueries([]);
   spies.push(spyOn(ai, "getAiChatQuotas").mockResolvedValue({ enabled: false, balances: [] }));
-  spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
+  spies.push(
+    spyOn(rail, "readRailSnapshot").mockResolvedValue({
+      revision: 0,
+      visibility: {},
+      shortcuts: [],
+      showNames: true,
+      managedShortcuts: [],
+    }),
+  );
   spies.push(spyOn(live.aiLive, "cursor").mockResolvedValue("s6t.cloud-live-core.0"));
   spies.push(
     spyOn(ai, "assistantAiSettingsState").mockResolvedValue({

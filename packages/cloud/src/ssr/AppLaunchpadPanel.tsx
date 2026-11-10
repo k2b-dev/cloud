@@ -1,6 +1,6 @@
 import { documentNavigate } from "@k2b/ssr/nav";
 import { IconButton, ScrollArea, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { importOnDemand } from "../browser/reload";
 import type { CloudThemePreference } from "../shared/theme";
@@ -33,6 +33,8 @@ export type AppLaunchpadContext = {
   apps: AppLaunchpadApp[];
   legalLinks: AppLaunchpadLegalLink[];
 };
+
+type LaunchpadTile = AppLaunchpadApp & { appId?: string; start?: boolean };
 
 type AppIconPaletteEntry = { from: string };
 
@@ -68,11 +70,21 @@ export const AppLaunchpadPanel = (
   const messages = () => platformMessages.resolve([locale()]).t;
   const matches = (label: string, description = "") =>
     `${label} ${description}`.toLocaleLowerCase(locale()).includes(query().trim().toLocaleLowerCase(locale()));
-  const apps = () => props.apps.filter((app) => matches(app.label, app.description));
-  const shortcuts = () =>
-    (rail ? projectRailNavigation(rail.apps, rail.settings, locale()).shortcuts : []).filter((shortcut) => matches(shortcut.label));
-  // A signed-in phone has no rail and no Home button in its title row: the sheet leads its shortcuts with Start.
-  const start = () => props.surface === "sheet" && !!props.profile && matches(messages().home);
+  // One grid: pinned entries are ordinary tiles that come first, in their pinned order, and a pinned app is not
+  // repeated among the others. A signed-in phone has no rail and no Home button in its title row: Start leads there.
+  const allTiles = createMemo((): LaunchpadTile[] => {
+    const pinned = rail ? projectRailNavigation(rail.apps, rail.settings, locale()).shortcuts : [];
+    const pinnedApps = new Set(pinned.flatMap((entry) => (entry.appId ? [entry.appId] : [])));
+    return [
+      ...(props.surface === "sheet" && props.profile
+        ? [{ id: "home", label: messages().home, href: "/", iconClass: "ti ti-home", start: true }]
+        : []),
+      // A pinned app keeps its app's colour; a link takes the tone of its own id, as an app without an accent does.
+      ...pinned.map((entry) => ({ ...entry, id: entry.appId ?? entry.id })),
+      ...props.apps.filter((app) => !pinnedApps.has(app.id)).map((app) => ({ ...app, appId: app.id })),
+    ];
+  });
+  const tiles = () => allTiles().filter((tile) => matches(tile.label, tile.description));
   const follow: JSX.EventHandler<HTMLAnchorElement, MouseEvent> = (event) => {
     if (!props.beforeSelect || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -129,67 +141,26 @@ export const AppLaunchpadPanel = (
           </div>
         </Show>
       </div>
-      <Show when={start() || shortcuts().length > 0}>
-        <section class="mb-5" aria-label={t().shortcuts}>
-          <div class="flex flex-wrap justify-center gap-3">
-            <Show when={start()}>
-              <a
-                onClick={follow}
-                href="/"
-                data-cloud-launchpad-start=""
-                class="group flex w-16 min-w-0 flex-col items-center gap-1 rounded-lg p-1 text-center focus-ui"
-              >
-                <span class="relative grid h-9 w-9 place-items-center rounded-xl bg-[var(--ui-hover)] text-lg transition-colors group-hover:bg-[var(--ui-active)]">
-                  <i class="ti ti-home" aria-hidden="true" />
-                </span>
-                <span class="max-w-full k2b-truncate-fade text-[11px] font-medium text-primary dark:text-white">{messages().home}</span>
-              </a>
-            </Show>
-            <For each={shortcuts()}>
-              {(shortcut) => {
-                const badge = useAppBadgeDescription(() => ({ endpoint: shortcut.badge, appId: shortcut.appId }));
-                return (
-                  <a
-                    onClick={follow}
-                    href={shortcut.href}
-                    class="group flex w-16 min-w-0 flex-col items-center gap-1 rounded-lg p-1 text-center focus-ui"
-                  >
-                    <span class="relative grid h-9 w-9 place-items-center rounded-xl bg-[var(--ui-hover)] text-lg transition-colors group-hover:bg-[var(--ui-active)]">
-                      <i class={shortcut.iconClass} aria-hidden="true" />
-                      <AppBadge endpoint={shortcut.badge} appId={shortcut.appId} />
-                    </span>
-                    <span class="max-w-full k2b-truncate-fade text-[11px] font-medium text-primary dark:text-white">
-                      {shortcut.label}
-                      <Show when={badge()}>
-                        <span class="sr-only">, {badge()}</span>
-                      </Show>
-                    </span>
-                  </a>
-                );
-              }}
-            </For>
-          </div>
-        </section>
-      </Show>
       <div class="launchpad-apps-grid flex flex-wrap justify-center gap-x-4 gap-y-4 sm:gap-x-7 sm:gap-y-6">
-        <For each={apps()}>
-          {(app) => {
-            const badge = useAppBadgeDescription(() => ({ endpoint: app.badge, appId: app.id }));
+        <For each={tiles()}>
+          {(tile) => {
+            const badge = useAppBadgeDescription(() => ({ endpoint: tile.badge, appId: tile.appId }));
             return (
               <a
                 onClick={follow}
-                href={app.href}
+                href={tile.href}
+                data-cloud-launchpad-start={tile.start ? "" : undefined}
                 class="launchpad-app group flex w-[4.75rem] min-w-0 flex-col items-center gap-1.5 rounded-2xl p-1 text-center focus-ui sm:w-[6.25rem] sm:gap-2 sm:p-2"
               >
                 <span
                   class="app-icon relative grid h-12 w-12 place-items-center rounded-[0.95rem] text-[1.25rem] sm:h-16 sm:w-16 sm:rounded-[1.25rem] sm:text-[1.7rem]"
-                  style={appIconStyle(app)}
+                  style={appIconStyle(tile)}
                 >
-                  <i class={app.iconClass} />
-                  <AppBadge endpoint={app.badge} appId={app.id} />
+                  <i class={tile.iconClass} aria-hidden="true" />
+                  <AppBadge endpoint={tile.badge} appId={tile.appId} />
                 </span>
                 <span class="max-w-full k2b-truncate-fade text-[11px] font-medium text-primary sm:text-xs dark:text-white">
-                  {app.label}
+                  {tile.label}
                   <Show when={badge()}>
                     <span class="sr-only">, {badge()}</span>
                   </Show>
@@ -199,7 +170,7 @@ export const AppLaunchpadPanel = (
           }}
         </For>
       </div>
-      <Show when={!apps().length && !shortcuts().length && !start()}>
+      <Show when={!tiles().length}>
         <p class="py-6 text-center text-dimmed">{messages().noAppsFound}</p>
       </Show>
       <Show when={props.surface === "sheet" && props.profile && props.beforeSelect}>

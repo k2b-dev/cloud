@@ -107,6 +107,9 @@ export const platformMessages = i18n.define({
       menu: "Menu",
       search: "Search",
       clearSearch: "Clear search",
+      railSearch: "Search",
+      railHelp: "Help",
+      railPanel: "Panel",
     },
     de: {
       panel: "Panel",
@@ -212,6 +215,10 @@ export const platformMessages = i18n.define({
       menu: "Menü",
       search: "Suchen",
       clearSearch: "Suche leeren",
+      // The visible name is part of each control's spoken name ("Globale Suche öffnen").
+      railSearch: "Suche",
+      railHelp: "Hilfe",
+      railPanel: "Panel",
     },
   },
 });

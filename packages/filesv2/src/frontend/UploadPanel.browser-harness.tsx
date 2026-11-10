@@ -54,7 +54,7 @@ render(
           add: (files, target = "Projects") =>
             queue.add(
               null,
-              { key: target, label: target },
+              { key: target, label: target, href: `#${target}` },
               files.map(([path, size]) => ({ file: new File([new Uint8Array(size)], path.split("/").at(-1)!), path })),
             ),
           progress: (bytes) => current().progress(bytes),

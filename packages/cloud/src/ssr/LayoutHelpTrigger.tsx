@@ -1,10 +1,11 @@
-import { IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { IconButton, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
 import { closePanel, openPanel } from "../browser/panel";
 import { importOnDemand } from "../browser/reload";
 import { createBusyAction } from "./busy-action";
 import { platformMessages } from "./platform-messages";
+import { RailItemHint } from "./RailItemHint";
 
 type LayoutHelpTriggerProps = {
   variant: "header" | "rail";
@@ -40,23 +41,27 @@ export default function LayoutHelpTrigger(props: LayoutHelpTriggerProps) {
     );
   };
 
-  if (props.variant === "rail")
+  if (props.variant === "rail") {
+    let target: HTMLButtonElement | undefined;
     return (
-      <Tooltip.Trigger
-        type="button"
-        class={`rail-item text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300 ${props.class ?? ""}`}
-        aria-controls={props.panel ? "cloud-panel" : undefined}
-        aria-expanded={props.panel ? helpOpen() : undefined}
-        onClick={openHelp}
-        aria-busy={action.busy() ? "true" : undefined}
-        aria-label={t().openHelp}
-        placement="right"
-        delay={0}
-        content={t().helpShortcut}
-      >
-        <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-help-circle"} text-xl`} />
-      </Tooltip.Trigger>
+      <>
+        <button
+          ref={target}
+          type="button"
+          class={`rail-item text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300 ${props.class ?? ""}`}
+          aria-controls={props.panel ? "cloud-panel" : undefined}
+          aria-expanded={props.panel ? helpOpen() : undefined}
+          onClick={openHelp}
+          aria-busy={action.busy() ? "true" : undefined}
+          aria-label={t().openHelp}
+        >
+          <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-help-circle"} text-xl`} />
+          <span class="rail-item-label">{t().railHelp}</span>
+        </button>
+        <RailItemHint target={() => target} content={t().helpShortcut} />
+      </>
     );
+  }
 
   return (
     <IconButton
