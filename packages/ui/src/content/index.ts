@@ -104,6 +104,8 @@ export type { LabelChipProps } from "./LabelChip";
 export { LabelChip } from "./LabelChip";
 export type { LightboxAction, LightboxImage } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
+export type { LoadMoreProps } from "./LoadMore";
+export { LoadMore } from "./LoadMore";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";
 export { MapAttribution } from "./MapAttribution";

@@ -255,7 +255,7 @@ component keeps scrolling on its inner viewport. Bound a scrolling table with
 `height`, `max-height`, or a correctly sized `min-h-0 flex-1` region instead of
 adding another scroll container.
 
-`hasMore`, `loadingMore`, and `onLoadMore` add an infinite-load sentinel. The owning island still fetches the next server page and appends its rows. The table requests that page when its end comes near the visible area, whether the table scrolls its own viewport or grows with its rows while the page scrolls. While `loadingMore` is true, the table requests nothing more. Otherwise it requests again after rows or loading state advance, or after the end has left the visible area and returned, so a request the owner ignored is not lost. An owner that omits `loadingMore` must ignore a repeated call while its page is still loading.
+`hasMore`, `loadingMore`, and `onLoadMore` end the table with the shared [`LoadMore`](/en/ui/content/load-more) edge: one row that reads "Load more", "Loading more…" while `loadingMore` is true, or a failed page's error with "Try again". The owning island still fetches the next server page and appends its rows. The table requests that page when its end comes near the visible area, whether the table scrolls its own viewport or grows with its rows while the page scrolls, and also when the reader presses the button. While `loadingMore` is true, the table requests nothing more. Once `loadingMore` turns off and rows arrived, it asks again if the end is still in reach; a request that brought no rows, or one the owner ignored, waits until the end has left the visible area and returned. Return a promise from `onLoadMore` to show its rejection at the table's end. An owner that omits `loadingMore` and returns no promise must ignore a repeated call while its page is still loading.
 
 ## API reference
 
@@ -296,7 +296,7 @@ type DataTableProps<T> = {
   onRowClick?: (row: T) => void; onRowDoubleClick?: (row: T) => void; renderCell?: DataTableRenderCell<T>;
   renderHeader?: DataTableRenderHeader<T>; footer?: DataTableFooter<T>; hasMore?: boolean;
   loading?: boolean; loadingRows?: number;
-  loadingMore?: boolean; onLoadMore?: () => void; empty?: JSX.Element; density?: "compact" | "normal";
+  loadingMore?: boolean; onLoadMore?: () => unknown; empty?: JSX.Element; density?: "compact" | "normal";
   stickyHeader?: boolean; highlightColumns?: boolean; verticalAlign?: "top" | "middle" | "bottom";
   cellContentClass?: string; fillHeight?: boolean; surface?: "paper" | "plain"; class?: string;
   tableClass?: string; scrollClass?: string; scrollPreserveKey?: string | false;
@@ -321,7 +321,7 @@ type DataTablePanelFooterProps = {
 };
 ```
 
-The four panel types correspond to `DataTable.Panel`, `.Header`, `.Controls`, and `.Footer`. All row callbacks receive the original row. Footer values are keyed by **column id**. `getRowId` returns a stable string. `onLoadMore` returns `void`; expose request state through `loadingMore` and append rows after success.
+The four panel types correspond to `DataTable.Panel`, `.Header`, `.Controls`, and `.Footer`. All row callbacks receive the original row. Footer values are keyed by **column id**. `getRowId` returns a stable string. `onLoadMore` may return a promise; expose request state through `loadingMore` and append rows after success.
 
 Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, `scrollClass` the scroll container, and `class` its outer shell. Pass `scrollClass="k2b-detail-trail"` to keep column widths beside a [workspace detail](/en/ui/layout/workspace#detail-and-panel). The scroller narrows and scrolls the table at its width without the panel; closing returns the full width without extra space. Under an open waiting drawer the scroller gets the drawer's width as space at its end instead.
 

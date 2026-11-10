@@ -24,6 +24,7 @@ import contentFiles from "./content/files.md" with { type: "text" };
 import contentIntl from "./content/intl.md" with { type: "text" };
 import contentKbd from "./content/kbd.md" with { type: "text" };
 import contentLabelChip from "./content/label-chip.md" with { type: "text" };
+import contentLoadMore from "./content/load-more.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
 import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
@@ -222,6 +223,7 @@ const catalogContextSources = {
   "content/code": { file: "content/code.md", content: contentCode },
   "content/logs": { file: "content/logs.md", content: contentLogs },
   "content/virtual-feed": { file: "content/virtual-feed.md", content: contentVirtualFeed },
+  "content/load-more": { file: "content/load-more.md", content: contentLoadMore },
   "content/reaction-bar": { file: "content/reaction-bar.md", content: contentReactionBar },
   "content/message-rows": { file: "content/message-rows.md", content: contentMessageRows },
   "content/structured-data": { file: "content/structured-data.md", content: contentStructuredData },

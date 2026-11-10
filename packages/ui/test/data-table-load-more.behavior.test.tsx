@@ -23,34 +23,64 @@ let cleanup = () => {};
 afterEach(() => cleanup());
 
 /**
- * happy-dom has no layout, so each test states the geometry a browser would
- * report: the table viewport's scroll box, the sentinel's position, and the
- * window height. The observer stub lets a test deliver the notification a
- * real IntersectionObserver sends when the sentinel crosses the viewport.
+ * happy-dom has no layout. The observer stub stands in for the browser's IntersectionObserver: a test says whether the
+ * edge is within reach, and every observe() delivers the current state again, as a real observer does.
  */
-async function renderLoadMoreTable() {
-  const dom = createDomTestHarness();
-  const previousObserver = Object.getOwnPropertyDescriptor(globalThis, "IntersectionObserver");
-  const observers: Array<{ notify: () => void; init: IntersectionObserverInit | undefined }> = [];
+function stubObserver() {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "IntersectionObserver");
+  const state = { inReach: false, observers: [] as Array<{ init?: IntersectionObserverInit; notify: () => void }> };
   class ManualIntersectionObserver {
+    private targets = new Set<Element>();
     constructor(
       private readonly callback: IntersectionObserverCallback,
       readonly init?: IntersectionObserverInit,
     ) {
-      observers.push({ notify: () => this.callback([], this as unknown as IntersectionObserver), init });
+      state.observers.push({ init, notify: () => this.deliver() });
     }
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+    private deliver() {
+      const entries = [...this.targets].map((target) => ({ target, isIntersecting: state.inReach }) as IntersectionObserverEntry);
+      if (entries.length > 0) this.callback(entries, this as unknown as IntersectionObserver);
+    }
+    observe(target: Element) {
+      this.targets.add(target);
+      queueMicrotask(() => this.deliver());
+    }
+    unobserve(target: Element) {
+      this.targets.delete(target);
+    }
+    disconnect() {
+      this.targets.clear();
+    }
     takeRecords(): IntersectionObserverEntry[] {
       return [];
     }
   }
   Object.defineProperty(globalThis, "IntersectionObserver", { configurable: true, writable: true, value: ManualIntersectionObserver });
+  const restore = () => {
+    if (previous) Object.defineProperty(globalThis, "IntersectionObserver", previous);
+    else delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
+  };
+  return {
+    state,
+    restore,
+    /** The reader scrolls the edge into or out of reach. */
+    reach: async (inReach: boolean) => {
+      state.inReach = inReach;
+      for (const observer of state.observers) observer.notify();
+      await settle();
+    },
+  };
+}
 
+const settle = () => new Promise((done) => setTimeout(done, 0));
+
+async function renderTable(options: { onLoadMore?: (loads: number) => unknown } = {}) {
+  const dom = createDomTestHarness();
+  const observer = stubObserver();
   const { DataTable } = modules!;
   const [rows, setRows] = createSignal(rowsUpTo(3));
   const [hasMore, setHasMore] = createSignal(false);
+  const [loadingMore, setLoadingMore] = createSignal(false);
   let loads = 0;
   const dispose = render(
     () => (
@@ -59,8 +89,10 @@ async function renderLoadMoreTable() {
         columns={[{ id: "name", header: "Name", value: "name" }]}
         getRowId={(row) => row.id}
         hasMore={hasMore()}
+        loadingMore={loadingMore()}
         onLoadMore={() => {
           loads++;
+          return options.onLoadMore?.(loads);
         }}
       />
     ),
@@ -69,90 +101,123 @@ async function renderLoadMoreTable() {
   cleanup = () => {
     dispose();
     dom.cleanup();
-    if (previousObserver) Object.defineProperty(globalThis, "IntersectionObserver", previousObserver);
-    else delete (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver;
+    observer.restore();
     cleanup = () => {};
   };
-
+  // The list grows with its rows, which is how the edge tells a page that arrived from one that brought nothing.
   const wrap = dom.root.querySelector<HTMLElement>(".k2b-table-wrap")!;
-  const sentinel = dom.root.querySelector<HTMLElement>(".k2b-data-table__sentinel")!;
-  const layout = { scrollHeight: 0, clientHeight: 0, scrollTop: 0, sentinelTop: 0 };
-  Object.defineProperty(wrap, "scrollHeight", { configurable: true, get: () => layout.scrollHeight });
-  Object.defineProperty(wrap, "clientHeight", { configurable: true, get: () => layout.clientHeight });
-  Object.defineProperty(wrap, "scrollTop", { configurable: true, get: () => layout.scrollTop });
-  sentinel.getBoundingClientRect = () => ({ top: layout.sentinelTop }) as DOMRect;
-  Object.defineProperty(dom.window, "innerHeight", { configurable: true, value: 844 });
-
-  expect(observers).toHaveLength(1);
+  Object.defineProperty(wrap, "scrollHeight", { configurable: true, get: () => rows().length * 40 });
+  await settle();
   return {
-    layout,
+    dom,
+    observer,
     loads: () => loads,
-    observer: observers[0]!,
     setRows,
     setHasMore,
-    scrollTable: () => wrap.dispatchEvent(new Event("scroll")),
+    setLoadingMore,
+    edge: () => dom.root.querySelector<HTMLElement>(".k2b-load-more"),
   };
 }
 
-describe("@k2b/ui DataTable infinite loading", () => {
+describe("@k2b/ui LoadMore in DataTable", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
 
-  test("a bounded table loads the next page when its own viewport nears the end", async () => {
-    const table = await renderLoadMoreTable();
-    // The table scrolls itself and sits inside the window, so only its own scroll position counts.
-    Object.assign(table.layout, { scrollHeight: 2000, clientHeight: 400, scrollTop: 0, sentinelTop: 400 });
+  test("the table's end is the shared edge, watched in the window with the reach ahead of it", async () => {
+    const table = await renderTable();
+    expect(table.edge()?.dataset.state).toBe("done");
+    expect(table.edge()?.querySelector("button")).toBeNull();
+    expect(table.observer.state.observers).toHaveLength(1);
+    expect(table.observer.state.observers[0]!.init?.root ?? null).toBeNull();
+    expect(table.observer.state.observers[0]!.init?.rootMargin).toBe("240px 0px");
 
     table.setHasMore(true);
-    expect(table.loads()).toBe(0);
-
-    table.layout.scrollTop = 1400;
-    table.scrollTable();
-    expect(table.loads()).toBe(1);
-
-    table.scrollTable();
-    expect(table.loads()).toBe(1);
+    await settle();
+    expect(table.edge()?.dataset.state).toBe("idle");
+    expect(table.edge()?.textContent).toContain("Load more");
   });
 
-  test("a table that grows with its rows loads the next page when the page scrolls to its end", async () => {
-    const table = await renderLoadMoreTable();
-    // Narrow layouts let the table grow; the document scrolls and the table viewport never does.
-    Object.assign(table.layout, { scrollHeight: 3000, clientHeight: 3000, scrollTop: 0, sentinelTop: 3000 });
-
+  test("loads once when the end comes within reach, and again after the owner's load finished", async () => {
+    const table = await renderTable();
     table.setHasMore(true);
-    expect(table.loads()).toBe(0);
-    expect(table.observer.init?.root ?? null).toBeNull();
-
-    table.layout.sentinelTop = 900;
-    table.observer.notify();
+    await table.observer.reach(true);
     expect(table.loads()).toBe(1);
 
-    // The appended page pushes the end below the window again: no chained request.
-    table.layout.sentinelTop = 5000;
+    // The owner reports its load; the edge stays one row of the same height and keeps its button.
+    table.setLoadingMore(true);
+    await settle();
+    expect(table.edge()?.dataset.state).toBe("loading");
+    expect(table.edge()?.textContent).toContain("Loading more…");
+    expect(table.edge()?.querySelector("button")?.getAttribute("aria-disabled")).toBe("true");
+    table.edge()!.querySelector("button")!.click();
+    expect(table.loads()).toBe(1);
+
+    // The page arrived while the end is still in reach: the next one follows.
     table.setRows(rowsUpTo(6));
-    expect(table.loads()).toBe(1);
-
-    table.layout.sentinelTop = 700;
-    table.observer.notify();
+    table.setLoadingMore(false);
+    await settle();
+    await settle();
     expect(table.loads()).toBe(2);
+
+    // A load that brought nothing does not ask again while the end stays in reach.
+    table.setLoadingMore(true);
+    await settle();
+    table.setLoadingMore(false);
+    await settle();
+    await settle();
+    expect(table.loads()).toBe(2);
+  });
+
+  test("a promise that resolves without new rows waits for the reader instead of asking in a loop", async () => {
+    const table = await renderTable({ onLoadMore: () => Promise.resolve() });
+    table.setHasMore(true);
+    await table.observer.reach(true);
+    await settle();
+    await settle();
+    expect(table.loads()).toBe(1);
+    expect(table.edge()?.dataset.state).toBe("idle");
   });
 
   test("leaving the end re-arms a request the owner declined", async () => {
-    const table = await renderLoadMoreTable();
-    Object.assign(table.layout, { scrollHeight: 3000, clientHeight: 3000, scrollTop: 0, sentinelTop: 700 });
-
-    // The owner ignores the request, for example because its first page is still loading.
+    const table = await renderTable();
     table.setHasMore(true);
+    await table.observer.reach(true);
     expect(table.loads()).toBe(1);
-    table.observer.notify();
+    // The owner ignores the request, for example because its first page is still loading.
+    await table.observer.reach(true);
     expect(table.loads()).toBe(1);
 
-    table.layout.sentinelTop = 3000;
-    table.observer.notify();
-    table.layout.sentinelTop = 700;
-    table.observer.notify();
+    await table.observer.reach(false);
+    await table.observer.reach(true);
     expect(table.loads()).toBe(2);
+  });
+
+  test("a failed load shows its message with Try again, and loads only when asked", async () => {
+    let fail = true;
+    const table = await renderTable({
+      onLoadMore: () => (fail ? Promise.reject(new Error("Server unavailable")) : Promise.resolve()),
+    });
+    table.setHasMore(true);
+    await table.observer.reach(true);
+    await settle();
+    expect(table.loads()).toBe(1);
+    expect(table.edge()?.dataset.state).toBe("error");
+    expect(table.edge()?.querySelector("[role='alert']")?.textContent).toContain("Server unavailable");
+
+    // Staying at the end does not retry by itself.
+    await table.observer.reach(true);
+    expect(table.loads()).toBe(1);
+
+    fail = false;
+    const retry = table.edge()!.querySelector("button")!;
+    expect(retry.textContent).toContain("Retry");
+    retry.click();
+    await settle();
+    expect(table.loads()).toBe(2);
+    expect(table.edge()?.dataset.state).toBe("idle");
+    // Focus stays on the one button in every state.
+    expect(table.edge()!.querySelector("button")).toBe(retry);
   });
 });

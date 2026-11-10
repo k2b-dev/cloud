@@ -91,6 +91,8 @@ const measurements = [
   "[data-app-workspace-detail-toggle]",
   ".mail-reading-column",
   ".k2b-app-workspace__detail",
+  // The Events feed's rows: the server renders the first ones in the flow, the browser places the same ones.
+  ".mail-event",
 ].join(",");
 // Rows below the fold render lazily (content-visibility); only what the person sees must hold still.
 const geometrySource = `() => Array.from(document.querySelectorAll(${JSON.stringify(measurements)})).map((e,i)=>{const r=e.getBoundingClientRect();const part=String(e.className).split(" ").filter(Boolean).join(" ");return r.bottom<=0||r.top>=innerHeight?{part,index:i,x:0,y:-1,width:0,height:0}:{part,index:i,x:r.x,y:r.y,width:r.width,height:r.height}})`;
@@ -4343,7 +4345,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(await currentHref(page)).toBe("/app/mail/Box001?view=events");
             // Events stays after More and is marked new until the person has opened it once.
             expect(await tabs(page).locator('[data-view-tab="events"] .k2b-view-tabs__badge').textContent()).toBe("neu");
-            expect(await page.locator(".mail-events .k2b-list-group-heading").allTextContents()).toEqual(["Heute", "Gestern"]);
+            // Each day heads its rows; the copy that stays at the top of the list is decoration for sighted readers.
+            expect(await page.locator(".mail-events .k2b-virtual-feed__item .k2b-virtual-feed__separator").allTextContents()).toEqual([
+              "Heute",
+              "Gestern",
+            ]);
+            expect(await page.locator(".mail-events .k2b-virtual-feed__sticky").getAttribute("aria-hidden")).toBe("true");
+            expect(await page.locator(".mail-events .k2b-virtual-feed__sticky").textContent()).toBe("Heute");
             expect(await rows(page).count()).toBe(11);
             const failed = page.locator('[data-mail-event="6"]');
             expect(await failed.getAttribute("data-tone")).toBe("error");
@@ -4433,13 +4441,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       test("events load older pages below the feed and show the loading state while a filter loads", async () => {
         const page = await open(`${events}&events=more`);
         try {
-          const before = await rows(page).count();
-          const older = page.waitForResponse((response) => response.url().includes("/activity"));
-          await page.locator("[data-mail-events-more]").click();
-          await older;
+          // The end of a short feed is within reach at once: the older page loads by itself below the server's rows,
+          // and the edge is gone once nothing older is left.
+          await page.locator(".mail-events .k2b-load-more[data-state='done']").waitFor({ state: "attached" });
           await settled(page);
-          expect(await rows(page).count()).toBe(before + 1);
-          expect(await page.locator("[data-mail-events-more]").count()).toBe(0);
+          expect(await rows(page).count()).toBe(12);
+          expect(await page.locator(".mail-events .k2b-load-more button").count()).toBe(0);
           // A slow filter shows the skeleton in the feed's place, under the chips that stay where they are.
           await page.route("**/workspace-*", async (route) => {
             await new Promise((resolve) => setTimeout(resolve, 600));
@@ -4451,7 +4458,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(await page.locator("[data-mail-events-filters]").boundingBox()).toEqual(chips);
           await page.waitForURL(/eventMine=1/);
           await page.locator(".mail-events__skeleton").waitFor({ state: "detached" });
-          expect(await rows(page).count()).toBe(3);
+          // Three events concern the person; the short list then loads the fixture's older page, which it does not filter.
+          await page.locator(".mail-events .k2b-load-more[data-state='done']").waitFor({ state: "attached" });
+          expect(await rows(page).count()).toBe(4);
         } finally {
           await close(page);
         }
@@ -4460,7 +4469,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       test("opening an event far down the feed keeps the feed where the person was", async () => {
         const page = await open(events, 1440, 560);
         try {
-          const scroller = page.locator(".mail-events__scroll");
+          const scroller = page.locator(".mail-events .k2b-virtual-feed__viewport");
           await scroller.evaluate((element) => {
             element.scrollTop = element.scrollHeight;
           });

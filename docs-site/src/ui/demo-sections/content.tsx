@@ -30,6 +30,7 @@ import {
   LabelChip,
   Lightbox,
   LinkCard,
+  LoadMore,
   LocaleProvider,
   LogEntriesTable,
   MapView,
@@ -698,6 +699,153 @@ const VirtualFeedDemo = () => {
               </div>
             )}
           </VirtualFeed>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+// A work list: groups of requests, newest first, 300 in all; pages of 40 load below.
+type InboxRow = { id: string; group: string; title: string };
+const INBOX_TOTAL = 300;
+const inboxGroups = ["Needs action", "Waiting for the customer", "Done"];
+const inboxRow = (seq: number): InboxRow => ({
+  id: `request-${seq}`,
+  group: inboxGroups[Math.min(inboxGroups.length - 1, Math.floor(seq / 50))]!,
+  title: `#${seq + 1} ${feedPhrases[(seq * 5) % feedPhrases.length]}`,
+});
+
+const VirtualListDemo = () => {
+  const [rows, setRows] = createSignal(Array.from({ length: 60 }, (_, index) => inboxRow(index)));
+  let loaded = 60;
+  let fresh = 0;
+  let failNext = false;
+  let list: VirtualFeedController | undefined;
+  const loadMore = () =>
+    new Promise<void>((done, fail) =>
+      setTimeout(() => {
+        if (failNext) {
+          failNext = false;
+          fail(new Error("The server did not answer in time."));
+          return;
+        }
+        const page = Array.from({ length: Math.min(40, INBOX_TOTAL - loaded) }, (_, index) => inboxRow(loaded + index));
+        loaded += page.length;
+        setRows((current) => [...current, ...page]);
+        done();
+      }, 600),
+    );
+  const addAbove = () => setRows((current) => [{ id: `new-${++fresh}`, group: "Needs action", title: `New request ${fresh}` }, ...current]);
+  return (
+    <DemoCard
+      id="virtual-list-start"
+      chip={{ kind: "component", name: "VirtualFeed", from: "@k2b/ui" }}
+      description='A work list with anchor="start": it opens at the first request, keeps each group heading at the top, loads pages below, and keeps its place when requests arrive above.'
+      code={`<VirtualFeed
+  anchor="start"
+  items={rows()}
+  getKey={(row) => row.id}
+  estimateSize={() => 44}
+  label="Requests"
+  separator={(row, previous) => (previous?.group === row.group ? undefined : row.group)}
+  stickySeparators
+  hasMore={hasMore()}
+  onLoadMore={loadMore}
+>
+  {(row) => <RequestRow row={row} />}
+</VirtualFeed>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Toolbar label="List actions" wrap>
+          <Button size="sm" variant="subtle" onClick={addAbove}>
+            Add a request above
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => {
+              failNext = true;
+            }}
+          >
+            Fail the next page
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => list?.scrollToStart()}>
+            Back to the first request
+          </Button>
+        </Toolbar>
+        <div style={{ display: "flex", height: "26rem" }}>
+          <VirtualFeed
+            anchor="start"
+            items={rows()}
+            getKey={(row) => row.id}
+            estimateSize={() => 44}
+            label="Requests"
+            separator={(row, previous) => (previous?.group === row.group ? undefined : row.group)}
+            stickySeparators
+            hasMore={rows().length - fresh < INBOX_TOTAL}
+            onLoadMore={loadMore}
+            controller={(controller) => (list = controller)}
+          >
+            {(row) => <div style={{ padding: "0.625rem 1rem", "border-bottom": "1px solid var(--k2b-border)" }}>{row.title}</div>}
+          </VirtualFeed>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+const LoadMoreDemo = () => {
+  const [cards, setCards] = createSignal(Array.from({ length: 6 }, (_, index) => inboxRow(index)));
+  let failNext = false;
+  const loadMore = () =>
+    new Promise<void>((done, fail) =>
+      setTimeout(() => {
+        if (failNext) {
+          failNext = false;
+          fail(new Error("The server did not answer in time."));
+          return;
+        }
+        const from = cards().length;
+        setCards((current) => [...current, ...Array.from({ length: Math.min(6, 30 - from) }, (_, index) => inboxRow(from + index))]);
+        done();
+      }, 600),
+    );
+  return (
+    <DemoCard
+      id="load-more"
+      chip={{ kind: "component", name: "LoadMore", from: "@k2b/ui" }}
+      description="A list of cards that loads 6 more as its end comes into reach, 30 in all. Fail the next page to see the error with Try again; the row never changes its height."
+      code={`<For each={cards()}>{(card) => <Card card={card} />}</For>
+<LoadMore hasMore={cards().length < 30} onLoadMore={loadMore} />`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Toolbar label="Edge actions" wrap>
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => {
+              failNext = true;
+            }}
+          >
+            Fail the next page
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => setCards((current) => current.slice(0, 6))}>
+            Start over
+          </Button>
+        </Toolbar>
+        <div
+          style={{ height: "18rem", overflow: "auto", border: "1px solid var(--k2b-border)", "border-radius": "var(--k2b-radius-surface)" }}
+        >
+          <div
+            style={{ display: "grid", "grid-template-columns": "repeat(auto-fill, minmax(12rem, 1fr))", gap: "0.5rem", padding: "0.5rem" }}
+          >
+            {cards().map((card) => (
+              <div style={{ padding: "0.75rem", border: "1px solid var(--k2b-border)", "border-radius": "var(--k2b-radius-control)" }}>
+                {card.title}
+              </div>
+            ))}
+          </div>
+          <LoadMore hasMore={cards().length < 30} onLoadMore={loadMore} />
         </div>
       </div>
     </DemoCard>
@@ -2237,6 +2385,12 @@ const demos: DemoSection = {
   "virtual-feed": () => (
     <DemoGrid columns="one">
       <VirtualFeedDemo />
+      <VirtualListDemo />
+    </DemoGrid>
+  ),
+  "load-more": () => (
+    <DemoGrid columns="one">
+      <LoadMoreDemo />
     </DemoGrid>
   ),
   "message-rows": () => (

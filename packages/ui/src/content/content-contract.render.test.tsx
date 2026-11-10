@@ -538,13 +538,18 @@ describe("@k2b/ui Cloud content contract", () => {
     );
   });
 
-  test("keeps the load-more sentinel observable without creating vertical overflow", () => {
-    expect(uiCss).toMatch(/\.k2b-data-table__sentinel \{[^}]*height: 1px[^}]*margin-top: -1px/s);
+  test("keeps the load-more edge one row of the same height in every state, gone once the list is complete", () => {
+    expect(uiCss).toMatch(/\.k2b-load-more \{[^}]*min-height: 2\.75rem/s);
+    expect(uiCss).toMatch(/\.k2b-load-more\[data-state="done"\] \{[^}]*min-height: 0;[^}]*padding: 0;/s);
+    // The reach strip reaches into the list ahead of the edge without adding scroll space or taking clicks.
+    expect(uiCss).toMatch(
+      /\.k2b-load-more__reach \{[^}]*position: absolute;[^}]*bottom: 0;[^}]*height: calc\(100% \+ var\(--k2b-load-more-reach\)\);[^}]*pointer-events: none;/s,
+    );
   });
 
-  test("keeps the load-more sentinel in view while a wide table is scrolled sideways", () => {
-    // The page-level observer only sees the end of a growing table when the sentinel is not clipped horizontally.
-    expect(uiCss).toMatch(/\.k2b-data-table__sentinel \{[^}]*position: sticky;[^}]*left: 0;[^}]*pointer-events: none;/s);
+  test("keeps the load-more edge in view while a wide table is scrolled sideways", () => {
+    // The page-level observer only sees the end of a growing table when the edge is not clipped horizontally.
+    expect(uiCss).toMatch(/\.k2b-load-more \{[^}]*position: sticky;[^}]*left: 0;/s);
   });
 
   test("composes a labelled professional DataTable panel without component-valued props", () => {
@@ -782,7 +787,7 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain('data-align="center"');
     expect(html).toContain('data-valign="top"');
     expect(html).toContain("k2b-data-table__fill");
-    expect(html).toContain("k2b-data-table__sentinel");
+    expect(html).toContain('class="k2b-load-more"');
     expect(html).toContain("k2b-data-table__cell-text");
     expect(html).toContain('scope="col"');
     expect(html.indexOf("<tbody")).toBeLessThan(html.indexOf("<tfoot"));

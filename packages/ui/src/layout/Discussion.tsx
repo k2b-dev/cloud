@@ -1,6 +1,7 @@
-import { children, createEffect, createSignal, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
+import { children, createSignal, type JSX, onCleanup, Show, splitProps } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { useChatMessages } from "../chat/chat-messages";
+import { LoadMore } from "../content/LoadMore";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
 import { useUiMessages } from "../intl/messages";
 import { Section } from "../surfaces/Section";
@@ -210,35 +211,25 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
   const folded = () => props.fold !== undefined && entries().length > props.fold;
   const visible = () => (hidden() > 0 ? entries().slice(hidden()) : entries());
   const [loadingMoreInternally, setLoadingMoreInternally] = createSignal(false);
-  const [loadMoreError, setLoadMoreError] = createSignal<string | null>(null);
-  const [sentinelVisible, setSentinelVisible] = createSignal(false);
-  const [automaticLoadAttempted, setAutomaticLoadAttempted] = createSignal(false);
   let listRef: HTMLOListElement | undefined;
-  let sentinelRef: HTMLDivElement | undefined;
-  let observer: IntersectionObserver | undefined;
   let adjustmentFrame: number | undefined;
   let active = true;
 
   const loadingMore = () => Boolean(props.loadingMore || loadingMoreInternally());
-  const canLoadMore = () =>
-    Boolean(!props.loading && !props.error && !loadMoreError() && hidden() === 0 && props.hasMore && props.onLoadMore && !loadingMore());
 
-  const loadMore = async (retry = false): Promise<boolean> => {
-    if (props.loading || props.error || (!retry && loadMoreError()) || hidden() > 0 || !props.onLoadMore || !props.hasMore || loadingMore())
-      return false;
+  /** Loads earlier entries above the list and keeps the entries in view where they were. */
+  const loadEarlier = async (): Promise<boolean> => {
+    if (!props.onLoadMore) return false;
     const owner = listRef ? scrollOwner(listRef) : null;
     const previousScrollHeight = owner?.scrollHeight ?? 0;
-    setLoadMoreError(null);
     setLoadingMoreInternally(true);
     let loaded = false;
     try {
       loaded = (await props.onLoadMore()) !== false;
-    } catch (error) {
-      if (active) setLoadMoreError(error instanceof Error ? error.message : chatMessages().couldNotLoadEarlierMessages);
     } finally {
       if (active) setLoadingMoreInternally(false);
     }
-    if (!active || !loaded || !owner) return false;
+    if (!active || !loaded || !owner) return loaded;
     queueMicrotask(() => {
       if (!active) return;
       adjustmentFrame = requestAnimationFrame(() => {
@@ -249,36 +240,13 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
     return true;
   };
 
-  createEffect(() => {
-    if (!sentinelVisible()) {
-      setAutomaticLoadAttempted(false);
-      return;
-    }
-    if (automaticLoadAttempted() || !canLoadMore()) return;
-    setAutomaticLoadAttempted(true);
-    void loadMore();
-  });
-
-  onMount(() => {
-    if (typeof IntersectionObserver === "undefined" || !sentinelRef) return;
-    observer = new IntersectionObserver(
-      (entries) => {
-        setSentinelVisible(entries.some((entry) => entry.isIntersecting));
-      },
-      { rootMargin: "160px 0px 0px" },
-    );
-    observer.observe(sentinelRef);
-  });
-
   onCleanup(() => {
     active = false;
-    observer?.disconnect();
     if (adjustmentFrame !== undefined) cancelAnimationFrame(adjustmentFrame);
   });
 
   return (
     <div class={classNames("k2b-discussion__list-region", props.class)} aria-busy={props.loading || loadingMore() ? "true" : undefined}>
-      <div ref={sentinelRef} class="k2b-discussion__sentinel" aria-hidden="true" />
       <Show when={props.loading}>
         <p class="k2b-discussion__status" role="status">
           <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" /> {props.loadingLabel ?? chatMessages().loadingMessages}
@@ -296,16 +264,6 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
           </div>
         )}
       </Show>
-      <Show when={loadMoreError()}>
-        {(error) => (
-          <div class="k2b-discussion__status" role="alert">
-            <span>{error()}</span>
-            <button type="button" onClick={() => void loadMore(true)}>
-              {messages().retry}
-            </button>
-          </div>
-        )}
-      </Show>
       {/* The toggle stays above the entries in both states, so nothing above it moves. A failed refresh keeps it:
           the entries it folds are still there. */}
       <Show when={folded() && !props.loading}>
@@ -314,18 +272,18 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
           {hidden() > 0 ? foldMessages().showOlder({ count: hidden() }) : foldMessages().showLess}
         </button>
       </Show>
-      <Show when={!props.loading && !props.error && !loadMoreError() && (canLoadMore() || loadingMore())}>
-        <Button
-          variant="link"
-          size="sm"
+      {/* Earlier entries load above the list, with the shared edge; while folded, the toggle reveals them first. */}
+      <Show when={props.onLoadMore && props.hasMore && hidden() === 0 && !props.loading && !props.error}>
+        <LoadMore
+          side="start"
           class="k2b-discussion__load-more"
-          loading={loadingMore()}
+          hasMore
+          loading={props.loadingMore}
+          onLoadMore={loadEarlier}
+          label={props.loadMoreLabel ?? chatMessages().loadEarlier}
           loadingLabel={props.loadingLabel ?? chatMessages().loadingMessages}
-          onClick={() => void loadMore()}
-        >
-          <i class="ti ti-chevron-up" aria-hidden="true" />
-          {props.loadMoreLabel ?? chatMessages().loadEarlier}
-        </Button>
+          errorLabel={chatMessages().couldNotLoadEarlierMessages}
+        />
       </Show>
       <ol ref={listRef} class="k2b-discussion__list">
         {visible()}

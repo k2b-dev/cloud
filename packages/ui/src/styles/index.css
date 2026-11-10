@@ -4319,13 +4319,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
 }
 
-.k2b-ui .k2b-discussion__sentinel {
-  width: 100%;
-  height: 1px;
-  margin-bottom: -0.5rem;
-  pointer-events: none;
-}
-
 .k2b-ui .k2b-discussion__status {
   display: flex;
   min-width: 0;
@@ -4388,8 +4381,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
-.k2b-ui .k2b-discussion__load-more {
+/* Earlier entries load at the start of the entries' text edge. */
+.k2b-ui .k2b-load-more.k2b-discussion__load-more {
   align-self: flex-start;
+  padding-inline: 0;
 }
 
 .k2b-ui .k2b-discussion__list {
@@ -11914,18 +11909,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline: auto;
 }
 
-.k2b-ui .k2b-data-table__sentinel {
-  /* Keep the observer target measurable without extending a fill-height table. */
-  height: 1px;
-  margin-top: -1px;
-  /* A wide table scrolled sideways would otherwise clip the sentinel, so a
-     page-scrolling table would never see its end. Positioning paints it above
-     the last row, so it also stays out of hit-testing. */
-  position: sticky;
-  left: 0;
-  pointer-events: none;
-}
-
 /* -------------------------------------------------------------- log table */
 
 .k2b-ui .k2b-log-table {
@@ -12674,6 +12657,140 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-virtual-feed__item {
     transition: none;
   }
+}
+
+/* A sticky separator: one copy of the top group's separator at the top of the visible area, drawn over the rows in
+   the same place as the row's own, so the two never show at once. The feed moves it; it never moves a row. */
+.k2b-ui .k2b-virtual-feed__sticky {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  height: 0;
+}
+
+.k2b-ui .k2b-virtual-feed__sticky > .k2b-virtual-feed__separator {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  max-width: var(--k2b-reading-column);
+  margin-inline: auto;
+  /* A conversation's floating day label lets the reader click what scrolls beside it. */
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-virtual-feed__sticky > .k2b-virtual-feed__separator > span {
+  pointer-events: auto;
+}
+
+/* A list that starts at the top: full-width rows, and separators that read as the list's group headings. */
+.k2b-ui .k2b-virtual-feed[data-anchor="start"] .k2b-virtual-feed__item {
+  max-width: none;
+}
+
+.k2b-ui .k2b-virtual-feed[data-anchor="start"] .k2b-virtual-feed__separator {
+  min-height: 2rem;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 0 1rem 0.25rem;
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-virtual-feed[data-anchor="start"] .k2b-virtual-feed__separator > span {
+  padding: 0;
+  border-radius: 0;
+  color: var(--k2b-text-muted);
+  background: none;
+  font-weight: 600;
+  line-height: 1rem;
+}
+
+/* The heading covers the row under it, so a click on it never reaches a row the reader cannot see. */
+.k2b-ui .k2b-virtual-feed[data-anchor="start"] .k2b-virtual-feed__sticky > .k2b-virtual-feed__separator {
+  max-width: none;
+  pointer-events: auto;
+}
+
+/* "New above" floats at the top, over the heading that stays there. */
+.k2b-ui .k2b-virtual-feed__end[data-edge="start"] {
+  top: 0.5rem;
+  bottom: auto;
+}
+
+/* The server renders the items at the starting point in the flow: the first ones from the top, or the last ones at
+   the end with the overflow above, and a few at the top as the browser places them. The browser replaces them before
+   it paints, so the server's picture is its first one. */
+.k2b-ui .k2b-virtual-feed[data-server] > .k2b-virtual-feed__viewport {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+.k2b-ui .k2b-virtual-feed[data-server]:not([data-anchor="start"]) > .k2b-virtual-feed__viewport {
+  flex-direction: column-reverse;
+}
+
+.k2b-ui .k2b-virtual-feed[data-server]:not([data-anchor="start"]) .k2b-virtual-feed__feed {
+  margin-bottom: auto;
+}
+
+.k2b-ui .k2b-virtual-feed__item[data-server] {
+  position: relative;
+}
+
+/* The load-more edge below a list that starts at the top keeps its row in the server's flex column too. */
+.k2b-ui .k2b-virtual-feed__more {
+  flex: none;
+}
+
+/* LoadMore: the edge of a list that loads more. One row of the same height while idle, loading, or failed, so
+   nothing around it moves; it is gone once the list is complete. */
+.k2b-ui .k2b-load-more {
+  /* A wide table scrolled sideways keeps the edge in view, so its observer still sees the end. */
+  position: sticky;
+  left: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-load-more[data-state="done"] {
+  min-height: 0;
+  padding: 0;
+}
+
+/* What the observer watches: the edge, and the stretch of list ahead of it, so the next page loads before the
+   reader arrives. It reaches into the list, never past it, so it adds no scroll space. */
+.k2b-ui .k2b-load-more__reach {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: calc(100% + var(--k2b-load-more-reach));
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-load-more[data-side="start"] > .k2b-load-more__reach {
+  top: 0;
+  height: auto;
+}
+
+.k2b-ui .k2b-load-more__error {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-load-more__button[aria-disabled="true"] {
+  cursor: default;
 }
 
 /* MessageRow: a conversation row. Every part has its final height at mount, so VirtualFeed keeps its positions: the
