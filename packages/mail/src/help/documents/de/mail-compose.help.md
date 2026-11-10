@@ -90,17 +90,17 @@ Der Speicherstatus unterscheidet **Änderungen ausstehend**, **Auf diesem Gerät
 
 Kann eine Textänderung nicht sicher übernommen werden, hält Mail den Vorschlag getrennt fest. Wähle im Hinweis am Editor **Vorschlag übernehmen**, um es erneut zu versuchen, oder **Vorschlag verwerfen**, um ihn zu entfernen. **Entwurf kopieren** kopiert den ausstehenden Vorschlag. Änderungen anderer Personen und Neuladen verwerfen ihn nicht. Kläre den Vorschlag vor dem Senden. Dauert der Abgleich zu lange, beendet Mail das Warten auf das Speichern. Deine Eingabe bleibt zum erneuten Versuch oder Kopieren erhalten.
 
-Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. Mail lehnt Speichern, Änderungen an Anhängen und Verwerfen aus jeder anderen Sitzung, jedem Tab, Agenten oder CLI-Aufruf ab und nennt die bearbeitende Person. Hält niemand die Sperre, kann die nächste Sitzung den Entwurf wieder ändern. Deine eigene abgelaufene Sitzung blockiert dich also nie.
+Im Standardmodus reserviert Mail den Entwurf für die Person, die daran schreibt. Öffnen und Lesen reservieren nichts. Deine eigenen Tabs, separaten Schreibfenster und Geräte teilen sich diese Reservierung und sperren dich nie gegenseitig aus. Änderst du gleichzeitig unterschiedliche Fassungen, behält Mail die widersprüchlichen Eingaben zur Wiederherstellung.
 
-Bearbeitet ein anderer Tab oder eine andere Person den Entwurf, nennt Mail diese Sitzung nach Möglichkeit. Du kannst schreibgeschützt weiterarbeiten oder die Bearbeitung gezielt in diesen Tab holen. Nach dem Schließen des Dialogs zeigt der Editor einen ruhigen Hinweis.
+Mail verlängert die Reservierung nicht mehr, wenn du nicht mehr tippst oder den Tab in den Hintergrund legst. Sie verfällt spätestens 40 Sekunden nach der letzten Eingabe oder 30 Sekunden nach dem Wechsel in den Hintergrund. Vorschläge von Gustav und Code reservieren den Entwurf nie.
 
-Nach einem ausgeblendeten Tab, dem Ruhezustand oder einer langsamen Antwort setzt Mail die Bearbeitung selbst fort. Mail fragt nur nach, wenn ein anderer Tab, ein anderes Gerät oder eine andere Person den Entwurf gerade hält.
+Du kannst offline weiterschreiben. **Auf diesem Gerät gesichert** bedeutet, dass dieser Browser deinen aktuellen Text hält. Nach dem Verbinden speichert Mail automatisch, wenn niemand den Entwurf geändert hat. Hat eine andere Person übernommen oder eine andere Fassung gespeichert, bleibt deine Eingabe zum **Text kopieren** oder Wiederherstellen sichtbar. Mail überschreibt keine der Fassungen stillschweigend.
 
 :::warning Bearbeitung übernehmen macht die andere Sitzung schreibgeschützt
-Wähle **Bearbeitung übernehmen** nur, wenn die andere Sitzung die Bearbeitung verlieren soll.
+Hält eine andere Person die Reservierung, nennt Mail sie und bietet **Bearbeitung übernehmen** an. Ihr Editor erklärt anschließend, wer übernommen hat, und behält ungespeicherte Eingaben zur Wiederherstellung. Übernimm bei einer Antwort zuerst die Bearbeitung und wähle dann **Änderungen wiederherstellen**, um deine Eingabe in derselben Unterhaltung zu behalten. Du kannst auch ohne Übernahme weiterlesen.
 :::
 
-Ein vorübergehendes Verbindungsproblem zeigt Mail getrennt an und fordert dich nicht zur Übernahme auf. Veraltete Speichervorgänge in deiner eigenen Sitzung können Wiederherstellungskopien erzeugen. Mit der Wiederherstellungsaktion im Editor prüfst du sie und stellst sie wieder her.
+Mail fragt nur nach einer Übernahme, wenn eine andere Person die Reservierung hält. Änderungen am Server, Anhänge, Verwerfen, Agenten und CLI-Aufrufe prüfen dieselbe Zuständigkeit und denselben Zugriff. Über die Wiederherstellungsaktion im Editor prüfst und übernimmst du widersprüchliche Fassungen.
 
 Entwürfe liegen in Cloud als gemeinsame Entwürfe.
 

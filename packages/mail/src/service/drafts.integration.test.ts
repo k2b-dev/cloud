@@ -350,12 +350,10 @@ suite("mail draft limits", () => {
     expect(acquired.ok).toBe(true);
     if (!acquired.ok) return;
     try {
-      for (const context of [collaborator, owner]) {
-        expect(await acquireDraftLease({ ...target, context })).toMatchObject({
-          ok: false,
-          error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
-        });
-      }
+      expect(await acquireDraftLease({ ...target, context: collaborator })).toMatchObject({
+        ok: false,
+        error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
+      });
       const stale = { ...target, context: owner, token: crypto.randomUUID() };
       expect(await heartbeatDraftLease(stale)).toMatchObject({
         ok: false,
@@ -396,22 +394,28 @@ suite("mail draft limits", () => {
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     try {
-      expect(await acquireDraftLease({ ...target, context: owner, editorId })).toMatchObject({
+      const renewed = await acquireDraftLease({ ...target, context: owner, editorId });
+      expect(renewed).toMatchObject({
         ok: true,
         data: { token: first.data.token },
       });
-      for (const retry of [{ context: owner, editorId: crypto.randomUUID() }, { context: owner }, { context: collaborator, editorId }]) {
-        expect(await acquireDraftLease({ ...target, ...retry })).toMatchObject({
-          ok: false,
-          error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
-        });
+      if (renewed.ok) expect(Date.parse(renewed.data.expiresAt)).toBeGreaterThan(Date.parse(first.data.expiresAt));
+      for (const retry of [{ context: owner, editorId: crypto.randomUUID() }, { context: owner }]) {
+        expect(await acquireDraftLease({ ...target, ...retry })).toMatchObject({ ok: true, data: { token: first.data.token } });
       }
+      // A cancelled acquire or a closing own tab must not release another own writer.
+      expect(await heartbeatDraftLease({ ...target, context: owner, token: first.data.token })).toMatchObject({ ok: true });
+      expect(await releaseDraftLease({ ...target, context: owner, token: first.data.token })).toMatchObject({ ok: true });
+      expect(await acquireDraftLease({ ...target, context: collaborator, editorId })).toMatchObject({
+        ok: false,
+        error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
+      });
     } finally {
       await releaseDraftLease({ ...target, context: owner, token: first.data.token });
     }
   });
 
-  test("lets only the current lease holder change a shared draft", async () => {
+  test("protects the writer and preserves an offline proposal after takeover", async () => {
     const [collaboratorRow] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail)
       VALUES (${`draft-lease-mate-${suffix}`}, 'local', 'user', 'Bea Mate', ${`draft-lease-mate-${suffix}@example.test`})
@@ -485,17 +489,38 @@ suite("mail draft limits", () => {
     expect(holderSave.ok && holderSave.data.body).toBe("Holder body");
     if (!holderSave.ok) return;
 
-    const released = await releaseDraftLease({ context: owner, mailboxId, draftId: draft.data.id, token: lease.data.token });
-    expect(released.ok).toBe(true);
+    const takeover = await acquireDraftLease({ context: collaborator, mailboxId, draftId: draft.data.id, takeover: true });
+    expect(takeover.ok).toBe(true);
+    if (!takeover.ok) return;
+    expect(await heartbeatDraftLease({ context: owner, mailboxId, draftId: draft.data.id, token: lease.data.token })).toMatchObject({
+      ok: false,
+      error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED },
+    });
 
-    const afterRelease = await updateDraft({
+    const afterTakeover = await updateDraft({
       context: collaborator,
       mailboxId,
       draftId: draft.data.id,
       expectedRevision: holderSave.data.revision,
       input: { ...content, body: "Collaborator body" },
     });
-    expect(afterRelease.ok && afterRelease.data.body).toBe("Collaborator body");
+    expect(afterTakeover.ok && afterTakeover.data.body).toBe("Collaborator body");
+    if (!afterTakeover.ok) return;
+    expect(await releaseDraftLease({ context: collaborator, mailboxId, draftId: draft.data.id, token: takeover.data.token })).toMatchObject(
+      { ok: true },
+    );
+    const offlineInput = await updateDraft({
+      context: owner,
+      mailboxId,
+      draftId: draft.data.id,
+      expectedRevision: holderSave.data.revision,
+      input: { ...content, body: "Offline owner proposal" },
+    });
+    expect(offlineInput).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    const recovery = await listDraftRecoveryCopies({ context: owner, mailboxId, draftId: draft.data.id });
+    expect(recovery.ok && recovery.data.some((copy) => copy.content.body === "Offline owner proposal")).toBe(true);
+    const [retained] = await sql<{ body_markdown: string }[]>`SELECT body_markdown FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
+    expect(retained?.body_markdown).toBe("Collaborator body");
   });
 
   test("refuses an unapproved send when template text would leave the mailbox verbatim", async () => {

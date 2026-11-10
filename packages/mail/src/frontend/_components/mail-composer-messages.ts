@@ -241,6 +241,9 @@ export const mailComposerMessages = i18n.define({
       collaboratorDescription:
         "You can read the draft now, or take over when you need to make changes. Taking over makes their editor read-only.",
       collaboratorStatus: ({ name }: { name: string }) => `${name} is currently editing this draft.`,
+      collaboratorLostDescription:
+        "Another person took over editing. Your input stays here for copying or recovery. You can keep reading or take over again.",
+      collaboratorLostStatus: ({ name }: { name: string }) => `${name} took over editing. Your input stays here for recovery.`,
       takeOver: "Take over",
       draftOpenElsewhere: "Draft open elsewhere",
       unknownSessionDescription:
@@ -558,6 +561,9 @@ export const mailComposerMessages = i18n.define({
       collaboratorDescription:
         "Du kannst den Entwurf lesen oder die Bearbeitung übernehmen. Dadurch wird der Editor der anderen Person schreibgeschützt.",
       collaboratorStatus: ({ name }) => `${name} bearbeitet diesen Entwurf gerade.`,
+      collaboratorLostDescription:
+        "Eine andere Person hat die Bearbeitung übernommen. Deine Eingabe bleibt zum Kopieren oder Wiederherstellen erhalten. Du kannst weiterlesen oder die Bearbeitung wieder übernehmen.",
+      collaboratorLostStatus: ({ name }) => `${name} hat die Bearbeitung übernommen. Deine Eingabe bleibt zur Wiederherstellung erhalten.`,
       takeOver: "Bearbeitung übernehmen",
       draftOpenElsewhere: "Entwurf an anderer Stelle geöffnet",
       unknownSessionDescription:

@@ -4783,8 +4783,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       });
 
       test("Gustav's suggestion is already open in plum, its row says so, and the first typing takes it over", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
-          await draftApi(next);
+          api = await draftApi(next);
         });
         try {
           await readyDraft(page);
@@ -4794,6 +4795,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(await page.locator('[data-conversation-id="Conv01"] [data-mail-row-draft]').getAttribute("data-suggestion")).toBe("");
           // Never a second Reply while the suggestion stands in the pill's place.
           expect(await readerReplies(page).count()).toBe(0);
+          expect(api.calls).not.toContain("POST /drafts/DrfSug/lease");
           await page.locator("[data-mail-inline-draft] .cm-content").click();
           await page.keyboard.type(" Thanks!");
           await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]")?.hasAttribute("data-suggestion"));
@@ -4918,14 +4920,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
           await readyDraft(page);
           await page.keyboard.type("Not lost");
-          // Leave before the 700 ms autosave: the closing session saves, then releases the lease.
+          // Leave before the 700 ms autosave: save even if no writing lease was acquired yet.
           await page.locator('[data-conversation-id="Conv02"] a.mail-list-row').click();
           await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv02");
           await page.waitForFunction(() => !document.querySelector("[data-mail-inline-draft]"));
           await eventually(() => api.drafts.get("DrfNew")?.body, "Not lost", "saved on leave");
-          await eventually(() => api.calls.includes("DELETE /drafts/DrfNew/lease"), true, "lease released after the save");
-          const saveIndex = api.calls.lastIndexOf("PUT /drafts/DrfNew");
-          expect(saveIndex, "the save comes before the release").toBeLessThan(api.calls.indexOf("DELETE /drafts/DrfNew/lease"));
+          if (api.calls.includes("POST /drafts/DrfNew/lease")) {
+            await eventually(() => api.calls.includes("DELETE /drafts/DrfNew/lease"), true, "lease released after the save");
+            const saveIndex = api.calls.lastIndexOf("PUT /drafts/DrfNew");
+            expect(saveIndex, "the save comes before the release").toBeLessThan(api.calls.indexOf("DELETE /drafts/DrfNew/lease"));
+          } else {
+            expect(api.calls).not.toContain("DELETE /drafts/DrfNew/lease");
+          }
           expect(new URL(page.url()).searchParams.has("draft")).toBe(false);
           // Back returns to the first conversation with its draft open again, as the person left it.
           await page.goBack();

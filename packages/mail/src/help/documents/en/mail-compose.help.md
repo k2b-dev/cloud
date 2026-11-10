@@ -91,17 +91,17 @@ The save status distinguishes **Changes pending**, **Saved on this device**, and
 
 If a body change cannot be applied safely, Mail keeps the proposal separately. In the editor notice, choose **Apply proposal** to try it again or **Discard proposal** to remove it. **Copy draft** copies the proposal while it is pending. Updates from other people and reloading do not discard it. Resolve the proposal before sending. If synchronization takes too long, saving stops waiting and leaves your input available for retry or copying.
 
-Only the session that currently holds the editing lease can change the draft. Mail refuses saves, attachment changes, and discards from every other session, tab, agent, or CLI call, and it names the current editor. If nobody holds the lease, the next editor can change the draft again. Your own expired session therefore never blocks you.
+In the default editing mode, Mail reserves a draft for the person writing it. Opening or reading a draft takes no reservation. Your own tabs, separate compose windows, and devices share that reservation and never lock each other out. If you change different versions at once, Mail keeps the conflicting input for recovery.
 
-If another tab or person edits the draft, Mail names that session when possible. You can continue read-only or move editing to this tab on purpose. After the dialog closes, the composer keeps a quiet reminder.
+Mail stops renewing the reservation when you stop typing or put the tab in the background. It expires within 40 seconds of the last input, or within 30 seconds after the tab goes into the background. Gustav and Code suggestions never reserve the draft.
 
-Mail resumes editing on its own after a hidden tab, sleep, or a slow response. It asks only when another tab, device, or person holds the draft.
+You can keep writing offline. **Saved on this device** means that this browser holds your current text. When you reconnect, Mail saves automatically if nobody changed the draft. If another person took over or saved a different version, your input stays visible for **Copy text** or recovery; Mail never silently overwrites either version.
 
 :::warning Take over makes the other editor read-only
-Choose **Take over** only when you want the other editor to lose editing.
+If another person holds the reservation, Mail names them and offers **Take over**. Their editor then explains who took over and keeps unsaved input for recovery. For a reply, take over before choosing **Recover changes** to keep your current input in the same conversation. You can also keep reading without taking over.
 :::
 
-Mail shows a temporary connection problem separately and does not ask you to take over. Outdated saves within your own session can create recovery copies. Use the recovery action in the composer to inspect and restore them.
+Mail asks about takeover only when another person holds the reservation. Server-side changes, attachments, discards, agents, and CLI calls enforce the same ownership and access rules. Use the recovery action in the composer to inspect and restore conflicting versions.
 
 Drafts live in Cloud as shared drafts.
 

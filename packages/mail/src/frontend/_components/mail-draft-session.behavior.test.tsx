@@ -478,7 +478,7 @@ describe("Mail draft session", () => {
         locale: () => "en",
       });
     });
-    await waitFor(() => session.lease() !== null);
+    await session.ensureDraft();
     setCurrent(content("First", "first@example.test"));
     void session.persist();
     await waitFor(() => saves === 1);
@@ -588,11 +588,11 @@ describe("Mail draft session", () => {
 
     socket.message({ t: "event", id: "1", cursor: "s6t.mail.6", data: { conversationId: "Conv01" } });
     await Bun.sleep(20);
-    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 1, heartbeats: 1 });
+    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 1, heartbeats: 0 });
 
     socket.message({ t: "event", id: "1", cursor: "s6t.mail.7", data: { conversationId: null } });
     await Bun.sleep(20);
-    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 2, heartbeats: 2 });
+    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 2, heartbeats: 0 });
   });
 
   test("expired authentication preserves the journal and stops automatic lease retries", async () => {
@@ -682,6 +682,7 @@ describe("Mail draft session", () => {
   test("a late successful save cannot hide expired sign-in or discard newer journal text", async () => {
     const pending = Promise.withResolvers<Response>();
     respondWith((method, url) => {
+      if (url.endsWith("/lease") && method === "GET") return Response.json(null);
       if (url.endsWith("/lease"))
         return method === "POST"
           ? Response.json({ ...lease, token: "lease-token" })
@@ -751,12 +752,13 @@ describe("Mail draft session", () => {
       });
     });
     await session.ensureDraft();
+    await session.acquireLease(session.draft()!);
     expect(session.authenticationRequired()).toBe(true);
     expect(session.status()).toBe("readonly");
     expect(session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
   });
 
-  test("a composer that lost its connection becomes editable again once Mail answers, without a live update", async () => {
+  test("an offline composer retains its lease and reconnects without a live update", async () => {
     let reachable = true;
     respondWith((method, url) => {
       if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "POST") return Response.json({ ...lease, token: crypto.randomUUID() });
@@ -792,10 +794,11 @@ describe("Mail draft session", () => {
         expect(condition()).toBe(true);
       };
       await until(() => session.status() === "saved");
+      await session.acquireLease(session.draft()!);
 
       reachable = false;
-      await until(() => session.status() === "readonly");
-      expect(session.statusMessage()).toBe("Connection lost. Retry to resume editing.");
+      await until(() => session.status() === "local");
+      expect(session.lease()).not.toBeNull();
 
       reachable = true;
       await until(() => session.status() === "saved");
@@ -830,6 +833,7 @@ describe("Mail draft session", () => {
 
     const mountSession = async (
       initial: MailDraft = { ...draft(3, content("Local text", "ada@example.test")), conversationId: "Conv01" },
+      writing = true,
     ) => {
       const { createMailDraftSession } = await import("./mail-draft-session");
       const [current, setCurrent] = createSignal<DraftEditableContent>({
@@ -837,8 +841,12 @@ describe("Mail draft session", () => {
         signatureTemplateId: initial.signatureTemplateId,
       });
       const trace: Array<{ status: string; message: string; conflict: unknown }> = [];
+      let disposed = false;
       const session = createRoot((disposeRoot) => {
-        dispose = disposeRoot;
+        dispose = () => {
+          disposed = true;
+          disposeRoot();
+        };
         const session = createMailDraftSession({
           mailboxId: MAILBOX_ID,
           currentActor: { kind: "user", id: "Usr001" },
@@ -846,7 +854,7 @@ describe("Mail draft session", () => {
           hasVerifiedIdentity: () => true,
           content: current,
           applyDraftContent: setCurrent,
-          isDisposed: () => false,
+          isDisposed: () => disposed,
           onRecovered: () => undefined,
           onMaterialized: () => undefined,
           locale: () => "en",
@@ -857,6 +865,10 @@ describe("Mail draft session", () => {
         return session;
       });
       await flush();
+      if (writing) {
+        void session.acquireLease(initial);
+        await flush();
+      }
       return { session, current, setCurrent, trace };
     };
     let heartbeatAnswers: Response[];
@@ -864,13 +876,16 @@ describe("Mail draft session", () => {
     let saveAnswer: ((body: { expectedRevision: number; draft: DraftEditableContent }) => Response | Promise<Response>) | undefined;
     let stored: MailDraft;
     let heldLease: typeof lease | null;
+    let offline: boolean;
     beforeEach(() => {
+      offline = false;
       heartbeatAnswers = [];
       acquireAnswer = undefined;
       saveAnswer = undefined;
       stored = { ...draft(3, content("Local text", "ada@example.test")), conversationId: "Conv01" };
-      heldLease = lease;
+      heldLease = null;
       respondWith((method, url, body) => {
+        if (offline) throw new TypeError("Failed to fetch");
         if (url.endsWith("/lease")) {
           if (method === "POST") return acquireAnswer?.(body) ?? Response.json({ ...lease, token: "local-token" });
           if (method === "GET") return Response.json(heldLease);
@@ -908,6 +923,94 @@ describe("Mail draft session", () => {
       expect(trace.map((entry) => entry.status)).not.toContain("preparing");
       expect(trace.map((entry) => entry.status)).not.toContain("readonly");
     };
+
+    test("opening a draft for reading never acquires a lease", async () => {
+      const state = await mountSession(undefined, false);
+      expect(state.session.status()).toBe("saved");
+      expect(state.session.lease()).toBeNull();
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(0);
+      expect((await state.session.persist())?.id).toBe(DRAFT_ID);
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(0);
+      state.setCurrent({ ...state.current(), body: "First input" });
+      await state.session.persist();
+      expect(state.session.lease()).not.toBeNull();
+      expect(stored.body).toBe("First input");
+    });
+
+    test("closing before the first lease arrives still saves the first input", async () => {
+      const state = await mountSession(undefined, false);
+      const saved = Promise.withResolvers<void>();
+      saveAnswer = (input) => {
+        stored = { ...stored, ...input.draft, revision: input.expectedRevision + 1 };
+        saved.resolve();
+        return Response.json(stored);
+      };
+      state.setCurrent({ ...state.current(), body: "Typed and immediately closed" });
+      dispose();
+      await saved.promise;
+      expect(stored.body).toBe("Typed and immediately closed");
+    });
+
+    test("offline typing stays editable and saves after reconnect without another writer", async () => {
+      const state = await mountSession();
+      offline = true;
+      state.setCurrent({ ...state.current(), body: "Typed offline" });
+      expect(await state.session.persist()).toBeNull();
+      await advance(10_000);
+      await advance(500);
+      await advance(1_000);
+      expect(state.session.status()).not.toBe("readonly");
+      state.setCurrent({ ...state.current(), body: "Still typing offline" });
+      await flush();
+      expect(state.session.saveStatus()).toBe("local");
+      offline = false;
+      window.dispatchEvent(new Event("online"));
+      expect((await state.session.persist())?.body).toBe("Still typing offline");
+      expect(state.session.saveStatus()).toBe("saved");
+    });
+
+    test("offline input and another person's saved text both survive takeover and recovery", async () => {
+      const state = await mountSession();
+      offline = true;
+      state.setCurrent({ ...state.current(), body: "My offline proposal" });
+      expect(await state.session.persist()).toBeNull();
+      await advance(10_000);
+      await advance(500);
+      await advance(1_000);
+      expect(state.session.status()).not.toBe("readonly");
+      stored = { ...stored, body: "Grace's saved text", revision: 4 };
+      heldLease = { ...lease, holder: { ...lease.holder, id: "Usr002", displayName: "Grace Example" } };
+      acquireAnswer = () => Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
+      offline = false;
+      window.dispatchEvent(new Event("online"));
+      expect(await state.session.persist()).toBeNull();
+      expect(state.session.leaseConflict()).toMatchObject({ lease: heldLease });
+      expect(state.session.revisionConflict()).toBe(true);
+      expect(state.current().body).toBe("My offline proposal");
+      expect(state.session.saveStatus()).toBe("local");
+      expect(stored.body).toBe("Grace's saved text");
+      acquireAnswer = () => Response.json({ ...lease, token: "taken-over" });
+      await state.session.acquireLease(state.session.draft()!, true);
+      expect(state.session.restoreCurrentInput()).toBe(true);
+      expect(state.session.localRecoveryCopies().map((copy) => copy.content.body)).toContain("Grace's saved text");
+      expect((await state.session.persist())?.body).toBe("My offline proposal");
+      expect(state.session.localRecoveryCopies().map((copy) => copy.content.body)).toContain("Grace's saved text");
+    });
+
+    test.each(["idle", "hidden"])("a %s editor stops renewing the writing lease", async (reason) => {
+      const state = await mountSession();
+      state.setCurrent({ ...state.current(), body: "Finished typing" });
+      await state.session.persist();
+      if (reason === "hidden") {
+        Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => "hidden" });
+        dom.document.dispatchEvent(new Event("visibilitychange"));
+      }
+      await advance(10_001);
+      const renewals = requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease")).length;
+      await advance(30_000);
+      expect(requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease"))).toHaveLength(renewals);
+      expect(state.session.status()).toBe("saved");
+    });
 
     test("disposing while an acquire is pending releases the granted token exactly once", async () => {
       let grant: (() => void) | undefined;
@@ -966,8 +1069,70 @@ describe("Mail draft session", () => {
       expect(requests.filter((r) => r.method === "DELETE").map((r) => r.body)).toEqual([{ token: "cancelled-token" }]);
       const heartbeats = requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease")).length;
       await advance(10_000);
-      expect(requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease"))).toHaveLength(heartbeats + 1);
+      expect(requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease"))).toHaveLength(heartbeats);
       healthy(state);
+    });
+
+    test("BFCache return after inactivity stays editable without reserving the draft", async () => {
+      const state = await mountSession();
+      await advance(40_000);
+      const acquisitions = requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease")).length;
+      for (const type of ["pagehide", "pageshow"]) {
+        const event = new Event(type);
+        Object.defineProperty(event, "persisted", { value: true });
+        window.dispatchEvent(event);
+      }
+      await flush();
+      expect(state.session.status()).toBe("saved");
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(acquisitions);
+      state.setCurrent({ ...state.current(), body: "After returning" });
+      expect((await state.session.persist())?.body).toBe("After returning");
+    });
+
+    test("reconnecting an idle saved editor does not acquire or renew a lease", async () => {
+      const state = await mountSession();
+      heartbeatAnswers.push(Response.json({}, { status: 503 }), Response.json({}, { status: 503 }), Response.json({}, { status: 503 }));
+      await advance(10_000);
+      await advance(500);
+      await advance(1_000);
+      expect(state.session.status()).toBe("local");
+      const writes = requests.filter((r) => r.url.endsWith("/lease") && ["POST", "PUT"].includes(r.method)).length;
+      await advance(40_000);
+      expect(requests.filter((r) => r.url.endsWith("/lease") && ["POST", "PUT"].includes(r.method))).toHaveLength(writes);
+      expect(state.session.status()).toBe("saved");
+    });
+
+    test("new typing after idle revalidates the lease even when the client clock moves backwards", async () => {
+      const state = await mountSession();
+      await advance(10_000);
+      await advance(30_000);
+      setSystemTime(new Date("2026-10-04T09:00:00.000Z"));
+      const acquisitions = requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease")).length;
+      state.setCurrent({ ...state.current(), body: "New typing after idle" });
+      await state.session.persist();
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(acquisitions + 1);
+    });
+
+    test("an idle saved reader reports an occupied draft without claiming unsaved input was taken over", async () => {
+      const state = await mountSession();
+      await advance(40_000);
+      heldLease = { ...lease, holder: { ...lease.holder, id: "Usr002" } };
+      await state.session.resumeCurrentLease();
+      expect(state.session.leaseConflict()?.reason).toBe("occupied");
+      expect(state.session.revisionConflict()).toBe(false);
+    });
+
+    test("an internal TypeError is a visible save error rather than an offline status", async () => {
+      const state = await mountSession();
+      state.setCurrent({ ...state.current(), body: "Input awaiting hashing" });
+      const hash = spyOn(cryptoUtils.common, "hash").mockRejectedValue(new TypeError("Hashing failed"));
+      try {
+        expect(await state.session.persist()).toBeNull();
+        expect(state.session.status()).toBe("error");
+        expect(state.session.statusMessage()).toBe("Hashing failed");
+      } finally {
+        hash.mockRestore();
+      }
     });
 
     test("a live echo during a silent re-acquire waits for it instead of orphaning the granted lease", async () => {
@@ -1037,26 +1202,18 @@ describe("Mail draft session", () => {
       expect(requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease"))).toHaveLength(2);
     });
 
-    test("reload waits for the predecessor's keepalive release", async () => {
-      let released = false;
-      acquireAnswer = () =>
-        released ? Response.json({ ...lease, token: "new-token" }) : Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
-      setTimeout(() => {
-        released = true;
-        heldLease = null;
-      }, 300);
+    test("reload shares its person's lease without waiting for the predecessor's release", async () => {
+      acquireAnswer = () => Response.json({ ...lease, token: "same-person-token" });
       const state = await mountSession();
-      expect(state.session.status()).toBe("preparing");
+      expect(state.session.lease()?.token).toBe("same-person-token");
       const socket = FakeWebSocket.instances.at(-1)!;
       socket.open();
       socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
       socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: null } });
       await flush();
-      await advance(250);
-      await advance(500);
       healthy(state);
       expect(state.trace.map((entry) => entry.status)).not.toContain("readonly");
-      expect(requests.filter((r) => r.method === "POST")).toHaveLength(3);
+      expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
     });
 
     test("live echo of an own save stays quiet for mailbox and conversation events, including a pending save", async () => {
@@ -1467,17 +1624,17 @@ describe("Mail draft session", () => {
       expect(state.session.localRecoveryCopies()).toEqual([]);
     });
 
-    test("a read-only second tab does not adopt another editor's live handoff journal", async () => {
+    test.each(["Usr001", "Usr002"])("a reading tab does not adopt holder %s's live handoff journal", async (holderId) => {
       const storage = openMailUserDraftStorage(localStorage, "Usr001");
       storage.setItem(
         mailDraftJournalKey(MAILBOX_ID, DRAFT_ID),
         JSON.stringify({ revision: 3, content: content("Other tab's pending text", "ada@example.test") }),
       );
-      heldLease = { ...lease, holder: { ...lease.holder, id: "Usr002" } };
-      acquireAnswer = () => Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
-      const state = await mountSession();
+      heldLease = { ...lease, holder: { ...lease.holder, id: holderId } };
+      const state = await mountSession(undefined, false);
       expect(state.current().body).toBe(stored.body);
       expect(state.session.lease()).toBeNull();
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(0);
       expect(JSON.parse(storage.getItem(mailDraftJournalKey(MAILBOX_ID, DRAFT_ID))!).content.body).toBe("Other tab's pending text");
     });
 
@@ -1520,7 +1677,7 @@ describe("Mail draft session", () => {
       }
     });
 
-    test("persist rechecks a conflict discovered while reacquiring its own lease", async () => {
+    test("reacquiring does not reload another tab's journal over current typing", async () => {
       const state = await mountSession();
       await state.session.ensureDraft();
       state.session.setLease(null);
@@ -1529,9 +1686,9 @@ describe("Mail draft session", () => {
         mailDraftJournalKey(MAILBOX_ID, DRAFT_ID),
         JSON.stringify({ revision: 1, content: pending }),
       );
-      expect(await state.session.persist()).toBeNull();
-      expect(state.current()).toEqual(pending);
-      expect(state.session.revisionConflict()).toBe(true);
+      expect((await state.session.persist())?.body).toBe("Local text");
+      expect(state.current().body).toBe("Local text");
+      expect(state.session.revisionConflict()).toBe(false);
       expect(requests.filter((r) => r.method === "PUT" && !r.url.endsWith("/lease"))).toHaveLength(0);
       expect(stored.body).toBe("Local text");
     });
@@ -1637,32 +1794,28 @@ describe("Mail draft session", () => {
       });
     });
 
-    test("a real same-actor tab opens the occupied dialog after the bounded grace", async () => {
-      acquireAnswer = () => Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
+    test("a same-person tab never opens an occupied dialog", async () => {
+      acquireAnswer = () => Response.json({ ...lease, token: "shared-person-token" });
       const state = await mountSession();
       expect(state.session.leaseConflict()).toBeNull();
-      expect(state.session.status()).toBe("preparing");
+      expect(state.session.lease()?.token).toBe("shared-person-token");
       for (const ms of [250, 500, 1_000, 2_000, 4_000, 2_250]) await advance(ms);
-      expect(state.session.leaseConflict()).toEqual({ lease, reason: "occupied" });
-      const { mailDraftCollaborationCopy } = await import("./MailDraftCollaborationDialog");
-      expect(mailDraftCollaborationCopy(state.session.leaseConflict()!, lease.holder, "en")).toMatchObject({
-        title: "Draft open in another tab",
-        takeoverLabel: "Edit in this tab",
-      });
+      expect(state.session.leaseConflict()).toBeNull();
     });
 
-    test("Take over during the same-tab grace waits for the cancelled acquire and then holds the lease", async () => {
+    test("Take over grants the other person's occupied lease with one request", async () => {
+      heldLease = { ...lease, holder: { ...lease.holder, id: "Usr002", displayName: "Grace Example" } };
       acquireAnswer = (body) =>
         (body as { takeover?: boolean }).takeover
           ? Response.json({ ...lease, token: "takeover-token" })
           : Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
       const state = await mountSession();
-      expect(state.session.status()).toBe("preparing");
+      expect(state.session.status()).toBe("readonly");
       state.session.stopHeartbeat();
       const acquired = await state.session.acquireLease(state.session.draft()!, true);
       await flush();
       expect(acquired?.token).toBe("takeover-token");
-      healthy(state);
+      expect(state.session.leaseConflict()).toBeNull();
       expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease")).map((r) => r.body)).toMatchObject([
         { takeover: false },
         { takeover: true },
@@ -1680,16 +1833,12 @@ describe("Mail draft session", () => {
       expect(mailDraftCollaborationCopy(state.session.leaseConflict()!, lease.holder, "en").takeoverLabel).toBe("Take over");
     });
 
-    test("a real same-actor takeover during heartbeat has no initial-acquire grace", async () => {
+    test("another device of the same person resumes without takeover or a dialog", async () => {
       const state = await mountSession();
-      acquireAnswer = () => Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
       heartbeatAnswers.push(Response.json({ code: "DRAFT_LEASE_NOT_OWNED" }, { status: 409 }));
       await advance(10_000);
-      expect(state.session.leaseConflict()).toEqual({ lease, reason: "lost" });
-      const { mailDraftCollaborationCopy } = await import("./MailDraftCollaborationDialog");
-      expect(mailDraftCollaborationCopy(state.session.leaseConflict()!, lease.holder, "en").description).toBe(
-        "Another tab or window took over editing this draft. You can keep reading here or move editing back to this tab.",
-      );
+      expect(state.session.leaseConflict()).toBeNull();
+      expect(state.session.lease()).not.toBeNull();
     });
 
     test("an unreadable held lease is retried without inventing another editor", async () => {

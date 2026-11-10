@@ -20,7 +20,7 @@ import { attachEventInvitation } from "./calendar-invitations";
 import { sha256Json } from "./canonical";
 import { mergeConversations } from "./conversations";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
-import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
+import { acquireDraftLease, getDraftLease, releaseDraftLease } from "./draft-leases";
 import { applyDraftTableAction } from "./draft-table-actions";
 import * as uploads from "./draft-uploads";
 import * as drafts from "./drafts";
@@ -221,6 +221,9 @@ suite("Mail service-account suggestions", () => {
     // A person's own draft stays open to Gustav, which changes it only on request; only adopted suggestions close.
     unwrap(await save(human, gustav, { body: "Changed on request" }));
     const draft = await suggest();
+    expect(unwrap(await getDraftLease({ context: owner, mailboxId, draftId: draft.id }))).toBeNull();
+    unwrap(await drafts.getDraft(owner, mailboxId, draft.id));
+    expect(unwrap(await getDraftLease({ context: owner, mailboxId, draftId: draft.id }))).toBeNull();
     const lease = unwrap(await acquireDraftLease({ context: owner, mailboxId, draftId: draft.id }));
     unwrap(await releaseDraftLease({ context: owner, mailboxId, draftId: draft.id, token: lease.token }));
     expect(unwrap(await drafts.getDraft(owner, mailboxId, draft.id)).suggestion).toBeTrue();

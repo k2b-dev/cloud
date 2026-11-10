@@ -298,7 +298,6 @@ export default function MailComposer(props: {
     sharedState,
     isShared,
     lease,
-    materializedLeasePending,
     authenticationRequired,
     prepareSignIn,
     leaseConflict,
@@ -487,7 +486,7 @@ export default function MailComposer(props: {
       verifiedIdentities().length > 0 &&
       status() !== "preparing" &&
       status() !== "readonly" &&
-      (isShared() ? Boolean(shared() && !sharedState()?.terminal) : Boolean(lease()) || !draft() || materializedLeasePending()),
+      (isShared() ? Boolean(shared() && !sharedState()?.terminal) : !leaseConflict()),
   );
   const editable = createMemo(() => canEditDraft() && composerTransition.active() === null);
   let editorController: TextEditorController | undefined;
@@ -722,7 +721,7 @@ export default function MailComposer(props: {
       // same queue; the recovery transition already prevents new input.
       await serializeDraftMutation(async () => {
         if (disposed || recoveryController !== controller || controller.signal.aborted) return;
-        const currentLease = lease();
+        const currentLease = isShared() ? null : (lease() ?? (await acquireLease(currentDraft)));
         if (!canEditDraft() || (!isShared() && !currentLease)) throw new Error(t().draftNotEditable);
         if (!isShared()) draftSession.keepCurrentRecoveryCopy();
         const restore = (leaseToken?: string) =>
@@ -1255,7 +1254,7 @@ export default function MailComposer(props: {
         leaveBack("closed");
         return;
       }
-      if (draft() && !lease() && !isShared()) {
+      if (draft() && !lease() && !isShared() && !hasUnsavedChanges()) {
         leaveBack("closed");
         return;
       }

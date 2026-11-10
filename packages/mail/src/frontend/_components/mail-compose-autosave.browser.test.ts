@@ -89,7 +89,7 @@ let active = 0,
   maximum = 0,
   conflicts = 0,
   loseAnswer = false;
-let lease: { token: string; editorId: string } | null = null;
+let lease: { token: string; editorId: string; holderId?: string } | null = null;
 let firstWrite: Promise<void> | null = null;
 let writes: Array<{ expectedRevision: number; draft: DraftEditableContent }> = [];
 let copies: MailDraft[] = [];
@@ -97,7 +97,7 @@ let recoveryCopies: DraftRecoveryCopy[] = [];
 let restoreOverlapsSave = false;
 const leaseAnswer = () => ({
   token: lease?.token,
-  holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
+  holder: { kind: "user", id: lease?.holderId ?? "Usr001", displayName: lease?.holderId ? "Grace" : "Ada", avatarHash: null },
   acquiredAt: now,
   expiresAt: "2026-10-11T11:00:00.000Z",
 });
@@ -113,8 +113,8 @@ const server = Bun.serve({
     if (path.endsWith("/lease")) {
       if (request.method === "POST") {
         const input = (await request.json()) as { editorId: string; takeover: boolean };
-        if (lease && lease.editorId !== input.editorId && !input.takeover)
-          return Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
+        // Every page in this fixture acts as Ada: her tabs share one lease.
+        if (lease?.holderId && !input.takeover) return Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
         lease ??= { token: crypto.randomUUID(), editorId: input.editorId };
         if (input.takeover) lease = { token: crypto.randomUUID(), editorId: input.editorId };
         return Response.json(leaseAnswer());
@@ -177,6 +177,7 @@ const server = Bun.serve({
     if (path.endsWith("/drafts/Draft1")) {
       if (request.method === "GET") return Response.json(stored);
       if (request.method === "PUT") {
+        if (lease?.holderId) return Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
         const input = (await request.json()) as { expectedRevision: number; draft: DraftEditableContent };
         writes.push(input);
         active++;
@@ -281,6 +282,52 @@ const waitSaved = async (_page: Page, body: string) => {
   await until(() => stored.body === body && active === 0);
 };
 
+test.each(["unchanged", "taken over"])(
+  "offline writing stays editable after missed heartbeats: %s",
+  async (scenario) => {
+    reset();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await mount(page);
+      expect(lease).toBeNull();
+      await bodyInput(page).fill("Saved before disconnect");
+      await waitSaved(page, "Saved before disconnect");
+      await page.clock.install({ time: Date.parse(now) });
+      await context.setOffline(true);
+      await bodyInput(page).fill("Offline input");
+      await page.clock.runFor(16_000);
+      // The old session became read-only after heartbeat retry exhaustion.
+      expect(await bodyInput(page).getAttribute("contenteditable")).toBe("true");
+      await bodyInput(page).fill("Still writing after missed heartbeats");
+      expect(await page.locator('[data-mail-save-status="local"]').count()).toBeGreaterThan(0);
+      if (scenario === "taken over") {
+        stored = { ...stored, body: "Grace's online text", revision: stored.revision + 1 };
+        lease = { token: crypto.randomUUID(), editorId: "grace-editor", holderId: "Usr002" };
+      }
+      await context.setOffline(false);
+      // Online retries run against real browser time again.
+      await page.clock.resume();
+      if (scenario === "taken over") {
+        await page.getByRole("button", { name: "Take over", exact: true }).last().waitFor();
+        expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Still writing after missed heartbeats");
+        expect(stored.body).toBe("Grace's online text");
+        await page.getByRole("button", { name: "Take over", exact: true }).last().click();
+        await page.getByRole("button", { name: "Save as new draft", exact: true }).click();
+        await until(() => copies.length === 1);
+        expect(copies[0]?.body).toBe("Still writing after missed heartbeats");
+        expect(stored.body).toBe("Grace's online text");
+      } else {
+        await waitSaved(page, "Still writing after missed heartbeats");
+        expect(conflicts).toBe(0);
+      }
+    } finally {
+      await context.close();
+    }
+  },
+  20_000,
+);
+
 test("fresh compose continuously types for 60 seconds while subject and recipients change", async () => {
   reset();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -367,7 +414,6 @@ test("two tabs retain both versions through conflict, reload and save as new", a
     await mount(a);
     await bodyInput(a).fill("Tab A input must survive");
     await until(() => writes.length === 1);
-    lease = null; // A's lease expires offline; B is now the exclusive editor.
     await mount(b);
     await bodyInput(b).fill("Tab B saved version");
     // A's request is deliberately still in flight until B has committed.
