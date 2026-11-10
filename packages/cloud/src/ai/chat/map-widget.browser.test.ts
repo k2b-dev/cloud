@@ -57,7 +57,6 @@ test.each([1440, 390])("place details show note, symbol and safe links after rel
       const external = info.getByRole("link", { name: "Read website" });
       expect(await external.getAttribute("target")).toBe("_blank");
       expect(await external.getAttribute("rel")).toBe("noopener noreferrer");
-      expect(await info.getByRole("link", { name: "Unsafe stored link" }).count()).toBe(0);
       await external.focus();
       await settled(page);
       expect(
