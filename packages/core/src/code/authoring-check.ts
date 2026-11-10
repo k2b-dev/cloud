@@ -3,6 +3,7 @@ import { CODE_CHECK_LIMITS, type CodeCheckRequest, type CodeSdkOptions, generate
 import type { CapabilityManifest, CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
+import { isCodeAiOperation } from "./policy-contracts";
 import { createRunnerCodeCheckHost } from "./runner-jobs";
 import { readCode } from "./store";
 
@@ -52,10 +53,7 @@ export async function createCodeCheckRequest(
     entry,
     sdk,
     aiOperations: sdk.manifest.operations
-      .filter(
-        (operation) =>
-          operation.capability.startsWith("core.ai.") && !["core.ai.chat.deliver", "core.ai.chat.run.read"].includes(operation.capability),
-      )
+      .filter((operation) => isCodeAiOperation(operation.capability))
       .map((operation) => operation.capability),
     limits: CODE_CHECK_LIMITS,
   };

@@ -41,7 +41,6 @@ test("the index names every app export, method and automation event with its pol
     expect(method.description.length).toBeGreaterThan(0);
     expect(method.description.length).toBeLessThanOrEqual(160);
     expect(method.description).not.toContain("\n");
-    if (method.kind === "query") expect(method.policy).toBe("read");
   }
   // A targeted method is called on its handle; the path shows the factory with its id.
   expect(index.apps.flatMap((app) => app.methods).some((method) => /^\w+\.[\w.]+\(id\)\.\w/.test(method.path))).toBe(true);
@@ -89,4 +88,20 @@ test("a resource Code's declarations always carry its owner's app, so the owner 
   if (view.kind !== "declarations") throw new Error("expected declarations");
   expect(view.apps).toEqual(["mail", "spaces"]);
   expect(view.declarations).toContain("export declare const owner:");
+});
+
+test("the SDK index classifies inference queries as AI and keeps non-inference queries read", () => {
+  const sdk = generateCodeSdk(manifests, { mode: "personal" });
+  const index = codeChatSdkView(manifests, { mode: "personal" });
+  if (index.kind !== "index") throw new Error("expected the index");
+  const core = index.apps.find((app) => app.appId === "core")!;
+  const operations = sdk.manifest.operations.filter((operation) => operation.appId === "core");
+  const policy = (capability: string) => {
+    const position = operations.findIndex((operation) => operation.capability === `core.${capability}`);
+    expect(position).toBeGreaterThanOrEqual(0);
+    return core.methods[position]?.policy;
+  };
+  for (const capability of ["ai.generate", "ai.decide", "ai.chat.run"]) expect(policy(capability)).toBe("ai");
+  for (const capability of ["ai.chat.run.read", "code.list"]) expect(policy(capability)).toBe("read");
+  expect(policy("ai.chat.deliver")).toBe("silent_you");
 });

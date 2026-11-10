@@ -15,6 +15,12 @@ resource an operation acts on. The available factories, methods, inputs and
 results come from [application capability manifests](/en/docs/platform/capabilities).
 Third-party applications use the same path as built-in applications.
 
+Gustav's `code_sdk` index shows each method's policy classification. Inference
+calls (`core.ai.generate`, `core.ai.decide` and `core.ai.chat.run`) use `ai`,
+including inference Queries. Reading a stored chat run uses `read`; delivering
+a chat message retains its Action policy. The index, checker and runtime use
+the same inference classification.
+
 SDK generation rejects invalid app IDs, capability paths, target types and event
 names with a validation error. App IDs use the capability app-ID grammar; local
 names and ref target types use `CapabilityLocalIdSchema`. Ref field names remain
