@@ -14,6 +14,10 @@ import { CountryMap } from "@k2b/ui/country-map";
 import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
+// This gallery backs the frozen existing-demo parity fixture. BalanceFlow has
+// its own catalog showcase in charts/examples/balanceFlow.ts.
+type DemoKind = Exclude<ChartKind, "balanceFlow">;
+
 const examples = {
   funnel: {
     description: "Funnel · Share of the start and previous step.",
@@ -366,12 +370,12 @@ const examples = {
       ],
     },
   },
-} satisfies { [K in ChartKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
+} satisfies { [K in DemoKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
 
 type TooltipField = { label: string; unit?: string; names?: Record<string, string> };
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
-const tooltipExamples: Record<ChartKind, TooltipExample> = {
+const tooltipExamples: Record<DemoKind, TooltipExample> = {
   bubble: {
     title: "Campaign",
     fields: { group: { label: "Group" }, x: { label: "Visits" }, y: { label: "Opens" }, size: { label: "Audience" } },

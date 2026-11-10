@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup,
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
-import { calendarLayout } from "../charts/core/calendar";
+import { calendarLayout } from "../charts/core/calendar-layout";
 import { lineDetailsEnabled, lineLegendX } from "../charts/core/line-options";
 import type { ChartDrawingOptions } from "../charts/core/render";
 import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
@@ -11,6 +11,7 @@ import { sankeyWidth } from "../charts/core/sankey-size";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import type { BalanceFlowUiProps } from "./ChartBalanceFlow";
 import { calendarInspectionNavigation, mountCalendarScroll } from "./chart-calendar";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
@@ -120,7 +121,7 @@ export type ChartProps = {
     tooltip?: ChartTooltipFormatter;
     /** Optional shared X cursor for line charts. */
     cursor?: ChartCursor;
-  };
+  } & (K extends "balanceFlow" ? BalanceFlowUiProps : {});
 }[ChartKind];
 
 /** Empty-data short-circuit. Kept per-kind because each renderer's payload

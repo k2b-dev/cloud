@@ -1740,6 +1740,15 @@
   gap: 0.75rem;
 }
 
+.ui-sortable-demo__row {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 .ui-dnd-demo__targets {
   display: flex;
   flex-wrap: wrap;
