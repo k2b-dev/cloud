@@ -457,29 +457,32 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
           </For>
         </div>
       </div>
-      <Show when={props.zoom !== false && doc()}>
+      {/* The pill: page and zoom unless `zoom` is false, then the host's actions, which stay without zoom. */}
+      <Show when={doc() && (props.zoom !== false || (props.actions?.length ?? 0) > 0)}>
         <div class="k2b-pdf-viewer__bar">
           <Toolbar label={messages().pdfZoom}>
-            <Show when={props.page === undefined && pages().length > 1}>
-              <Toolbar.Label class="k2b-pdf-viewer__page-number">
-                <span class="k2b-sr-only">{messages().pdfPage({ number: current() + 1, total: pages().length })}</span>
-                <span aria-hidden="true">{messages().pdfPageShort({ number: current() + 1, total: pages().length })}</span>
+            <Show when={props.zoom !== false}>
+              <Show when={props.page === undefined && pages().length > 1}>
+                <Toolbar.Label class="k2b-pdf-viewer__page-number">
+                  <span class="k2b-sr-only">{messages().pdfPage({ number: current() + 1, total: pages().length })}</span>
+                  <span aria-hidden="true">{messages().pdfPageShort({ number: current() + 1, total: pages().length })}</span>
+                </Toolbar.Label>
+                <Toolbar.Separator />
+              </Show>
+              <Toolbar.Action label={messages().pdfZoomOut} icon="ti ti-minus" disabled={percent() <= SMALLEST} onClick={() => step(-1)} />
+              <Toolbar.Label class="k2b-pdf-viewer__percent">
+                <span aria-live="polite">{messages().pdfZoomPercent({ value: percent() })}</span>
               </Toolbar.Label>
+              <Toolbar.Action label={messages().pdfZoomIn} icon="ti ti-plus" disabled={percent() >= LARGEST} onClick={() => step(1)} />
               <Toolbar.Separator />
+              {/* Icons only; the pressed state is the blue icon without a fill. */}
+              <Toolbar.Action
+                label={fitMode() === "page" ? messages().pdfFitPageLabel : messages().pdfFitWidthLabel}
+                icon={fitMode() === "page" ? "ti ti-arrows-vertical" : "ti ti-arrows-horizontal"}
+                pressed={fitWidth()}
+                onClick={fit}
+              />
             </Show>
-            <Toolbar.Action label={messages().pdfZoomOut} icon="ti ti-minus" disabled={percent() <= SMALLEST} onClick={() => step(-1)} />
-            <Toolbar.Label class="k2b-pdf-viewer__percent">
-              <span aria-live="polite">{messages().pdfZoomPercent({ value: percent() })}</span>
-            </Toolbar.Label>
-            <Toolbar.Action label={messages().pdfZoomIn} icon="ti ti-plus" disabled={percent() >= LARGEST} onClick={() => step(1)} />
-            <Toolbar.Separator />
-            {/* Icons only; the pressed state is the blue icon without a fill. */}
-            <Toolbar.Action
-              label={fitMode() === "page" ? messages().pdfFitPageLabel : messages().pdfFitWidthLabel}
-              icon={fitMode() === "page" ? "ti ti-arrows-vertical" : "ti ti-arrows-horizontal"}
-              pressed={fitWidth()}
-              onClick={fit}
-            />
             <For each={props.actions ?? []}>
               {(action) => <Toolbar.Action label={action.label} icon={action.icon} disabled={action.disabled} onClick={action.onClick} />}
             </For>

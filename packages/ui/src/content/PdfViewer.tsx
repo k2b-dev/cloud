@@ -102,8 +102,11 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
     setShown(document);
   };
 
-  /** Loads from the address or the request; a newer load or the end of the viewer drops a late answer. */
-  const load = async () => {
+  /**
+   * Loads from the address or the request. A person's click waits for a running load; a changed source (`replace`)
+   * supersedes it. A newer load or the end of the viewer drops a late answer.
+   */
+  const load = async (replace = false) => {
     const source = props.data;
     const request =
       typeof source === "string"
@@ -115,12 +118,15 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
         : source
           ? undefined
           : props.request;
-    if (!request || (loading() && typeof source !== "string") || props.disabled) return;
+    if (!request || (loading() && !replace) || props.disabled) return;
     const current = ++generation;
-    // A retry the loaded document removes hands keyboard focus to the viewer instead of dropping it.
+    // The focused render or retry action leaves with the state it belongs to: keyboard focus moves to the viewer at
+    // once instead of dropping to the page.
     const focused = root?.contains(document.activeElement) ?? false;
     setLoading(true);
     setError(null);
+    setUndrawable(false);
+    if (focused && root && !root.contains(document.activeElement)) root.focus();
     try {
       const blob = await toBlob(await request());
       if (disposed || current !== generation) return;
@@ -134,16 +140,30 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
     }
   };
 
-  // Bytes show at once; an address or an automatic request loads, again whenever it changes.
+  // Bytes show at once and an address loads, again whenever `data` changes; either replaces a running load.
+  createEffect(
+    on(
+      () => props.data,
+      (data) => {
+        if (data instanceof Blob || data instanceof ArrayBuffer) {
+          fetching?.abort();
+          generation += 1;
+          setLoading(false);
+          show(data);
+        } else if (typeof data === "string") void load(true);
+      },
+    ),
+  );
+  // An automatic request runs once it may, and again for a new request, which replaces a running one.
+  let requested: PdfViewerRequest | undefined;
   createEffect(
     on(
       () => [props.data, props.request, props.autoLoad, props.disabled] as const,
       ([data, request, autoLoad, disabled]) => {
-        if (data instanceof Blob || data instanceof ArrayBuffer) {
-          generation += 1;
-          setLoading(false);
-          show(data);
-        } else if (typeof data === "string" || (request && autoLoad && !disabled)) void load();
+        if (data !== undefined || !request || !autoLoad || disabled) return;
+        if (request === requested && (shown() || loading())) return;
+        requested = request;
+        void load(true);
       },
     ),
   );
@@ -200,6 +220,15 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
     if (!shown()) return loading() || (!onDemand() && !props.disabled && (props.data !== undefined || props.request)) ? "loading" : "idle";
     return drawn() ? null : "loading";
   };
+  // A document pdf.js cannot draw can still open in the browser's viewer, and a generated one can render again, for
+  // example after its template input was corrected.
+  const undrawableActions = () =>
+    props.open || onDemand() ? (
+      <>
+        <Show when={onDemand()}>{action(props.loadLabel ?? pdfMessages().previewPdf, () => void load(), loading() || props.disabled)}</Show>
+        <Show when={props.open}>{action(pdfMessages().pdfOpenInTab, () => void openInTab())}</Show>
+      </>
+    ) : undefined;
   const action = (label: string, run: () => void, disabled?: boolean) => (
     <button type="button" class="k2b-button" data-variant="secondary" data-size="sm" disabled={disabled} onClick={run}>
       {label}
@@ -254,8 +283,8 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
                 ? action(props.loadLabel ?? pdfMessages().previewPdf, () => void load(), props.disabled)
                 : state() === "error" && (props.request || typeof props.data === "string")
                   ? action(messages().retry, () => void load(), loading() || props.disabled)
-                  : state() === "undrawable" && props.open
-                    ? action(pdfMessages().pdfOpenInTab, () => void openInTab())
+                  : state() === "undrawable"
+                    ? undrawableActions()
                     : undefined
             }
           />

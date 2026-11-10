@@ -29,7 +29,7 @@ const result = await Bun.build({
     const query = new URLSearchParams(location.search);
     const app = document.getElementById("app");
     if (query.get("height")) app.style.height = query.get("height") + "px";
-    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", fit: query.get("fit") ?? undefined, open: query.has("open") || undefined, onError: (error) => window.pdfErrors.push(String(error)) }), app);
+    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", fit: query.get("fit") ?? undefined, open: query.has("open") || undefined, zoom: query.get("zoom") === "0" ? false : undefined, onError: (error) => window.pdfErrors.push(String(error)) }), app);
   `,
   },
   target: "browser",
@@ -204,6 +204,20 @@ describe("@k2b/ui PdfViewer", () => {
       // The ground is rounded and the pages sit in it without a second frame.
       const radius = await page.locator(".k2b-pdf-viewer").evaluate((element) => getComputedStyle(element).borderTopLeftRadius);
       expect(radius).not.toBe("0px");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("without zoom, the pill keeps only the host's open icon", async () => {
+    const page = await load("?open&zoom=0");
+    try {
+      await settled(page);
+      const labels = await page
+        .locator(".k2b-pdf-viewer__bar button")
+        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")));
+      expect(labels).toEqual(["Open in new tab"]);
+      expect(await page.locator(".k2b-pdf-viewer__page-number").count()).toBe(0);
     } finally {
       await page.close();
     }

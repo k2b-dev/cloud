@@ -24,7 +24,7 @@ globalThis.settleViewers = () => {
 };
 const request = (outcome) => () => new Promise((resolve, reject) => pending.push({ outcome, resolve, reject }));
 // The containers callers use: a sized class, an unsized column (the Files details panel), and a plain block.
-const hosts = { sized: "", column: "column", block: "block" };
+const hosts = { sized: "", small: "column", column: "column", block: "block" };
 const cases = [
   ...Object.keys(hosts).flatMap((host) => ["ok", "fail"].map((outcome) => [host, outcome])),
   // A message taller than the unsized area, as a long renderer error can be.
@@ -36,7 +36,7 @@ render(
       const cell = document.createElement("div");
       cell.dataset.case = host + " " + outcome;
       cell.className = hosts[host];
-      insert(cell, createComponent(PdfViewer, { autoLoad: true, open: true, title: "Report", class: host === "sized" ? "sized" : undefined, request: request(outcome) }));
+      insert(cell, createComponent(PdfViewer, { autoLoad: true, open: true, title: "Report", class: host === "sized" ? "sized" : host === "small" ? "small" : undefined, request: request(outcome) }));
       return cell;
     }),
   document.getElementById("app"),
@@ -82,7 +82,7 @@ const viewerStates = (): Record<string, Viewer> => {
 const openCases = async (options: (typeof viewports)[keyof typeof viewports]): Promise<Page> => {
   const page = await browser.newPage(options);
   await page.setContent(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .sized { height: 24rem } .column { display: flex; flex-direction: column; gap: 0.5rem }</style></head>` +
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .sized { height: 24rem } .small { height: 150px; min-height: 0 } .column { display: flex; flex-direction: column; gap: 0.5rem }</style></head>` +
       `<body class="k2b-ui" style="margin:0"><main id="app" style="display:grid;gap:16px;padding:16px"></main></body></html>`,
   );
   await page.addScriptTag({ content: `${script}\nglobalThis.viewerStates = ${viewerStates};` });
@@ -97,10 +97,10 @@ describe("@k2b/ui PdfViewer states", () => {
       const page = await openCases(options);
       try {
         const loading = await read(page);
-        expect(Object.values(loading).map(({ state }) => state)).toEqual(Array(7).fill("loading"));
+        expect(Object.values(loading).map(({ state }) => state)).toEqual(Array(9).fill("loading"));
         await page.evaluate(() => (globalThis as unknown as Fixture).settleViewers());
         await page.waitForFunction(
-          () => document.querySelectorAll('.k2b-pdf-viewer:is([data-state="error"], [data-state="undrawable"])').length === 7,
+          () => document.querySelectorAll('.k2b-pdf-viewer:is([data-state="error"], [data-state="undrawable"])').length === 9,
         );
         const settled = await read(page);
         for (const [key, { state, box, radius, background }] of Object.entries(settled)) {
@@ -116,6 +116,8 @@ describe("@k2b/ui PdfViewer states", () => {
         expect(loading["sized ok"]!.box[3]).toBe(384);
         expect(loading["column ok"]!.box[3]).toBe(200);
         expect(loading["block ok"]!.box[3]).toBe(200);
+        // A host that sizes it smaller wins over that default.
+        expect(loading["small ok"]!.box[3]).toBe(150);
         // A long error scrolls inside that area from its top instead of overflowing above it out of reach.
         const long = await page.evaluate(() => {
           const placeholder = document.querySelector<HTMLElement>('[data-case="column long"] .k2b-pdf-viewer__placeholder')!;

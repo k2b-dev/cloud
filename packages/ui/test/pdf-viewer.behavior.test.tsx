@@ -231,3 +231,96 @@ domTest("an address loads from this site and a new address stops the previous re
     dom.cleanup();
   }
 });
+
+domTest("a new request replaces a running automatic one, and the old answer never shows", async () => {
+  const dom = createDomTestHarness();
+  const { default: PdfViewer } = await import("../src/content/PdfViewer");
+  const answers: ((blob: Blob) => void)[] = [];
+  const make = () => () => new Promise<Blob>((resolve) => answers.push(resolve));
+  const [request, setRequest] = createSignal(make());
+  opened.length = 0;
+  const dispose = render(() => <PdfViewer title="Report" autoLoad request={request()} />, dom.root);
+  try {
+    expect(answers).toHaveLength(1);
+    setRequest(() => make());
+    expect(answers).toHaveLength(2);
+    answers[0]!(new Blob(["old"], { type: "application/pdf" }));
+    await settle();
+    expect(opened).toEqual([]);
+    answers[1]!(new Blob(["new"], { type: "application/pdf" }));
+    await settle();
+    expect(await (opened[0] as Blob).text()).toBe("new");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+domTest("disabled changes leave shown bytes alone, and bytes replacing an address stop its request", async () => {
+  const dom = createDomTestHarness();
+  const { default: PdfViewer } = await import("../src/content/PdfViewer");
+  const originalFetch = globalThis.fetch;
+  let signal: AbortSignal | null | undefined;
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal;
+      return new Promise<Response>(() => {});
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const [data, setData] = createSignal<Blob | string>("/files/a.pdf");
+  const [disabled, setDisabled] = createSignal(false);
+  const dispose = render(() => <PdfViewer title="Report" data={data()} disabled={disabled()} />, dom.root);
+  try {
+    await settle();
+    expect(signal?.aborted).toBe(false);
+    setData(pdf());
+    expect(signal?.aborted).toBe(true);
+    await settle();
+    expect(viewer(dom.root).dataset.state).toBe("undrawable");
+    setDisabled(true);
+    setDisabled(false);
+    await settle();
+    expect(viewer(dom.root).dataset.state).toBe("undrawable");
+  } finally {
+    globalThis.fetch = originalFetch;
+    dispose();
+    dom.cleanup();
+  }
+});
+
+domTest("an on-demand document pdf.js cannot draw can render again, and focus stays in the viewer meanwhile", async () => {
+  const dom = createDomTestHarness();
+  const { default: PdfViewer } = await import("../src/content/PdfViewer");
+  let calls = 0;
+  let answer!: (blob: Blob) => void;
+  const dispose = render(
+    () => (
+      <PdfViewer
+        title="Invoice"
+        loadLabel="Render preview"
+        request={() => {
+          calls++;
+          return calls === 1 ? Promise.resolve(pdf()) : new Promise<Blob>((resolve) => (answer = resolve));
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    click(viewer(dom.root).querySelector("button")!);
+    await settle();
+    expect(viewer(dom.root).dataset.state).toBe("undrawable");
+    const again = [...viewer(dom.root).querySelectorAll("button")].find((button) => button.textContent === "Render preview")!;
+    again.focus();
+    click(again);
+    expect(calls).toBe(2);
+    expect(viewer(dom.root).dataset.state).toBe("loading");
+    expect(dom.document.activeElement).toBe(viewer(dom.root));
+    answer(pdf());
+    await settle();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

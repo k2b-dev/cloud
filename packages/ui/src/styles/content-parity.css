@@ -4816,12 +4816,9 @@
   @apply min-h-0 w-full flex-1 rounded-md;
 }
 
-/* A PDF from loaded bytes or a same-origin inline address: the viewer fills the file view, its ground the only frame,
-   and keeps the viewer's minimum height (`.k2b-pdf-viewer`), which the file view's `> div` rule would reset, in a host
-   that leaves the height open. */
-.k2b-ui .k2b-content-file-view > .k2b-content-file-view__pdf-viewer {
+/* A PDF from loaded bytes or a same-origin inline address: the viewer fills the file view, its ground the only frame. */
+.k2b-ui .k2b-content-file-view__pdf-viewer {
   width: 100%;
-  min-height: 12.5rem;
 }
 
 .k2b-ui .k2b-content-file-view img {
@@ -5497,13 +5494,18 @@
 .k2b-ui .k2b-content-markdown th:not([align]) { text-align: start; }
 
 /* PdfViewer: one grey, rounded ground for every state. The drawn pages, the placeholder of the empty, loading, or
-   error state, and the pill all lie in it, so the area never moves. A host gives the viewer its size; without one it
-   keeps 12.5rem, enough for every state with its action. */
+   error state, and the pill all lie in it, so the area never moves. Without a size from its host it is 12.5rem tall,
+   enough for every state with its actions, and grows in a flex column; any host class or rule that sizes it wins,
+   also a smaller one, because this default has no specificity. */
+:where(.k2b-ui) :where(.k2b-pdf-viewer) {
+  height: 12.5rem;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
 .k2b-ui .k2b-pdf-viewer {
   position: relative;
   display: flex;
-  min-height: 12.5rem;
-  flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--k2b-radius-surface);
