@@ -32,7 +32,7 @@ import {
 | Method | Result | Use |
 | --- | --- | --- |
 | `prompts.alert(content, options)` | resolves when closed | Information that requires acknowledgement. |
-| `prompts.success(content, options)` | resolves when closed | Successful result that requires acknowledgement. |
+| `prompts.success(content, options)` | resolves when closed | Successful result that requires acknowledgement. With `celebrate: true`, a finished result such as an issued invoice: the header draws its check once when the dialog opens; see [Celebrate a finished result](#celebrate-a-finished-result). |
 | `prompts.error(content, options)` | resolves when closed | Failure details that must be read. |
 | `prompts.confirm(content, options)` | `boolean \| undefined` | One confirm-or-cancel decision. |
 | `prompts.prompt(content, defaultValue, options)` | `string \| null` | One text value. |
@@ -58,6 +58,14 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `history` | Back closes the prompt like Cancel instead of leaving the page; see [Close dialogs with Back](#close-dialogs-with-back). `prompts.form` does not take it. |
 
 Use `surface: "bare"` with `header: false` only when the custom content supplies complete visible panel structure and a close control.
+
+### Celebrate a finished result
+
+`prompts.success` takes `celebrate: true` for a success that ends a piece of work for good, such as an issued invoice or a created SEPA file. The header draws its check once when the dialog opens: the ring closes, the check follows, and the mark springs up a little, in under a second. The check takes the tone icon's place at the same size and colour, nothing else moves, and screen readers hear the same tone and title. With reduced motion, the check is finished at once. Leave it off for routine results; the same option exists for [toasts](/en/ui/feedback/toast#celebrate-a-finished-result) and a success [PanelDialog](/en/ui/layout/panel-dialog#tone).
+
+```ts
+await prompts.success("The invoice is ready to send.", { title: "Invoice issued", celebrate: true });
+```
 
 ## Warning confirmation
 
@@ -245,6 +253,10 @@ interface DialogOptions {
 interface ConfirmOptions extends DialogOptions {
   confirmationPhrase?: string;
 }
+
+type SuccessDialogOptions = Omit<DialogOptions, "variant"> & {
+  celebrate?: boolean;
+};
 
 type PromptSearchInput = {
   query: string; abortSignal: AbortSignal;

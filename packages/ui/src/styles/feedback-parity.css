@@ -313,6 +313,52 @@
   color: var(--k2b-danger-text);
 }
 
+.k2b-ui .k2b-dialog__header > .k2b-success-check {
+  color: var(--k2b-success-text);
+}
+
+/* A finished success draws its check once when it appears (`celebrate` on
+   toast.success, prompts.success, and a success PanelDialog): the ring
+   closes, the check follows, and the mark springs up a little, in about
+   0.75 s. It takes the glyph's place at the same size and colour and moves
+   only by transform, so nothing around it shifts. Reduced motion makes every
+   duration and delay zero, so the finished check stands still. */
+.k2b-ui .k2b-success-check {
+  display: block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  animation: k2b-success-check-pop var(--k2b-motion-sheet) var(--k2b-ease-out) calc(var(--k2b-motion-celebrate) * 0.85) both;
+}
+
+/* With pathLength 1, a dash of 1 and a gap of 2 hide the stroke and its
+   round caps at an offset just past 1, and show it whole at 0. */
+.k2b-ui .k2b-success-check__ring,
+.k2b-ui .k2b-success-check__mark {
+  stroke-dasharray: 1 2;
+  animation: k2b-success-check-draw calc(var(--k2b-motion-celebrate) * 0.6) var(--k2b-ease-out) both;
+}
+
+.k2b-ui .k2b-success-check__mark {
+  animation-duration: calc(var(--k2b-motion-celebrate) * 0.4);
+  animation-delay: calc(var(--k2b-motion-celebrate) * 0.5);
+}
+
+@keyframes k2b-success-check-draw {
+  from {
+    stroke-dashoffset: 1.05;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes k2b-success-check-pop {
+  50% {
+    transform: scale(1.15);
+  }
+}
+
 .k2b-ui .k2b-dialog__header h2 {
   min-width: 0;
   flex: 1;

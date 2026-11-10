@@ -9,6 +9,8 @@ import {
   MovedHint,
   NoticeCard,
   NoticeRow,
+  PanelDialog,
+  panelDialogOptions,
   prompts,
   SplitButton,
   StatusBadge,
@@ -460,6 +462,76 @@ exportToast.update("Archive ready", {
         </Button>
         <Button variant="secondary" onClick={() => toast.dismissAll()}>
           Dismiss all
+        </Button>
+      </div>
+    </DemoCard>
+  );
+};
+
+const SuccessCheckDemo = () => {
+  let sepaTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(sepaTimer));
+  const createSepaFile = () => {
+    clearTimeout(sepaTimer);
+    const sepa = toast("14 payments", { title: "Creating SEPA file …", progress: "indeterminate" });
+    sepaTimer = setTimeout(
+      () => sepa.update("14 payments · 18,240.00 EUR", { variant: "success", title: "SEPA file created", progress: null, celebrate: true }),
+      1200,
+    );
+  };
+  const openCustomer = () =>
+    dialogCore.open<void>(
+      (close) => (
+        <PanelDialog tone="success" celebrate>
+          <PanelDialog.Header title="Customer K-1042 created" subtitle="Mueller Antik GmbH" close={() => close()} />
+          <PanelDialog.Body>The customer can now receive offers and invoices.</PanelDialog.Body>
+          <PanelDialog.Footer>
+            <Button onClick={() => close()}>Done</Button>
+          </PanelDialog.Footer>
+        </PanelDialog>
+      ),
+      panelDialogOptions,
+    );
+
+  return (
+    <DemoCard
+      id="success-check"
+      chip={[
+        { kind: "component", name: "toast", from: "@k2b/ui" },
+        { kind: "component", name: "prompts", from: "@k2b/ui" },
+        { kind: "component", name: "PanelDialog", from: "@k2b/ui" },
+      ]}
+      description="A finished success draws its check once: the ring closes, the check follows, and the mark springs up, in under a second. Only for final results such as an issued invoice; a routine save keeps the still check. With reduced motion the check is finished at once."
+      code={`toast.success("RE-2026-0142 · 1,480.00 EUR", { title: "Invoice issued", celebrate: true });
+
+const sepa = toast("14 payments", { title: "Creating SEPA file …", progress: "indeterminate" });
+sepa.update("14 payments · 18,240.00 EUR", { variant: "success", title: "SEPA file created", progress: null, celebrate: true });
+
+await prompts.success("The invoice is ready to send.", { title: "Invoice issued", celebrate: true });
+
+<PanelDialog tone="success" celebrate>
+  <PanelDialog.Header title="Customer K-1042 created" close={close} />
+  …
+</PanelDialog>`}
+    >
+      <div class="ui-demo-row">
+        <Button
+          variant="secondary"
+          onClick={() => toast.success("RE-2026-0142 · 1,480.00 EUR", { title: "Invoice issued", celebrate: true })}
+        >
+          Issue invoice
+        </Button>
+        <Button variant="secondary" onClick={createSepaFile}>
+          Create SEPA file
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => void prompts.success("The invoice is ready to send.", { title: "Invoice issued", celebrate: true })}
+        >
+          Success prompt
+        </Button>
+        <Button variant="secondary" onClick={() => void openCustomer()}>
+          Create customer
         </Button>
       </div>
     </DemoCard>
@@ -935,6 +1007,7 @@ const demos: DemoSection = {
   toast: () => (
     <DemoGrid columns="one">
       <ToastDemo />
+      <SuccessCheckDemo />
       <AnnounceDemo />
     </DemoGrid>
   ),

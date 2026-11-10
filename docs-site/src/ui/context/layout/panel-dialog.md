@@ -156,8 +156,16 @@ ordinary editor. Prompts carry the same tone through their `variant`; see
 stacked above it shows only the upper one's frame. A `floating` panel draws
 the edge on its own frame.
 
+Add `celebrate` to a success dialog that reports a finished result, such as a
+created customer or an issued invoice. Its header draws the check once when it
+appears: the ring closes, the check follows, and the mark springs up a little,
+in under a second. The check takes the icon's place in its chip at the same
+size and colour, and nothing else moves. With reduced motion, the check is
+finished at once. Other tones ignore it; leave it off for routine saves.
+Toasts and `prompts.success` take the same option.
+
 ```tsx
-<PanelDialog tone="success">
+<PanelDialog tone="success" celebrate>
   <PanelDialog.Header title="Invoice RE-2026-0142 created" subtitle="Mueller Antik GmbH" close={() => close()} />
   <PanelDialog.Body>…</PanelDialog.Body>
   <PanelDialog.Footer>
@@ -229,7 +237,7 @@ type PanelDialogSurface = "contained" | "floating";
 type DialogTone = "success" | "warning" | "danger";
 
 type PanelDialogProps = {
-  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone; media?: boolean;
+  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone; celebrate?: boolean; media?: boolean;
 };
 
 type PanelDialogHeaderProps = {
