@@ -6,12 +6,12 @@ import { Button, Kbd, SegmentedControl, SettingsSection, Switch as SwitchField, 
 import { type JSX, Match, Show, Switch } from "solid-js";
 import { accountMessages } from "./messages";
 
-/** One setting per row: a one-line label beside its control; on a phone the control moves below. */
+/** One setting per row: a one-line label above its control, the same at every width. */
 function Row(props: { label: string; children: JSX.Element; class?: string }) {
   return (
-    <div class={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6 ${props.class ?? ""}`}>
+    <div class={`flex flex-col gap-2 ${props.class ?? ""}`}>
       <p class="min-w-0 truncate text-sm font-medium text-primary">{props.label}</p>
-      <div class="flex min-w-0 shrink-0 flex-wrap items-center gap-2">{props.children}</div>
+      <div class="flex min-w-0 flex-wrap items-center gap-2">{props.children}</div>
     </div>
   );
 }
@@ -38,6 +38,7 @@ export default function ScreenSettings(props: {
           <div class="flex flex-col gap-1">
             <Row label={privacy.messages().timer}>
               <SegmentedControl
+                class="max-w-sm"
                 options={privacy.options()}
                 value={() => String(privacy.value())}
                 ariaLabel={privacy.messages().timer}
@@ -48,7 +49,7 @@ export default function ScreenSettings(props: {
               />
             </Row>
             {/* One line of its own, kept while empty, so a status never moves the rows below. */}
-            <p class="flex min-h-5 items-center justify-end gap-1.5 text-xs" role="status">
+            <p class="flex min-h-5 items-center gap-1.5 text-xs" role="status">
               <Switch>
                 {/* Off is 0: test the failure for null, not for truth. */}
                 <Match when={privacy.failed() !== null}>
