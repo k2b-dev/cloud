@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { type CodeVersionPreview, codeVersionPageHref } from "./code-activation";
+import { type CodeVersionPreview, codeVersionOwnPageHref, codeVersionPageHref } from "./code-activation";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 const codeId = "c_info01";
@@ -19,6 +19,7 @@ const preview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview =>
   allowed: { allowed: true },
   readiness: { state: "ready" },
   place: { title: "info@example.test", typeTitle: "mailbox", href: "/app/mail/m_info" },
+  page: "/app/mail/m_info/code",
   ...patch,
 });
 
@@ -68,6 +69,52 @@ test("version preview offers switching on without inspecting or granting target 
   expect(calls.map((call) => call.route)).toEqual(["activation/preview"]);
 });
 
+test("the card lists what the version calls where, as the Code page does, and marks what is new", async () => {
+  const target = (id: string, own = false) => ({
+    key: `mail.mailbox\u0000${id}`,
+    ref: { type: "mail.mailbox", id },
+    title: null,
+    typeTitle: "Mailbox",
+    icon: "ti ti-mail",
+    own,
+    href: null,
+  });
+  const targets = [
+    { target: target("m_info", true), operations: [], isNew: false },
+    { target: target("m_billing"), operations: ["mail.message.read", "mail.message.move"], isNew: true },
+    { target: null, operations: ["spaces.task.create"], isNew: false },
+  ];
+  // Operations read by their titles, as the Code page names them; the registry does not name the Spaces one here.
+  const operationLabels = {
+    "mail.message.read": { title: "Read message", app: "Mail" },
+    "mail.message.move": { title: "Move message", app: "Mail" },
+  };
+  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ targets, operationLabels }) } }) });
+  const rows = [...dom.root.querySelectorAll(".assistant-code-version__target")].map((row) => row.textContent);
+  expect(dom.root.textContent).toContain("What this version calls");
+  expect(rows).toEqual([
+    "at info@example.test itself",
+    "Read message · MailMove message · Mailat Mailbox m_billingnew",
+    "spaces.task.createwhere the Code picks it while running",
+  ]);
+  // The technical ID stays in the tooltip; an unnamed one shows as an ID.
+  const operations = [...dom.root.querySelectorAll(".assistant-code-version__ops > span")];
+  expect(operations.map((operation) => [operation.getAttribute("title"), operation.hasAttribute("data-id")])).toEqual([
+    ["mail.message.read", false],
+    ["mail.message.move", false],
+    ["spaces.task.create", true],
+  ]);
+
+  // A place this person may not read is named like any target, by type and ID.
+  restore.splice(0).forEach((undo) => undo());
+  const hidden = await mount({ "activation/preview": () => ({ json: { data: preview({ targets, place: null }) } }) });
+  expect(hidden.dom.root.querySelector(".assistant-code-version__target")?.textContent).toBe("at Mailbox m_info itself");
+
+  restore.splice(0).forEach((undo) => undo());
+  const none = await mount({ "activation/preview": () => ({ json: { data: preview({ targets: [] }) } }) });
+  expect(none.dom.root.textContent).toContain("Calls no app.");
+});
+
 test("switching on runs Core's activation and the card becomes one line, the same after a reload", async () => {
   let on = false;
   const { dom, calls, activated } = await mount({
@@ -89,6 +136,50 @@ test("switching on runs Core's activation and the card becomes one line, the sam
   expect(activated).toEqual([1]);
   expect(dom.root.textContent).toMatch(/Version 5 switched on · .* · by you/);
   expect(button(dom.root, "Switch on")).toBeUndefined();
+});
+
+test("a switched-on version links its page, its next run and its runs in the same paint as its line", async () => {
+  const automation = (nextRunAt: string | null) => ({
+    entrypoint: "morning",
+    kind: "schedule",
+    cron: "0 7 * * *",
+    nextRunAt,
+    lastRun: null,
+    missingTargets: [],
+  });
+  const on = preview({
+    running: 5,
+    activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null },
+    automations: [
+      { entrypoint: "morning", title: "Every morning" },
+      { entrypoint: "GET /invoices/:id", route: { method: "GET", path: "/invoices/:id", public: false } },
+      { entrypoint: "GET /", route: { method: "GET", path: "/", public: false } },
+    ],
+  });
+  const { dom, calls } = await mount({
+    "activation/preview": () => ({ json: { data: on } }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({
+      json: { data: { items: [automation("2026-11-11T07:00:00.000Z"), automation(null)], removedTargets: [] } },
+    }),
+  });
+  const links = [...dom.root.querySelectorAll(".assistant-code-version__links a")].map((link) => [
+    link.textContent,
+    link.getAttribute("href"),
+  ]);
+  expect(links).toEqual([
+    ["Open page", "/code/c_info01/"],
+    [expect.stringMatching(/^Next run .*11.*07:00/), "/app/mail/m_info/code"],
+    ["Runs", "/app/mail/m_info/code?tab=runs"],
+  ]);
+  expect(calls.map((call) => call.route)).toEqual(["activation/preview", "/api/capabilities/v1/queries/core/code.automation.list"]);
+
+  // Without a declared Code page and without a schedule, the line stays alone.
+  restore.splice(0).forEach((undo) => undo());
+  const bare = await mount({
+    "activation/preview": () => ({ json: { data: { ...on, page: null, automations: [] } } }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
+  });
+  expect(bare.dom.root.querySelector(".assistant-code-version__links")).toBeNull();
 });
 
 test("a refusal says nothing changed and offers to try again with a new identity", async () => {
@@ -147,12 +238,18 @@ test("an older version, no access and an outage each say so; the outage retries"
   expect(button(down.dom.root, "Switch on")).toBeDefined();
 });
 
-test("the Code page is the place's own /code page, or a personal Code's page in Gustav", () => {
+test("the Code page is the one the owner's app declares, or a personal Code's page in Gustav", () => {
   expect(codeVersionPageHref(preview())).toBe("/app/mail/m_info/code");
-  expect(codeVersionPageHref(preview({ ownerKind: "person", place: null }))).toBe(`/app/assistant/code/${codeId}`);
-  // A place the person may not read has no address; Code of a place is never sent to a personal page.
-  expect(codeVersionPageHref(preview({ place: null }))).toBeNull();
-  expect(codeVersionPageHref(preview({ place: { title: "info@", typeTitle: null, href: null } }))).toBeNull();
+  expect(codeVersionPageHref(preview({ ownerKind: "person", place: null, page: null }))).toBe(`/app/assistant/code/${codeId}`);
+  // Without a declared page there is no address, also when the place is readable; Code of a place never gets a personal page.
+  expect(codeVersionPageHref(preview({ page: null }))).toBeNull();
+  expect(codeVersionPageHref(preview({ page: undefined, place: null }))).toBeNull();
+});
+
+test("a page served for every method opens like a GET page; a page with a named segment does not", () => {
+  const route = (method: string, path: string) => ({ entrypoint: `${method} ${path}`, route: { method, path, public: false } });
+  expect(codeVersionOwnPageHref(preview({ automations: [route("ALL", "/")] }))).toBe(`/code/${codeId}/`);
+  expect(codeVersionOwnPageHref(preview({ automations: [route("GET", "/item/:id"), route("POST", "/")] }))).toBeNull();
 });
 
 test("an activation whose person is hidden or gone is credited to nobody", async () => {

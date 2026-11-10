@@ -38,6 +38,7 @@ import { ToolActionView } from "./tool-action";
 import { AiToolActivity } from "./tool-disclosure";
 import { isFailedTool } from "./tool-groups";
 import type { AiTurnActionState } from "./turn-layout";
+import { submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
 
@@ -699,8 +700,8 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
             toolName={props.block.name}
             args={props.block.args}
             result={props.block.result}
-            isError={Boolean(props.block.isError)}
-            leading={featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+            isError={isFailedTool(props.block)}
+            leading={isFailedTool(props.block) ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
             errorLabel={fetchError()?.label}
             errorDescription={fetchError()?.description}
           />
@@ -869,11 +870,14 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     waiting() ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : isFailedTool(props.block) ? t().stepFailed : "";
   const finished = () => props.block.status === "completed" && !props.block.isError;
   const check = () => (finished() ? codeCheckOutcome(props.block.name, props.block.result) : null);
+  const submitted = () => {
+    const version = submittedCodeVersion(props.block);
+    return version ? t().codeSubmittedVersion({ number: version.number }) : undefined;
+  };
   const outcome = () => {
     const value = check();
     if (!value) return "";
-    const result = value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
-    return value.warnings > 0 ? `${result} · ${t().checkWarnings({ count: value.warnings })}` : result;
+    return value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
   };
   const actions = useAiChatActions();
   /** Only a host that resolves chat file URLs shows the image; without one there is no preview, not an empty box. */
@@ -882,8 +886,11 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     const src = viewed ? actions.fileUrl?.(viewed.path) : null;
     return viewed && src ? { ...viewed, src } : null;
   };
+  // A failed step shows the error sign instead of the tool's own; its row stays quiet like every failed step.
+  const failed = () => !waiting() && props.block.status !== "rejected" && isFailedTool(props.block);
   const icon = () => {
     if (waiting()) return "ti ti-clock";
+    if (failed()) return "ti ti-alert-circle";
     const value = check();
     if (value) return value.passed ? "ti ti-circle-check" : "ti ti-alert-triangle";
     return aiToolIcon(props.block.name, props.block.presentation?.appIcon);
@@ -892,7 +899,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     <>
       <AiToolActivity
         blockId={props.block.id}
-        label={sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
+        label={sentence() ?? props.block.presentation?.title ?? submitted() ?? displayToolName(props.block.name, locale())}
         description={[
           props.block.status === "running" ? (props.block.progress ?? "") : "",
           typeof detail() === "string" ? String(detail()) : "",
@@ -902,7 +909,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           .filter(Boolean)
           .join(" · ")}
         icon={icon()}
-        leading={waiting() || check() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+        leading={waiting() || check() || failed() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
         busy={props.busy && props.block.status === "running"}
         bodyInset={false}
         renderBody={() => (

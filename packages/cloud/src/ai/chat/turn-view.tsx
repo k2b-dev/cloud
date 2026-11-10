@@ -124,6 +124,20 @@ export const liveStepLabel = (block: AiTurnBlock | null, t: Messages, stepMs = 0
   return `${stepPhrase(block, t, false)} · ${formatWorkDuration(stepMs, t)}`;
 };
 
+/** Lasting Code steps say what happens; their row names in tool-names.ts say the same. */
+const CODE_AUTHORING_STEPS: Partial<Record<string, keyof Messages & `stepCode${string}`>> = {
+  code_init: "stepCodeInit",
+  code_pull: "stepCodeRead",
+  code_read: "stepCodeRead",
+  code_sdk: "stepCodeSdk",
+  code_write: "stepCodeWrite",
+  code_check: "stepCodeCheck",
+  code_test: "stepCodeTest",
+  code_simulate: "stepCodeSimulate",
+  code_submit: "stepCodeSubmit",
+  code_diff: "stepCodeDiff",
+};
+
 const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean): string => {
   if (!block || block.kind === "thinking" || block.kind === "steer_applied" || block.kind === "steer_message") return t.stepThinking;
   if (block.kind === "text") return t.stepWriting;
@@ -143,10 +157,11 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (name === "code_present") return withTarget(t.stepPreparingView);
   if (isCardToolName(name)) return t.stepPreparingCard;
   if (isChartToolName(name)) return t.stepPreparingChart;
-  if (["code_write", "code_import", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
+  const authoring = CODE_AUTHORING_STEPS[name];
+  if (authoring) return name === "code_write" ? withTarget(t[authoring]) : t[authoring];
+  if (["code_import", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
     return withTarget(t.stepWritingCode);
   if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
-  if (name === "code_check") return t.stepCheckingApp;
   if (name === "code_inspect") return t.stepCheckingRun;
   if (name.startsWith("code_")) return t.stepCode;
   if (["markdown_to_pdf", "html_to_pdf"].includes(name)) return withTarget(t.stepPdf);

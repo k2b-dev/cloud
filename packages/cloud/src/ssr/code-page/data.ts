@@ -4,6 +4,7 @@ import type { CapabilityClientResult, CapabilityInvocation } from "../../capabil
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../../contracts/code-call";
 import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
+import type { CodeOperationLabels } from "./targets";
 
 /**
  * The shared Code page reads Core's public `core.code.*` queries and the Core activation routes, like any
@@ -345,6 +346,8 @@ export type CodePageReady = {
   refusal: CodePageRefusal | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */
   waitingTargets: CodePageActivationRow[] | null;
+  /** Titles and app names of the operations the targets and the version difference list. */
+  operationLabels: CodeOperationLabels;
   runs: { items: CodePageRun[]; nextCursor: string | null; eventDeliveries?: z.infer<typeof EventDeliverySchema>[] } | null;
   run: CodePageRunDetail | null;
   /** The selected version and its difference to the previous one. */

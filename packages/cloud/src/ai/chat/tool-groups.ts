@@ -1,6 +1,6 @@
 import { aiSkillFilePathFromMount } from "../file-mount";
 import type { AiTurnBlock } from "../protocol";
-import { isRecord } from "./message-utils";
+import { isFeatCodeTool, isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -16,18 +16,20 @@ export type AiWorkItem =
   | { kind: "housekeeping"; id: string; entries: AiWorkEntry[] }
   | { kind: "repeat"; id: string; target: string; entries: AiWorkEntry[] };
 
-/** A failed call, including a code run that reported an error. A rejected approval is a decision, not a failure. */
+/**
+ * A failed call, including a code run that reported an error, a lasting Code command that answered with its error
+ * shape `{ error: { code, message } }`, and Code tests that did not pass. A rejected approval is a decision, not a
+ * failure. A Code check with diagnostics is a finished step; its outcome says "not passed".
+ */
 export function isFailedTool(tool: Tool): boolean {
   if (tool.status === "rejected") return false;
   if (tool.isError || tool.status === "failed") return true;
   const result = tool.result;
-  return (
-    ["code_run", "code_inspect"].includes(tool.name) &&
-    result !== null &&
-    typeof result === "object" &&
-    "status" in result &&
-    result.status === "error"
-  );
+  if (!isRecord(result)) return false;
+  if (["code_run", "code_inspect"].includes(tool.name)) return result.status === "error";
+  if (!isFeatCodeTool(tool.name)) return false;
+  if (isRecord(result.error) && typeof result.error.code === "string" && typeof result.error.message === "string") return true;
+  return (tool.name === "code_test" || tool.name === "code_simulate") && result.ok === false;
 }
 
 const HOUSEKEEPING_TOOLS = new Set([

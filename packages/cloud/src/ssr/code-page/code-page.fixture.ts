@@ -107,6 +107,15 @@ const waitingTargets: CodePageActivationRow[] = [
   { target: space, operations: ["spaces.task.create"], isNew: true },
 ];
 
+/** Operation titles in the page's language, as the registry names them; one operation stays unnamed. */
+const operationLabels = {
+  "mail.conversation.tag": { title: "Unterhaltung markieren", app: "Mail" },
+  "mail.conversation.move": { title: "Unterhaltung verschieben", app: "Mail" },
+  "mail.conversation.assign": { title: "Unterhaltung zuweisen", app: "Mail" },
+  "spaces.task.create": { title: "Aufgabe anlegen", app: "Spaces" },
+  "spaces.comment.create": { title: "Kommentar schreiben", app: "Spaces" },
+};
+
 const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   kind: "ready",
   code: {
@@ -145,6 +154,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   targets,
   refusal: null,
   waitingTargets: null,
+  operationLabels,
   runs: { items: runs, nextCursor: null },
   run: null,
   diff: null,

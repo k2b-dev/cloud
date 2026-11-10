@@ -60,6 +60,8 @@ export function CloudSurveyBlock(props: {
   disabledLabel?: string;
   onSubmit?: (result: unknown) => void | Promise<void>;
 }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const survey = () => (isRecord(props.args) ? props.args : null);
   const questions = () => (Array.isArray(survey()?.questions) ? (survey()!.questions as unknown[]).filter(isRecord) : []);
   const surveyId = createUniqueId();
@@ -72,7 +74,7 @@ export function CloudSurveyBlock(props: {
       await props.onSubmit(result);
     },
     onSuccess: () => setSubmitted(true),
-    onError: (submissionError) => setError(submissionError.message || "Could not submit the survey. Try again."),
+    onError: (submissionError) => setError(submissionError.message || t().surveyFailed),
   });
 
   const setAnswer = (id: string, value: unknown) => setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -87,7 +89,7 @@ export function CloudSurveyBlock(props: {
       return Array.isArray(value) ? value.length === 0 : value === undefined || value === "";
     });
     if (missing) {
-      setError("Please answer all required questions.");
+      setError(t().surveyRequired);
       return;
     }
     setError(null);
@@ -103,8 +105,8 @@ export function CloudSurveyBlock(props: {
             <i class="ti ti-forms" aria-hidden="true" />
           </span>
           <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-primary">{String(survey()?.title ?? "Survey")}</p>
-            <p class="text-xs text-dimmed">Survey</p>
+            <p class="truncate text-sm font-semibold text-primary">{String(survey()?.title ?? t().surveyKind)}</p>
+            <p class="text-xs text-dimmed">{t().surveyKind}</p>
           </div>
         </div>
         <div class="min-w-0">
@@ -179,6 +181,7 @@ export function CloudSurveyBlock(props: {
                     <Show when={question.type === "text"}>
                       <input
                         class="input mt-1 h-9 w-full text-sm"
+                        aria-label={String(question.label ?? "")}
                         disabled={disabled()}
                         placeholder={typeof question.placeholder === "string" ? question.placeholder : ""}
                         value={String(answers()[id()] ?? "")}
@@ -211,14 +214,14 @@ export function CloudSurveyBlock(props: {
         <Show when={submitted()}>
           <span class="inline-flex items-center gap-1.5 text-xs font-medium text-secondary">
             <i class="ti ti-check text-[var(--k2b-ai-accent)]" aria-hidden="true" />
-            Answer submitted. Assistant is continuing…
+            {t().surveySubmitted}
           </span>
         </Show>
         <Show
           when={!props.disabled && !submitted() && props.onSubmit}
           fallback={
             <Show when={!submitted()}>
-              <p class="ml-auto text-xs text-dimmed">{props.disabledLabel ?? "Waiting for the assistant to continue."}</p>
+              <p class="ml-auto text-xs text-dimmed">{props.disabledLabel ?? t().surveyWaiting}</p>
             </Show>
           }
         >
@@ -227,10 +230,10 @@ export function CloudSurveyBlock(props: {
             size="sm"
             class="ml-auto"
             loading={submission.loading()}
-            loadingLabel="Submitting"
+            loadingLabel={t().surveySubmitting}
             onClick={() => void submit()}
           >
-            {String(survey()?.submitLabel ?? "Submit")}
+            {String(survey()?.submitLabel ?? t().surveySubmit)}
           </Button>
         </Show>
       </footer>

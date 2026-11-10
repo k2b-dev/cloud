@@ -26,7 +26,7 @@ background tasks cannot use these tools to edit lasting Code.
 | --- | --- |
 | `code_init` | Creates Code and returns its initial editable project. Omit `owner` for personal Code. |
 | `code_pull` or `code_read({codeId})` | Returns the latest submitted files and `code.json` metadata, including `baseVersionId`. |
-| `code_sdk` | Returns generated `@sdk` declarations, runtime, manifest and TypeScript configuration. |
+| `code_sdk` | Without `apps`, returns an index of every app export, method path, policy row and automation event, one line each. With `apps` (at most two per call), returns the generated `@sdk` declarations of those apps and of the shared `app`, page, `db`, `http` and event types. |
 | `code_write({project,path,content})` | Replaces one file in the supplied project and returns the complete replacement project. |
 | `code_check` | Checks `{codeId,files,entry}` and lists permissions with source file and line. |
 | `code_test` | Checks source and runs the supplied `test/NAME.json` fixtures against fake data. |
@@ -44,20 +44,26 @@ templates. Every example in it passes the real checker in CI.
 After `code_submit`, the chat shows one card for the newest version, below
 Gustav's answer. It shows the version, execution subject and approval state:
 
+- **What this version calls** lists each target with its operations by title
+  and app, such as "Import file · Files", as the Code page does, and marks what
+  is new against the running version. The operation ID stays in the tooltip. Calls whose target the Code picks while it runs share one row.
 - **Switch on** starts the same durable activation as the Code page. Core checks
   current owner authority and any required version approval before switching.
   The card becomes one line after activation and keeps that state after reload.
+  Below that line it links the Code's own page, its next run and its runs where
+  they exist.
 - A version waiting for Cloud-admin approval or refused by policy says so.
   A phone or non-interactive credential sees why it cannot switch on.
 - A version replaced by a newer one becomes one line. Lost access to the Code
   and failed requests remain visible, with recovery through **Retry** or
   **Check status**.
 
-The card asks only Core's activation preview. It does not inspect target rights
-or managers, and activation creates no shares. Target managers use normal
+The card asks only Core's activation preview and, once switched on, the
+automation list for the next run. It does not inspect target rights or
+managers, and activation creates no shares. Target managers use normal
 sharing with the service account's handle. A host enables the card through
 `renderCodeVersion` in `AiChatActions`; without it, `code_submit` stays an
-ordinary step.
+ordinary step. The Assistant workspace and the Cloud app on a phone both show it.
 
 ## Draft and conflict rules
 

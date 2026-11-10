@@ -1,9 +1,11 @@
 import { sql } from "@k2b/cloud";
-import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema, cloudResourceRefAppId } from "@k2b/cloud/contracts";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
 import { mandates } from "@k2b/cloud/services/mandates";
+import { catalogCache, describeOperations, describeTarget } from "@k2b/cloud/ssr/code-page/load";
+import { codeActivationRows, codeDynamicOperations } from "@k2b/cloud/ssr/code-page/targets";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, readCodeOwner, requireCodePermission } from "./access";
@@ -173,6 +175,8 @@ export async function previewCodeActivation(
     allowed,
   };
   const place = null;
+  const catalog = catalogCache(context.locale ?? "en");
+  const page = await previewPage(code, catalog);
   if (code.activeVersionId === input.versionId) {
     const [activation] = await sql<{ activating_person: string | null; updated_at: Date }[]>`
       SELECT activating_person, updated_at FROM code.activations
@@ -190,10 +194,11 @@ export async function previewCodeActivation(
       activated: activation ? { at: activation.updated_at.toISOString(), byYou: by === person.id, byName } : null,
       readiness: { state: "ready" },
       place,
+      page,
     };
   }
   // An older card in a chat asks no target again: nothing can be switched on from there.
-  if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place };
+  if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place, page };
   let readiness: CodeActivationPreview["readiness"] = { state: "ready" };
   try {
     await requireCodeVersionApproval(code, input.versionId, sql);
@@ -204,7 +209,48 @@ export async function previewCodeActivation(
         ? { state: "approval_pending" }
         : { state: "refused", code: error.code, message: error.message };
   }
-  return { ...base, activated: null, readiness, place };
+  const targets = manifest.success ? await previewTargets(code, manifest.data, catalog) : undefined;
+  const operationLabels = targets
+    ? await describeOperations(
+        targets.flatMap((row) => row.operations),
+        catalog,
+      )
+    : undefined;
+  return { ...base, activated: null, readiness, place, page, ...(targets ? { targets, operationLabels } : {}) };
+}
+/** A resource Code's page from its owner app's registry manifest; the owner app itself is not asked. */
+async function previewPage(code: Code, catalog: ReturnType<typeof catalogCache>): Promise<string | null> {
+  if (code.owner.kind !== "resource") return null;
+  const { ref } = code.owner;
+  const app = await catalog(cloudResourceRefAppId(ref));
+  const pattern = app?.ok ? app.data?.manifest.code?.pages?.[ref.type.slice(cloudResourceRefAppId(ref).length + 1)] : undefined;
+  return pattern ? pattern.replace("{id}", encodeURIComponent(ref.id)) : null;
+}
+/**
+ * The targets the Code page lists for switching on this version, through the same grouping and naming from registry
+ * manifests: no target or owner app is asked. The owner row is marked as the Code's own place, unnamed.
+ */
+async function previewTargets(
+  code: Code,
+  waiting: CodeCheckedVersionManifest,
+  catalog: ReturnType<typeof catalogCache>,
+): Promise<NonNullable<CodeActivationPreview["targets"]>> {
+  const [active] = code.activeVersionId
+    ? await sql<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${code.activeVersionId}::uuid AND code_id=${code.id}`
+    : [];
+  const activeManifest = active ? CodeCheckedVersionManifestSchema.safeParse(active.manifest) : null;
+  const ownerRef = code.owner.kind === "resource" ? code.owner.ref : null;
+  const owner = ownerRef ? { ref: ownerRef, title: "" } : { codeId: code.id };
+  const running = activeManifest?.success ? activeManifest.data : null;
+  const rows = await Promise.all(
+    codeActivationRows(running, waiting, ownerRef).map(async (row) => ({
+      target: await describeTarget(row.ref, owner, catalog),
+      operations: row.operations,
+      isNew: row.isNew,
+    })),
+  );
+  const dynamic = codeDynamicOperations(running, waiting);
+  return dynamic ? [...rows, { target: null, ...dynamic }] : rows;
 }
 /** Enqueue once without waiting on owner reads. The unique process identity fences duplicate requests. */
 export async function activateCodeVersion(

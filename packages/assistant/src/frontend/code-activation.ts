@@ -1,3 +1,4 @@
+import { codeOwnPath } from "@k2b/cloud/contracts/code-routes";
 import { z } from "zod";
 
 /** What switching on one version would do for this person, from Core's activation preview. */
@@ -5,7 +6,15 @@ const PreviewSchema = z.object({
   codeId: z.string(),
   title: z.string(),
   ownerKind: z.enum(["person", "resource", "app"]),
-  automations: z.array(z.object({ entrypoint: z.string(), title: z.string().optional() })).optional(),
+  automations: z
+    .array(
+      z.object({
+        entrypoint: z.string(),
+        title: z.string().optional(),
+        route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
+      }),
+    )
+    .optional(),
   versionId: z.string(),
   number: z.number().int(),
   running: z.number().int().nullable(),
@@ -20,13 +29,42 @@ const PreviewSchema = z.object({
     z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }),
   ]),
   place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).nullable(),
+  /** The Code page of a resource Code, as its owner's app declares it in the registry. */
+  page: z.string().nullable().optional(),
+  operationLabels: z.record(z.string(), z.object({ title: z.string(), app: z.string().nullable() })).optional(),
+  /** What switching on this version calls where, as the Code page lists it; a null target is picked while the Code runs. */
+  targets: z
+    .array(
+      z.object({
+        target: z
+          .object({
+            key: z.string(),
+            ref: z.object({ type: z.string(), id: z.string() }),
+            title: z.string().nullable(),
+            typeTitle: z.string().nullable(),
+            icon: z.string().nullable(),
+            own: z.boolean(),
+            href: z.string().nullable(),
+          })
+          .nullable(),
+        operations: z.array(z.string()),
+        isNew: z.boolean(),
+      }),
+    )
+    .optional(),
 });
 export type CodeVersionPreview = z.infer<typeof PreviewSchema>;
 
-/** The Code page of this Code: a personal Code's page in Gustav, or its place's "/code" page when the person may read it. */
-export const codeVersionPageHref = (preview: CodeVersionPreview): string | null => {
-  if (preview.ownerKind === "person") return `/app/assistant/code/${preview.codeId}`;
-  return preview.place?.href ? `${preview.place.href.replace(/\/$/, "")}/code` : null;
+/** The Code page of this Code: a personal Code's page in Gustav, or the Code page its owner's app declares. */
+export const codeVersionPageHref = (preview: CodeVersionPreview): string | null =>
+  preview.ownerKind === "person" ? `/app/assistant/code/${preview.codeId}` : (preview.page ?? null);
+
+/** The Code's own page: its first route a browser can open (GET or ALL) without named segments, served under `/code/<id>`. */
+export const codeVersionOwnPageHref = (preview: CodeVersionPreview): string | null => {
+  const route = preview.automations?.find(
+    (entry) => (entry.route?.method === "GET" || entry.route?.method === "ALL") && !entry.route.path.includes(":"),
+  )?.route;
+  return route ? codeOwnPath(preview.codeId, route.path) : null;
 };
 
 const StatusSchema = z.object({

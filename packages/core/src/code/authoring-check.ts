@@ -1,19 +1,16 @@
 import { listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
-import { CODE_CHECK_LIMITS, type CodeCheckRequest, generateCodeSdk } from "@k2b/cloud/code";
+import { CODE_CHECK_LIMITS, type CodeCheckRequest, type CodeSdkOptions, generateCodeSdk } from "@k2b/cloud/code";
 import type { CapabilityManifest, CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { createRunnerCodeCheckHost } from "./runner-jobs";
 import { readCode } from "./store";
 
-/** Build authoritative checker input for CLI/chat and C8 from the live catalog under this caller's authority.
- * Author-supplied SDK code, compiler paths and budget overrides never enter this request. */
-export async function createCodeCheckRequest(
+/** The live catalog under this caller's authority and the SDK mode of this Code; editor rights required. */
+export async function loadCodeSdkCatalog(
   codeId: string,
-  files: Record<string, string>,
-  entry: string,
   context: CodeContext,
-): Promise<CodeCheckRequest> {
+): Promise<{ manifests: CapabilityManifest[]; options: CodeSdkOptions }> {
   codePerson(context, true);
   const { code } = await readCode(codeId, context);
   await requireCodePermission(code, context, true);
@@ -29,15 +26,27 @@ export async function createCodeCheckRequest(
     manifests.push(...page.data.apps.map((app) => app.manifest));
     cursor = page.data.page.hasMore ? page.data.page.nextCursor : undefined;
   } while (cursor);
-  const sdk = generateCodeSdk(
+  return {
     manifests,
-    code.owner.kind === "person"
-      ? { mode: "personal" }
-      : {
-          mode: "resource",
-          owner: code.owner.kind === "resource" ? { kind: "resource", ref: code.owner.ref } : { kind: "app", appId: code.owner.appId },
-        },
-  );
+    options:
+      code.owner.kind === "person"
+        ? { mode: "personal" }
+        : {
+            mode: "resource",
+            owner: code.owner.kind === "resource" ? { kind: "resource", ref: code.owner.ref } : { kind: "app", appId: code.owner.appId },
+          },
+  };
+}
+/** Build authoritative checker input for CLI/chat and C8 from the live catalog under this caller's authority.
+ * Author-supplied SDK code, compiler paths and budget overrides never enter this request. */
+export async function createCodeCheckRequest(
+  codeId: string,
+  files: Record<string, string>,
+  entry: string,
+  context: CodeContext,
+): Promise<CodeCheckRequest> {
+  const { manifests, options } = await loadCodeSdkCatalog(codeId, context);
+  const sdk = generateCodeSdk(manifests, options);
   return {
     files,
     entry,
