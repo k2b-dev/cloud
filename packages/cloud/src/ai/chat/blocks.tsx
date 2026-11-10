@@ -700,7 +700,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
             toolName={props.block.name}
             args={props.block.args}
             result={props.block.result}
-            isError={Boolean(props.block.isError)}
+            isError={isFailedTool(props.block)}
             leading={featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
             errorLabel={fetchError()?.label}
             errorDescription={fetchError()?.description}

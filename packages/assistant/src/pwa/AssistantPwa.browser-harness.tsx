@@ -216,7 +216,12 @@ const detailOf = (id: string): Detail | null => {
     return {
       ...base,
       messages: [
-        stored(id, 1, { role: "user", content: [{ type: "text", text: "Leg Rechnungen aus der Mail jeden Morgen in Dateien ab." }] }, "turn-c"),
+        stored(
+          id,
+          1,
+          { role: "user", content: [{ type: "text", text: "Leg Rechnungen aus der Mail jeden Morgen in Dateien ab." }] },
+          "turn-c",
+        ),
       ],
       activeTurn: {
         turnId: "turn-c",

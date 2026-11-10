@@ -42,9 +42,7 @@ const IndexSchema = z
         })
         .strict(),
     ),
-    events: z.array(
-      z.object({ type: z.string(), subject: z.string(), place: z.string().nullable(), description: z.string() }).strict(),
-    ),
+    events: z.array(z.object({ type: z.string(), subject: z.string(), place: z.string().nullable(), description: z.string() }).strict()),
   })
   .strict();
 const DeclarationsSchema = z
@@ -65,7 +63,11 @@ const oneLine = (text: string): string => {
  * method first and then the TypeScript declarations of the apps it uses. Paths, events and policy rows come from the
  * same generated manifest and classification the check uses, so the index cannot drift from the checker.
  */
-export function codeChatSdkView(manifests: readonly CapabilityManifest[], options: CodeSdkOptions, apps?: readonly string[]): CodeChatSdkData {
+export function codeChatSdkView(
+  manifests: readonly CapabilityManifest[],
+  options: CodeSdkOptions,
+  apps?: readonly string[],
+): CodeChatSdkData {
   const sdk = generateCodeSdk(manifests, options);
   if (apps === undefined) {
     const byApp = new Map(manifests.map((manifest) => [manifest.appId, manifest]));

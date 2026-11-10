@@ -477,7 +477,11 @@ for (const view of [
           ...base,
           seq: 3,
           type: "block_set",
-          block: { ...check, status: "completed", result: { version: 1, result: { ok: false, diagnostics }, manifest: null, permissions: [] } },
+          block: {
+            ...check,
+            status: "completed",
+            result: { version: 1, result: { ok: false, diagnostics }, manifest: null, permissions: [] },
+          },
         });
         const checked = await layout(page);
         expect(checked.nodes.map(({ box }) => box)).toEqual(before.nodes.map(({ box }) => box));

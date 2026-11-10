@@ -44,20 +44,26 @@ templates. Every example in it passes the real checker in CI.
 After `code_submit`, the chat shows one card for the newest version, below
 Gustav's answer. It shows the version, execution subject and approval state:
 
+- **What this version calls** lists each target with its operations, as the
+  Code page's switch-on dialog does, and marks what is new against the running
+  version. Calls whose target the Code picks while it runs share one row.
 - **Switch on** starts the same durable activation as the Code page. Core checks
   current owner authority and any required version approval before switching.
   The card becomes one line after activation and keeps that state after reload.
+  Below that line it links the Code's own page, its next run and its runs where
+  they exist.
 - A version waiting for Cloud-admin approval or refused by policy says so.
   A phone or non-interactive credential sees why it cannot switch on.
 - A version replaced by a newer one becomes one line. Lost access to the Code
   and failed requests remain visible, with recovery through **Retry** or
   **Check status**.
 
-The card asks only Core's activation preview. It does not inspect target rights
-or managers, and activation creates no shares. Target managers use normal
+The card asks only Core's activation preview and, once switched on, the
+automation list for the next run. It does not inspect target rights or
+managers, and activation creates no shares. Target managers use normal
 sharing with the service account's handle. A host enables the card through
 `renderCodeVersion` in `AiChatActions`; without it, `code_submit` stays an
-ordinary step.
+ordinary step. The Assistant workspace and the Cloud app on a phone both show it.
 
 ## Draft and conflict rules
 

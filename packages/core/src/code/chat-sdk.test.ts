@@ -5,7 +5,6 @@ import { generateCodeSdk } from "@k2b/cloud/code";
 import type { CapabilityDefinitions, CapabilityManifest } from "@k2b/cloud/contracts";
 import { declarationOf } from "../../../../scripts/checks/capability-presentation";
 import { packageIds } from "../../../../scripts/workspace";
-import { resolveAiToolResultMaxChars } from "../../../cloud/src/ai/tool-result-budget";
 import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, codeChatSdkView } from "./chat-sdk";
 
 // The real catalog: every workspace app that declares capabilities, as Core lists them for the chat.
@@ -19,8 +18,11 @@ for (const appId of packageIds(workspaceRoot)) {
   manifests.push(compileCapabilityManifest(appId, loaded[declaration.exportName]!));
 }
 const size = (value: unknown) => JSON.stringify(value).length;
-/** A 128k-token chat model; nessi counts about four characters per token, Cloud gives one result half of the context. */
-const budget = resolveAiToolResultMaxChars({ contextWindow: 128_000, configuredMaxChars: 2_000_000 });
+/**
+ * The tool result budget of a 128k-token chat model: Cloud gives one result at most two characters per context token,
+ * about half the context at nessi's four characters per token (resolveAiToolResultMaxChars in @k2b/cloud).
+ */
+const budget = 128_000 * 2;
 
 test("the complete SDK does not fit one chat tool result, which is why the chat reads it in two steps", () => {
   const sdk = generateCodeSdk(manifests, { mode: "personal" });

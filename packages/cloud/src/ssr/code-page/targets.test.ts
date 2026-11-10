@@ -17,9 +17,9 @@ test("switching on lists the owner, each target with its operations, and what is
   ]);
   expect(codeActivationRows(next, next, null).map((row) => row.isNew)).toEqual([false, false]);
   // An app-wide call targets the app; a dynamic ID is no fixed target.
-  expect(codeActivationRows(null, { permissions: [{ operation: "core.ai.generate", target: null }, call("mail.read", null)] }, null)).toEqual([
-    { ref: { type: "app", id: "core" }, operations: ["core.ai.generate"], isNew: true },
-  ]);
+  expect(
+    codeActivationRows(null, { permissions: [{ operation: "core.ai.generate", target: null }, call("mail.read", null)] }, null),
+  ).toEqual([{ ref: { type: "app", id: "core" }, operations: ["core.ai.generate"], isNew: true }]);
 });
 
 test("calls whose target the Code picks while running are listed once, new when the running version made none", () => {
@@ -31,7 +31,15 @@ test("calls whose target the Code picks while running are listed once, new when 
 
 test("targets read as on the Code page: the owner itself, an app by name, a foreign target by type and ID", () => {
   const t = codePageMessages.resolve(["de"]).t;
-  const target = { key: "", ref: { type: "spaces.space", id: "sp_1" }, title: null, typeTitle: "Space", icon: null, own: false, href: null };
+  const target = {
+    key: "",
+    ref: { type: "spaces.space", id: "sp_1" },
+    title: null,
+    typeTitle: "Space",
+    icon: null,
+    own: false,
+    href: null,
+  };
   expect(codeTargetLabel(target, "info@", t)).toBe("an Space sp_1");
   expect(codeTargetLabel({ ...target, own: true }, "info@", t)).toBe("an info@ selbst");
   expect(codeTargetLabel({ ...target, ref: { type: "app", id: "core" }, title: "Cloud" }, "info@", t)).toBe("in der App Cloud");

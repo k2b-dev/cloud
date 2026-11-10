@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { type Accessor, createComponent, createRoot, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { CodeCheckResultSchema } from "../../code/checker-contract";
 import { aiAttachmentMarker } from "../attachments";
 import type { AiActiveTurn } from "../client/projection";
 import type { AiTurnBlock } from "../protocol";
@@ -1835,19 +1836,35 @@ describe("Code check steps", () => {
     result,
     isError,
   });
-  /** Core's check result: the checker's result with no manifest while it has diagnostics. */
+  /** Core's check result around the checker's own contract, with no manifest while it has diagnostics. */
   const checked = (diagnostics: number) => ({
     version: 1,
-    result: {
-      ok: diagnostics === 0,
-      diagnostics: Array.from({ length: diagnostics }, (_, index) => ({
-        code: "TS2339",
-        message: "Property does not exist.",
-        file: "code.ts",
-        line: index + 1,
-        column: 1,
-      })),
-    },
+    result: CodeCheckResultSchema.parse(
+      diagnostics === 0
+        ? {
+            ok: true,
+            diagnostics: [],
+            bundle: "export {};",
+            manifest: {
+              version: 1,
+              entrypoints: [],
+              permissions: [],
+              ai: false,
+              hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+            },
+            permissions: [],
+          }
+        : {
+            ok: false,
+            diagnostics: Array.from({ length: diagnostics }, (_, index) => ({
+              code: "TS2339",
+              message: "Property does not exist.",
+              file: "code.ts",
+              line: index + 1,
+              column: 1,
+            })),
+          },
+    ),
     manifest: null,
     permissions: [],
   });
@@ -1935,7 +1952,11 @@ describe("Code check steps", () => {
   });
 
   test("names the outcome of a check in words and with its own icon", () => {
-    const blocks = [check("check-failed", checked(3)), check("check-passed", checked(0)), { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock];
+    const blocks = [
+      check("check-failed", checked(3)),
+      check("check-passed", checked(0)),
+      { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
+    ];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
     expect(english).toContain("3 findings");
     expect(english).toContain("<strong>Checks the Code</strong><small>passed</small>");
@@ -1951,7 +1972,10 @@ describe("Code check steps", () => {
 
     // A check that could not run answers with Core's error and is a failed step, not a passed or failed check.
     const broken = renderExpanded([
-      check("check-broken", { version: 1, error: { code: "BAD_INPUT", message: "Code request exceeds the checker budget.", details: null } }),
+      check("check-broken", {
+        version: 1,
+        error: { code: "BAD_INPUT", message: "Code request exceeds the checker budget.", details: null },
+      }),
     ]);
     expect(broken).toContain("failed");
     expect(broken).not.toMatch(/passed|findings/);
