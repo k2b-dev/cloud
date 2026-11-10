@@ -20,7 +20,7 @@ const open = async (query: string, view: { width: number; height: number } = des
   const page = await browser.newPage({ viewport: view, reducedMotion: "reduce", isMobile: view.width < 600, hasTouch: view.width < 600 });
   const errors = pageErrors(page);
   await page.goto(`${fixture.url}?${query}`);
-  await page.locator('body[data-ready="true"]').waitFor();
+  await page.waitForFunction(() => document.body?.dataset.ready === "true");
   return { page, errors };
 };
 /**
@@ -51,25 +51,26 @@ const fixtureReset = () => {
   fixture.control.requests.length = 0;
 };
 
-test("every state fits a desktop and a phone and says what happened", async () => {
-  const cases = [
-    {
-      query: "state=liste",
-      expect: ["Standard", "Weitere Buckets", "Archiv", "Test fehlgeschlagen", "Entfernt", "Den Standard-Bucket gibt es immer"],
-    },
-    { query: `state=liste&bucket=${archive}`, expect: ["Erreichbar · getestet", archive, "Sicherung"] },
-    {
-      query: `state=liste&bucket=${STORAGE_FIXTURE_IDS.customer}`,
-      expect: ["Test fehlgeschlagen beim Schreiben.", "Erst lesbar, wenn die Verbindung steht."],
-    },
-    { query: `state=liste&bucket=${STORAGE_FIXTURE_IDS.backup}`, expect: ["Entfernt am", "storage_bucket_disconnected", "Letztes Ziel"] },
-    { query: "state=liste&bucket=new", expect: ["Neuer Bucket", "Entwurf", "Wird beim Anlegen vergeben."] },
-    { query: "state=liste&bucket=00000000-0000-4000-8000-000000000000", expect: ["Diesen Bucket gibt es nicht"] },
-    { query: "state=leer", expect: ["Noch keine weiteren Buckets."] },
-    { query: "state=fehler", expect: ["Speicher konnte nicht geladen werden"] },
-  ];
-  for (const view of [desktop, phone])
-    for (const item of cases) {
+const cases = [
+  {
+    query: "state=liste",
+    expect: ["Standard", "Weitere Buckets", "Archiv", "Test fehlgeschlagen", "Entfernt", "Den Standard-Bucket gibt es immer"],
+  },
+  { query: `state=liste&bucket=${archive}`, expect: ["Erreichbar · getestet", archive, "Sicherung"] },
+  {
+    query: `state=liste&bucket=${STORAGE_FIXTURE_IDS.customer}`,
+    expect: ["Test fehlgeschlagen beim Schreiben.", "Erst lesbar, wenn die Verbindung steht."],
+  },
+  { query: `state=liste&bucket=${STORAGE_FIXTURE_IDS.backup}`, expect: ["Entfernt am", "storage_bucket_disconnected", "Letztes Ziel"] },
+  { query: "state=liste&bucket=new", expect: ["Neuer Bucket", "Entwurf", "Wird beim Anlegen vergeben."] },
+  { query: "state=liste&bucket=00000000-0000-4000-8000-000000000000", expect: ["Diesen Bucket gibt es nicht"] },
+  { query: "state=leer", expect: ["Noch keine weiteren Buckets."] },
+  { query: "state=fehler", expect: ["Speicher konnte nicht geladen werden"] },
+];
+// Each page has the same 5 s budget as an interaction test, including on WebKit.
+for (const view of [desktop, phone])
+  for (const item of cases)
+    test(`${item.query} fits at ${view.width}px and says what happened`, async () => {
       fixtureReset();
       const { page, errors } = await open(item.query, view);
       try {
@@ -89,10 +90,9 @@ test("every state fits a desktop and a phone and says what happened", async () =
       } finally {
         await page.close();
       }
-    }
-}, 120_000);
+    });
 
-test("renaming keeps the ID, sends no keys and shows the new name in the list", async () => {
+test("editing the name enables Save without moving the head buttons", async () => {
   fixtureReset();
   const { page, errors } = await open(`state=liste&bucket=${archive}`);
   try {
@@ -105,7 +105,18 @@ test("renaming keeps the ID, sends no keys and shows the new name in the list", 
     await settled(page);
     // Getting dirty changes paint only: the head buttons stay where they were.
     expect(await save.boundingBox()).toEqual(before);
-    await loadsBucket(page, archive, () => save.click());
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("renaming keeps the ID, sends no keys and shows the new name in the list", async () => {
+  fixtureReset();
+  const { page, errors } = await open(`state=liste&bucket=${archive}`);
+  try {
+    await field(page, "Name").fill("Archiv 2026");
+    await loadsBucket(page, archive, () => headAction(page, "save").click());
     const put = fixture.control.requests.find((request) => request.method === "PUT");
     expect(put?.path).toBe(`/buckets/${archive}`);
     const body = JSON.parse(put?.body ?? "{}");
@@ -120,12 +131,23 @@ test("renaming keeps the ID, sends no keys and shows the new name in the list", 
   }
 });
 
-test("adding a bucket like Default tests it at once; a failed test stays visible with Test again", async () => {
+test("adding a bucket requires a name and bucket before sending a request", async () => {
   fixtureReset();
   const { page, errors } = await open("state=liste&bucket=new");
   try {
     await headAction(page, "save").click();
     expect(await page.getByText("Pflichtfeld.").count()).toBeGreaterThan(0);
+    expect(fixture.control.requests.some((request) => request.method === "POST")).toBe(false);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("adding a bucket like Default tests it at once", async () => {
+  fixtureReset();
+  const { page, errors } = await open("state=liste&bucket=new");
+  try {
     await field(page, "Name").fill("Rechnungen");
     await field(page, "Bucket").fill("cloud-rechnungen");
     await loadsBucket(page, STORAGE_FIXTURE_IDS.created, () => headAction(page, "save").click());
@@ -136,9 +158,18 @@ test("adding a bucket like Default tests it at once; a failed test stays visible
     });
     expect(await page.locator('[data-storage-check="ok"]').isVisible()).toBe(true);
     expect(await page.locator(`[data-storage-row="${STORAGE_FIXTURE_IDS.created}"]`).innerText()).toBe("Rechnungen");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
 
-    fixture.control.failingTests.add(STORAGE_FIXTURE_IDS.created);
-    await loadsBucket(page, STORAGE_FIXTURE_IDS.created, () => headAction(page, "test").click());
+test("a failed test stays visible with Test again", async () => {
+  fixtureReset();
+  const { page, errors } = await open(`state=liste&bucket=${archive}`);
+  try {
+    fixture.control.failingTests.add(archive);
+    await loadsBucket(page, archive, () => headAction(page, "test").click());
     expect(await page.locator('[data-storage-check="failed"]').innerText()).toContain("Test fehlgeschlagen beim Schreiben.");
     expect(await headAction(page, "test").innerText()).toBe("Erneut testen");
     expect(errors).toEqual([]);
@@ -147,7 +178,7 @@ test("adding a bucket like Default tests it at once; a failed test stays visible
   }
 });
 
-test("own keys are required for a new own bucket; a taken name shows at the field", async () => {
+test("own keys are required for a new own bucket", async () => {
   fixtureReset();
   const { page, errors } = await open("state=liste&bucket=new");
   try {
@@ -159,6 +190,22 @@ test("own keys are required for a new own bucket; a taken name shows at the fiel
     await headAction(page, "save").click();
     // The keys are still empty: nothing is sent.
     expect(fixture.control.requests.some((request) => request.method === "POST")).toBe(false);
+    expect(await page.getByText("Pflichtfeld.").count()).toBe(2);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a taken name shows at the field when adding a bucket with own keys", async () => {
+  fixtureReset();
+  const { page, errors } = await open("state=liste&bucket=new");
+  try {
+    await field(page, "Name").fill("archiv");
+    await page.getByRole("radio", { name: /Eigener Server oder Schlüssel/ }).click();
+    await field(page, "S3-Endpunkt").fill("https://s3.example.org");
+    await field(page, "Signaturregion").fill("garage");
+    await field(page, "Bucket").fill("cloud-belege");
     await field(page, "Access-Key-ID").fill("GKexample");
     await field(page, "Secret-Access-Key").fill("not-a-real-secret");
     await headAction(page, "save").click();
@@ -188,7 +235,7 @@ test("a conflict offers the other version or mine", async () => {
   }
 });
 
-test("removing names the apps with data; restoring needs the keys again", async () => {
+test("removing names the apps with data and mutes the removed bucket in the list", async () => {
   fixtureReset();
   const { page, errors } = await open(`state=liste&bucket=${archive}`);
   try {
@@ -201,13 +248,34 @@ test("removing names the apps with data; restoring needs the keys again", async 
     await page.locator("[data-storage-removed]").waitFor();
     expect(fixture.control.requests.some((request) => request.method === "DELETE" && request.path === `/buckets/${archive}`)).toBe(true);
     expect(await page.locator(`[data-storage-row="${archive}"]`).getAttribute("class")).toContain("muted");
+    expect(await field(page, "Access-Key-ID").inputValue()).toBe("");
+    expect(await field(page, "Secret-Access-Key").inputValue()).toBe("");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
 
+test("restoring an own bucket needs the keys again", async () => {
+  fixtureReset();
+  const { page, errors } = await open(`state=liste&bucket=${STORAGE_FIXTURE_IDS.backup}`);
+  try {
     await headAction(page, "restore").click();
     expect(await page.getByText("Pflichtfeld.").count()).toBe(2);
     expect(fixture.control.requests.some((request) => request.path.endsWith("/restore"))).toBe(false);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("restoring with fresh keys tests the bucket again", async () => {
+  fixtureReset();
+  const { page, errors } = await open(`state=liste&bucket=${STORAGE_FIXTURE_IDS.backup}`);
+  try {
     await field(page, "Access-Key-ID").fill("GKexample");
     await field(page, "Secret-Access-Key").fill("not-a-real-secret");
-    await headAction(page, "restore").click();
+    await loadsBucket(page, STORAGE_FIXTURE_IDS.backup, () => headAction(page, "restore").click());
     await page.locator('[data-storage-check="ok"]').waitFor();
     expect(errors).toEqual([]);
   } finally {
@@ -217,13 +285,13 @@ test("removing names the apps with data; restoring needs the keys again", async 
 
 test("restoring a bucket whose name a connected bucket took says what to rename", async () => {
   fixtureReset();
-  const { page, errors } = await open("state=liste&bucket=new");
+  const { page, errors } = await open(`state=liste&bucket=${STORAGE_FIXTURE_IDS.backup}`);
   try {
-    await field(page, "Name").fill("Backup");
-    await field(page, "Bucket").fill("cloud-backup-neu");
-    await loadsBucket(page, STORAGE_FIXTURE_IDS.created, () => headAction(page, "save").click());
-    await page.goto(`${fixture.url}?bucket=${STORAGE_FIXTURE_IDS.backup}`);
-    await page.locator('body[data-ready="true"]').waitFor();
+    // Set up the collision through the fixture API; creating a bucket is covered separately.
+    const created = await page.request.post(fixture.url.replace("/admin/storage", "/api/admin/core/storage/buckets"), {
+      data: { access: "inherit", name: "Backup", bucket: "cloud-backup-neu" },
+    });
+    expect(created.status()).toBe(201);
     await field(page, "Access-Key-ID").fill("GKexample");
     await field(page, "Secret-Access-Key").fill("not-a-real-secret");
     await headAction(page, "restore").click();
