@@ -244,10 +244,10 @@ export default function AssistantCodeVersionCard(props: {
             <div class="assistant-code-version__links">
               <Show when={ownPage()}>
                 {(href) => (
-                  <ButtonLink href={href()} size="sm" variant="secondary">
+                  <a class="k2b-text-link" href={href()}>
                     <i class="ti ti-external-link" aria-hidden="true" />
                     {t().codeVersionOpenPage}
-                  </ButtonLink>
+                  </a>
                 )}
               </Show>
               <Show when={nextRun()}>
@@ -257,17 +257,17 @@ export default function AssistantCodeVersionCard(props: {
                     <Show
                       when={page()}
                       fallback={
-                        <span class="assistant-code-version__next">
+                        <span>
                           <i class="ti ti-clock" aria-hidden="true" />
                           {label()}
                         </span>
                       }
                     >
                       {(href) => (
-                        <ButtonLink href={href()} size="sm" variant="ghost">
+                        <a class="k2b-text-link" href={href()}>
                           <i class="ti ti-clock" aria-hidden="true" />
                           {label()}
-                        </ButtonLink>
+                        </a>
                       )}
                     </Show>
                   );
@@ -275,10 +275,10 @@ export default function AssistantCodeVersionCard(props: {
               </Show>
               <Show when={page()}>
                 {(href) => (
-                  <ButtonLink href={`${href()}?tab=runs`} size="sm" variant="ghost">
+                  <a class="k2b-text-link" href={`${href()}?tab=runs`}>
                     <i class="ti ti-list-details" aria-hidden="true" />
                     {t().codeVersionRuns}
-                  </ButtonLink>
+                  </a>
                 )}
               </Show>
             </div>

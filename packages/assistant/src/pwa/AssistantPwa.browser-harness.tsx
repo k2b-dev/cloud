@@ -171,6 +171,17 @@ const STREAM_TEXT =
   "| Posten | Menge | Preis |\n|---|---:|---:|\n| Stühle neu beziehen | 12 | 1.140 € |\n| Stoff Samt Moos 14 | 9 m | 486 € |\n| Abholen und Liefern | 1 | 60 € |\n\n" +
   "Für die Lieferzeit schaue ich noch, was in Spaces für die Werkstatt";
 
+/** One finished lasting-Code step of the `code=1` chat. */
+const codeStep = (id: string, name: string, result: unknown, args: Record<string, unknown> = {}): ToolBlock => ({
+  id: `tool-${id}`,
+  kind: "tool",
+  callId: id,
+  name,
+  args: { codeId: "c_rechnung", ...args },
+  status: "completed",
+  at: ago(3),
+  result,
+});
 /** Core's switch-on preview on a phone: switching on waits for a computer, the targets show here as well. */
 const CODE_VERSION = {
   codeId: "c_rechnung",
@@ -232,6 +243,15 @@ const detailOf = (id: string): Detail | null => {
         createdAt: ago(4),
         waitingSince: ago(1),
         blocks: [
+          codeStep("sdk", "code_sdk", { version: 1, kind: "index", apps: [], events: [] }),
+          codeStep("write", "code_write", { version: 1 }, { path: "code.ts" }),
+          codeStep("test", "code_test", { version: 1, mode: "test", ok: false, error: null, diagnostics: [], cases: [] }),
+          codeStep("check", "code_check", {
+            version: 1,
+            result: { ok: false, diagnostics: [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 9 }] },
+            manifest: null,
+            permissions: [],
+          }),
           {
             id: "tool-submit",
             kind: "tool",
@@ -468,7 +488,26 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     return json({ message: "Invented failure" }, Number(status ?? 500));
   }
   if (url.pathname.endsWith("/stream")) return quietStream();
-  if (url.pathname === "/api/code/activation/preview") return json({ data: CODE_VERSION });
+  // `code=on`: the version is switched on; the card links its page, next run and runs.
+  if (url.pathname === "/api/code/activation/preview")
+    return json({
+      data:
+        params.get("code") === "on"
+          ? {
+              ...CODE_VERSION,
+              running: 3,
+              activated: { at: ago(1), byYou: true, byName: null },
+              automations: [...CODE_VERSION.automations, { entrypoint: "GET /", route: { method: "GET", path: "/", public: false } }],
+            }
+          : CODE_VERSION,
+    });
+  if (url.pathname === "/api/capabilities/v1/queries/core/code.automation.list")
+    return json({
+      data: {
+        items: [{ entrypoint: "morning", kind: "schedule", cron: "0 7 * * *", nextRunAt: "2026-11-05T06:00:00.000Z", lastRun: null, missingTargets: [] }],
+        removedTargets: [],
+      },
+    });
   if (url.pathname === "/api/assistant/workspace/sidebar")
     return json({
       conversations: empty ? [] : CHATS,
