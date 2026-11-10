@@ -345,8 +345,8 @@ describe("Code in the Cloud app", () => {
       expect(text).toContain("Version 3 von „Rechnungen ablegen“ ist fertig.");
       expect(text).toContain("Was diese Version aufruft");
       expect(await card.locator(".assistant-code-version__target").allInnerTexts()).toEqual([
-        expect.stringContaining("an Ordner fo_rechnungen"),
-        expect.stringContaining("wo der Code es beim Lauf wählt"),
+        expect.stringMatching(/^Datei importieren · Dateien\s*an Ordner fo_rechnungen/),
+        expect.stringMatching(/^Nachricht lesen · Mail\s*wo der Code es beim Lauf wählt/),
       ]);
       // A phone cannot switch on; the card says where it works instead of hiding the version.
       expect(text).toContain("Am Telefon lässt sich nicht einschalten.");

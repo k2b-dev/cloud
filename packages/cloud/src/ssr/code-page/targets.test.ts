@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { codePageMessages } from "./messages";
-import { codeActivationRows, codeDynamicOperations, codeTargetLabel } from "./targets";
+import { codeActivationRows, codeDynamicOperations, codeOperationText, codeTargetLabel } from "./targets";
 
 const call = (operation: string, id: string | null, type = "spaces.space") => ({ operation, target: { type, id } });
 const owner = { type: "mail.mailbox", id: "m_info" };
@@ -44,4 +44,15 @@ test("targets read as on the Code page: the owner itself, an app by name, a fore
   expect(codeTargetLabel({ ...target, own: true }, "info@", t)).toBe("an info@ selbst");
   expect(codeTargetLabel({ ...target, ref: { type: "app", id: "core" }, title: "Cloud" }, "info@", t)).toBe("in der App Cloud");
   expect(codeTargetLabel({ ...target, typeTitle: null }, "info@", t)).toBe("an sp_1");
+});
+
+test("operations read by their title and app, as the registry names them; unnamed ones keep their ID", () => {
+  const labels = {
+    "filesv2.file.import": { title: "Datei importieren", app: "Dateien" },
+    "core.ai.generate": { title: "Text erzeugen", app: null },
+  };
+  expect(codeOperationText("filesv2.file.import", labels)).toBe("Datei importieren · Dateien");
+  expect(codeOperationText("core.ai.generate", labels)).toBe("Text erzeugen");
+  expect(codeOperationText("mail.message.read", labels)).toBe("mail.message.read");
+  expect(codeOperationText("mail.message.read", undefined)).toBe("mail.message.read");
 });

@@ -84,13 +84,25 @@ test("the card lists what the version calls where, as the Code page does, and ma
     { target: target("m_billing"), operations: ["mail.message.read", "mail.message.move"], isNew: true },
     { target: null, operations: ["spaces.task.create"], isNew: false },
   ];
-  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ targets }) } }) });
+  // Operations read by their titles, as the Code page names them; the registry does not name the Spaces one here.
+  const operationLabels = {
+    "mail.message.read": { title: "Read message", app: "Mail" },
+    "mail.message.move": { title: "Move message", app: "Mail" },
+  };
+  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ targets, operationLabels }) } }) });
   const rows = [...dom.root.querySelectorAll(".assistant-code-version__target")].map((row) => row.textContent);
   expect(dom.root.textContent).toContain("What this version calls");
   expect(rows).toEqual([
     "at info@example.test itself",
-    "mail.message.readmail.message.moveat Mailbox m_billingnew",
+    "Read message · MailMove message · Mailat Mailbox m_billingnew",
     "spaces.task.createwhere the Code picks it while running",
+  ]);
+  // The technical ID stays in the tooltip; an unnamed one shows as an ID.
+  const operations = [...dom.root.querySelectorAll(".assistant-code-version__ops > span")];
+  expect(operations.map((operation) => [operation.getAttribute("title"), operation.hasAttribute("data-id")])).toEqual([
+    ["mail.message.read", false],
+    ["mail.message.move", false],
+    ["spaces.task.create", true],
   ]);
 
   // A place this person may not read is named like any target, by type and ID.

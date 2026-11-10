@@ -1,6 +1,6 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
-import { codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
+import { codeOperationText, codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { loadCodeNextRun } from "../code-summary";
@@ -327,7 +327,13 @@ export default function AssistantCodeVersionCard(props: {
                             <span class="assistant-code-version__calls">
                               <Show when={row.operations.length > 0}>
                                 <span class="assistant-code-version__ops">
-                                  <For each={row.operations}>{(operation) => <code>{operation}</code>}</For>
+                                  <For each={row.operations}>
+                                    {(operation) => (
+                                      <span title={operation} data-id={current().operationLabels?.[operation] ? undefined : ""}>
+                                        {codeOperationText(operation, current().operationLabels)}
+                                      </span>
+                                    )}
+                                  </For>
                                 </span>
                               </Show>
                               <span class="assistant-code-version__where">

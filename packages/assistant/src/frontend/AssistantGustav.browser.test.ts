@@ -480,6 +480,38 @@ const cardPreview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPrevie
   readiness: { state: "ready" },
   place: { title: "info@moebel-beispiel.de", typeTitle: "Postfach", href: "/app/mail/m/info" },
   page: "/app/mail/m/info/code",
+  operationLabels: {
+    "mail.conversation.tag": { title: "Unterhaltung markieren", app: "Mail" },
+    "spaces.task.create": { title: "Aufgabe anlegen", app: "Spaces" },
+  },
+  targets: [
+    {
+      target: {
+        key: "mail.mailbox\u0000m_info",
+        ref: { type: "mail.mailbox", id: "m_info" },
+        title: null,
+        typeTitle: "Postfach",
+        icon: "ti ti-mail",
+        own: true,
+        href: null,
+      },
+      operations: ["mail.conversation.tag"],
+      isNew: false,
+    },
+    {
+      target: {
+        key: "spaces.space\u0000sp_2lg8",
+        ref: { type: "spaces.space", id: "sp_2lg8" },
+        title: null,
+        typeTitle: "Space",
+        icon: "ti ti-layout-kanban",
+        own: false,
+        href: null,
+      },
+      operations: ["spaces.task.create"],
+      isNew: true,
+    },
+  ],
   ...patch,
 });
 
@@ -653,8 +685,9 @@ describe("Gustav", () => {
         diff: false,
       },
     ];
+    // A browser session switches on at any width; only the Cloud app's session cannot (AssistantPwa.more.browser.test.ts).
     for (const state of states)
-      for (const view of [panel, phone]) {
+      for (const view of state.name === "ready" || state.name === "an" ? [desktop, panel, phone] : [panel, phone]) {
         const h = await open(view, { cardPreview: state.preview }, { path: "/app/assistant/panel" });
         try {
           await h.page.getByText(state.expected).waitFor();
@@ -668,8 +701,16 @@ describe("Gustav", () => {
           expect(await card.getByRole("link", { name: "Unterschied", exact: true }).count()).toBe(state.diff ? 1 : 0);
           expect(await card.textContent()).not.toMatch(/du verwaltest|Link für|Ben Schulz|Logistik/);
           expect(await card.locator(".assistant-code-version__row").count()).toBe(0);
+          if (state.switchOn === true) {
+            expect(await card.textContent()).not.toContain("Am Telefon");
+            expect(await card.locator(".assistant-code-version__ops > span").allTextContents()).toEqual([
+              "Unterhaltung markieren · Mail",
+              "Aufgabe anlegen · Spaces",
+            ]);
+          }
           expect(h.activationCalls).toEqual(["/api/code/activation/preview"]);
-          expect(h.codeCalls).toEqual([]);
+          // A switched-on version reads its next run from the same list as "My apps"; no other Code query.
+          expect(h.codeCalls).toEqual(state.name === "an" ? ["core.code.automation.list"] : []);
           expect(h.errors).toEqual([]);
           const overflow = await h.page.evaluate(() => {
             const card = document.querySelector(".assistant-code-version, .assistant-code-version__line")!;

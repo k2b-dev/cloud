@@ -44,9 +44,9 @@ templates. Every example in it passes the real checker in CI.
 After `code_submit`, the chat shows one card for the newest version, below
 Gustav's answer. It shows the version, execution subject and approval state:
 
-- **What this version calls** lists each target with its operations, as the
-  Code page's switch-on dialog does, and marks what is new against the running
-  version. Calls whose target the Code picks while it runs share one row.
+- **What this version calls** lists each target with its operations by title
+  and app, such as "Import file · Files", as the Code page does, and marks what
+  is new against the running version. The operation ID stays in the tooltip. Calls whose target the Code picks while it runs share one row.
 - **Switch on** starts the same durable activation as the Code page. Core checks
   current owner authority and any required version approval before switching.
   The card becomes one line after activation and keeps that state after reload.

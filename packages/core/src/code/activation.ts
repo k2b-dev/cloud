@@ -4,7 +4,7 @@ import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
 import { mandates } from "@k2b/cloud/services/mandates";
-import { catalogCache, describeTarget } from "@k2b/cloud/ssr/code-page/load";
+import { catalogCache, describeOperations, describeTarget } from "@k2b/cloud/ssr/code-page/load";
 import { codeActivationRows, codeDynamicOperations } from "@k2b/cloud/ssr/code-page/targets";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -210,7 +210,13 @@ export async function previewCodeActivation(
         : { state: "refused", code: error.code, message: error.message };
   }
   const targets = manifest.success ? await previewTargets(code, manifest.data, catalog) : undefined;
-  return { ...base, activated: null, readiness, place, page, ...(targets ? { targets } : {}) };
+  const operationLabels = targets
+    ? await describeOperations(
+        targets.flatMap((row) => row.operations),
+        catalog,
+      )
+    : undefined;
+  return { ...base, activated: null, readiness, place, page, ...(targets ? { targets, operationLabels } : {}) };
 }
 /** A resource Code's page from its owner app's registry manifest; the owner app itself is not asked. */
 async function previewPage(code: Code, catalog: ReturnType<typeof catalogCache>): Promise<string | null> {

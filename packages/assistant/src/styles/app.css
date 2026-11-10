@@ -694,10 +694,14 @@
   flex-wrap: wrap;
   gap: 0 0.5rem;
 }
-.assistant-code-version__ops > code {
+.assistant-code-version__ops > span {
+  color: var(--k2b-text);
+  overflow-wrap: anywhere;
+}
+/* An operation the registry does not name shows its ID. */
+.assistant-code-version__ops > span[data-id] {
   font-family: var(--k2b-font-mono, ui-monospace, monospace);
   font-size: 0.78125rem;
-  overflow-wrap: anywhere;
 }
 .assistant-code-version__where {
   color: var(--k2b-text-muted);

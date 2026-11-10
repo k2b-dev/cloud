@@ -83,6 +83,8 @@ export const CodeActivationPreviewSchema = z
      * whether that is new compared with the running version, as the Code page lists them. A null target collects the
      * calls whose target the Code picks while it runs. Review evidence, never a grant: each call checks current access.
      */
+    /** Titles and app names of the operations in `targets`, as the Code page names them; unknown ones are left out. */
+    operationLabels: z.record(z.string(), z.object({ title: z.string(), app: z.string().nullable() }).strict()).optional(),
     targets: z
       .array(
         z

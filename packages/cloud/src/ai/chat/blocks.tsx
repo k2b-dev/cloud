@@ -701,7 +701,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
             args={props.block.args}
             result={props.block.result}
             isError={isFailedTool(props.block)}
-            leading={featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+            leading={isFailedTool(props.block) ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
             errorLabel={fetchError()?.label}
             errorDescription={fetchError()?.description}
           />
@@ -886,8 +886,11 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     const src = viewed ? actions.fileUrl?.(viewed.path) : null;
     return viewed && src ? { ...viewed, src } : null;
   };
+  // A failed step shows the error sign instead of the tool's own; its row stays quiet like every failed step.
+  const failed = () => !waiting() && props.block.status !== "rejected" && isFailedTool(props.block);
   const icon = () => {
     if (waiting()) return "ti ti-clock";
+    if (failed()) return "ti ti-alert-circle";
     const value = check();
     if (value) return value.passed ? "ti ti-circle-check" : "ti ti-alert-triangle";
     return aiToolIcon(props.block.name, props.block.presentation?.appIcon);
@@ -906,7 +909,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           .filter(Boolean)
           .join(" · ")}
         icon={icon()}
-        leading={waiting() || check() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+        leading={waiting() || check() || failed() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
         busy={props.busy && props.block.status === "running"}
         bodyInset={false}
         renderBody={() => (

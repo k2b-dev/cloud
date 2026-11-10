@@ -31,6 +31,7 @@ const PreviewSchema = z.object({
   place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).nullable(),
   /** The Code page of a resource Code, as its owner's app declares it in the registry. */
   page: z.string().nullable().optional(),
+  operationLabels: z.record(z.string(), z.object({ title: z.string(), app: z.string().nullable() })).optional(),
   /** What switching on this version calls where, as the Code page lists it; a null target is picked while the Code runs. */
   targets: z
     .array(

@@ -39,7 +39,7 @@ import {
   VersionListSchema,
   VersionReadSchema,
 } from "./data";
-import { codeActivationRows, codeTargetsOf, permissionRef, targetKey } from "./targets";
+import { type CodeOperationLabel, codeActivationRows, codeTargetsOf, permissionRef, targetKey } from "./targets";
 
 /** Core pages run metadata and versions in pages of 20. */
 const PAGE = 20;
@@ -164,6 +164,24 @@ export const describeTarget = async (
   } catch {
     return base;
   }
+};
+
+/** Titles and app names of called operations in the caller's locale, from registry manifests; unknown ones are left out. */
+export const describeOperations = async (
+  operations: Iterable<string>,
+  catalog: ReturnType<typeof catalogCache>,
+): Promise<Record<string, CodeOperationLabel>> => {
+  const entries = await Promise.all(
+    [...new Set(operations)].map(async (operation) => {
+      const appId = operation.split(".")[0]!;
+      const app = await catalog(appId).catch(() => null);
+      if (!app?.ok || !app.data) return null;
+      const localId = operation.slice(appId.length + 1);
+      const entry = [...app.data.manifest.actions, ...app.data.manifest.queries].find((candidate) => candidate.localId === localId);
+      return entry ? ([operation, { title: entry.title, app: app.data.appName ?? null }] as const) : null;
+    }),
+  );
+  return Object.fromEntries(entries.filter((entry) => entry !== null));
 };
 
 /** The title of a called Query or Action in the caller's locale, from the same registry manifest; null when unknown. */
@@ -408,6 +426,15 @@ const loadReady = async (
           isNew: row.isNew,
         }))
       : null;
+  // Names only the operations this page shows anyway: its target rows, the switch-on rows and the version difference.
+  const operationLabels = await describeOperations(
+    [
+      ...(targetRows ?? []).flatMap((row) => [...row.operations, ...row.newOperations]),
+      ...(waitingTargets ?? []).flatMap((row) => row.operations),
+      ...diffPermissions.map((permission) => permission.operation),
+    ],
+    catalog,
+  );
   // A skipped tick or a cancelled start is not a run's result.
   const nextRuns = new Map(automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : []);
   const lastRunOf = (entrypoint: string) =>
@@ -579,6 +606,7 @@ const loadReady = async (
     refusal,
     attentionReasons: attentionResult?.ok ? (attentionResult.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? []) : null,
     waitingTargets,
+    operationLabels,
     runs:
       runs && runsResult.ok
         ? { items: runs, nextCursor: runsResult.data.data.nextCursor, eventDeliveries: runsResult.data.data.eventDeliveries ?? [] }

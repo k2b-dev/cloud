@@ -196,6 +196,10 @@ const CODE_VERSION = {
   allowed: { allowed: false, reason: "phone" },
   readiness: { state: "ready" },
   place: null,
+  operationLabels: {
+    "filesv2.file.import": { title: "Datei importieren", app: "Dateien" },
+    "mail.message.read": { title: "Nachricht lesen", app: "Mail" },
+  },
   targets: [
     {
       target: {

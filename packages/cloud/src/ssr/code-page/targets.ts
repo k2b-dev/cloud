@@ -68,6 +68,16 @@ export const codeDynamicOperations = (
   return operations.length ? { operations, isNew: operations.some((operation) => !before.has(operation)) } : null;
 };
 
+/** A called Query or Action as people read it: its title in the reader's language and its app's name, from the registry. */
+export type CodeOperationLabel = { title: string; app: string | null };
+export type CodeOperationLabels = Readonly<Record<string, CodeOperationLabel>>;
+
+/** "Import file · Files"; an operation the registry does not name keeps its ID. */
+export const codeOperationText = (operation: string, labels: CodeOperationLabels | undefined): string => {
+  const label = labels?.[operation];
+  return label ? (label.app ? `${label.title} · ${label.app}` : label.title) : operation;
+};
+
 /** A foreign target is never named: its type and ID only, like cron names a path. */
 export const codeTargetName = (target: CodePageTarget, ownerTitle: string): string => {
   if (target.own) return ownerTitle;

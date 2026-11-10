@@ -1236,6 +1236,24 @@ describe("survey presentation", () => {
     expect(html).toContain("Submit");
   });
 
+  test("speaks the reader's language and labels a text answer with its question", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CloudSurveyBlock, {
+            args: { title: "Ablage", questions: [{ id: "folder", type: "text", label: "In welchen Ordner?" }] },
+            onSubmit: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain(">Umfrage</p>");
+    expect(html).toContain("Absenden");
+    expect(html).toContain('aria-label="In welchen Ordner?"');
+    expect(html).not.toMatch(/>Survey<|>Submit</);
+  });
+
   test("renders accepted survey answers in the shared user bubble", () => {
     const completed: AiTurnBlock = {
       id: "survey-call",
@@ -1979,6 +1997,35 @@ describe("Code check steps", () => {
     ]);
     expect(broken).toContain("failed");
     expect(broken).not.toMatch(/passed|findings/);
+  });
+
+  test("a failed step shows the error sign instead of the feat/code sign and stays quiet; a passed step keeps its sign", () => {
+    const step = (id: string, name: string, result: unknown): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args: { codeId: "c_1234" },
+      status: "completed",
+      result,
+    });
+    const html = renderExpanded(
+      [
+        step("tested", "code_test", { version: 1, mode: "test", ok: false, error: null, diagnostics: [], cases: [] }),
+        step("written", "code_write", { version: 1 }),
+        { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
+      ],
+      { locale: "de", open: ["group:tested"] },
+    );
+    const rows = html.split("<details").slice(1);
+    const failed = rows.find((row) => row.includes("Testet mit erfundenen Daten"))!;
+    const written = rows.find((row) => row.includes("Bearbeitet eine Code-Datei"))!;
+    expect(failed).toContain("ti-alert-circle");
+    expect(failed).not.toContain('data-tone="danger"');
+    expect(failed).toContain("fehlgeschlagen");
+    expect(failed).not.toContain("cloud-featcode");
+    expect(written).not.toContain('data-tone="danger"');
+    expect(written).toContain("cloud-featcode");
   });
 
   test("names every Code step by what happens in the reader's language", () => {

@@ -490,6 +490,7 @@ databaseSuite()("durable Code activation", () => {
         { target: target("A", false), operations: ["example.item.change"], isNew: true },
         { target: target("B", false), operations: ["example.item.change"], isNew: true },
       ]);
+      expect(preview.operationLabels).toEqual({ "example.item.change": { title: expect.any(String), app: "Example" } });
       const activation = await start(code, submitted.version.id);
       await run(activation.id);
       expect((await status(code, activation.id)).state).toBe("active");
