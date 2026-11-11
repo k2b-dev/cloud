@@ -1599,15 +1599,32 @@ describePart("head", "Spaces Kanban board in a browser", () => {
 
   test("filter values the API would reject do not break a column refresh", async () => {
     const page = await open(desktop, { locale: "en", query: "?tags=Gone01&assignedTo=bogus&priority=Urgent&deadline=soon" });
+    const remaining = Promise.withResolvers<void>();
     try {
+      // Keep later requests behind a gate: one response must never stand in for the whole refresh.
+      await page.route("**/items/filter", async (route) => {
+        const filter = ItemFilterSchema.parse(route.request().postDataJSON());
+        if (!filter.columnIds?.includes(columns[0]!.id)) await remaining.promise;
+        await route.continue();
+      });
       filterRequests.splice(0);
-      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
+      const refreshed = columns.map((column) =>
+        page.waitForResponse(
+          (response) =>
+            response.url().endsWith("/items/filter") &&
+            ItemFilterSchema.parse(response.request().postDataJSON()).columnIds?.includes(column.id) === true,
+        ),
+      );
       await page.evaluate(() =>
         window.dispatchEvent(
           new CustomEvent("spaces-data-invalidated", { detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined } }),
         ),
       );
-      await refreshed;
+      await refreshed[0];
+      expect(filterRequests).toHaveLength(1);
+      remaining.resolve();
+      const responses = await Promise.all(refreshed);
+      await Promise.all(responses.map((response) => response.finished()));
       await page.waitForFunction(() => !window.document.querySelector('[role="region"] button.text-red-600'));
       // Nothing valid remains of the URL filter, so the board is unfiltered: one plain page per column.
       expect(filterRequests).toHaveLength(4);
@@ -1618,6 +1635,8 @@ describePart("head", "Spaces Kanban board in a browser", () => {
       expect(await page.locator('[role="region"] button.text-red-600').count()).toBe(0);
       expect(await page.locator("[data-spaces-head-filters] [data-active]").count()).toBe(0);
     } finally {
+      remaining.resolve();
+      await page.unrouteAll({ behavior: "wait" });
       await page.context().close();
     }
   }, 30_000);
