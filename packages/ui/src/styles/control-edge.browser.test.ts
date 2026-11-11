@@ -355,7 +355,9 @@ describe("one edge source in the browser", () => {
             expect(inner.height, `${label} height`).toBe(outer.height - 2 * outer.border);
             expect(outer.overflow, `${label} clip`).toBe("hidden");
             expect(inner.shadow, `${label} own edge`).toBe("none");
-            expect(line.width, `${label} divider width`).toBe("1px");
+            // 1 px; WebKit snaps it to one device pixel at 1.5x (0.667 px).
+            const divider = Number.parseFloat(line.width);
+            expect(divider > 0 && divider <= 1, `${label} divider width ${line.width}`).toBe(true);
             expect(line.color, `${label} divider colour`).toBe(line.edge);
           }
           // Forced colours drop the fill, so a stepper focused from the keyboard shows the system outline.
