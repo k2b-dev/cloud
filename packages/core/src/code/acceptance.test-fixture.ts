@@ -24,7 +24,7 @@ import { Hono } from "hono";
 import type { JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import type { AcceptanceProvider } from "../../../../scripts/fixtures/code-acceptance-provider";
-import { getCheckerIsolate } from "../../../../scripts/fixtures/test-infra";
+import { getCheckerIsolate } from "../../../../scripts/fixtures/checker-isolate";
 import type { RunnerEngine, SandboxCall } from "../../../runner/src/engine";
 import { Runner } from "../../../runner/src/runner";
 import { requireCodeRunFence } from "./bridge";

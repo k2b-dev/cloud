@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CodeCheckHost, type CodeTestCase, checkCode, generateCodeSdk } from "@k2b/cloud/code";
 import { z } from "zod";
-import { getCheckerIsolate } from "../../../../scripts/fixtures/test-infra";
+import { getCheckerIsolate } from "../../../../scripts/fixtures/checker-isolate";
 import { type CodeTestingHost, simulateCode, testCode } from "./testing";
 
 const isolate = await getCheckerIsolate();

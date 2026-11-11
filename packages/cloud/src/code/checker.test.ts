@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { getCheckerIsolate } from "../../../../scripts/fixtures/test-infra";
+import { getCheckerIsolate } from "../../../../scripts/fixtures/checker-isolate";
 import { chatCapabilities } from "../../../chat/src/capabilities";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";

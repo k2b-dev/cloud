@@ -338,9 +338,11 @@ suiteFor(
   }
   async function completed(codeId: string, runId: string, ctx = author) {
     const signal = AbortSignal.timeout(10_000);
+    let lastState = "unobserved";
     while (!signal.aborted) {
       await runOutbox.reconcile();
       const run = await readCodeRun({ codeId, runId, cursor: 0, offset: 0, length: 32768 }, ctx);
+      lastState = run.run.state;
       if (["succeeded", "failed", "cancelled", "skipped"].includes(run.run.state)) {
         const calls = [...(run.contents?.calls ?? [])];
         let cursor = run.contents?.nextCursor;
@@ -354,7 +356,7 @@ suiteFor(
       }
       await Bun.sleep(10);
     }
-    throw new Error("Acceptance run did not reach a visible terminal state");
+    throw new Error(`Acceptance run did not reach a visible terminal state (last state: ${lastState}; runner codes: ${fleet.logs.join(",")})`);
   }
   test("Lea checks, Ben activates, both runners execute, the manager revokes and Mail deletion cleans up", async () => {
     const initialized = await code.init({ title: "Rechnungen", owner: { kind: "resource", ref: mailboxRef } }, manager);
