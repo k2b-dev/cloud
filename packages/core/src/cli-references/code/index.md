@@ -272,3 +272,18 @@ return a generic message without private input. The shared contract adds
 `policyEffective`, `policyPreview`, `policyUpdate`, `secretSet`, `secretList`
 and `secretDelete`; `CodeLocalStatusSchema` and `CodeWorkspaceStatusSchema`
 define the local comparison. Existing C18a keys and version 1 stay unchanged.
+
+## Export a database
+
+`cld code show <code>` shows SQLite size, its per-Code limit, the owner's
+reserved capacity. An editor or Cloud
+administrator can run `cld code db export <code> --out ./database.sqlite`.
+This streams a consistent SQLite snapshot to a new private file; it never
+overwrites an existing path or leaves a final file after a failed download.
+It does not include source, secrets or grants, or create a database. JSON/JSONL success reports `codeId`, `path`, `bytes`, `format`.
+
+`code_db_owner_full` means the owner has reached its reserved storage capacity.
+Delete unused Code or ask an administrator to raise
+`core.code.database_owner_bytes`; reads and exports remain available. The
+owner default is ten 100 MiB database ceilings. Pausing a Code preserves its
+database; deleting the Code removes it through the durable deletion job.

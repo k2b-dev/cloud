@@ -110,6 +110,7 @@ export const CODE_LIMIT_KEYS = [
   "core.code.calls_per_run",
   "core.code.calls_per_second",
   "core.code.database_bytes",
+  "core.code.database_owner_bytes",
   "core.code.rsql_url",
   "core.code.rsql_api_token",
   "core.code.rsql_allowed_targets",
