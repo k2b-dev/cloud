@@ -67,7 +67,7 @@ export function createPreviewsStore(db: SQL, packageName: string): PreviewStore 
     async put(source, state, variants = {}, errorCode) {
       const bytes = Object.values(variants).reduce((total, item) => total + item.bytes, 0);
       await query`INSERT INTO platform._cloud_previews (package, key_hash, revision, state, bytes, variants, error_code)
-        VALUES (${packageName}, ${previewHash(source.key)}, ${source.revision}, ${state}, ${bytes}, ${JSON.stringify(variants)}::jsonb, ${errorCode ?? null})
+        VALUES (${packageName}, ${previewHash(source.key)}, ${source.revision}, ${state}, ${bytes}, ${JSON.stringify(variants)}::text::jsonb, ${errorCode ?? null})
         ON CONFLICT (package, key_hash, revision) DO UPDATE SET state=EXCLUDED.state, bytes=EXCLUDED.bytes, variants=EXCLUDED.variants, error_code=EXCLUDED.error_code`;
     },
     async shown(source) {

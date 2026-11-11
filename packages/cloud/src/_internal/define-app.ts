@@ -79,7 +79,6 @@ import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./publi
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
 import { PWA_ASSET_MANIFEST_PATH } from "../contracts/pwa-assets";
-import { sql } from "../runtime/clients";
 import { connections } from "../runtime/connections";
 import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
@@ -99,7 +98,6 @@ import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { startPreviewsRuntime } from "../services/previews/runtime";
-import { setupPreviews } from "../services/previews/store";
 import { readRailSnapshot } from "../services/rail-snapshot";
 import { screenPreferences } from "../services/screen-preferences";
 import { isAppPagePath } from "../services/session";
@@ -1285,7 +1283,6 @@ export const defineApp = <
       if (meta.id !== "core") await startOutbox();
 
       cleanup.push(await startLinksRuntime(meta.id));
-      await setupPreviews(sql);
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);
