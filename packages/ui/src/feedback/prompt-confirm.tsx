@@ -1,5 +1,6 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import { TextInput } from "../inputs/TextInput";
+import { showTruncatedTitle } from "../internal/truncated-title";
 import { resolveUiMessages } from "../intl/messages";
 import { dialogCore } from "./dialog-core";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "./dialog-tone";
@@ -48,7 +49,7 @@ export const DialogHeader = (props: {
       )}
     </Show>
     <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
-      {(title) => <h2>{title()}</h2>}
+      {(title) => <h2 onPointerEnter={showTruncatedTitle}>{title()}</h2>}
     </Show>
     <button type="button" class="k2b-dialog__close" aria-label={resolveUiMessages().closeDialog} onClick={props.close}>
       <i class="ti ti-x" aria-hidden="true" />

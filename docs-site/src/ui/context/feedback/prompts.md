@@ -47,7 +47,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 
 | Property | Purpose |
 | --- | --- |
-| `title`, `icon` | Name the dialog and add a muted Tabler icon. The header sits flat on the dialog surface like the `PanelDialog` header, and a long title wraps instead of being cut off. |
+| `title`, `icon` | Name the dialog and add a muted Tabler icon. The header sits flat on the dialog surface like the `PanelDialog` header. A long title stays on one line and ends with an ellipsis; the native hint shows all of it. |
 | `confirmText`, `cancelText` | Override action labels. `cancelText: false` hides the cancel button in `prompts.form`. |
 | `confirmationPhrase` | Requires an exact typed phrase before `prompts.confirm` can confirm. |
 | `variant` | Selects `primary`, `success`, `warning`, or `danger` treatment. `success`, `warning`, and `danger` also give the prompt that [dialog tone](/en/ui/layout/panel-dialog#tone): a 2 px edge in its colour and the tone's icon instead of `icon`. `success` and `danger` colour the action button too; `warning` keeps a primary button, because it asks for care, not for a destructive act. `prompts.success` has the success tone and `prompts.error` the danger tone. |

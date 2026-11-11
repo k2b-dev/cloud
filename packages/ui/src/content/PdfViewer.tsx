@@ -34,6 +34,11 @@ export type PdfViewerProps = {
   /** Without the zoom controls, always fitted. Defaults to `true`. */
   zoom?: boolean;
   /**
+   * With `zoom` false, a factor of the fitted width, such as 1.5, for a host that zooms with its own controls, like
+   * `QuickView`. Defaults to 1.
+   */
+  scale?: number;
+  /**
    * How a fitted document fills the area: `"width"` (the default) fits each page to the area's width, for reading;
    * `"page"` shows the whole first page in the area's height, narrower, for a preview beside other content.
    * Fitted pages never grow past 100 %.
@@ -41,8 +46,8 @@ export type PdfViewerProps = {
   fit?: "width" | "page";
   /** Shows only this page (zero-based) instead of all pages one below the other. */
   page?: number;
-  /** The first visible page is drawn. */
-  onReady?: () => void;
+  /** The first visible page is drawn; `pages` counts the document's pages, such as for a host's "4 pages". */
+  onReady?: (document: { pages: number }) => void;
   /** pdf.js could not open or draw the document; the viewer shows its error state. */
   onError?: (error: unknown) => void;
   class?: string;
@@ -249,14 +254,15 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
             data={pdf()}
             title={props.title}
             zoom={props.zoom}
+            scale={props.scale}
             fit={props.fit}
             page={props.page}
             actions={actions()}
-            onReady={() => {
+            onReady={(drawnDocument) => {
               const waiting = document.activeElement === root;
               setDrawn(true);
               if (waiting) root?.querySelector<HTMLElement>(".k2b-pdf-viewer__pages")?.focus();
-              props.onReady?.();
+              props.onReady?.(drawnDocument);
             }}
             onError={undrawableNow}
           />

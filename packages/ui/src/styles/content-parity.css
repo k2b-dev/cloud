@@ -4993,6 +4993,142 @@
   transform: translateX(-50%);
 }
 
+/* QuickView: the page stays faintly visible behind a quiet blurred stage in
+   both themes. Name chip, commands, the pill and the film strip float over it
+   in the light overlay glass; only the pill carries the toolbar shadow. */
+.k2b-ui .k2b-quick-view {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  box-sizing: border-box;
+  width: 100dvw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0.75rem;
+  border: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 0.75rem;
+  color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-surface-muted) 88%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.k2b-ui .k2b-quick-view::backdrop {
+  background: transparent;
+}
+
+.k2b-ui .k2b-quick-view__top {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* The name never wraps: one line with an ellipsis; the facts give way first. */
+.k2b-ui .k2b-quick-view__name {
+  display: flex;
+  min-width: 0;
+  max-width: min(40rem, 100%);
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.375rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-quick-view__name > b {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-quick-view__name > span {
+  min-width: 0;
+  flex: 0 100 auto;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-quick-view__actions {
+  display: flex;
+  flex: none;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-quick-view__action {
+  border-radius: 9999px;
+}
+
+/* The item centres on the stage; zoomed beyond it, the stage scrolls both
+   ways and the auto margins keep every edge reachable. */
+.k2b-ui .k2b-quick-view__stage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  container-type: size;
+  overscroll-behavior: contain;
+}
+
+.k2b-ui .k2b-quick-view__stage > * {
+  margin: auto;
+}
+
+.k2b-ui .k2b-quick-view__bar {
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-quick-view__bar > .k2b-toolbar {
+  --k2b-radius-control: 9999px;
+  padding: var(--k2b-pill-inset);
+  border: 1px solid var(--k2b-border);
+  border-radius: 9999px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
+  pointer-events: auto;
+}
+
+.k2b-ui .k2b-quick-view__bar .k2b-toolbar__action {
+  min-inline-size: var(--k2b-pill-control);
+  inline-size: var(--k2b-pill-control);
+  min-block-size: var(--k2b-pill-control);
+  block-size: var(--k2b-pill-control);
+}
+
+.k2b-ui :is(.k2b-quick-view__count, .k2b-quick-view__percent) {
+  min-width: 3rem;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-quick-view__strip {
+  justify-self: center;
+  max-width: min(56rem, 100%);
+}
+
+/* A phone keeps the stage for the item: the pill steps, a swipe steps too. */
+@media (max-width: 40rem) {
+  .k2b-ui .k2b-quick-view__strip {
+    display: none;
+  }
+}
+
 /* ThumbnailStrip: 44 px high; it fades only on the side where more images follow (data-scroll-fade). */
 .k2b-ui .k2b-thumbnail-strip {
   display: flex;

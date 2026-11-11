@@ -294,8 +294,9 @@
 }
 
 /* Same header as PanelDialog: flat on the dialog surface, a quiet icon, the
-   same close control, and a title that wraps instead of hiding a long name
-   behind an ellipsis. Only the title size differs. */
+   same close control, and a title that stays on one line and ends with an
+   ellipsis, so a long name never moves the content. Only the title size
+   differs. */
 .k2b-ui .k2b-dialog__header > i {
   color: var(--k2b-text-muted);
 }
@@ -363,10 +364,12 @@
   min-width: 0;
   flex: 1;
   margin: 0;
+  overflow: hidden;
   color: var(--k2b-text);
   font-size: 1rem;
   font-weight: 600;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-dialog__header-spacer {

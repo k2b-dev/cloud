@@ -13,6 +13,7 @@ import {
   fileKindLabel,
   formatFileViewSize,
   IconButton,
+  Kbd,
   Placeholder,
   prompts,
   Section,
@@ -39,6 +40,7 @@ import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
 import ItemHistory from "./ItemHistory";
 import { useFilesMessages } from "./messages";
+import { previewRevision, previewSource } from "./preview-client";
 import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 
 /** One entry in the shared details outline: header, preview, properties, versions or contents, then technical details; a summary for several. */
@@ -153,6 +155,8 @@ export default function FileInspector(props: {
   );
   const expand = (item: FileEntry) => props.onPreview(item, () => setNotPdf(revision(item)));
   const readOnly = (item: FileEntry) => item.actions?.write === false;
+  /** Photos, PDFs and Office documents show the preview service's picture of their first page. */
+  const pictured = (item: FileEntry) => ["image", "pdf", "office"].includes(previewSource(item) ?? "");
   /** The file's preview stands in the panel; Collabora files keep Edit as their main action. */
   const inlinePreview = (item: FileEntry) => !item.directory && !props.editable?.(item) && Boolean(previewKind(item));
   const metaLine = (item: FileEntry) =>
@@ -326,15 +330,16 @@ export default function FileInspector(props: {
                     }
                   />
                   <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
-                    {/* The preview leads the body without a heading of its own: the icon in its corner, or a click on an
-                        image, opens it large. A PDF shows its whole first page. */}
-                    <Show when={!item().directory && previewKind(item())}>
-                      <div class="filesv2-inspector-preview" data-preview={previewKind(item()) || undefined}>
+                    {/* The preview leads the body without a heading of its own: the icon in its corner, Space, or a click
+                        on a picture opens the quick view. Photos, PDFs and Office documents show the service's preview
+                        of their first page; texts, video and audio keep their own preview. */}
+                    <Show when={!item().directory && (pictured(item()) || previewKind(item()))}>
+                      <div class="filesv2-inspector-preview" data-preview={previewSource(item()) ?? previewKind(item()) ?? undefined}>
                         <Show
                           keyed
                           when={
-                            previewKind(item()) === "image"
-                              ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
+                            pictured(item())
+                              ? JSON.stringify([props.base.id, props.base.locationKey, item().path, previewRevision(item())])
                               : null
                           }
                           fallback={
@@ -357,6 +362,7 @@ export default function FileInspector(props: {
                         >
                           <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
                             <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
+                            <Kbd class="filesv2-hero__key" keys="space" />
                           </button>
                         </Show>
                         <div class="filesv2-inspector-preview__expand">

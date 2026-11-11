@@ -447,26 +447,40 @@ describe("Filesv2 interactions", () => {
     expect(actions()).toContain("Rename");
   });
 
-  test("PDF preview actions follow the German locale", async () => {
+  test("PDF quick view commands follow the German locale", async () => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "de";
-    const { openFilePreview } = await import("../src/frontend/FilePreviewDialog");
+    const { default: FileQuickView } = await import("../src/frontend/FileQuickView");
     const { default: FilePreview } = await import("../src/frontend/FilePreview");
+    const { LocaleProvider } = await import("@k2b/ui");
     const entry = { name: "Bericht.pdf", path: "Bericht.pdf", directory: false, size: 8, modified: "2026-09-17T10:00:00Z" };
     // On its own, the preview of a PDF is only the document.
-    const dispose = render(() => createComponent(FilePreview, { baseId: "base-1", entry, onDownload: () => {} }), dom.root);
+    const disposePreview = render(() => createComponent(FilePreview, { baseId: "base-1", entry, onDownload: () => {} }), dom.root);
     expect(dom.root.querySelectorAll("a, button")).toHaveLength(0);
-    void openFilePreview({ baseId: "base-1", entry, onDownload: () => {} });
+    disposePreview();
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(FileQuickView, {
+              baseId: "base-1",
+              entries: [entry],
+              current: entry.path,
+              onCurrentChange: () => {},
+              onClose: () => {},
+              onDownload: () => {},
+            });
+          },
+        }),
+      dom.root,
+    );
     await flush();
     cleanup = () => {
-      dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
       dispose();
       dom.cleanup();
     };
-    const actions = dom.document
-      .querySelector("dialog")!
-      .querySelectorAll(".k2b-panel-dialog__actions a, .k2b-panel-dialog__actions button");
-    const labels = [...actions].map((action) => action.getAttribute("aria-label"));
-    expect(labels).toEqual(["In neuem Tab öffnen", "Herunterladen"]);
+    const labels = [...dom.document.querySelectorAll(".k2b-quick-view__actions button")].map((action) => action.getAttribute("aria-label"));
+    expect(labels).toEqual(["In neuem Tab öffnen", "Herunterladen", "Schließen"]);
   });
 });

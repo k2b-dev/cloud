@@ -3495,9 +3495,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
 }
 
-/* A long title takes two lines, then ends with an ellipsis. */
+/* A title never wraps: one line that ends with an ellipsis, so a long name
+   moves nothing below it. The native hint shows the cut name. */
 .k2b-ui .k2b-detail-panel__heading h2 {
-  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
   color: var(--k2b-text);
@@ -3505,10 +3505,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 650;
   line-height: 1.25rem;
   letter-spacing: -0.018em;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The state leads the line below the title, in the quiet meta type; badges
@@ -5302,12 +5300,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
 }
 
+/* One line with an ellipsis: a long name never wraps and moves the dialog's
+   content; the native hint shows the cut name. */
 .k2b-ui .k2b-panel-dialog__heading h2 {
+  overflow: hidden;
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.018em;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-panel-dialog__heading p {

@@ -158,6 +158,60 @@
   object-fit: contain;
   border-radius: 0.25rem;
 }
+/* A preview fills the icon's fixed box: photos are cropped to it, pages stand
+   whole on a hairline, and a preview fades in without moving anything. */
+.filesv2-thumbnail--preview {
+  position: relative;
+  border-radius: 0.25rem;
+}
+.filesv2-thumbnail--preview img {
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+.filesv2-thumbnail--preview img[data-ready] {
+  opacity: 1;
+}
+.filesv2-thumbnail--preview[data-kind="image"] img {
+  object-fit: cover;
+}
+.filesv2-thumbnail--preview:is([data-kind="pdf"], [data-kind="office"]) img[data-ready] {
+  width: auto;
+  height: auto;
+  box-shadow: 0 0 0 1px var(--k2b-border);
+  border-radius: 0.125rem;
+  background: #fff;
+}
+.filesv2-thumbnail__page {
+  display: block;
+  width: 78%;
+  height: 100%;
+  overflow: hidden;
+  padding: 8% 7%;
+  border-radius: 0.125rem;
+  background: var(--k2b-surface);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+/* The first lines of a text, as small as they come out; in a row they read as
+   lines, in a tile as words. */
+.filesv2-thumbnail__text {
+  display: block;
+  color: var(--k2b-text-muted);
+  font-family: var(--k2b-font-mono);
+  font-size: 3px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.filesv2-thumbnail--large .filesv2-thumbnail__text {
+  font-size: 7px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .filesv2-thumbnail--preview img {
+    transition: none;
+  }
+}
 .filesv2-thumbnail--large {
   width: 100%;
   height: 100%;
@@ -183,161 +237,6 @@
   min-height: 0;
 }
 
-/* The preview dialog is a reading frame anchored near the top: a document that finishes loading, or a longer one,
-   only grows downward, so the header never moves. Text and Markdown get a 40rem column (the 72ch reading measure),
-   tables and media the wide frame. Images, PDFs and video fill the frame's height. */
-.k2b-ui .k2b-dialog.filesv2-preview-dialog {
-  --filesv2-preview-top: max(0.75rem, env(safe-area-inset-top, 0px), 5vh);
-  --filesv2-preview-height: calc(100dvh - var(--filesv2-preview-top) - max(0.75rem, env(safe-area-inset-bottom, 0px)));
-  top: var(--filesv2-preview-top);
-  width: min(var(--k2b-dialog-available-width), 40rem);
-  max-height: var(--filesv2-preview-height);
-  transform: translateX(-50%);
-}
-.k2b-ui .k2b-dialog.filesv2-preview-dialog--wide {
-  width: min(var(--k2b-dialog-available-width), 64rem);
-}
-.k2b-ui .k2b-dialog.filesv2-preview-dialog--fill {
-  height: var(--filesv2-preview-height);
-}
-.k2b-ui .filesv2-preview-dialog .k2b-panel-dialog-viewport {
-  max-height: var(--filesv2-preview-height);
-}
-.k2b-ui .filesv2-preview-dialog--fill .k2b-panel-dialog-viewport {
-  height: 100%;
-}
-/* The document title keeps the size it had as the heading of the document and wraps, so it reads in full; four
-   lines bound a runaway heading. */
-.k2b-ui .filesv2-preview-dialog .k2b-panel-dialog__heading h2 {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 1.5rem;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-}
-/* Holds the title line while a Markdown file loads. The facts below it stay invisible until the title is known and
-   then appear with it, so a title that wraps moves nothing visible. */
-.filesv2-preview-dialog__title-pending {
-  display: inline-block;
-  width: 14rem;
-  max-width: 70%;
-  height: 1.25rem;
-  vertical-align: middle;
-  border-radius: 0.375rem;
-  background: var(--k2b-surface-muted);
-}
-/* One quiet line: the file name gives way, so the size and date stay. */
-.filesv2-preview-facts {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.filesv2-preview-facts[data-pending] {
-  visibility: hidden;
-}
-.filesv2-preview-facts > * {
-  flex: none;
-}
-.filesv2-preview-facts > i {
-  font-size: 0.875rem;
-}
-.filesv2-preview-facts > .filesv2-preview-facts__name {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--k2b-text-secondary);
-  text-overflow: ellipsis;
-}
-.filesv2-preview-facts__date-day {
-  display: none;
-}
-/* The content takes focus on open, so arrow keys scroll it; it is not a control, so it draws no ring. */
-.filesv2-preview-dialog__content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  outline: none;
-}
-/* A stretched preview takes the body's height, so a filled frame shows media at its height and a long table scrolls
-   in itself once the frame reaches its maximum height. */
-.k2b-ui .filesv2-preview-dialog--stretch .k2b-panel-dialog__body > .filesv2-preview-dialog__content,
-.k2b-ui .filesv2-preview-dialog--stretch .filesv2-preview {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-}
-/* A plain FileView keeps its natural height; here it fills the frame instead. */
-.k2b-ui .filesv2-preview-dialog--stretch .k2b-content-file-view[data-variant] {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-/* One definite cell, so an image or video fits the frame's height as well as its width. */
-.k2b-ui .filesv2-preview-dialog--fill .k2b-content-file-view__media {
-  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
-}
-.k2b-ui .filesv2-preview-dialog .filesv2-preview img {
-  max-height: 100%;
-}
-/* The dialog's video frame takes the whole body, so a portrait reel shows at the body's full height. */
-.k2b-ui .filesv2-preview-dialog .filesv2-preview > .k2b-video-player {
-  flex: 1 1 auto;
-  max-height: none;
-}
-/* Phones: the preview takes the whole screen, clear of notches and the home indicator. */
-@media (max-width: 47.999rem) {
-  .k2b-ui .k2b-dialog.filesv2-preview-dialog {
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100dvh;
-    max-width: none;
-    max-height: none;
-    border: 0;
-    border-radius: 0;
-    background: var(--k2b-surface);
-    transform: none;
-  }
-  .k2b-ui .filesv2-preview-dialog .k2b-panel-dialog-viewport {
-    height: 100%;
-    max-height: none;
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
-      env(safe-area-inset-left, 0px);
-  }
-  .k2b-ui .filesv2-preview-dialog .k2b-panel-dialog__heading h2 {
-    font-size: 1.25rem;
-  }
-  /* Too narrow for one line: the file name takes the first line, size and day the second. */
-  .filesv2-preview-facts {
-    flex-wrap: wrap;
-    row-gap: 0.125rem;
-  }
-  .filesv2-preview-facts > .filesv2-preview-facts__name {
-    flex: 1 0 calc(100% - 1.25rem);
-  }
-  .filesv2-preview-facts__name + .filesv2-preview-facts__separator {
-    display: none;
-  }
-  .filesv2-preview-facts__date-time {
-    display: none;
-  }
-  .filesv2-preview-facts__date-day {
-    display: inline;
-  }
-  /* Edit becomes an icon button that keeps its name for assistive technology. */
-  .filesv2-preview-dialog__edit-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
 
 .filesv2-search {
   flex: 1 1 12rem;
@@ -553,6 +452,21 @@
 }
 .filesv2-hero:focus-visible {
   outline: 2px solid var(--k2b-focus-ring);
+}
+.filesv2-hero {
+  position: relative;
+}
+/* The key that opens the quick view, quietly in the corner; pointers and
+   touch see it as a hint, the button's name says the same. */
+.filesv2-hero__key {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+}
+@media (pointer: coarse) {
+  .filesv2-hero__key {
+    display: none;
+  }
 }
 .filesv2-thumbnail--hero {
   width: 100%;
@@ -1261,4 +1175,84 @@ dialog[open]:has(.filesv2-export-dialog) {
 }
 .k2b-file-grid__preview > .filesv2-thumbnail img {
   border-radius: 0;
+}
+
+/* Quick view: a photo's frame takes its own proportions inside the stage and
+   keeps them while the sharp preview fades in; zoom grows the frame and the
+   stage scrolls. */
+.filesv2-quick-image {
+  position: relative;
+  width: calc(min(100cqw, 100cqh * var(--ratio)) * var(--zoom));
+  aspect-ratio: var(--ratio);
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+.filesv2-quick-image:not([data-sized]) {
+  width: min(100cqw, 100cqh * var(--ratio), 36rem);
+}
+.filesv2-quick-image > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+.filesv2-quick-image:not([data-sized]) > img {
+  opacity: 0;
+}
+.filesv2-quick-image__sharp {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+.filesv2-quick-image__sharp[data-ready] {
+  opacity: 1;
+}
+/* Documents read in the full stage, in the PDF viewer's own grey ground. */
+.filesv2-quick-document {
+  position: relative;
+  display: flex;
+  width: min(100%, 64rem);
+  height: 100%;
+  flex-direction: column;
+}
+.filesv2-quick-document > .k2b-pdf-viewer {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.filesv2-quick-document:not([data-drawn]) > .k2b-pdf-viewer {
+  visibility: hidden;
+}
+.filesv2-quick-document__first {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  max-width: 100%;
+  max-height: 100%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+  background: #fff;
+}
+/* Texts, tables, video and audio keep the usual preview in a reading column. */
+.filesv2-quick-reading {
+  width: min(100%, 48rem);
+  max-height: 100%;
+  overflow: auto;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  background: var(--k2b-surface);
+}
+.filesv2-quick-state {
+  max-width: 26rem;
+}
+.filesv2-quick-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .filesv2-quick-image__sharp {
+    transition: none;
+  }
 }

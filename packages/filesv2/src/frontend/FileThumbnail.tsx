@@ -1,166 +1,107 @@
-import { FileTypeIcon } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import { apiClient } from "../api/client";
+import { createDelayedLoading, FileTypeIcon } from "@k2b/ui";
+import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
-import { previewKind } from "./file-preview";
-
-/**
- * Filegate renders thumbnails on demand and answers 503 thumbnail_capacity beyond a handful of
- * parallel renders, so requests are queued here and retried with backoff instead of failing.
- */
-const CONCURRENCY = 3;
-const RETRY_DELAYS = [600, 1500, 3000];
-let active = 0;
-const waiting: Array<() => void> = [];
-const acquire = (signal: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const ready = () => {
-      signal.removeEventListener("abort", cancel);
-      resolve();
-    };
-    const cancel = () => {
-      const index = waiting.indexOf(ready);
-      if (index >= 0) waiting.splice(index, 1);
-      reject(signal.reason);
-    };
-    if (active < CONCURRENCY) {
-      active++;
-      resolve();
-    } else {
-      waiting.push(ready);
-      signal.addEventListener("abort", cancel, { once: true });
-    }
-  });
-const release = () => {
-  const next = waiting.shift();
-  if (next) next();
-  else active--;
-};
-const sleep = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const cancel = () => {
-      clearTimeout(timer);
-      reject(signal.reason);
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", cancel);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", cancel, { once: true });
-  });
-const loadImage = (url: string, signal: AbortSignal) =>
-  new Promise<string>((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const image = new Image();
-    const cleanup = () => {
-      signal.removeEventListener("abort", cancel);
-      image.onload = null;
-      image.onerror = null;
-    };
-    const cancel = () => {
-      cleanup();
-      image.removeAttribute("src");
-      reject(signal.reason);
-    };
-    image.crossOrigin = "anonymous";
-    image.referrerPolicy = "no-referrer";
-    image.onload = () => {
-      cleanup();
-      resolve(url);
-    };
-    image.onerror = () => {
-      cleanup();
-      reject(new Error("thumbnail_unavailable"));
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    image.src = url;
-  });
+import { loadPreview, previewRevision, previewSource, previewUrl } from "./preview-client";
 
 type ThumbnailProps = { baseId: string; locationKey?: string; entry: FileEntry; large?: boolean; hero?: boolean };
+
+/**
+ * The file's content in its icon's place: an image, the first page of a PDF or Office document, or the first lines of
+ * a text. The box has its fixed size from the first render, so nothing moves while a preview arrives. A placeholder
+ * shows only after 200 ms and then stays at least 300 ms; a file without a preview keeps its type icon, quietly.
+ */
 export default function FileThumbnail(props: ThumbnailProps) {
   return (
-    <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified, props.hero])}>
-      {(_key) => <ThumbnailImage {...props} />}
+    <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, previewRevision(props.entry), props.hero])}>
+      {(_key) => <Thumbnail {...props} />}
     </Show>
   );
 }
-function ThumbnailImage(props: ThumbnailProps) {
-  const [url, setUrl] = createSignal<string | null>(null);
-  let host: HTMLSpanElement | undefined;
+
+function Thumbnail(props: ThumbnailProps) {
+  const kind = previewSource(props.entry);
+  const variant = kind === "text" ? "text" : props.hero ? "large" : "small";
+  const url = kind ? previewUrl(props.baseId, props.entry, variant) : null;
+  // The versioned address goes straight into the first HTML, so a cached preview stands in the first frame.
+  const [src, setSrc] = createSignal<string | null>(kind && kind !== "text" ? url : null);
+  const [text, setText] = createSignal<string | null>(null);
+  const [state, setState] = createSignal<"loading" | "ready" | "icon">(kind ? "loading" : "icon");
+  const placeholder = createDelayedLoading(() => state() === "loading");
   const controller = new AbortController();
-  onCleanup(() => controller.abort());
-  const load = async () => {
-    const signal = controller.signal;
-    for (const [attempt, delay] of [0, ...RETRY_DELAYS].entries()) {
-      if (delay) await sleep(delay, signal).catch(() => {});
-      if (signal.aborted) return;
-      try {
-        await acquire(signal);
-      } catch {
-        return;
+  let objectUrl: string | undefined;
+  onCleanup(() => {
+    controller.abort();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  });
+
+  /** The image request failed or the preview is not drawn yet: ask the service and wait for it, within bounds. */
+  const fetchPreview = async () => {
+    if (!url || controller.signal.aborted) return;
+    try {
+      const result = await loadPreview(url, controller.signal);
+      if (controller.signal.aborted) return;
+      if (result.state !== "ready") return void setState("icon");
+      if (kind === "text") {
+        setText(await result.blob.text());
+      } else {
+        objectUrl = URL.createObjectURL(result.blob);
+        setSrc(objectUrl);
       }
-      try {
-        const response = await apiClient.bases[":baseId"].thumbnail.$post(
-          { param: { baseId: props.baseId }, json: { path: props.entry.path, size: props.hero ? "large" : "small" } },
-          { init: { signal } },
-        );
-        if (!response.ok) {
-          if ((response.status as number) === 503 && attempt < RETRY_DELAYS.length) continue;
-          return;
-        }
-        const lease = await response.json();
-        const loaded = await loadImage(lease.url, signal);
-        if (!signal.aborted) setUrl(loaded);
-        return;
-      } catch {
-        if (signal.aborted || attempt === RETRY_DELAYS.length) return;
-      } finally {
-        release();
-      }
+      setState("ready");
+    } catch {
+      if (!controller.signal.aborted) setState("icon");
     }
   };
+  let image: HTMLImageElement | undefined;
   onMount(() => {
-    const image = previewKind(props.entry) === "image";
-    if (!host || !image) return;
-    if (typeof IntersectionObserver === "undefined") {
-      void load();
-      return;
+    if (kind === "text") return void fetchPreview();
+    // An image that failed before the page became interactive reported its error to nobody.
+    if (image?.complete) {
+      if (image.naturalWidth > 0) setState("ready");
+      else void fetchPreview();
     }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect();
-          void load();
-        }
-      },
-      { rootMargin: "120px" },
-    );
-    observer.observe(host);
-    onCleanup(() => observer.disconnect());
   });
+
   return (
     <span
-      ref={host}
-      class={`filesv2-thumbnail ${props.large ? "filesv2-thumbnail--large" : ""} ${props.hero ? "filesv2-thumbnail--hero" : ""}`}
+      class="filesv2-thumbnail"
+      classList={{
+        "filesv2-thumbnail--large": props.large || props.hero,
+        "filesv2-thumbnail--hero": props.hero,
+        "filesv2-thumbnail--preview": state() !== "icon",
+        "k2b-skeleton": placeholder(),
+      }}
+      data-kind={kind ?? undefined}
       aria-hidden="true"
     >
-      <Show
-        when={url()}
-        fallback={<FileTypeIcon name={props.entry.name} folder={props.entry.directory} size={props.large || props.hero ? "lg" : "md"} />}
-      >
-        {(href) => <img src={href()} alt="" draggable={false} referrerPolicy="no-referrer" crossOrigin="anonymous" />}
-      </Show>
+      <Switch>
+        <Match when={state() === "icon"}>
+          <FileTypeIcon name={props.entry.name} folder={props.entry.directory} size={props.large || props.hero ? "lg" : "md"} />
+        </Match>
+        <Match when={kind === "text"}>
+          <span class="filesv2-thumbnail__page">
+            <span class="filesv2-thumbnail__text">{text()}</span>
+          </span>
+        </Match>
+        <Match when={src()}>
+          {(href) => (
+            <img
+              ref={image}
+              src={href()}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              data-ready={state() === "ready" ? "" : undefined}
+              onLoad={() => setState("ready")}
+              onError={() => {
+                if (src() === url) void fetchPreview();
+                else setState("icon");
+              }}
+            />
+          )}
+        </Match>
+      </Switch>
     </span>
   );
 }

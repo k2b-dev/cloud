@@ -2,6 +2,7 @@ import { createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps, IconButton } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Checkbox } from "../inputs/Checkbox";
+import { showTruncatedTitle } from "../internal/truncated-title";
 import { SectionFrameDefault } from "../surfaces/Section";
 import { useDetailPanelMessages } from "./detail-panel-messages";
 import { createScrollFade } from "./scroll-fade";
@@ -151,12 +152,6 @@ type DetailPanelComponent = ((props: DetailPanelProps) => JSX.Element) & {
 
 const classNames = (base: string, extra?: string): string => (extra ? `${base} ${extra}` : base);
 
-const showTruncatedTitle = (event: PointerEvent & { currentTarget: HTMLHeadingElement }) => {
-  const heading = event.currentTarget;
-  if (heading.scrollHeight > heading.clientHeight + 1) heading.title = heading.textContent ?? "";
-  else heading.removeAttribute("title");
-};
-
 const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
   const t = useDetailPanelMessages();
   const menuLabel = () => props.menuLabel ?? t().moreActions;
@@ -183,7 +178,7 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
           <div class="k2b-detail-panel__header-leading">{props.leading}</div>
         </Show>
         <div class="k2b-detail-panel__heading">
-          {/* The name comes first, beside the close button. A long title wraps to two lines and ends with an ellipsis;
+          {/* The name comes first, beside the close button. It never wraps: a long title ends with an ellipsis, and
               then the native hint shows all of it. */}
           <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
           <Show when={props.kind || props.subtitle || props.meta}>

@@ -210,7 +210,8 @@ their size. Header, tabs, body, and footer share a 24 px leading inset, 16 px
 below 48rem; body and footer use it at the trailing edge too. The header's
 trailing edge is tighter, 20 px and 12 px below 48rem, so the close control
 sits closer to the corner. Keep filenames and other long identifiers in the
-subtitle or body; both heading lines wrap.
+subtitle or body. The title never wraps: it stays on one line and ends with an
+ellipsis, and the native hint shows all of it; the subtitle wraps.
 Use whitespace to separate content when additional section frames add no meaning.
 
 Pass the dialog's `close` callback to `PanelDialog.Header`. `closeDisabled`
