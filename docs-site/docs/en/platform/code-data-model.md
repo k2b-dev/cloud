@@ -30,7 +30,8 @@ type CodeOwner =
   | { kind: "app"; appId: string };
 ```
 
-A person creates their own personal Code and can own several Codes.
+A member creates their own personal Code and can own several Codes.
+Guests cannot author Code, including creating Code, checking, testing, simulating or submitting versions through Gustav, the CLI or the HTTP API.
 Creating resource or application Code requires current owner administration,
 including for Cloud administrators. A resource or an application can own at most
 one. Resource identity uses `CloudResourceRef`; Core does not interpret the

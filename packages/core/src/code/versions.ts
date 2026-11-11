@@ -36,6 +36,7 @@ import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
 import {
+  codeAuthor,
   codeBundleHash,
   codeSourceHash,
   codeTextChunk,
@@ -193,7 +194,7 @@ async function validateOperationRows(
 }
 function checkedSubmission(raw: z.input<typeof codeVersionContracts.submit.input>, context: CodeContext) {
   const input = codeVersionContracts.submit.input.parse(raw);
-  codePerson(context, true);
+  codeAuthor(context);
   if (isAppSessionActor(context.authority.actor)) throw new CodeDataError("FORBIDDEN", "Phone sessions cannot submit Code authority.");
   if (
     input.manifest.hashes.source !== codeSourceHash(input.sourceFiles, input.manifest.entry) ||

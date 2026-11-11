@@ -34,6 +34,8 @@ background tasks cannot use these tools to edit lasting Code.
 | `code_submit` | Checks and saves an immutable version against the supplied `baseVersionId`. Pass the fixtures as `tests`: Core runs them and shows the result to reviewers. |
 | `code_diff` | Returns complete file differences and permissions for a submitted version. |
 
+Guests are offered neither these authoring tools nor the `code-authoring` Skill; Gustav explains that creating Code and submitting versions requires a Cloud member.
+
 Gustav loads the `code-authoring` Skill with these tools. It holds the
 workflow, the page building blocks, mail events, schedules, AI, what each
 app's Actions allow unattended, tests and common errors, plus complete
