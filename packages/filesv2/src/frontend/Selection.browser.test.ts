@@ -250,7 +250,6 @@ describe("Files selection pill in a browser", () => {
       expect(await pill(tab).count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {
-      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -268,7 +267,6 @@ describe("Files selection pill in a browser", () => {
       await settled(tab);
       expect(await tab.evaluate(() => document.cookie)).toContain("filesv2.selection-pill");
     } finally {
-      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -329,7 +327,6 @@ describe("Files selection pill in a browser", () => {
       // The originals were never touched.
       expect(session.items.map((item) => item.name)).toEqual(initialItems().map((item) => item.name));
     } finally {
-      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -361,7 +358,6 @@ describe("Files selection pill in a browser", () => {
       ]);
       expect(await tab.locator(".filesv2-list__row--operation").count()).toBe(0);
     } finally {
-      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -398,7 +394,6 @@ describe("Files selection pill in a browser", () => {
       expect(session.posts.map((post) => post.pages)).toEqual([[1], [1]]);
       expect(session.posts[0]!.name).toBe("Rechnung-2026-0388-Auszug.pdf");
     } finally {
-      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -417,7 +412,6 @@ describe("Files selection pill in a browser", () => {
       expect(await pillText(tab)).toBe("2 PDFs");
       await tab.screenshot({ path: "/tmp/files11-shots/pill-light-390.png" });
     } finally {
-      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -431,7 +425,6 @@ describe("Files selection pill in a browser", () => {
       await settled(tab);
       await tab.screenshot({ path: "/tmp/files11-shots/pill-light-1440.png" });
     } finally {
-      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
