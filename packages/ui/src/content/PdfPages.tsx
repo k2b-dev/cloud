@@ -13,8 +13,6 @@ export type PdfPagesProps = {
   title: string;
   /** Without the zoom bar, always fitted. Defaults to `true`. */
   zoom?: boolean;
-  /** With `zoom` false, a factor of the fitted width, for a host that zooms with its own controls. Defaults to 1. */
-  scale?: number;
   /**
    * How a fitted document fills the area: `"width"` (the default) fits each page to the area's width, for reading;
    * `"page"` shows the whole first page in the area's height, narrower, for a preview beside other content.
@@ -24,7 +22,7 @@ export type PdfPagesProps = {
   /** Shows only this page (zero-based) instead of all pages one below the other. */
   page?: number;
   /** The first visible page is drawn; a host can drop its loading state. */
-  onReady?: (document: { pages: number }) => void;
+  onReady?: () => void;
   /** The document could not be opened, or a page could not be drawn and has no image yet. */
   onError?: (error: unknown) => void;
   /** Icons after the fit, in this order. */
@@ -160,12 +158,9 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
     );
   };
   /** CSS pixels per point of the common page width; percent, steps, and fixed zoom follow from it. */
-  /** A host that zooms with its own controls scales the fitted width; the viewer's own zoom then stays off. */
-  const hostScale = () => (props.zoom === false ? (props.scale ?? 1) : 1);
-  const factor = () => (fitWidth() ? (fittedWidth() * hostScale()) / commonWidth() : fixed());
+  const factor = () => (fitWidth() ? fittedWidth() / commonWidth() : fixed());
   const percent = () => Math.round((factor() / POINT) * 100);
-  const pageWidth = (page: PdfPageSize) =>
-    fitWidth() ? Math.max(1, Math.floor(fittedWidth() * hostScale())) : Math.max(1, Math.floor(page.width * fixed()));
+  const pageWidth = (page: PdfPageSize) => (fitWidth() ? fittedWidth() : Math.max(1, Math.floor(page.width * fixed())));
 
   /**
    * Draws each near page whose image is too small (blurred) or far too large (memory) for its shown size. A new zoom or
@@ -210,7 +205,7 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
       if (existing) URL.revokeObjectURL(existing.url);
       if (!ready()) {
         setReady(true);
-        props.onReady?.({ pages: pages().length });
+        props.onReady?.();
       }
     }
   };

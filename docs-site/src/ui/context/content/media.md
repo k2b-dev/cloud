@@ -1,12 +1,10 @@
 # Media preview
 
-`Lightbox` presents one or more images in a modal viewer. `QuickView` steps through a sequence of mixed items that the host draws. `VideoPlayer` plays one video with the browser's own controls. `PdfViewer` shows a PDF, from its bytes, its address, or a request, with pdf.js. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
+`Lightbox` presents one or more images in a modal viewer. `VideoPlayer` plays one video with the browser's own controls. `PdfViewer` shows a PDF, from its bytes, its address, or a request, with pdf.js. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
 
 ## Use media preview
 
 Use `Lightbox` when a page already shows an image or thumbnail and readers need a larger view.
-
-Use `QuickView` when people step through a sequence of mixed items, such as the files of a folder, and want a large look at each without leaving the page: Space opens it on a desktop, the arrow keys step. The host draws each item, so a photo, a PDF, and a text can share one view.
 
 Use `VideoPlayer` wherever a stored video should play in place, such as a file preview or an attachment dialog. Do not wrap it in a `Lightbox`.
 
@@ -26,10 +24,6 @@ import {
   PdfViewer,
   type PdfViewerProps,
   type PdfViewerRequest,
-  QuickView,
-  type QuickViewAction,
-  type QuickViewItem,
-  type QuickViewProps,
   ThumbnailStrip,
   type ThumbnailStripItem,
   type ThumbnailStripProps,
@@ -69,22 +63,6 @@ The host decides where the strip sits, also on a phone, and its surface: over a 
   onSelectItem={setCurrent}
   onAddItems={pickPhotos}
 />
-```
-
-## Quick view
-
-`QuickView` is a large look at one item of a sequence. It covers the page with a quiet, blurred stage, so the page stays faintly visible behind it. The item's name stands in a chip at the top left, on one line that ends with an ellipsis; optional `facts` follow it quietly and give way first. The item's commands (`actions`) and Close are round buttons at the top right. One floating pill at the bottom holds previous, the position as "3 / 14", next, and −, the zoom, and +. Below it, a [`ThumbnailStrip`](#thumbnail-strip) shows the sequence on screens wider than 40rem; phones keep the stage for the item and step with the pill or a swipe.
-
-The host owns `current` and draws the shown item with `children(item, zoom)`, mounted once per item. `zoom` is a factor of the fitted size, 1 at first and again on every item; apply it to the content, such as an image frame's width or `PdfViewer`'s `scale` with `zoom={false}`. Items without `zoomable` keep the zoom controls in place, disabled, so the pill never moves. Keep the item's loading, error, and retry states on the stage, in the item's place. The stage centres the item and scrolls both ways when it is zoomed beyond it.
-
-```tsx
-<Show when={shown()}>
-  {(id) => (
-    <QuickView items={items()} current={id()} onCurrentChange={setShown} onClose={() => setShown(null)} actions={(item) => [download(item)]}>
-      {(item, zoom) => <PhotoFrame item={item} zoom={zoom()} />}
-    </QuickView>
-  )}
-</Show>
 ```
 
 ## PDF thumbnails
@@ -195,8 +173,8 @@ type PdfViewerRequest = () => Promise<Response | Blob>;
 type PdfViewerProps = {
   title: string; data?: Blob | ArrayBuffer | string; request?: PdfViewerRequest; autoLoad?: boolean;
   disabled?: boolean; emptyText?: string; loadLabel?: string; open?: boolean | string;
-  zoom?: boolean; scale?: number; fit?: "width" | "page"; page?: number;
-  onReady?: (document: { pages: number }) => void; onError?: (error: unknown) => void; class?: string;
+  zoom?: boolean; fit?: "width" | "page"; page?: number;
+  onReady?: () => void; onError?: (error: unknown) => void; class?: string;
 };
 
 type PdfThumbnailsProps = {
@@ -204,19 +182,7 @@ type PdfThumbnailsProps = {
   selected?: ReadonlySet<number>; onToggle?: (index: number) => void;
   onPages?: (count: number) => void; onError?: (error: unknown) => void; class?: string;
 };
-
-type QuickViewItem = { id: string; name: string; facts?: string; thumbnail?: string | (() => JSX.Element); zoomable?: boolean };
-
-type QuickViewAction = { label: string; icon: string; onClick: () => void };
-
-type QuickViewProps = {
-  items: readonly QuickViewItem[]; current: string; onCurrentChange: (id: string) => void; onClose: () => void;
-  children: (item: QuickViewItem, zoom: Accessor<number>) => JSX.Element;
-  actions?: (item: QuickViewItem) => readonly QuickViewAction[];
-};
 ```
-
-− and + step through the factors 0.5, 0.75, 1, 1.25, 1.5, 2, and 3. `PdfViewer`'s `scale` applies only with `zoom={false}` and multiplies the fitted width, for a host such as `QuickView` that zooms with its own controls.
 
 ```ts
 type VideoPlayerProps = {
@@ -245,8 +211,6 @@ type ZoomPanViewportProps = {
 
 The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`. A dialog that an image action opens above the lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
 
-`QuickView` is a native modal dialog named "Quick view: " and the item's name. Space and Escape close it, unless Space presses a focused button; the left and right arrows step, and so do up and down outside a scrolling document; `+`, `-`, and `0` zoom and fit. A swipe steps on touch screens while the item is not zoomed. The position is announced politely; every round button and pill control has its name as tooltip and accessible name. A cut name shows all of it as a native hint. Focus returns to the opener on close.
-
 `PdfViewer` names its page area with `title`. The pill's icons carry their names as tooltips and accessible names; the state actions are native buttons named by their visible labels. Keep `loadLabel` specific when several documents appear on one page. The loading state is a polite status and the error state an alert; when a document turns out not to be drawable, the viewer announces that politely. While a placeholder shows, the viewer itself holds keyboard focus that would otherwise drop; once the first page is drawn, focus moves on to the pages.
 
 `VideoPlayer` names its video with `label`. The browser's controls bring their own labels and keyboard support. With focus on the video, the player adds the same keys in every engine: Space and `K` play and pause, the left and right arrows seek five seconds, `M` mutes, and `F` opens fullscreen. Focus draws its ring around the frame. The loading state is a polite status. The fallback is an alert that names the problem and offers its action; when it replaces the focused video, focus moves to that action, or to the frame when there is none.
@@ -255,7 +219,7 @@ The lightbox uses a native dialog, labeled navigation controls, arrow keys, Esca
 
 ## Runtime
 
-`Lightbox`, `QuickView`, and `PdfViewer` require browser code. `Lightbox` and `QuickView` call `showModal()` after mount. `PdfViewer` renders its loading or empty state on the server and loads in the browser; a late response after unmount shows nothing. Only "Open in new tab" with `open` alone creates a temporary object URL, which it revokes after a minute.
+`Lightbox` and `PdfViewer` require browser code. `Lightbox` calls `showModal()` after mount. `PdfViewer` renders its loading or empty state on the server and loads in the browser; a late response after unmount shows nothing. Only "Open in new tab" with `open` alone creates a temporary object URL, which it revokes after a minute.
 
 The server may render their initial markup, but modal behavior, network requests, Blob URLs, and navigation controls run in the browser.
 

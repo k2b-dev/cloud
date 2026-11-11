@@ -64,7 +64,7 @@ import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
 import FileList, { type FileOperationView, type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
-import FileQuickView from "./FileQuickView";
+import { openFilePreview } from "./FilePreviewDialog";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
@@ -1060,22 +1060,20 @@ export default function Browser(props: {
     }
     void preview(entry);
   };
-  /** The file the quick view shows; Space, Enter, a double-click and the details preview open it. */
-  const [quick, setQuick] = createSignal<string | null>(null);
-  /** The files the quick view steps through, in the order the folder shows them. */
-  const quickEntries = () =>
-    (view().view === "grid" ? visibleItems() : rows()).filter((row) => !row.directory && !("more" in row && row.more));
-  const preview = (entry: FileEntry) => {
-    if (!entry.directory) setQuick(entry.path);
-  };
-  // Stepping in the quick view moves the highlight with it, so the details and the list follow the shown file.
-  const stepQuick = (path: string) => {
-    setQuick(path);
-    if (!selecting()) selection.select(path);
-  };
+  /** The preview dialog; a Markdown file it shows also offers its editor, as a double-click would open it. */
+  const preview = (entry: FileEntry, onNotPdf?: () => void) =>
+    openFilePreview({
+      baseId: baseId(),
+      locationKey: props.directory.base.locationKey,
+      entry,
+      onDownload: () => startDownload([entry]),
+      onEdit: editable(entry) ? () => open(entry) : undefined,
+      readOnly: entry.actions?.write === false,
+      onNotPdf,
+    });
   let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(prefetchTimer));
-  /** Resting on a file loads its large preview into the cache, so Space shows it without waiting. */
+  /** Resting on a file loads its large preview into the cache, so its details show it without waiting. */
   const hoverProps = (entry: FileEntry) => ({
     onPointerEnter: (event: PointerEvent) => {
       clearTimeout(prefetchTimer);
@@ -1574,16 +1572,6 @@ export default function Browser(props: {
       return selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id);
     },
     keyDown: (event: KeyboardEvent, id: string, columns?: number) => {
-      // Space opens the quick view; while selecting with checkboxes it keeps toggling the focused entry.
-      if (event.key === " " && !selecting() && !event.altKey && !event.ctrlKey && !event.metaKey) {
-        const entry = quickEntries().find((item) => item.path === id);
-        if (entry) {
-          event.preventDefault();
-          selection.select(id);
-          setQuick(id);
-          return true;
-        }
-      }
       if (selecting()) return selection.keyDown(event, id, columns);
       const multi = event.key === " " || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a");
       if (multi) return false;
@@ -2235,7 +2223,7 @@ export default function Browser(props: {
                     </div>
                   </Show>
                   {/* The selection's actions float at the bottom of the column; the list scrolls beneath and ends above. */}
-                  <Show when={selected().length > 0 && !quick()}>
+                  <Show when={selected().length > 0}>
                     <Toolbar label={b().selectionActions} variant="floating" moreItems={pillMore()} class="filesv2-selection-pill">
                       <Toolbar.Action label={b().clear} icon="ti ti-x" onClick={() => toggleSelecting(false)} />
                       <Toolbar.Label>{b().pillCount({ n: selected().length, kind: pillKind(selected()) })}</Toolbar.Label>
@@ -2325,23 +2313,6 @@ export default function Browser(props: {
           />
         </Show>
       </AppWorkspace.Detail>
-      <Show when={quick() && quickEntries().some((entry) => entry.path === quick())}>
-        <FileQuickView
-          baseId={baseId()}
-          locationKey={props.directory.base.locationKey}
-          entries={quickEntries()}
-          current={quick()!}
-          onCurrentChange={stepQuick}
-          onClose={() => setQuick(null)}
-          onDownload={(entry) => startDownload([entry])}
-          onShare={props.onShare ? (entry) => props.onShare?.([entry.path]) : undefined}
-          editable={editable}
-          onEdit={(entry) => {
-            setQuick(null);
-            open(entry);
-          }}
-        />
-      </Show>
     </>
   );
 }

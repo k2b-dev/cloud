@@ -59,7 +59,6 @@ import {
   Placeholder,
   panelDialogFixedOptions,
   panelDialogOptions,
-  QuickView,
   ReactionBar,
   reactionPeople,
   StatusBadge,
@@ -1745,7 +1744,6 @@ const samplePdf = (): Blob => {
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
   const [strip, setStrip] = createSignal("0");
-  const [quick, setQuick] = createSignal<string | null>(null);
   const [pickedPages, setPickedPages] = createSignal<ReadonlySet<number>>(new Set([0]));
   const togglePage = (index: number) =>
     setPickedPages((all) => {
@@ -1754,10 +1752,6 @@ const MediaDemo = () => {
       else next.add(index);
       return next;
     });
-  const quickItems = [
-    ...gallery.map((image, i) => ({ id: String(i), name: `${image.alt}.svg`, facts: "12 KB", thumbnail: image.src, zoomable: true })),
-    { id: "report", name: "Sample report with a name long enough to end with an ellipsis.pdf", facts: "2 pages", zoomable: true },
-  ];
   const openPreview = () =>
     dialogCore.open<void>(
       (close) => (
@@ -1785,10 +1779,9 @@ const MediaDemo = () => {
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
         { kind: "component", name: "PdfThumbnails", from: "@k2b/ui" },
         { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
-        { kind: "component", name: "QuickView", from: "@k2b/ui" },
         { kind: "component", name: "ThumbnailStrip", from: "@k2b/ui" },
       ]}
-      description="Application-owned media with a thumbnail strip from four images, a quick view that steps through photos and a PDF with one pill, the strip on its own with an unsaved dot and a + tile, a PDF rendered on demand, a PDF shown from its bytes with zoom and selectable text, and a dialog whose viewer shows the server's reason with a retry."
+      description="Application-owned media with a thumbnail strip from four images, the strip on its own with an unsaved dot and a + tile, a PDF rendered on demand, a PDF shown from its bytes with zoom and selectable text, and a dialog whose viewer shows the server's reason with a retry."
       code={`const [open, setOpen] = createSignal(false);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
@@ -1806,39 +1799,9 @@ const MediaDemo = () => {
         <Button variant="secondary" onClick={() => void openPreview()}>
           Preview dialog · recovery state
         </Button>
-        <Button variant="secondary" onClick={() => setQuick("0")}>
-          Open quick view
-        </Button>
       </div>
       <Show when={open()}>
         <Lightbox images={gallery} initialIndex={0} onClose={() => setOpen(false)} />
-      </Show>
-      <Show when={quick()}>
-        {(id) => (
-          <QuickView
-            items={quickItems}
-            current={id()}
-            onCurrentChange={setQuick}
-            onClose={() => setQuick(null)}
-            actions={() => [
-              { label: "Download", icon: "ti ti-download", onClick: () => void toast("The application downloads the file.") },
-            ]}
-          >
-            {(item, zoom) =>
-              item.id === "report" ? (
-                <div style={{ width: "min(100%, 56rem)", height: "100%", display: "flex", "flex-direction": "column" }}>
-                  <PdfViewer data={samplePdf()} title={item.name} zoom={false} scale={zoom()} />
-                </div>
-              ) : (
-                <img
-                  src={gallery[Number(item.id)]!.src}
-                  alt={item.name}
-                  style={{ width: `calc(min(100cqw, 100cqh * 16 / 9) * ${zoom()})`, "aspect-ratio": "16 / 9", "border-radius": "0.5rem" }}
-                />
-              )
-            }
-          </QuickView>
-        )}
       </Show>
       <div class="ui-thumbnail-strip-demo">
         <ThumbnailStrip

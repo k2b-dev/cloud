@@ -190,7 +190,6 @@ export { Pagination, type PaginationProps } from "./Pagination";
 export { PdfThumbnails, type PdfThumbnailsProps } from "./PdfThumbnails";
 export type { PdfViewerProps, PdfViewerRequest } from "./PdfViewer";
 export { default as PdfViewer } from "./PdfViewer";
-export { QuickView, type QuickViewAction, type QuickViewItem, type QuickViewProps } from "./QuickView";
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export { ReactionBar, type ReactionBarItem, type ReactionBarProps } from "./ReactionBar";
