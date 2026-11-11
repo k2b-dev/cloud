@@ -41,7 +41,7 @@ import {
   type Mention,
   withinMessageMutationWindow,
 } from "../service/contracts";
-import { isShownImage, rowAttachments } from "./attachment-views";
+import { lightboxItem, rowAttachments } from "./attachment-views";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { createMessageDates } from "./chat-message-dates";
 import { followVisualViewport } from "./follow-viewport";
@@ -330,16 +330,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       const view = uploadOf(attachment)?.view;
       return view ? [view] : [];
     });
-  const [lightbox, setLightbox] = createSignal<{ images: AttachmentView[]; index: number }>();
-  const openImage = (item: ChatFeedItem, attachment: AttachmentView) => {
-    const images = (item.attachments ?? []).filter(isShownImage);
-    setLightbox({
-      images,
-      index: Math.max(
-        images.findIndex((image) => image.id === attachment.id),
-        0,
-      ),
-    });
+  // A message's attachments, every one of them, open in the Lightbox; it steps through them in the message's order.
+  const [lightbox, setLightbox] = createSignal<readonly AttachmentView[]>();
+  const [lightboxIndex, setLightboxIndex] = createSignal(0);
+  const openAttachment = (item: ChatFeedItem, attachment: AttachmentView) => {
+    const attachments = item.attachments ?? [];
+    setLightboxIndex(Math.max(attachments.indexOf(attachment), 0));
+    setLightbox(attachments);
   };
   const refsOf = (attachments: readonly ChatAttachment[]) =>
     attachments.flatMap((attachment) => {
@@ -620,7 +617,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               card={item.refs?.length ? <ChatResourceCards refs={item.refs} cards={props.cards} /> : undefined}
               attachments={
                 item.attachments?.length
-                  ? rowAttachments(item.attachments, t(), locale(), (attachment) => openImage(item, attachment))
+                  ? rowAttachments(item.attachments, t(), locale(), (attachment) => openAttachment(item, attachment))
                   : undefined
               }
               onRetry={item.retry}
@@ -811,20 +808,20 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           <Show when={lightbox()}>
             {(open) => (
               <Lightbox
-                images={open().images.map((image) => ({
-                  src: image.href,
-                  alt: image.name,
-                  downloadUrl: image.href,
-                  actions: [
+                items={open().map((attachment) =>
+                  lightboxItem(attachment, t(), locale(), [
                     {
-                      label: saveFilesLabel(locale(), { name: image.name }),
+                      label: saveFilesLabel(locale(), { name: attachment.name }),
                       icon: SAVE_FILES_ICON,
                       onClick: () =>
-                        void saveFiles([{ name: image.name, content: image.href, mediaType: image.mimeType, size: image.size }]),
+                        void saveFiles([
+                          { name: attachment.name, content: attachment.href, mediaType: attachment.mimeType, size: attachment.size },
+                        ]),
                     },
-                  ],
-                }))}
-                initialIndex={open().index}
+                  ]),
+                )}
+                index={lightboxIndex()}
+                onIndexChange={setLightboxIndex}
                 onClose={() => setLightbox(undefined)}
               />
             )}
