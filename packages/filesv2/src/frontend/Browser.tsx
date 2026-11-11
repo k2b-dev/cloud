@@ -18,6 +18,7 @@ import {
   FilterChip,
   fileDropTarget,
   InlineGuidance,
+  Lightbox,
   Placeholder,
   prompts,
   ScrollArea,
@@ -60,9 +61,9 @@ import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
 import FileList, { type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
-import { openFilePreview } from "./FilePreviewDialog";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
+import { fileLightboxItem } from "./file-lightbox";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
 import type { HistoryActions, HistoryEnvironment } from "./history-actions";
@@ -1052,17 +1053,50 @@ export default function Browser(props: {
     }
     void preview(entry);
   };
-  /** The preview dialog; a Markdown file it shows also offers its editor, as a double-click would open it. */
-  const preview = (entry: FileEntry, onNotPdf?: () => void) =>
-    openFilePreview({
-      baseId: baseId(),
-      locationKey: props.directory.base.locationKey,
-      entry,
-      onDownload: () => startDownload([entry]),
-      onEdit: editable(entry) ? () => open(entry) : undefined,
-      readOnly: entry.actions?.write === false,
-      onNotPdf,
-    });
+  /*
+   * A file opens large in the Lightbox, with the folder's other files to step through; the highlight follows the
+   * shown file, so its details are ready when the Lightbox closes. A Markdown file offers its editor as Open.
+   */
+  const [viewing, setViewing] = createSignal<{ files: readonly FileEntry[]; base: string } | null>(null);
+  const [viewingIndex, setViewingIndex] = createSignal(0);
+  const preview = (entry: FileEntry) => {
+    const files = entries().filter((row) => !row.directory && !virtualOf(row));
+    const index = files.findIndex((row) => row.path === entry.path);
+    setViewing({ files: index >= 0 ? files : [entry], base: baseId() });
+    setViewingIndex(Math.max(0, index));
+  };
+  const lightboxItems = createMemo(() => {
+    const shown = viewing();
+    if (!shown) return [];
+    const messages = {
+      open: b().open,
+      openReadOnly: b().openReadOnly,
+      openInTab: b().openInTab,
+      copyText: b().copyText,
+      copied: b().copiedText,
+      share: b().shareSelection,
+      failed: b().previewFailed,
+    };
+    return shown.files.map((entry) =>
+      fileLightboxItem(
+        shown.base,
+        entry,
+        {
+          onDownload: (file) => startDownload([file]),
+          onOpen: editable(entry) ? (file) => open(file) : undefined,
+          readOnly: (file) => file.actions?.write === false,
+          onShare: props.onShare && shareable([entry]) ? (file) => props.onShare!([file.path]) : undefined,
+        },
+        messages,
+        locale(),
+      ),
+    );
+  });
+  const showInLightbox = (index: number) => {
+    setViewingIndex(index);
+    const entry = viewing()?.files[index];
+    if (entry && entries().some((row) => row.path === entry.path)) selection.select(entry.path);
+  };
   let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(prefetchTimer));
   /** Resting on a file loads its large preview into the cache, so its details show it without waiting. */
@@ -1334,6 +1368,14 @@ export default function Browser(props: {
     select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) =>
       selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id),
     keyDown: (event: KeyboardEvent, id: string, columns?: number) => {
+      // Space shows the highlighted file large, as Quick Look does; Space in the Lightbox closes it again.
+      if (event.key === " " && !selecting() && !event.ctrlKey && !event.metaKey) {
+        const entry = entries().find((row) => row.path === id);
+        if (!entry || entry.directory) return false;
+        event.preventDefault();
+        void preview(entry);
+        return true;
+      }
       if (selecting()) return selection.keyDown(event, id, columns);
       const multi = event.key === " " || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a");
       if (multi) return false;
@@ -1996,6 +2038,9 @@ export default function Browser(props: {
           </Show>
         </div>
       </AppWorkspace.Main>
+      <Show when={viewing()}>
+        <Lightbox items={lightboxItems()} index={viewingIndex()} onIndexChange={showInLightbox} onClose={() => setViewing(null)} />
+      </Show>
       <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md" phone="page">
         <Show when={detailOpen()}>
           <FileInspector

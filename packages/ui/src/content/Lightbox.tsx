@@ -39,6 +39,8 @@ export type LightboxItem = {
   thumbnail?: string;
   /** Adds Download to the action pill. */
   downloadUrl?: string;
+  /** Adds Download for a file the app hands out itself, such as through a short-lived lease. */
+  onDownload?: () => void;
   /** Adds the blue Open pill at the front, for an app that can open the file. The caller chooses where it leads. */
   open?: { label?: string; onOpen: () => void };
   /** More commands for this file, before Download. */
@@ -308,6 +310,13 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
               </IconButtonLink>
             )}
           </Show>
+          <Show when={!item()?.downloadUrl && item()?.onDownload}>
+            {(download) => (
+              <IconButton variant="ghost" label={t().download} onClick={() => download()()}>
+                <i class="ti ti-download" aria-hidden="true" />
+              </IconButton>
+            )}
+          </Show>
           <span class="k2b-lightbox__separator" aria-hidden="true" />
           <IconButton variant="ghost" label={t().close} tooltip={t().closeHint} onClick={close}>
             <i class="ti ti-x" aria-hidden="true" />
@@ -374,6 +383,29 @@ function LightboxStage(props: {
   const [source, setSource] = createSignal<string | null>(null);
   const failed = () => setState("failed");
   const ready = () => setState("ready");
+  const downloadable = () => Boolean(props.item.downloadUrl || props.item.onDownload);
+  const download = (variant: "primary" | "secondary") => (
+    <Show
+      when={props.item.downloadUrl}
+      fallback={
+        <Show when={props.item.onDownload}>
+          {(run) => (
+            <Button size="sm" variant={variant} onClick={() => run()()}>
+              <i class="ti ti-download" aria-hidden="true" />
+              {t().download}
+            </Button>
+          )}
+        </Show>
+      }
+    >
+      {(href) => (
+        <ButtonLink size="sm" variant={variant} href={href()} download="" navigation="document">
+          <i class="ti ti-download" aria-hidden="true" />
+          {t().download}
+        </ButtonLink>
+      )}
+    </Show>
+  );
 
   // Addresses, PDFs from bytes and preview PDFs load here; the viewers then draw them.
   createEffect(
@@ -415,14 +447,7 @@ function LightboxStage(props: {
                 {t().retry}
               </Button>
             </Show>
-            <Show when={props.item.downloadUrl}>
-              {(href) => (
-                <ButtonLink size="sm" variant="secondary" href={href()} download="" navigation="document">
-                  <i class="ti ti-download" aria-hidden="true" />
-                  {t().download}
-                </ButtonLink>
-              )}
-            </Show>
+            {download("secondary")}
           </div>
         </div>
       </Show>
@@ -494,16 +519,9 @@ function LightboxStage(props: {
             <div class="k2b-lightbox__notice">
               <FileTypeIcon name={props.item.file?.path ?? props.item.name} size="lg" />
               <b>{t().noPreview}</b>
-              <span>{props.item.downloadUrl ? t().noPreviewHint : props.item.meta}</span>
-              <Show when={props.item.downloadUrl}>
-                {(href) => (
-                  <div class="k2b-lightbox__notice-actions">
-                    <ButtonLink size="sm" href={href()} download="" navigation="document">
-                      <i class="ti ti-download" aria-hidden="true" />
-                      {t().download}
-                    </ButtonLink>
-                  </div>
-                )}
+              <span>{downloadable() ? t().noPreviewHint : props.item.meta}</span>
+              <Show when={downloadable()}>
+                <div class="k2b-lightbox__notice-actions">{download("primary")}</div>
               </Show>
             </div>
           </Match>

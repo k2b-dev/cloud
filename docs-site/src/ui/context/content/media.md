@@ -37,14 +37,14 @@ import {
 
 Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns the index, so it can follow a selection behind the Lightbox, and removes the component on close. Each `LightboxItem` has a `name` (it never wraps; the pill gives way with an ellipsis) and gives what the file has:
 
-- `src`: an address on this site the browser reads directly, for an image, a video, an audio file, or a PDF;
+- `src`: an address on this site the browser reads directly, for an image, a video, an audio file, or a PDF; a function resolves it when the file is shown, such as a short-lived signed address, and **Try again** asks it for a fresh one;
 - `load`: text, Markdown, code, or a PDF's bytes, drawn by the `FileView` renderers;
 - `preview`: a preview PDF, such as one converted from an Office file; a rejection shows **Preview not possible** with Open and Download;
 - `file`: path, media type, and size, which choose the renderer as in `FileView`; it defaults to the name.
 
 Anything else shows its icon, **There is no preview for this file**, and Download. The Lightbox loads the file itself: a placeholder appears after a short wait, a failure offers **Try again**, and nothing around the file moves.
 
-The head holds the name pill on the left, with `meta` such as "PDF · 412 KB", and the action pill on the right: the blue **Open** pill when `open` names where the file opens, the caller's own control from `actions={(item) => …}` such as **Select** in a file chooser, the item's `actions` (a short `label`, a Tabler `icon`, and `onClick`; Cloud apps use one for **Save to Files**), Download from `downloadUrl`, and Close. Markdown lifts its first heading into the name pill.
+The head holds the name pill on the left, with `meta` such as "PDF · 412 KB", and the action pill on the right: the blue **Open** pill when `open` names where the file opens, the caller's own control from `actions={(item) => …}` such as **Select** in a file chooser, the item's `actions` (a short `label`, a Tabler `icon`, and `onClick`; Cloud apps use one for **Save to Files**), Download from `downloadUrl` (or `onDownload` for a file the app hands out itself, such as through a short-lived lease), and Close. Markdown lifts its first heading into the name pill.
 
 Large round buttons at the screen edges step between files on the middle of the document; the first and last file hide theirs. ← and →, a [`ThumbnailStrip`](#thumbnail-strip) from two files on, and a swipe on a phone step too; there is no "2 / 8" counter. The only pill at the bottom holds zoom (−, +, 0 fits) and the page or sheet of a PDF or document; it keeps its place for other files. Escape, Close, a press beside the file, or a pull down on a phone close it, and focus returns to the opener. A veil keeps the page visible: light in the light theme, dark in the dark theme. On a phone the Lightbox fills the screen.
 
@@ -146,9 +146,10 @@ Without a height, the viewport takes the height of its content. Give it a height
 
 ```ts
 type LightboxItem = {
-  name: string; meta?: string; file?: FileViewFile; src?: string;
+  name: string; meta?: string; file?: FileViewFile; src?: string | (() => Promise<string>);
   load?: () => Promise<FileViewContent>; preview?: () => Promise<Blob>; thumbnail?: string;
-  downloadUrl?: string; open?: { label?: string; onOpen: () => void }; actions?: readonly LightboxAction[];
+  downloadUrl?: string; onDownload?: () => void; open?: { label?: string; onOpen: () => void };
+  actions?: readonly LightboxAction[];
 };
 
 type LightboxProps = {
