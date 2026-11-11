@@ -742,6 +742,26 @@ test("launcher catalog follows live app navigation, roles and request locale in 
   }
 });
 
+test("focus pages retain the signed-in profile for access UI and omit it for anonymous readers", async () => {
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+  ];
+  try {
+    const embedded = async (path: string) => {
+      const html = await (await server.request(path)).text();
+      return JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+    };
+    const regular = await embedded("/signed-in");
+    const focus = await embedded("/signed-in?focusMode=true");
+    expect(regular.profile.userId).toBe(person.id);
+    expect(focus.profile).toEqual(regular.profile);
+    expect(await embedded("/layout?focusMode=true")).not.toHaveProperty("profile");
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
 test("Layout and AdminLayout serialize the canonical configured origin; MinimalLayout has no shell data", async () => {
   const parameter = new URLSearchParams({ cloudUrl: "https://canonical.example/cloud/" });
   for (const path of ["/layout", "/admin", "/layout?focusMode=true"]) {

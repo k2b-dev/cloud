@@ -370,7 +370,7 @@ export default function Layout(props: LayoutProps) {
               );
             })()}
           </PageTrailProvider>
-          {/* Focus pages also expose the canonical origin to their islands. */}
+          {/* Focus pages keep the request's profile and canonical origin available to their islands. */}
           <ShellDataProvider
             data={{
               cloudOrigin,
@@ -380,7 +380,7 @@ export default function Layout(props: LayoutProps) {
               apps: [],
               legalLinks: [],
               searchLinks: {},
-              ...(user ? { privacyTimerSeconds } : {}),
+              ...(user ? { privacyTimerSeconds, profile: shellData.profile } : {}),
             }}
           >
             {panel && <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />}
