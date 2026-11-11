@@ -102,6 +102,7 @@ and start with the [database template](references/template-database.md).
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
+| Generate a PDF, CSV, ODS, chart or DATEV/SEPA file | `pdf`, `sheet`, `chart`, `finance` from `@sdk` | [FileRef](references/file-ref.md), [generated file](references/template-generated-file.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
 
 ## Zugriff prüfen
@@ -164,6 +165,7 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
 | [Task due tomorrow](references/template-task-due-tomorrow.md) | personal | Spaces events and a daily schedule assign tomorrow’s tasks and notify a team chat |
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |
+| [Generate a file](references/template-generated-file.md) | personal | Generate a CSV as a FileRef and pass it to a receiving app Action |
 | [Mail invoices to an app](references/template-mail-invoices.md) | mailbox | Pass invoice attachments to an import app as FileRefs, then tag the conversation |
 
 In the Cloud repository the templates are the files in `templates/` beside

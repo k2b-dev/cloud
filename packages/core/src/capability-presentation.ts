@@ -107,6 +107,33 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "file.pdf.render.v1": {
+          title: "PDF erstellen",
+          description: "Offline-HTML als vorübergehende PDF-Datei erzeugen. Speichern oder Senden ist eine eigene Action.",
+        },
+        "file.sheet.to-csv.v1": {
+          title: "CSV erstellen",
+          description:
+            "Eine vorübergehende CSV-Tabelle mit geschützten Zellen und lokalisierten Dezimalzahlen erstellen. Speichern ist eine eigene Action.",
+        },
+        "file.sheet.to-ods.v1": {
+          title: "Tabelle erstellen",
+          description: "Eine vorübergehende OpenDocument-Tabelle aus einfachen Zellen erstellen. Speichern ist eine eigene Action.",
+        },
+        "file.finance.datev.v1": {
+          title: "DATEV-Datei erstellen",
+          description:
+            "Einen DATEV-Stapel prüfen und als vorübergehende CSV-Datei erzeugen. Übermittelt keine Buchungen und speichert die Datei nicht.",
+        },
+        "file.finance.sepa.v1": {
+          title: "SEPA-Datei erstellen",
+          description:
+            "Eine vorübergehende SCT-Zahlungsdatei prüfen und als XML erzeugen. Übermittelt keine Zahlungen und speichert die Datei nicht.",
+        },
+        "file.chart.render.v1": {
+          title: "Diagrammdatei erstellen",
+          description: "Eine geprüfte Diagrammbeschreibung als vorübergehende SVG-Datei zeichnen. Speichern ist eine eigene Action.",
+        },
         "code.event.catchup.read": {
           title: "Fortschritt des Code-Nachholens lesen",
           description: "Liest den dauerhaften Annahmefortschritt eines Vorgangs. Ausführungsergebnisse stehen unter Läufe.",

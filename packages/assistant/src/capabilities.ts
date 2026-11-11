@@ -1,4 +1,5 @@
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
+import { chatAttachmentReadQuery } from "./chat-code/attachment-stream";
 import { ChatComposeInputSchema } from "./commands";
 import { searchAssistant, searchAssistantProjects } from "./search";
 export const assistantCapabilities = defineCapabilities({
@@ -9,6 +10,7 @@ export const assistantCapabilities = defineCapabilities({
     message: { title: "Chat message", description: "A message in an accessible Assistant chat.", icon: "ti ti-message" },
   },
   queries: {
+    "chat.file.read.v1": chatAttachmentReadQuery,
     "project.search": {
       title: "Search projects",
       description: "Find accessible Assistant projects by name or description. Returns projects, not their chats.",
@@ -83,6 +85,11 @@ export const assistantCapabilities = defineCapabilities({
           message: { title: "Chat-Nachricht", description: "Eine Nachricht in einem zugänglichen Assistenten-Chat." },
         },
         queries: {
+          "chat.file.read.v1": {
+            title: "Chat-Anhang lesen",
+            description:
+              "Eine Datei aus deinem Gustav-Chat einmalig innerhalb von zehn Minuten übertragen. Chat- und Projektzugriff werden bei der Übertragung erneut geprüft.",
+          },
           "project.search": {
             title: "Projekte durchsuchen",
             description: "Zugängliche Assistenten-Projekte nach Name oder Beschreibung finden. Liefert Projekte, nicht deren Chats.",

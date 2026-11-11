@@ -124,6 +124,77 @@ and approval rules. Streams without the generic `file` input remain unavailable
 to Code; [Binary streams](/en/docs/platform/capabilities#binary-streams) describes
 the provider contract.
 
+## Generate a file
+
+Lasting Code can generate a file and pass its FileRef to a receiving app's
+Action. Read the `core` SDK declarations for the current inputs:
+
+| Helper | Output |
+| --- | --- |
+| `pdf.render({ name, html, title?, headerHtml?, footerHtml?, page?, tagged? })` | PDF from offline HTML; scripts and remote resources are disabled. |
+| `sheet.toCsv({ name, rows, delimiter?, bom? })` | UTF-8 CSV. Semicolon is the default separator; comma-separated files use dot decimals, other separators use the request locale. Text cells cannot become formulas. |
+| `sheet.toOds({ name, sheets })` | OpenDocument spreadsheet of plain cells. Worksheet names are unique, at most 31 characters. |
+| `finance.datev({ name, batch })` | DATEV CSV using stdlib's validation and exact amount strings. |
+| `finance.sepa({ name, batch })` | SEPA SCT XML using stdlib's validation and exact amount strings. |
+| `chart.render({ name, chart })` | SVG from the same checked chart description as Code pages, including a title. |
+
+Each helper is an alias of an ordinary versioned Core read Query under
+`core.file.*.v1`. The checker records its operation and `read` policy. File
+generation does not start an effect; storing or sending belongs to the
+receiving app's Action, with that app's access, review and idempotency rules.
+An existing app export keeps its name if it collides with a helper alias; use
+the corresponding `core.file.<helper>.<method>.v1` from the SDK in that case.
+
+```ts
+import { app, sheet, imports } from "@sdk";
+
+app.schedule({ cron: "0 8 * * 1", name: "weekly-file" }, async c => {
+  const file = await sheet.toCsv({
+    name: "weekly.csv",
+    rows: [{ item: "Example", amount: 12.5 }],
+  });
+  await imports.import({ file, idempotencyKey: `weekly-file:${c.scheduledAt ?? c.runId}` });
+});
+export default app;
+```
+
+`imports` is a fictional receiving app with a write Action whose input names
+`file`. Choose a compatible Action from the live SDK. Existing Files and Mail
+Actions keep their current inputs and confirmation policies; generation does
+not add file inputs to them.
+
+Generation input fits the ordinary 256 KiB capability request budget. A run can
+attempt at most 64 files of up to 50 MiB each within a combined 250 MiB output
+budget. In-progress and failed generation reserve budget too. Calls outside a
+Code run share the same limits per principal for ten minutes. Temporary output
+is encrypted, single-use and expires after ten minutes; its run-bound FileRef
+expires earlier when the run-token deadline does. Cancellation stops new work
+and propagates to PDF rendering. PDF generation needs the operator's existing
+Gotenberg configuration. Finance generation neither submits payments nor
+claims bank acceptance or XSD validation.
+
+## Pass a Gustav chat attachment to an app
+
+`assistant.chat.file.read.v1({ chatId, path })` opens one exact file from the
+person's chat as a read stream. Its generated SDK method returns the same
+FileRef that a receiving Action's `file` input accepts. Use an ID and path
+returned by the chat's file list; neither is a grant.
+
+The read checks chat ownership, archive state, allowed tools and current Project
+access when issuing the stream and again on transfer. It pins the file revision
+and checks its size before loading bytes, up to 50 MiB. A different account,
+changed or deleted file, expired stream or second use fails. The stream lives
+ten minutes at most. The receiving Code host enforces its existing aggregate
+transfer limits and keeps the FileRef local to that run.
+Resource-owned Code cannot borrow a person's chat access.
+
+For chat-attachment integration, the one-off chat host must invoke this Query
+through its current person's capability service. The existing stream dispatcher
+supports registering that read stream as a run-local FileRef and accepting it
+in a destination SDK write call. Automatic attachment selection in the chat
+host is a separate integration step.
+This adds no URL, bearer credential or separate file-download endpoint.
+
 ## Return a page
 
 Start with a TSX page:
