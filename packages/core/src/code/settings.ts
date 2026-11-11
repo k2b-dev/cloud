@@ -218,6 +218,25 @@ export const CODE_SETTINGS = {
       translations: { de: { label: "Datenbank je Code (Bytes)", description: "Maximale Größe der bei Bedarf angelegten Code-Datenbank." } },
     },
   },
+  "core.code.database_owner_bytes": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1099511627776,
+    default: 10 * 104857600,
+    label: "Database bytes per owner",
+    description:
+      "Total reserved database capacity of one exact owner. Default: ten databases at the 100 MiB per-Code default. Existing reservations remain until the Code is deleted.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Datenbankspeicher je Besitzer (Bytes)",
+          description:
+            "Gesamte reservierte Datenbankkapazität eines exakten Besitzers. Standard: zehn Datenbanken mit je 100 MiB. Bestehende Reservierungen bleiben bis zur Löschung des Codes erhalten.",
+        },
+      },
+    },
+  },
   "core.code.ai_budget_usd": {
     kind: "number",
     min: 0,

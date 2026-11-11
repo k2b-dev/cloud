@@ -20,6 +20,8 @@ name **feat/code**: a person who says feat/code means Code.
    gives resource Code that runs as the mailbox's service account and can react to
    incoming mail; creating it needs **Manage** access to the mailbox. For
    existing Code, `code_pull({codeId})` returns the project and its `baseVersionId`.
+   Both initialize this Code's server-held draft for this chat; pull resets it
+   to the latest saved version and clears fixtures.
 2. **Read the SDK in two steps.** `code_sdk({codeId})` returns an index: every
    app export with its method paths, policy row and one line each, plus every
    automation event. Pick the apps you need, then `code_sdk({codeId, apps:["mail"]})`
@@ -35,27 +37,36 @@ name **feat/code**: a person who says feat/code means Code.
    `mail.mailbox(id)`; `owner` stays the fixed handle. The zero-argument `.app()`
    factory is removed; a resource Type named `app` still has its typed `.app(id)` factory.
    Streaming reads keep their `FileRef`; Actions return domain data directly.
-3. **Write.** `code_write({project, path, content})` replaces one file and
-   returns the complete project. Pass that project to the next write. Drafts
-   stay in this chat until submit. Default-export `app` from `code.ts` or `code.tsx`.
-4. **Check.** `code_check({codeId, files, entry})`. Fix every diagnostic
+3. **Write.** `code_write({codeId, path, content})` replaces one file in
+   the server-held draft and returns paths and byte counts. Write one file
+   per call; use `{codeId, path, delete: true}` to remove one or
+   `{codeId, path, renameTo}` to rename one. Write fixtures as
+   `test/NAME.json` through the same tool. Default-export `app` from `code.ts`
+   or `code.tsx`. Do not copy the project into later calls.
+4. **Check.** `code_check({codeId})` checks that draft. Fix every diagnostic
+   and address each warning; never suppress a type error
    ([Troubleshooting](references/troubleshooting.md)). Read the permission
    rows: each names an operation, its target and file and line. Tell the person
    what the Code will read and change, and which rows need a Cloud
    administrator's approval ([Capabilities](references/capabilities.md)).
-5. **Test.** Write `test/NAME.json` fixtures with a fixed `now`, a `seed` and
-   fictional replies; run them with `code_test({codeId, files, entry, tests})`.
-   `code_simulate` runs one fixture with one run. Nothing real is called
-   ([Tests and simulation](references/testing.md)).
-6. **Submit.** `code_submit({codeId, files, entry, baseVersionId, tests})`
-   with the unchanged base from init or pull. On a version conflict, pull,
-   reconcile the complete comparison, check again and submit with the new base.
-   After an uncertain submit, pull before trying again.
+5. **Test.** Write `test/NAME.json` fixtures through `code_write` with a fixed
+   `now`, a `seed` and fictional replies; run them with `code_test({codeId})`.
+   `code_simulate({codeId, fixture})` runs one fixture with one run on the same
+   draft. Nothing real is called ([Tests and simulation](references/testing.md)).
+6. **Submit.** `code_submit({codeId})` checks and submits the same draft,
+   including its fixtures and saved base. On a version conflict, `code_pull`
+   resets the draft to the latest version; re-apply the edits and fixtures,
+   check again and submit. After an uncertain submit, pull before trying again.
 7. **Hand over.** The chat shows a version card; the person chooses
    **Switch on** there, on the Code page or with `cld code activate`. You never
    switch Code on and never change access. For resource Code, say which
    resources the service account needs and that their managers share them
    with its handle ([Access and secrets](references/access.md)).
+
+The draft is what the last init/pull/read returned, plus your writes.
+Explicit `files`, `entry`, `tests` or `baseVersionId` replace that draft part
+before a command runs. Drafts expire seven days after their last change; on a
+missing or expired draft, call `code_pull` (or `code_init`) first.
 
 Authoring needs Code editor rights and an interactive chat; background tasks
 cannot edit lasting Code. A passing check or test grants nothing: every call

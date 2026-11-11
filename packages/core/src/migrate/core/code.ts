@@ -31,6 +31,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       server_url TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
     )`.simple();
+    // Historical namespaces may have the largest previously supported quota; never undercount them.
+    await tx`ALTER TABLE code.databases
+      ADD COLUMN IF NOT EXISTS reserved_bytes BIGINT NOT NULL DEFAULT 1073741824 CHECK(reserved_bytes>0)`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.shares (
       code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
       access_id UUID NOT NULL UNIQUE REFERENCES auth.access(id) ON DELETE CASCADE,

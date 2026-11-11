@@ -16,6 +16,11 @@ export type CodeDisplayProps = {
 export default function CodeDisplay(props: CodeDisplayProps) {
   const lines = () => highlightCodeDisplayLines(props.code, language());
   const lineNumbers = () => props.lineNumbers ?? true;
+  // Numbers past three digits get a wider column, so a long file keeps every line aligned.
+  const digits = () => {
+    const count = String(lines().length).length;
+    return lineNumbers() && count > 3 ? String(Math.min(count, 6)) : undefined;
+  };
   const language = () => props.language ?? "text";
   const hasHeader = () => Boolean(props.title || props.copy !== false);
 
@@ -33,6 +38,7 @@ export default function CodeDisplay(props: CodeDisplayProps) {
       <div
         class="k2b-content-code-display__body"
         data-header={hasHeader() ? "true" : undefined}
+        data-digits={digits()}
         role="region"
         aria-label={props.title ? `${props.title} code` : `${language()} code`}
         tabIndex={0}
