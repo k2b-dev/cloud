@@ -42,11 +42,10 @@ const buildHarness = async (): Promise<Record<string, [string, string | Buffer]>
   return Object.fromEntries(
     await Promise.all(
       build.outputs.map(
-        async (output) =>
-          [
-            `/${output.path.split("/").at(-1)}`,
-            [output.path.endsWith(".js") ? "text/javascript; charset=utf-8" : output.type, Buffer.from(await output.arrayBuffer())],
-          ] as const,
+        async (output): Promise<[string, [string, Buffer]]> => [
+          `/${output.path.split("/").at(-1)}`,
+          [output.path.endsWith(".js") ? "text/javascript; charset=utf-8" : output.type, Buffer.from(await output.arrayBuffer())],
+        ],
       ),
     ),
   );
@@ -112,6 +111,7 @@ const files: Record<string, [string, string | Buffer]> = {
   "Offer.docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx bytes"],
   "Archive.zip": ["application/zip", "PK"],
   "Clip.webm": ["video/webm", readFileSync(`${ui}test/media/landscape-320x180.webm`)],
+  "Packing.txt": ["text/plain", "Packing list\n\n- Pavilion 6 x 3 m\n- Stage platforms (4)\n"],
   "The quarterly planning notes of the summer party organising committee, final version for the board.jpg": ["image/jpeg", "jpeg bytes"],
 };
 const folder = Object.entries(files).map(([name, [, body]]) => ({ name, size: Buffer.byteLength(body) }));
@@ -450,6 +450,29 @@ describe("file quick view in a browser", () => {
       await tab.click('[aria-label="Edit"]');
       expect(await tab.evaluate(() => window.preview.edits)).toEqual(["README.md"]);
       expect(await tab.$(".k2b-quick-view")).toBeNull();
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("a text file reads in the column and copies its text in one press", async () => {
+    const tab = await open(desktop);
+    try {
+      // The test origin is not a secure context, so the clipboard is the page's own stand-in.
+      await tab.evaluate(() => {
+        Object.defineProperty(navigator, "clipboard", {
+          value: {
+            writeText: async (text: string) => {
+              document.body.dataset.copied = text;
+            },
+          },
+        });
+      });
+      await show(tab, "Packing.txt");
+      await tab.waitForFunction(() => document.querySelector(".filesv2-quick-reading")?.textContent?.includes("Pavilion"));
+      expect(await actionNames(tab)).toEqual(["Copy text", "Download", "Share publicly", "Close"]);
+      await tab.click('[aria-label="Copy text"]');
+      expect(await tab.evaluate(() => document.body.dataset.copied)).toBe(String(files["Packing.txt"]![1]));
     } finally {
       await tab.context().close();
     }

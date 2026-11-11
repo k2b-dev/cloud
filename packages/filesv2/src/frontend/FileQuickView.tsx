@@ -7,6 +7,7 @@ import {
   QuickView,
   type QuickViewAction,
   type QuickViewItem,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, Match, onCleanup, Show, Switch } from "solid-js";
@@ -47,6 +48,8 @@ export default function FileQuickView(props: FileQuickViewProps) {
   const zoomable = (item: FileEntry) => ["image", "pdf", "office"].includes(previewSource(item) ?? "");
   /** Page counts of documents drawn in this view, for the facts after the name. */
   const [pages, setPages] = createSignal<Readonly<Record<string, number>>>({});
+  /** Loaded text of text files, for Copy. */
+  const [texts, setTexts] = createSignal<Readonly<Record<string, string>>>({});
   // The neighbours' large previews load in the background, so the arrow keys never wait.
   createEffect(() => {
     const at = props.entries.findIndex((item) => item.path === props.current);
@@ -95,6 +98,23 @@ export default function FileQuickView(props: FileQuickViewProps) {
             },
           ]
         : []),
+      // A text file's content copies in one press, as from the former preview dialog.
+      ...(previewKind(file) === "text"
+        ? [
+            {
+              label: t().copyText,
+              icon: "ti ti-copy",
+              onClick: () => {
+                const content = texts()[file.path];
+                if (content === undefined) return;
+                void navigator.clipboard.writeText(content).then(
+                  () => toast.success(t().textCopied),
+                  () => toast.error(t().textNotCopied),
+                );
+              },
+            },
+          ]
+        : []),
       // Safari on iOS shows only the first page of an embedded PDF; the tab opens the whole document at a stable address.
       ...(previewSource(file) === "pdf"
         ? [
@@ -121,6 +141,7 @@ export default function FileQuickView(props: FileQuickViewProps) {
               entry={file}
               zoom={zoom}
               onPages={(count) => setPages((all) => (all[file.path] === count ? all : { ...all, [file.path]: count }))}
+              onText={(content) => setTexts((all) => (all[file.path] === content ? all : { ...all, [file.path]: content }))}
             />
           )}
         </Show>
@@ -136,6 +157,7 @@ type StageProps = {
   zoom: Accessor<number>;
   onDownload: (entry: FileEntry) => void;
   onPages?: (count: number) => void;
+  onText?: (content: string) => void;
 };
 
 function Stage(props: StageProps) {
@@ -152,6 +174,7 @@ function Stage(props: StageProps) {
               variant="plain"
               headingScale="normal"
               onDownload={() => props.onDownload(props.entry)}
+              onText={props.onText}
             />
           </div>
         </Show>
