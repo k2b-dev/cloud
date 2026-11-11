@@ -506,6 +506,8 @@ const createEventMapper = (
   const streamKinds = new Map<string, "text" | "thinking">();
   /** Calls whose tool shows its arguments while the model writes them, by call id, until the call is final. */
   const liveCalls = new Map<string, { reader: ReturnType<typeof createLiveArgsReader>; sentAt: number }>();
+  /** Calls of a failed and retried model call; later previews of them are stale. */
+  const retiredCalls = new Set<string>();
   /** A step that shows only arguments still being written: no final call exists for it yet. */
   const isPreview = (callId: string) => toolBlocks.get(callId)?.liveArgs !== undefined;
   /** Takes back a step whose call never became final, so the chat shows only calls that exist. */
@@ -564,7 +566,7 @@ const createEventMapper = (
       case "tool_args_delta": {
         const keys = streamArgs.get(event.name);
         // A call id that already names a final call is never shown as written again.
-        if (!keys || (toolBlocks.has(event.callId) && !isPreview(event.callId))) return [];
+        if (!keys || retiredCalls.has(event.callId) || (toolBlocks.has(event.callId) && !isPreview(event.callId))) return [];
         let live = liveCalls.get(event.callId);
         if (!live) {
           live = { reader: createLiveArgsReader(keys), sentAt: Number.NEGATIVE_INFINITY };
@@ -697,8 +699,15 @@ const createEventMapper = (
 
   return {
     translate: (event: OutboundEvent) => translate(event).filter(isVisibleAiNextMessageOp),
-    /** Takes back every step still being written, as a retried model call leaves no trace. */
-    dropPreviews: () => [...toolBlocks.keys(), ...liveCalls.keys()].flatMap((callId) => dropPreview(callId)),
+    /**
+     * Takes back the steps a failed model call was writing, as its retry leaves no trace. A preview of theirs that the
+     * loop still delivers afterwards shows nothing; their final calls show as usual.
+     */
+    retirePreviews: (callIds: readonly string[]) =>
+      callIds.flatMap((callId) => {
+        retiredCalls.add(callId);
+        return dropPreview(callId);
+      }),
     setTool,
     storedMessage,
     compaction,
@@ -1553,9 +1562,9 @@ export class AiTurnExecutor {
           {
             deadline,
             delaysMs: this.config.providerRetryDelaysMs,
-            onRetry: async ({ retry, delayMs, issue }) => {
+            onRetry: async ({ retry, delayMs, issue, previewedCallIds }) => {
               log.warn("AI provider call retried", { conversationId, turnId, retry, delayMs, kind: issue.kind, message: issue.message });
-              await pipeline.emitProviderRetry();
+              await pipeline.emitProviderRetry(previewedCallIds);
             },
           },
         ),
@@ -2522,9 +2531,9 @@ class StreamPipeline {
   }
 
   /** Transient: says a model call is waiting to be retried. Snapshots never carry it. */
-  async emitProviderRetry(): Promise<void> {
+  async emitProviderRetry(previewedCallIds: readonly string[]): Promise<void> {
     // The retried call starts its arguments over; what the failed call had written so far goes.
-    for (const op of this.mapper.dropPreviews()) await this.emitOp(op);
+    for (const op of this.mapper.retirePreviews(previewedCallIds)) await this.emitOp(op);
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "provider_retry" as const, seq }));
     await this.maybeSnapshot();

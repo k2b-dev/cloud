@@ -674,8 +674,11 @@ describe("nessi block event mapping", () => {
       expect(mapper.translate(issue("malformed_tool_call", "bad"))).toEqual([{ type: "block_remove", blockId: toolBlockId("bad") }]);
 
       mapper.translate(preview("retried", '{"path":"c.ts","content":"z'));
-      expect(mapper.dropPreviews()).toEqual([{ type: "block_remove", blockId: toolBlockId("retried") }]);
-      expect(mapper.dropPreviews()).toEqual([]);
+      mapper.translate(preview("kept", '{"path":"d.ts","content":"w'));
+      expect(mapper.retirePreviews(["retried", "never-shown"])).toEqual([{ type: "block_remove", blockId: toolBlockId("retried") }]);
+      // A preview the loop delivers after the retry began is stale and shows nothing; other calls keep theirs.
+      expect(mapper.translate(preview("retried", "more"))).toEqual([]);
+      expect(mapper.retirePreviews(["retried"])).toEqual([]);
     });
 
     test("a call nessi finds malformed after its previews leaves no running step behind", async () => {

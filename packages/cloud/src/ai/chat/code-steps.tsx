@@ -86,6 +86,8 @@ function CodeSource(props: { path: string; content: string; omittedLines?: numbe
   const shown = () => (props.live ? lines().slice(-LIVE_LINES) : lines());
   const startLine = () => (props.live ? (props.omittedLines ?? 0) + lines().length - shown().length + 1 : 1);
   const lastLine = () => startLine() + shown().length - 1;
+  // Lines the written file will show, so a very long line that hides earlier ones keeps the final height.
+  const liveLines = () => Math.min(LIVE_LINES, lastLine());
   createEffect(
     on(
       () => props.live,
@@ -97,7 +99,12 @@ function CodeSource(props: { path: string; content: string; omittedLines?: numbe
     ),
   );
   return (
-    <div ref={frame} class="ai-code-step__source" data-live={props.live ? "" : undefined}>
+    <div
+      ref={frame}
+      class="ai-code-step__source"
+      data-live={props.live ? "" : undefined}
+      style={props.live ? { "--ai-code-live-lines": String(liveLines()) } : undefined}
+    >
       <CodeDisplay
         title={props.live ? `${props.path} · ${t().codeStepLine({ line: lastLine() })}` : props.path}
         code={shown().join("\n")}

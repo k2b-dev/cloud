@@ -1805,6 +1805,11 @@ dialog:has(.launchpad-panel)::backdrop {
   min-height: 2.5rem;
 }
 
+/* While Gustav writes a file, it already takes the lines the written file will show, so a long line moves nothing. */
+.k2b-ui .ai-code-step__source[data-live] .k2b-content-code-display__body {
+  min-height: calc(var(--ai-code-live-lines) * 1.25rem + 0.5rem);
+}
+
 /* While Gustav writes a file, its name carries the AI colour. */
 .k2b-ui .ai-code-step__source[data-live] .k2b-content-code-display__title {
   color: var(--k2b-ai-accent);

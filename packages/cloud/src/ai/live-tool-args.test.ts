@@ -49,3 +49,24 @@ test("a long value keeps only its end, starting at a line, and counts every line
   expect(view.omittedLines.content).toBe(5000 - shown.split("\n").length);
   expect(lines[view.omittedLines.content ?? 0]).toBe(shown.split("\n")[0]);
 });
+
+test("a repeated key with any other value drops the earlier string", () => {
+  for (const value of ["{}", "[]", "null", "3", "true"]) expect(readAll([`{"content":"old","content":${value}}`]).args).toEqual({});
+});
+
+test("a cut never leaves half of a surrogate pair", () => {
+  const value = `😀${"x".repeat(AI_LIVE_ARG_TAIL_CHARS - 1)}`;
+  for (const fragments of [
+    [JSON.stringify({ content: value })],
+    [JSON.stringify({ content: value + "y".repeat(AI_LIVE_ARG_TAIL_CHARS + 7) })],
+  ]) {
+    const shown = readAll(fragments, ["content"]).args.content ?? "";
+    const first = shown.charCodeAt(0);
+    expect(first >= 0xdc00 && first <= 0xdfff).toBe(false);
+  }
+});
+
+test("one huge fragment reads the same end as many small ones", () => {
+  const json = JSON.stringify({ content: Array.from({ length: 40_000 }, (_, index) => `row ${index}`).join("\n") });
+  expect(readAll([json], ["content"])).toEqual(readAll(json.match(/[\s\S]{1,9}/g) ?? [], ["content"]));
+});

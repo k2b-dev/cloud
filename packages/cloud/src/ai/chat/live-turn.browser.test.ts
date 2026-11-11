@@ -1598,10 +1598,23 @@ for (const width of [1440, 390])
       expect(await sourceView.locator(".k2b-content-code-display__number").first().innerText()).toBe("17");
       mkdirSync("/tmp/l28-gustav-live", { recursive: true });
       await page.screenshot({ path: `/tmp/l28-gustav-live/code-write-live-light-${width}.png` });
-      // The written file keeps the live height and stays at its end, so nothing moves under the reader.
+      // A line longer than the streamed end hides the lines before it; the step still keeps the written height.
       await emit(page, {
         ...base,
         seq: 4,
+        type: "block_set",
+        block: {
+          ...live(30),
+          args: { path: "code.ts", content: `const data = "${"x".repeat(5000)}` },
+          liveArgs: { omittedLines: { path: 0, content: 30 } },
+        },
+      });
+      await settled(page, ".ai-turn-work");
+      expect((await box()).height).toBe(growing.height);
+      // The written file keeps the live height and stays at its end, so nothing moves under the reader.
+      await emit(page, {
+        ...base,
+        seq: 5,
         type: "block_set",
         block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
       });

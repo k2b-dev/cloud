@@ -225,15 +225,17 @@ test("arguments a lost connection cut off while previewed are charged, and a fin
   const cut = fixture([preview('{"content":"'), preview("x".repeat(388)), failure]);
   await drain(cut.wrap());
   expect(cut.booked[0]?.usage).toMatchObject({ estimated: true, output: 100 });
-  const args = { content: "x".repeat(385) };
+  // The final call's block repeats the arguments; stopped before its end, they still count once.
+  const json = JSON.stringify({ content: "x".repeat(386) });
   const final = fixture([
-    preview('{"content":"'),
-    preview("x".repeat(385)),
-    { type: "block_end", blockId: "tool", index: 0, block: { type: "tool_call", id: "call", name: "code_write", args } },
+    preview(json.slice(0, 12)),
+    preview(json.slice(12)),
+    { type: "block_start", blockId: "tool", index: 0, kind: "tool_call", callId: "call", name: "code_write" },
+    { type: "block_delta", blockId: "tool", delta: json },
     failure,
   ]);
   await drain(final.wrap());
-  expect(final.booked[0]?.usage?.output).toBe(Math.ceil(("code_write".length + JSON.stringify(args).length) / 4));
+  expect(final.booked[0]?.usage?.output).toBe(Math.ceil(json.length / 4));
 });
 test("explicit stream abort estimates synthetic zero usage", async () => {
   const f = fixture([{ type: "usage", usage: { input: 0, output: 0, total: 0 }, finishReason: "aborted" }]);

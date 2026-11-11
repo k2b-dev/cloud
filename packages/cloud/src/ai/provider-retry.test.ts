@@ -84,7 +84,7 @@ describe("transient provider retries", () => {
     const { provider, retries } = retrying(source.provider);
     expect(await collect(provider)).toEqual(answer);
     expect(source.calls).toBe(2);
-    expect(retries).toEqual([{ retry: 1, delayMs: 1, issue: rateLimitIssue }]);
+    expect(retries).toEqual([{ retry: 1, delayMs: 1, issue: rateLimitIssue, previewedCallIds: [] }]);
   });
 
   test("provider timeouts and lost connections are transient", async () => {
@@ -125,14 +125,14 @@ describe("transient provider retries", () => {
     const provider = retryTransientProviderErrors(source.provider, {
       deadline: null,
       delaysMs: [1, 2],
-      onRetry: async () => {
-        order.push("retry");
+      onRetry: async ({ previewedCallIds }) => {
+        order.push(`retry ${previewedCallIds.join(",")}`);
       },
     });
     for await (const event of provider.stream({ messages: [] })) order.push(event.type);
     expect(source.calls).toBe(2);
     // The failed attempt's issues leave no trace; the executor takes its previews back on the retry.
-    expect(order).toEqual(["tool_args_delta", "retry", ...answer.map((event) => event.type)]);
+    expect(order).toEqual(["tool_args_delta", "retry c1", ...answer.map((event) => event.type)]);
   });
 
   test("permanent failures and context overflow are not repeated", async () => {

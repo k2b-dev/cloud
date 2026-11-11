@@ -204,3 +204,25 @@ test("stream issues discard content and preserve retry, overflow, and tool-repai
   expect(events[2]).toMatchObject({ issue: { kind: "malformed_tool_call", reason: "invalid_tool_arguments" } });
   expect(events[3]).toMatchObject({ issue: { kind: "cancelled_tool_call" } });
 });
+
+test("a broken call keeps only the call id its own preview already showed", async () => {
+  const provider: Provider = {
+    name: "fixture",
+    family: "openai-compatible",
+    model: "fixture",
+    capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+    async *stream() {
+      yield { type: "tool_args_delta", callId: "call-1", name: "code_write", delta: '{"content":"x' };
+      for (const callId of ["call-1", "never-shown"])
+        yield { type: "issue", issue: { kind: "malformed_tool_call", reason: "invalid_tool_arguments", message: "raw", callId } };
+    },
+  };
+  const events = await Array.fromAsync(withProviderErrors(provider).stream({ messages: [] }));
+  expect(events.slice(1)).toEqual([
+    {
+      type: "issue",
+      issue: { kind: "malformed_tool_call", reason: "invalid_tool_arguments", callId: "call-1", message: expect.any(String) },
+    },
+    { type: "issue", issue: { kind: "malformed_tool_call", reason: "invalid_tool_arguments", message: expect.any(String) } },
+  ]);
+});

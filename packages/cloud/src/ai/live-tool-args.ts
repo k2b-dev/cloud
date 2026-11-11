@@ -10,6 +10,12 @@ const ESCAPES: Record<string, string> = { b: "\b", f: "\f", n: "\n", r: "\r", t:
 /** The end of one streamed value: at most twice the shown tail is kept, with the lines cut off before it. */
 type Tail = { text: string; droppedLines: number };
 
+/** A cut at `index` would leave the low half of a surrogate pair; step past it. */
+const pairSafe = (text: string, index: number) => {
+  const code = text.charCodeAt(index);
+  return code >= 0xdc00 && code <= 0xdfff ? index + 1 : index;
+};
+
 const countLines = (text: string, end = text.length) => {
   let lines = 0;
   for (let index = 0; index < end; index += 1) if (text.charCodeAt(index) === 10) lines += 1;
@@ -41,7 +47,7 @@ export const createLiveArgsReader = (keys: readonly string[], limit = AI_LIVE_AR
     if (!text) return;
     tail.text += text;
     if (tail.text.length <= limit * 2) return;
-    const cut = tail.text.length - limit;
+    const cut = pairSafe(tail.text, tail.text.length - limit);
     tail.droppedLines += countLines(tail.text, cut);
     tail.text = tail.text.slice(cut);
   };
@@ -50,8 +56,17 @@ export const createLiveArgsReader = (keys: readonly string[], limit = AI_LIVE_AR
     let chunk = "";
     const flush = () => {
       if (reading?.kind === "value") append(reading.tail, chunk);
-      else if (reading?.kind === "key" && key.length < MAX_KEY_CHARS) key += chunk.slice(0, MAX_KEY_CHARS - key.length);
+      else if (reading?.kind === "key") key += chunk;
       chunk = "";
+    };
+    /** Keeps one fragment's text bounded too: a value flushes every `limit` characters, a key stops at its cap. */
+    const take = (text: string) => {
+      if (reading?.kind === "key") {
+        if (key.length + chunk.length < MAX_KEY_CHARS) chunk += text;
+        return;
+      }
+      chunk += text;
+      if (chunk.length >= limit) flush();
     };
     for (let index = 0; index < delta.length; index += 1) {
       const char = delta[index]!;
@@ -60,13 +75,13 @@ export const createLiveArgsReader = (keys: readonly string[], limit = AI_LIVE_AR
           if (escape === "\\") {
             if (char === "u") escape = "u";
             else {
-              if (reading) chunk += ESCAPES[char] ?? char;
+              if (reading) take(ESCAPES[char] ?? char);
               escape = null;
             }
           } else {
             escape += char;
             if (escape.length === 5) {
-              if (reading) chunk += String.fromCharCode(Number.parseInt(escape.slice(1), 16));
+              if (reading) take(String.fromCharCode(Number.parseInt(escape.slice(1), 16)));
               escape = null;
             }
           }
@@ -79,11 +94,15 @@ export const createLiveArgsReader = (keys: readonly string[], limit = AI_LIVE_AR
         if (char === '"') {
           flush();
           inString = false;
-          if (reading?.kind === "key") lastKey = key;
+          if (reading?.kind === "key") {
+            lastKey = key;
+            // A repeated key replaces its value whatever the new value is, as JSON.parse keeps the last one.
+            values.delete(key);
+          }
           reading = null;
           continue;
         }
-        if (reading) chunk += char;
+        if (reading) take(char);
         continue;
       }
       if (char === '"') {
@@ -92,7 +111,6 @@ export const createLiveArgsReader = (keys: readonly string[], limit = AI_LIVE_AR
           key = "";
           reading = { kind: "key" };
         } else if (depth === 1 && lastKey !== null && wanted.has(lastKey)) {
-          // A repeated key starts over, as JSON.parse keeps the last value.
           const tail: Tail = { text: "", droppedLines: 0 };
           values.set(lastKey, tail);
           reading = { kind: "value", tail };
@@ -119,7 +137,7 @@ export const createLiveArgsReader = (keys: readonly string[], limit = AI_LIVE_AR
     const args: Record<string, string> = {};
     const omittedLines: Record<string, number> = {};
     for (const [name, tail] of values) {
-      let start = Math.max(0, tail.text.length - limit);
+      let start = pairSafe(tail.text, Math.max(0, tail.text.length - limit));
       if (start > 0 || tail.droppedLines > 0) {
         const lineStart = tail.text.indexOf("\n", start - 1);
         if (lineStart >= 0 && lineStart < tail.text.length - 1) start = lineStart + 1;

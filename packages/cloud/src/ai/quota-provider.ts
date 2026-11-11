@@ -117,9 +117,10 @@ export function inferenceProvider(
           )
             firstBlockAt = Date.now();
           if (event.type === "block_delta") outputBlocks.set(event.blockId, (outputBlocks.get(event.blockId) ?? 0) + event.delta.length);
-          // Arguments the model wrote before the call ended count until its final block replaces them.
+          // Arguments the model wrote before the call ended count until its final block starts and counts them itself.
           if (event.type === "tool_args_delta")
             outputBlocks.set(`args:${event.callId}`, (outputBlocks.get(`args:${event.callId}`) ?? 0) + event.delta.length);
+          if (event.type === "block_start" && event.kind === "tool_call" && event.callId) outputBlocks.delete(`args:${event.callId}`);
           if (event.type === "block_end") {
             const block = event.block;
             if (block.type === "tool_call") outputBlocks.delete(`args:${block.id}`);
