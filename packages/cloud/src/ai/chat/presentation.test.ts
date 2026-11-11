@@ -80,8 +80,11 @@ test("a long step shows its duration in place of its target, in the reader's lan
   expect(liveStepLabel(read, aiChatMessages("en"))).toBe("Reading q1.csv");
   expect(liveStepLabel(read, aiChatMessages("en"), 60_000)).toBe("Reading a file · 1 min");
   // Only a path is cut to its file name; a title with a slash is shown as given.
-  const view: AiTurnBlock = { ...run, id: "tool-view", callId: "view", name: "code_present", args: { title: "Angebot 2026/118" } };
-  expect(liveStepLabel(view, aiChatMessages("de"))).toBe("Bereitet eine Ansicht vor · Angebot 2026/118");
+  const titled: AiTurnBlock = { ...run, id: "tool-titled", callId: "titled", args: { title: "Angebot 2026/118" } };
+  expect(liveStepLabel(titled, aiChatMessages("de"))).toBe("Führt Code aus · Angebot 2026/118");
+  // Retired Studio calls in old turns read as a plain Code step; no Studio wording remains.
+  for (const name of ["code_present", "code_import", "code_sql"])
+    expect(liveStepLabel({ ...run, name }, aiChatMessages("de"))).toBe(aiChatMessages("de").stepCode);
 });
 
 test("a Code check has its own calm live label in the reader's language", async () => {

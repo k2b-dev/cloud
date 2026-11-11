@@ -436,7 +436,8 @@ export const CloudAiSurveyInputSchema = /* @__PURE__ */ (() =>
   z.object({
     title: z.string().min(1),
     description: z.string().optional(),
-    submitLabel: z.string().default("Submit"),
+    /** Omitted, the chat names the button in the reader's language. */
+    submitLabel: z.string().optional(),
     questions: z.array(SurveyQuestionSchema).min(1).max(8),
   }))();
 export const CloudAiSurveyOutputSchema = /* @__PURE__ */ (() =>
@@ -454,7 +455,8 @@ export const CloudAiTextEditorInputSchema = /* @__PURE__ */ (() =>
     description: z.string().trim().min(1).max(1_000).optional(),
     content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
     format: z.enum(["plain", "markdown"]).default("plain"),
-    submitLabel: z.string().trim().min(1).max(40).default("Continue"),
+    /** Omitted, the chat names the button in the reader's language. */
+    submitLabel: z.string().trim().min(1).max(40).optional(),
   }))();
 
 export const CloudAiTextEditorOutputSchema = /* @__PURE__ */ (() =>

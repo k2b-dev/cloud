@@ -154,14 +154,11 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (name === "write_file") return withTarget(t.stepWritingFile);
   if (name === "todo_write") return t.stepPlan;
   if (name === "present") return withTarget(t.stepDeliveringFile);
-  if (name === "code_present") return withTarget(t.stepPreparingView);
   if (isCardToolName(name)) return t.stepPreparingCard;
   if (isChartToolName(name)) return t.stepPreparingChart;
   const authoring = CODE_AUTHORING_STEPS[name];
   if (authoring) return name === "code_write" ? withTarget(t[authoring]) : t[authoring];
-  if (["code_import", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
-    return withTarget(t.stepWritingCode);
-  if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
+  if (name === "code_run") return withTarget(t.stepRunningCode);
   if (name === "code_inspect") return t.stepCheckingRun;
   if (name.startsWith("code_")) return t.stepCode;
   if (["markdown_to_pdf", "html_to_pdf"].includes(name)) return withTarget(t.stepPdf);

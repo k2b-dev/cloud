@@ -416,7 +416,6 @@ describe("AI tools", () => {
       title: "Review",
       content: "Hello",
       format: "plain",
-      submitLabel: "Continue",
     });
     expect(CloudAiTextEditorOutputSchema.safeParse({ submitted: true, content: "# Hello", format: "markdown" }).success).toBe(true);
     expect(CloudAiTextEditorOutputSchema.safeParse({ submitted: false, feedback: "Make the opening more direct." }).success).toBe(true);
