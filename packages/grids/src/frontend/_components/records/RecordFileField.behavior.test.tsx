@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import type { ChooseFilesOptions } from "@k2b/cloud/browser/files";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicField, PublicGridFile } from "../../../api/public-dto";
 
@@ -108,6 +108,60 @@ domTest("a file field takes only as many dropped files as it has room for and na
     await Bun.sleep(30);
     expect(full.defaultPrevented).toBe(true);
     expect(uploads).toBe(1);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+domTest("a file opens in the Lightbox with the field's other files, Save to Files and Download", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      return new Response("Cover notes\n", { headers: { "content-type": "text/plain" } });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  // Solid delegated its clicks to the document of the first test.
+  delegateEvents(["click"], dom.document);
+  const { default: RecordFileField } = await import("./RecordFileField");
+  const notes: PublicGridFile = { ...stored("notes.txt"), id: "FILE02", mimeType: "text/plain", sizeBytes: 12 };
+  const dispose = render(
+    () => (
+      <RecordFileField
+        tableId="TABLE1"
+        recordId="RECORD1"
+        field={field}
+        canWrite={false}
+        initialFiles={[stored("front.png"), notes]}
+        endpoint="/api/files/FIELD1"
+      />
+    ),
+    dom.root,
+  );
+  const lightbox = () => dom.document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox");
+  try {
+    await Bun.sleep(0);
+    dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid__open")!.click();
+    await Bun.sleep(20);
+    expect(lightbox()?.getAttribute("aria-label")).toBe("front.png");
+    expect(lightbox()?.querySelector("img.k2b-lightbox__image")?.getAttribute("src")).toBe("/api/files/FIELD1/FILE01/content?inline=true");
+    expect(lightbox()?.querySelector(".k2b-lightbox__actions a[download]")?.getAttribute("href")).toBe("/api/files/FIELD1/FILE01/content");
+    expect([...lightbox()!.querySelectorAll(".k2b-lightbox__action")].map((button) => button.textContent)).toEqual(["Save to…"]);
+    expect(lightbox()?.querySelectorAll(".k2b-thumbnail-strip__thumb")).toHaveLength(2);
+    // The next file is the text, which loads from its inline address.
+    lightbox()!.querySelector<HTMLButtonElement>('button[aria-label="Next file"]')!.click();
+    await Bun.sleep(40);
+    expect(lightbox()?.getAttribute("aria-label")).toBe("notes.txt");
+    expect(requests).toContain("/api/files/FIELD1/FILE02/content?inline=true");
+    expect(lightbox()?.textContent).toContain("Cover notes");
+    lightbox()!.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click();
+    await Bun.sleep(0);
+    expect(lightbox()).toBeNull();
   } finally {
     dispose();
     globalThis.fetch = originalFetch;

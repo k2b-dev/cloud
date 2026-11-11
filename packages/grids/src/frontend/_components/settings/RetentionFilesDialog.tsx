@@ -1,4 +1,3 @@
-import { fileIcons } from "@k2b/stdlib";
 import { query, timed } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -6,11 +5,14 @@ import {
   DataTable,
   type DataTableColumn,
   dialogCore,
-  FileView,
   type FileViewContent,
   FilterChip,
+  fileKindLabel,
+  formatFileViewSize,
   getFileViewPreviewKind,
   IconButtonLink,
+  Lightbox,
+  type LightboxItem,
   PanelDialog,
   Placeholder,
   panelDialogWorkspaceOptions,
@@ -31,109 +33,36 @@ const contentHref = (baseId: string, file: RetentionFile, inline = false): strin
   return inline ? `${path}?inline=true` : path;
 };
 
-function RetentionFilePreviewDialog(props: { baseId: string; file: RetentionFile; close: () => void }) {
-  const locale = useLocale();
-  const messages = useGridsSettingsMessages(locale);
-  const bytes = (value: number) => {
-    const format = (amount: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(amount);
-    if (value < 1024) return `${format(value)} B`;
-    if (value < 1024 * 1024) return `${format(value / 1024)} KB`;
-    return `${format(value / (1024 * 1024))} MB`;
+/**
+ * A retained file in the Lightbox with its type, size and Download. Pictures, PDFs, video and audio read from the
+ * inline address; text loads; the Lightbox shows loading, a failure with "Try again", or no preview.
+ */
+const retentionFileItem = (baseId: string, file: RetentionFile, locale: string, failed: string): LightboxItem => {
+  const facts = { path: file.filename, mediaType: file.mimeType, size: file.sizeBytes };
+  const kind = getFileViewPreviewKind(facts);
+  const read = kind === "image" || kind === "pdf" || kind === "audio" || kind === "video";
+  const previewHref = contentHref(baseId, file, true);
+  return {
+    name: file.filename,
+    meta: `${fileKindLabel({ name: file.filename, mediaType: file.mimeType }, locale)} · ${formatFileViewSize(file.sizeBytes, locale)}`,
+    file: facts,
+    src: read ? previewHref : undefined,
+    load:
+      kind && !read
+        ? async (): Promise<FileViewContent> => {
+            const response = await fetch(previewHref);
+            if (!response.ok) throw new Error(await errorMessage(response, failed));
+            return {
+              encoding: "utf8",
+              content: await response.text(),
+              mediaType: response.headers.get("content-type")?.split(";", 1)[0] || file.mimeType,
+            };
+          }
+        : undefined,
+    thumbnail: kind === "image" ? previewHref : undefined,
+    downloadUrl: contentHref(baseId, file),
   };
-  const previewKind = () =>
-    getFileViewPreviewKind({
-      path: props.file.filename,
-      mediaType: props.file.mimeType,
-      size: props.file.sizeBytes,
-    });
-  const nativePreview = () => ["image", "pdf", "audio", "video"].includes(previewKind() ?? "");
-  const preview = query.create({
-    source: () => `${props.baseId}:${props.file.fileId}`,
-    enabled: () => !nativePreview(),
-    load: async (_, { abortSignal }): Promise<FileViewContent> => {
-      const response = await fetch(contentHref(props.baseId, props.file, true), { signal: abortSignal });
-      if (!response.ok) throw new Error(await errorMessage(response, messages().loadFilePreviewFailed));
-      return {
-        encoding: "utf8",
-        content: await response.text(),
-        mediaType: response.headers.get("content-type")?.split(";", 1)[0] || props.file.mimeType,
-      };
-    },
-  });
-  const loaded = (): FileViewContent | null => preview.data() ?? null;
-  const ready = () => nativePreview() || loaded() !== null;
-  const downloadHref = () => contentHref(props.baseId, props.file);
-  const previewHref = () => contentHref(props.baseId, props.file, true);
-
-  return (
-    <PanelDialog>
-      <PanelDialog.Header
-        title={props.file.filename}
-        subtitle={`${props.file.mimeType} · ${bytes(props.file.sizeBytes)}`}
-        icon={`ti ${fileIcons.getFileIcon({ name: props.file.filename, type: "file", mimeType: props.file.mimeType })}`}
-        actions={
-          <Tooltip.Anchor content={messages().downloadFile}>
-            <IconButtonLink
-              variant="ghost"
-              size="sm"
-              href={downloadHref()}
-              download={props.file.filename}
-              label={messages().downloadNamedFile({ name: props.file.filename })}
-            >
-              <i class="ti ti-download" aria-hidden="true" />
-            </IconButtonLink>
-          </Tooltip.Anchor>
-        }
-        close={props.close}
-      />
-      <PanelDialog.Body>
-        <Show when={nativePreview() || !preview.loading()} fallback={<Placeholder state="loading" title={messages().loadingFilePreview} />}>
-          <Show
-            when={!preview.error() && ready()}
-            fallback={
-              <Placeholder
-                state="error"
-                title={messages().filePreviewUnavailable}
-                description={preview.error() instanceof Error ? preview.error()!.message : messages().loadFilePreviewFailed}
-                action={
-                  <Button size="sm" variant="secondary" onClick={() => void preview.refresh()}>
-                    {messages().retry}
-                  </Button>
-                }
-              />
-            }
-          >
-            <FileView
-              file={{
-                path: props.file.filename,
-                mediaType: props.file.mimeType,
-                size: props.file.sizeBytes,
-              }}
-              load={() =>
-                Promise.resolve(
-                  loaded() ?? {
-                    encoding: "base64",
-                    content: "",
-                    mediaType: props.file.mimeType,
-                  },
-                )
-              }
-              previewHref={previewHref()}
-              downloadHref={downloadHref()}
-              class="min-h-[24rem]"
-            />
-          </Show>
-        </Show>
-      </PanelDialog.Body>
-    </PanelDialog>
-  );
-}
-
-const openPreview = (baseId: string, file: RetentionFile) =>
-  dialogCore.open<void>(
-    (close) => <RetentionFilePreviewDialog baseId={baseId} file={file} close={() => close()} />,
-    panelDialogWorkspaceOptions,
-  );
+};
 
 function RetentionFilesDialog(props: { baseId: string; minimumDays: number; close: () => void }) {
   const locale = useLocale();
@@ -183,6 +112,14 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
     },
   });
   const result = () => files.data();
+  // This page's files in the Lightbox, above the list, so the arrow keys step through them; one without a preview
+  // shows its facts and Download there.
+  const previewable = (file: RetentionFile) => canPreviewFile({ path: file.filename, mediaType: file.mimeType, size: file.sizeBytes });
+  const [shown, setShown] = createSignal<number | null>(null);
+  const lightboxItems = createMemo(() =>
+    (result()?.items ?? []).map((file) => retentionFileItem(props.baseId, file, locale(), messages().loadFilePreviewFailed)),
+  );
+  const openPreview = (file: RetentionFile) => setShown(Math.max(0, (result()?.items ?? []).indexOf(file)));
   const rangeLabel = createMemo(() => {
     const value = result();
     if (!value || value.pagination.total === 0) return messages().noFiles;
@@ -302,15 +239,9 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
                 if (col.id === "actions") {
                   return (
                     <div class="flex justify-end gap-1">
-                      <Show
-                        when={canPreviewFile({
-                          path: row.filename,
-                          mediaType: row.mimeType,
-                          size: row.sizeBytes,
-                        })}
-                      >
+                      <Show when={previewable(row)}>
                         <Tooltip.Anchor content={messages().viewFile}>
-                          <Button size="sm" variant="ghost" onClick={() => void openPreview(props.baseId, row)}>
+                          <Button size="sm" variant="ghost" onClick={() => openPreview(row)}>
                             <i class="ti ti-eye" aria-hidden="true" /> {messages().view}
                           </Button>
                         </Tooltip.Anchor>
@@ -360,6 +291,9 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
           </Show>
         </DataTable.Panel>
       </PanelDialog.Body>
+      <Show when={shown() !== null && lightboxItems().length > 0}>
+        <Lightbox items={lightboxItems()} index={shown() ?? 0} onIndexChange={setShown} onClose={() => setShown(null)} />
+      </Show>
     </PanelDialog>
   );
 }

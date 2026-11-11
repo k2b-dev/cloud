@@ -1,18 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
-import {
-  Button,
-  ButtonLink,
-  DescriptionList,
-  dialogCore,
-  Format,
-  PanelHeader,
-  Paper,
-  Placeholder,
-  panelDialogFixedOptions,
-  prompts,
-  useLocale,
-} from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { Button, ButtonLink, DescriptionList, Format, Lightbox, PanelHeader, Paper, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { CustomAppDocumentPreview } from "../../api/custom-app-published-page";
 import type { PublicField as Field, PublicGridFile as GridFile, PublicGridRecord as GridRecord } from "../../api/public-dto";
@@ -29,7 +17,7 @@ import { FieldValue } from "../_components/table/FieldValue";
 import { fieldDisplayFormat, formatFieldValueText } from "../_components/table/field-value-format";
 import { ObjectListValue } from "../_components/table/ObjectListValue";
 import { createCalendarDateBase } from "./calendar-date-base";
-import DocumentPreviewDialog from "./DocumentPreviewDialog";
+import { documentPreviewItem } from "./document-preview";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 
 type RecordBlock = Extract<CustomAppBlock, { type: "record" }>;
@@ -62,21 +50,32 @@ export default function RecordDetails(props: {
     props.block.relativeDates?.length && props.relativeDateBase
       ? createCalendarDateBase(props.relativeDateBase, props.dateConfig.timeZone)
       : () => props.relativeDateBase;
-  const preview = (entry: CustomAppDocumentPreview) =>
-    dialogCore.open<void>((close) => <DocumentPreviewDialog entry={entry} close={close} />, {
-      ...panelDialogFixedOptions,
-      panelClassName: `${panelDialogFixedOptions.panelClassName} is-wide grids-document-preview-dialog`,
-    });
+  // The drafts' PDFs in the Lightbox; closing it cancels a render still running.
+  const [previewIndex, setPreviewIndex] = createSignal<number | null>(null);
+  let previewAbort = new AbortController();
+  const previewItems = () => (props.documentPreviews ?? []).map((entry) => documentPreviewItem(entry, messages(), previewAbort.signal));
+  const preview = (entry: CustomAppDocumentPreview) => {
+    previewAbort = new AbortController();
+    setPreviewIndex(Math.max(0, (props.documentPreviews ?? []).indexOf(entry)));
+  };
+  const closePreview = () => {
+    previewAbort.abort();
+    setPreviewIndex(null);
+  };
+  onCleanup(() => previewAbort.abort());
   const previewActions = () => (
     <div class="flex flex-wrap gap-2">
       <For each={props.documentPreviews ?? []}>
         {(entry) => (
-          <Button variant="secondary" onClick={() => void preview(entry)}>
+          <Button variant="secondary" onClick={() => preview(entry)}>
             <i class="ti ti-eye" aria-hidden="true" />
             {messages().previewDocument}: {entry.name}
           </Button>
         )}
       </For>
+      <Show when={previewIndex() !== null}>
+        <Lightbox items={previewItems()} index={previewIndex() ?? 0} onIndexChange={setPreviewIndex} onClose={closePreview} />
+      </Show>
     </div>
   );
   const [record, setRecord] = createSignal(props.record);

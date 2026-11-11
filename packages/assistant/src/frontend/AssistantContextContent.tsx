@@ -16,6 +16,9 @@ import {
   type FileSource,
   type FileTreeEntry,
   type FileViewContent,
+  formatFileViewSize,
+  getFileViewPreviewKind,
+  type LightboxItem,
   MarkdownView,
   prompts,
   ScrollArea,
@@ -354,26 +357,45 @@ export const openAssistantContextFiles = (files: readonly AssistantContextFile[]
     { title: assistantBrowserText("Files"), icon: "ti ti-files", size: "wide" },
   );
 
-export const loadAssistantContextImages = async (files: readonly AssistantContextFile[]) =>
-  Promise.all(
-    files.filter(isAssistantContextImage).map(async (file) => {
-      const content = await file.source.read(file.path);
-      const src =
-        content.encoding === "base64"
-          ? `data:${content.mediaType};base64,${content.content}`
-          : `data:${content.mediaType};charset=utf-8,${encodeURIComponent(content.content)}`;
-      // The shown image is already loaded, so saving it never reads it again and cannot fail before its dialog opens.
-      const save = {
+/**
+ * A chat or project file in the Lightbox. It reads the file only when it is shown: a picture as a data address, video
+ * and audio from the download route, PDFs and text through the source. Save to Files and Download follow it, and
+ * `open` adds the blue Open pill where the Assistant can open the file in its workspace.
+ */
+export const assistantFileLightboxItem = (file: AssistantContextFile, options: { name?: string; open?: () => void } = {}): LightboxItem => {
+  const href = file.source.downloadHref?.(file.path) ?? undefined;
+  const kind = getFileViewPreviewKind({ path: file.path, mediaType: file.mediaType, size: file.size });
+  // A file already shown is saved from what the page holds, so saving never reads it again.
+  let loaded: FileViewContent | undefined;
+  const read = async () => {
+    loaded = await file.source.read(file.path);
+    return loaded;
+  };
+  const picture = async () => {
+    const content = await read();
+    return content.encoding === "base64"
+      ? `data:${content.mediaType};base64,${content.content}`
+      : `data:${content.mediaType};charset=utf-8,${encodeURIComponent(content.content)}`;
+  };
+  const media = kind === "video" || kind === "audio";
+  return {
+    name: options.name ?? file.displayName ?? file.path.replace(/^.*\//u, ""),
+    meta: formatFileViewSize(file.size),
+    file: { path: file.path, mediaType: file.mediaType, size: file.size },
+    src: kind === "image" ? picture : media ? href : undefined,
+    load: kind && kind !== "image" && !media ? read : undefined,
+    downloadUrl: href,
+    onDownload: href ? undefined : () => void downloadAssistantContextFile(file),
+    open: options.open ? { onOpen: options.open } : undefined,
+    actions: [
+      {
         label: saveFilesLabel(document.documentElement.lang || "en"),
         icon: SAVE_FILES_ICON,
-        onClick: () => void saveAssistantContextFile(file, content),
-      };
-      return {
-        file,
-        image: { src, alt: file.path.replace(/^.*\//u, ""), downloadUrl: file.source.downloadHref?.(file.path) ?? src, actions: [save] },
-      };
-    }),
-  );
+        onClick: () => void saveAssistantContextFile(file, loaded),
+      },
+    ],
+  };
+};
 
 export function AssistantContextRows(props: { children: JSX.Element }) {
   return <div class="flex flex-col gap-1">{props.children}</div>;

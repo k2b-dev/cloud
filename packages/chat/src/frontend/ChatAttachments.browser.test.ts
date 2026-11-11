@@ -103,11 +103,20 @@ describe("Chat attachments", () => {
         await row.getByText("Raumplan.pdf").waitFor();
         await row.getByText(/^PDF · \d+ B$/).waitFor();
         expect(await composer.getByText("lager.png").count()).toBe(0);
-        // An image opens large with "Save to Files" beside "Download".
+        // An image opens in the Lightbox with "Save to Files" beside "Download"; the arrow key steps to the document.
         await image.click();
-        const dialog = page.locator("dialog[open]");
+        const dialog = page.locator("dialog.k2b-lightbox[open]");
         await dialog.waitFor();
+        expect(await dialog.getAttribute("aria-label")).toBe("lager.png");
         await dialog.getByRole("button", { name: /Save/ }).waitFor();
+        await dialog.getByRole("link", { name: "Download" }).waitFor();
+        await page.keyboard.press("ArrowRight");
+        await page.waitForFunction(() => document.querySelector("dialog.k2b-lightbox")?.getAttribute("aria-label") === "Raumplan.pdf");
+        await page.keyboard.press("Escape");
+        await dialog.waitFor({ state: "detached" });
+        // The document opens there too, at its own place.
+        await row.getByText("Raumplan.pdf").click();
+        await page.waitForFunction(() => document.querySelector("dialog.k2b-lightbox")?.getAttribute("aria-label") === "Raumplan.pdf");
         await page.keyboard.press("Escape");
         await dialog.waitFor({ state: "detached" });
         expect(errors).toEqual([]);

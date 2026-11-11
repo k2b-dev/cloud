@@ -16,6 +16,8 @@ const LIBRARIES = new Set(["ui", "ssr", "editor"]);
  * belongs here.
  */
 export const ALLOWED: Readonly<Record<string, string>> = {
+  "packages/grids/src/frontend/_components/documents/DocumentGenerateDialog.tsx":
+    "Generating a Document: the PDF previews the record, file name and tags chosen in the same dialog before Generate issues it.",
   "packages/grids/src/frontend/_components/workflows/WorkflowScannerSurface.tsx":
     "The video is the live camera of the scanner, not a file; its dialogs ask about scanned codes.",
 };

@@ -1191,7 +1191,7 @@ export default function NotebookDetailPanel(props: Props) {
                       />
                     </>
                   )}
-                  onOpen={(attachment) => openAttachment(props.notebookId, attachment)}
+                  onOpen={(attachment) => openAttachment(props.notebookId, attachment, visibleAttachments())}
                 />
               </Show>
             </Section>

@@ -1,8 +1,6 @@
 import { chooseFiles, SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
-  ButtonLink,
   DetailPanel,
-  dialogCore,
   FileDropTarget,
   FileGrid,
   fileKindLabel,
@@ -10,15 +8,12 @@ import {
   IconButton,
   IconButtonLink,
   Lightbox,
-  type LightboxImage,
-  PanelDialog,
-  panelDialogWorkspaceOptions,
+  type LightboxItem,
   prompts,
   Section,
   Tooltip,
   toast,
   useLocale,
-  VideoPlayer,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { isServer } from "solid-js/web";
@@ -71,10 +66,16 @@ export default function TaskAttachmentsSection(props: {
   const videos = createMemo(() => attachments().filter(isVideo));
   /** Images and playable videos; other files are not shown. */
   const media = createMemo(() => [...videos(), ...images()]);
-  const lightboxImages = createMemo<LightboxImage[]>(() =>
-    images().map((attachment) => ({
+  const meta = (attachment: SpaceItemAttachment) =>
+    `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`;
+  /** Every attachment of the task in the Lightbox, in the order of the list: videos first, then images. */
+  const lightboxItems = createMemo<LightboxItem[]>(() =>
+    media().map((attachment) => ({
+      name: attachment.filename,
+      meta: meta(attachment),
+      file: { path: attachment.filename, mediaType: attachment.mimeType, size: attachment.sizeBytes },
       src: contentUrl(attachment),
-      alt: attachment.filename,
+      thumbnail: isVideo(attachment) ? undefined : contentUrl(attachment),
       downloadUrl: contentUrl(attachment, true),
       actions: [{ label: saveFilesLabel(locale()), icon: SAVE_FILES_ICON, onClick: () => void saveFiles([saveSource(attachment)]) }],
     })),
@@ -165,45 +166,6 @@ export default function TaskAttachmentsSection(props: {
     }
   };
 
-  /** A video plays in a dialog of its own, at the size of the screen's work area. */
-  const openVideo = (attachment: SpaceItemAttachment) =>
-    dialogCore.open<void>(
-      (close) => (
-        <PanelDialog>
-          <PanelDialog.Header
-            title={attachment.filename}
-            actions={
-              <>
-                <SaveFilesButton size="sm" files={() => [saveSource(attachment)]} />
-                <IconButtonLink size="sm" href={contentUrl(attachment, true)} download={attachment.filename} label={t.downloadAttachment}>
-                  <i class="ti ti-download" aria-hidden="true" />
-                </IconButtonLink>
-              </>
-            }
-            close={() => close()}
-          />
-          <PanelDialog.Body scrollFade={false}>
-            <VideoPlayer
-              src={contentUrl(attachment)}
-              label={attachment.filename}
-              fallbackAction={
-                <ButtonLink size="sm" variant="secondary" href={contentUrl(attachment, true)} download={attachment.filename}>
-                  <i class="ti ti-download" aria-hidden="true" />
-                  {t.downloadAttachment}
-                </ButtonLink>
-              }
-            />
-          </PanelDialog.Body>
-        </PanelDialog>
-      ),
-      {
-        ...panelDialogWorkspaceOptions,
-        panelClassName: `${panelDialogWorkspaceOptions.panelClassName} spaces-video-dialog`,
-        // Playback keys work at once: Space plays, the arrows seek.
-        initialFocus: (dialog) => dialog.querySelector<HTMLElement>("video"),
-      },
-    );
-
   const removeAttachment = async (attachment: SpaceItemAttachment) => {
     const confirmed = await prompts.confirm(t.deleteAttachmentQuestion({ filename: attachment.filename }), {
       title: t.deleteAttachment,
@@ -227,12 +189,13 @@ export default function TaskAttachmentsSection(props: {
     }
   };
 
-  const openAttachment = (attachment: SpaceItemAttachment) => {
-    if (isVideo(attachment)) openVideo(attachment);
-    else setLightboxIndex(images().findIndex((image) => image.id === attachment.id));
-  };
-  const meta = (attachment: SpaceItemAttachment) =>
-    `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`;
+  const openAttachment = (attachment: SpaceItemAttachment) =>
+    setLightboxIndex(
+      Math.max(
+        0,
+        media().findIndex((entry) => entry.id === attachment.id),
+      ),
+    );
 
   return (
     <>
@@ -330,8 +293,13 @@ export default function TaskAttachmentsSection(props: {
           </Show>
         </div>
       </Section>
-      <Show when={lightboxIndex() !== null}>
-        <Lightbox images={lightboxImages()} initialIndex={lightboxIndex() ?? 0} onClose={() => setLightboxIndex(null)} />
+      <Show when={lightboxIndex() !== null && lightboxItems().length > 0}>
+        <Lightbox
+          items={lightboxItems()}
+          index={lightboxIndex() ?? 0}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
       </Show>
     </>
   );
