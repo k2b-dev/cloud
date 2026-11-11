@@ -9,14 +9,17 @@ const appCss = readFileSync(new URL("../styles/app.css", import.meta.url), "utf8
   // Tailwind directives; the quick view uses only its own classes and @k2b/ui.
   .replace(/^@(import|source|custom-variant)[^\n]*\n/gm, "");
 
-const buildHarness = async (): Promise<string> => {
+/** An ES module build with chunks, as in an app, so pdf.js and its worker arrive as files next to the entry. */
+const buildHarness = async (): Promise<Record<string, [string, string | Buffer]>> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
     entrypoints: [new URL("./FileQuickView.browser-harness.tsx", import.meta.url).pathname],
     target: "browser",
-    format: "iife",
+    format: "esm",
+    splitting: true,
+    naming: { entry: "harness.js", chunk: "chunk-[hash].js", asset: "[name]-[hash].[ext]" },
     conditions: ["browser"],
     plugins: [
       {
@@ -36,12 +39,21 @@ const buildHarness = async (): Promise<string> => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "Quick view harness build failed");
-  return build.outputs[0]!.text();
+  return Object.fromEntries(
+    await Promise.all(
+      build.outputs.map(
+        async (output) =>
+          [
+            `/${output.path.split("/").at(-1)}`,
+            [output.path.endsWith(".js") ? "text/javascript; charset=utf-8" : output.type, Buffer.from(await output.arrayBuffer())],
+          ] as const,
+      ),
+    ),
+  );
 };
 
-const harness = await buildHarness();
 const assets: Record<string, [string, string | Buffer]> = {
-  "/harness.js": ["text/javascript; charset=utf-8", harness],
+  ...(await buildHarness()),
   // As in Cloud: the app sheet first, @k2b/ui after it.
   "/app.css": ["text/css", appCss],
   "/styles.css": ["text/css", readFileSync(`${ui}dist/styles.css`, "utf8")],
@@ -50,7 +62,7 @@ const assets: Record<string, [string, string | Buffer]> = {
 const page = (theme: "light" | "dark", lang: string) =>
   `<!doctype html><html lang="${lang}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css">` +
-  `</head><body class="k2b-ui" data-theme="${theme}"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+  `</head><body class="k2b-ui" data-theme="${theme}"><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`;
 
 /** Invented demo files: a picture as the service's previews draw it, in two sizes of the same 16:10 frame. */
 const picture = (width: number, fill: string) =>
@@ -70,7 +82,28 @@ const readme = [
   "",
   ...Array.from({ length: 40 }, (_, index) => `- Item ${index + 1} for the shopping list`),
 ].join("\n");
-const pdf = "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n";
+/** A real two-page PDF, so pdf.js draws it and the quick view counts its pages. */
+const pdf = (() => {
+  const objects = ["", "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>"];
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  for (const [page, title] of ["Offer 0414 for the summer party", "Appendix"].entries()) {
+    const stream = `BT /F1 24 Tf 72 740 Td (${title}) Tj ET\nBT /F1 12 Tf 72 700 Td (Page ${page + 1} of 2) Tj ET`;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
+    );
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  }
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = body.length;
+    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xref = body.length;
+  body += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id++) body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  return `${body}trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+})();
 const files: Record<string, [string, string | Buffer]> = {
   "Workshop.jpg": ["image/jpeg", "jpeg bytes"],
   "README.md": ["text/markdown", readme],
@@ -366,9 +399,19 @@ describe("file quick view in a browser", () => {
     try {
       await show(tab, "Report.pdf");
       expect(await actionNames(tab)).toEqual(["Open in new tab", "Download", "Share publicly", "Close"]);
-      await tab.waitForSelector('.k2b-pdf-viewer:is([data-state="shown"], [data-state="undrawable"])');
+      await tab.waitForSelector('.filesv2-quick-document[data-drawn] .k2b-pdf-viewer[data-state="shown"]');
+      // Once drawn, the facts count the pages; the first-page preview that held the place is gone.
+      expect(await chip(tab)).toMatch(/· 2 pages$/);
+      expect(await tab.$(".filesv2-quick-document__first")).toBeNull();
       // The viewer's own zoom stays off: the quick view's pill zooms the pages.
       expect(await tab.$(".k2b-pdf-viewer__bar")).toBeNull();
+      const page = await box(tab, ".k2b-pdf-viewer__page");
+      await tab.keyboard.press("+");
+      await settled(tab);
+      expect((await box(tab, ".k2b-pdf-viewer__page")).width).toBeGreaterThan(page.width);
+      await tab.keyboard.press("0");
+      await settled(tab);
+      await tab.screenshot({ path: "/tmp/files11-shots/quick-view-pdf-light-1440.png" });
       await tab.evaluate(() => {
         window.open = (url?: string | URL) => {
           document.body.dataset.opened = String(url);
@@ -387,9 +430,10 @@ describe("file quick view in a browser", () => {
     try {
       await show(tab, "Offer.docx");
       expect(await chip(tab)).toMatch(/^Offer\.docx 10\sB · shown as PDF$/);
-      await tab.waitForSelector('.k2b-pdf-viewer:is([data-state="shown"], [data-state="undrawable"])', { timeout: 10_000 });
+      await tab.waitForSelector('.k2b-pdf-viewer[data-state="shown"]', { timeout: 10_000 });
       const polls = previewRequests.filter((request) => request.name === "Offer.docx" && request.size === "pdf");
       expect(polls.map((request) => request.status)).toEqual([202, 200]);
+      expect(await chip(tab)).toMatch(/· 2 pages · shown as PDF$/);
     } finally {
       await tab.context().close();
     }

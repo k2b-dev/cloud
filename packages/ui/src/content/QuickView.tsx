@@ -1,4 +1,4 @@
-import { type Accessor, createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { Toolbar } from "../actions/Toolbar";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
@@ -219,8 +219,9 @@ export function QuickView(props: QuickViewProps): JSX.Element {
       </div>
       <div class="k2b-quick-view__stage" data-zoomed={zoom() !== 1 ? "" : undefined}>
         <div ref={scroller} class="k2b-quick-view__scroller" tabIndex={-1}>
-          <Show keyed when={item()}>
-            {(shown) => props.children(shown, zoom)}
+          {/* Keyed by id: the stage mounts once per item, also when the host hands in a new object for it. */}
+          <Show keyed when={item()?.id}>
+            {(_id) => props.children(untrack(item)!, zoom)}
           </Show>
         </div>
       </div>

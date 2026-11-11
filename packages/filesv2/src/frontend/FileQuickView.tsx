@@ -9,7 +9,7 @@ import {
   type QuickViewItem,
   useLocale,
 } from "@k2b/ui";
-import { type Accessor, createEffect, createSignal, Match, onCleanup, Show, Switch } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
 import { hasPdfSignature, PDF_HEADER_WINDOW } from "../pdf-body";
 import { useBrowserMessages } from "./browser-messages";
@@ -55,20 +55,33 @@ export default function FileQuickView(props: FileQuickViewProps) {
     }, 300);
     onCleanup(() => clearTimeout(timer));
   });
-  const items = (): QuickViewItem[] =>
-    props.entries.map((item) => ({
-      id: item.path,
-      name: item.name,
-      facts: [
+  // One item per entry for the view's whole life: a page count that arrives updates the facts in place, so neither the
+  // stage nor the film strip mounts again.
+  const known = new Map<FileEntry, QuickViewItem>();
+  const describe = (item: FileEntry): QuickViewItem => ({
+    id: item.path,
+    name: item.name,
+    get facts() {
+      return [
         text.pprintBytes(item.size, { locale: locale() }),
         pages()[item.path] ? t().pageCount(pages()[item.path]!) : null,
         previewSource(item) === "office" ? t().shownAsPdf : null,
       ]
         .filter(Boolean)
-        .join(" · "),
-      zoomable: zoomable(item),
-      thumbnail: () => <FileThumbnail baseId={props.baseId} locationKey={props.locationKey} entry={item} />,
-    }));
+        .join(" · ");
+    },
+    zoomable: zoomable(item),
+    thumbnail: () => <FileThumbnail baseId={props.baseId} locationKey={props.locationKey} entry={item} />,
+  });
+  const items = createMemo(() =>
+    props.entries.map((item) => {
+      const existing = known.get(item);
+      if (existing) return existing;
+      const created = describe(item);
+      known.set(item, created);
+      return created;
+    }),
+  );
   const actions = (item: QuickViewItem): QuickViewAction[] => {
     const file = entry(item.id);
     if (!file) return [];
@@ -102,7 +115,14 @@ export default function FileQuickView(props: FileQuickViewProps) {
     <QuickView items={items()} current={props.current} onCurrentChange={props.onCurrentChange} onClose={props.onClose} actions={actions}>
       {(item, zoom) => (
         <Show when={entry(item.id)} keyed>
-          {(file) => <Stage {...props} entry={file} zoom={zoom} onPages={(count) => setPages((all) => ({ ...all, [file.path]: count }))} />}
+          {(file) => (
+            <Stage
+              {...props}
+              entry={file}
+              zoom={zoom}
+              onPages={(count) => setPages((all) => (all[file.path] === count ? all : { ...all, [file.path]: count }))}
+            />
+          )}
         </Show>
       )}
     </QuickView>
