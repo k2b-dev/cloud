@@ -1,15 +1,46 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as settings from "@k2b/cloud/services/settings";
 import { generateSpecs } from "hono-openapi";
 import {
   CreateOAuthClientSchema,
   DynamicClientRegistrationRequestSchema,
   OAuthClientListQuerySchema,
   OAuthClientParamSchema,
+  OAuthScopeSchema,
   UpdateOAuthClientSchema,
 } from "./contracts";
 import oauthRoutes from "./oauth";
 
 describe("OAuth contracts", () => {
+  test("both discovery documents advertise every supported scope independently of dynamic registration", async () => {
+    const issuer = "https://cloud.example.test";
+    const appUrl = spyOn(settings, "get").mockResolvedValue(issuer);
+    try {
+      for (const path of ["/.well-known/openid-configuration", "/.well-known/oauth-authorization-server"]) {
+        const response = await oauthRoutes.request(path);
+        expect(response.status).toBe(200);
+        const configuration = await response.json();
+        expect(configuration.issuer).toBe(issuer);
+        expect(configuration.scopes_supported).toContain("groups");
+        expect(configuration.scopes_supported).toContain("admin");
+        expect(configuration.scopes_supported).toEqual(OAuthScopeSchema.options);
+      }
+    } finally {
+      appUrl.mockRestore();
+    }
+  });
+
+  test("dynamic registration still rejects groups and admin advertised by discovery", () => {
+    for (const scope of ["groups", "admin"]) {
+      expect(
+        DynamicClientRegistrationRequestSchema.safeParse({
+          redirect_uris: ["http://localhost:49152/callback"],
+          scope: `openid ${scope}`,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   test("OpenAPI documents the login ttl input and optional refresh lifetime output", async () => {
     const spec = await generateSpecs(oauthRoutes);
     const tokenRoute = spec.paths["/oauth/token"]?.post;
