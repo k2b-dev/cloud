@@ -7,9 +7,12 @@ import type { CoreNotificationSender } from "../notifications";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { CodeIdSchema } from "./contracts";
 import { lockNamespaceChange, readCodeDatabaseConfig } from "./database";
+import { DATABASE_EXPIRY_NOTICE_MS, lockDatabaseRetentionPolicy, refreshDatabaseDeadline } from "./database-deadline";
+
+export { databaseDeletionDate, readUnusedDatabaseDays } from "./database-deadline";
+
 import { createCodeDatabaseClient } from "./database-client";
 import { requireCodePolicyAdmin } from "./policy";
-import { codeSettings } from "./settings";
 import { findCode } from "./store";
 
 export const unusedDatabaseInput = z
@@ -20,16 +23,6 @@ export const unusedDatabaseInput = z
     since: z.iso.datetime(),
   })
   .strict();
-export const databaseDeletionDate = (since: Date, days: number): Date | null =>
-  days === 0 ? null : new Date(since.getTime() + days * 86_400_000);
-
-/** Destructive maintenance never falls back over an unreadable operator setting. */
-export async function readUnusedDatabaseDays() {
-  const state = await codeSettings.read("core.code.database_unused_days");
-  if (state.stored === "unreadable") throw new Error("code_database_retention_setting_unreadable");
-  return state.value;
-}
-
 type DeletionRow = OutboxRow & { code_id: string; namespace: string; server_url: string };
 
 /** Code-row lock linearizes deletion against activation, pause/resume and version saves.
@@ -41,16 +34,31 @@ async function detach(db: SQL, codeId: string, now: Date, days: number, expected
   const [lifecycle] = await db<{ acquired: boolean }[]>`
     SELECT pg_try_advisory_xact_lock(hashtextextended('core.code.database-lifecycle',0)) AS acquired`;
   if (!lifecycle?.acquired) return false;
-  const [mapping] = await db<{ namespace: string; server_url: string; unused_since: Date }[]>`
-    SELECT namespace,server_url,unused_since FROM code.databases WHERE code_id=${codeId}
+  const [mapping] = await db<
+    {
+      namespace: string;
+      server_url: string;
+      unused_since: Date;
+      unused_delete_at: Date | null;
+      unused_shown_at: Date | null;
+    }[]
+  >`
+    SELECT namespace,server_url,unused_since,unused_delete_at,unused_shown_at FROM code.databases WHERE code_id=${codeId}
       AND unused_since IS NOT NULL AND code.database_is_unused(code_id)
+      AND (${Boolean(expected)} OR (unused_delete_at<=${now} AND unused_shown_at<=${new Date(now.getTime() - DATABASE_EXPIRY_NOTICE_MS)}))
       AND NOT EXISTS(SELECT 1 FROM code.runs WHERE code_id=${codeId} AND state IN ('queued','running')) FOR UPDATE`;
   if (!mapping) return false;
   if (expected) {
     if (mapping.namespace !== expected.namespace || mapping.unused_since.toISOString() !== expected.since) return false;
   } else {
-    const deadline = databaseDeletionDate(mapping.unused_since, days);
-    if (!deadline || deadline > now) return false;
+    if (
+      !days ||
+      !mapping.unused_delete_at ||
+      mapping.unused_delete_at > now ||
+      !mapping.unused_shown_at ||
+      mapping.unused_shown_at.getTime() + DATABASE_EXPIRY_NOTICE_MS > now.getTime()
+    )
+      return false;
   }
   const [job] = await db<{ id: string }[]>`INSERT INTO code.database_deletions(code_id,namespace,server_url)
     VALUES(${codeId},${mapping.namespace},${mapping.server_url}) ON CONFLICT(namespace) DO NOTHING RETURNING id`;
@@ -63,7 +71,13 @@ async function detach(db: SQL, codeId: string, now: Date, days: number, expected
       actor: actor ? { userId: actor } : null,
       target: { type: "code", id: codeId },
       requestId: job!.id,
-      metadata: { namespace: mapping.namespace, unusedSince: mapping.unused_since.toISOString(), automatic: !expected },
+      metadata: {
+        namespace: mapping.namespace,
+        unusedSince: mapping.unused_since.toISOString(),
+        automatic: !expected,
+        deleteAt: mapping.unused_delete_at?.toISOString() ?? null,
+        shownAt: mapping.unused_shown_at?.toISOString() ?? null,
+      },
     },
     db,
   );
@@ -93,11 +107,16 @@ export async function deleteUnusedCodeDatabase(raw: z.input<typeof unusedDatabas
 
 /** One scheduled pass: at most 50 candidates and 10 seconds, no remote I/O under the admission transaction. */
 export async function expireUnusedCodeDatabases(now: Date, signal: AbortSignal) {
-  const days = await readUnusedDatabaseDays();
-  if (!days) return 0;
   const deadline = performance.now() + 10_000;
-  const candidates = await sql<{ code_id: string }[]>`SELECT code_id FROM code.databases
-    WHERE unused_since<=${new Date(now.getTime() - days * 86400000)} ORDER BY unused_since,code_id LIMIT 50`;
+  const candidates = await sql.begin(async (tx) => {
+    await tx`SET LOCAL lock_timeout='100ms'`;
+    await tx`SET LOCAL statement_timeout='2s'`;
+    const policy = await lockDatabaseRetentionPolicy(tx);
+    return tx<{ code_id: string }[]>`SELECT code_id FROM code.databases
+      WHERE unused_since IS NOT NULL AND (unused_policy_revision IS DISTINCT FROM ${policy.revision}::bigint
+        OR unused_days IS DISTINCT FROM ${policy.days} OR (${policy.days}>0 AND (unused_shown_at IS NULL OR unused_delete_at<=${now})))
+      ORDER BY unused_since,code_id LIMIT 50`;
+  });
   let count = 0;
   for (const { code_id } of candidates) {
     if (signal.aborted || performance.now() >= deadline) break;
@@ -106,8 +125,11 @@ export async function expireUnusedCodeDatabases(now: Date, signal: AbortSignal) 
         await sql.begin(async (tx) => {
           await tx`SET LOCAL lock_timeout='100ms'`;
           await tx`SET LOCAL statement_timeout='2s'`;
+          const policy = await lockDatabaseRetentionPolicy(tx);
           const [available] = await tx`SELECT id FROM code.codes WHERE id=${code_id} FOR UPDATE SKIP LOCKED`;
-          return available ? detach(tx, code_id, now, days) : false;
+          if (!available) return false;
+          await refreshDatabaseDeadline(tx, code_id, now, policy);
+          return detach(tx, code_id, now, policy.days);
         }),
       );
     } catch {
@@ -185,22 +207,33 @@ export type UnusedCodeDatabase = {
 export async function listUnusedCodeDatabases(context: CodeContext, cursor?: string) {
   requireCodePolicyAdmin(context);
   const after = cursor ? CodeIdSchema.parse(cursor) : null;
-  const days = await readUnusedDatabaseDays();
-  const rows = await sql<
-    {
-      code_id: string;
-      title: string;
-      owner: string;
-      last_size_bytes: string | null;
-      unused_since: Date;
-      last_access_at: Date | null;
-      namespace: string;
-    }[]
-  >`
+  const rows = await sql.begin(async (tx) => {
+    await tx`SET LOCAL lock_timeout='100ms'`;
+    await tx`SET LOCAL statement_timeout='2s'`;
+    const policy = await lockDatabaseRetentionPolicy(tx);
+    const selected = await tx<{ code_id: string }[]>`SELECT code_id FROM code.databases
+      WHERE unused_since IS NOT NULL AND (${after}::text IS NULL OR code_id>${after}) ORDER BY code_id LIMIT 21`;
+    for (const row of selected) await refreshDatabaseDeadline(tx, row.code_id, new Date(), policy);
+    return tx<
+      {
+        code_id: string;
+        title: string;
+        owner: string;
+        last_size_bytes: string | null;
+        unused_since: Date;
+        unused_delete_at: Date | null;
+        last_access_at: Date | null;
+        namespace: string;
+      }[]
+    >`
     SELECT d.code_id,c.title,COALESCE(NULLIF(u.display_name,''),u.uid,c.owner_type || ':' || c.owner_id,c.owner_app_id) AS owner,
-      d.last_size_bytes::text,d.unused_since,d.last_access_at,d.namespace
+      d.last_size_bytes::text,d.unused_since,d.unused_delete_at,d.last_access_at,d.namespace
     FROM code.databases d JOIN code.codes c ON c.id=d.code_id LEFT JOIN auth.users u ON u.id=c.owner_user_id
-    WHERE d.unused_since IS NOT NULL AND (${after}::text IS NULL OR d.code_id>${after}) ORDER BY d.code_id LIMIT 21`;
+    WHERE d.unused_since IS NOT NULL AND d.code_id=ANY(${tx.array(
+      selected.map((row) => row.code_id),
+      "text",
+    )}) ORDER BY d.code_id LIMIT 21`;
+  });
   return {
     items: rows.slice(0, 20).map(
       (row): UnusedCodeDatabase => ({
@@ -209,7 +242,7 @@ export async function listUnusedCodeDatabases(context: CodeContext, cursor?: str
         owner: row.owner,
         bytes: row.last_size_bytes === null ? null : Number(row.last_size_bytes),
         since: row.unused_since.toISOString(),
-        deleteAt: databaseDeletionDate(row.unused_since, days)?.toISOString() ?? null,
+        deleteAt: row.unused_delete_at?.toISOString() ?? null,
         lastAccess: row.last_access_at?.toISOString() ?? null,
         namespace: row.namespace,
       }),
@@ -224,28 +257,49 @@ export async function notifyUnusedCodeDatabases(
   now: Date,
   signal: AbortSignal,
 ) {
-  const days = await readUnusedDatabaseDays();
-  if (!days) return;
-  const rows = await sql<
-    { code_id: string; namespace: string; unused_since: Date; unused_stamp: string; owner_user_id: string; title: string }[]
-  >`
-    SELECT d.code_id,d.namespace,d.unused_since,d.unused_since::text AS unused_stamp,c.owner_user_id,c.title FROM code.databases d JOIN code.codes c ON c.id=d.code_id
-    WHERE c.owner_kind='person' AND d.unused_since>${new Date(now.getTime() - days * 86400000)}
-      AND d.unused_since<=${new Date(now.getTime() - (days - 7) * 86400000)}
-      AND d.unused_notice_key IS DISTINCT FROM d.namespace || ':' || d.unused_since::text || ':' || ${days}::text
-    ORDER BY d.unused_since,d.code_id LIMIT 20`;
+  const rows = await sql.begin(async (tx) => {
+    await tx`SET LOCAL lock_timeout='100ms'`;
+    await tx`SET LOCAL statement_timeout='2s'`;
+    const policy = await lockDatabaseRetentionPolicy(tx);
+    if (!policy.days) return [];
+    const selected = await tx<{ code_id: string }[]>`SELECT d.code_id FROM code.databases d JOIN code.codes c ON c.id=d.code_id
+      WHERE c.owner_kind='person' AND d.unused_since IS NOT NULL
+        AND (d.unused_policy_revision IS DISTINCT FROM ${policy.revision}::bigint OR d.unused_days IS DISTINCT FROM ${policy.days}
+          OR d.unused_shown_at IS NULL OR (d.unused_delete_at>${now} AND d.unused_delete_at<=${new Date(now.getTime() + DATABASE_EXPIRY_NOTICE_MS)}
+            AND d.unused_notice_key IS DISTINCT FROM d.namespace || ':' || d.unused_delete_at::text))
+      ORDER BY d.unused_since,d.code_id LIMIT 20`;
+    for (const row of selected.toSorted((a, b) => (a.code_id < b.code_id ? -1 : a.code_id > b.code_id ? 1 : 0)))
+      await refreshDatabaseDeadline(tx, row.code_id, now, policy);
+    return tx<
+      {
+        code_id: string;
+        namespace: string;
+        delete_at: Date;
+        delete_stamp: string;
+        owner_user_id: string;
+        title: string;
+      }[]
+    >`SELECT d.code_id,d.namespace,d.unused_delete_at AS delete_at,d.unused_delete_at::text AS delete_stamp,c.owner_user_id,c.title
+      FROM code.databases d JOIN code.codes c ON c.id=d.code_id
+      WHERE d.code_id=ANY(${tx.array(
+        selected.map((row) => row.code_id),
+        "text",
+      )}) AND d.unused_delete_at>${now}
+        AND d.unused_delete_at<=${new Date(now.getTime() + DATABASE_EXPIRY_NOTICE_MS)}
+        AND d.unused_notice_key IS DISTINCT FROM d.namespace || ':' || d.unused_delete_at::text
+      ORDER BY d.unused_since,d.code_id LIMIT 20`;
+  });
   const budget = performance.now() + 10_000;
   for (const row of rows) {
     if (signal.aborted || performance.now() >= budget) break;
-    const deleteAt = databaseDeletionDate(row.unused_since, days)!.toISOString();
     await sender.sendCodeDatabaseExpiry({
       userId: row.owner_user_id,
       codeId: row.code_id,
       title: row.title,
-      deleteAt,
-      key: `code-db-expiry:${row.namespace}:${row.unused_stamp}:${days}`,
+      deleteAt: row.delete_at.toISOString(),
+      key: `code-db-expiry:${row.namespace}:${row.delete_stamp}`,
     });
-    await sql`UPDATE code.databases SET unused_notice_key=namespace || ':' || unused_since::text || ':' || ${days}::text
-      WHERE code_id=${row.code_id} AND namespace=${row.namespace} AND unused_since=${row.unused_stamp}::timestamptz`;
+    await sql`UPDATE code.databases SET unused_notice_key=namespace || ':' || unused_delete_at::text
+      WHERE code_id=${row.code_id} AND namespace=${row.namespace} AND unused_delete_at=${row.delete_stamp}::timestamptz`;
   }
 }

@@ -121,11 +121,13 @@ or with `cld admin settings apply --from <file> --yes`. The file contains:
 ```
 
 Zero disables automatic deletion; confirmed manual deletion remains available.
-Changing the setting recalculates deadlines from the stored unused start.
-Reducing or re-enabling retention can delete already overdue databases on the
-next five-minute pass without a reminder. Review and export the unused list
-first. Last access does not extend
-the deadline. Personal owners receive a notification about seven days before
+Cloud stores the deletion date and when it became visible. A new or recalculated
+date is at least one reminder period (seven days) in the future, including when
+you reduce retention, re-enable it or reset the setting. Code pages, the admin
+list and the deletion job use that same stored date. This advance notice also
+applies to resource and app owners. Changes are recalculated on the next read
+or bounded scheduled pass; the notice period starts then. Last access does not
+extend the deadline. Personal owners receive a notification about seven days before
 deletion through their configured notification channels. Resource and app
 owners have no single notification recipient; use the administrator list for
 those databases.

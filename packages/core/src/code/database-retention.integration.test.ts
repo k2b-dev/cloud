@@ -7,9 +7,11 @@ import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
+import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import { codeDatabaseOwnerCapacity } from "./database-budget";
 import type { CodeDatabaseClient } from "./database-client";
+import { DATABASE_EXPIRY_NOTICE_MS, readDatabaseDeadline } from "./database-deadline";
 import {
   deleteUnusedCodeDatabase,
   expireUnusedCodeDatabases,
@@ -72,13 +74,32 @@ databaseSuite()("Unused Code database retention", () => {
       VALUES(${id},${number},'{}','fixture',${"a".repeat(64)},${"b".repeat(64)},${JSON.stringify({ database })}::jsonb,0,7) RETURNING id`;
     return v!.id;
   }
-  async function fixture() {
+  async function age(id: string) {
+    await sql`UPDATE code.databases SET unused_since=${since},unused_shown_at=${since},unused_delete_at=${fixed},unused_days=30,
+      unused_policy_revision=(SELECT revision FROM code.database_retention_policy WHERE singleton) WHERE code_id=${id}`;
+  }
+  async function changeDays(value: number) {
+    days = value;
+    // Exercise the same transaction hook as settings API/CLI writes, without encrypted fixture secrets.
+    await sql`INSERT INTO settings.entries(key,value) VALUES('core.code.database_unused_days',${String(value)})
+      ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`;
+  }
+  async function fixture(kind: "person" | "resource" | "app" = "person") {
     const id = `c_exp${String(++ordinal).padStart(4, "0")}`;
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,state) VALUES(${id},'person',${owner}::uuid,'Unused database','paused')`;
+    if (kind === "person") {
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,state) VALUES(${id},'person',${owner}::uuid,'Unused database','paused')`;
+    } else {
+      const ownerId = `fixture${ordinal}`;
+      const name = kind === "app" ? `code:app:${ownerId}` : `code:example.item:${ownerId}`;
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind) VALUES(${name},'code') RETURNING id`;
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,owner_app_id,service_account_id,title,state)
+        VALUES(${id},${kind},${kind === "resource" ? "example.item" : null},${kind === "resource" ? ownerId : null},
+          ${kind === "app" ? ownerId : null},${account!.id}::uuid,'Unused database','paused')`;
+    }
     await version(id, 1);
     await sql`INSERT INTO code.databases(code_id,namespace,server_url,reserved_bytes,connected,last_size_bytes)
       VALUES(${id},${`code_${id}`},'http://rsql.test',104857600,TRUE,4096)`;
-    await sql`UPDATE code.databases SET unused_since=${since} WHERE code_id=${id}`;
+    await age(id);
     return id;
   }
   const unused = async (id: string) =>
@@ -92,6 +113,7 @@ databaseSuite()("Unused Code database retention", () => {
     await migrateCode();
     await migrateActivation();
     await migrateCode();
+    await migrateSettings();
     await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${owner}::uuid,'owner','local','user',TRUE)`;
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) =>
       key === "core.code.database_unused_days" ? days : CODE_SETTINGS[key].default,
@@ -115,6 +137,7 @@ databaseSuite()("Unused Code database retention", () => {
     await sql`DELETE FROM code.database_deletions`;
     await sql`DELETE FROM audit.events`;
     days = 30;
+    setSystemTime(fixed);
     removed.length = 0;
   });
   afterAll(async () => {
@@ -150,7 +173,7 @@ databaseSuite()("Unused Code database retention", () => {
     const id = await fixture();
     const rollback = await version(id, 2, true);
     await version(id, 3, false);
-    await sql`UPDATE code.databases SET unused_since=${since} WHERE code_id=${id}`;
+    await age(id);
     await sql`INSERT INTO code.activations(id,code_id,version_id,locale,cloud_admin,state)
       VALUES('33333333-3333-4333-8333-333333333333',${id},${rollback}::uuid,'en',TRUE,'waiting')`;
     expect(await unused(id)).toBeNull();
@@ -208,7 +231,7 @@ databaseSuite()("Unused Code database retention", () => {
     expect(removed).toEqual([]);
     expect(await sql`SELECT id FROM code.database_deletions`).toHaveLength(1);
     await sql`UPDATE code.codes SET state='paused' WHERE id=${id}`;
-    await sql`UPDATE code.databases SET unused_since=${since} WHERE code_id=${id}`;
+    await age(id);
     await expect(deleteUnusedCodeDatabase(await confirmation(id), context)).rejects.toMatchObject({ code: "CONFLICT" });
     const next = await fixture();
     expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(1);
@@ -301,6 +324,61 @@ databaseSuite()("Unused Code database retention", () => {
       }),
     ).resolves.toEqual({ deleted: true });
   });
+  test("shortening retention persists the same visible advance notice in Code and admin before expiry", async () => {
+    const id = await fixture();
+    await changeDays(3);
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
+    expect(await readDatabaseDeadline(id)).toMatchObject({ deleteAt: deleteAt.toISOString() });
+    expect((await listUnusedCodeDatabases(context)).items[0]?.deleteAt).toBe(deleteAt.toISOString());
+    expect(await expireUnusedCodeDatabases(new Date(deleteAt.getTime() - 1), signal())).toBe(0);
+    expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(1);
+  });
+  test("re-enabling retention never reuses a deadline from before it was disabled", async () => {
+    const id = await fixture();
+    await changeDays(0);
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    expect((await readDatabaseDeadline(id))?.deleteAt).toBeNull();
+    await changeDays(30);
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
+    expect((await readDatabaseDeadline(id))?.deleteAt).toBe(deleteAt.toISOString());
+    expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(1);
+  });
+  test("an off/on cycle between sweeps and resetting to the default retain advance notice", async () => {
+    const id = await fixture();
+    await changeDays(0);
+    // Remove is the existing settings reset path. No intervening read or sweep observes zero.
+    await sql`DELETE FROM settings.entries WHERE key='core.code.database_unused_days'`;
+    days = 30;
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
+    expect((await readDatabaseDeadline(id))?.deleteAt).toBe(deleteAt.toISOString());
+    expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(1);
+  });
+  test("resource and app owners receive the same persisted visible advance notice", async () => {
+    await fixture("resource");
+    await fixture("app");
+    await changeDays(1);
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
+    expect((await listUnusedCodeDatabases(context)).items.map((row) => row.deleteAt)).toEqual([
+      deleteAt.toISOString(),
+      deleteAt.toISOString(),
+    ]);
+    expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(2);
+  });
+  test("migration never invents elapsed visibility for an old overdue database", async () => {
+    const id = await fixture();
+    await sql`UPDATE code.databases SET unused_shown_at=NULL,unused_delete_at=NULL,unused_policy_revision=NULL WHERE code_id=${id}`;
+    await migrateCode();
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
+    expect((await readDatabaseDeadline(id))?.deleteAt).toBe(deleteAt.toISOString());
+    await sql`UPDATE code.codes SET state='active' WHERE id=${id}`;
+    expect(await readDatabaseDeadline(id)).toBeUndefined();
+    expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(0);
+  });
   test("the administrator list is keyset-paginated without losing or duplicating rows", async () => {
     for (let i = 0; i < 21; i++) await fixture();
     const first = await listUnusedCodeDatabases(context);
@@ -313,7 +391,7 @@ databaseSuite()("Unused Code database retention", () => {
   });
   test("personal owner reminder starts seven days before deletion and sends once per unused period", async () => {
     const id = await fixture();
-    await sql`UPDATE code.databases SET unused_since='2026-11-01T12:00:00.000123Z'::timestamptz WHERE code_id=${id}`;
+    await sql`UPDATE code.databases SET unused_since='2026-11-01T12:00:00.000123Z'::timestamptz, unused_delete_at='2026-12-01T12:00:00.000123Z'::timestamptz WHERE code_id=${id}`;
     const notices: unknown[] = [];
     const sender = {
       sendCodeDatabaseExpiry: async (notice: unknown) => {

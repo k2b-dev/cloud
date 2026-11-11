@@ -139,7 +139,9 @@ A dash means no measurement or access has been recorded. Each row offers
 the URL. Deleting a database preserves its Code and releases the owner quota
 immediately; failed RSQL removals appear under **Cleanup** and retry automatically.
 
-The default deadline is 30 days. Change **Unused database retention (days)**
+The default deadline is 30 days. New and recalculated deletion dates remain
+visible for at least the seven-day reminder period, including after shortening
+or re-enabling retention and for resource or app owners. Change **Unused database retention (days)**
 under **Limits**, or use `core.code.database_unused_days` with
 `cld admin settings apply`; zero switches automatic deletion off. See
 [Code storage](/en/docs/operations/code-storage#database-lifecycle) before

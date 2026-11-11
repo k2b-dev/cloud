@@ -9,6 +9,7 @@ import { authorizeCodeCall } from "./bridge";
 import { CodeIdSchema } from "./contracts";
 import { codeDatabaseOwnerCapacity, reserveCodeDatabaseCapacity } from "./database-budget";
 import { createCodeDatabaseClient } from "./database-client";
+import { readDatabaseDeadline } from "./database-deadline";
 import { codeDatabaseSettings } from "./database-settings";
 import { codeSettings } from "./settings";
 import { readCode } from "./store";
@@ -153,14 +154,7 @@ export async function readCodeDatabaseUsage(
     (Mapping & { unused_since: Date | null })[]
   >`SELECT namespace,connected,server_url,unused_since FROM code.databases WHERE code_id=${codeId}`;
   if (!mapping) return { bytes: 0, limit, state: "unused", owner };
-  const days = await codeSettings.get("core.code.database_unused_days");
-  const unused = mapping.unused_since
-    ? {
-        since: mapping.unused_since.toISOString(),
-        deleteAt: days ? new Date(mapping.unused_since.getTime() + days * 86400000).toISOString() : null,
-        namespace: mapping.namespace,
-      }
-    : undefined;
+  const unused = await readDatabaseDeadline(codeId);
   try {
     const config = await readCodeDatabaseConfig();
     sameServer(mapping, config.url);

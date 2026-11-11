@@ -271,6 +271,10 @@ The default grace period is 30 days. **Export SQLite database** saves a copy;
 administrators. A refused or uncertain request leaves a reload action to check
 the current state. Reactivation or a database declaration ends the deadline.
 
+The deletion date stays visible for at least the seven-day reminder period.
+Shortening or re-enabling retention recalculates it with that same advance
+notice; the Code page and administrator list show the same stored date.
+
 The authorized `database.unused` snapshot contains `since`, nullable `deleteAt`
 (null when automatic deletion is disabled), `namespace` and `canDelete`.
 `CodeDatabaseStatus` shows this notice and `CodeDatabaseDelete` supplies the

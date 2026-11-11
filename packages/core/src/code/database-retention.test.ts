@@ -42,3 +42,18 @@ test("an unreadable retention setting stops destructive maintenance", async () =
     setting.mockRestore();
   }
 });
+
+test("shortening retention preserves the reminder period from the newly visible date", () => {
+  setSystemTime(new Date("2026-12-01T12:00:00.000Z"));
+  expect(databaseDeletionDate(new Date("2026-11-01T12:00:00.000Z"), 3, new Date())?.toISOString()).toBe("2026-12-08T12:00:00.000Z");
+});
+test("re-enabling retention starts a visible reminder period even when already overdue", () => {
+  setSystemTime(new Date("2026-12-01T12:00:00.000Z"));
+  const since = new Date("2026-10-01T12:00:00.000Z");
+  expect(databaseDeletionDate(since, 0, new Date())).toBeNull();
+  expect(databaseDeletionDate(since, 30, new Date())?.toISOString()).toBe("2026-12-08T12:00:00.000Z");
+});
+test("a newly visible date never shortens the ordinary unused period", () => {
+  setSystemTime(new Date("2026-11-02T12:00:00.000Z"));
+  expect(databaseDeletionDate(new Date("2026-11-01T12:00:00.000Z"), 30, new Date())?.toISOString()).toBe("2026-12-01T12:00:00.000Z");
+});

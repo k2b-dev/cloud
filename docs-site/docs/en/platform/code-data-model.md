@@ -65,6 +65,10 @@ Its stable machine name is `code:<resource-type>:<resource-id>` or
 the account or activating Code grants no target permissions. Target managers
 use normal sharing to grant View or Edit.
 
+Unused database mappings persist their deletion date, its visible start and the
+retention-setting generation. Setting writes or resets advance that generation;
+recalculation preserves at least the reminder period before automatic deletion.
+
 ## Immutable versions
 
 A version stores all source files, the exact UTF-8 bundle, `sourceHash`,

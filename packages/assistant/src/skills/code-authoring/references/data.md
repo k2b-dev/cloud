@@ -41,7 +41,9 @@ SQLite snapshot to a new private file; failed downloads remove partial files
 and existing files are never overwritten. There is no database import command.
 Export does not create a database. An inactive Code's database becomes unused
 when neither its latest nor selected version declares `database`. It is deleted
-after the visible deadline (30 days by default). Reactivation or selecting a
+after the visible deadline (30 days by default). New or recalculated deletion
+dates remain visible for at least seven days, including after retention is
+shortened or re-enabled. Reactivation or selecting a
 version that declares `database` ends the deadline. Historical versions alone
 do not preserve it. Editors can export or confirm **Delete now** on the Code
 page; administrators have an **Unused databases** list. Deletion releases the

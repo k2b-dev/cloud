@@ -226,13 +226,13 @@ export const CODE_SETTINGS = {
     default: 30,
     label: "Unused database retention (days)",
     description:
-      "Delete inactive Code databases when neither the latest nor selected version declares database. Zero disables automatic deletion. Reducing or re-enabling retention can delete already overdue databases on the next pass, without a reminder.",
+      "Delete inactive Code databases when neither the latest nor selected version declares database. Zero disables automatic deletion. New or recalculated deletion dates remain visible for at least seven days, including after reducing or re-enabling retention.",
     presentation: {
       translations: {
         de: {
           label: "Frist für ungenutzte Datenbanken (Tage)",
           description:
-            "Löscht Datenbanken inaktiver Codes, wenn weder die neueste noch die ausgewählte Version database deklariert. 0 schaltet die automatische Löschung aus. Verkürzen oder Wiedereinschalten kann bereits überfällige Datenbanken beim nächsten Durchlauf ohne Erinnerung löschen.",
+            "Löscht Datenbanken inaktiver Codes, wenn weder die neueste noch die ausgewählte Version database deklariert. 0 schaltet die automatische Löschung aus. Neue oder neu berechnete Löschdaten sind mindestens sieben Tage vorher sichtbar, auch nach Verkürzen oder Wiedereinschalten.",
         },
       },
     },

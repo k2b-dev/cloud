@@ -5,8 +5,21 @@ export async function migrateUnusedCodeDatabases(tx: SQL): Promise<void> {
   await tx`ALTER TABLE code.databases
     ADD COLUMN IF NOT EXISTS unused_since TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS unused_notice_key TEXT,
+    ADD COLUMN IF NOT EXISTS unused_policy_revision BIGINT,
+    ADD COLUMN IF NOT EXISTS unused_days INTEGER,
+    ADD COLUMN IF NOT EXISTS unused_shown_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS unused_delete_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS last_access_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS last_size_bytes BIGINT CHECK(last_size_bytes>=0)`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS code.database_retention_policy (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK(singleton), revision BIGINT NOT NULL DEFAULT 0
+  ); INSERT INTO code.database_retention_policy(singleton) VALUES(TRUE) ON CONFLICT DO NOTHING`.simple();
+  await tx`CREATE OR REPLACE FUNCTION code.database_retention_setting_changed() RETURNS TRIGGER AS $$
+  BEGIN
+    UPDATE code.database_retention_policy SET revision=revision+1 WHERE singleton;
+    RETURN NULL;
+  END $$ LANGUAGE plpgsql`.simple();
+  await installDatabaseRetentionSettingTrigger(tx);
   // Old mappings retain their namespace. Every new mapping has an immutable incarnation suffix.
   await tx`ALTER TABLE code.databases DROP CONSTRAINT IF EXISTS databases_namespace_check`.simple();
   await tx`DO $$ BEGIN
@@ -51,7 +64,7 @@ export async function migrateUnusedCodeDatabases(tx: SQL): Promise<void> {
     is_unused := code.database_is_unused(cid);
     -- Unchanged status must not wait behind remote provisioning's mapping lock.
     UPDATE code.databases SET unused_since=CASE WHEN is_unused THEN clock_timestamp() ELSE NULL END,
-      unused_notice_key=CASE WHEN is_unused THEN unused_notice_key ELSE NULL END
+      unused_notice_key=NULL, unused_policy_revision=NULL, unused_days=NULL, unused_shown_at=NULL, unused_delete_at=NULL
       WHERE code_id=cid AND (unused_since IS NULL)=is_unused;
     RETURN NEW;
   END $$ LANGUAGE plpgsql`.simple();
@@ -63,4 +76,22 @@ export async function migrateUnusedCodeDatabases(tx: SQL): Promise<void> {
     FOR EACH ROW EXECUTE FUNCTION code.refresh_database_unused()`.simple();
   await tx`UPDATE code.databases SET unused_since=clock_timestamp()
     WHERE unused_since IS NULL AND code.database_is_unused(code_id)`;
+}
+
+/** Core's settings migration runs later on a fresh installation; both entry points install
+ * the same O(1) hook. No database rows are scanned by an operator's settings write.
+ */
+export async function installDatabaseRetentionSettingTrigger(tx: SQL) {
+  await tx`DO $$ BEGIN
+    IF to_regclass('settings.entries') IS NOT NULL AND to_regclass('code.database_retention_policy') IS NOT NULL THEN
+      CREATE OR REPLACE TRIGGER code_database_retention_setting_write
+        AFTER INSERT OR UPDATE ON settings.entries FOR EACH ROW
+        WHEN (NEW.key='core.code.database_unused_days')
+        EXECUTE FUNCTION code.database_retention_setting_changed();
+      CREATE OR REPLACE TRIGGER code_database_retention_setting_delete
+        AFTER DELETE ON settings.entries FOR EACH ROW
+        WHEN (OLD.key='core.code.database_unused_days')
+        EXECUTE FUNCTION code.database_retention_setting_changed();
+    END IF;
+  END $$`.simple();
 }
