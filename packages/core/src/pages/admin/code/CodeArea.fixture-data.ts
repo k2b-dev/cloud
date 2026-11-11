@@ -381,6 +381,12 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
   const refused = base.owner.kind === "app";
   return {
     code: { ...base, activeVersionNumber: 1, createdAt: "2026-10-20T09:00:00.000Z", serviceAccountHandle: "code-7k2q9m4xwt" },
+    database: {
+      bytes: 1048576,
+      limit: 104857600,
+      state: "ready",
+      owner: { reserved: 209715200, limit: 1048576000 },
+    },
     pendingVersionId: V.rechnungen2,
     versions: [
       {
