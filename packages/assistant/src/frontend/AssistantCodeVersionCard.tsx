@@ -1,6 +1,7 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { codePageMessages } from "@k2b/cloud/ssr/code-page/messages";
 import { codeAutomationName, codeOperationText, codeTargetLabel, codeTargetName } from "@k2b/cloud/ssr/code-page/targets";
+import { describeCodeTiming } from "@k2b/cloud/ssr/code-schedule";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { loadCodeNextRun } from "../code-summary";
@@ -38,6 +39,12 @@ const switchedOnWhen = (at: string, locale: string, timeZone: string, now: Date)
   } catch {
     return formatCodeTime(at, locale, timeZone);
   }
+};
+
+/** The service account a resource or app Code runs as, named after its place or app when this person may see it. */
+const accountName = (preview: CodeVersionPreview, t: ReturnType<typeof codePageMessages.resolve>["t"]): string | null => {
+  const name = preview.ownerKind === "app" ? preview.appName : preview.ownerKind === "resource" ? preview.place?.title : null;
+  return name ? t.accountName({ name }) : null;
 };
 
 /** Whether the version may do more than call apps: pages, events, the internet or its own database. */
@@ -83,12 +90,21 @@ export default function AssistantCodeVersionCard(props: {
   const [loaded, setLoaded] = createSignal<Loaded>(null);
   const [activation, setActivation] = createSignal<Activation>({ kind: "idle" });
   let disposed = false;
+  let switchButton: HTMLButtonElement | undefined;
+  /** The switch had keyboard focus when it was pressed: focus follows to the result, so it is never lost with the button. */
+  let returnFocus = false;
+  const focusSwitch = () => {
+    if (!returnFocus) return;
+    returnFocus = false;
+    queueMicrotask(() => switchButton?.focus());
+  };
   onCleanup(() => {
     disposed = true;
   });
   const [nextRun, setNextRun] = createSignal<string | null>(null);
   const load = async () => {
-    setLoaded(null);
+    // A reload after a step keeps the card as it is until the new state arrives, so nothing jumps under the pointer.
+    if (typeof loaded() !== "object") setLoaded(null);
     const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
     // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
     setNextRun(
@@ -107,14 +123,18 @@ export default function AssistantCodeVersionCard(props: {
   const settle = (status: CodeVersionActivation): boolean => {
     if (status.state === "active") {
       pending.write(null);
-      setActivation({ kind: "idle" });
       props.onActivated?.();
-      void load();
+      // The switch stays busy until the card reads the new state, so it never offers itself again in between.
+      void load().then(() => {
+        returnFocus = false;
+        setActivation({ kind: "idle" });
+      });
       return true;
     }
     if (status.state === "failed" || status.state === "cancelled") {
       finish();
       setActivation({ kind: "failed", reason: status.failure?.reason ?? null });
+      focusSwitch();
       return true;
     }
     setActivation({ kind: "progress", state: status.state });
@@ -127,7 +147,9 @@ export default function AssistantCodeVersionCard(props: {
       const read = await readCodeVersionActivation(props.codeId, activationId);
       if (read.ok && settle(read.status)) return;
     }
-    if (!disposed) setActivation({ kind: "unknown" });
+    if (disposed) return;
+    setActivation({ kind: "unknown" });
+    focusSwitch();
   };
   /** Reads the status only; it never starts an activation. */
   const check = async () => {
@@ -141,9 +163,11 @@ export default function AssistantCodeVersionCard(props: {
     if (read.notFound) {
       pending.write(null);
       setActivation({ kind: "failed", reason: null });
+      focusSwitch();
       return;
     }
     setActivation({ kind: "unknown" });
+    focusSwitch();
   };
   const start = async () => {
     setActivation({ kind: "progress", state: "pending" });
@@ -157,6 +181,7 @@ export default function AssistantCodeVersionCard(props: {
       // Core refused before acting; a later attempt is a new activation.
       finish();
       setActivation({ kind: "failed", reason: started.message });
+      focusSwitch();
       return;
     }
     // The answer was lost: Core may have accepted. Its status says what happened.
@@ -248,7 +273,19 @@ export default function AssistantCodeVersionCard(props: {
       </Match>
       <Match when={preview()?.running === props.number}>
         <div class="assistant-code-version__on">
-          <p class="assistant-code-version__line" data-tone="ok" data-state="on" role="status">
+          <p
+            class="assistant-code-version__line"
+            data-tone="ok"
+            data-state="on"
+            role="status"
+            tabindex="-1"
+            ref={(line) => {
+              // Switched on from the keyboard: the result takes focus, and Tab goes on to its links.
+              if (!returnFocus) return;
+              returnFocus = false;
+              queueMicrotask(() => line.focus());
+            }}
+          >
             <i class="ti ti-circle-check" aria-hidden="true" />
             <Show when={preview()?.activated} fallback={t().codeVersionOnPlain({ version: props.number })}>
               {(activated) => {
@@ -323,7 +360,12 @@ export default function AssistantCodeVersionCard(props: {
             <Show when={current().automations?.length}>
               <p class="assistant-code-version__note">
                 {current()
-                  .automations?.map((entry) => codeAutomationName(entry, current().place?.title ?? ""))
+                  .automations?.map((entry) => {
+                    const name = codeAutomationName(entry, current().place?.title ?? "", locale());
+                    // A reviewed title says what it does; when it runs follows, as on the Code page.
+                    const timing = entry.title === undefined ? null : describeCodeTiming(entry, locale());
+                    return timing ? `${name} (${timing})` : name;
+                  })
                   .join(" · ")}
               </p>
             </Show>
@@ -375,12 +417,15 @@ export default function AssistantCodeVersionCard(props: {
                         {(entry) => (
                           <MayDoRow
                             icon={entry.route?.public ? "ti ti-lock-open" : "ti ti-lock"}
-                            what={codeAutomationName(entry, current().place?.title ?? "")}
+                            what={codeAutomationName(entry, current().place?.title ?? "", locale())}
                             where={
                               entry.route?.public
                                 ? pageT().routePublic
                                 : pageT().routePrivate({
-                                    owner: current().ownerKind === "person" ? { kind: "you" } : { kind: "account", name: null },
+                                    owner:
+                                      current().ownerKind === "person"
+                                        ? { kind: "you" }
+                                        : { kind: "account", name: accountName(current(), pageT()) },
                                   })
                             }
                           />
@@ -445,35 +490,19 @@ export default function AssistantCodeVersionCard(props: {
                 </p>
               )}
             </Show>
-            <Show when={progressText()}>
-              {(text) => (
-                <p class="assistant-code-version__note" role="status">
-                  <Show when={busy()}>
-                    <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-                  </Show>
-                  <span>{text()}</span>
-                </p>
-              )}
-            </Show>
-            <Show when={failedReason()}>
-              {(failed) => (
-                <p class="assistant-code-version__note text-danger" role="alert">
-                  <i class="ti ti-alert-triangle" aria-hidden="true" />
-                  <span>
-                    {failed().reason ?? t().codeVersionFailed} {t().codeVersionNothingChanged({ version: current().running })}
-                  </span>
-                </p>
-              )}
-            </Show>
             <div class="assistant-code-version__actions">
               <Show when={current().readiness.state === "ready"}>
                 <Button
+                  ref={switchButton}
                   type="button"
                   size="sm"
                   variant="primary"
                   disabled={!current().allowed.allowed || busy()}
                   loading={spinning()}
-                  onClick={() => void (activation().kind === "unknown" ? check() : start())}
+                  onClick={() => {
+                    returnFocus = document.activeElement === switchButton;
+                    void (activation().kind === "unknown" ? check() : start());
+                  }}
                 >
                   <i class="ti ti-power" aria-hidden="true" />
                   {activation().kind === "unknown"
@@ -484,6 +513,31 @@ export default function AssistantCodeVersionCard(props: {
                 </Button>
               </Show>
               {diffLink()}
+              <Show when={current().readiness.state === "ready"}>
+                {/* One fixed slot after the actions: progress and its result appear here, so the buttons never move. */}
+                <div class="assistant-code-version__status" role="status">
+                  <Show when={progressText()}>
+                    {(text) => (
+                      <p class="assistant-code-version__note">
+                        <Show when={busy()}>
+                          <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
+                        </Show>
+                        <span>{text()}</span>
+                      </p>
+                    )}
+                  </Show>
+                  <Show when={failedReason()}>
+                    {(failed) => (
+                      <p class="assistant-code-version__note text-danger" role="alert">
+                        <i class="ti ti-alert-triangle" aria-hidden="true" />
+                        <span>
+                          {failed().reason ?? t().codeVersionFailed} {t().codeVersionNothingChanged({ version: current().running })}
+                        </span>
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              </Show>
             </div>
           </div>
         )}

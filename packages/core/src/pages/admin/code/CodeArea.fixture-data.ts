@@ -164,6 +164,17 @@ const diffLines = () => {
   return rows;
 };
 
+/** A Space the Code follows events of, named by type and ID as any foreign place is. */
+const FIXTURE_SPACE_TARGET = {
+  key: "spaces.space\u0000k7qm2x9a",
+  ref: { type: "spaces.space", id: "k7qm2x9a" },
+  title: null,
+  typeTitle: "Space",
+  icon: "ti ti-layout-board",
+  own: false,
+  href: "/app/spaces/k7qm2x9a",
+};
+
 export const fixtureApprovalDetail = (
   variant: "normal" | "first" | "newer" | "own" | "sole" | "difffail" | "approved" | "rejected" = "normal",
 ): CodeAdminApprovalDetail => {
@@ -216,7 +227,15 @@ export const fixtureApprovalDetail = (
               },
             ],
     staleComparison: false,
-    automations: [{ entrypoint: "lieferungenEintragen", title: "Lieferungen eintragen" }, { entrypoint: "legacyJob" }],
+    automations: [
+      { entrypoint: "lieferungenEintragen", title: "Lieferungen eintragen", cron: "0 8 * * 1-5" },
+      { entrypoint: "legacyJob" },
+      { entrypoint: "wochenbericht", cron: "0 8 * * 1" },
+      {
+        entrypoint: "event:spaces.item.due@1:place:0",
+        event: { type: "spaces.item.due", title: "Aufgabe fällig", place: FIXTURE_SPACE_TARGET },
+      },
+    ],
     permissions: first
       ? [
           { operation: "mail.message.list", target: { type: "mail.mailbox", id: "m_info" }, file: "code.ts", line: 5, change: "added" },
@@ -452,8 +471,13 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
         id: "90000000-0000-4000-8000-000000000001",
         codeId: base.id,
         versionId: "c0000000-0000-4000-8000-000000000001",
-        trigger: "schedule",
-        entrypoint: "default",
+        trigger: "event",
+        entrypoint: "event:spaces.item.due@1:place:0",
+        // Named from the version it ran, as its automation is on the Code page.
+        automation: {
+          entrypoint: "event:spaces.item.due@1:place:0",
+          event: { type: "spaces.item.due", title: "Aufgabe fällig", place: FIXTURE_SPACE_TARGET },
+        },
         state: "succeeded",
         outcome: "succeeded",
         createdAt: "2026-11-01T07:42:00.000Z",

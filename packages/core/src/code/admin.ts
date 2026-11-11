@@ -1,13 +1,14 @@
 import { sql } from "@k2b/cloud";
 import { runAiStructured } from "@k2b/cloud/ai";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
-import { audit, logger } from "@k2b/cloud/services";
+import { audit, coreSettings, logger } from "@k2b/cloud/services";
 import { listPending, presentPendingApproval } from "@k2b/cloud/services/approvals";
 import type { CodePageRefusal } from "@k2b/cloud/ssr/code-page/data";
 import { catalogCache, presentRefusedCall } from "@k2b/cloud/ssr/code-page/load";
 import { diffArrays } from "diff";
 import { z } from "zod";
 import { type CodeContext, CodeDataError } from "./access";
+import { type CodeAutomationView, describeCodeAutomations } from "./automation-view";
 import type { Code, CodeOwner, CodeRun, CodeSourceFiles } from "./contracts";
 import { listCodeCleanupJobs } from "./lifecycle";
 import type { CodeCleanupJob } from "./lifecycle-contracts";
@@ -89,8 +90,8 @@ export type CodeAdminApprovalDetail = {
   why: CodeAdminWhyRow[];
   ai: boolean;
   database?: boolean;
-  /** Reviewed automation names; identifiers remain the keys. */
-  automations?: Array<{ entrypoint: string; title?: string; route?: { public: boolean } }>;
+  /** Automations named as the Code page names them; identifiers remain the keys. */
+  automations?: CodeAutomationView[];
   newer: { versionId: string; number: number; author: string | null; submittedAt: string } | null;
   /** Only the advisory C5 eligibility; the decision rechecks it under locks. */
   canApprove: boolean;
@@ -125,7 +126,8 @@ export type CodeAdminCodeFilter = { status?: CodeAdminCodeStatus; app?: string; 
 export type CodeAdminCodeDetail = {
   code: CodeAdminCode & { activeVersionNumber: number | null; createdAt: string; serviceAccountHandle: string | null };
   versions: Awaited<ReturnType<typeof listCodeVersions>>["items"];
-  runs: CodeRun[];
+  /** Recent runs, each with its automation as its own version declares it, when that version can be read. */
+  runs: Array<CodeRun & { automation?: CodeAutomationView }>;
   cleanup: CodeCleanupJob[];
   pendingVersionId: string | null;
   /**
@@ -484,12 +486,14 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
     permissions,
     why: manifest ? await whyRows(owner, row.created_by, manifest.policyRows) : [],
     ai: manifest?.ai ?? false,
-    automations:
-      manifest?.entrypoints.map(({ entrypoint, title, route }) => ({
-        entrypoint,
-        ...(title === undefined ? {} : { title }),
-        ...(route ? { route } : {}),
-      })) ?? [],
+    automations: manifest
+      ? await describeCodeAutomations(
+          manifest.entrypoints,
+          automationOwner(owner, row.code_id),
+          catalogCache(context.locale ?? "en"),
+          await coreSettings.get<string>("app.timezone"),
+        )
+      : [],
     newer: newer ? { versionId: newer.id, number: newer.number, author: newer.author, submittedAt: iso(newer.created_at) } : null,
     canApprove,
     own: row.created_by === admin.id,
@@ -618,12 +622,41 @@ export async function readCodeAdminCode(codeId: string, context: CodeContext): P
       serviceAccountHandle: row.service_account_handle,
     },
     versions: versions.items,
-    runs: runs.items,
+    runs: await withRunAutomations(runs.items, code.owner, codeId, context),
     cleanup: cleanup.items,
     pendingVersionId: pending[0]?.version_id ?? null,
     refusal:
       code.owner.kind === "app" && last?.state === "failed" && last.firstRefusedCallOrdinal ? await appCodeRefusal(last, context) : null,
   };
+}
+
+/** Describes a Code's places as the Code page does: its own place unnamed, everything else by type and ID. */
+const automationOwner = (owner: CodeOwner, codeId: string) => (owner.kind === "resource" ? { ref: owner.ref, title: "" } : { codeId });
+
+/** Each run with its automation from the version it ran, so it reads like the Code page's automation; no app is asked. */
+async function withRunAutomations(
+  runs: CodeRun[],
+  owner: CodeOwner,
+  codeId: string,
+  context: CodeContext,
+): Promise<CodeAdminCodeDetail["runs"]> {
+  const ids = [...new Set(runs.map((run) => run.versionId))];
+  if (!ids.length) return runs;
+  const rows = await sql<{ id: string; manifest: unknown }[]>`SELECT id,manifest FROM code.versions
+    WHERE code_id=${codeId} AND id=ANY(${sql.array(ids, "uuid")})`;
+  const catalog = catalogCache(context.locale ?? "en");
+  const timeZone = await coreSettings.get<string>("app.timezone");
+  const named = new Map<string, CodeAutomationView>();
+  for (const row of rows) {
+    const used = new Set(runs.filter((run) => run.versionId === row.id).map((run) => run.entrypoint));
+    const entrypoints = parseManifest(row.manifest)?.entrypoints.filter((entry) => used.has(entry.entrypoint)) ?? [];
+    for (const automation of await describeCodeAutomations(entrypoints, automationOwner(owner, codeId), catalog, timeZone))
+      named.set(`${row.id}\u0000${automation.entrypoint}`, automation);
+  }
+  return runs.map((run) => {
+    const automation = named.get(`${run.versionId}\u0000${run.entrypoint}`);
+    return automation ? { ...run, automation } : run;
+  });
 }
 
 /** Reads the refused call once; Core returns it only to editors of the Code, and nobody here asks the target's app. */

@@ -162,6 +162,8 @@ type Scenario = {
   panelAccessMissing?: boolean;
   /** What Core answers for a version card, which then renders alone in the panel's width. */
   cardPreview?: CodeVersionPreview;
+  /** Core's answer to switching the card's version on, held back until `answered` settles. */
+  activation?: { answered: Promise<void>; status: { state: string; failure: { reason: string } | null } };
   /** One personal Code with the shared Code page. */
   detail?: boolean;
   /** Waiting for you, with one chat question and Code of a place that needs the person. */
@@ -421,6 +423,10 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
     }
     if (url.pathname === "/api/code/activation/preview" && scenario.cardPreview)
       return route.fulfill({ json: { data: scenario.cardPreview } });
+    if (url.pathname === "/api/code/activate" && scenario.activation) {
+      await scenario.activation.answered;
+      return route.fulfill({ json: { data: scenario.activation.status } });
+    }
     const capability = /^\/api\/capabilities\/v1\/queries\/(\w+)\/([\w.]+)$/.exec(url.pathname);
     if (capability) {
       const [, appId, capabilityId] = capability;
@@ -722,6 +728,72 @@ describe("Gustav", () => {
           await h.close();
         }
       }
+  }, 120_000);
+
+  test("a check keeps the switch in place, says its progress beside it, and hands focus back with the result", async () => {
+    for (const view of [panel, phone]) {
+      let answer = () => {};
+      const answered = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      const status = { state: "failed", failure: { reason: "Die Richtlinie erlaubt das nicht mehr." } };
+      const h = await open(view, { cardPreview: cardPreview(), activation: { answered, status } }, { path: "/app/assistant/panel" });
+      try {
+        const card = h.page.locator(".assistant-code-version");
+        const switchOn = card.getByRole("button", { name: "Einschalten", exact: true });
+        await switchOn.waitFor();
+        const at = async () => {
+          const box = await card.locator(".assistant-code-version__actions button").boundingBox();
+          return box && { x: Math.round(box.x), y: Math.round(box.y) };
+        };
+        const before = await at();
+        await shot(h.page, `l19-karte-vorher-${view.name}-light`);
+        await switchOn.focus();
+        await h.page.keyboard.press("Enter");
+        await card.getByText("Prüft …").waitFor();
+        expect(await at()).toEqual(before);
+        await shot(h.page, `l19-karte-pruefung-${view.name}-light`);
+        answer();
+        const again = card.getByRole("button", { name: "Erneut versuchen", exact: true });
+        await again.waitFor();
+        await card.getByText("Die Richtlinie erlaubt das nicht mehr.", { exact: false }).waitFor();
+        expect(await at()).toEqual(before);
+        // The switch was pressed from the keyboard: focus returns to it, so Enter tries again.
+        expect(await again.evaluate((element) => element === document.activeElement)).toBe(true);
+        expect(h.errors).toEqual([]);
+        await shot(h.page, `l19-karte-nachher-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
+
+  test("a schedule says when it runs and an app's pages name its service account", async () => {
+    const preview = cardPreview({
+      ownerKind: "app",
+      appName: "Werkstattbuch",
+      place: null,
+      page: null,
+      targets: [],
+      automations: [
+        { entrypoint: "wochenbericht", cron: "0 8 * * 1" },
+        { entrypoint: "morgen", title: "Morgenübersicht", cron: "0 7 * * 1-5" },
+        { entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } },
+      ],
+    });
+    for (const view of [desktop, panel, phone]) {
+      const h = await open(view, { cardPreview: preview }, { path: "/app/assistant/panel" });
+      try {
+        const card = h.page.locator(".assistant-code-version");
+        await card.getByText("Montags 08:00 · Morgenübersicht (Mo–Fr 07:00) · GET /").waitFor();
+        expect(await card.textContent()).toContain("den Rechten des Dienstkontos „Code von Werkstattbuch“");
+        expect(await card.textContent()).not.toContain("wochenbericht");
+        expect(h.errors).toEqual([]);
+        await shot(h.page, `l19-karte-zeitplan-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
   }, 120_000);
 
   test("a personal Code opens on the shared Code page, runs as its person, and keeps My apps & automations marked", async () => {

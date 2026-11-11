@@ -50,3 +50,15 @@ export const describeCodeSchedule = (cron: string, locale: string): string => {
   if (day !== null && dayOfWeek === "*") return lang === "de" ? `am ${day}. jedes Monats ${time}` : `monthly on day ${day} ${time}`;
   return cron;
 };
+
+/**
+ * When a scheduled automation runs: a one-time instant with its date, time and zone, else its repeating schedule; null
+ * for an automation that no schedule starts. The Code page, the switch-on card and the administration read the same text.
+ */
+export const describeCodeTiming = (automation: { cron?: string | null; at?: string; timeZone?: string }, locale: string): string | null => {
+  if (automation.at) {
+    const timeZone = automation.timeZone ?? "UTC";
+    return `${new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(automation.at))} (${timeZone})`;
+  }
+  return automation.cron ? describeCodeSchedule(automation.cron, locale) : null;
+};

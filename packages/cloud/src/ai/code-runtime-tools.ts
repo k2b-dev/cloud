@@ -14,6 +14,7 @@ import { CodeToolFailure } from "./browser-code-contracts";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
+import { codeRuntimeMessages } from "./code-runtime-messages";
 import { aiConversations } from "./store";
 import type { AiApprovalTarget, AiWebsiteReceipt } from "./types";
 
@@ -70,7 +71,8 @@ export const runManagedCodeTool =
     });
     const { actor } = authority;
     await authorizeCodeExecution(context.conversationId, context.turnId, actor.user.id);
-    await context.reportProgress?.(context.locale?.startsWith("de") ? "Ausführungshost verbinden" : "Connecting execution host");
+    const t = codeRuntimeMessages.resolve(context.locale ? [context.locale] : []).t;
+    await context.reportProgress?.(t.connecting);
     const app = await getApp("assistant");
     if (!app) throw new Error("Assistant code host is unavailable");
     const issue = async (audience: { targetAppId: string; callingAppId: string; operation: string }) => {
@@ -100,12 +102,7 @@ export const runManagedCodeTool =
           if (context.signal.aborted || !(error instanceof DOMException && error.name === "TimeoutError")) throw error;
           if (Date.now() < giveUpAt) continue;
           log.warn("Code call gave up on identity issuance", { tool: name, error: error.message });
-          throw new Error(
-            context.locale?.startsWith("de")
-              ? "Der Identitätsdienst hat nicht rechtzeitig geantwortet. Prüfe, ob dieser Aufruf schon gestartet ist, bevor du ihn erneut ausführst."
-              : "The identity service did not respond in time. Check whether this call already started before running it again.",
-            { cause: error },
-          );
+          throw new Error(t.identityTimeout, { cause: error });
         }
       }
     };
@@ -168,6 +165,7 @@ export async function waitForManagedCodeCall(
     reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
   },
 ): Promise<z.infer<ReturnType<typeof z.json>>> {
+  const t = codeRuntimeMessages.resolve(context.locale ? [context.locale] : []).t;
   const seen = new Set<string>();
   let lastPhase: string | undefined;
   let receiptsAfter = 0;
@@ -181,20 +179,7 @@ export async function waitForManagedCodeCall(
     if (state.moreReceipts) continue;
     if (state.phase && state.phase !== lastPhase) {
       lastPhase = state.phase;
-      const labels = context.locale?.startsWith("de")
-        ? {
-            starting: "Ausführungshost startet",
-            running: "Code wird ausgeführt",
-            busy: "Wartet auf laufende Ausführung",
-            waiting_for_user: "Wartet auf Freigabe",
-          }
-        : {
-            starting: "Starting execution host",
-            running: "Executing code",
-            busy: "Waiting for current execution",
-            waiting_for_user: "Waiting for approval",
-          };
-      await context.reportProgress?.(labels[state.phase]);
+      await context.reportProgress?.(t[`phase_${state.phase}`]);
     }
     // Replay the same ordered approval history when Nessi resumes this server tool.
     // Skipping already resolved reviews would shift Nessi's child action IDs.

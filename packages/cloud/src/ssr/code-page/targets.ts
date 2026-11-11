@@ -1,5 +1,6 @@
 import type { CodePageEvent, CodePageTarget } from "./data";
 import type { CodePageMessages } from "./messages";
+import { describeCodeTiming } from "./schedule";
 
 /**
  * What a Code version calls at which target, as its checked manifest records it. Browser-safe: the Code page, Core's
@@ -78,9 +79,9 @@ export const codeOperationText = (operation: string, labels: CodeOperationLabels
   return label ? (label.app ? `${label.title} · ${label.app}` : label.title) : operation;
 };
 
-/** A foreign target is never named: its type and ID only, like cron names a path. */
+/** A foreign target is never named: its type and ID only, like cron names a path. So is the own place whose name is unknown. */
 export const codeTargetName = (target: CodePageTarget, ownerTitle: string): string => {
-  if (target.own) return ownerTitle;
+  if (target.own && ownerTitle) return ownerTitle;
   if (target.ref.type === "app") return target.title ?? target.ref.id;
   return [target.typeTitle, target.ref.id].filter(Boolean).join(" ");
 };
@@ -93,17 +94,40 @@ export const codeTargetLabel = (target: CodePageTarget, ownerTitle: string, t: C
   return t.unknownTarget({ id: target.ref.id });
 };
 
+/** What names an automation: its reviewed title, the event or page it serves, or the schedule that starts it. */
+export type CodeAutomationNaming = {
+  entrypoint: string;
+  title?: string;
+  event?: CodePageEvent;
+  route?: { method: string; path: string };
+  cron?: string | null;
+  at?: string;
+  timeZone?: string;
+};
+
 /**
  * An automation as people read it: its reviewed title, else an event by its title and place, a page by its method and
- * path, else its stable name.
+ * path, a schedule by when it runs, else its stable name.
  */
-export const codeAutomationName = (
-  automation: { entrypoint: string; title?: string; event?: CodePageEvent; route?: { method: string; path: string } },
+export const codeAutomationName = (automation: CodeAutomationNaming, ownerTitle: string, locale: string): string => {
+  if (automation.title !== undefined) return automation.title;
+  if (automation.event) return `${automation.event.title ?? automation.event.type} · ${codeTargetName(automation.event.place, ownerTitle)}`;
+  if (automation.route) return `${automation.route.method} ${automation.route.path}`;
+  const timing = describeCodeTiming(automation, locale);
+  return timing ? timing.charAt(0).toLocaleUpperCase(locale) + timing.slice(1) : automation.entrypoint;
+};
+
+/**
+ * A run as people read it: the title its own version gave its entrypoint, else that entrypoint named as the listed
+ * automation of the same name is, else the stable name itself.
+ */
+export const codeRunName = (
+  run: { entrypoint: string; title?: string },
+  automations: readonly CodeAutomationNaming[] | null | undefined,
   ownerTitle: string,
-): string =>
-  automation.title ??
-  (automation.event
-    ? `${automation.event.title ?? automation.event.type} · ${codeTargetName(automation.event.place, ownerTitle)}`
-    : automation.route
-      ? `${automation.route.method} ${automation.route.path}`
-      : automation.entrypoint);
+  locale: string,
+): string => {
+  if (run.title !== undefined) return run.title;
+  const automation = automations?.find((entry) => entry.entrypoint === run.entrypoint);
+  return automation ? codeAutomationName(automation, ownerTitle, locale) : run.entrypoint;
+};
