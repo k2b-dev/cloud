@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { announceSavedPrivacyTimer, onPrivacyTimer, savePrivacyTimer } from "../browser/privacy-timer";
-import { PRIVACY_TIMER_CHOICES, type PrivacyTimerSeconds } from "../contracts/screen-preferences";
+import { PRIVACY_TIMER_CHOICES, type PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import { privacyScreenMessages, privacyTimerLabel } from "./privacy-screen-messages";
 
 /**

@@ -1,4 +1,4 @@
-import { type PrivacyTimerSeconds, PrivacyTimerSecondsSchema } from "../contracts/screen-preferences";
+import { isPrivacyTimerSeconds, type PrivacyTimerSeconds } from "../contracts/privacy-timer";
 
 /** Every Cloud tab of this browser hears timer changes and the privacy screen's state on this channel. */
 export const PRIVACY_CHANNEL = "cloud.privacy";
@@ -26,8 +26,8 @@ export const publishPrivacyTimer = (seconds: PrivacyTimerSeconds) =>
 
 export const onPrivacyTimer = (listener: (seconds: PrivacyTimerSeconds) => void): (() => void) => {
   const handle = (event: Event) => {
-    const parsed = PrivacyTimerSecondsSchema.safeParse((event as CustomEvent<unknown>).detail);
-    if (parsed.success) listener(parsed.data);
+    const seconds = (event as CustomEvent<unknown>).detail;
+    if (isPrivacyTimerSeconds(seconds)) listener(seconds);
   };
   window.addEventListener(PRIVACY_TIMER_EVENT, handle);
   return () => window.removeEventListener(PRIVACY_TIMER_EVENT, handle);

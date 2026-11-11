@@ -1,6 +1,6 @@
 import { Button, keyboardPlatform } from "@k2b/ui";
 import { render } from "solid-js/web";
-import type { PrivacyTimerSeconds } from "../contracts/screen-preferences";
+import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import {
   onPrivacyTimer,
   PRIVACY_CHANNEL,

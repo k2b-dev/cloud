@@ -3,7 +3,7 @@ import { createContext, type JSX, useContext } from "solid-js";
 import type { AppSearchLink } from "../contracts/app";
 import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
 import type { RailSnapshot } from "../contracts/rail-preferences";
-import type { PrivacyTimerSeconds } from "../contracts/screen-preferences";
+import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
 import type { PanelProvider } from "./app-navigation";

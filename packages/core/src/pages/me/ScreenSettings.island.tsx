@@ -1,4 +1,4 @@
-import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/screen-preferences";
+import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/privacy-timer";
 import { createPrivacyTimerChoice, PRIVACY_SHORTCUT, parsePrivacyTimer, requestPrivacyScreen } from "@k2b/cloud/ssr/privacy-timer-choice";
 import { createSharedWorkstationSwitch } from "@k2b/cloud/ssr/profile-actions";
 import type { KeyboardPlatform } from "@k2b/ui";

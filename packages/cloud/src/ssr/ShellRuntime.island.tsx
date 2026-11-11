@@ -31,7 +31,7 @@ import {
   serializeAnnouncementCookieState,
 } from "../contracts/announcement-cookie";
 import type { AnnouncementDisplayEntry } from "../contracts/announcements";
-import type { PrivacyTimerSeconds } from "../contracts/screen-preferences";
+import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import { createGlobalSearchHost } from "./global-search-host";
 import { LayoutHelpDocuments } from "./layout-help-registry";
 import { installPageTrailRuntime } from "./page-trail-runtime";
