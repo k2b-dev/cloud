@@ -715,7 +715,7 @@
 .assistant-code-version__actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.375rem;
 }
 /*
@@ -726,6 +726,8 @@
   flex: 1 1 12rem;
   min-width: 0;
   min-height: 1lh;
+  /* Its first line sits level with a small button; more lines grow downward and never move the buttons. */
+  padding-block-start: calc((1.75rem - 1lh) / 2);
   padding-inline-start: 0.25rem;
   font-size: 0.78125rem;
 }

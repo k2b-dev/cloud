@@ -93,10 +93,15 @@ export default function AssistantCodeVersionCard(props: {
   let switchButton: HTMLButtonElement | undefined;
   /** The switch had keyboard focus when it was pressed: focus follows to the result, so it is never lost with the button. */
   let returnFocus = false;
+  /** Focus is still where the press left it, nowhere or in this card; a person who moved on keeps their place. */
+  const focusStayed = () => {
+    const active = document.activeElement;
+    return !active || active === document.body || !!switchButton?.closest(".assistant-code-version")?.contains(active);
+  };
   const focusSwitch = () => {
     if (!returnFocus) return;
     returnFocus = false;
-    queueMicrotask(() => switchButton?.focus());
+    if (focusStayed()) queueMicrotask(() => switchButton?.focus());
   };
   onCleanup(() => {
     disposed = true;
@@ -283,7 +288,7 @@ export default function AssistantCodeVersionCard(props: {
               // Switched on from the keyboard: the result takes focus, and Tab goes on to its links.
               if (!returnFocus) return;
               returnFocus = false;
-              queueMicrotask(() => line.focus());
+              if (focusStayed()) queueMicrotask(() => line.focus());
             }}
           >
             <i class="ti ti-circle-check" aria-hidden="true" />

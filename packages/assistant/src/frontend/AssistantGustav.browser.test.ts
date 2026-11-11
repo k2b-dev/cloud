@@ -731,12 +731,16 @@ describe("Gustav", () => {
   }, 120_000);
 
   test("a check keeps the switch in place, says its progress beside it, and hands focus back with the result", async () => {
-    for (const view of [panel, phone]) {
+    // Wide, the status sits beside the switch and a long refusal wraps there; narrow, it takes its own line below.
+    const chat: View = { name: "720", width: 720, height: 900, touch: false };
+    for (const view of [desktop, chat, panel, phone]) {
       let answer = () => {};
       const answered = new Promise<void>((resolve) => {
         answer = resolve;
       });
-      const status = { state: "failed", failure: { reason: "Die Richtlinie erlaubt das nicht mehr." } };
+      const reason =
+        "Die Richtlinie erlaubt das nicht mehr. Ein Cloud-Admin hat die Regeln für Code an diesem Postfach geändert, nachdem die Version geprüft wurde.";
+      const status = { state: "failed", failure: { reason } };
       const h = await open(view, { cardPreview: cardPreview(), activation: { answered, status } }, { path: "/app/assistant/panel" });
       try {
         const card = h.page.locator(".assistant-code-version");
@@ -756,7 +760,7 @@ describe("Gustav", () => {
         answer();
         const again = card.getByRole("button", { name: "Erneut versuchen", exact: true });
         await again.waitFor();
-        await card.getByText("Die Richtlinie erlaubt das nicht mehr.", { exact: false }).waitFor();
+        await card.getByText(reason, { exact: false }).waitFor();
         expect(await at()).toEqual(before);
         // The switch was pressed from the keyboard: focus returns to it, so Enter tries again.
         expect(await again.evaluate((element) => element === document.activeElement)).toBe(true);

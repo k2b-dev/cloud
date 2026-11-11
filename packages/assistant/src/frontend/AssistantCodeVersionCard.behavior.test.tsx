@@ -423,3 +423,27 @@ test("a schedule says when it runs, and an app's Code names the service account 
   expect(dom.root.textContent).not.toContain("weekly");
   expect(dom.root.textContent).toContain("runs with the rights of the service account “Code of Mail”");
 });
+
+test("a person who moved on while the switch waited keeps their place when the result arrives", async () => {
+  let answer = () => {};
+  const answered = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview() } }),
+    activate: async () => {
+      await answered;
+      return { json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } };
+    },
+  });
+  const switchOn = button(dom.root, "Switch on")!;
+  switchOn.focus();
+  switchOn.click();
+  const composer = dom.document.createElement("textarea");
+  dom.document.body.append(composer);
+  composer.focus();
+  answer();
+  await tick();
+  expect(button(dom.root, "Try again")).toBeDefined();
+  expect(dom.document.activeElement).toBe(composer);
+});
