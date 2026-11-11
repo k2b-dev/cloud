@@ -546,14 +546,17 @@ describe("@k2b/ui files and media runtime behavior", () => {
     // No counter: the edge buttons and the strip say where one is.
     expect(dom.root.textContent).not.toContain("2 / 3");
 
-    // The caller owns the index: an index out of range shows the nearest file.
+    // The caller owns the index: an index out of range shows the nearest file. Each file resolves its address first.
     setIndex(99);
+    await flush();
     expect(image()?.src).toEndWith("/c.png");
     expect(edge("next").style.visibility).toBe("hidden");
     setIndex(-5);
+    await flush();
     expect(image()?.src).toEndWith("/a.png");
     expect(edge("previous").style.visibility).toBe("hidden");
     edge("next").click();
+    await flush();
     expect(image()?.src).toEndWith("/b.png");
 
     // A file's own actions sit before Download and act on that file only; Open leads when the caller gives a target.
