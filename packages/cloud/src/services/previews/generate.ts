@@ -115,5 +115,10 @@ export async function generatePreview(
     );
   const [small, large] = prepared.variants;
   if (!small || !large) throw new PreviewGenerationError("failed", "encoding_failed");
-  return { ...artifacts, small: small.data, large: large.data };
+  // The worker's bytes carry no media type of their own; the stored manifest and the response need it.
+  return {
+    ...artifacts,
+    small: new Blob([small.data], { type: small.type }),
+    large: new Blob([large.data], { type: large.type }),
+  };
 }

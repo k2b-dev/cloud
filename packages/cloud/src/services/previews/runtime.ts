@@ -1,9 +1,10 @@
 import { StoreFullError, type Worker } from "@k2b/sync";
 import { getProcessApplicationPackage } from "../../_internal/process-identity";
 import { lazySync } from "../../_internal/process-sync";
+import { sql } from "../../runtime/clients";
 import { get } from "../settings";
 import { hasPreviewReader, previewService, setPreviewSubmit } from "./index";
-import { previewJobKey } from "./store";
+import { previewJobKey, setupPreviews } from "./store";
 import { PREVIEW_DEADLINE_MS, type PreviewSource } from "./types";
 
 /** Each application owns its own queues and schedule: a job names a source only its own reader can open. */
@@ -29,8 +30,13 @@ const high = queue("high");
 const low = queue("low");
 const maintenance = lazySync((sync) => sync.scheduler({ id: owned("retention"), delivery: { maxAttempts: 2, ackWaitMs: 60_000 } }));
 
+/**
+ * Runs after the application's lifecycle start, where it registers its reader: only then does it create the shared
+ * table and start its own queues and budget schedule. An application without a reader touches nothing.
+ */
 export async function startPreviewsRuntime(): Promise<() => Promise<void>> {
   if (!hasPreviewReader()) return async () => {};
+  await setupPreviews(sql);
   const service = previewService();
   const stopping = new AbortController();
   const workers: Worker[] = [];

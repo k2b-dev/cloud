@@ -462,8 +462,8 @@ with representative traffic before production exposure.
 
 ### File previews
 
-Cloud creates `platform._cloud_previews` idempotently at application startup,
-under a transaction-scoped advisory lock. No per-application migration is
+Cloud creates `platform._cloud_previews` idempotently when an application that
+registered a preview reader starts, under a transaction-scoped advisory lock. No per-application migration is
 needed. Include this reserved table in the platform database backup contract.
 Preview bytes live in the platform object store's default private bucket area,
 confined to the application's package. They can be regenerated from sources.

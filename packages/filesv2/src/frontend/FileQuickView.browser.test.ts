@@ -113,7 +113,9 @@ const files: Record<string, [string, string | Buffer]> = {
   "Clip.webm": ["video/webm", readFileSync(`${ui}test/media/landscape-320x180.webm`)],
   "Packing.txt": ["text/plain", "Packing list\n\n- Pavilion 6 x 3 m\n- Stage platforms (4)\n"],
   "Offline.jpg": ["image/jpeg", "jpeg bytes"],
-  "The quarterly planning notes of the summer party organising committee, final version for the board.jpg": ["image/jpeg", "jpeg bytes"],
+  // Long enough to be cut in every engine's fonts at the chip's 40rem limit.
+  "The quarterly planning notes of the summer party organising committee, final version for the board, with all appendices and the signed minutes.jpg":
+    ["image/jpeg", "jpeg bytes"],
 };
 const folder = Object.entries(files).map(([name, [, body]]) => ({ name, size: Buffer.byteLength(body) }));
 
