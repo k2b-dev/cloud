@@ -236,6 +236,13 @@ test("arguments a lost connection cut off while previewed are charged, and a fin
   ]);
   await drain(final.wrap());
   expect(final.booked[0]?.usage?.output).toBe(Math.ceil(json.length / 4));
+  // Stopped right after the final block started, the previews still count.
+  const started = fixture([
+    preview(json),
+    { type: "block_start", blockId: "tool", index: 0, kind: "tool_call", callId: "call", name: "code_write" },
+  ]);
+  for await (const event of started.wrap().stream(request)) if (event.type === "block_start") break;
+  expect(started.booked[0]?.usage).toMatchObject({ estimated: true, output: Math.ceil(json.length / 4) });
 });
 test("explicit stream abort estimates synthetic zero usage", async () => {
   const f = fixture([{ type: "usage", usage: { input: 0, output: 0, total: 0 }, finishReason: "aborted" }]);
