@@ -17,7 +17,7 @@ export class CodeBridgeRefusal extends Error {
   }
   get errorStatus(): number {
     if (this.status !== 200) return this.status;
-    if (this.code === "code_db_full") return 413;
+    if (["code_db_full", "code_db_owner_full"].includes(this.code)) return 413;
     if (this.code === "code_db_timeout") return 504;
     if (this.code === "code_operation_not_found") return 404;
     if (

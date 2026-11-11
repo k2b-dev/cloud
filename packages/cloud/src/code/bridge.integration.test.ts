@@ -191,6 +191,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   const dbCreated: string[] = [];
   const dbCalls: Array<{ namespace: string; request: unknown }> = [];
   const dbQuotas: number[] = [];
+  let dbOwnerLimit: number = CODE_SETTINGS["core.code.database_owner_bytes"].default;
   const dbClient: CodeDatabaseClient = {
     create: async (namespace) => {
       dbCreated.push(namespace);
@@ -208,6 +209,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       return dbResult;
     },
     size: async () => 4096,
+    export: async () => new Response(new Uint8Array(4096)),
     remove: async () => {},
   };
   let dbSettingsSpy: ReturnType<typeof spyOn<typeof codeDatabaseSettings, "read">>;
@@ -412,13 +414,15 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     signer = { kid, key: pair.privateKey, signUntil: new Date(now.getTime() + 600_000) };
     key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), alg: "RS256", use: "sig", kid }] });
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (name) =>
-      name === "core.code.calls_per_run"
-        ? callLimit
-        : name === "core.code.calls_per_second"
-          ? callRate
-          : name === "core.code.ai_budget_usd"
-            ? aiBudget
-            : CODE_SETTINGS[name].default,
+      name === "core.code.database_owner_bytes"
+        ? dbOwnerLimit
+        : name === "core.code.calls_per_run"
+          ? callLimit
+          : name === "core.code.calls_per_second"
+            ? callRate
+            : name === "core.code.ai_budget_usd"
+              ? aiBudget
+              : CODE_SETTINGS[name].default,
     );
     dbSettingsSpy = spyOn(codeDatabaseSettings, "read").mockImplementation(async <K extends keyof typeof dbValues>(key: K) => ({
       value: dbConfigured ? dbValues[key] : { ...dbValues, "core.code.rsql_url": "" }[key],
@@ -596,6 +600,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     dbCreated.length = 0;
     dbCalls.length = 0;
     dbQuotas.length = 0;
+    dbOwnerLimit = CODE_SETTINGS["core.code.database_owner_bytes"].default;
     fileTransport = undefined;
     fileEntries = new Map();
     providerRequestsConfirmation = false;
@@ -611,6 +616,31 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     setSystemTime();
   });
 
+  test("database growth refuses an exhausted owner while reads remain available, and a raised limit recovers", async () => {
+    await resetFixture({ personal: true, entry: true, database: true, permissions: [], policyRows: [] });
+    await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+    const bytes = CODE_SETTINGS["core.code.database_bytes"].default;
+    const sibling = "c_quotaother";
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title) VALUES(${sibling},'person',${userId}::uuid,'Other database')`;
+    await sql`INSERT INTO code.databases(code_id,namespace,server_url,reserved_bytes,connected)
+      VALUES(${sibling},${codeDatabaseNamespace(sibling)},'http://rsql.test',${bytes},TRUE)`;
+    try {
+      dbOwnerLimit = bytes;
+      await error({ operation: "db.exec", input: { sql: "CREATE TABLE notes(body TEXT)" } }, "code_db_owner_full", 413);
+      expect(dbCreated).toEqual([]);
+      expect(dbCalls).toEqual([]);
+      dbOwnerLimit = bytes * 2;
+      expect((await (await send({ operation: "db.exec", input: { sql: "CREATE TABLE notes(body TEXT)" } })).json()).ok).toBe(true);
+      dbOwnerLimit = bytes;
+      expect(
+        (await (await send({ operation: "db.exec", input: { sql: "INSERT INTO notes VALUES (?)", params: ["extra"] } })).json()).ok,
+      ).toBe(true);
+      expect((await (await send({ operation: "db.query", input: { sql: "SELECT 1" } })).json()).ok).toBe(true);
+    } finally {
+      await sql`DELETE FROM code.codes WHERE id IN (${sibling},${claims.codeId})`;
+    }
+  });
+
   test.each([false, true])("database is lazy, uses the executing subject and survives versions (personal=%s)", async (personal) => {
     await resetFixture({ personal, entry: true, database: true, permissions: [], policyRows: [] });
     if (personal)
@@ -619,6 +649,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       bytes: 0,
       limit: CODE_SETTINGS["core.code.database_bytes"].default,
       state: "unused",
+      owner: { reserved: 0, limit: CODE_SETTINGS["core.code.database_owner_bytes"].default },
     });
     expect(dbCreated).toEqual([]);
     expect(await sql`SELECT code_id FROM code.databases WHERE code_id=${claims.codeId}`).toHaveLength(0);
