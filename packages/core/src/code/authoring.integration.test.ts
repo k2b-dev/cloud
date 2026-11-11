@@ -394,8 +394,8 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       await invoke("code_write", { codeId, path: "test/two.json", content: "x".repeat(half) });
       // Content alone stays 50 bytes under the budget; paths and structure push the whole draft over it.
       expect(
-        CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: "test/three.json", content: "x".repeat(8192 - 50) })).error
-          .code,
+        CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: "test/three.json", content: "x".repeat(8192 - 50) }))
+          .error.code,
       ).toBe("BAD_INPUT");
       const after = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "test/absent.json", delete: true }));
       expect(after.draft.tests.map((item) => item.path)).toEqual(["test/one.json", "test/two.json"]);
