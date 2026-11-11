@@ -217,6 +217,24 @@ export const CORE_SETTINGS = {
     },
   },
 
+  "previews.max_bytes": {
+    kind: "number",
+    label: "Preview storage budget (bytes)",
+    description: "Default 2 GiB across all applications. Maintenance removes the least recently shown previews first.",
+    default: 2 * 1024 ** 3,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    integer: true,
+    presentation: {
+      translations: {
+        de: {
+          label: "Speicherbudget für Vorschauen (Bytes)",
+          description:
+            "Standard: 2 GiB für alle Anwendungen. Die Bereinigung entfernt zuerst die am längsten nicht angezeigten Vorschauen.",
+        },
+      },
+    },
+  },
   "outgoing_mail.content_retention_days": {
     kind: "number",
     label: "Mail content retention (days)",

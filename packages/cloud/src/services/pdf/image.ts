@@ -7,7 +7,7 @@ export { PDF_IMAGE_MAX_BOXES, PDF_IMAGE_MAX_INPUT_BYTES } from "./image-protocol
 export type PdfImageBox = z.infer<typeof ImageBox>;
 export type PdfImageVariant = { data: Blob; type: "image/jpeg" | "image/png"; width: number; height: number };
 export type PdfImageErrorCode = z.infer<typeof ImageErrorCode>;
-export type PreparePdfImageInput = { data: Uint8Array | Blob; boxes: PdfImageBox[]; maxBytes: number };
+export type PreparePdfImageInput = { data: Uint8Array | Blob; boxes: PdfImageBox[]; maxBytes: number; encoding?: "auto" | "preview" };
 /** The deadline includes queue time. Default 30 s matches PDF page decoding; 240 s is the request idle-timeout ceiling. */
 export type PreparePdfImageOptions = { signal?: AbortSignal; timeoutMs?: number };
 export type PreparePdfImageResult = { ok: true; variants: (PdfImageVariant | null)[] } | { ok: false; code: PdfImageErrorCode };
@@ -51,7 +51,12 @@ function release() {
  * Bun itself uses about half the 512 MiB data limit; decodes that exhaust the remaining memory return too_large.
  */
 export async function preparePdfImage(input: PreparePdfImageInput, options: PreparePdfImageOptions = {}): Promise<PreparePdfImageResult> {
-  const request = ImageRequest.parse({ boxes: input.boxes, maxBytes: input.maxBytes, timeoutMs: options.timeoutMs });
+  const request = ImageRequest.parse({
+    boxes: input.boxes,
+    maxBytes: input.maxBytes,
+    encoding: input.encoding,
+    timeoutMs: options.timeoutMs,
+  });
   const inputData = z.union([z.instanceof(Uint8Array), z.instanceof(Blob)]).parse(input.data);
   if (process.platform !== "linux") throw new Error("PDF image preparation requires the Linux Cloud runtime with memory isolation.");
   if (options.signal?.aborted) return { ok: false, code: "timed_out" };

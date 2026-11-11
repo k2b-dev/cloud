@@ -415,6 +415,11 @@ through. Other images are re-encoded.
 EXIF rotation is applied before fitting. Animated GIF and WebP use the first
 frame; TIFF uses the first page.
 
+These are the default `encoding: "auto"` rules. Pass `encoding: "preview"`
+to produce JPEG quality 80 for every box, flatten transparency onto white,
+and re-encode fitting JPEGs too. Both modes preserve the no-upscaling rule.
+The [file preview service](/en/docs/platform/previews) uses this mode.
+
 Accepted formats are JPEG, PNG, WebP, GIF, TIFF, and AVIF. HEIC/HEIF with HEVC
 compression returns `unsupported_format` because the prebuilt libvips has no
 HEVC decoder. SVG, PDF, and other formats are also unsupported.

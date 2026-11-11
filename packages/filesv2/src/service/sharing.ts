@@ -30,6 +30,7 @@ import type { FilesFilegate, FilesRoot } from "./filegate-facade";
 import { filesAuditActor, filesScope, machineActor, machineOwner, principalMetadata } from "./machine-access";
 import { joinPath, relativePath, userPath } from "./paths";
 import type { UnixIdentity } from "./posix";
+import { enqueueFilePreview } from "./previews";
 import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
 
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
@@ -748,6 +749,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         const node = await uploadAction(upload.id, () => active.root.commitSession(sessionId));
         const result = published(upload, row, node);
         await uploads.finish(upload.id, "committed", node);
+        await enqueueFilePreview(active.current.inspection.summary, userPath(node.path.slice(row.base_path.length + 1)), node);
         return result;
       } catch (error) {
         const recovered = await reconcile(root, upload, config);
