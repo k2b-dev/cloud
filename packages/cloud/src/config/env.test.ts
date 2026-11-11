@@ -1,4 +1,12 @@
 import { expect, test } from "bun:test";
+import { env } from "./env";
+
+test("SQL pool maximum keeps Bun's default and accepts only positive signed 32-bit integers", () => {
+  const spec = env.$specs.CLOUD_DATABASE_POOL_MAX;
+  expect(spec.default).toBe(10);
+  for (const value of ["1", "2", "10", "2147483647"]) expect(spec.schema.parse(value)).toBe(Number(value));
+  for (const value of ["0", "-1", "1.5", "NaN", "Infinity", "2147483648"]) expect(spec.schema.safeParse(value).success).toBe(false);
+});
 
 test("Sync replicas default to three and accept only explicit supported counts", async () => {
   const path = new URL("./env.ts", import.meta.url).pathname;
