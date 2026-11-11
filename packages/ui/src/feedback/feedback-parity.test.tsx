@@ -41,14 +41,17 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(header).not.toContain("background");
     expect(title).toContain("font-size: 1.25rem");
     expect(title).toContain("font-weight: 600");
-    expect(title).toContain("overflow-wrap: anywhere");
+    // A title never wraps: one line that ends with an ellipsis, so a long name moves nothing.
+    expect(title).toContain("white-space: nowrap");
+    expect(title).toContain("text-overflow: ellipsis");
     expect(subtitle).toContain("margin-top: 0.375rem");
     expect(subtitle).toContain("font-size: 0.8125rem");
 
-    // Prompt dialogs share the flat header and wrap a long title like it.
+    // Prompt dialogs share the flat header and keep a long title on one line like it.
     const promptTitle = feedbackCss.match(/\.k2b-ui \.k2b-dialog__header h2 \{([^}]*)\}/)?.[1] ?? "";
-    expect(promptTitle).toContain("overflow-wrap: anywhere");
-    expect(promptTitle).not.toContain("nowrap");
+    expect(promptTitle).toContain("white-space: nowrap");
+    expect(promptTitle).toContain("text-overflow: ellipsis");
+    expect(promptTitle).not.toContain("overflow-wrap: anywhere");
     expect(feedbackCss).not.toMatch(/\.k2b-ui \.k2b-dialog__header \{[^}]*background/);
   });
 

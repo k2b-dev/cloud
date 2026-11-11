@@ -432,8 +432,10 @@ describe("Filesv2 interactions", () => {
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(notPdf.name))!.click();
     await flush();
     await Bun.sleep(0);
-    // Until the bytes are read, a .pdf is treated as a PDF, as in the preview dialog.
+    // Until the bytes are read, a .pdf is treated as a PDF. The details show its first-page preview, which reads no
+    // bytes; the large preview reads them and tells the details.
     expect(actions()).toContain("Open in new tab");
+    dom.root.querySelector<HTMLButtonElement>('.filesv2-inspector-preview__expand button[aria-label="Open large preview"]')!.click();
     for (let round = 0; round < 8; round++) {
       for (const request of requests)
         if (request.kind === "download" && !request.signal.aborted)
@@ -442,7 +444,7 @@ describe("Filesv2 interactions", () => {
       await Bun.sleep(0);
     }
 
-    expect(dom.root.textContent).toContain("This file is not a PDF");
+    expect(dom.document.body.textContent).toContain("This file is not a PDF");
     expect(actions()).not.toContain("Open in new tab");
     expect(actions()).toContain("Rename");
   });

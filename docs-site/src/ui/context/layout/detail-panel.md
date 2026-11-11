@@ -94,7 +94,8 @@ commands below the identity row. On touch devices, primary
 actions keep 0.625rem from the identity row and between wrapped lines, so
 their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
 `meta` action or the line above.
-The title wraps to at most two lines, with the full string in its native hint.
+The title never wraps: it stays on one line and ends with an ellipsis, with the
+full string in its native hint and in its accessible text.
 The subtitle stays on one line and ends with an ellipsis; `meta` sits at its
 trailing edge instead of competing with the title. The subtitle keeps at least
 6rem, so a `meta` too wide for that moves below it, still on the trailing edge,

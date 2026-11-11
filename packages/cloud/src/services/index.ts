@@ -150,6 +150,7 @@ export { getFreeIpaConfig } from "./freeipa-config";
 export type { FreeIpaConfig } from "./freeipa-config";
 export {
   GotenbergRenderError,
+  convertOfficeToPdf,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
   MARKDOWN_PDF_TEMPLATE_IDS,
   MarkdownPdfError,
@@ -300,4 +301,6 @@ export type {
 } from "./object-store";
 
 export { links } from "./links";
+export { previews, PreviewSourceChanged } from "./previews";
+export type { PreviewSource, PreviewReader, PreviewReadResult, PreviewVariant } from "./previews";
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";

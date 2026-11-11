@@ -325,6 +325,20 @@ export const getGotenbergConfig = async (): Promise<GotenbergConfig> => ({
 export const renderHtmlToPdf = async (input: RenderHtmlToPdfInput, options: RenderHtmlToPdfOptions = {}): Promise<RenderHtmlToPdfResult> =>
   renderHtmlToPdfWithConfig(input, await getGotenbergConfig(), options);
 
+/** LibreOffice is included in the full Gotenberg image, but not the -chromium variant. */
+export const convertOfficeToPdf = async (
+  input: { data: Blob; name: string },
+  options: RenderHtmlToPdfOptions = {},
+): Promise<RenderHtmlToPdfResult> => {
+  if (input.data.size > 20_000_000) throw new GotenbergRenderError("bad_input", "Office input exceeds 20 MB.");
+  const extension = input.name.split(".").at(-1)?.toLowerCase();
+  if (!extension || !["docx", "doc", "odt", "xlsx", "xls", "ods", "pptx", "ppt", "odp", "rtf"].includes(extension))
+    throw new GotenbergRenderError("bad_input", "Unsupported Office extension.");
+  const form = new FormData();
+  form.append("files", input.data, `document.${extension}`);
+  return requestGotenberg("/forms/libreoffice/convert", form, await getGotenbergConfig(), options);
+};
+
 export const renderFacturXHtmlToPdf = async (
   input: RenderFacturXHtmlToPdfInput,
   options: RenderHtmlToPdfOptions = {},

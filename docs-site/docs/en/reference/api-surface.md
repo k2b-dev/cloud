@@ -28,6 +28,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/start` | Supported, server-only | `startPlatform`, `initializePlatform`, and `PlatformStartOptions`; [startup contract](/en/docs/build/platform-start) |
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
+| `@k2b/cloud/shared` | Supported, portable | Shared helpers, including `previewSourceKind` and `PreviewVariant` for [file previews](/en/docs/platform/previews) |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
@@ -86,6 +87,11 @@ application's provider page with its request locale and the embedded panel
 runtime. See [Panels](/en/docs/platform/panels).
 
 ## Handle server requests
+
+The [file preview service](/en/docs/platform/previews) exports `previews`,
+`PreviewSourceChanged`, `PreviewSource`, `PreviewReader`, `PreviewReadResult`,
+and `PreviewVariant` through `@k2b/cloud/services`. Applications authorize each
+read and retry before using the service.
 
 Import request APIs from `@k2b/cloud/server`:
 

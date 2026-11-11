@@ -140,6 +140,12 @@ const defaultEntries = (): SettingFieldDef[] => {
     entry("storage.access_key_id", "Access key ID", "secret", ""),
     entry("storage.secret_access_key", "Secret access key", "secret", ""),
     entry("storage.max_object_bytes", "Maximum object size (bytes)", "number", 33554432, { min: 1 }),
+    entry("previews.max_bytes", "Preview storage budget (bytes)", "number", 2147483648, {
+      min: 0,
+      group: "previews",
+      default: 2147483648,
+      resetValue: 2147483648,
+    }),
   ];
 };
 

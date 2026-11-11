@@ -13,6 +13,7 @@ export type {
 export {
   attachPdfFiles,
   attachPdfFilesWithConfig,
+  convertOfficeToPdf,
   GotenbergRenderError,
   getGotenbergConfig,
   mergePdfs,

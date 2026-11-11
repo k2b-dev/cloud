@@ -70,6 +70,7 @@ import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { openNewFolderDialog } from "./NewFolderDialog";
+import { prefetchPreview } from "./preview-client";
 import {
   defaultSort,
   effectiveSort,
@@ -1062,6 +1063,17 @@ export default function Browser(props: {
       readOnly: entry.actions?.write === false,
       onNotPdf,
     });
+  let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(prefetchTimer));
+  /** Resting on a file loads its large preview into the cache, so its details show it without waiting. */
+  const hoverProps = (entry: FileEntry) => ({
+    onPointerEnter: (event: PointerEvent) => {
+      clearTimeout(prefetchTimer);
+      if (entry.directory || event.pointerType === "touch") return;
+      prefetchTimer = setTimeout(() => prefetchPreview(baseId(), entry), 180);
+    },
+    onPointerLeave: () => clearTimeout(prefetchTimer),
+  });
   // Entering or leaving select mode starts clean; outside it a click only highlights one entry for its details.
   const toggleSelecting = (on: boolean) => {
     selection.clear();
@@ -1863,7 +1875,7 @@ export default function Browser(props: {
                           selecting={selecting()}
                           before={virtualBefore()}
                           after={virtualAfter()}
-                          rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row) })}
+                          rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row), ...hoverProps(row) })}
                           virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
                           messages={listMessages()}
                           sort={listSort()}
@@ -1908,7 +1920,11 @@ export default function Browser(props: {
                         size={view().size}
                         onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
                         itemProps={(row) =>
-                          virtualOf(row) ? (virtualOf(row)!.key === "up" ? upDrop() : {}) : { ...dragProps(row), ...folderDrop(row) }
+                          virtualOf(row)
+                            ? virtualOf(row)!.key === "up"
+                              ? upDrop()
+                              : {}
+                            : { ...dragProps(row), ...folderDrop(row), ...hoverProps(row) }
                         }
                         onContextMenu={(row) => !virtualOf(row) && focusContext(row)}
                         onRowClick={(row) => {

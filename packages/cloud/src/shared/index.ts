@@ -64,6 +64,7 @@ export { markdownCalloutSanitizeOptions } from "./markdown/callout-sanitizer";
 export type { MockCover, MockCoverIcon, MockCoverOptions, MockCoverTheme } from "./mock-cover";
 export { createMockCover, createMockCoverSvg, parseDataUrl } from "./mock-cover";
 export * from "./network-address";
+export { type PreviewSourceKind, type PreviewVariant, previewSourceKind } from "./previews";
 export * from "./redirect";
 export type { LiquidTemplateErrorReason, LiquidTemplateFilter, LiquidTemplateOptions } from "./template-rendering";
 export {
