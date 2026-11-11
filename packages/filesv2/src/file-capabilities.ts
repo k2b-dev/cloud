@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   type CapabilityActionDefinition,
   type CapabilityExecutionContext,
+  CapabilityFileMetadataSchema,
   type CapabilityResult,
   CapabilitySemanticLinkSchema,
   type CapabilityStream,
@@ -609,7 +610,71 @@ function action<S extends z.ZodObject>(
     run: async (value, c) => domain(c, async () => ok(await run(await rootInput(value, c), c))),
   };
 }
+const FileSave = z
+  .strictObject({
+    path: Path.min(1),
+    file: CapabilityFileMetadataSchema.describe("FileRef to save; the source provides its exact media type and byte count."),
+    onConflict: Upload.shape.onConflict,
+    expectedRevision: Upload.shape.expectedRevision,
+  })
+  .refine((value) => value.onConflict !== "overwrite" || Boolean(value.expectedRevision), "Replacing requires expectedRevision");
+
 export const fileActions = {
+  "file.save.v1": {
+    title: "Save a file into Files",
+    description:
+      "Save a FileRef at a path in the storage-root entry target from bases.list. A taken name fails by default, like an upload; replacing needs an explicit overwrite and the current revision. Never changes the source.",
+    target: "entry",
+    input: FileSave,
+    data: Result,
+    openWorld: false,
+    destructive: false,
+    idempotency: "required" as const,
+    approval: "rememberable" as const,
+    review: async (input: z.output<typeof FileSave>, c: CapabilityExecutionContext) =>
+      domain(c, async () => {
+        const located = await rootInput(input, c);
+        await filesService.uploadTarget(capabilityCall(c), located);
+        const r = await reviewText(c);
+        const name = r.name(input.path);
+        return ok({
+          message: input.onConflict === "overwrite" ? r.t.replaceFile({ name }) : r.t.saveFile({ name }),
+          details: [
+            { label: r.t.storage, value: r.base(located.baseId) },
+            { label: r.t.path, value: r.path(input.path) },
+            { label: r.t.size, value: r.size(input.file.size) },
+          ],
+          ...(input.onConflict === "overwrite" ? {} : await baseApprovalScope(c, located.baseId, input.path)),
+        });
+      }),
+    run: async (input: z.output<typeof FileSave>, c: CapabilityExecutionContext) =>
+      domain(c, async () => {
+        if (input.file.size > CONTENT_STREAM_LIMIT) return fail(err.badInput(filesCapabilityMessages(c.locale).tooLarge));
+        if (input.onConflict === "overwrite" && !input.expectedRevision)
+          return fail(err.badInput(filesCapabilityMessages(c.locale).replaceNeedsRevision));
+        const located = await rootInput(input, c);
+        const session = await filesService.upload(capabilityCall(c), {
+          baseId: located.baseId,
+          path: input.path,
+          size: input.file.size,
+          onConflict: input.onConflict,
+          expectedRevision: input.expectedRevision,
+          idempotencyKey: uuidKey(JSON.stringify(["filesv2.file.save.v1", readActor(c), c.target, c.idempotencyKey!])),
+        });
+        return ok({
+          data: { baseId: located.baseId, uploadId: session.id },
+          stream: {
+            id: JSON.stringify({ baseId: located.baseId, id: session.id }),
+            direction: "write" as const,
+            name: nameOf(input.path),
+            mediaType: input.file.mediaType,
+            size: input.file.size,
+            expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          },
+        });
+      }),
+    stream: uploadStream(result),
+  },
   "content.create": {
     title: "Write file content",
     description:

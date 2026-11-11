@@ -653,6 +653,11 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             disposition: "Ob durch eine Stornierung der Entwurf wiederhergestellt oder verworfen wird.",
           },
         },
+        "draft.attachment.import.v1": {
+          title: "Datei an einen Entwurf anhängen",
+          description:
+            "Eine FileRef mit aktuellen Schreibrechten und Versionsprüfung an einen Entwurf anhängen. Die bestehenden Anhangsgrenzen und die Bearbeitungssperre gelten. Versendet nie eine Nachricht.",
+        },
         "draft.attachment.add": {
           title: "Entwurfsanhang hinzufügen",
           description: "Fügen Sie einem Entwurf einen begrenzten Inline-Anhang hinzu.",

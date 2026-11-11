@@ -920,6 +920,8 @@ CREATE TABLE mail.draft_attachment_uploads (
     finalized_revision bigint,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    capability_revision bigint,
+    capability_write_started boolean DEFAULT false NOT NULL,
     CONSTRAINT draft_attachment_upload_state_check CHECK ((((state = 'attached'::text) AND (attachment_id IS NOT NULL) AND (finalized_revision IS NOT NULL)) OR ((state <> 'attached'::text) AND (attachment_id IS NULL) AND (finalized_revision IS NULL)))),
     CONSTRAINT draft_attachment_uploads_blob_state_check CHECK ((((state = 'cancelled'::text) AND (blob_id IS NULL)) OR ((state <> 'cancelled'::text) AND (blob_id IS NOT NULL)))),
     CONSTRAINT draft_attachment_uploads_byte_length_check CHECK (((byte_length >= 0) AND (byte_length <= 104857600))),

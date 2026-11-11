@@ -32,11 +32,16 @@ through Cloud while Code still holds no bytes. The generate loop offers
 | Read | `files.content.read({ id })` | A file in Files, up to 50 MiB. |
 | Read | `pdf.render`, `sheet.toCsv`, `sheet.toOds`, `finance.datev`, `finance.sepa`, `chart.render` | Generate a new temporary file. Read the `core` SDK declarations. |
 | Read | `assistant.chat.file.read.v1({ chatId, path })` | One of the person's chat files, with current chat and Project access checked again when redeemed. |
+| Write | `files.entry(root).file.save.v1({ path, file, onConflict?, expectedRevision?, idempotencyKey })` | Save in a writable Files folder; asks for approval. Existing names fail unless replacement is explicitly approved with a current revision. |
+| Write | `mail.mailbox(id).draft.attachment.import.v1({ draftId, expectedRevision, file, idempotencyKey })` | Attach to an editable draft, never send. Existing attachment limits and editor locks apply. |
 | Write | An Action with a write stream and a `file` input | The SDK types `file` as `FileRef` and returns the Action's ordinary data after the transfer. Find these in `code_sdk`; the example below uses a fictional `imports` app. |
 
 Write streams without a `file` input, such as `filesv2.content.create` and
 `filesv2.provider.save`, are not in the SDK (`code_stream`): Code cannot
-supply bytes directly. Generated files still need a receiving Action with a `file` input.
+supply bytes directly. Generated files use a receiving Action with a `file` input.
+The [chat-attachment examples](/en/docs/platform/code-sdk#pass-a-gustav-chat-attachment-to-an-app)
+show both real destinations in the one-off chat host, under the current person’s
+capability service and approval. They are not unattended Files automations.
 
 ## Rules
 
