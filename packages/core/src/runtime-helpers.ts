@@ -17,6 +17,7 @@ import { startCodeVersionApprovals } from "./code/versions";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
 import { migrate as migrateCodeActivation } from "./migrate/core/code-activation";
+import { migrate as migrateCodeChatDrafts } from "./migrate/core/code-chat-drafts";
 import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
 import { migrate as migrateCodeLifecycle } from "./migrate/core/code-lifecycle";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
@@ -144,6 +145,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "code", run: migrateCode },
     { name: "code-policy", run: migrateCodePolicy },
     { name: "code-versions", run: migrateCodeVersions },
+    { name: "code-chat-drafts", run: migrateCodeChatDrafts },
     { name: "code-scheduling", run: migrateCodeScheduling },
     { name: "code-jobs", run: migrateCodeJobs },
     { name: "code-activation", run: migrateCodeActivation },
