@@ -160,6 +160,49 @@ export const browserMessages = i18n.define({
       uploadFolder: "Upload folder",
       actions: "Actions",
       selectedActions: (n: number) => `${n} selected`,
+      selectionActions: "Actions for the selection",
+      pillCount: ({ n, kind }: { n: number; kind: "pdf" | "image" | "document" | "any" }) =>
+        kind === "pdf"
+          ? n === 1
+            ? "1 PDF"
+            : `${n} PDFs`
+          : kind === "image"
+            ? n === 1
+              ? "1 image"
+              : `${n} images`
+            : kind === "document"
+              ? n === 1
+                ? "1 document"
+                : `${n} documents`
+              : `${n} selected`,
+      pillMovedTitle: "Actions moved",
+      pillMovedText: "The actions for the selection are now in the bar at the bottom.",
+      gotIt: "Got it",
+      pdfMerge: "Merge",
+      pdfExtract: "Take out pages",
+      pdfMergeTitle: (n: number) => `Merge ${n} PDFs`,
+      pdfMergeHint: "Drag the files into the order they take in the new PDF.",
+      pdfNewName: "Name of the new PDF",
+      pdfNameInvalid: "Enter a file name that ends in .pdf.",
+      pdfOriginalsStay: "The originals stay as they are. The new PDF goes next to them.",
+      pdfPages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
+      pdfExtractHint: (several: boolean): string =>
+        several ? "Choose the pages for a new PDF. The originals stay as they are." : "Choose the pages for a new PDF. The original stays as it is.",
+      pdfPagesChosen: (n: number) => (n === 0 ? "No page chosen yet" : n === 1 ? "1 page chosen" : `${n} pages chosen`),
+      pdfExtractSave: "Save as new PDF",
+      pdfFileUnreadable: "This file cannot be shown here.",
+      opMerging: "Merging",
+      opExtracting: "Taking out pages",
+      opProgress: ({ verb, percent }: { verb: string; percent: number }) => `${verb} … ${percent} %`,
+      opCancel: "Cancel",
+      opDiscard: "Discard",
+      opWithout: "Without this file",
+      opCreated: (name: string) => `“${name}” created`,
+      opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} pages from ${files} files`,
+      opExtractSummary: (pages: number) => (pages === 1 ? "1 page" : `${pages} pages`),
+      opUndo: "Undo",
+      opUndone: "The new file is in the trash.",
+      justCreated: "Just created",
       downloadZip: "Download as ZIP",
       moveToNewFolder: "Move into new folder",
       moveTo: "Move to…",
@@ -561,6 +604,49 @@ export const browserMessages = i18n.define({
       uploadFolder: "Ordner hochladen",
       actions: "Aktionen",
       selectedActions: (n: number) => `${n} ausgewählt`,
+      selectionActions: "Aktionen für die Auswahl",
+      pillCount: ({ n, kind }: { n: number; kind: "pdf" | "image" | "document" | "any" }) =>
+        kind === "pdf"
+          ? n === 1
+            ? "1 PDF"
+            : `${n} PDFs`
+          : kind === "image"
+            ? n === 1
+              ? "1 Bild"
+              : `${n} Bilder`
+            : kind === "document"
+              ? n === 1
+                ? "1 Dokument"
+                : `${n} Dokumente`
+              : `${n} ausgewählt`,
+      pillMovedTitle: "Aktionen umgezogen",
+      pillMovedText: "Die Aktionen für die Auswahl stehen jetzt in der Leiste unten.",
+      gotIt: "Verstanden",
+      pdfMerge: "Zusammenfügen",
+      pdfExtract: "Seiten herausnehmen",
+      pdfMergeTitle: (n: number) => `${n} PDFs zusammenfügen`,
+      pdfMergeHint: "Zieh die Dateien in die Reihenfolge, in der sie im neuen PDF stehen.",
+      pdfNewName: "Name des neuen PDFs",
+      pdfNameInvalid: "Gib einen Dateinamen ein, der auf .pdf endet.",
+      pdfOriginalsStay: "Die Originale bleiben erhalten. Das neue PDF liegt daneben.",
+      pdfPages: (n: number) => (n === 1 ? "1 Seite" : `${n} Seiten`),
+      pdfExtractHint: (several: boolean) =>
+        several ? "Wähle die Seiten für ein neues PDF. Die Originale bleiben, wie sie sind." : "Wähle die Seiten für ein neues PDF. Das Original bleibt, wie es ist.",
+      pdfPagesChosen: (n: number) => (n === 0 ? "Noch keine Seite gewählt" : n === 1 ? "1 Seite gewählt" : `${n} Seiten gewählt`),
+      pdfExtractSave: "Als neues PDF speichern",
+      pdfFileUnreadable: "Diese Datei kann hier nicht gezeigt werden.",
+      opMerging: "Wird zusammengefügt",
+      opExtracting: "Seiten werden herausgenommen",
+      opProgress: ({ verb, percent }: { verb: string; percent: number }) => `${verb} … ${percent} %`,
+      opCancel: "Abbrechen",
+      opDiscard: "Verwerfen",
+      opWithout: "Ohne diese Datei",
+      opCreated: (name: string) => `„${name}“ erstellt`,
+      opMergeSummary: ({ pages, files }: { pages: number; files: number }) => `${pages} Seiten aus ${files} Dateien`,
+      opExtractSummary: (pages: number) => (pages === 1 ? "1 Seite" : `${pages} Seiten`),
+      opUndo: "Rückgängig",
+      opUndone: "Die neue Datei liegt im Papierkorb.",
+      justCreated: "Gerade erstellt",
       downloadZip: "Als ZIP herunterladen",
       moveToNewFolder: "In neuen Ordner verschieben",
       moveTo: "Verschieben nach …",

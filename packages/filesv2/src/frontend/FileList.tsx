@@ -14,6 +14,15 @@ export type FileRow = FileEntry & {
   more?: boolean;
   /** Search matches: code point ranges into the path below the searched folder. */
   highlight?: readonly (readonly [number, number])[];
+  /** A new file still being made, such as a merged PDF: its progress or failure in place, with its own commands. */
+  operation?: FileOperationView;
+  /** Shown instead of the date for a file this page made a moment ago, such as "Just created". */
+  fresh?: string;
+};
+export type FileOperationView = {
+  state: "running" | "failed";
+  text: string;
+  actions: readonly { label: string; onClick: () => void }[];
 };
 
 /** A search hit's name and folder below the searched folder, each with the matches inside it. */
@@ -184,6 +193,43 @@ export default function FileList(props: {
       <For each={props.rows}>
         {(row) => (
           <Show
+            when={!row.operation}
+            fallback={
+              <div
+                role="row"
+                class="filesv2-list__row filesv2-list__row--operation"
+                data-state={row.operation!.state}
+                style={{ "--depth": row.depth ?? 0 }}
+              >
+                <Show when={props.selecting}>
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
+                </Show>
+                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
+                  <span class="filesv2-thumbnail" aria-hidden="true">
+                    <i class={row.operation!.state === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"} />
+                  </span>
+                </span>
+                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
+                  <span class="filesv2-list__name" title={row.name}>
+                    {row.name}
+                  </span>
+                  <span class="filesv2-list__operation-text" role={row.operation!.state === "failed" ? "alert" : "status"}>
+                    {row.operation!.text}
+                  </span>
+                </span>
+                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--operation">
+                  <For each={row.operation!.actions}>
+                    {(action) => (
+                      <Button size="xs" variant="link" onClick={action.onClick}>
+                        {action.label}
+                      </Button>
+                    )}
+                  </For>
+                </span>
+              </div>
+            }
+          >
+          <Show
             when={!row.more}
             fallback={
               <div role="row" class="filesv2-list__row filesv2-list__row--more" style={{ "--depth": row.depth ?? 0 }}>
@@ -291,7 +337,14 @@ export default function FileList(props: {
               </span>
               <Show when={props.showModified}>
                 <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--modified">
-                  <Format.DateTime value={row.modified} timeZone={props.timeZone} />
+                  <Show when={row.fresh} fallback={<Format.DateTime value={row.modified} timeZone={props.timeZone} />}>
+                    {(label) => (
+                      <span class="filesv2-list__fresh">
+                        <i class="ti ti-circle-check" aria-hidden="true" />
+                        {label()}
+                      </span>
+                    )}
+                  </Show>
                 </span>
               </Show>
               <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info">
@@ -306,6 +359,7 @@ export default function FileList(props: {
                 </IconButton>
               </span>
             </div>
+          </Show>
           </Show>
         )}
       </For>

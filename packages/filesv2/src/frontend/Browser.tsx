@@ -1,4 +1,5 @@
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
@@ -13,17 +14,20 @@ import {
   ContextMenu,
   createCollectionSelection,
   Dropdown,
+  type DropdownItem,
   FileDropTarget,
   FileGrid,
   FilterChip,
   fileDropTarget,
   InlineGuidance,
+  MovedHint,
   Placeholder,
   prompts,
   ScrollArea,
   SegmentedControl,
   Skeleton,
   TextInput,
+  Toolbar,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -58,7 +62,7 @@ import {
 } from "./browser-preferences";
 import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
-import FileList, { type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
+import FileList, { type FileOperationView, type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
 import FileQuickView from "./FileQuickView";
 import FileThumbnail from "./FileThumbnail";
@@ -70,7 +74,15 @@ import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { openNewFolderDialog } from "./NewFolderDialog";
-import { prefetchPreview } from "./preview-client";
+import { SELECTION_PILL_HINT } from "./hints";
+import {
+  openPdfExtractDialog,
+  openPdfMergeDialog,
+  PdfOperationError,
+  type PdfOperationRequest,
+  runPdfOperation,
+} from "./pdf-actions";
+import { prefetchPreview, previewSource } from "./preview-client";
 import {
   defaultSort,
   effectiveSort,
@@ -147,6 +159,8 @@ export default function Browser(props: {
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
   /** The workspace's upload queue; it outlives this view, so leaving the folder does not stop an upload. */
   uploads: FilesUploads;
+  /** The server shows, once, where the header's Actions menu went: to the selection pill at the bottom. */
+  selectionPillHint?: boolean;
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
@@ -1082,6 +1096,9 @@ export default function Browser(props: {
     setSelecting(on);
   };
   const rowClick = (row: FileRow, event: MouseEvent) => {
+    // Shift+click takes the range from the last chosen entry, Ctrl or ⌘+click adds or removes one; both start
+    // choosing several, as the Select button does, and keep what is already chosen.
+    if (!selecting() && (event.shiftKey || event.ctrlKey || event.metaKey)) setSelecting(true);
     if (selecting()) {
       if (event.shiftKey) selection.select(row.path, event);
       else selection.toggle(row.path);
@@ -1140,6 +1157,213 @@ export default function Browser(props: {
       },
     ];
   };
+  /*
+   * The selection pill at the bottom: the count, what fits the selection (such as Merge for several PDFs), then
+   * Download, Share and Move, and the rarer commands under More. It replaces the header's Actions menu.
+   */
+  const [pillHint, setPillHint] = createSignal(!!props.selectionPillHint);
+  const isPdf = (entry: FileEntry) => !entry.directory && previewSource(entry) === "pdf";
+  const pillKind = (items: readonly FileEntry[]) => (items.length && items.every(isPdf) ? "pdf" : "any");
+  const suggestions = () => {
+    const items = selected();
+    if (!items.length || searching() || !canCreate() || !items.every(isPdf)) return [];
+    return [
+      ...(items.length > 1 ? [{ label: b().pdfMerge, icon: "ti ti-stack-2", run: () => void mergePdfs(items) }] : []),
+      { label: b().pdfExtract, icon: "ti ti-files", run: () => void extractPages(items) },
+    ];
+  };
+  const pillMore = (): DropdownItem[] => {
+    const items = selected();
+    return [
+      ...(searching()
+        ? []
+        : [
+            {
+              disabled: !canCreate() || !movable(items),
+              label: b().moveToNewFolder,
+              icon: "ti ti-folder-plus",
+              action: () => void moveIntoNewFolder(items),
+            },
+            { label: b().copyTo, icon: "ti ti-copy", action: () => void moveOrCopy(items, true) },
+            ...(items.length === 1
+              ? [{ disabled: items[0]!.actions?.move === false, label: b().rename, icon: "ti ti-pencil", action: () => void rename(items[0]!) }]
+              : []),
+          ]),
+      {
+        items: [
+          {
+            disabled: !movable(items),
+            label: b().trashSelection,
+            icon: "ti ti-trash",
+            variant: "danger" as const,
+            action: () => void trashItems(items),
+          },
+        ],
+      },
+    ];
+  };
+
+  /*
+   * PDF actions make a new file next to their sources. Until it exists, a row at that place shows the progress with
+   * Cancel; a failure stays there with its reason and a way out. The originals never change.
+   */
+  type Operation = {
+    id: string;
+    request: PdfOperationRequest;
+    verb: string;
+    summary: string;
+    location: string;
+    afterPath: string;
+    state: "running" | "failed";
+    percent: number;
+    error?: { message: string; path?: string };
+    controller: AbortController;
+  };
+  const [operations, setOperations] = createSignal<readonly Operation[]>([]);
+  const [fresh, setFresh] = createSignal<ReadonlySet<string>>(new Set());
+  onCleanup(() => {
+    for (const operation of operations()) operation.controller.abort();
+  });
+  const patchOperation = (id: string, patch: Partial<Operation>) =>
+    setOperations((all) => all.map((operation) => (operation.id === id ? { ...operation, ...patch } : operation)));
+  const dropOperation = (id: string) => setOperations((all) => all.filter((operation) => operation.id !== id));
+  const markFresh = (path: string) => {
+    setFresh((all) => new Set(all).add(path));
+    setTimeout(
+      () =>
+        setFresh((all) => {
+          const next = new Set(all);
+          next.delete(path);
+          return next;
+        }),
+      10_000,
+    );
+  };
+  const undoCreated = async (entry: FileEntry) => {
+    const response = await apiClient.bases[":baseId"].delete.$post({ param: { baseId: baseId() }, json: { paths: [entry.path] } });
+    if (!response.ok) return void toast.error(t().unavailable);
+    toast.success(b().opUndone);
+    await refresh();
+  };
+  const runOperation = (operation: Operation) => {
+    const controller = new AbortController();
+    patchOperation(operation.id, { controller, state: "running", percent: 0, error: undefined });
+    void runPdfOperation(
+      baseId(),
+      operation.request,
+      controller.signal,
+      (done, total) => patchOperation(operation.id, { percent: total ? Math.round((done / total) * 100) : 0 }),
+      t().unavailable,
+    ).then(
+      async (result) => {
+        dropOperation(operation.id);
+        if (operation.location !== locationKey()) return;
+        markFresh(result.entry.path);
+        await refresh();
+        toast.success(b().opCreated(result.entry.name), {
+          celebrate: true,
+          title: operation.summary || undefined,
+          action: { label: b().opUndo, onClick: () => void undoCreated(result.entry) },
+        });
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted) return dropOperation(operation.id);
+        patchOperation(operation.id, {
+          state: "failed",
+          error: {
+            message: error instanceof Error ? error.message : t().unavailable,
+            path: error instanceof PdfOperationError ? error.path : undefined,
+          },
+        });
+      },
+    );
+  };
+  const startOperation = (request: PdfOperationRequest, verb: string, summary: string) => {
+    const order = entries().map((entry) => entry.path);
+    const afterPath = [...request.paths].sort((a, z) => order.indexOf(z) - order.indexOf(a))[0] ?? request.paths[0]!;
+    const operation: Operation = {
+      id: crypto.randomUUID(),
+      request,
+      verb,
+      summary,
+      location: locationKey(),
+      afterPath,
+      state: "running",
+      percent: 0,
+      controller: new AbortController(),
+    };
+    selection.clear();
+    setSelecting(false);
+    setOperations((all) => [...all, operation]);
+    runOperation(operation);
+  };
+  const mergePdfs = async (items: readonly FileEntry[]) => {
+    const chosen = await openPdfMergeDialog({ baseId: baseId(), files: items, title: b().pdfMergeTitle(items.length) });
+    if (!chosen) return;
+    startOperation(chosen.request, b().opMerging, b().opMergeSummary({ pages: chosen.pages, files: chosen.request.paths.length }));
+  };
+  const extractPages = async (items: readonly FileEntry[]) => {
+    const chosen = await openPdfExtractDialog({ baseId: baseId(), files: items, title: b().pdfExtract });
+    if (!chosen) return;
+    startOperation(chosen.request, b().opExtracting, b().opExtractSummary(chosen.pages));
+  };
+  const operationView = (operation: Operation): FileOperationView => {
+    if (operation.state === "running")
+      return {
+        state: "running",
+        text: b().opProgress({ verb: operation.verb, percent: operation.percent }),
+        actions: [{ label: b().opCancel, onClick: () => operation.controller.abort() }],
+      };
+    const failedPath = operation.error?.path;
+    const remaining = operation.request.paths.filter((path) => path !== failedPath);
+    // A merge can go on without the file that failed while two files remain.
+    const without =
+      operation.request.operation === "merge" && failedPath && remaining.length >= 2
+        ? [
+            {
+              label: b().opWithout,
+              onClick: () => {
+                // The page count of the first plan no longer holds, so the result names only the file.
+                const next = { ...operation, summary: "", request: { ...operation.request, paths: remaining } };
+                setOperations((all) => all.map((item) => (item.id === operation.id ? next : item)));
+                runOperation(next);
+              },
+            },
+          ]
+        : [{ label: b().retry, onClick: () => runOperation(operation) }];
+    return {
+      state: "failed",
+      text: operation.error?.message ?? t().unavailable,
+      actions: [...without, { label: b().opDiscard, onClick: () => dropOperation(operation.id) }],
+    };
+  };
+  /** The list's rows with the files in the making at their place and the files made a moment ago marked. */
+  const listRows = createMemo<FileRow[]>(() => {
+    const here = operations().filter((operation) => operation.location === locationKey());
+    const marks = fresh();
+    if (!here.length && !marks.size) return rows();
+    const out: FileRow[] = [];
+    const pending = (operation: Operation): FileRow => ({
+      name: operation.request.name,
+      path: `\u0001operation:${operation.id}`,
+      directory: false,
+      size: 0,
+      modified: "",
+      operation: operationView(operation),
+    });
+    const placed = new Set<string>();
+    for (const row of rows()) {
+      out.push(marks.has(row.path) ? { ...row, fresh: b().justCreated } : row);
+      for (const operation of here)
+        if (operation.afterPath === row.path) {
+          out.push(pending(operation));
+          placed.add(operation.id);
+        }
+    }
+    // A source no longer listed, such as after a sort, still shows its file in the making first.
+    return [...here.filter((operation) => !placed.has(operation.id)).map(pending), ...out];
+  });
+
   const cloudId = useCloudIdCopy();
   const entryRef = (item: FileEntry) => {
     const id = item.resourceId ?? entryRefId(baseId(), item.path);
@@ -1333,8 +1557,11 @@ export default function Browser(props: {
   // Ranges, toggles and select-all exist only with checkboxes; otherwise clicks and keys move the single highlight.
   const interactiveSelection = {
     ...selection,
-    select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) =>
-      selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id),
+    select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) => {
+      // As in the list: Shift or Ctrl/⌘ on a tile starts choosing several and keeps what is already chosen.
+      if (!selecting() && (modifiers?.shiftKey || modifiers?.ctrlKey || modifiers?.metaKey)) setSelecting(true);
+      return selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id);
+    },
     keyDown: (event: KeyboardEvent, id: string, columns?: number) => {
       // Space opens the quick view; while selecting with checkboxes it keeps toggling the focused entry.
       if (event.key === " " && !selecting() && !event.altKey && !event.ctrlKey && !event.metaKey) {
@@ -1680,15 +1907,22 @@ export default function Browser(props: {
                   </span>
                 }
               >
-                <span class="text-xs font-medium" role="status">
+                <span class="filesv2-selection-status text-xs font-medium" role="status">
                   {b().selectedActions(selectedPaths().length)}
                 </span>
-                <Dropdown.Root items={selectionItems()}>
-                  <Dropdown.Trigger size="sm" variant="secondary" disabled={busy() || !selectedPaths().length}>
-                    {b().actions}
-                    <i class="ti ti-chevron-down" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
+                {/* The Actions menu that stood here moved to the pill at the bottom; this says so once. */}
+                <MovedHint
+                  open={pillHint()}
+                  target={() => document.querySelector<HTMLElement>(".filesv2-selection-status") ?? undefined}
+                  placement="bottom"
+                  onDismiss={() => {
+                    setPillHint(false);
+                    markHintSeen(SELECTION_PILL_HINT);
+                  }}
+                  action={{ label: b().gotIt, onClick: () => {} }}
+                >
+                  <strong>{b().pillMovedTitle}</strong> {b().pillMovedText}
+                </MovedHint>
                 <Button size="xs" variant="text" onClick={() => toggleSelecting(false)}>
                   {b().endSelect}
                 </Button>
@@ -1874,7 +2108,7 @@ export default function Browser(props: {
                       <>
                         <FileList
                           baseId={baseId()}
-                          rows={rows()}
+                          rows={listRows()}
                           selection={interactiveSelection}
                           label={t().files}
                           tree={view().view === "tree"}
@@ -1988,6 +2222,51 @@ export default function Browser(props: {
                         <InlineGuidance role="alert">{b().loadMoreFailed}</InlineGuidance>
                       </Show>
                     </div>
+                  </Show>
+                  {/* The selection's actions float at the bottom of the column; the list scrolls beneath and ends above. */}
+                  <Show when={selected().length > 0 && !quick()}>
+                    <Toolbar label={b().selectionActions} variant="floating" moreItems={pillMore()} class="filesv2-selection-pill">
+                      <Toolbar.Action label={b().clear} icon="ti ti-x" onClick={() => toggleSelecting(false)} />
+                      <Toolbar.Label>{b().pillCount({ n: selected().length, kind: pillKind(selected()) })}</Toolbar.Label>
+                      <Toolbar.Separator />
+                      <For each={suggestions()}>
+                        {(suggestion, index) => (
+                          <Toolbar.Action
+                            label={suggestion.label}
+                            icon={suggestion.icon}
+                            text
+                            priority={2 + index()}
+                            disabled={busy()}
+                            onClick={suggestion.run}
+                          />
+                        )}
+                      </For>
+                      <Toolbar.Separator />
+                      <Toolbar.Action
+                        label={selected().length === 1 && !selected()[0]!.directory ? t().download : b().downloadZip}
+                        icon="ti ti-download"
+                        priority={5}
+                        disabled={busy()}
+                        onClick={() => startDownload(selected())}
+                      />
+                      <Show when={props.onShare && shareable(selected())}>
+                        <Toolbar.Action
+                          label={b().shareSelection}
+                          icon="ti ti-world-share"
+                          priority={6}
+                          onClick={() => props.onShare?.(selected().map((item) => item.path))}
+                        />
+                      </Show>
+                      <Show when={!searching()}>
+                        <Toolbar.Action
+                          label={b().moveTo}
+                          icon="ti ti-arrow-move-right"
+                          priority={7}
+                          disabled={busy() || !movable(selected())}
+                          onClick={() => void moveOrCopy(selected())}
+                        />
+                      </Show>
+                    </Toolbar>
                   </Show>
                 </ScrollArea>
               </ContextMenu>
