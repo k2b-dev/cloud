@@ -1,5 +1,5 @@
 import { CodeDisplay, type CodeDisplayLanguage, StatusBadge, useLocale } from "@k2b/ui";
-import { For, type JSX, Match, Show, Switch } from "solid-js";
+import { createEffect, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import { isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -15,6 +15,9 @@ type Permission = {
   file: string;
   line: number;
 };
+
+/** Lines a source shows while Gustav still writes it; the finished file keeps the same height and scrolls. */
+const LIVE_LINES = 14;
 
 /** Lasting Code steps that read as source, findings, test cases or files instead of their JSON. */
 const CODE_STEP_TOOLS: ReadonlySet<string> = new Set([
@@ -70,11 +73,38 @@ const permissions = (value: unknown): Permission[] =>
 
 const lineCount = (source: string) => (source ? source.split("\n").length - (source.endsWith("\n") ? 1 : 0) : 0);
 
-/** One file's source, scrolling inside the step at a fixed height. */
-function CodeSource(props: { path: string; content: string }) {
+/**
+ * One file's source, scrolling inside the step at a fixed height. While Gustav writes it, the newest lines show,
+ * numbered like the whole file; the written file keeps that height and starts where the writing ended, so nothing
+ * jumps when the call completes.
+ */
+function CodeSource(props: { path: string; content: string; omittedLines?: number; live: boolean }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  let frame: HTMLDivElement | undefined;
+  const lines = () => props.content.split("\n");
+  const shown = () => (props.live ? lines().slice(-LIVE_LINES) : lines());
+  const startLine = () => (props.live ? (props.omittedLines ?? 0) + lines().length - shown().length + 1 : 1);
+  const lastLine = () => startLine() + shown().length - 1;
+  createEffect(
+    on(
+      () => props.live,
+      (live, wasLive) => {
+        if (live || !wasLive || !frame) return;
+        const body = frame.querySelector<HTMLElement>(".k2b-content-code-display__body");
+        if (body) body.scrollTop = body.scrollHeight;
+      },
+    ),
+  );
   return (
-    <div class="ai-code-step__source">
-      <CodeDisplay title={props.path} code={props.content} language={languageOf(props.path)} />
+    <div ref={frame} class="ai-code-step__source" data-live={props.live ? "" : undefined}>
+      <CodeDisplay
+        title={props.live ? `${props.path} · ${t().codeStepLine({ line: lastLine() })}` : props.path}
+        code={shown().join("\n")}
+        language={languageOf(props.path)}
+        startLine={startLine()}
+        copy={!props.live}
+      />
     </div>
   );
 }
@@ -302,7 +332,12 @@ export function CodeStepBody(props: { block: ToolBlock; raw: () => JSX.Element }
         {(file) => (
           <Switch>
             <Match when={content() !== null}>
-              <CodeSource path={file()} content={content() ?? ""} />
+              <CodeSource
+                path={file()}
+                content={content() ?? ""}
+                omittedLines={props.block.liveArgs?.omittedLines.content}
+                live={props.block.liveArgs !== undefined}
+              />
             </Match>
             <Match when={text(args().renameTo)}>
               {(target) => <p class="ai-code-step__note">{t().codeStepRenamed({ from: file(), to: target() })}</p>}
@@ -340,7 +375,7 @@ export function CodeStepBody(props: { block: ToolBlock; raw: () => JSX.Element }
         )}
       </Show>
       {/* The exact call and result stay one click away, such as a simulation's returned value and its ordered calls. */}
-      <Show when={props.block.status !== "running"}>
+      <Show when={props.block.status !== "running" && !props.block.liveArgs}>
         <details class="ai-code-step__raw">
           <summary class="focus-ui">{t().codeStepRaw}</summary>
           {props.raw()}

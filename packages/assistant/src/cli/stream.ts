@@ -503,7 +503,8 @@ export const streamAssistantTurn = async (input: {
     if (event.type === "block_set") {
       blocks.set(event.block.id, event.block);
       if (event.block.kind === "text") emitLiveText(event.block.id, event.block.text);
-      if (event.block.kind !== "tool") return null;
+      // A call still being written is not a step yet; the CLI reports it once the call exists.
+      if (event.block.kind !== "tool" || event.block.liveArgs) return null;
       return handleToolBlock(event.block);
     }
 

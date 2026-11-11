@@ -111,10 +111,18 @@ export function inferenceProvider(
             failed = true;
             error ??= event.issue.message;
           }
-          if ((event.type === "block_start" || event.type === "block_delta") && firstBlockAt === undefined) firstBlockAt = Date.now();
+          if (
+            (event.type === "block_start" || event.type === "block_delta" || event.type === "tool_args_delta") &&
+            firstBlockAt === undefined
+          )
+            firstBlockAt = Date.now();
           if (event.type === "block_delta") outputBlocks.set(event.blockId, (outputBlocks.get(event.blockId) ?? 0) + event.delta.length);
+          // Arguments the model wrote before the call ended count until its final block replaces them.
+          if (event.type === "tool_args_delta")
+            outputBlocks.set(`args:${event.callId}`, (outputBlocks.get(`args:${event.callId}`) ?? 0) + event.delta.length);
           if (event.type === "block_end") {
             const block = event.block;
+            if (block.type === "tool_call") outputBlocks.delete(`args:${block.id}`);
             const size =
               block.type === "text"
                 ? block.text.length
@@ -123,7 +131,13 @@ export function inferenceProvider(
                   : block.name.length + JSON.stringify(block.args).length;
             outputBlocks.set(event.blockId, size);
           }
-          if (event.type === "block_start" || event.type === "block_delta" || event.type === "block_end") generated = true;
+          if (
+            event.type === "block_start" ||
+            event.type === "block_delta" ||
+            event.type === "block_end" ||
+            event.type === "tool_args_delta"
+          )
+            generated = true;
           // A provider that refused the request, or never received it, did not process it.
           if (
             event.type === "issue" &&

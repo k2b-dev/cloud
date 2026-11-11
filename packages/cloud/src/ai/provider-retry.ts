@@ -76,6 +76,11 @@ export function retryTransientProviderErrors(
                 break;
               }
             }
+            // Arguments being written show at once; a retry takes them back (see the executor's provider_retry).
+            if (!committed && event.type === "tool_args_delta") {
+              yield event;
+              continue;
+            }
             if (!committed && !isBlockEvent(event)) {
               held.push(event);
               continue;

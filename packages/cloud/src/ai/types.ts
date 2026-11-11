@@ -1191,6 +1191,12 @@ export type AiToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput exten
   promptHint?: string;
   /** Optional compact representation sent to providers in later loops. The full result remains persisted and visible. */
   toHistoricalResult?: (context: { input: z.infer<TInput>; output: z.infer<TOutput>; callId: string }) => unknown | Promise<unknown>;
+  /**
+   * Top-level string arguments the chat shows while the model still writes them, such as a file's path and content.
+   * The step receives them a few times per second, each cut to its last few kilobytes; the complete arguments replace
+   * them when the call is written out, and a call that is cut off disappears. Never list arguments that can hold secrets.
+   */
+  streamArgs?: readonly string[];
 };
 
 export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> =

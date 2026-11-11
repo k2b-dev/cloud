@@ -74,3 +74,19 @@ test("a call to a name the turn does not offer tells the model how to find a cal
     result: expect.stringContaining("Unknown tool: code_run. Call only tools offered in this turn"),
   });
 });
+
+test("a tool-argument preview carries the provider name of the call it previews", async () => {
+  const provider = acceptCanonicalToolNames(
+    {
+      ...callingProvider("contacts.list", []),
+      async *stream() {
+        yield { type: "tool_args_delta", callId: "call-1", name: "contacts.list", delta: "{" };
+      },
+    },
+    new Map([["contacts__query__list", "contacts.list"]]),
+  );
+  const events = [];
+  for await (const event of provider.stream({ messages: [], tools: [{ name: "contacts__query__list", description: "", inputSchema: {} }] }))
+    events.push(event);
+  expect(events).toEqual([{ type: "tool_args_delta", callId: "call-1", name: "contacts__query__list", delta: "{" }]);
+});

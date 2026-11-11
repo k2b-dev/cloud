@@ -39,6 +39,7 @@ import { aiTurnErrorText } from "./chat/turn-error";
 import { createCloudCompactFn } from "./compaction";
 import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
+import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
@@ -408,7 +409,8 @@ const loadChatAttemptState = async (conversationId: string, turnId: string): Pro
 
 type BlockSetOp = { type: "block_set"; block: AiTurnBlock };
 type BlockDeltaOp = { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string };
-type BlockOp = BlockSetOp | BlockDeltaOp;
+type BlockRemoveOp = { type: "block_remove"; blockId: string };
+type BlockOp = BlockSetOp | BlockDeltaOp | BlockRemoveOp;
 
 type ToolBlockPatch = Partial<Extract<AiTurnBlock, { kind: "tool" }>> & { name?: string; clearApproval?: boolean };
 
@@ -472,6 +474,10 @@ const createEventMapper = (
   const setCanonicalNames = (items: Map<string, string>) => {
     canonicalNames = items;
   };
+  let streamArgs: PreparedAiTools["streamArgs"] = new Map();
+  const setStreamArgs = (items: PreparedAiTools["streamArgs"]) => {
+    streamArgs = items;
+  };
   let approvalReviews = new Map<string, CapabilityActionReviewData>();
   let capabilityScopes: ReadonlyMap<string, string> = new Map();
   const setApprovalReviews = (items: Map<string, CapabilityActionReviewData>, scopes: ReadonlyMap<string, string> = new Map()) => {
@@ -498,6 +504,17 @@ const createEventMapper = (
   const toolStreamIds = new Set<string>();
   /** kind per open Cloud stream block id, for delta create-if-missing. */
   const streamKinds = new Map<string, "text" | "thinking">();
+  /** Calls whose tool shows its arguments while the model writes them, by call id, until the call is final. */
+  const liveCalls = new Map<string, { reader: ReturnType<typeof createLiveArgsReader>; sentAt: number }>();
+  /** A step that shows only arguments still being written: no final call exists for it yet. */
+  const isPreview = (callId: string) => toolBlocks.get(callId)?.liveArgs !== undefined;
+  /** Takes back a step whose call never became final, so the chat shows only calls that exist. */
+  const dropPreview = (callId: string): BlockOp[] => {
+    liveCalls.delete(callId);
+    if (!isPreview(callId)) return [];
+    toolBlocks.delete(callId);
+    return [{ type: "block_remove", blockId: toolBlockId(callId) }];
+  };
 
   const setTool = (callId: string, patch: ToolBlockPatch, displayCallId = callId): BlockOp => {
     const existing = toolBlocks.get(callId) ?? toolBlocks.get(displayCallId);
@@ -510,6 +527,14 @@ const createEventMapper = (
       callId,
       name,
       args: "args" in patch ? patch.args : existing?.args,
+      // New arguments end the live view unless they are a live update themselves.
+      ...("args" in patch
+        ? patch.liveArgs
+          ? { liveArgs: patch.liveArgs }
+          : {}
+        : existing?.liveArgs
+          ? { liveArgs: existing.liveArgs }
+          : {}),
       status: patch.status ?? existing?.status ?? "running",
       at: patch.at ?? existing?.at,
       result: patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
@@ -536,6 +561,25 @@ const createEventMapper = (
 
   const translate = (event: OutboundEvent): BlockOp[] => {
     switch (event.type) {
+      case "tool_args_delta": {
+        const keys = streamArgs.get(event.name);
+        // A call id that already names a final call is never shown as written again.
+        if (!keys || (toolBlocks.has(event.callId) && !isPreview(event.callId))) return [];
+        let live = liveCalls.get(event.callId);
+        if (!live) {
+          live = { reader: createLiveArgsReader(keys), sentAt: Number.NEGATIVE_INFINITY };
+          liveCalls.set(event.callId, live);
+        }
+        live.reader.push(event.delta);
+        const now = Date.now();
+        if (now - live.sentAt < AI_LIVE_ARGS_INTERVAL_MS) return [];
+        const view = live.reader.view();
+        if (!Object.keys(view.args).length) return [];
+        live.sentAt = now;
+        return [
+          setTool(event.callId, { name: event.name, args: view.args, liveArgs: { omittedLines: view.omittedLines }, status: "running" }),
+        ];
+      }
       case "block_start": {
         if (event.kind === "tool_call") {
           toolStreamIds.add(`${event.turnIndex}:${event.blockId}`);
@@ -553,6 +597,7 @@ const createEventMapper = (
       }
       case "block_end": {
         if (event.block.type === "tool_call") {
+          liveCalls.delete(event.block.id);
           return [setTool(event.block.id, { name: event.block.name, args: event.block.args, status: "running" })];
         }
         // Converge on the final block content (covers any missed delta).
@@ -608,6 +653,8 @@ const createEventMapper = (
       case "issue": {
         const callId = "callId" in event.issue ? event.issue.callId : undefined;
         if (callId && rejectedCallIds.has(callId)) return [];
+        // A call cut off or malformed while it was written never runs; nessi records a malformed one as its own step.
+        if (callId && isPreview(callId)) return dropPreview(callId);
         if (callId && toolBlocks.has(callId)) {
           const existing = toolBlocks.get(callId);
           if (existing && existing.status !== "completed" && existing.status !== "failed") {
@@ -650,12 +697,15 @@ const createEventMapper = (
 
   return {
     translate: (event: OutboundEvent) => translate(event).filter(isVisibleAiNextMessageOp),
+    /** Takes back every step still being written, as a retried model call leaves no trace. */
+    dropPreviews: () => [...toolBlocks.keys(), ...liveCalls.keys()].flatMap((callId) => dropPreview(callId)),
     setTool,
     storedMessage,
     compaction,
     setFrontendModes,
     setPresentations,
     setCanonicalNames,
+    setStreamArgs,
     setApprovalPolicies,
     setApprovalReviews,
     setApprovalTargets,
@@ -1130,6 +1180,7 @@ export class AiTurnExecutor {
     pipeline.setApprovalTargets(approvalTargets);
     pipeline.setFrontendModes(prepared.frontendModes);
     pipeline.setCanonicalNames(prepared.canonicalNames);
+    pipeline.setStreamArgs(prepared.streamArgs);
     pipeline.setApprovalPolicies(prepared.approvalPolicies);
     const toolPresentations = new Map<string, AiToolPresentation>();
     const rejectedToolCallIds = new Set<string>();
@@ -1372,15 +1423,18 @@ export class AiTurnExecutor {
             prepared.canonicalNames.clear();
             prepared.approvalPolicies.clear();
             prepared.frontendModes.clear();
+            prepared.streamArgs.clear();
             rememberableCapabilityApprovals.clear();
             toolPresentations.clear();
             for (const [name, canonicalName] of snapshot.canonicalNames) prepared.canonicalNames.set(name, canonicalName);
             for (const [name, policy] of snapshot.approvalPolicies) prepared.approvalPolicies.set(name, policy);
             for (const [name, mode] of snapshot.frontendModes) prepared.frontendModes.set(name, mode);
+            for (const [name, keys] of snapshot.streamArgs) prepared.streamArgs.set(name, keys);
             for (const [name, scope] of rememberableApprovals) rememberableCapabilityApprovals.set(name, scope);
             for (const [name, presentation] of presentations) toolPresentations.set(name, presentation);
             pipeline.setFrontendModes(prepared.frontendModes);
             pipeline.setCanonicalNames(prepared.canonicalNames);
+            pipeline.setStreamArgs(prepared.streamArgs);
             pipeline.setApprovalPolicies(prepared.approvalPolicies);
             pipeline.setPresentations(toolPresentations);
           },
@@ -1566,6 +1620,8 @@ export class AiTurnExecutor {
       maxOutputTokens: resolved.profile.maxOutputTokens,
       reasoningEffort: resolved.profile.reasoningEffort,
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
+      // Steps of tools that declare `streamArgs` show those arguments while the model writes them.
+      toolArgsPreview: true,
       compact: createCloudCompactFn({
         conversationId,
         turnId,
@@ -2306,6 +2362,10 @@ class StreamPipeline {
     this.mapper.setCanonicalNames(names);
   }
 
+  setStreamArgs(items: PreparedAiTools["streamArgs"]): void {
+    this.mapper.setStreamArgs(items);
+  }
+
   setApprovalReviews(reviews: Map<string, CapabilityActionReviewData>, scopes: ReadonlyMap<string, string>): void {
     this.mapper.setApprovalReviews(reviews, scopes);
   }
@@ -2421,9 +2481,7 @@ class StreamPipeline {
     await this.maybeSnapshot();
   }
 
-  private async emitOp(
-    op: { type: "block_set"; block: AiTurnBlock } | { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string },
-  ): Promise<void> {
+  private async emitOp(op: BlockOp): Promise<void> {
     const seq = this.nextSeq();
     const event = this.envelope({ ...op, seq }) as AiWireEvent;
     this.blocks = applyWireEventToBlocks(this.blocks, event);
@@ -2465,6 +2523,8 @@ class StreamPipeline {
 
   /** Transient: says a model call is waiting to be retried. Snapshots never carry it. */
   async emitProviderRetry(): Promise<void> {
+    // The retried call starts its arguments over; what the failed call had written so far goes.
+    for (const op of this.mapper.dropPreviews()) await this.emitOp(op);
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "provider_retry" as const, seq }));
     await this.maybeSnapshot();

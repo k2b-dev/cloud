@@ -136,6 +136,8 @@ export function createCodeAuthoringChatTools() {
       inputSchema: write,
       outputSchema: z.unknown(),
       approval: "never",
+      // The chat shows the file while Gustav writes it.
+      streamArgs: ["path", "content"],
     }).server((draft, context) =>
       safe(
         async () => {

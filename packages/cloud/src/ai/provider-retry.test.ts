@@ -107,6 +107,34 @@ describe("transient provider retries", () => {
     expect(retries).toEqual([]);
   });
 
+  test("arguments being written pass at once and leave the call retryable; the retry announces itself after them", async () => {
+    const preview: ProviderEvent = { type: "tool_args_delta", callId: "c1", name: "code_write", delta: '{"content":"a' };
+    const cutOff: ProviderEvent = {
+      type: "issue",
+      issue: {
+        kind: "cancelled_tool_call",
+        callId: "c1",
+        name: "code_write",
+        reason: "provider_error_before_tool_call",
+        message: "cut off",
+        argsText: '{"content":"a',
+      },
+    };
+    const source = scripted([preview, cutOff, rateLimited], answer);
+    const order: string[] = [];
+    const provider = retryTransientProviderErrors(source.provider, {
+      deadline: null,
+      delaysMs: [1, 2],
+      onRetry: async () => {
+        order.push("retry");
+      },
+    });
+    for await (const event of provider.stream({ messages: [] })) order.push(event.type);
+    expect(source.calls).toBe(2);
+    // The failed attempt's issues leave no trace; the executor takes its previews back on the retry.
+    expect(order).toEqual(["tool_args_delta", "retry", ...answer.map((event) => event.type)]);
+  });
+
   test("permanent failures and context overflow are not repeated", async () => {
     for (const issue of [
       { kind: "provider_error", message: "401 invalid key", retryable: false },

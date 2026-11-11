@@ -1560,6 +1560,65 @@ for (const view of [
     }, 60_000);
 
 for (const width of [1440, 390])
+  test(`a Code file grows in its step while Gustav writes it and keeps its place when written (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      const source = Array.from({ length: 40 }, (_, index) =>
+        index === 0 ? 'import { app, spaces } from "@sdk";' : `  await spaces.space("sp_team").task.create({ title: "Aufgabe ${index}" });`,
+      ).join("\n");
+      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "code_write" };
+      const live = (lines: number) => ({
+        ...write,
+        status: "running" as const,
+        args: { path: "code.ts", content: source.split("\n").slice(0, lines).join("\n") },
+        liveArgs: { omittedLines: { path: 0, content: 0 } },
+      });
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 2, type: "block_set", block: live(6) });
+      // The path is known while Gustav writes, so the work line names the file.
+      expect(await page.locator(".ai-turn-work > summary").innerText()).toContain("code.ts");
+      await page.locator(".ai-turn-work > summary").click();
+      await frames(page);
+      await page.locator(".ai-turn-steps .k2b-chat-activity").first().locator("summary").first().click();
+      await frames(page);
+      const sourceView = page.locator(".ai-code-step__source").first();
+      expect(await sourceView.innerText()).toContain("code.ts · Zeile 6");
+      // The file name carries the AI colour while it is written.
+      const title = sourceView.locator(".k2b-content-code-display__title");
+      expect(await title.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(142, 27, 111)");
+      await emit(page, { ...base, seq: 3, type: "block_set", block: live(30) });
+      await settled(page, ".ai-turn-work");
+      const box = () => sourceView.evaluate((node) => node.getBoundingClientRect().toJSON() as DOMRect);
+      const growing = await box();
+      expect(await sourceView.innerText()).toContain("code.ts · Zeile 30");
+      // Only the newest lines show while written, numbered like the whole file.
+      expect(await sourceView.locator(".k2b-content-code-display__number").first().innerText()).toBe("17");
+      mkdirSync("/tmp/l28-gustav-live", { recursive: true });
+      await page.screenshot({ path: `/tmp/l28-gustav-live/code-write-live-light-${width}.png` });
+      // The written file keeps the live height and stays at its end, so nothing moves under the reader.
+      await emit(page, {
+        ...base,
+        seq: 4,
+        type: "block_set",
+        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+      });
+      await settled(page, ".ai-turn-work");
+      const written = await box();
+      expect([written.top, written.height]).toEqual([growing.top, growing.height]);
+      expect(await sourceView.locator(".k2b-content-code-display__body").evaluate((node) => node.scrollTop > 0)).toBe(true);
+      expect(await sourceView.innerText()).not.toContain("Zeile 30");
+      expect(await title.evaluate((node) => getComputedStyle(node).color)).not.toBe("rgb(142, 27, 111)");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: `/tmp/l28-gustav-live/code-write-written-light-${width}.png` });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+for (const width of [1440, 390])
   test(`a written Code file, its check and its tests read as source and rows, not JSON (${width})`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
     try {

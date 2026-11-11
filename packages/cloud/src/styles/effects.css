@@ -1800,7 +1800,17 @@ dialog:has(.launchpad-panel)::backdrop {
   margin: 0;
 }
 
-/* A long file scrolls inside its step at the height of 14 lines. */
+/* The copy button joins the header once the file is written; the header keeps its height without it. */
+.k2b-ui .ai-code-step__source .k2b-content-code-display__header {
+  min-height: 2.5rem;
+}
+
+/* While Gustav writes a file, its name carries the AI colour. */
+.k2b-ui .ai-code-step__source[data-live] .k2b-content-code-display__title {
+  color: var(--k2b-ai-accent);
+}
+
+/* A long file scrolls inside its step at the height of 14 lines, live and written alike. */
 .k2b-ui .ai-code-step__source .k2b-content-code-display__body {
   max-height: calc(14 * 1.25rem + 0.5rem);
   overscroll-behavior: contain;
