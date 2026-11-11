@@ -34,6 +34,29 @@ export type PreviewDependencies = {
   ): Promise<PreviewArtifacts>;
 };
 
+/** Object-store calls take no abort signal; the job stops waiting at its deadline and frees its slot and transaction. */
+const within = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) {
+      void work.catch(() => {});
+      return abort();
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
+/** Cleanup after a failed or abandoned write is best effort within its own short bound; a late object is only a leftover. */
+const CLEANUP_MS = 15_000;
+
 /** One pool is shared by both Sync consumers and inline requests. No unbounded local wait list. */
 export function createPreviewsService(deps: PreviewDependencies) {
   let reader: PreviewReader | undefined;
@@ -42,6 +65,11 @@ export function createPreviewsService(deps: PreviewDependencies) {
   const running = new Set<Promise<unknown>>();
   const removeObjects = async (row: { key_hash: string; revision: string; variants: PreviewManifest }) => {
     for (const variant of Object.keys(row.variants)) await deps.object(previewObjectKey(row.key_hash, row.revision, variant)).delete();
+  };
+  const discardWritten = async (written: string[]) => {
+    const keys = written.splice(0);
+    const bound = AbortSignal.timeout(CLEANUP_MS);
+    for (const key of keys) await within(deps.object(key).delete(), bound).catch(() => {});
   };
   async function generate(source: PreviewSource, signal: AbortSignal, persistent: boolean): Promise<PreviewArtifacts | null> {
     if (active >= 2 || stopping.signal.aborted) return null;
@@ -69,7 +97,7 @@ export function createPreviewsService(deps: PreviewDependencies) {
               bounded.throwIfAborted();
               const key = previewObjectKey(previewHash(source.key), source.revision, variant);
               written.push(key);
-              await deps.object(key).write(blob);
+              await within(deps.object(key).write(blob), bounded);
               manifest[variant] = { type: blob.type, bytes: blob.size };
             }
             bounded.throwIfAborted();
@@ -77,8 +105,7 @@ export function createPreviewsService(deps: PreviewDependencies) {
           }
           return artifacts;
         } catch (error) {
-          for (const key of written) await deps.object(key).delete();
-          written.length = 0;
+          await discardWritten(written);
           if (error instanceof PreviewSourceChanged || signal.aborted || stopping.signal.aborted) return null;
           const failure =
             error instanceof PreviewGenerationError
@@ -91,7 +118,7 @@ export function createPreviewsService(deps: PreviewDependencies) {
       return result?.value ?? null;
     } catch (error) {
       // Object writes precede the metadata commit. Compensate if that commit fails too.
-      for (const key of written) await deps.object(key).delete();
+      await discardWritten(written);
       throw error;
     } finally {
       active--;
@@ -180,8 +207,8 @@ export function createPreviewsService(deps: PreviewDependencies) {
       if (await deps.persistent()) await trackedGenerate(source, signal, true);
     },
     async maintain(maxBytes: number, signal: AbortSignal): Promise<number> {
+      let removed = await deps.store.expireTerminal();
       const rows = await deps.store.eviction(maxBytes);
-      let removed = 0;
       for (const row of rows) {
         signal.throwIfAborted();
         const result = await deps.store.withKey(row.key_hash, async (store) => {

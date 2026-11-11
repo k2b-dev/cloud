@@ -112,6 +112,7 @@ const files: Record<string, [string, string | Buffer]> = {
   "Archive.zip": ["application/zip", "PK"],
   "Clip.webm": ["video/webm", readFileSync(`${ui}test/media/landscape-320x180.webm`)],
   "Packing.txt": ["text/plain", "Packing list\n\n- Pavilion 6 x 3 m\n- Stage platforms (4)\n"],
+  "Offline.jpg": ["image/jpeg", "jpeg bytes"],
   "The quarterly planning notes of the summer party organising committee, final version for the board.jpg": ["image/jpeg", "jpeg bytes"],
 };
 const folder = Object.entries(files).map(([name, [, body]]) => ({ name, size: Buffer.byteLength(body) }));
@@ -154,6 +155,8 @@ const open = async (options: BrowserContextOptions, holdSharp?: Promise<void>, h
       const size = url.searchParams.get("size")!;
       // Every address carries the file's version, so the browser may keep the answer.
       if (url.searchParams.get("rev") !== `r-${name}`) return route.fulfill({ status: 400 });
+      // The connection drops, as when the network goes away.
+      if (name === "Offline.jpg") return route.abort("failed");
       const answer = async (): Promise<[number, string, string | Buffer, Record<string, string>?]> => {
         if (name === "Broken.jpg" && !retried.includes(name)) return [404, "application/json", JSON.stringify({ code: "preview_failed" })];
         if (name.endsWith(".jpg") && (size === "small" || size === "large")) {
@@ -450,6 +453,17 @@ describe("file quick view in a browser", () => {
       await tab.click('[aria-label="Edit"]');
       expect(await tab.evaluate(() => window.preview.edits)).toEqual(["README.md"]);
       expect(await tab.$(".k2b-quick-view")).toBeNull();
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("a dropped connection ends in the same calm failure with Try again, never in an endless placeholder", async () => {
+    const tab = await open(desktop);
+    try {
+      await show(tab, "Offline.jpg");
+      await tab.waitForSelector(".filesv2-quick-state", { timeout: 5_000 });
+      expect(await tab.$eval(".filesv2-quick-state", (state) => (state as HTMLElement).innerText)).toContain("Try again");
     } finally {
       await tab.context().close();
     }

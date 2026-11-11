@@ -148,6 +148,16 @@ suiteFor("database", "nats")("platform previews", () => {
     expect(await store.find(input)).toBeNull();
     expect((await other.find({ ...input, key: "foreign" }))?.state).toBe("ready");
   }, 30_000);
+  test("remembered failures expire after 30 days, only the local package's", async () => {
+    const failed = source("expired", "broken.png");
+    await store.put(failed, "failed", {}, "generation_failed");
+    const other = createPreviewsStore(sql, "other-app");
+    await other.put({ ...failed, key: "foreign-failed" }, "failed", {}, "generation_failed");
+    await sql`UPDATE platform._cloud_previews SET created_at=statement_timestamp() - interval '31 days' WHERE state='failed'`;
+    expect(await service.maintain(1_000_000_000, new AbortController().signal)).toBe(1);
+    expect(await store.find(failed)).toBeNull();
+    expect((await other.find({ ...failed, key: "foreign-failed" }))?.state).toBe("failed");
+  }, 30_000);
 });
 
 suiteFor(

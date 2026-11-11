@@ -31,6 +31,8 @@ test("ready bytes use the revision cache policy and pass the request signal", as
   const response = await app.request(url);
   expect(await response.text()).toBe("image");
   expect(response.headers.get("Cache-Control")).toBe("private, max-age=31536000, immutable");
+  // A cached preview belongs to the session that read it; another sign-in in the same browser asks again.
+  expect(response.headers.get("Vary")).toBe("Cookie, Authorization");
   expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
   expect(read.mock.calls[0]?.[1]).toEqual({ baseId: "base", path: "Docs/plan.png", rev: "r1", size: "small" });
   expect(read.mock.calls[0]?.[2]).toBeInstanceOf(AbortSignal);

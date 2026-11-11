@@ -40,6 +40,8 @@ export const previewApi = new Hono<AuthContext>()
         "Content-Type": result.type,
         "Content-Length": String(result.bytes),
         "Cache-Control": immutable ? "private, max-age=31536000, immutable" : "no-store",
+        // The browser keeps a preview only for the session that was allowed to read it.
+        Vary: "Cookie, Authorization",
         "X-Content-Type-Options": "nosniff",
         "Cross-Origin-Resource-Policy": "same-origin",
       });

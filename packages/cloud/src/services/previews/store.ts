@@ -18,6 +18,8 @@ export type PreviewRow = {
   error_code: string | null;
 };
 export const PREVIEW_CLEANUP_BATCH = 100;
+/** How long a failed, too large or unsupported revision is remembered. */
+export const PREVIEW_TERMINAL_RETENTION_DAYS = 30;
 
 export async function setupPreviews(db: SQL): Promise<void> {
   await db.begin(async (tx) => {
@@ -48,6 +50,8 @@ export interface PreviewStore {
   rows(keyHash: string): Promise<PreviewRow[]>;
   remove(row: Pick<PreviewRow, "key_hash" | "revision">): Promise<void>;
   eviction(maxBytes: number): Promise<PreviewRow[]>;
+  /** Removes up to one batch of this package's remembered failures and refusals that are older than their retention. */
+  expireTerminal(): Promise<number>;
   withKey<T>(keyHash: string, run: (store: PreviewStore) => Promise<T>): Promise<{ value: T } | null>;
 }
 
@@ -86,6 +90,17 @@ export function createPreviewsStore(db: SQL, packageName: string): PreviewStore 
       FROM platform._cloud_previews WHERE bytes > 0
     ) SELECT * FROM ranked WHERE retained > ${maxBytes} AND package=${packageName}
       ORDER BY shown_at, key_hash, revision LIMIT ${PREVIEW_CLEANUP_BATCH}`,
+    async expireTerminal() {
+      // A failure stays remembered for its revision long enough that a broken file is not drawn again on every view;
+      // after that a later view tries once more. These rows hold no bytes, so the byte budget never removes them.
+      const removed = await query<{ key_hash: string }[]>`DELETE FROM platform._cloud_previews
+        WHERE (package, key_hash, revision) IN (
+          SELECT package, key_hash, revision FROM platform._cloud_previews
+          WHERE package=${packageName} AND state <> 'ready' AND created_at < statement_timestamp() - ${PREVIEW_TERMINAL_RETENTION_DAYS} * interval '1 day'
+          LIMIT ${PREVIEW_CLEANUP_BATCH})
+        RETURNING key_hash`;
+      return removed.length;
+    },
     async withKey(keyHash, run) {
       // Serialize all revisions, generation, retry and deletion for one application object.
       return db.begin(async (tx) => {

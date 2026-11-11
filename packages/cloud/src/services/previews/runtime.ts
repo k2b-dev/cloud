@@ -2,15 +2,21 @@ import { StoreFullError, type Worker } from "@k2b/sync";
 import { getProcessApplicationPackage } from "../../_internal/process-identity";
 import { lazySync } from "../../_internal/process-sync";
 import { get } from "../settings";
-import { previewService, setPreviewSubmit } from "./index";
+import { hasPreviewReader, previewService, setPreviewSubmit } from "./index";
 import { previewJobKey } from "./store";
 import { PREVIEW_DEADLINE_MS, type PreviewSource } from "./types";
 
+/** Each application owns its own queues and schedule: a job names a source only its own reader can open. */
+const owned = (name: string) => {
+  const packageName = getProcessApplicationPackage();
+  if (!packageName) throw new Error("Start the application before using previews");
+  return `cloud-previews-${packageName}-${name}`;
+};
 // 64 metadata messages per lane: a bounded burst, about three hours at the job deadline.
 const queue = (priority: "high" | "low") =>
   lazySync((sync) =>
     sync.job<PreviewSource>({
-      id: `cloud-previews-${priority}`,
+      id: owned(priority),
       // 32 KiB also fits the worst-case JSON escaping of all bounded source fields.
       maxPayloadBytes: 32 * 1024,
       retention: { maxMessages: 64, maxBytes: 64 * 32 * 1024, maxAgeMs: 4 * 60 * 60_000 },
@@ -21,11 +27,10 @@ const queue = (priority: "high" | "low") =>
   );
 const high = queue("high");
 const low = queue("low");
-const maintenance = lazySync((sync) =>
-  sync.scheduler({ id: "cloud-previews-retention", owner: "platform", delivery: { maxAttempts: 2, ackWaitMs: 60_000 } }),
-);
+const maintenance = lazySync((sync) => sync.scheduler({ id: owned("retention"), delivery: { maxAttempts: 2, ackWaitMs: 60_000 } }));
 
 export async function startPreviewsRuntime(): Promise<() => Promise<void>> {
+  if (!hasPreviewReader()) return async () => {};
   const service = previewService();
   const stopping = new AbortController();
   const workers: Worker[] = [];
@@ -45,7 +50,7 @@ export async function startPreviewsRuntime(): Promise<() => Promise<void>> {
         }),
       );
     await maintenance().create({
-      id: getProcessApplicationPackage()!,
+      id: "budget",
       cron: "*/10 * * * *",
       timezone: "UTC",
       misfire: "latest",

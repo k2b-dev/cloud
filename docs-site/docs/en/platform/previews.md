@@ -58,7 +58,7 @@ After checking the caller's access, call
 | --- | --- |
 | `ready` | `body` is a stream or Blob; `type` and `bytes` describe it |
 | `pending` | Retry after `retryAfter` seconds; the queue or inline pool may be full |
-| `failed` | Failure is remembered for this revision; offer an explicit retry |
+| `failed` | Failure is remembered for this revision for 30 days; offer an explicit retry |
 | `too_large` | Source bytes or decoding exceed the relevant limit |
 | `unsupported` | Source format, requested variant, or text encoding is unsupported |
 
@@ -114,7 +114,11 @@ default bucket's size setting. Its default is 2 GiB across applications sharing
 the platform database. Every ten minutes each running application's runtime
 removes a bounded batch of its own previews, using installation-wide recency
 and byte totals. The oldest previews are removed first and regenerate on view.
-Inactive applications must run their runtime again to clean their objects.
+The same run removes remembered `failed`, `too_large` and `unsupported`
+revisions after 30 days, so they hold no budget but still cannot grow without
+end. Inactive applications must run their runtime again to clean their objects.
+Only applications that register a reader start preview queues and workers; each
+application owns its own queues, so no application processes another's jobs.
 
 Without an object store (`storage_not_configured`), `read` generates inline in
 the same bounded pool and returns the requested bytes without saving them.

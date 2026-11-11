@@ -37,6 +37,8 @@ export function previewService() {
   }
   return service;
 }
+/** Only an application that reads its own sources generates previews; the others start no queues or workers. */
+export const hasPreviewReader = () => registeredReader !== undefined;
 export function setPreviewSubmit(value: typeof submit) {
   submit = value;
 }

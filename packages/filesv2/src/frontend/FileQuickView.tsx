@@ -257,8 +257,10 @@ function ImageStage(props: StageProps) {
     if (image.naturalWidth > 0 && ratio() === null) setRatio(image.naturalWidth / image.naturalHeight);
   };
   const recover = async () => {
+    // A network failure ends in the same visible state as a failed preview, with Try again and Download.
     const result = await loadPreview(previewUrl(props.baseId, props.entry, "large"), abort.signal).catch(() => null);
-    if (abort.signal.aborted || !result) return;
+    if (abort.signal.aborted) return;
+    if (!result) return void setState("failed");
     if (result.state === "ready") {
       const url = URL.createObjectURL(result.blob);
       urls.push(url);

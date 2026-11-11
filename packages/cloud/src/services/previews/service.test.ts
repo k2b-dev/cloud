@@ -41,6 +41,11 @@ function fixture(persistent = true) {
       rows.delete(`${row.key_hash}:${row.revision}`);
     },
     eviction: async () => [...rows.values()].filter((row) => row.bytes > 0),
+    async expireTerminal() {
+      const old = [...rows.entries()].filter(([, row]) => row.state !== "ready" && Date.now() - row.created_at.getTime() > 30 * 86_400_000);
+      for (const [key] of old) rows.delete(key);
+      return old.length;
+    },
     async withKey(key, run) {
       if (locks.has(key)) return null;
       locks.add(key);
@@ -166,6 +171,31 @@ test("discard removes every revision and budget maintenance removes tracked obje
   await f.service.work(source, new AbortController().signal);
   expect(await f.service.maintain(0, new AbortController().signal)).toBe(1);
   expect(f.objects.size).toBe(0);
+});
+
+test("remembered failures expire after their retention, so byte-free rows cannot grow forever", async () => {
+  const f = fixture();
+  f.deps.generate = async () => {
+    throw new Error("invalid");
+  };
+  await f.service.work(source, new AbortController().signal);
+  expect(await f.service.read(source, "small")).toEqual({ state: "failed" });
+  expect(await f.service.maintain(1_000_000, new AbortController().signal)).toBe(0);
+  setSystemTime(new Date(now.getTime() + 31 * 86_400_000));
+  expect(await f.service.maintain(1_000_000, new AbortController().signal)).toBe(1);
+  expect(f.rows.size).toBe(0);
+});
+
+test("a stalled object write ends at the job deadline and leaves no row", async () => {
+  const f = fixture();
+  const write = f.deps.object;
+  f.deps.object = (key) => ({ ...write(key), write: () => new Promise(() => {}) });
+  const job = new AbortController();
+  const done = f.service.work(source, job.signal);
+  await Bun.sleep(10);
+  job.abort();
+  await done;
+  expect(f.rows.size).toBe(0);
 });
 
 test("a failed metadata transaction does not leave generated objects behind", async () => {
