@@ -11,6 +11,8 @@ import {
   audit,
   coreSettings,
   logger,
+  type PreviewVariant,
+  previews,
   serviceAccounts,
 } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
@@ -113,6 +115,7 @@ import {
 } from "./machine-access";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
 import { permits, type UnixIdentity } from "./posix";
+import { enqueueFilePreview, filePreviewSource } from "./previews";
 import { rootSummary } from "./root-summary";
 import { highlight, searchPage, trashHits } from "./search";
 import { createSharingService } from "./sharing";
@@ -906,15 +909,20 @@ export function createFilesService(
           throw new FilesError("unavailable", 503);
         return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
       },
-    ).catch(async (error: unknown) => {
-      // The write owner has finished its definite refusal before this comparison. Open upload journals still suppress observations.
-      if (error instanceof FilegateError && error.status === 412)
-        await observeContact(current, current.target, {
-          underRootLock: true,
-          stableId: current.info.stableIds ? current.node.id : undefined,
-        });
-      throw error;
-    });
+    )
+      .then(async (node) => {
+        await enqueueFilePreview(current.inspection.summary, userPath(node.path.slice(current.inspection.candidate.path.length + 1)), node);
+        return node;
+      })
+      .catch(async (error: unknown) => {
+        // The write owner has finished its definite refusal before this comparison. Open upload journals still suppress observations.
+        if (error instanceof FilegateError && error.status === 412)
+          await observeContact(current, current.target, {
+            underRootLock: true,
+            stableId: current.info.stableIds ? current.node.id : undefined,
+          });
+        throw error;
+      });
   }
 
   function versionIntent(
@@ -1234,7 +1242,11 @@ export function createFilesService(
     signal?: AbortSignal,
   ): Promise<FileEntry> {
     const { root } = current;
-    if (row.state === "committed" && row.result) return uploadResult(current, row, row.result);
+    if (row.state === "committed" && row.result) {
+      const result = uploadResult(current, row, row.result);
+      await enqueueFilePreview(current.inspection.summary, result.path, row.result);
+      return result;
+    }
     if (row.state === "aborted" || row.state === "expired") throw new FilesError("upload_closed", 409);
     const sessionId = uploadSessionId(row);
     if (!sessionId) throw new FilesError("receipt_unknown", 409);
@@ -1243,6 +1255,7 @@ export function createFilesService(
     if (session.state === "committed" && session.result) {
       const result = uploadResult(current, row, session.result);
       await uploads.finish(row.id, "committed", session.result);
+      await enqueueFilePreview(current.inspection.summary, result.path, session.result);
       return result;
     }
     if (session.state === "aborted" || session.state === "expired") {
@@ -1260,6 +1273,7 @@ export function createFilesService(
     const node = await uploadAction(row.id, () => root.commitSession(sessionId));
     const result = uploadResult(current, row, node);
     await uploads.finish(row.id, "committed", node);
+    await enqueueFilePreview(current.inspection.summary, result.path, node);
     return result;
   }
   /** Sessions are bound to the user that opened them; commit re-checks the target before Filegate publishes. */
@@ -2318,6 +2332,11 @@ export function createFilesService(
               },
               batchId,
             );
+            await enqueueFilePreview(
+              destination.inspection.summary,
+              userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
+              node,
+            );
             return fileEntry(
               destination.inspection.summary,
               userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
@@ -2410,6 +2429,7 @@ export function createFilesService(
             return { itemAfterId: fresh.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
           },
         );
+        await enqueueFilePreview(fresh.inspection.summary, fresh.relative, node);
         return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });
     },
@@ -2455,6 +2475,7 @@ export function createFilesService(
             return { itemAfterId: destination.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
           },
         );
+        await enqueueFilePreview(destination.inspection.summary, relative, node);
         return { base: destination.inspection.summary, entry: fileEntry(destination.inspection.summary, relative, node) };
       });
     },
@@ -2751,6 +2772,16 @@ export function createFilesService(
       const dimension = input.size === "large" ? 1024 : 320;
       const lease = await current.root.directThumbnail(current.target, { width: dimension, height: dimension, expiresIn: 60 });
       return { url: lease.url, method: "GET", expires: lease.expires };
+    },
+    async preview(call: UserFilesCall, input: { baseId: string; path: string; rev: string; size: PreviewVariant }, signal: AbortSignal) {
+      const current = await authorized(call.actor, input.baseId, input.path, false);
+      const source = filePreviewSource(current.inspection.summary, current.relative, current.node);
+      return { result: await previews.read(source, input.size, { signal }), immutable: input.rev === source.revision };
+    },
+    async retryPreview(call: UserFilesCall, input: { baseId: string; path: string }) {
+      const current = await authorized(call.actor, input.baseId, input.path, false);
+      await previews.retry(filePreviewSource(current.inspection.summary, current.relative, current.node));
+      return { state: "pending" as const };
     },
     async capabilityDownload(call: UserFilesCall, input: { id: string; revision: string }, signal: AbortSignal): Promise<Response> {
       const actor = call.actor;

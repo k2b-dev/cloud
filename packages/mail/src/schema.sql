@@ -1231,6 +1231,7 @@ CREATE TABLE mail.folders (
     body_cursor jsonb DEFAULT '{}'::jsonb NOT NULL,
     attachment_cursor jsonb DEFAULT '{}'::jsonb NOT NULL,
     last_reconciled_at timestamp with time zone,
+    last_sync_snapshot jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     discovery_state text DEFAULT 'active'::text NOT NULL,
@@ -2380,7 +2381,8 @@ CREATE INDEX sync_runs_resource_idx ON mail.sync_runs USING btree (remote_resour
 
 CREATE INDEX sync_runs_running_idx ON mail.sync_runs USING btree (remote_resource_id, state) WHERE (state = 'running'::text);
 
-CREATE INDEX sync_runs_terminal_retention_idx ON mail.sync_runs USING btree (COALESCE(finished_at, started_at), id) WHERE (state <> 'running'::text);
+CREATE INDEX sync_runs_completed_retention_idx ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed';
+CREATE INDEX sync_runs_error_retention_idx ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed');
 
 -- mail.workflow_profile ---------------------------------------------------
 
@@ -2895,6 +2897,7 @@ CREATE TABLE IF NOT EXISTS mail.automation_log (
   UNIQUE (run_id, conversation_id)
 );
 CREATE INDEX IF NOT EXISTS automation_log_mailbox_date_idx ON mail.automation_log (mailbox_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS automation_log_retention_idx ON mail.automation_log (created_at, id);
 CREATE INDEX IF NOT EXISTS automation_log_conversation_date_idx ON mail.automation_log (conversation_id, created_at DESC, id DESC);
 -- A person changing assignment invalidates provenance even if they restore the same person later.
 CREATE TABLE IF NOT EXISTS mail.automation_assignment (
@@ -2935,6 +2938,7 @@ CREATE TABLE IF NOT EXISTS mail.workflow_effect_order (
 CREATE INDEX IF NOT EXISTS workflow_effect_order_message_position_idx
     ON mail.workflow_effect_order (remote_message_ref_id, position);
 CREATE INDEX IF NOT EXISTS workflow_effect_order_retention_idx ON mail.workflow_effect_order (created_at, event_id);
+CREATE INDEX IF NOT EXISTS workflow_effect_order_expiry_idx ON mail.workflow_effect_order (expires_at, event_id);
 
 CREATE TABLE IF NOT EXISTS mail.workflow_effect_claim (
     remote_message_ref_id uuid NOT NULL REFERENCES mail.remote_message_refs(id) ON DELETE CASCADE,

@@ -133,10 +133,10 @@ export function StorageView(props: {
           </SettingsField>
         </SettingsSection>
         <RegistryForm
-          groups={["storage"]}
+          groups={["storage", "previews"]}
           sections={[
             { title: t.connection, keys: CONNECTION_KEYS },
-            { title: t.limits, description: t.maxSize, keys: ["storage.max_object_bytes"] },
+            { title: t.limits, description: t.maxSize, keys: ["storage.max_object_bytes", "previews.max_bytes"] },
           ]}
           entries={props.defaultEntries}
           reloadAfter={CONNECTION_KEYS}

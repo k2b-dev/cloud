@@ -126,12 +126,12 @@
 .k2b-ui .notebook-sidebar-chip.k2b-button {
   flex: none;
 }
-/* Quick filters read like FilterChip: the field edge at rest, drawn as the button's 1 px border plus a 1 px inset of
-   the same colour, so a state never changes the chip's size. Focus turns the edge blue inside the chip. */
+/* Quick filters read like FilterChip: the field edge at rest, drawn as the button's border at the edge width, so a
+   state never changes the chip's size. Focus turns the edge blue inside the chip. */
 .k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button {
   --k2b-edge-color: var(--k2b-edge);
+  border-width: var(--k2b-edge-width);
   border-color: var(--k2b-edge-color);
-  box-shadow: inset 0 0 0 1px var(--k2b-edge-color);
 }
 .k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);

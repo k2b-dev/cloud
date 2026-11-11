@@ -46,6 +46,19 @@ test.skipIf(process.platform !== "linux")("PDF rendering cancellation terminates
   expect((await renderPdfPages(visionPdfFixture())).pages.map((page) => page.page)).toEqual([1, 2]);
 });
 
+test.skipIf(process.platform !== "linux")(
+  "previews explicitly accept PDF inputs beyond the AI limit while keeping the default unchanged",
+  async () => {
+    const bytes = new Uint8Array(PDF_MAX_BYTES + 1);
+    bytes.fill(32);
+    bytes.set(visionPdfFixture());
+    await expect(renderPdfPages(bytes)).rejects.toThrow("10 MiB");
+    expect((await renderPdfPages(bytes, [1], undefined, { maxInputBytes: 50_000_000 })).pages).toHaveLength(1);
+    await expect(renderPdfPages(new Uint8Array(), [1], undefined, { maxInputBytes: 50_000_001 })).rejects.toThrow(RangeError);
+  },
+  30_000,
+);
+
 test.skipIf(process.platform !== "linux")("PDF decoder keeps a fixed thread set so its memory limit holds on any core count", async () => {
   // The data limit also counts per-thread memory: pools sized by core count exhausted it on 16-core hosts.
   const spawn = spyOn(Bun, "spawn");

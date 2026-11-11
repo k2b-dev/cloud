@@ -89,6 +89,8 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  // One checkpoint per folder lets waiting sync commands finish without retaining empty runs.
+  await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS last_sync_snapshot jsonb`;
   await tx`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns
       WHERE table_schema = 'mail' AND table_name = 'drafts' AND column_name = 'adopted_at') THEN
@@ -424,8 +426,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   if (!receiptPending?.present) {
     await tx`ALTER TABLE mail.message_contents ADD COLUMN IF NOT EXISTS receipt_pending boolean DEFAULT false NOT NULL`.simple();
   }
-  // A mailbox completes thousands of sync runs a day and keeps them for 30 days. Listing its rare
-  // failed, cancelled, superseded, or running runs seeks here instead of reading every completed one.
+  // Changed batches and error recoveries remain for three days; other terminal runs for 30 days.
+  // Listing failed, cancelled, superseded, or running runs seeks here instead of reading completed work.
   // Building it reads the table once, on the first start after the update; later starts skip the
   // statement, so they do not wait for the table lock that the build takes.
   const [syncRunStateIndex] = await tx<{ present: boolean }[]>`
@@ -786,6 +788,33 @@ const INDEX_BUILD_LEASE_MS = 60_000;
 const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
 
 type BackgroundIndex = { name: string; table: string; ddl: string };
+const runtimeHistoryIndexes: BackgroundIndex[] = [
+  // Build the smaller auxiliary indexes before the potentially large sync-history indexes.
+  {
+    name: "mail.automation_log_retention_idx",
+    table: "mail.automation_log",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS automation_log_retention_idx
+      ON mail.automation_log (created_at, id)`,
+  },
+  {
+    name: "mail.workflow_effect_order_expiry_idx",
+    table: "mail.workflow_effect_order",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS workflow_effect_order_expiry_idx
+      ON mail.workflow_effect_order (expires_at, event_id)`,
+  },
+  {
+    name: "mail.sync_runs_completed_retention_idx",
+    table: "mail.sync_runs",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_completed_retention_idx
+      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed'`,
+  },
+  {
+    name: "mail.sync_runs_error_retention_idx",
+    table: "mail.sync_runs",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_error_retention_idx
+      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed')`,
+  },
+];
 const backfillActivityIndex: BackgroundIndex = {
   name: "mail.activity_events_backfill_operation_idx",
   table: "mail.activity_events",
@@ -896,6 +925,21 @@ export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroun
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
 export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);
+
+let runtimeHistoryBuild: Promise<void> | undefined;
+export const buildRuntimeHistoryIndexes = (pool: SqlClient = sql): Promise<void> => {
+  runtimeHistoryBuild ??= (async () => {
+    try {
+      for (const index of runtimeHistoryIndexes) {
+        const result = await buildBackgroundIndex(index, pool);
+        if (result === "busy" || result === "failed") return;
+      }
+    } finally {
+      runtimeHistoryBuild = undefined;
+    }
+  })();
+  return runtimeHistoryBuild;
+};
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and

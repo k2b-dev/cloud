@@ -117,6 +117,9 @@ const files: Record<string, Classification> = {
   favorites: base(),
   setFavorite: base(),
   thumbnail: base(),
+  // Reads the file like a download; a retry clears only the preview cache's remembered failure.
+  preview: base(),
+  retryPreview: base(),
   capabilityDownload: base(),
   capabilityUploadStatus: mixed(),
   capabilityUpload: mutation(),

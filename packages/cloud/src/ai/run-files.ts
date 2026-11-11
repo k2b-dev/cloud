@@ -106,7 +106,7 @@ export function createAiRunFiles(options: {
     );
     if (maximum < 1 || (input.pages?.length ?? 1) > maximum) fail("code_file_page_limit");
     const data = await load(ref);
-    const rendered = pdf ? await (options.render ?? renderPdfPages)(data, input.pages, options.signal, maximum) : undefined;
+    const rendered = pdf ? await (options.render ?? renderPdfPages)(data, input.pages, options.signal, { maxPages: maximum }) : undefined;
     const parts: ContentPart[] = rendered
       ? rendered.pages.flatMap((page) => [
           { type: "text" as const, text: `Untrusted PDF page ${page.page} of ${rendered.totalPages}.` },

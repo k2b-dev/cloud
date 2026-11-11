@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { getProcessSync, type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/events";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
-import { accountIdentities, secrets } from "@k2b/cloud/services";
+import { accountIdentities, previews, secrets } from "@k2b/cloud/services";
 import { type ExecutionIdentity, Filegate, FilegateError, type Node, type WriteOptions } from "@k2b/filegate";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -823,6 +823,41 @@ suite("Files service and durable bindings", () => {
     expect(leases).toBe(1);
     directory("freeipa", "users/alice", 1001, 2001, "0600");
     await expect(service.download(testCall(actor), { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
+  });
+  test("preview uses current revisions after the ordinary download authority check", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/report.txt", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const read = spyOn(previews, "read").mockResolvedValue({ state: "pending", retryAfter: 2 });
+    const retry = spyOn(previews, "retry").mockResolvedValue();
+    try {
+      const entry = (await service.list(testCall(actor), { baseId })).items[0]!;
+      const signal = new AbortController().signal;
+      const current = await service.preview(testCall(actor), { baseId, path: entry.path, rev: entry.revision!, size: "text" }, signal);
+      expect(current.immutable).toBe(true);
+      expect(read.mock.calls[0]?.[0]).toMatchObject({
+        key: `${baseId}:report.txt`,
+        revision: entry.revision,
+        locator: JSON.stringify({ baseId, path: "report.txt" }),
+      });
+      expect(read.mock.calls[0]?.[2]?.signal).toBe(signal);
+      expect((await service.preview(testCall(actor), { baseId, path: entry.path, rev: "stale", size: "text" }, signal)).immutable).toBe(
+        false,
+      );
+      await service.retryPreview(testCall(actor), { baseId, path: entry.path });
+      expect(retry).toHaveBeenCalledTimes(1);
+      directory("freeipa", "users/alice/report.txt", 999, 999, "0600", false);
+      await expect(
+        service.preview(testCall(actor), { baseId, path: entry.path, rev: entry.revision!, size: "text" }, signal),
+      ).rejects.toMatchObject({ code: "forbidden" });
+      await expect(service.retryPreview(testCall(actor), { baseId, path: entry.path })).rejects.toMatchObject({ code: "forbidden" });
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(retry).toHaveBeenCalledTimes(1);
+    } finally {
+      read.mockRestore();
+      retry.mockRestore();
+    }
   });
   test("indexed FreeIPA search uses Unix execution, rejects unreadable trees, hides trash and reports scan limits", async () => {
     const actor = await user("alice", "ipa");

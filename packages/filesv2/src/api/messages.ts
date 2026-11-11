@@ -168,6 +168,8 @@ const messages: Record<string, [string, string]> = {
     "Du hast die Höchstzahl an Favoriten erreicht. Entferne zuerst einen.",
   ],
   preview_too_large: ["The file is too large for a preview.", "Die Datei ist für eine Vorschau zu groß."],
+  preview_failed: ["The preview could not be created. Try again.", "Die Vorschau konnte nicht erstellt werden. Versuche es erneut."],
+  preview_unsupported: ["This file has no supported preview.", "Für diese Datei ist keine Vorschau verfügbar."],
   inbox_file_limit: ["This file exceeds the inbox's file-size limit.", "Diese Datei überschreitet die Dateigrößengrenze des Eingangs."],
   inbox_total_limit: ["The inbox's total upload budget is exhausted.", "Das gesamte Upload-Budget des Eingangs ist ausgeschöpft."],
   inbox_invalid_limits: [

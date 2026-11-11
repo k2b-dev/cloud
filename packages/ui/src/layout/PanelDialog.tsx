@@ -6,6 +6,7 @@ import { type DialogTone, dialogToneIcon, dialogToneLabel } from "../feedback/di
 import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
 import { SuccessCheck } from "../feedback/success-check";
+import { showTruncatedTitle } from "../internal/truncated-title";
 import { useUiMessages } from "../intl/messages";
 import { usePanelDialogMessages } from "./panel-dialog-messages";
 import { createScrollFade } from "./scroll-fade";
@@ -155,7 +156,9 @@ const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
             </span>
           )}
         </Show>
-        <h2 class={media ? "k2b-truncate-fade" : undefined}>{props.title}</h2>
+        <h2 class={media ? "k2b-truncate-fade" : undefined} onPointerEnter={showTruncatedTitle}>
+          {props.title}
+        </h2>
         <Show when={props.subtitle}>
           <p>{props.subtitle}</p>
         </Show>

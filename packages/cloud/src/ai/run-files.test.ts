@@ -6,9 +6,9 @@ const ref = { id: "sealed-this-run", mediaType: "text/plain", size: 5, name: "a.
 function fixture(vision = true, maxInputTokens = 100_000) {
   const read = mock(async () => new TextEncoder().encode("hello"));
   const describe = mock(async () => "Visual evidence");
-  const render = mock(async (_bytes: Uint8Array, pages?: number[], _signal?: AbortSignal, maxPages = 20) => ({
+  const render = mock(async (_bytes: Uint8Array, pages?: number[], _signal?: AbortSignal, options: { maxPages?: number } = {}) => ({
     totalPages: 30,
-    pages: (pages ?? Array.from({ length: maxPages }, (_, i) => i + 1)).map((page) => ({ page, png: "YQ==" })),
+    pages: (pages ?? Array.from({ length: options.maxPages ?? 20 }, (_, i) => i + 1)).map((page) => ({ page, png: "YQ==" })),
   }));
   const files = createAiRunFiles({
     read,

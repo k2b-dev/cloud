@@ -504,7 +504,7 @@ describe("image input frame protocol", () => {
 
   test.each([1, 7, 4096])("fills the exact declared input length across reads of %i bytes", (size) => {
     const frame = readImageFrame(read(`${line(header)}abc`, size));
-    expect(frame.header).toEqual(header);
+    expect(frame.header).toEqual({ ...header, encoding: "auto" });
     expect(frame.body).toBeInstanceOf(Uint8Array);
     expect(frame.body.buffer.byteLength).toBe(3);
     expect(new TextDecoder().decode(frame.body)).toBe("abc");

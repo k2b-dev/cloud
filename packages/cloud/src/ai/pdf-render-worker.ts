@@ -1,5 +1,6 @@
 // Standalone subprocess. No server imports or application credentials.
 
+import { readSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
@@ -8,18 +9,39 @@ import { z } from "zod";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const inputSchema = z.object({
-  pdf: z.string().max(Math.ceil((MAX_BYTES * 4) / 3)),
+  bytes: z.number().int().nonnegative().max(50_000_000),
+  maxInputBytes: z.number().int().min(1).max(50_000_000).default(MAX_BYTES),
   maxPages: z.number().int().positive().max(20).default(20),
   pages: z.array(z.number().int().positive()).min(1).max(20).optional(),
 });
 const require = createRequire(import.meta.url);
 const root = dirname(require.resolve("pdfjs-dist/package.json"));
 try {
-  const input = inputSchema.parse(JSON.parse(await Bun.stdin.text()));
-  const data = Buffer.from(input.pdf, "base64");
-  if (data.byteLength > MAX_BYTES) throw new Error("PDF exceeds the 10 MiB limit.");
+  // A binary frame avoids base64 and JSON copies of a 50 MB document inside the 512 MiB worker.
+  const header = new Uint8Array(4096);
+  let used = 0;
+  let newline = -1;
+  while (newline < 0) {
+    const read = readSync(0, header, used, header.length - used, null);
+    if (!read) throw new Error("Missing PDF frame header.");
+    used += read;
+    newline = header.subarray(0, used).indexOf(10);
+    if (newline < 0 && used === header.length) throw new Error("PDF frame header exceeds 4 KiB.");
+  }
+  const input = inputSchema.parse(JSON.parse(new TextDecoder().decode(header.subarray(0, newline))));
+  const data = new Uint8Array(input.bytes);
+  let filled = used - newline - 1;
+  if (filled > data.length) throw new Error("PDF frame exceeds declared length.");
+  data.set(header.subarray(newline + 1, used));
+  while (filled < data.length) {
+    const read = readSync(0, data, filled, data.length - filled, null);
+    if (!read) throw new Error("Truncated PDF frame.");
+    filled += read;
+  }
+  if (readSync(0, header, 0, 1, null)) throw new Error("PDF frame exceeds declared length.");
+  if (data.byteLength > input.maxInputBytes) throw new Error("PDF exceeds the input limit.");
   const task = getDocument({
-    data: new Uint8Array(data),
+    data,
     verbosity: 0,
     cMapUrl: join(root, "cmaps/"),
     cMapPacked: true,

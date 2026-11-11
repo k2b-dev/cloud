@@ -475,6 +475,34 @@ There is no universal CPU, memory, disk or database-connection sizing guarantee.
 Size for your app set, data volume, replicas and workload, and verify headroom
 with representative traffic before production exposure.
 
+### File previews
+
+Cloud creates `platform._cloud_previews` idempotently when an application that
+registered a preview reader starts, under a transaction-scoped advisory lock. No per-application migration is
+needed. Include this reserved table in the platform database backup contract.
+Preview bytes live in the platform object store's default private bucket area,
+confined to the application's package. They can be regenerated from sources.
+
+Set `previews.max_bytes` in **Administration → Storage** beside the default
+bucket limits. The default budget is 2 GiB across packages in the platform
+database. Each running package removes at most 100 of its own previews every
+ten minutes using the installation-wide recency ordering. An inactive package
+cleans its objects after its runtime returns. Recency writes occur at most daily.
+
+Without a configured object store, reads generate inline without saving bytes;
+upload warmup does nothing. Failure memory still needs the database. Office
+previews require the full Gotenberg 8.36.0 image, including LibreOffice;
+`-chromium` images lack it and Office preview jobs end in `failed`. Conversion
+uses the existing Gotenberg settings, output limit, timeout and concurrency
+budget. Image and PDF decoding retain their isolated Linux workers.
+
+Every application reserves two preview work streams of 2 MiB and two
+dead-letter streams of 512 KiB before replication. Each work lane rejects new
+jobs after 64 pending messages or its byte limit, preserving accepted work.
+High and low lanes have one worker each, sharing a two-generator process limit.
+Generation has a three-minute deadline; queued work expires after four hours.
+See [File previews](/en/docs/platform/previews) for formats and source limits.
+
 ### Reserve JetStream storage
 
 JetStream reserves each stream's byte limit on every node that holds one of its
