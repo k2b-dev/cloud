@@ -6,6 +6,7 @@ export type GotenbergRenderErrorCode =
   | "busy"
   | "bad_input"
   | "unreadable_pdf"
+  | "encrypted_pdf"
   | "not_configured"
   | "html_too_large"
   | "pdf_too_large"
@@ -18,6 +19,7 @@ export class GotenbergRenderError extends Error {
     readonly code: GotenbergRenderErrorCode,
     message: string,
     readonly status?: number,
+    readonly fileIndex?: number,
   ) {
     super(message);
     this.name = "GotenbergRenderError";

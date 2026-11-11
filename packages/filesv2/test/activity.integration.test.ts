@@ -577,6 +577,43 @@ suite("Files activity with real storage", () => {
     await recover();
     for (const key of keys) expect((await uploadRows(key))[0]?.state).toBe("not_done");
   });
+  test("a direct create permits rename only when the journal intent permits it", async () => {
+    for (const allowed of [false, true]) {
+      let sent = 0;
+      const transport: typeof fetch = Object.assign(
+        async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          sent++;
+          return init?.method === "POST"
+            ? Response.json({ url: `${config.url}/v1/direct/fixture.signature` })
+            : Response.json({ root: "cloud", path: `${home}/renamed-create`, directory: false, size: 0 });
+        },
+        { preconnect: fetch.preconnect },
+      );
+      const guarded = connectFilegate(config, transport);
+      const options: WriteOptions = { onConflict: allowed ? "rename" : "error" };
+      await fileAction(
+        testCall(actor),
+        {
+          ...intent("renamed-create"),
+          action: "file.create",
+          directory: false,
+          size: 0,
+          onConflict: allowed ? "rename" : "error",
+          writeOptions: options,
+        },
+        async () => {
+          const write = guarded.root("cloud").put(`${home}/renamed-create`, new Blob([]), {
+            onConflict: "rename",
+            metadata: { activity: currentActivityId() },
+          });
+          if (allowed) await write;
+          else await expect(write).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+        },
+        async () => {},
+      );
+      expect(sent).toBe(allowed ? 2 : 0);
+    }
+  });
   test.each(["condition", "ownership", "acl", "marker", "changed-intent"])(
     "direct-write scope refuses changed %s before transport",
     async (change) => {

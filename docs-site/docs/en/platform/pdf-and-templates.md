@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-11-07
+updated: 2026-11-11
 ---
 
 # PDF and templates
@@ -251,7 +251,7 @@ whole request.
 | Operation | Input and result |
 | --- | --- |
 | `{ kind: "merge" }` | One or more files, combined in input order into one PDF. |
-| `{ kind: "extract", pages: [1, 3] }` | One file; distinct pages in ascending source order, returned as one PDF. |
+| `{ kind: "extract", pages: [1, 3] }` | One or more files; distinct pages in ascending order over their ordered concatenation, returned as one PDF. Multiple files are merged before extraction. |
 | `{ kind: "split", groups: [[3], [1, 2]] }` | One file; at least two groups, each in ascending source order. No page may occur twice across groups. Returns a ZIP with `part-000001.pdf`, `part-000002.pdf`, etc., in group order. Groups may select a subset of the source. |
 | `{ kind: "rotate", angle: 90, pages: [2] }` | One file; turn selected pages clockwise by 90, 180 or 270 degrees. Omit `pages` to turn every page. |
 | `{ kind: "reorder", pages: [3, 1, 2] }` | One file; every source page exactly once, in the desired output order. |
@@ -267,6 +267,15 @@ Cloud extracts ascending runs and merges those runs in the requested order.
 counts before work. `runPdfToolWithConfig(input, config, options)` supports an
 explicit operator configuration and test transport. These helpers are exported
 from `@k2b/cloud/services/pdf`.
+
+`runPdfToolWithConfig` also accepts `onOperation`, an optional async callback
+after a completed transformation. Multi-source extraction calls it after the
+merge and again after extraction. Metadata inspection is not a transformation.
+All transformations share the same deadline and cumulative work allowance.
+Encrypted sources raise `GotenbergRenderError` with `code: "encrypted_pdf"`;
+source metadata failures use `"unreadable_pdf"`. When attributable to a source,
+`fileIndex` is its zero-based index in `files`. Encryption is detected from
+ExifTool's `Encryption` metadata before attempting a transformation.
 
 - Total source bytes and final PDF or ZIP bytes must each fit `maxPdfBytes`.
 - Repeated source uploads, intermediate merge inputs and all other renderer

@@ -69,6 +69,8 @@ const folder = [
 /** Every preview request: file name and size. */
 const previewRequests: { name: string; size: string }[] = [];
 
+/** Set FILES_SHOTS to a folder to keep screenshots of the states the tests reach. */
+const shots = process.env.FILES_SHOTS;
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
 
@@ -175,7 +177,7 @@ describe("file previews in the list", () => {
           await tab.waitForSelector(`.filesv2-list__row:has-text("${name}") .k2b-file-type-icon`);
         expect(previewRequests.some((request) => request.name === "Archive.zip")).toBe(false);
         await settled(tab);
-        await tab.screenshot({ path: `/tmp/files11-shots/list-light-${label}.png` });
+        if (shots) await tab.screenshot({ path: `${shots}/list-light-${label}.png` });
       } finally {
         await tab.context().close();
       }
