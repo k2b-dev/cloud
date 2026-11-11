@@ -356,7 +356,9 @@ suiteFor(
       }
       await Bun.sleep(10);
     }
-    throw new Error(`Acceptance run did not reach a visible terminal state (last state: ${lastState}; runner codes: ${fleet.logs.join(",")})`);
+    throw new Error(
+      `Acceptance run did not reach a visible terminal state (last state: ${lastState}; runner codes: ${fleet.logs.join(",")})`,
+    );
   }
   test("Lea checks, Ben activates, both runners execute, the manager revokes and Mail deletion cleans up", async () => {
     const initialized = await code.init({ title: "Rechnungen", owner: { kind: "resource", ref: mailboxRef } }, manager);

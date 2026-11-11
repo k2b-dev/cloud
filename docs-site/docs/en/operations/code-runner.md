@@ -5,7 +5,7 @@ section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-11-06
+updated: 2026-11-11
 ---
 
 # Scaling runners

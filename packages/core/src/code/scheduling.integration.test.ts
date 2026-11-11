@@ -458,11 +458,14 @@ suiteFor(
     const code = await fixture();
     const [runId] = await enqueueMany(code, 1);
     overrides.set("core.code.runner_poll_ms", 1000);
+    const signal = new AbortController().signal;
     const openReader = queue.reader.bind(queue);
     const readers = spyOn(queue, "reader").mockImplementation(async (options) => {
+      expect(options?.signal).toBe(signal);
       const reader = await openReader(options);
       const receive = reader.receive.bind(reader);
       reader.receive = async (options) => {
+        expect(options?.signal).toBe(signal);
         // fixed wait: resume a broker delivery after the existing 1000 ms poll budget, as under event-loop contention.
         await Bun.sleep(1100);
         return receive(options);
@@ -470,10 +473,7 @@ suiteFor(
       return reader;
     });
     try {
-      const response = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, new AbortController().signal, {
-        queue,
-        sign,
-      });
+      const response = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, signal, { queue, sign });
       expect(response.runs.map((run) => run.runId)).toEqual([runId!]);
       expect(await state(runId!)).toMatchObject({ state: "running", generation: 1 });
     } finally {
