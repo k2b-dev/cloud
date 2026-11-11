@@ -1,14 +1,26 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtemp, rmdir, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { expect, test } from "bun:test";
 import { dirname, join, resolve } from "node:path";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CodeCheckHost, type CodeTestCase, checkCode, generateCodeSdk } from "@k2b/cloud/code";
 import { z } from "zod";
+import { getCheckerIsolate } from "../../../../scripts/fixtures/test-infra";
 import { type CodeTestingHost, simulateCode, testCode } from "./testing";
 
-let directory: string;
-let checker: CodeCheckHost;
+const isolate = await getCheckerIsolate();
+const checker: CodeCheckHost = {
+  isolate,
+  bun: process.execPath,
+  worker: resolve(import.meta.dir, "../../../cloud/scripts/code-check-worker.ts"),
+  compiler: join(
+    dirname(
+      Bun.resolveSync(
+        `@typescript/typescript-${process.platform}-${process.arch}/package.json`,
+        dirname(Bun.resolveSync("typescript/package.json", import.meta.dir)),
+      ),
+    ),
+    "lib/tsc",
+  ),
+};
 let executions = 0;
 const limits = { requestBytes: 2 * 1024 * 1024, outputBytes: 64 * 1024, cases: 10, runs: 10, calls: 10, wallClockMs: 10_000 };
 const sdk = generateCodeSdk(
@@ -74,34 +86,6 @@ const host = (): CodeTestingHost => ({
     expect(request.cases).toEqual([{ file: request.mode === "test" ? "test/weekly.json" : null, fixture }]);
     return { version: 1, mode: request.mode, ok: true, error: null, diagnostics: [], cases: [] };
   },
-});
-beforeAll(async () => {
-  directory = await mkdtemp(join(tmpdir(), "cloud-c17-core-"));
-  const isolate = join(directory, "checker-isolate");
-  const compiler = Bun.spawn(
-    ["cc", "-O2", "-Wall", "-Wextra", "-Werror", resolve(import.meta.dir, "../../../runner/native/checker-isolate.c"), "-o", isolate],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  const [exit, stderr] = await Promise.all([compiler.exited, new Response(compiler.stderr).text()]);
-  expect({ exit, stderr }).toEqual({ exit: 0, stderr: "" });
-  checker = {
-    isolate,
-    bun: process.execPath,
-    worker: resolve(import.meta.dir, "../../../cloud/scripts/code-check-worker.ts"),
-    compiler: join(
-      dirname(
-        Bun.resolveSync(
-          `@typescript/typescript-${process.platform}-${process.arch}/package.json`,
-          dirname(Bun.resolveSync("typescript/package.json", import.meta.dir)),
-        ),
-      ),
-      "lib/tsc",
-    ),
-  };
-});
-afterAll(async () => {
-  await unlink(join(directory, "checker-isolate"));
-  await rmdir(directory);
 });
 
 test("Core checks source before sending immutable bundles and fixtures to the fake-only Runner role", async () => {

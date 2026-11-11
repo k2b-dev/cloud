@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { getCheckerIsolate } from "../../../../scripts/fixtures/test-infra";
 import { chatCapabilities } from "../../../chat/src/capabilities";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
@@ -28,7 +29,8 @@ import { validateCodePage } from "./page-contract";
 import { sdkFixture } from "./sdk.test-fixture";
 import type { CodeSdkInvocation } from "./types";
 
-let directory: string;
+const isolate = await getCheckerIsolate();
+let directory = "";
 let host: Extract<CodeCheckHost, { bun: string }>;
 const sdk = generateCodeSdk([sdkFixture()], {
   mode: "resource",
@@ -37,13 +39,6 @@ const sdk = generateCodeSdk([sdkFixture()], {
 const base: Omit<CodeCheckRequest, "files" | "entry"> = { sdk, aiOperations: [] };
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "cloud-c16-test-"));
-  const isolate = join(directory, "checker-isolate");
-  const compile = Bun.spawn(
-    ["cc", "-O2", "-Wall", "-Wextra", "-Werror", resolve(import.meta.dir, "../../../runner/native/checker-isolate.c"), "-o", isolate],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  const [exit, stderr] = await Promise.all([compile.exited, new Response(compile.stderr).text()]);
-  expect({ exit, stderr }).toEqual({ exit: 0, stderr: "" });
   host = {
     isolate,
     compiler: join(
@@ -98,7 +93,7 @@ afterAll(async () => {
     }
     await rmdir(path);
   }
-  await clean(directory);
+  if (directory) await clean(directory);
 });
 const check = (source: string, extra: Partial<CodeCheckRequest> = {}) =>
   checkCode({ ...base, entry: "code.ts", files: { "code.ts": source }, ...extra }, host);

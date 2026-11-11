@@ -52,6 +52,7 @@ import {
 import { connectTestNats } from "./test-nats";
 import { cancellingTestWork, finishTestWork, observeTestWork } from "./test-work";
 
+export { getCheckerIsolate } from "./checker-isolate";
 export type { InfraKind } from "./test-infra-env";
 export { connectTestNats } from "./test-nats";
 // Unit and CLI processes load this gate too; do not load server clients until needed.
