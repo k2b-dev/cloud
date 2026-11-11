@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../ui/test/browser";
+import { launchBrowser, settled } from "../../ui/test/browser";
 import { buildTablerIconAssets } from "./tabler-assets";
 
 let output: string | undefined;
@@ -80,7 +80,15 @@ for (const [device, width] of [
       const before = await geometry();
       expect(before.filter((_, index) => index % 2 === 0).map((box) => box.width)).toEqual([24, 24, 24]);
       release();
-      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      await settled(page);
+      await page.evaluate(async () => {
+        // Split faces can be discovered on the next layout after the first face arrives.
+        const glyphs = [...document.querySelectorAll(".ti")]
+          .map((icon) => getComputedStyle(icon, "::before").content.slice(1, -1))
+          .join("");
+        await document.fonts.load("24px tabler-icons", ` ${glyphs}`);
+        await document.fonts.ready;
+      });
       expect(await fontStatus()).toEqual(["loaded"]);
       expect(await geometry()).toEqual(before);
     } finally {
