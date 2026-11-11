@@ -88,10 +88,10 @@ function usePdfBytes(baseId: string, files: readonly FileEntry[], fallback: stri
  * and the footer counts the pages of the result. Resolves with the request, or nothing when cancelled.
  */
 export const openPdfMergeDialog = (options: { baseId: string; files: readonly FileEntry[]; title: string }) =>
-  prompts.dialog<PdfDialogResult>(
-    (close) => <MergeDialog {...options} close={(value) => close(value)} />,
-    { title: options.title, icon: "ti ti-stack-2" },
-  );
+  prompts.dialog<PdfDialogResult>((close) => <MergeDialog {...options} close={(value) => close(value)} />, {
+    title: options.title,
+    icon: "ti ti-stack-2",
+  });
 
 /** What a dialog asks for, and how many pages the new PDF will have. */
 export type PdfDialogResult = { request: PdfOperationRequest; pages: number };
@@ -189,10 +189,10 @@ function MergeDialog(props: { baseId: string; files: readonly FileEntry[]; close
  * The new file is named after the first file. Resolves with the request, or nothing when cancelled.
  */
 export const openPdfExtractDialog = (options: { baseId: string; files: readonly FileEntry[]; title: string }) =>
-  prompts.dialog<PdfDialogResult>(
-    (close) => <ExtractDialog {...options} close={(value) => close(value)} />,
-    { title: options.title, icon: "ti ti-files" },
-  );
+  prompts.dialog<PdfDialogResult>((close) => <ExtractDialog {...options} close={(value) => close(value)} />, {
+    title: options.title,
+    icon: "ti ti-files",
+  });
 
 function ExtractDialog(props: { baseId: string; files: readonly FileEntry[]; close: (value?: PdfDialogResult) => void }) {
   const b = useBrowserMessages();

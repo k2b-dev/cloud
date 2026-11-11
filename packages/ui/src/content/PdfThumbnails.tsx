@@ -59,20 +59,22 @@ export function PdfThumbnails(props: PdfThumbnailsProps): JSX.Element {
           void opened?.close();
         });
         // The loader comes with the first document, so a page without one carries no PDF code.
-        void import("./pdf-document").then(({ openPdfDocument }) => openPdfDocument(data, opening.signal)).then(
-          (handle) => {
-            if (!handle || opening.signal.aborted) return void handle?.close();
-            opened = handle;
-            setPages(handle.pages);
-            setDoc({ handle, signal: opening.signal, urls });
-            props.onPages?.(handle.pages.length);
-          },
-          (error: unknown) => {
-            if (opening.signal.aborted) return;
-            setFailed(true);
-            props.onError?.(error);
-          },
-        );
+        void import("./pdf-document")
+          .then(({ openPdfDocument }) => openPdfDocument(data, opening.signal))
+          .then(
+            (handle) => {
+              if (!handle || opening.signal.aborted) return void handle?.close();
+              opened = handle;
+              setPages(handle.pages);
+              setDoc({ handle, signal: opening.signal, urls });
+              props.onPages?.(handle.pages.length);
+            },
+            (error: unknown) => {
+              if (opening.signal.aborted) return;
+              setFailed(true);
+              props.onError?.(error);
+            },
+          );
       },
     ),
   );
@@ -155,7 +157,12 @@ export function PdfThumbnails(props: PdfThumbnailsProps): JSX.Element {
   };
 
   return (
-    <ul class={`k2b-pdf-thumbnails ${props.class ?? ""}`} data-size={size()} data-failed={failed() ? "" : undefined} aria-label={props.title}>
+    <ul
+      class={`k2b-pdf-thumbnails ${props.class ?? ""}`}
+      data-size={size()}
+      data-failed={failed() ? "" : undefined}
+      aria-label={props.title}
+    >
       <Show
         when={pages()}
         fallback={

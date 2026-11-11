@@ -1,6 +1,6 @@
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
-import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
@@ -69,19 +69,13 @@ import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
+import { SELECTION_PILL_HINT } from "./hints";
 import type { HistoryActions, HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { openNewFolderDialog } from "./NewFolderDialog";
-import { SELECTION_PILL_HINT } from "./hints";
-import {
-  openPdfExtractDialog,
-  openPdfMergeDialog,
-  PdfOperationError,
-  type PdfOperationRequest,
-  runPdfOperation,
-} from "./pdf-actions";
+import { openPdfExtractDialog, openPdfMergeDialog, PdfOperationError, type PdfOperationRequest, runPdfOperation } from "./pdf-actions";
 import { prefetchPreview, previewSource } from "./preview-client";
 import {
   defaultSort,
@@ -1186,7 +1180,14 @@ export default function Browser(props: {
             },
             { label: b().copyTo, icon: "ti ti-copy", action: () => void moveOrCopy(items, true) },
             ...(items.length === 1
-              ? [{ disabled: items[0]!.actions?.move === false, label: b().rename, icon: "ti ti-pencil", action: () => void rename(items[0]!) }]
+              ? [
+                  {
+                    disabled: items[0]!.actions?.move === false,
+                    label: b().rename,
+                    icon: "ti ti-pencil",
+                    action: () => void rename(items[0]!),
+                  },
+                ]
               : []),
           ]),
       {
@@ -1220,6 +1221,7 @@ export default function Browser(props: {
     controller: AbortController;
   };
   const [operations, setOperations] = createSignal<readonly Operation[]>([]);
+  let operationCount = 0;
   const [fresh, setFresh] = createSignal<ReadonlySet<string>>(new Set());
   onCleanup(() => {
     for (const operation of operations()) operation.controller.abort();
@@ -1260,9 +1262,9 @@ export default function Browser(props: {
         if (operation.location !== locationKey()) return;
         markFresh(result.entry.path);
         await refresh();
-        toast.success(b().opCreated(result.entry.name), {
+        // The new name leads; how it was made follows quietly, as "9 pages from 3 files".
+        toast.success([b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · "), {
           celebrate: true,
-          title: operation.summary || undefined,
           action: { label: b().opUndo, onClick: () => void undoCreated(result.entry) },
         });
       },
@@ -1282,7 +1284,7 @@ export default function Browser(props: {
     const order = entries().map((entry) => entry.path);
     const afterPath = [...request.paths].sort((a, z) => order.indexOf(z) - order.indexOf(a))[0] ?? request.paths[0]!;
     const operation: Operation = {
-      id: crypto.randomUUID(),
+      id: String(++operationCount),
       request,
       verb,
       summary,
@@ -1437,7 +1439,16 @@ export default function Browser(props: {
         ? b().searchTruncated(props.directory.total)
         : b().searchTotal(props.directory.total);
   const parentOf = (path: string) => parentPath(path) || baseLabel(props.directory.base, b(), locale());
-  const detailOpen = () => selectedPaths().length > 0;
+  // On a phone the details are a page of their own; while choosing several entries, the list and its pill stay.
+  const [narrow, setNarrow] = createSignal(false);
+  onMount(() => {
+    const query = window.matchMedia("(max-width: 47.999rem)");
+    const update = () => setNarrow(query.matches);
+    update();
+    query.addEventListener("change", update);
+    onCleanup(() => query.removeEventListener("change", update));
+  });
+  const detailOpen = () => selectedPaths().length > 0 && !(narrow() && selecting());
   const addItems = () =>
     !canCreate()
       ? []

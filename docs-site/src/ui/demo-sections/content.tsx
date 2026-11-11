@@ -54,6 +54,7 @@ import {
   Pagination,
   PanelDialog,
   Paper,
+  PdfThumbnails,
   PdfViewer,
   Placeholder,
   panelDialogFixedOptions,
@@ -1745,6 +1746,14 @@ const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
   const [strip, setStrip] = createSignal("0");
   const [quick, setQuick] = createSignal<string | null>(null);
+  const [pickedPages, setPickedPages] = createSignal<ReadonlySet<number>>(new Set([0]));
+  const togglePage = (index: number) =>
+    setPickedPages((all) => {
+      const next = new Set(all);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   const quickItems = [
     ...gallery.map((image, i) => ({ id: String(i), name: `${image.alt}.svg`, facts: "12 KB", thumbnail: image.src, zoomable: true })),
     { id: "report", name: "Sample report with a name long enough to end with an ellipsis.pdf", facts: "2 pages", zoomable: true },
@@ -1774,6 +1783,7 @@ const MediaDemo = () => {
       id="media"
       chip={[
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
+        { kind: "component", name: "PdfThumbnails", from: "@k2b/ui" },
         { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
         { kind: "component", name: "QuickView", from: "@k2b/ui" },
         { kind: "component", name: "ThumbnailStrip", from: "@k2b/ui" },
@@ -1845,6 +1855,7 @@ const MediaDemo = () => {
       <div class="ui-pdf-viewer-demo">
         <PdfViewer data={samplePdf()} title="Sample report" />
       </div>
+      <PdfThumbnails data={samplePdf()} title="Sample report" size="md" selected={pickedPages()} onToggle={togglePage} />
     </DemoCard>
   );
 };

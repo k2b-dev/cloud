@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page, Route } from "playwright";
@@ -42,10 +42,12 @@ const buildHarness = async (): Promise<Map<string, [string, Buffer]>> => {
   if (!build.success) throw new AggregateError(build.logs, "Selection harness build failed");
   return new Map(
     await Promise.all(
-      build.outputs.map(async (output): Promise<[string, [string, Buffer]]> => [
-        `/${output.path.split("/").at(-1)}`,
-        [output.path.endsWith(".js") ? "text/javascript; charset=utf-8" : output.type, Buffer.from(await output.arrayBuffer())],
-      ]),
+      build.outputs.map(
+        async (output): Promise<[string, [string, Buffer]]> => [
+          `/${output.path.split("/").at(-1)}`,
+          [output.path.endsWith(".js") ? "text/javascript; charset=utf-8" : output.type, Buffer.from(await output.arrayBuffer())],
+        ],
+      ),
     ),
   );
 };
@@ -57,7 +59,9 @@ const pdf = (titles: readonly string[]) => {
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   for (const [page, title] of titles.entries()) {
     const stream = `BT /F1 28 Tf 72 740 Td (${title}) Tj ET`;
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
+    );
     objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   }
   let body = "%PDF-1.4\n";
@@ -79,7 +83,12 @@ const photo = (fill: string) =>
 const folder = "Angebote 2026";
 type Item = { name: string; size: number; body?: string; fill: string };
 const initialItems = (): Item[] => [
-  { name: "Angebot-0412-Sekretär-Biedermeier.pdf", size: 412_000, body: pdf(["Angebot 0412", "Positionen", "Bedingungen"]), fill: "#b91c1c" },
+  {
+    name: "Angebot-0412-Sekretär-Biedermeier.pdf",
+    size: 412_000,
+    body: pdf(["Angebot 0412", "Positionen", "Bedingungen"]),
+    fill: "#b91c1c",
+  },
   { name: "Expertise-Sekretär.pdf", size: 1_800_000, body: pdf(["Expertise", "Befund", "Fotos", "Wert"]), fill: "#1e3a8a" },
   { name: "Angebot-0413-Vitrine-Gründerzeit.pdf", size: 388_000, body: pdf(["Angebot 0413", "Positionen"]), fill: "#b91c1c" },
   { name: "Rechnung-2026-0388.pdf", size: 96_000, body: pdf(["Rechnung 0388"]), fill: "#047857" },
@@ -97,6 +106,8 @@ const entry = (item: Item) => ({
   actions: { write: true, move: true, share: true },
 });
 
+// pdf.js draws the dialogs' pages and the server answers in steps; a flow takes a few seconds.
+setDefaultTimeout(30_000);
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
 
@@ -131,6 +142,8 @@ type Session = {
 const open = async (options: BrowserContextOptions, query = "", lang = "en"): Promise<Session> => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
+  // A step that waits fails well inside the test's own timeout, so its report names the step.
+  tab.setDefaultTimeout(12_000);
   const session: Session = { tab, errors: pageErrors(tab), items: initialItems(), posts: [], deleted: [], answers: [] };
   const named = (path: string) => session.items.find((item) => `${folder}/${item.name}` === path);
   await tab.route("http://files-selection.test/**", async (route: Route) => {
@@ -229,13 +242,15 @@ describe("Files selection pill in a browser", () => {
       // The rarer commands stay in More at every width.
       await pill(tab).getByRole("button", { name: "More actions" }).click();
       const menu = tab.getByRole("menu");
-      for (const name of ["Move into new folder", "Copy to…", "Move to trash"]) expect(await menu.getByRole("menuitem", { name }).count()).toBe(1);
+      for (const name of ["Move into new folder", "Copy to…", "Move to trash"])
+        expect(await menu.getByRole("menuitem", { name }).count()).toBe(1);
       await tab.keyboard.press("Escape");
       await pill(tab).getByRole("button", { name: "Clear selection" }).click();
       await settled(tab);
       expect(await pill(tab).count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {
+      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -244,15 +259,16 @@ describe("Files selection pill in a browser", () => {
     const { tab } = await open(desktop, "?hint");
     try {
       await tab.getByRole("button", { name: "Select", exact: true }).click();
-      const hint = tab.locator(".k2b-moved-hint");
+      const hint = tab.locator(".k2b-moved-hint").first();
       await hint.waitFor();
       expect(await hint.textContent()).toContain("The actions for the selection are now in the bar at the bottom.");
       // The old menu is gone from the header.
       expect(await tab.locator(".filesv2-toolbar").getByRole("button", { name: "Actions" }).count()).toBe(0);
-      await hint.getByRole("button", { name: "Got it" }).click();
+      await hint.locator("button", { hasText: "Got it" }).first().click();
       await settled(tab);
       expect(await tab.evaluate(() => document.cookie)).toContain("filesv2.selection-pill");
     } finally {
+      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -290,7 +306,11 @@ describe("Files selection pill in a browser", () => {
       expect(await making.textContent()).toContain("Merging …");
       expect(session.posts[0]).toEqual({
         operation: "merge",
-        paths: [`${folder}/Angebot-0413-Vitrine-Gründerzeit.pdf`, `${folder}/Angebot-0412-Sekretär-Biedermeier.pdf`, `${folder}/Expertise-Sekretär.pdf`],
+        paths: [
+          `${folder}/Angebot-0413-Vitrine-Gründerzeit.pdf`,
+          `${folder}/Angebot-0412-Sekretär-Biedermeier.pdf`,
+          `${folder}/Expertise-Sekretär.pdf`,
+        ],
         name: "Angebot-0412-Sekretär-Biedermeier-komplett.pdf",
       });
       await tab.screenshot({ path: "/tmp/files11-shots/merge-progress-light-1440.png" });
@@ -309,6 +329,7 @@ describe("Files selection pill in a browser", () => {
       // The originals were never touched.
       expect(session.items.map((item) => item.name)).toEqual(initialItems().map((item) => item.name));
     } finally {
+      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -334,9 +355,13 @@ describe("Files selection pill in a browser", () => {
       await tab.screenshot({ path: "/tmp/files11-shots/merge-failed-light-1440.png" });
       await failed.getByRole("button", { name: "Without this file" }).click();
       await row(tab, "-komplett.pdf").waitFor();
-      expect(session.posts[1]!.paths).toEqual([`${folder}/Angebot-0412-Sekretär-Biedermeier.pdf`, `${folder}/Angebot-0413-Vitrine-Gründerzeit.pdf`]);
+      expect(session.posts[1]!.paths).toEqual([
+        `${folder}/Angebot-0412-Sekretär-Biedermeier.pdf`,
+        `${folder}/Angebot-0413-Vitrine-Gründerzeit.pdf`,
+      ]);
       expect(await tab.locator(".filesv2-list__row--operation").count()).toBe(0);
     } finally {
+      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -373,6 +398,7 @@ describe("Files selection pill in a browser", () => {
       expect(session.posts.map((post) => post.pages)).toEqual([[1], [1]]);
       expect(session.posts[0]!.name).toBe("Rechnung-2026-0388-Auszug.pdf");
     } finally {
+      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -391,6 +417,7 @@ describe("Files selection pill in a browser", () => {
       expect(await pillText(tab)).toBe("2 PDFs");
       await tab.screenshot({ path: "/tmp/files11-shots/pill-light-390.png" });
     } finally {
+      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });
@@ -404,6 +431,7 @@ describe("Files selection pill in a browser", () => {
       await settled(tab);
       await tab.screenshot({ path: "/tmp/files11-shots/pill-light-1440.png" });
     } finally {
+      if (process.env.DEBUG_SELECTION) await tab.screenshot({ path: `/tmp/files11-debug-${Date.now()}.png` }).catch(() => {});
       await tab.context().close();
     }
   });

@@ -187,7 +187,9 @@ export const browserMessages = i18n.define({
       pdfOriginalsStay: "The originals stay as they are. The new PDF goes next to them.",
       pdfPages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
       pdfExtractHint: (several: boolean): string =>
-        several ? "Choose the pages for a new PDF. The originals stay as they are." : "Choose the pages for a new PDF. The original stays as it is.",
+        several
+          ? "Choose the pages for a new PDF. The originals stay as they are."
+          : "Choose the pages for a new PDF. The original stays as it is.",
       pdfPagesChosen: (n: number) => (n === 0 ? "No page chosen yet" : n === 1 ? "1 page chosen" : `${n} pages chosen`),
       pdfExtractSave: "Save as new PDF",
       pdfFileUnreadable: "This file cannot be shown here.",
@@ -631,7 +633,9 @@ export const browserMessages = i18n.define({
       pdfOriginalsStay: "Die Originale bleiben erhalten. Das neue PDF liegt daneben.",
       pdfPages: (n: number) => (n === 1 ? "1 Seite" : `${n} Seiten`),
       pdfExtractHint: (several: boolean) =>
-        several ? "Wähle die Seiten für ein neues PDF. Die Originale bleiben, wie sie sind." : "Wähle die Seiten für ein neues PDF. Das Original bleibt, wie es ist.",
+        several
+          ? "Wähle die Seiten für ein neues PDF. Die Originale bleiben, wie sie sind."
+          : "Wähle die Seiten für ein neues PDF. Das Original bleibt, wie es ist.",
       pdfPagesChosen: (n: number) => (n === 0 ? "Noch keine Seite gewählt" : n === 1 ? "1 Seite gewählt" : `${n} Seiten gewählt`),
       pdfExtractSave: "Als neues PDF speichern",
       pdfFileUnreadable: "Diese Datei kann hier nicht gezeigt werden.",

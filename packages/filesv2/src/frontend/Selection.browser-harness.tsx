@@ -42,7 +42,9 @@ render(() => {
               uploads={uploads}
               selectionPillHint={new URLSearchParams(location.search).has("hint")}
               onShare={(paths) => host.setAttribute("data-shared", JSON.stringify(paths))}
-              onChanged={async () => setDirectory(await listing())}
+              onChanged={async () => {
+                setDirectory(await listing());
+              }}
               onNavigate={async () => {}}
             />
           )}
