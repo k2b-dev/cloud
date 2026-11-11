@@ -219,6 +219,31 @@ test("chunking does not change estimates and encoded file data is excluded", asy
   expect(a.booked[0]!.usage!.output).toBe(3);
   expect(a.booked[0]!.usage!.input).toBeLessThan(200);
 });
+test("arguments a lost connection cut off while previewed are charged, and a final call is not charged twice", async () => {
+  const failure: ProviderEvent = { type: "issue", issue: { kind: "provider_error", message: "lost", retryable: true } };
+  const preview = (delta: string): ProviderEvent => ({ type: "tool_args_delta", callId: "call", name: "code_write", delta });
+  const cut = fixture([preview('{"content":"'), preview("x".repeat(388)), failure]);
+  await drain(cut.wrap());
+  expect(cut.booked[0]?.usage).toMatchObject({ estimated: true, output: 100 });
+  // The final call's block repeats the arguments; stopped before its end, they still count once.
+  const json = JSON.stringify({ content: "x".repeat(386) });
+  const final = fixture([
+    preview(json.slice(0, 12)),
+    preview(json.slice(12)),
+    { type: "block_start", blockId: "tool", index: 0, kind: "tool_call", callId: "call", name: "code_write" },
+    { type: "block_delta", blockId: "tool", delta: json },
+    failure,
+  ]);
+  await drain(final.wrap());
+  expect(final.booked[0]?.usage?.output).toBe(Math.ceil(json.length / 4));
+  // Stopped right after the final block started, the previews still count.
+  const started = fixture([
+    preview(json),
+    { type: "block_start", blockId: "tool", index: 0, kind: "tool_call", callId: "call", name: "code_write" },
+  ]);
+  for await (const event of started.wrap().stream(request)) if (event.type === "block_start") break;
+  expect(started.booked[0]?.usage).toMatchObject({ estimated: true, output: Math.ceil(json.length / 4) });
+});
 test("explicit stream abort estimates synthetic zero usage", async () => {
   const f = fixture([{ type: "usage", usage: { input: 0, output: 0, total: 0 }, finishReason: "aborted" }]);
   await drain(f.wrap());

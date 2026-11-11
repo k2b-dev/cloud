@@ -927,6 +927,7 @@ suite("AI executor integration", () => {
           canonicalNames: new Map(),
           approvalPolicies: new Map([["danger", "always"]]),
           frontendModes: new Map(),
+          streamArgs: new Map(),
         };
         pipeline.setApprovalPolicies(prepared.approvalPolicies);
         const pushed: InboundEvent[] = [];
@@ -1007,6 +1008,7 @@ suite("AI executor integration", () => {
           canonicalNames: new Map(),
           approvalPolicies: new Map([["chart", "never"]]),
           frontendModes: new Map([["chart", "client_view"]]),
+          streamArgs: new Map(),
         };
         pipeline.setFrontendModes(prepared.frontendModes);
         const statuses: string[] = [];
@@ -1187,6 +1189,7 @@ suite("AI executor integration", () => {
         canonicalNames: new Map(),
         approvalPolicies: new Map([["code_run", "never"]]),
         frontendModes: new Map(),
+        streamArgs: new Map(),
       };
       const content = {
         kind: "page" as const,
@@ -1347,6 +1350,7 @@ suite("AI executor integration", () => {
             ["code_run", "never"],
           ]),
           frontendModes: new Map(),
+          streamArgs: new Map(),
         };
         const approvalTargets = new Map([
           ["run-approval-0", { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: "https://api.example.com", always: false }],

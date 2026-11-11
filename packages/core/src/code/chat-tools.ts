@@ -209,6 +209,8 @@ export function createCodeAuthoringChatTools() {
       inputSchema: codeChatAuthoringInputs.write,
       outputSchema: z.union([CodeChatDraftSummarySchema, codeAuthoringContracts.pull.data, CodeAuthoringErrorSchema]),
       approval: "never",
+      // The chat shows the file while Gustav writes it.
+      streamArgs: ["path", "content"],
     }).server((input, context) =>
       safe(
         async () => {

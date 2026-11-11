@@ -84,7 +84,7 @@ describe("transient provider retries", () => {
     const { provider, retries } = retrying(source.provider);
     expect(await collect(provider)).toEqual(answer);
     expect(source.calls).toBe(2);
-    expect(retries).toEqual([{ retry: 1, delayMs: 1, issue: rateLimitIssue }]);
+    expect(retries).toEqual([{ retry: 1, delayMs: 1, issue: rateLimitIssue, previewedCallIds: [] }]);
   });
 
   test("provider timeouts and lost connections are transient", async () => {
@@ -105,6 +105,34 @@ describe("transient provider retries", () => {
     expect(await collect(provider)).toEqual(midStream);
     expect(source.calls).toBe(1);
     expect(retries).toEqual([]);
+  });
+
+  test("arguments being written pass at once and leave the call retryable; the retry announces itself after them", async () => {
+    const preview: ProviderEvent = { type: "tool_args_delta", callId: "c1", name: "code_write", delta: '{"content":"a' };
+    const cutOff: ProviderEvent = {
+      type: "issue",
+      issue: {
+        kind: "cancelled_tool_call",
+        callId: "c1",
+        name: "code_write",
+        reason: "provider_error_before_tool_call",
+        message: "cut off",
+        argsText: '{"content":"a',
+      },
+    };
+    const source = scripted([preview, cutOff, rateLimited], answer);
+    const order: string[] = [];
+    const provider = retryTransientProviderErrors(source.provider, {
+      deadline: null,
+      delaysMs: [1, 2],
+      onRetry: async ({ previewedCallIds }) => {
+        order.push(`retry ${previewedCallIds.join(",")}`);
+      },
+    });
+    for await (const event of provider.stream({ messages: [] })) order.push(event.type);
+    expect(source.calls).toBe(2);
+    // The failed attempt's issues leave no trace; the executor takes its previews back on the retry.
+    expect(order).toEqual(["tool_args_delta", "retry c1", ...answer.map((event) => event.type)]);
   });
 
   test("permanent failures and context overflow are not repeated", async () => {

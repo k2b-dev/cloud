@@ -39,6 +39,11 @@ export type AiTurnBlock =
       callId: string;
       name: string;
       args?: unknown;
+      /**
+       * Present while the model still writes the call: `args` then holds only the tool's `streamArgs`, each cut to its
+       * end, and this names how many lines of each came before that end. The final arguments replace both.
+       */
+      liveArgs?: { omittedLines: Record<string, number> };
       status: AiToolBlockStatus;
       /** ISO time the call reached its outcome. */
       at?: string;
@@ -98,6 +103,8 @@ export type AiWireEvent =
   | (AiWireEventBase & { type: "message_saved"; message: AiStoredMessage })
   | (AiWireEventBase & { type: "block_set"; block: AiTurnBlock })
   | (AiWireEventBase & { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string })
+  /** Takes a block back, such as a step whose call was still being written when it was cut off or retried. */
+  | (AiWireEventBase & { type: "block_remove"; blockId: string })
   /** A model call failed transiently and waits for its retry. Transient: the next event of the turn ends it. */
   | (AiWireEventBase & { type: "provider_retry" })
   | (AiWireEventBase & {
@@ -166,6 +173,8 @@ export const applyWireEventToBlocks = (blocks: AiTurnBlock[], event: AiWireEvent
     if (existing.kind !== "text" && existing.kind !== "thinking") return blocks;
     return [...blocks.slice(0, index), { ...existing, text: existing.text + event.delta }, ...blocks.slice(index + 1)];
   }
+
+  if (event.type === "block_remove") return blocks.filter((block) => block.id !== event.blockId);
 
   return blocks;
 };

@@ -36,6 +36,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
   promptHint?: string;
   /** Optional compact representation sent to providers in later loops. */
   toHistoricalResult?: (context: { input: z.infer<TInput>; output: z.infer<TOutput>; callId: string }) => unknown | Promise<unknown>;
+  /** Top-level string arguments the chat shows while the model still writes them; see `AiToolDefinition.streamArgs`. */
+  streamArgs?: readonly string[];
 }) => {
   const def: AiToolDefinition<TInput, TOutput> = {
     name: config.name,
@@ -48,6 +50,7 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
     ...(config.readOnly ? { readOnly: true as const } : {}),
     promptHint: config.promptHint,
     toHistoricalResult: config.toHistoricalResult,
+    ...(config.streamArgs?.length ? { streamArgs: config.streamArgs } : {}),
   };
 
   return {
@@ -111,6 +114,8 @@ export type PreparedAiTools = {
   canonicalNames: Map<string, string>;
   approvalPolicies: Map<string, AiToolApprovalPolicy>;
   frontendModes: Map<string, AiFrontendToolMode>;
+  /** Provider tool name to the string arguments its chat step shows while the model writes them. */
+  streamArgs: Map<string, readonly string[]>;
 };
 
 export type AiToolPreparationContext = {
@@ -171,6 +176,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
   const canonicalNames = new Map<string, string>();
   const approvalPolicies = new Map<string, AiToolApprovalPolicy>();
   const frontendModes = new Map<string, AiFrontendToolMode>();
+  const streamArgs = new Map<string, readonly string[]>();
 
   const approvalContext = async (toolInput: unknown, ctx: ToolContext, needsApproval: boolean) => {
     const callId = ctx.callId;
@@ -225,6 +231,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
 
     canonicalNames.set(tool.def.name, tool.def.canonicalName ?? tool.def.name);
     approvalPolicies.set(tool.def.name, tool.def.approval);
+    if (tool.def.streamArgs?.length) streamArgs.set(tool.def.name, tool.def.streamArgs);
 
     const nessiTool = defineNessiTool({
       name: tool.def.name,
@@ -281,5 +288,5 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
     });
   });
 
-  return { tools, canonicalNames, approvalPolicies, frontendModes };
+  return { tools, canonicalNames, approvalPolicies, frontendModes, streamArgs };
 };

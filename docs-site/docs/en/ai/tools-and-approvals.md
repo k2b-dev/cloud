@@ -165,6 +165,15 @@ substantial web extracts and file slices, while models without a known context
 window use a conservative fallback. Tool-specific safety and transport limits
 still apply, and historical projections stay compact for later loops.
 
+`streamArgs` names top-level string arguments the chat shows while the model
+is still writing the call, such as a file's `path` and `content`. The step
+receives them a few times per second, each cut to its last 4 KB and starting
+at a line, with the number of lines before that end (`liveArgs` on the tool
+block). The complete arguments replace them when the call is written out. A
+call that is cut off, malformed, or retried disappears again, so the chat only
+keeps calls that exist. The tool never runs from these previews. Never list
+arguments that can carry secrets.
+
 `promptHint` adds one short usage nudge to the system prompt. Use it when the
 model could finish with plain text but Cloud prefers the tool-backed experience,
 as with surveys, the long-form text editor, charts, or presented files. Keep

@@ -31,6 +31,30 @@ const step = (block: Partial<ToolBlock> & Pick<ToolBlock, "name">, locale = "en"
 const numbers = (html: string) => [...html.matchAll(/k2b-content-code-display__number"[^>]*>(\d+)</g)].map((match) => Number(match[1]));
 const source = Array.from({ length: 40 }, (_, index) => `const line${index + 1} = ${index + 1};`).join("\n");
 
+test("a file Gustav still writes shows its newest lines, numbered like the whole file, in the AI colour", () => {
+  // The executor sent the end of the content after 100 earlier lines.
+  const html = step({
+    name: "code_write",
+    status: "running",
+    args: { path: "code.ts", content: source },
+    liveArgs: { omittedLines: { path: 0, content: 100 } },
+  });
+  expect(numbers(html)).toEqual(Array.from({ length: 14 }, (_, index) => 127 + index));
+  expect(html).toContain("code.ts · line 140");
+  expect(html).toContain("data-live");
+  expect(html).toContain("line40");
+  expect(html).not.toContain("line26 ");
+  // Nothing to copy or inspect until the call exists.
+  expect(html).not.toContain("RAW-INPUT-OUTPUT");
+  expect(html).not.toContain("k2b-copy");
+  expect(
+    step(
+      { ...{ name: "code_write", status: "running" as const }, args: { path: "a.ts", content: "x" }, liveArgs: { omittedLines: {} } },
+      "de",
+    ),
+  ).toContain("a.ts · Zeile 1");
+});
+
 test("a written file shows its complete source instead of the call's JSON", () => {
   const html = step({ name: "code_write", args: { codeId: "c_1234", path: "code.tsx", content: source }, result: { version: 1 } });
   expect(numbers(html)).toHaveLength(40);

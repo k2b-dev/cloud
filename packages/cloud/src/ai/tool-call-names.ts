@@ -36,6 +36,7 @@ export const acceptCanonicalToolNames = (provider: Provider, canonicalNames: Rea
     const callName = (name: string) => aliases.get(name) ?? name;
     for await (const event of provider.stream({ ...request, messages: request.messages.map(explainUnknownTool) })) {
       if (event.type === "block_start" && event.kind === "tool_call" && event.name) yield { ...event, name: callName(event.name) };
+      else if (event.type === "tool_args_delta") yield { ...event, name: callName(event.name) };
       else if (event.type === "block_end" && event.block.type === "tool_call")
         yield { ...event, block: { ...event.block, name: callName(event.block.name) } };
       else yield event;
