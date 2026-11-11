@@ -97,6 +97,7 @@ import { normalizeInvocationRequestId } from "../services/identity/invocation-to
 import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
+import { startPreviewsRuntime } from "../services/previews/runtime";
 import { readRailSnapshot } from "../services/rail-snapshot";
 import { screenPreferences } from "../services/screen-preferences";
 import { isAppPagePath } from "../services/session";
@@ -1315,6 +1316,7 @@ export const defineApp = <
         log.info(`Start: ${meta.id}`);
         await startOpts.lifecycle.start(cloudCtx);
       }
+      cleanup.push(await startPreviewsRuntime());
 
       // Provision resources declared during application setup before exposing readiness.
       await processSync.sync.ready();

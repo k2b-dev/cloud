@@ -18,9 +18,18 @@ const RenderResult = z.object({
 });
 
 /** Isolate native decoding from the server: abort/deadline kills the process. */
-export async function renderPdfPages(bytes: Uint8Array, pages: number[] = [1], signal?: AbortSignal) {
+export async function renderPdfPages(
+  bytes: Uint8Array,
+  pages: number[] = [1],
+  signal?: AbortSignal,
+  options: { maxInputBytes?: number } = {},
+) {
   PdfPages.parse(pages);
-  if (bytes.byteLength > PDF_MAX_BYTES) throw new Error("PDF exceeds the 10 MiB view_image limit.");
+  const maxInputBytes = options.maxInputBytes ?? PDF_MAX_BYTES;
+  if (!Number.isInteger(maxInputBytes) || maxInputBytes < 1 || maxInputBytes > 50_000_000)
+    throw new RangeError("PDF input limit must be at most 50 MB.");
+  if (bytes.byteLength > maxInputBytes)
+    throw new Error(maxInputBytes === PDF_MAX_BYTES ? "PDF exceeds the 10 MiB view_image limit." : "PDF exceeds the input limit.");
   if (process.platform !== "linux") throw new Error("PDF page inspection requires the Linux Cloud runtime with memory isolation.");
   const boundedSignal = AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]);
   boundedSignal.throwIfAborted();
@@ -31,7 +40,8 @@ export async function renderPdfPages(bytes: Uint8Array, pages: number[] = [1], s
       typeof __CLOUD_PDF_RENDER_WORKER__ === "string"
         ? new URL(__CLOUD_PDF_RENDER_WORKER__, import.meta.url)
         : new URL("./pdf-render-worker.ts", import.meta.url);
-    const child = spawnCanvasWorker(worker, "pdf-decoder", JSON.stringify({ pdf: Buffer.from(bytes).toString("base64"), pages }));
+    const header = `${JSON.stringify({ bytes: bytes.byteLength, pages, maxInputBytes })}\n`;
+    const child = spawnCanvasWorker(worker, "pdf-decoder", new Blob([header, new Uint8Array(bytes)]));
     const stop = () => child.kill("SIGKILL");
     boundedSignal.addEventListener("abort", stop, { once: true });
     if (boundedSignal.aborted) stop();

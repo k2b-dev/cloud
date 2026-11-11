@@ -334,7 +334,7 @@ describe("file preview dialog in a browser", () => {
     ["desktop", desktop],
     ["phone", phone],
   ] as const)
-    test(`a title that wraps arrives without moving anything visible, and reads in full (${label})`, async () => {
+    test(`a long title arrives without moving anything visible and stays on one line (${label})`, async () => {
       let release = () => {};
       const tab = await open(
         options,
@@ -365,12 +365,13 @@ describe("file preview dialog in a browser", () => {
         for (const element of pending) expect(loaded).toContainEqual(element);
         const title = await tab.$eval(".k2b-panel-dialog__heading h2", (heading) => ({
           text: heading.textContent,
-          clipped: heading.scrollHeight > heading.clientHeight + 1,
           lines: Math.round(heading.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(heading).lineHeight)),
+          ellipsis: getComputedStyle(heading).textOverflow,
         }));
+        // A title never wraps: the whole name stays in the heading for assistive technology, cut with an ellipsis.
         expect(title.text).toBe("Everything the organising team needs for the summer party in July");
-        expect(title.clipped).toBe(false);
-        expect(title.lines).toBeGreaterThan(1);
+        expect(title.lines).toBe(1);
+        expect(title.ellipsis).toBe("ellipsis");
         // The facts line sits below the whole title.
         const heading = await box(tab, ".k2b-panel-dialog__heading h2");
         expect((await box(tab, ".filesv2-preview-facts")).top).toBeGreaterThanOrEqual(heading.top + heading.height);

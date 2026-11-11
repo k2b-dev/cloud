@@ -208,7 +208,8 @@ describe("@k2b/ui complete action migrations", () => {
     const inputRule = rule('.k2b-ui .k2b-button[data-variant="input"]');
     expect(inputRule).toContain("min-height: 2.25rem");
     expect(inputRule).toContain("background: var(--k2b-surface)");
-    expect(inputRule).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
+    expect(inputRule).toContain("border-width: var(--k2b-edge-width)");
+    expect(inputRule).not.toContain("box-shadow");
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 

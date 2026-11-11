@@ -738,10 +738,10 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(withoutSteppers).not.toContain("k2b-number-input__step");
     expect(cssRule(".k2b-ui .k2b-number-input")).toContain("width: 100%");
     expect(cssRule(".k2b-ui .k2b-number-input__step")).toContain("border: 0");
-    expect(cssRule(".k2b-ui .k2b-number-input__step:first-child")).toContain("border-right");
-    expect(cssRule(".k2b-ui .k2b-number-input__step:last-child")).toContain("border-left");
-    expect(cssRule(".k2b-ui .k2b-number-input:focus-within > .k2b-number-input__step")).toContain("var(--k2b-focus-fill)");
-    expect(cssRule(".k2b-ui .k2b-number-input__step:hover:not(:disabled)")).toContain("var(--k2b-focus-fill)");
+    // One quiet divider in the edge grey; the fill reaches the field's border.
+    expect(cssRule(".k2b-ui .k2b-number-input__step:first-child")).toContain("border-right: 1px solid var(--k2b-edge)");
+    expect(cssRule(".k2b-ui .k2b-number-input__step:last-child")).toContain("border-left: 1px solid var(--k2b-edge)");
+    expect(cssRule(".k2b-ui .k2b-number-input__step:is(:hover, :focus-visible):not(:disabled)")).toContain("var(--k2b-focus-fill)");
     expect(cssRule(".k2b-ui .k2b-input-shell__affix:last-child")).toContain("margin-right: 0.625rem");
   });
 
@@ -776,8 +776,10 @@ describe("@k2b/ui complete choice input migrations", () => {
   });
 
   test("gives steppers, colour buttons and disabled sliders a visible state", () => {
-    // A focused stepper draws the field's focus edge inside its own box.
-    expect(cssRule(".k2b-ui .k2b-number-input__step:focus-visible")).toContain("var(--k2b-edge-focus)");
+    // A focused stepper takes the stepper fill inside the field's focus edge.
+    expect(cssRule(".k2b-ui .k2b-number-input__step:is(:hover, :focus-visible):not(:disabled)")).toContain(
+      "background: var(--k2b-focus-fill)",
+    );
     expect(cssRule(".k2b-ui .k2b-slider input:disabled")).toContain("cursor: not-allowed");
     const disabled = renderToString(() =>
       createComponent(Slider, {

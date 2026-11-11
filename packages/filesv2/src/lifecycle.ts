@@ -1,8 +1,9 @@
 import type { AppLifecycle } from "@k2b/cloud/contracts";
-import { logger, trace } from "@k2b/cloud/services";
+import { logger, previews, trace } from "@k2b/cloud/services";
 import { MAINTENANCE_ID as ID, maintenanceScheduler as scheduler } from "./maintenance-schedule";
 import { migrate } from "./migrate";
 import { filesService } from "./service";
+import { readFilePreview } from "./service/previews";
 
 const log = logger("filesv2:maintenance");
 let worker: Awaited<ReturnType<ReturnType<typeof scheduler>["process"]>> | undefined;
@@ -29,6 +30,7 @@ export async function runFilesMaintenance(
 export const filesLifecycle: AppLifecycle = {
   setup: migrate,
   async start() {
+    previews.reader(readFilePreview);
     await scheduler().create({
       id: ID,
       cron: "* * * * *",

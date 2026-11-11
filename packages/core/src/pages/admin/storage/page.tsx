@@ -15,7 +15,7 @@ export default ssr<AuthContext>(async (c) => {
       console.error("[admin] storage buckets could not be read", error instanceof Error ? error.message : error);
       return null;
     }),
-    buildEntries("storage", locale),
+    Promise.all([buildEntries("storage", locale), buildEntries("previews", locale)]).then((groups) => groups.flat()),
     coreSettings.get<string>("app.documentation_url"),
   ]);
   const id = requested === undefined || requested === "new" ? null : parseStorageBucketId(requested);

@@ -20,6 +20,10 @@ const deOptions: Partial<Record<string, Record<string, string>>> = {
 };
 
 const de: Record<string, SettingCopy> = {
+  "previews.max_bytes": {
+    label: "Speicherbudget für Vorschauen (Bytes)",
+    description: "Standard: 2 GiB für alle Anwendungen. Die Bereinigung entfernt zuerst die am längsten nicht angezeigten Vorschauen.",
+  },
   "ai.openai_api_enabled": {
     label: "OpenAI-kompatible API",
     description:

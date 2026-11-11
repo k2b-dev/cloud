@@ -292,7 +292,15 @@ suite("administrative read history with real Filegate", () => {
         const result = await service.adminList(call, input);
         expect(result).toMatchObject({ basePath: home, path: input.path, archiveId: null, versioningEnabled: true });
         expect(result.items).toEqual([
-          { name: "evidence.txt", path: file.path, directory: false, size: file.before.size, modified: file.before.modified },
+          {
+            name: "evidence.txt",
+            path: file.path,
+            directory: false,
+            size: file.before.size,
+            modified: file.before.modified,
+            // Every listed file carries its version, so previews can be cached per version.
+            revision: expect.any(String),
+          },
         ]);
         break;
       }

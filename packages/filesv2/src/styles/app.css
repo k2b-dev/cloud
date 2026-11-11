@@ -158,6 +158,60 @@
   object-fit: contain;
   border-radius: 0.25rem;
 }
+/* A preview fills the icon's fixed box: photos are cropped to it, pages stand
+   whole on a hairline, and a preview fades in without moving anything. */
+.filesv2-thumbnail--preview {
+  position: relative;
+  border-radius: 0.25rem;
+}
+.filesv2-thumbnail--preview img {
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+.filesv2-thumbnail--preview img[data-ready] {
+  opacity: 1;
+}
+.filesv2-thumbnail--preview[data-kind="image"] img {
+  object-fit: cover;
+}
+.filesv2-thumbnail--preview:is([data-kind="pdf"], [data-kind="office"]) img[data-ready] {
+  width: auto;
+  height: auto;
+  box-shadow: 0 0 0 1px var(--k2b-border);
+  border-radius: 0.125rem;
+  background: #fff;
+}
+.filesv2-thumbnail__page {
+  display: block;
+  width: 78%;
+  height: 100%;
+  overflow: hidden;
+  padding: 8% 7%;
+  border-radius: 0.125rem;
+  background: var(--k2b-surface);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+/* The first lines of a text, as small as they come out; in a row they read as
+   lines, in a tile as words. */
+.filesv2-thumbnail__text {
+  display: block;
+  color: var(--k2b-text-muted);
+  font-family: var(--k2b-font-mono);
+  font-size: 3px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.filesv2-thumbnail--large .filesv2-thumbnail__text {
+  font-size: 7px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .filesv2-thumbnail--preview img {
+    transition: none;
+  }
+}
 .filesv2-thumbnail--large {
   width: 100%;
   height: 100%;
@@ -206,18 +260,13 @@
 .k2b-ui .filesv2-preview-dialog--fill .k2b-panel-dialog-viewport {
   height: 100%;
 }
-/* The document title keeps the size it had as the heading of the document and wraps, so it reads in full; four
-   lines bound a runaway heading. */
+/* The document title keeps the size it had as the heading of the document; like every header title it stays on one
+   line and ends with an ellipsis. */
 .k2b-ui .filesv2-preview-dialog .k2b-panel-dialog__heading h2 {
-  display: -webkit-box;
-  overflow: hidden;
   font-size: 1.5rem;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
 }
 /* Holds the title line while a Markdown file loads. The facts below it stay invisible until the title is known and
-   then appear with it, so a title that wraps moves nothing visible. */
+   then appear with it, so nothing visible moves. */
 .filesv2-preview-dialog__title-pending {
   display: inline-block;
   width: 14rem;
@@ -338,6 +387,7 @@
     white-space: nowrap;
   }
 }
+
 
 .filesv2-search {
   flex: 1 1 12rem;
