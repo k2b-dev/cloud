@@ -1,23 +1,12 @@
-/* Privacy screen: only content blurs; the app bar stays recognizable but unusable, its counts and the avatar blur
-   with the content. Blur and inert never change layout: positions, sizes and scroll stay as they were. The hint is a
-   floating card (layer 3) over the middle of the app area. `browser/privacy-screen.tsx` owns the attributes. */
-[data-cloud-privacy-covered]:not([data-cloud-privacy-covered="rail"]) {
+/* Privacy screen: the whole screen blurs, app bar, navigation, content, dialogs and toasts alike; only the hint and
+   the islands stay sharp. Blur and inert never change layout: positions, sizes and scroll stay as they were. The hint
+   is a floating card (layer 3) over the middle of the app area. `browser/privacy-screen.tsx` owns the attributes. */
+[data-cloud-privacy-covered] {
   filter: blur(14px) saturate(0.7);
   opacity: 0.66;
   transition:
     filter 160ms ease-out,
     opacity 160ms ease-out;
-}
-
-[data-cloud-privacy-covered="rail"] {
-  opacity: 0.85;
-
-  & :is(.cloud-app-badge, .layout-profile-preferences) {
-    filter: blur(5px);
-  }
-  & .cloud-app-badge {
-    opacity: 0.6;
-  }
 }
 
 /* The runtime sets the countdown's remaining share and the app area's middle; these are the values before it does. */
@@ -246,7 +235,7 @@
 }
 
 @media (forced-colors: active) {
-  [data-cloud-privacy-covered]:not([data-cloud-privacy-covered="rail"]) {
+  [data-cloud-privacy-covered] {
     /* Where the system colours replace the blur's look, an opaque ground still hides the content. */
     background: Canvas;
   }
