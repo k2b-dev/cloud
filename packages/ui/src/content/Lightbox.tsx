@@ -446,13 +446,11 @@ function LightboxStage(props: {
             )}
           </Match>
           <Match when={props.kind === "video"}>
-            {/* biome-ignore lint/a11y/useMediaCaption: files from people carry no caption track. */}
             <video class="k2b-lightbox__video" src={props.item.src} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
           </Match>
           <Match when={props.kind === "audio"}>
             <div class="k2b-lightbox__audio">
               <FileTypeIcon name={props.item.file?.path ?? props.item.name} size="lg" />
-              {/* biome-ignore lint/a11y/useMediaCaption: files from people carry no caption track. */}
               <audio src={props.item.src} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
             </div>
           </Match>
