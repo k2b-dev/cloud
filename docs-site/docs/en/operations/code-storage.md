@@ -5,7 +5,7 @@ section: Operations
 order: 1254
 description: Back up Code versions and understand run retention and storage budgets.
 tags: [operations, code, postgres]
-updated: 2026-11-03
+updated: 2026-11-11
 ---
 
 # Code storage
@@ -28,7 +28,7 @@ budgets through the `core.code.*` administrator settings documented in the
 [Code data model](/en/docs/platform/code-data-model#storage-limits-and-retention).
 No Code storage environment variables are required.
 
-Administrators can change any of the six budgets with
+Administrators can change the storage budgets with
 `cld admin settings apply --from ./code-limits.json --yes`. For example, this
 file sets the source budget to 2 MiB:
 
@@ -59,3 +59,72 @@ retried on the next minute. Versions are retained until their Code is deleted.
 Policy revisions, group rules and durable pause work share the same schema.
 See [Code policy operations](/en/docs/operations/code-policy) for execution
 budgets and recovery from a failed pause batch.
+
+## Bound Code database storage
+
+Each Code database lives in RSQL 1.1.0 or newer, separately from Postgres.
+Include those SQLite databases in operator backups; a Postgres backup contains
+only their mappings, versions and reservation records.
+
+**Administration → Code → Limits** exposes `core.code.database_bytes`
+(default 104,857,600 bytes, 100 MiB) and `core.code.database_owner_bytes`
+(default 1,048,576,000 bytes, 1,000 MiB). The owner default allows ten databases
+at the per-Code default. It is a separate setting: changing the per-Code limit
+does not change the owner limit automatically. An owner is one exact person,
+resource or application, regardless of who started a run.
+
+The total counts **reserved capacity**, rather than adding potentially stale
+size readings. Before creating a database or raising its ceiling, Core commits
+a reservation for that database's full per-Code ceiling. RSQL enforces that
+ceiling when data grows. Concurrent runs cannot reserve the same remaining
+owner capacity. Ten small databases therefore reserve the default owner's
+entire allowance even when they contain little data. Database size and owner
+reserved capacity appear on the Code page, its administrator detail and
+`cld code show <code>`.
+
+Reservations survive outages and uncertain write results. Lowering a per-Code
+limit does not reclaim an earlier reservation. Existing mappings from before
+reservation accounting conservatively reserve 1 GiB each, the largest supported
+per-Code ceiling; review owner limits when upgrading an installation that
+already has Code databases. A lower owner limit preserves existing ceilings
+and data. It refuses new reservations and quota increases, while operations
+within existing reservations and exports remain available. Reads do not
+request quota increases. `code_db_owner_full` explains recovery: delete unused
+Code to release its database reservation, or raise the owner's limit.
+
+## Database lifecycle
+
+Deleting a Code or its owner uses the existing durable Code deletion job to
+remove its database. Failed removals are retried; the mapping and reservation
+remain until RSQL confirms removal. Changing the RSQL server URL never redirects
+an existing mapping to a different server.
+
+Pausing a Code or removing its database import from a newer version preserves
+the database. Immutable historical versions remain until their Code is deleted,
+so a database-using historical version continues to declare that dependency.
+There is currently no automatic database removal based on inactivity.
+
+## Export a Code database
+
+A Code editor, its owner or a Cloud administrator can choose **Export SQLite
+database** on the Code page or use:
+
+```sh
+cld code db export c_1234 --out ./c_1234.sqlite
+```
+
+Both surfaces use the same permission-aware service and the namespace recorded
+for that Code. Ordinary readers cannot export. A Code that has never used its
+database has nothing to export; the operation never creates one.
+
+RSQL creates a consistent SQLite snapshot. Core streams it with backpressure,
+a byte ceiling equal to its reserved capacity, and a two-minute deadline;
+request cancellation reaches RSQL. The CLI streams to a private temporary file
+and exposes the requested output only after a complete download. Existing
+files are never overwritten. A truncated or failed download reports failure
+and removes its partial file. JSON and JSONL output report `codeId`, `path`,
+`bytes` and `format: "sqlite"` after success.
+
+The export covers one Code's SQLite database, not its source, secrets, access
+grants or Postgres history. Keep the file private if the Code stores personal
+or confidential data. There is no Code database import command.

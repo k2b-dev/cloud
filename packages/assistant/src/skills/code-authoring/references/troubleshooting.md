@@ -4,6 +4,13 @@ Diagnostics carry a stable `code`, a message (German in this release), and a
 one-based `file`, `line` and `column`. Fix the cause; never suppress type
 errors (`code_type_suppression`).
 
+## Missing draft
+
+A `NOT_FOUND` that asks for `code_pull` means this chat has no current draft
+for that Code, or it expired seven days after the last change. Call
+`code_pull({codeId})` to start from the latest saved version, then re-apply
+edits and fixtures with `code_write({codeId, path, content})`.
+
 ## Check errors
 
 | Code | Cause | Fix |
@@ -32,7 +39,7 @@ errors (`code_type_suppression`).
 
 | Code | Cause | Fix |
 | --- | --- | --- |
-| `code_version_conflict` | Someone submitted after your base | `code_pull`, reconcile the comparison, check, submit with the new base |
+| `code_version_conflict` | Someone submitted after your base | `code_pull` resets the draft to the latest version; re-apply edits and fixtures, `code_check({codeId})`, then `code_submit({codeId})` |
 | `code_unattended_forbidden` | The version calls an Action that asks a person | Remove the call; use a silent Action or leave the step to a person |
 | `code_sends_not_yet` | The version sends mail or another message unattended | Create a draft instead |
 | `code_policy_never` | The installation's policy forbids a used class | Remove that call or ask a Cloud administrator about the policy |
