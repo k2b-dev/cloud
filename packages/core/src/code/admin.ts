@@ -10,6 +10,7 @@ import { z } from "zod";
 import { type CodeContext, CodeDataError } from "./access";
 import { type CodeAutomationView, describeCodeAutomations } from "./automation-view";
 import type { Code, CodeOwner, CodeRun, CodeSourceFiles } from "./contracts";
+import { type CodeDatabaseUsage, readCodeDatabaseUsage } from "./database";
 import { listCodeCleanupJobs } from "./lifecycle";
 import type { CodeCleanupJob } from "./lifecycle-contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, requireCodePolicyAdmin } from "./policy";
@@ -130,6 +131,7 @@ export type CodeAdminCodeDetail = {
   runs: Array<CodeRun & { automation?: CodeAutomationView }>;
   cleanup: CodeCleanupJob[];
   pendingVersionId: string | null;
+  database?: CodeDatabaseUsage;
   /**
    * Code of an app has its Code page here: the newest finished run's target refusal, as any Code page shows it. The
    * target comes only for editors of that Code, by type and ID from the registry; null for other Code.
@@ -624,6 +626,7 @@ export async function readCodeAdminCode(codeId: string, context: CodeContext): P
     versions: versions.items,
     runs: await withRunAutomations(runs.items, code.owner, codeId, context),
     cleanup: cleanup.items,
+    database: await readCodeDatabaseUsage(codeId, undefined, context.signal),
     pendingVersionId: pending[0]?.version_id ?? null,
     refusal:
       code.owner.kind === "app" && last?.state === "failed" && last.firstRefusedCallOrdinal ? await appCodeRefusal(last, context) : null,

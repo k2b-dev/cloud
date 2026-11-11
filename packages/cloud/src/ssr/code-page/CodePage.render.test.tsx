@@ -1076,3 +1076,33 @@ test.each(["de", "en"])("Code page shows database use and storage in %s", (local
   expect(page).toContain(locale === "de" ? "Nutzt Datenbank" : "Uses database");
   expect(page).toContain(locale === "de" ? "Datenbank: 1,00 MB von 100,00 MB" : "Database: 1.00 MB of 100.00 MB");
 });
+
+test.each(["de", "en"])("Code page shows owner reservation and export in %s", (locale) => {
+  const data = codePageFixture("overview", locale);
+  if (data.state.kind !== "ready") throw new Error("Missing fixture");
+  data.state.code.database = {
+    bytes: 1048576,
+    limit: 104857600,
+    state: "ready",
+    canExport: true,
+    owner: { reserved: 209715200, limit: 1048576000 },
+  };
+  const page = () =>
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+  const markup = page();
+  expect(renderedText(markup, " ")).toContain(
+    locale === "de"
+      ? "Reservierte Kapazität des Besitzers: 200,00 MB von 1.000,00 MB"
+      : "Owner reserved capacity: 200.00 MB of 1,000.00 MB",
+  );
+  expect(markup).toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
+  data.state.code.database.canExport = false;
+  expect(page()).not.toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
+});

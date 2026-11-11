@@ -78,11 +78,15 @@ export async function fetchCodeRuns(
   const config = await readCodeRunnerConfig();
   const free = Math.min(request.freeSlots, config.slots);
   await recordCodeRunner(request.instanceId, free);
-  const abort = AbortSignal.any([signal, AbortSignal.timeout(config.pollMs)]);
-  const reader = await (dependencies.queue ?? codeRunQueue()).reader({ signal: abort });
+  const pollDeadline = performance.now() + config.pollMs;
+  // Let each broker pull finish naturally. Aborting an expired poll can discard a
+  // delivery already buffered during event-loop contention until its ack wait ends.
+  const reader = await (dependencies.queue ?? codeRunQueue()).reader({ signal });
   try {
-    while (!abort.aborted) {
-      const ticket = await reader.receive({ waitMs: 1000, signal: abort });
+    while (!signal.aborted) {
+      const waitMs = Math.min(1000, pollDeadline - performance.now());
+      if (waitMs <= 0) break;
+      const ticket = await reader.receive({ waitMs, signal });
       if (!ticket) continue;
       // Selection skips Codes at their limit rather than making this runner wait behind their tickets.
       const { runs, jobs } = await claimCodeWork(free, request.instanceId, await readCodeRunLimits());
@@ -111,9 +115,6 @@ export async function fetchCodeRuns(
       }
     }
     return { runs: [] };
-  } catch (error) {
-    if (abort.aborted && !signal.aborted) return { runs: [] };
-    throw error;
   } finally {
     await reader.close();
   }

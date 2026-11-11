@@ -1130,7 +1130,11 @@ Every lasting Code, personal or resource-owned, has its own SQLite database.
 Import `db` from `@sdk`. Cloud creates the database on its first call; checking,
 submitting and opening the Code page do not create it. Data survives new Code
 versions. Deleting the Code, or deleting its owner, also deletes its database.
-Code pages and `cld code show <code>` show storage used and the current limit.
+Code pages and `cld code show <code>` show storage used, the current limit and
+the owner's reserved capacity. Editors and administrators can export a SQLite
+snapshot from the page or with `cld code db export <code> --out <file>`.
+Pausing a Code preserves its data, including data used by historical versions.
+See [Code storage](/en/docs/operations/code-storage) for lifecycle and exports.
 
 ```ts
 import { app, db } from "@sdk";
@@ -1165,7 +1169,12 @@ within the remaining run deadline. Results are limited to 256 KiB, so select onl
 the columns and rows you need. RSQL also enforces statement and storage limits.
 `core.code.database_bytes` sets the database quota. A write over the quota raises
 `CodeError` with `code_db_full`; a result over the response budget raises
-`code_db_limit`, and a statement timeout raises `code_db_timeout`. A timeout or
+`code_db_limit`, and a statement timeout raises `code_db_timeout`. The owner-wide
+`core.code.database_owner_bytes` limit reserves each database's full ceiling
+before provisioning or quota increases. Its default is ten times the default
+per-Code allowance (1,000 MiB). `code_db_owner_full` means the owner has no
+remaining capacity: delete unused Code or ask an administrator to raise the
+owner limit. Existing reads and SQLite exports remain available. A timeout or
 lost connection can leave a write outcome unknown: check an application-owned
 idempotency key before retrying. Concurrent namespace initialization or deletion
 can return `code_db_busy` (503); retry shortly afterward.

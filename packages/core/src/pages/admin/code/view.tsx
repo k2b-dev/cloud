@@ -1,5 +1,6 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
+import { CodeDatabaseStatus } from "@k2b/cloud/ssr/code-page";
 import { codeRunName } from "@k2b/cloud/ssr/code-page/targets";
 import type { DateContext } from "@k2b/stdlib";
 import {
@@ -677,6 +678,13 @@ export function CodeAreaView(props: Props) {
           <dt class="text-(--k2b-text-muted)">ID</dt>
           <dd class="font-mono text-xs">{code.id}</dd>
         </dl>
+        <Show when={detail.database}>
+          {(database) => (
+            <div class="text-sm">
+              <CodeDatabaseStatus codeId={code.id} database={{ ...database(), canExport: true }} />
+            </div>
+          )}
+        </Show>
         <div class="flex flex-wrap items-center gap-2">
           <Show when={source === null && newest}>
             {(versionId) => (

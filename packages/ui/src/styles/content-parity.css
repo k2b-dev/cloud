@@ -4255,8 +4255,9 @@
 
 /* Cloud's `.code-display` draws its 1px edge with a ring, not a border. Kept as
    an INSET ring here so a clipping ancestor cannot swallow it. */
+/* A column, so a host that caps its height scrolls the code under a fixed header. */
 .k2b-ui .k2b-content-code-display {
-  @apply my-3 overflow-hidden rounded-lg;
+  @apply my-3 flex flex-col overflow-hidden rounded-lg;
   background: var(--k2b-surface-muted);
   box-shadow: inset 0 0 0 1px var(--k2b-border);
 }
@@ -4279,8 +4280,16 @@
 }
 
 .k2b-ui .k2b-content-code-display__body {
-  @apply text-xs;
+  @apply min-h-0 overflow-y-auto text-xs;
   line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-content-code-display__body[data-digits="4"] .k2b-content-code-display__line[data-numbered="true"] {
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+}
+
+.k2b-ui .k2b-content-code-display__body:is([data-digits="5"], [data-digits="6"]) .k2b-content-code-display__line[data-numbered="true"] {
+  grid-template-columns: 3.5rem minmax(0, 1fr);
 }
 
 .k2b-ui :is(.k2b-content-code-display__body, .k2b-content-doc-code__body)[data-header="true"] {
