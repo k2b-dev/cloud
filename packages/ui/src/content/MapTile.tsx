@@ -27,16 +27,22 @@ export type MapTileProps = {
    * opens the dialog again. Omit it for maps without a stable id; their dialog stays closed after a reload.
    */
   restoreId?: string;
+  /**
+   * More query parameters the dialog's address carries with `restoreId`, so a reload reaches the tile again, such as
+   * the message of a long conversation that holds the map.
+   */
+  restoreQuery?: Record<string, string>;
   /** The still map, for example `<MapView still … />`, in the size of the tile. */
   children: JSX.Element;
   class?: string;
 };
 
 const urlParam = () => new URL(location.href).searchParams.get(MAP_DIALOG_PARAM);
-const urlWith = (value: string | undefined) => {
+const urlWith = (value: string | undefined, query: Record<string, string> = {}) => {
   const url = new URL(location.href);
   if (value === undefined) url.searchParams.delete(MAP_DIALOG_PARAM);
   else url.searchParams.set(MAP_DIALOG_PARAM, value);
+  for (const [name, param] of Object.entries(query)) url.searchParams.set(name, param);
   return url.pathname + url.search + url.hash;
 };
 
@@ -61,7 +67,11 @@ export function MapTile(props: MapTileProps): JSX.Element {
       // Only the dialog's own entry names the map, so Back and close land on the page without the name.
       await dialogCore.open<void>(
         (_close, context) => <LocaleProvider locale={locale()}>{props.dialog(() => void context.requestDismiss())}</LocaleProvider>,
-        { ...mapDialogOptions, signal: lifetime.signal, historyUrl: restore === undefined ? undefined : urlWith(restore) },
+        {
+          ...mapDialogOptions,
+          signal: lifetime.signal,
+          historyUrl: restore === undefined ? undefined : urlWith(restore, props.restoreQuery),
+        },
       );
     } finally {
       open = false;

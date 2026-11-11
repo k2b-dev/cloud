@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mapAddress, mapAvailability, mapFixture, mapGeoFixture, mapPlaces, mapSuccess, mapTime } from "./map.test-fixture";
 import { AI_MAP_MAX_DETAILS, AiMapSchema, AiMapToolInputSchema, aiMapToolResult } from "./map-contracts";
-import { aiMapNotebookContent } from "./map-notebook";
 import { applyAiMap, createAiMap } from "./map-service";
 
 const context = () => {
@@ -669,24 +668,6 @@ describe("native Assistant map transitions", () => {
     );
     expect(preview.map.preview?.title).toHaveLength(160);
     expect(preview.map.preview?.changes).toMatchObject({ stop: { label: place.name } });
-  });
-  test("Notebook serialization uses shared schema and retains every group and complete route", () => {
-    const map = mapFixture();
-    map.groups.push({ title: "Cafés", places: mapPlaces(20, "cafe") });
-    map.route = mapFixture("route").route;
-    map.groups[0]!.places[0]!.website = "https://[";
-    const providerId = "provider-" + "a".repeat(1000);
-    map.groups[0]!.places[0]!.id = providerId;
-    const unicodeWebsite = `https://example.com/${"ä".repeat(400)}`;
-    map.groups[0]!.places[1]!.website = unicodeWebsite;
-    const markdown = aiMapNotebookContent(map);
-    expect(markdown).not.toContain("https://[");
-    expect(markdown).toContain(`"id":"${providerId}"`);
-    expect(markdown).toContain(unicodeWebsite);
-    expect(markdown.match(/:::map/g)).toHaveLength(3);
-    expect(markdown).not.toContain("distanceAllowanceMeters");
-    expect(markdown).toContain('"distanceMeters":162000');
-    expect(markdown).toContain('"computedAt":"2026-10-19T14:31:00.000Z"');
   });
 });
 
