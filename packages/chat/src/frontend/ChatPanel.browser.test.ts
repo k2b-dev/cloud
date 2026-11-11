@@ -1690,6 +1690,14 @@ for (const { embedded, width } of [
       } else {
         const retry = view.getByRole("option").filter({ hasText: "Commands from apps could not be loaded" });
         await retry.waitFor();
+        // The draft's own save creates the chat two seconds after typing; the list and its retry row stay through it (#2233).
+        await page.waitForURL("**/app/assistant?conversation=*");
+        await retry.waitFor();
+        expect(
+          await page.evaluate(() =>
+            (window as Window & { presses?: string[] }).presses?.filter((line) => line.endsWith("command list gone")),
+          ),
+        ).toEqual([]);
         catalogFailed = false;
         const recovered = page.waitForResponse(
           (response) =>
