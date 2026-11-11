@@ -16,6 +16,14 @@ const messages: Record<string, [string, string]> = {
     "PDF processing is not configured. Ask an administrator.",
     "Die PDF-Verarbeitung ist nicht eingerichtet. Wende dich an eine Administratorin oder einen Administrator.",
   ],
+  pdf_changed: [
+    "A file changed while you chose its pages. Choose the pages again.",
+    "Eine Datei hat sich geändert, während du ihre Seiten gewählt hast. Wähle die Seiten noch einmal.",
+  ],
+  pdf_busy: [
+    "PDF processing is busy with another action. Try again in a moment.",
+    "Die PDF-Verarbeitung ist gerade mit einer anderen Aktion beschäftigt. Versuche es gleich noch einmal.",
+  ],
   pdf_failed: [
     "The PDF action could not be completed. Try again.",
     "Die PDF-Aktion konnte nicht abgeschlossen werden. Versuche es erneut.",
@@ -289,6 +297,10 @@ export function pdfErrorMessage(code: string, locale: string, path: string): str
     return locale.startsWith("de") ? `„${name}“ ist mit einem Kennwort geschützt.` : `“${name}” is password-protected.`;
   if (code === "pdf_unreadable")
     return locale.startsWith("de") ? `„${name}“ konnte nicht als PDF gelesen werden.` : `“${name}” could not be read as a PDF.`;
+  if (code === "pdf_changed")
+    return locale.startsWith("de")
+      ? `„${name}“ hat sich geändert. Wähle die Seiten noch einmal.`
+      : `“${name}” changed. Choose the pages again.`;
   return errorMessage(code, locale);
 }
 

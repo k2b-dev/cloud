@@ -41,6 +41,7 @@ suiteFor("gotenberg", "valkey")("Files PDF API with Gotenberg", () => {
       destination: async () => {},
       source: async (_call, _base, path) => ({
         size: originals.get(path)!.length,
+        revision: "seen",
         read: async () => new Response(new Uint8Array(originals.get(path)!)),
       }),
       save: async (_call, _base, path, bytes, signal) => {
@@ -75,7 +76,7 @@ suiteFor("gotenberg", "valkey")("Files PDF API with Gotenberg", () => {
           operation,
           paths: [...originals.keys()],
           name: `${operation}.pdf`,
-          ...(operation === "extract" ? { pages: [2, 3] } : {}),
+          ...(operation === "extract" ? { revisions: [...originals.keys()].map(() => "seen"), pages: [2, 3] } : {}),
         }),
       });
       expect(response.status).toBe(200);

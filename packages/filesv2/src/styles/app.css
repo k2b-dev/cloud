@@ -539,6 +539,30 @@
   gap: 0.75rem;
   justify-content: flex-end;
 }
+/* The same in a tile: the progress or the reason below the name, its commands below that. */
+.filesv2-grid-operation {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+.filesv2-grid-operation__text {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.filesv2-grid-operation[data-state="failed"] .filesv2-grid-operation__text,
+.filesv2-thumbnail--virtual[data-state="failed"] {
+  color: var(--k2b-danger-text);
+}
+.filesv2-grid-operation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 /* A file made a moment ago says so in place of its date, with the success check. */
 .filesv2-list__fresh {
   display: inline-flex;

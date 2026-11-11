@@ -113,7 +113,7 @@ import {
   transferTicket,
 } from "./machine-access";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
-import { createPdfOperation } from "./pdf";
+import { createPdfOperation, FilesPdfError } from "./pdf";
 import { permits, type UnixIdentity } from "./posix";
 import { enqueueFilePreview, filePreviewSource } from "./previews";
 import { rootSummary } from "./root-summary";
@@ -2576,12 +2576,15 @@ export function createFilesService(
       async source(call, baseId, path, signal) {
         signal.throwIfAborted();
         const current = await authorized(call.actor, baseId, path, false, undefined, signal);
+        const revision = markdownRevision(current.node);
         return {
           size: current.node.size,
+          revision,
           async read(readSignal) {
             readSignal.throwIfAborted();
-            // Reauthorize each source at the point of reading, just as download does.
+            // Reauthorize each source at the point of reading, just as download does, and read only the version checked.
             const fresh = await authorized(call.actor, baseId, path, false, undefined, readSignal);
+            if (markdownRevision(fresh.node) !== revision) throw new FilesPdfError("pdf_changed", path);
             return fresh.root.contentRaw(fresh.target, readSignal);
           },
         };

@@ -133,8 +133,10 @@ type Session = {
   tab: Page;
   errors: string[];
   items: Item[];
-  posts: { paths: string[]; pages?: number[]; name: string; operation: string }[];
+  posts: { paths: string[]; pages?: number[]; revisions?: string[]; name: string; operation: string }[];
   deleted: string[][];
+  /** The trash refuses the next deletion, as for a missing right. */
+  refuseDelete?: boolean;
   /** The answer to the next PDF action; the first entry is used and removed. */
   answers: PdfAnswer[];
 };
@@ -197,6 +199,10 @@ const open = async (options: BrowserContextOptions, query = "", lang = "en"): Pr
       const { paths } = route.request().postDataJSON() as { paths: string[] };
       session.deleted.push(paths);
       session.items = session.items.filter((item) => !paths.includes(`${folder}/${item.name}`));
+      if (session.refuseDelete)
+        return route.fulfill({
+          json: { results: paths.map((target) => ({ path: target, ok: false, error: "You may not move this file to the trash." })) },
+        });
       return route.fulfill({ json: { results: paths.map((target) => ({ path: target, ok: true })) } });
     }
     return route.fulfill({ status: 404, json: { code: "not_found", message: "" } });
@@ -393,6 +399,51 @@ describe("Files selection pill in a browser", () => {
       }
       expect(session.posts.map((post) => post.pages)).toEqual([[1], [1]]);
       expect(session.posts[0]!.name).toBe("Rechnung-2026-0388-Auszug.pdf");
+      // The pages count over the version shown in the dialog.
+      expect(session.posts[0]!.revisions).toEqual(["r-Rechnung-2026-0388.pdf"]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("in the grid a file in the making shows its failure and recovery in its tile", async () => {
+    const session = await open(desktop);
+    const { tab } = session;
+    session.answers.push({ fail: { code: "pdf_failed", message: "The PDF could not be made." } });
+    try {
+      await tab.getByRole("radio", { name: "Grid" }).click();
+      await tab.locator(".k2b-file-grid [role=option], .k2b-file-grid [aria-selected]").first().waitFor();
+      const tile = (name: string) => tab.locator(".k2b-file-grid > *", { hasText: name }).first();
+      await tile("Rechnung-2026-0388").click();
+      await pill(tab).getByRole("button", { name: "Take out pages" }).click();
+      const dialog = tab.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Page 1" }).click();
+      await dialog.getByRole("button", { name: "Save as new PDF" }).click();
+      const failed = tab.locator('.filesv2-grid-operation[data-state="failed"]');
+      await failed.waitFor();
+      expect(await failed.textContent()).toContain("The PDF could not be made.");
+      await failed.getByRole("button", { name: "Discard" }).click();
+      await settled(tab);
+      expect(await tab.locator(".filesv2-grid-operation").count()).toBe(0);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("an Undo the trash refuses says so instead of claiming success", async () => {
+    const session = await open(desktop);
+    const { tab } = session;
+    try {
+      await row(tab, "Angebot-0412").click();
+      await row(tab, "Expertise").click({ modifiers: ["Shift"] });
+      await pill(tab).getByRole("button", { name: "Merge" }).click();
+      await tab.getByRole("dialog").getByRole("button", { name: "Merge", exact: true }).click();
+      const toast = tab.locator(".k2b-toast", { hasText: "created" });
+      await toast.waitFor();
+      session.refuseDelete = true;
+      await toast.getByRole("button", { name: "Undo" }).click();
+      await tab.locator(".k2b-toast", { hasText: "You may not move this file to the trash." }).waitFor();
+      expect(await tab.locator(".k2b-toast", { hasText: "The new file is in the trash." }).count()).toBe(0);
     } finally {
       await tab.context().close();
     }

@@ -1212,10 +1212,12 @@ export default function Browser(props: {
     verb: string;
     summary: string;
     location: string;
+    /** The storage the action runs in, fixed when it starts. */
+    base: string;
     afterPath: string;
     state: "running" | "failed";
     percent: number;
-    error?: { message: string; path?: string };
+    error?: { code?: string; message: string; path?: string };
     controller: AbortController;
   };
   const [operations, setOperations] = createSignal<readonly Operation[]>([]);
@@ -1239,17 +1241,25 @@ export default function Browser(props: {
       10_000,
     );
   };
-  const undoCreated = async (entry: FileEntry) => {
-    const response = await apiClient.bases[":baseId"].delete.$post({ param: { baseId: baseId() }, json: { paths: [entry.path] } });
-    if (!response.ok) return void toast.error(t().unavailable);
-    toast.success(b().opUndone);
-    await refresh();
+  /** Undo targets the storage the file was made in, also after the person moved on to another one. */
+  const undoCreated = async (base: string, entry: FileEntry) => {
+    try {
+      const response = await apiClient.bases[":baseId"].delete.$post({ param: { baseId: base }, json: { paths: [entry.path] } });
+      if (!response.ok) await apiFailure(response, t().unavailable);
+      // The route answers per entry: a refused or unfinished move to the trash is a failure, not a success.
+      const failed = (await response.json()).results.find((result) => !result.ok);
+      if (failed) throw new Error(failed.error ?? t().unavailable);
+      toast.success(b().opUndone);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t().unavailable);
+    }
+    if (base === baseId()) await refresh();
   };
   const runOperation = (operation: Operation) => {
     const controller = new AbortController();
     patchOperation(operation.id, { controller, state: "running", percent: 0, error: undefined });
     void runPdfOperation(
-      baseId(),
+      operation.base,
       operation.request,
       controller.signal,
       (done, total) => patchOperation(operation.id, { percent: total ? Math.round((done / total) * 100) : 0 }),
@@ -1257,24 +1267,30 @@ export default function Browser(props: {
     ).then(
       async (result) => {
         dropOperation(operation.id);
-        if (operation.location !== locationKey()) return;
-        markFresh(result.entry.path);
-        await refresh();
-        // The new name leads; how it was made follows quietly, as "9 pages from 3 files".
+        if (operation.location === locationKey()) {
+          markFresh(result.entry.path);
+          await refresh();
+        }
+        // The new name leads; how it was made follows quietly, as "9 pages from 3 files". It also reaches a person who
+        // moved on to another folder meanwhile, and its Undo still targets the folder the file was made in.
         toast.success([b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · "), {
           celebrate: true,
-          action: { label: b().opUndo, onClick: () => void undoCreated(result.entry) },
+          action: { label: b().opUndo, onClick: () => void undoCreated(operation.base, result.entry) },
         });
       },
       (error: unknown) => {
         if (controller.signal.aborted) return dropOperation(operation.id);
+        const code = error instanceof PdfOperationError ? error.code : undefined;
         patchOperation(operation.id, {
           state: "failed",
           error: {
+            code,
             message: error instanceof Error ? error.message : t().unavailable,
             path: error instanceof PdfOperationError ? error.path : undefined,
           },
         });
+        // A file that changed meanwhile shows its current version, so choosing again starts from what is there now.
+        if (code === "pdf_changed" && operation.location === locationKey()) void refresh();
       },
     );
   };
@@ -1287,6 +1303,7 @@ export default function Browser(props: {
       verb,
       summary,
       location: locationKey(),
+      base: baseId(),
       afterPath,
       state: "running",
       percent: 0,
@@ -1330,7 +1347,10 @@ export default function Browser(props: {
               },
             },
           ]
-        : [{ label: b().retry, onClick: () => runOperation(operation) }];
+        : // Pages chosen from an older version would not fit again; the person chooses anew from the refreshed list.
+          operation.error?.code === "pdf_changed"
+          ? []
+          : [{ label: b().retry, onClick: () => runOperation(operation) }];
     return {
       state: "failed",
       text: operation.error?.message ?? t().unavailable,
@@ -1338,10 +1358,11 @@ export default function Browser(props: {
     };
   };
   /** The list's rows with the files in the making at their place and the files made a moment ago marked. */
-  const listRows = createMemo<FileRow[]>(() => {
+  /** The same files in the making and fresh marks in list, tree and grid, so every view shows progress and recovery. */
+  const withOperations = (source: readonly FileRow[]): FileRow[] => {
     const here = operations().filter((operation) => operation.location === locationKey());
     const marks = fresh();
-    if (!here.length && !marks.size) return rows();
+    if (!here.length && !marks.size) return [...source];
     const out: FileRow[] = [];
     const pending = (operation: Operation): FileRow => ({
       name: operation.request.name,
@@ -1352,7 +1373,7 @@ export default function Browser(props: {
       operation: operationView(operation),
     });
     const placed = new Set<string>();
-    for (const row of rows()) {
+    for (const row of source) {
       out.push(marks.has(row.path) ? { ...row, fresh: b().justCreated } : row);
       for (const operation of here)
         if (operation.afterPath === row.path) {
@@ -1362,7 +1383,8 @@ export default function Browser(props: {
     }
     // A source no longer listed, such as after a sort, still shows its file in the making first.
     return [...here.filter((operation) => !placed.has(operation.id)).map(pending), ...out];
-  });
+  };
+  const listRows = createMemo<FileRow[]>(() => withOperations(rows()));
 
   const cloudId = useCloudIdCopy();
   const entryRef = (item: FileEntry) => {
@@ -1545,9 +1567,9 @@ export default function Browser(props: {
       : [];
   // Virtual rows join the tile grid as entries with a reserved path; they are never selectable.
   const virtualKey = (row: VirtualRow) => `\u0000${row.key}`;
-  const gridRows = createMemo<FileEntry[]>(() => [
+  const gridRows = createMemo<FileRow[]>(() => [
     ...virtualBefore().map((row) => ({ name: row.label, path: virtualKey(row), directory: true, size: 0, modified: "" })),
-    ...visibleItems(),
+    ...withOperations(visibleItems()),
     ...virtualAfter().map((row) => ({ name: row.label, path: virtualKey(row), directory: true, size: 0, modified: "" })),
   ]);
   const virtualOf = (row: FileEntry) => [...virtualBefore(), ...virtualAfter()].find((item) => virtualKey(item) === row.path);
@@ -2163,21 +2185,41 @@ export default function Browser(props: {
                         selection={interactiveSelection}
                         label={t().files}
                         size={view().size}
-                        onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
+                        onOpen={(row) => {
+                          if (row.operation) return;
+                          if (virtualOf(row)) virtualOf(row)!.onClick();
+                          else open(row);
+                        }}
                         itemProps={(row) =>
-                          virtualOf(row)
-                            ? virtualOf(row)!.key === "up"
-                              ? upDrop()
-                              : {}
-                            : { ...dragProps(row), ...folderDrop(row), ...hoverProps(row) }
+                          row.operation
+                            ? { "data-operation": row.operation.state }
+                            : virtualOf(row)
+                              ? virtualOf(row)!.key === "up"
+                                ? upDrop()
+                                : {}
+                              : { ...dragProps(row), ...folderDrop(row), ...hoverProps(row) }
                         }
-                        onContextMenu={(row) => !virtualOf(row) && focusContext(row)}
+                        onContextMenu={(row) => !virtualOf(row) && !row.operation && focusContext(row)}
                         onRowClick={(row) => {
+                          if (row.operation) return;
                           const virtual = virtualOf(row);
                           if (virtual) virtual.onClick();
                           else if (!selecting() && row.directory) open(row);
                         }}
                         renderPreview={(row) => {
+                          // A file in the making shows its progress or failure in the tile's place.
+                          if (row.operation)
+                            return (
+                              <span
+                                class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual"
+                                data-state={row.operation.state}
+                              >
+                                <i
+                                  class={row.operation.state === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"}
+                                  aria-hidden="true"
+                                />
+                              </span>
+                            );
                           const virtual = virtualOf(row);
                           if (virtual)
                             return (
@@ -2198,6 +2240,34 @@ export default function Browser(props: {
                         }}
                         renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
                         renderMeta={(row) => {
+                          if (row.operation)
+                            return (
+                              <span class="filesv2-grid-operation" data-state={row.operation.state}>
+                                <span
+                                  class="filesv2-grid-operation__text"
+                                  role={row.operation.state === "failed" ? "alert" : "status"}
+                                  title={row.operation.text}
+                                >
+                                  {row.operation.text}
+                                </span>
+                                <span class="filesv2-grid-operation__actions">
+                                  <For each={row.operation.actions}>
+                                    {(action) => (
+                                      <Button size="xs" variant="link" onClick={action.onClick}>
+                                        {action.label}
+                                      </Button>
+                                    )}
+                                  </For>
+                                </span>
+                              </span>
+                            );
+                          if (row.fresh)
+                            return (
+                              <span class="filesv2-list__fresh">
+                                <i class="ti ti-circle-check" aria-hidden="true" />
+                                {row.fresh}
+                              </span>
+                            );
                           const virtual = virtualOf(row);
                           if (virtual) return virtual.detail ?? null;
                           return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;

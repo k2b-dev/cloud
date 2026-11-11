@@ -29,7 +29,7 @@ const result: EntryResult = {
   },
 };
 const input: PdfInput = { operation: "merge", paths: ["folder/b.pdf", "a.pdf"], name: "result.pdf" };
-function fixture(options: { sizes?: number[]; content?: string; denied?: boolean } = {}) {
+function fixture(options: { sizes?: number[]; content?: string; denied?: boolean; hold?: Promise<void> } = {}) {
   const reads: string[] = [];
   const stats: string[] = [];
   const save = mock<Parameters<typeof createPdfOperation>[0]["save"]>(async (_call, _baseId, _path, _bytes, signal) => {
@@ -49,7 +49,9 @@ function fixture(options: { sizes?: number[]; content?: string; denied?: boolean
       const index = stats.push(path) - 1;
       return {
         size: options.sizes?.[index] ?? 20,
+        revision: `r-${path}`,
         read: async (signal) => {
+          if (options.hold) await options.hold;
           signal.throwIfAborted();
           reads.push(path);
           return new Response(options.content ?? `%PDF-${path}`);
@@ -81,13 +83,53 @@ test("merge preserves source order, saves next to first source and reports every
 
 test("multi-source extraction forwards concatenated page indices and counts merge plus extraction", async () => {
   const f = fixture();
-  const prepared = await f.prepare(call, "base", { ...input, operation: "extract", pages: [2, 4] }, AbortSignal.timeout(1000));
+  const prepared = await f.prepare(
+    call,
+    "base",
+    { ...input, operation: "extract", revisions: ["r-folder/b.pdf", "r-a.pdf"], pages: [2, 4] },
+    AbortSignal.timeout(1000),
+  );
   const events: PdfEvent[] = [];
   await prepared.run(async (event) => {
     events.push(event);
   }, AbortSignal.timeout(1000));
   expect(f.run.mock.calls[0]?.[0].operation).toEqual({ kind: "extract", pages: [2, 4] });
   expect(events.filter((event) => event.type === "progress").map((event) => event.done)).toEqual([0, 1, 2, 3, 4, 5]);
+});
+
+test("pages count over the versions the person saw: a changed source fails before any byte read", async () => {
+  const f = fixture();
+  await expect(
+    f.prepare(
+      call,
+      "base",
+      { ...input, operation: "extract", revisions: ["r-folder/b.pdf", "older"], pages: [3] },
+      AbortSignal.timeout(1000),
+    ),
+  ).rejects.toMatchObject({ code: "pdf_changed", path: "a.pdf", status: 409 });
+  expect(f.reads).toEqual([]);
+  // Taking out pages always names the versions.
+  await expect(f.prepare(call, "base", { ...input, operation: "extract", pages: [3] }, AbortSignal.timeout(1000))).rejects.toBeInstanceOf(
+    FilesError,
+  );
+});
+
+test("one PDF action per person at a time: a second answers busy before reading", async () => {
+  let release = () => {};
+  const f = fixture({
+    hold: new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  });
+  const first = await f.prepare(call, "base", input, AbortSignal.timeout(5000));
+  const second = await f.prepare(call, "base", input, AbortSignal.timeout(5000));
+  const running = first.run(async () => {}, AbortSignal.timeout(5000));
+  await Bun.sleep(5);
+  await expect(second.run(async () => {}, AbortSignal.timeout(5000))).rejects.toMatchObject({ code: "pdf_busy", status: 503 });
+  release();
+  await running;
+  // Once the first finished, the same person may start again.
+  await second.run(async () => {}, AbortSignal.timeout(5000));
 });
 
 test("stat sizes refuse oversized input before any source bytes or renderer work", async () => {

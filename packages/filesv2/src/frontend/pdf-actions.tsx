@@ -4,10 +4,11 @@ import { apiClient } from "../api/client";
 import type { EntryResult, FileEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure, readPreview } from "./file-preview";
+import { previewRevision } from "./preview-client";
 
 export type PdfOperationRequest =
   | { operation: "merge"; paths: string[]; name: string }
-  | { operation: "extract"; paths: string[]; pages: number[]; name: string };
+  | { operation: "extract"; paths: string[]; revisions: string[]; pages: number[]; name: string };
 
 /** A failure the server attributed, such as a password-protected source; `path` names that source when known. */
 export class PdfOperationError extends Error {
@@ -230,6 +231,8 @@ function ExtractDialog(props: { baseId: string; files: readonly FileEntry[]; clo
           request: {
             operation: "extract",
             paths: props.files.map((file) => file.path),
+            // The pages count over the versions shown here; a file that changes meanwhile fails instead of shifting.
+            revisions: props.files.map(previewRevision),
             pages: pages(),
             name: `${stem(props.files[0]!.name)}-Auszug.pdf`,
           },
