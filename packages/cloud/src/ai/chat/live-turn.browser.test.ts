@@ -1558,3 +1558,110 @@ for (const view of [
         await context.close();
       }
     }, 60_000);
+
+for (const width of [1440, 390])
+  test(`a written Code file, its check and its tests read as source and rows, not JSON (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      const source = Array.from({ length: 30 }, (_, index) =>
+        index === 0 ? 'import { app, spaces } from "@sdk";' : `  await spaces.space("sp_team").task.create({ title: "Aufgabe ${index}" });`,
+      ).join("\n");
+      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "code_write" };
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+      });
+      const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: {
+          ...check,
+          status: "completed",
+          result: {
+            version: 1,
+            result: {
+              ok: true,
+              diagnostics: [],
+              warnings: [
+                { code: "code_route_unchecked", message: "Diese Seite prüft c.user nicht.", file: "code.ts", line: 12, column: 1 },
+              ],
+            },
+            manifest: null,
+            permissions: [
+              {
+                operation: "spaces.task.create",
+                target: { type: "spaces.space", id: "sp_team" },
+                title: "Team",
+                typeTitle: "Space",
+                own: false,
+                file: "code.ts",
+                line: 2,
+                status: "new",
+              },
+            ],
+          },
+        },
+      });
+      const test = { id: "tool-test", kind: "tool" as const, callId: "test", name: "code_test", args: { codeId: "c_1234" } };
+      await emit(page, {
+        ...base,
+        seq: 4,
+        type: "block_set",
+        block: {
+          ...test,
+          status: "completed",
+          result: {
+            version: 1,
+            mode: "test",
+            ok: false,
+            error: null,
+            diagnostics: [],
+            cases: [
+              { name: "Montag", file: "test/montag.json", ok: true, runs: [] },
+              {
+                name: "Leere Woche",
+                file: "test/leer.json",
+                ok: false,
+                runs: [
+                  { entrypoint: "monday", ok: false, error: "code_assertion_failed", value: null, calls: [], failures: ["$.calls[0]"] },
+                ],
+              },
+            ],
+          },
+        },
+      });
+      await page.locator(".ai-turn-work > summary").click();
+      await frames(page);
+      for (const label of ["Bearbeitet eine Code-Datei", "Prüft den Code", "Testet mit erfundenen Daten"]) {
+        await page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: label }).last().locator("summary").first().click();
+        await frames(page);
+      }
+      const steps = await page.locator(".ai-turn-steps").first().innerText();
+      expect(steps).toContain("Was der Code darf");
+      expect(steps).toContain("spaces.task.create");
+      expect(steps).toContain("1 von 2 Testfällen bestanden");
+      // The written file scrolls inside its step at a fixed height; the exact input and result stay one click away.
+      const sourceView = page.locator(".ai-code-step__source").first();
+      await settled(page, ".ai-turn-work");
+      const body = await sourceView
+        .locator(".k2b-content-code-display__body")
+        .evaluate((node) => ({ client: node.clientHeight, scroll: node.scrollHeight }));
+      expect(body.scroll).toBeGreaterThan(body.client);
+      expect(await page.locator(".ai-code-step__raw").count()).toBe(3);
+      expect(steps).not.toContain('"version"');
+      await settled(page, ".ai-turn-work");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      mkdirSync("/tmp/l23-code-steps-a", { recursive: true });
+      await page.screenshot({ path: `/tmp/l23-code-steps-a/code-steps-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
