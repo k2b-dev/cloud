@@ -3,7 +3,7 @@ id: core-profile
 title: Profil und Konto
 icon: ti ti-user-circle
 description: Konto, Gruppen und Aktivitäten prüfen, FreeIPA-Zugang beantragen und API Keys und Passkeys nutzen.
-updated: 2026-11-10
+updated: 2026-11-11
 order: 110
 ---
 
@@ -44,8 +44,7 @@ Geräts.
 ## Inhalte mit dem Sichtschutz verdecken {icon="eye-off"}
 
 Der Sichtschutz verdeckt deine Inhalte, wenn jemand über deine Schulter schaut.
-Er sperrt nichts. Die App-Leiste bleibt sichtbar, aber du kannst sie nicht
-bedienen.
+Er sperrt nichts. Er verdeckt den ganzen Bildschirm, auch die App-Leiste.
 
 :::reference
 - **Sofort:** Wähle im Profilmenü **Sichtschutz** oder drücke **Strg+.**
