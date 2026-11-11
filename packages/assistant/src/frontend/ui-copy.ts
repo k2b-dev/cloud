@@ -459,8 +459,6 @@ const germanText: Record<string, string> = {
   Download: "Herunterladen",
   "Remove from Project": "Aus Projekt entfernen",
   "Could not download file": "Datei konnte nicht heruntergeladen werden",
-  "Could not open images": "Bilder konnten nicht geöffnet werden",
-  "Images could not be loaded.": "Bilder konnten nicht geladen werden.",
   "Project context could not be updated.": "Der Projektkontext konnte nicht aktualisiert werden.",
   "Could not update Project context": "Projektkontext konnte nicht aktualisiert werden",
   "Edit knowledge": "Wissen bearbeiten",

@@ -197,11 +197,11 @@ type ZoomPanViewportProps = {
 };
 ```
 
-`Lightbox` requires `images: LightboxImage[]` and `onClose: () => void`; `initialIndex?: number` defaults to 0. Omitted labels use localized defaults; without `autoLoad`, `request` runs only after the load action.
+`Lightbox` requires `items`, `index`, `onIndexChange`, and `onClose`. Omitted labels use localized defaults; without `autoLoad`, `request` runs only after the load action.
 
 ## Accessibility
 
-The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`. A dialog that an image action opens above the lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
+The Lightbox is a native modal dialog named after the shown file. Its edge buttons, film strip, zoom controls, and actions are labeled controls; ← and → step, `+`, `-`, and `0` zoom, Space closes it except on video and audio, where it plays. Focus starts on the file, so the keys work at once, and returns to the opener on close. Loading is a polite status and a failure an alert with **Try again**. A dialog that an action opens above the Lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
 
 `PdfViewer` names its page area with `title`. The pill's icons carry their names as tooltips and accessible names; the state actions are native buttons named by their visible labels. Keep `loadLabel` specific when several documents appear on one page. The loading state is a polite status and the error state an alert; when a document turns out not to be drawable, the viewer announces that politely. While a placeholder shows, the viewer itself holds keyboard focus that would otherwise drop; once the first page is drawn, focus moves on to the pages.
 
@@ -222,18 +222,16 @@ The server may render their initial markup, but modal behavior, network requests
 ## Example
 
 ```tsx
-const [lightboxOpen, setLightboxOpen] = createSignal(false);
+const [shown, setShown] = createSignal<number | null>(null);
 
-const images: LightboxImage[] = [
-  {
-    src: "/api/files/cover/preview",
-    alt: "Report cover",
-    downloadUrl: "/api/files/cover/download",
-  },
+const items: LightboxItem[] = [
+  { name: "Cover.png", meta: "PNG · 1.2 MB", src: "/api/files/cover/preview", downloadUrl: "/api/files/cover/download" },
+  // A short-lived address, resolved when the file is shown and again on Try again.
+  { name: "Report.pdf", meta: "PDF · 412 KB", src: () => leaseFor("report.pdf"), onDownload: () => saveReport() },
 ];
 
-<Show when={lightboxOpen()}>
-  <Lightbox images={images} onClose={() => setLightboxOpen(false)} />
+<Show when={shown() !== null}>
+  <Lightbox items={items} index={shown()!} onIndexChange={setShown} onClose={() => setShown(null)} />
 </Show>
 
 <PdfViewer

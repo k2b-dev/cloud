@@ -141,6 +141,7 @@ describe("@k2b/ui Lightbox", () => {
       expect(await page.locator(".k2b-lightbox__percent").textContent()).toBe("125 %");
       expect(await page.locator(".k2b-lightbox .k2b-thumbnail-strip").count()).toBe(1);
       // The light veil leaves the page behind it readable.
+      await settled(page);
       const veil = await page.locator("dialog.k2b-lightbox").evaluate((dialog) => getComputedStyle(dialog, "::backdrop").backgroundColor);
       expect(veil).toMatch(/^(rgba?|color)\(/);
       expect(veil).not.toMatch(/\b0, 0, 0\b/);
