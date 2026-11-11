@@ -1,4 +1,5 @@
 import { previewSourceKind } from "@k2b/cloud/shared";
+import { apiClient } from "../api/client";
 import type { FileEntry } from "../contracts";
 
 export type PreviewVariant = "small" | "large" | "pdf" | "text";
@@ -94,12 +95,7 @@ export async function loadPreview(url: string, signal: AbortSignal): Promise<Pre
 
 /** Clears a remembered failure for the file's current version and asks for a new attempt. */
 export async function retryPreview(baseId: string, entry: FileEntry) {
-  const response = await fetch(`/api/filesv2/bases/${encodeURIComponent(baseId)}/preview/retry`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path: entry.path }),
-  });
+  const response = await apiClient.bases[":baseId"].preview.retry.$post({ param: { baseId }, json: { path: entry.path } });
   if (!response.ok) throw new Error(`preview retry ${response.status}`);
 }
 

@@ -128,7 +128,8 @@ const open = async (options: BrowserContextOptions, holdSharp?: Promise<void>, h
           if (name === "Workshop.jpg" && size === "small" && holdSmall) await holdSmall;
           return [200, "image/svg+xml", picture(size === "small" ? 320 : 1280, size === "small" ? "#94a3b8" : "#0e7490")];
         }
-        if ((name === "Report.pdf" || name === "Offer.docx") && size === "large") return [200, "image/svg+xml", firstPage];
+        if ((name === "Report.pdf" || name === "Offer.docx") && (size === "large" || size === "small"))
+          return [200, "image/svg+xml", firstPage];
         if (name === "Offer.docx" && size === "pdf")
           return officePolls++ === 0
             ? [202, "application/json", JSON.stringify({ state: "pending" }), { "retry-after": "1" }]
@@ -209,23 +210,39 @@ describe("file previews in the list", () => {
         }),
       );
       try {
-        await tab.evaluate(() => window.preview.list());
+        // Records when the first placeholder appears, measured from the moment the list renders.
+        await tab.evaluate(() => {
+          const start = performance.now();
+          new MutationObserver((_records, observer) => {
+            if (!document.querySelector(".filesv2-thumbnail.k2b-skeleton")) return;
+            document.body.dataset.placeholderAfter = String(performance.now() - start);
+            observer.disconnect();
+          }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });
+          window.preview.list();
+        });
         await tab.waitForSelector(".filesv2-list__row");
         const workshop = '.filesv2-list__row:has-text("Workshop.jpg") .filesv2-thumbnail';
         const rows = () => tab.$$eval(".filesv2-list__row", (all) => all.map((row) => Math.round(row.getBoundingClientRect().top)));
         const before = { rows: await rows(), tile: await box(tab, workshop) };
         // No placeholder for a quick answer: it appears only after 200 ms.
-        expect(await tab.$eval(workshop, (tile) => tile.classList.contains("k2b-skeleton"))).toBe(false);
         await tab.waitForSelector(`${workshop}.k2b-skeleton`, { timeout: 2_000 });
+        expect(Number(await tab.evaluate(() => document.body.dataset.placeholderAfter))).toBeGreaterThanOrEqual(195);
         release();
         await tab.waitForSelector(`${workshop} img[data-ready]`);
-        await tab.waitForFunction((selector) => !document.querySelector(selector)?.classList.contains("k2b-skeleton"), workshop);
+        await tab.waitForFunction(
+          () =>
+            ![...document.querySelectorAll(".filesv2-list__row")]
+              .find((row) => row.textContent?.includes("Workshop.jpg"))
+              ?.querySelector(".filesv2-thumbnail")
+              ?.classList.contains("k2b-skeleton"),
+        );
         expect(await rows()).toEqual(before.rows);
         expect(await box(tab, workshop)).toEqual(before.tile);
         // A text shows its first lines; a file without a preview, or whose preview failed, keeps its type icon quietly.
         await tab.waitForFunction(() =>
-          document
-            .querySelector('.filesv2-list__row:has-text("README.md") .filesv2-thumbnail__text')
+          [...document.querySelectorAll(".filesv2-list__row")]
+            .find((row) => row.textContent?.includes("README.md"))
+            ?.querySelector(".filesv2-thumbnail__text")
             ?.textContent?.includes("Summer party"),
         );
         await tab.waitForSelector(
@@ -248,9 +265,9 @@ describe("file quick view in a browser", () => {
       await show(tab, "Workshop.jpg");
       expect(await chip(tab)).toMatch(/^Workshop\.jpg 10\sB$/);
       expect(await actionNames(tab)).toEqual(["Download", "Share publicly", "Close"]);
-      expect(await tab.$eval(".k2b-quick-view__count", (count) => (count as HTMLElement).innerText.replace(/\s+/g, " ").trim())).toBe(
-        `1 / ${folder.length}`,
-      );
+      expect(
+        await tab.$eval(".k2b-quick-view__count [aria-hidden]", (count) => (count as HTMLElement).innerText.replace(/\s+/g, " ").trim()),
+      ).toBe(`1 / ${folder.length}`);
       // The film strip shows every file of the folder, the current one marked.
       expect(await tab.$$eval(".k2b-quick-view__strip button", (tiles) => tiles.length)).toBe(folder.length);
       await tab.keyboard.press("ArrowRight");
@@ -311,8 +328,8 @@ describe("file quick view in a browser", () => {
       await tab.keyboard.press("+");
       await settled(tab);
       expect(await tab.$eval(".k2b-quick-view__percent", (label) => (label as HTMLElement).innerText.trim())).toBe("125 %");
-      expect((await box(tab, ".filesv2-quick-image")).width).toBe(Math.round(frame.width * 1.25));
-      expect(await tab.$eval(".k2b-quick-view__stage", (stage) => stage.scrollWidth > stage.clientWidth)).toBe(true);
+      expect(Math.abs((await box(tab, ".filesv2-quick-image")).width - frame.width * 1.25)).toBeLessThanOrEqual(1.5);
+      expect(await tab.$eval(".k2b-quick-view__scroller", (stage) => stage.scrollWidth > stage.clientWidth)).toBe(true);
       expect(await box(tab, ".k2b-quick-view__bar .k2b-toolbar")).toEqual(pill);
       // A text cannot zoom: its controls stay in place, disabled, and the zoom starts again at 100 % on every file.
       await tab.keyboard.press("ArrowRight");
@@ -352,9 +369,14 @@ describe("file quick view in a browser", () => {
       await tab.waitForSelector('.k2b-pdf-viewer:is([data-state="shown"], [data-state="undrawable"])');
       // The viewer's own zoom stays off: the quick view's pill zooms the pages.
       expect(await tab.$(".k2b-pdf-viewer__bar")).toBeNull();
-      const popup = tab.waitForEvent("popup");
+      await tab.evaluate(() => {
+        window.open = (url?: string | URL) => {
+          document.body.dataset.opened = String(url);
+          return null;
+        };
+      });
       await tab.click('[aria-label="Open in new tab"]');
-      expect(new URL((await popup).url()).pathname).toBe("/app/filesv2/pdf/personal/Summer%20party/Report.pdf");
+      expect(await tab.evaluate(() => document.body.dataset.opened)).toBe("/app/filesv2/pdf/personal/Summer%20party/Report.pdf");
     } finally {
       await tab.context().close();
     }

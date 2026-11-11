@@ -5011,13 +5011,22 @@
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 0.75rem;
   color: var(--k2b-text);
-  background: color-mix(in srgb, var(--k2b-surface-muted) 88%, transparent);
+  background: transparent;
+}
+
+/* The blur sits behind the dialog, as for every modal: the page shows
+   faintly. `::backdrop` does not inherit from the dialog in every engine, so
+   both theme grounds are stated here. */
+.k2b-ui .k2b-quick-view::backdrop {
+  background: rgb(244 244 245 / 0.88);
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
 }
 
-.k2b-ui .k2b-quick-view::backdrop {
-  background: transparent;
+.k2b-ui[data-theme="dark"] .k2b-quick-view::backdrop,
+.k2b-ui.k2b-dark .k2b-quick-view::backdrop,
+.dark .k2b-ui .k2b-quick-view::backdrop {
+  background: rgb(32 36 42 / 0.9);
 }
 
 .k2b-ui .k2b-quick-view__top {
@@ -5069,18 +5078,28 @@
   border-radius: 9999px;
 }
 
-/* The item centres on the stage; zoomed beyond it, the stage scrolls both
-   ways and the auto margins keep every edge reachable. */
+/* The stage measures the item (container units) and never scrolls, so
+   scrollbars that appear on zoom do not resize what it measures. Its scroller
+   centres the item; zoomed beyond the stage, it scrolls both ways and the
+   auto margins keep every edge reachable. */
 .k2b-ui .k2b-quick-view__stage {
-  display: flex;
+  position: relative;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
   container-type: size;
-  overscroll-behavior: contain;
 }
 
-.k2b-ui .k2b-quick-view__stage > * {
+.k2b-ui .k2b-quick-view__scroller {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: auto;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+.k2b-ui .k2b-quick-view__scroller > * {
+  flex: none;
   margin: auto;
 }
 
@@ -5124,7 +5143,7 @@
 
 /* A phone keeps the stage for the item: the pill steps, a swipe steps too. */
 @media (max-width: 40rem) {
-  .k2b-ui .k2b-quick-view__strip {
+  .k2b-ui .k2b-quick-view > .k2b-quick-view__strip {
     display: none;
   }
 }

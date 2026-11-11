@@ -183,6 +183,12 @@
   border-radius: 0.125rem;
   background: #fff;
 }
+/* In the quick view's film strip, a page stands whole on the tile like in the list. */
+.k2b-ui .k2b-thumbnail-strip__thumb .filesv2-thumbnail--preview:is([data-kind="pdf"], [data-kind="office"]) img[data-ready] {
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
 .filesv2-thumbnail__page {
   display: block;
   width: 78%;
@@ -1181,14 +1187,17 @@ dialog[open]:has(.filesv2-export-dialog) {
    keeps them while the sharp preview fades in; zoom grows the frame and the
    stage scrolls. */
 .filesv2-quick-image {
+  /* The photo's proportions and the quick view's zoom, set inline per photo. */
+  --filesv2-quick-ratio: 1.3333;
+  --filesv2-quick-zoom: 1;
   position: relative;
-  width: calc(min(100cqw, 100cqh * var(--ratio)) * var(--zoom));
-  aspect-ratio: var(--ratio);
+  width: calc(min(100cqw, 100cqh * var(--filesv2-quick-ratio)) * var(--filesv2-quick-zoom));
+  aspect-ratio: var(--filesv2-quick-ratio);
   overflow: hidden;
   border-radius: 0.5rem;
 }
 .filesv2-quick-image:not([data-sized]) {
-  width: min(100cqw, 100cqh * var(--ratio), 36rem);
+  width: min(100cqw, 100cqh * var(--filesv2-quick-ratio), 36rem);
 }
 .filesv2-quick-image > img {
   position: absolute;

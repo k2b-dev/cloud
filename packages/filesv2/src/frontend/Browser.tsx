@@ -1065,16 +1065,16 @@ export default function Browser(props: {
     setQuick(path);
     if (!selecting()) selection.select(path);
   };
-  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(hoverTimer));
+  let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(prefetchTimer));
   /** Resting on a file loads its large preview into the cache, so Space shows it without waiting. */
   const hoverProps = (entry: FileEntry) => ({
     onPointerEnter: (event: PointerEvent) => {
-      clearTimeout(hoverTimer);
+      clearTimeout(prefetchTimer);
       if (entry.directory || event.pointerType === "touch") return;
-      hoverTimer = setTimeout(() => prefetchPreview(baseId(), entry), 180);
+      prefetchTimer = setTimeout(() => prefetchPreview(baseId(), entry), 180);
     },
-    onPointerLeave: () => clearTimeout(hoverTimer),
+    onPointerLeave: () => clearTimeout(prefetchTimer),
   });
   // Entering or leaving select mode starts clean; outside it a click only highlights one entry for its details.
   const toggleSelecting = (on: boolean) => {

@@ -67,7 +67,7 @@ export default function FileQuickView(props: FileQuickViewProps) {
         .filter(Boolean)
         .join(" · "),
       zoomable: zoomable(item),
-      thumbnail: () => <FileThumbnail baseId={props.baseId} locationKey={props.locationKey} entry={item} large />,
+      thumbnail: () => <FileThumbnail baseId={props.baseId} locationKey={props.locationKey} entry={item} />,
     }));
   const actions = (item: QuickViewItem): QuickViewAction[] => {
     const file = entry(item.id);
@@ -243,9 +243,9 @@ function ImageStage(props: StageProps) {
         class="filesv2-quick-image"
         classList={{ "k2b-skeleton": placeholder() }}
         data-sized={ratio() === null ? undefined : ""}
-        style={{ "--ratio": String(ratio() ?? 4 / 3), "--zoom": String(props.zoom()) }}
+        style={{ "--filesv2-quick-ratio": String(ratio() ?? 4 / 3), "--filesv2-quick-zoom": String(props.zoom()) }}
       >
-        <Show keyed when={attempt()}>
+        <Show keyed when={attempt() + 1}>
           {(_attempt) => (
             <img
               class="filesv2-quick-image__low"

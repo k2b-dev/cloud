@@ -24,7 +24,6 @@ import {
   PdfViewer,
   type PdfViewerProps,
   type PdfViewerRequest,
-  QUICK_VIEW_ZOOM_STEPS,
   QuickView,
   type QuickViewAction,
   type QuickViewItem,
@@ -198,7 +197,7 @@ type QuickViewProps = {
 };
 ```
 
-`QUICK_VIEW_ZOOM_STEPS` lists the factors − and + step through, from 0.5 to 3. `PdfViewer`'s `scale` applies only with `zoom={false}` and multiplies the fitted width, for a host such as `QuickView` that zooms with its own controls.
+− and + step through the factors 0.5, 0.75, 1, 1.25, 1.5, 2, and 3. `PdfViewer`'s `scale` applies only with `zoom={false}` and multiplies the fitted width, for a host such as `QuickView` that zooms with its own controls.
 
 ```ts
 type VideoPlayerProps = {

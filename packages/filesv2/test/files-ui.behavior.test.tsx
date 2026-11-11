@@ -265,8 +265,6 @@ describe("Filesv2 interactions", () => {
       dom.root,
     );
     cleanup = () => {
-      // The dialog stack outlives this document; close the preview so later tests open theirs in their own.
-      dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
       dispose();
       globalThis.fetch = originalFetch;
       URL.createObjectURL = originalCreate;
@@ -294,21 +292,27 @@ describe("Filesv2 interactions", () => {
     dom.root.querySelector<HTMLButtonElement>('.filesv2-inspector-preview__expand button[aria-label="Open large preview"]')!.click();
     await settleLeases();
 
-    const dialog = dom.document.querySelector("dialog")!;
+    const dialog = dom.document.querySelector("dialog.k2b-quick-view")!;
     // pdf.js draws only in a real browser; here the viewer reaches its end state in its own area, without a frame.
     expect(dialog.querySelector("iframe")).toBeNull();
-    expect(dialog.querySelector(".filesv2-preview .k2b-pdf-viewer")?.getAttribute("data-state")).toBe("undrawable");
-    // The dialog header owns the viewer actions; the preview below is only the document.
-    expect(dialog.querySelectorAll(".filesv2-preview :is(a, button)")).toHaveLength(0);
-    const [open, download] = [...dialog.querySelectorAll<HTMLElement>(".k2b-panel-dialog__actions :is(a, button)")];
-    // Each icon action keeps its name for keyboard and screen-reader users; reloading an unchanged file is not offered.
-    expect([open, download].map((action) => action?.getAttribute("aria-label"))).toEqual(["Open in new tab", "Download"]);
-    expect([open, download].every((action) => !action!.hasAttribute("disabled"))).toBe(true);
+    expect(dialog.querySelector(".filesv2-quick-document .k2b-pdf-viewer")?.getAttribute("data-state")).toBe("undrawable");
+    // The quick view owns the viewer actions at its top; the document below has none of its own.
+    expect(dialog.querySelectorAll(".filesv2-quick-document .k2b-pdf-viewer__bar")).toHaveLength(0);
+    const [open, download] = [...dialog.querySelectorAll<HTMLElement>(".k2b-quick-view__actions button")];
+    // Each icon action keeps its name for keyboard and screen-reader users.
+    expect([...dialog.querySelectorAll(".k2b-quick-view__actions button")].map((action) => action.getAttribute("aria-label"))).toEqual([
+      "Open in new tab",
+      "Download",
+      "Close",
+    ]);
     // The tab reads the stored file from a Files page, so it reloads, signs in again, and the viewer names it after the file.
-    expect(open).toBeInstanceOf(dom.window.HTMLAnchorElement);
-    expect(open!.getAttribute("href")).toBe("/app/filesv2/pdf/base-1/Budget%20%231/Bericht%20Q3.pdf");
-    expect(open!.getAttribute("target")).toBe("_blank");
-    expect(open!.getAttribute("rel")).toBe("noopener");
+    const opened: string[] = [];
+    dom.window.open = ((url: string | URL) => {
+      opened.push(String(url));
+      return tab;
+    }) as unknown as typeof dom.window.open;
+    open!.click();
+    expect(opened).toEqual(["/app/filesv2/pdf/base-1/Budget%20%231/Bericht%20Q3.pdf"]);
     const leasesBefore = requests.length;
     const fetchesBefore = fetched.length;
 
@@ -405,7 +409,7 @@ describe("Filesv2 interactions", () => {
     expect(downloads).toEqual(["download"]);
   });
 
-  test("the details panel stops offering the viewer tab once the preview finds a .pdf is no PDF", async () => {
+  test("the quick view says a .pdf is no PDF once it reads its bytes", async () => {
     const dom = createDomTestHarness();
     const Browser = await browserWithUploads();
     const originalFetch = globalThis.fetch;
@@ -427,13 +431,10 @@ describe("Filesv2 interactions", () => {
       globalThis.fetch = originalFetch;
       dom.cleanup();
     };
-    const actions = () => [...dom.root.querySelectorAll('[role="menuitem"]')].map((action) => action.textContent?.trim());
-
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(notPdf.name))!.click();
     await flush();
     await Bun.sleep(0);
-    // Until the bytes are read, a .pdf is treated as a PDF, as in the preview dialog.
-    expect(actions()).toContain("Open in new tab");
+    dom.root.querySelector<HTMLButtonElement>('.filesv2-inspector-preview__expand button[aria-label="Open large preview"]')!.click();
     for (let round = 0; round < 8; round++) {
       for (const request of requests)
         if (request.kind === "download" && !request.signal.aborted)
@@ -442,9 +443,12 @@ describe("Filesv2 interactions", () => {
       await Bun.sleep(0);
     }
 
-    expect(dom.root.textContent).toContain("This file is not a PDF");
-    expect(actions()).not.toContain("Open in new tab");
-    expect(actions()).toContain("Rename");
+    // The viewer shows the reason in its own area; the file can still be downloaded from the top.
+    const view = dom.document.querySelector("dialog.k2b-quick-view")!;
+    expect(view.querySelector(".filesv2-quick-document")?.textContent).toContain("This file is not a PDF");
+    expect([...view.querySelectorAll(".k2b-quick-view__actions button")].map((action) => action.getAttribute("aria-label"))).toContain(
+      "Download",
+    );
   });
 
   test("PDF quick view commands follow the German locale", async () => {

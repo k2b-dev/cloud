@@ -94,6 +94,12 @@ describe("Filesv2 office editing", () => {
     rows[1]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await flush();
     expect(edited).toEqual([]);
+    // A file without an editor opens in the quick view instead; it closes before the next step.
+    const quick = dom.document.querySelector("dialog.k2b-quick-view")!;
+    expect(quick).not.toBeNull();
+    quick.querySelector<HTMLButtonElement>('.k2b-quick-view__actions button[aria-label="Close"]')!.click();
+    await flush();
+    expect(dom.document.querySelector("dialog.k2b-quick-view")).toBeNull();
     rows[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await flush();
     expect(edited).toEqual(["Minutes.odt"]);

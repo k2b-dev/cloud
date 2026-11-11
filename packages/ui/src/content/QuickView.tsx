@@ -38,7 +38,7 @@ export type QuickViewProps = {
 };
 
 /** Steps for − and +, as factors of the fitted size. */
-export const QUICK_VIEW_ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
+const QUICK_VIEW_ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 const SWIPE = 60;
 
 /** Keys inside these keep their own meaning; Space presses a button instead of closing the view. */
@@ -161,9 +161,9 @@ export function QuickView(props: QuickViewProps): JSX.Element {
     if (Math.abs(dx) > SWIPE && Math.abs(dx) > Math.abs(touch.clientY - touchY)) step(dx < 0 ? 1 : -1);
   };
   // A press on the empty stage, outside the item, closes like a press beside a dialog.
-  let stage!: HTMLDivElement;
+  let scroller!: HTMLDivElement;
   const stagePress = (event: MouseEvent) => {
-    if (event.target === stage || event.target === dialog) close();
+    if (event.target === scroller || event.target === dialog) close();
   };
 
   // Registration and teardown both live in onMount: onCleanup also runs when an SSR render is disposed.
@@ -172,6 +172,8 @@ export function QuickView(props: QuickViewProps): JSX.Element {
     openerRing = ringOnReturn(opener);
     opener?.blur();
     dialog.showModal();
+    // The item has the focus, not the first command: the keys step and zoom at once, and no ring lands on Download.
+    scroller.focus({ preventScroll: true });
     document.addEventListener("keydown", keys);
     onCleanup(() => document.removeEventListener("keydown", keys));
   });
@@ -215,10 +217,12 @@ export function QuickView(props: QuickViewProps): JSX.Element {
           </IconButton>
         </div>
       </div>
-      <div ref={stage} class="k2b-quick-view__stage" data-zoomed={zoom() !== 1 ? "" : undefined}>
-        <Show keyed when={item()}>
-          {(shown) => props.children(shown, zoom)}
-        </Show>
+      <div class="k2b-quick-view__stage" data-zoomed={zoom() !== 1 ? "" : undefined}>
+        <div ref={scroller} class="k2b-quick-view__scroller" tabIndex={-1}>
+          <Show keyed when={item()}>
+            {(shown) => props.children(shown, zoom)}
+          </Show>
+        </div>
       </div>
       <div class="k2b-quick-view__bar">
         <Toolbar label={t().zoom}>
