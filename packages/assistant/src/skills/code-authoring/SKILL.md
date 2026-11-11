@@ -103,6 +103,7 @@ and start with the [database template](references/template-database.md).
 | Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
+| Check something before an app sends it, such as a customer message | The app's submitted event, rules from a note, `core.ai.generate`, then the app's approve or reject Action | [Review before sending](references/review-before-send.md) |
 
 ## Zugriff prüfen
 
@@ -146,6 +147,8 @@ secret binding](references/access.md#webhooks-r1-ohne-secret).
   recover; otherwise let the run fail visibly.
 - Write examples, fixtures and names without real people, mailboxes or IDs
   from this chat.
+- When someone wants a check before something is sent, use the
+  [review-before-sending pattern](references/review-before-send.md).
 
 Studio apps and their data have been retired without transfer. For a one-off
 chat computation, load `assistant-code-mode` and use inline `code_run`.
