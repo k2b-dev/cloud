@@ -7,7 +7,6 @@
     "@k2b/cloud src/access/PermissionEditor.browser.test.ts": 18.8,
     "@k2b/cloud src/ai/chat/action-question.browser.test.ts": 56.9,
     "@k2b/cloud src/ai/chat/live-turn.browser.test.ts": 79.7,
-    "@k2b/cloud src/ai/chat/map-notebook.browser.test.ts": 32.3,
     "@k2b/cloud src/ai/chat/map-widget.browser.test.ts": 62.2,
     "@k2b/cloud src/ai/chat/view-block.browser.test.ts": 48.4,
     "@k2b/cloud src/ai/live-dictation-browser.browser.test.ts": 0.7,
