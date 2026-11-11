@@ -1,7 +1,7 @@
 @reference "tailwindcss";
 
-.k2b-ui .k2b-content-lightbox button:focus-visible,
-.k2b-ui .k2b-content-lightbox a:focus-visible,
+.k2b-ui .k2b-lightbox button:focus-visible,
+.k2b-ui .k2b-lightbox a:focus-visible,
 .k2b-ui .k2b-content-file-tree [role="treeitem"]:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: min(var(--k2b-focus-offset), 0px);
@@ -4578,7 +4578,7 @@
 .k2b-ui .k2b-content-file-tree__actions:focus-visible,
 .k2b-ui .k2b-content-file-view__action:focus-visible,
 .k2b-ui .k2b-content-structured-data__action:focus-visible,
-.k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav, .k2b-content-lightbox__dot):focus-visible {
+.k2b-ui .k2b-lightbox__edge:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: min(var(--k2b-focus-offset), 0px);
 }
@@ -4868,7 +4868,9 @@
 
 /* Lightbox */
 
-.k2b-ui .k2b-content-lightbox {
+/* The page stays visible behind a veil: light in the light theme, dark in the dark theme. Pills keep 7 px from every
+   edge; the stage keeps 84 px beside the file for the round edge buttons, so they never cover it. */
+.k2b-ui .k2b-lightbox {
   position: fixed;
   inset: 0;
   box-sizing: border-box;
@@ -4879,118 +4881,271 @@
   margin: 0;
   padding: 0;
   border: 0;
-  color: #fff;
-  background: rgb(0 0 0 / 0.92);
-  /* The stage is always dark, so its floating layers take dark glass in both themes. */
-  --k2b-overlay-surface: rgb(39 39 42 / 0.78);
-  --k2b-overlay-surface-hover: rgb(63 63 70 / 0.9);
-  --k2b-overlay-edge: rgb(255 255 255 / 0.16);
-  --k2b-overlay-ring: rgb(0 0 0 / 0.5);
-  --k2b-overlay-lift: none;
-  --k2b-overlay-solid: #27272a;
-}
-
-.k2b-ui .k2b-content-lightbox::backdrop {
+  color: var(--k2b-text);
   background: transparent;
+  outline: none;
+  --k2b-lightbox-pull: 0;
 }
-
-.k2b-ui .k2b-content-lightbox__bar {
-  @apply absolute inset-x-0 top-0 z-10 flex items-start justify-between p-4;
+.k2b-ui .k2b-lightbox[open] {
+  display: flex;
+  flex-direction: column;
 }
-
-.k2b-ui .k2b-content-lightbox__meta {
-  @apply flex min-w-0 flex-col gap-2;
+.k2b-ui .k2b-lightbox::backdrop {
+  background: color-mix(in srgb, var(--k2b-surface-muted) 94%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
-
-.k2b-ui .k2b-content-lightbox__counter {
-  @apply inline-flex w-fit items-center rounded-full px-3 py-1 text-xs;
-  color: rgb(255 255 255 / 0.85);
+.k2b-ui .k2b-lightbox[style*="--k2b-lightbox-pull"] {
+  opacity: calc(1 - var(--k2b-lightbox-pull) * 0.5);
 }
-
-.k2b-ui .k2b-content-lightbox__caption {
-  @apply rounded-2xl px-4 py-2;
-  max-width: min(70vw, 42rem);
+.k2b-ui .k2b-lightbox__head {
+  position: absolute;
+  z-index: 3;
+  top: 7px;
+  right: 7px;
+  left: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  pointer-events: none;
 }
-
-.k2b-ui .k2b-content-lightbox__caption-text {
-  @apply truncate text-sm font-medium;
-  color: #fff;
+.k2b-ui .k2b-lightbox__head > * {
+  pointer-events: auto;
 }
-
-.k2b-ui .k2b-content-lightbox__actions {
-  @apply flex items-center gap-2;
+.k2b-ui .k2b-lightbox__name {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 2.5rem;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0 0.875rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  line-height: 2.375rem;
+  white-space: nowrap;
 }
-
-.k2b-ui .k2b-content-lightbox__button {
-  @apply inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm transition-colors;
-  border: 0;
-  color: #fff;
-  text-decoration: none;
-  cursor: pointer;
+.k2b-ui .k2b-lightbox__name b {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
 }
-
-.k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav):hover {
-  background: var(--k2b-overlay-surface-hover);
+.k2b-ui .k2b-lightbox__name span {
+  flex: none;
+  color: var(--k2b-text-muted);
 }
-
-.k2b-ui .k2b-content-lightbox__button-label {
+.k2b-ui .k2b-lightbox__actions {
+  display: flex;
+  flex: none;
+  height: 2.5rem;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  box-sizing: border-box;
+  border-radius: 999px;
+}
+.k2b-ui .k2b-lightbox__actions :is(.k2b-button, .k2b-icon-button) {
+  border-radius: 999px;
+}
+.k2b-ui .k2b-lightbox__separator {
+  width: 1px;
+  height: 1.125rem;
+  margin: 0 3px;
+  background: var(--k2b-border);
+}
+.k2b-ui .k2b-lightbox__separator:first-child {
   display: none;
 }
-
-.k2b-ui .k2b-content-lightbox__stage {
-  @apply flex h-full w-full items-center justify-center px-6 pb-20 pt-24;
+.k2b-ui .k2b-lightbox__main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.k2b-ui .k2b-lightbox__stage {
+  container-type: size;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  overflow: auto;
   box-sizing: border-box;
+  place-items: center;
+  padding: 3.5rem 84px 0.75rem;
+  outline: none;
 }
-
-.k2b-ui .k2b-content-lightbox__image {
-  @apply max-h-full max-w-full select-none;
-  object-fit: contain;
-}
-
-.k2b-ui .k2b-content-lightbox__nav {
-  @apply absolute top-1/2 z-10 flex h-12 w-12 items-center justify-center rounded-full text-2xl transition-colors;
+.k2b-ui .k2b-lightbox__edge {
+  position: absolute;
+  z-index: 2;
+  top: calc(50% + 22px);
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  padding: 0;
   border: 0;
-  color: #fff;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  font-size: 1.5rem;
   transform: translateY(-50%);
   cursor: pointer;
 }
-
-.k2b-ui .k2b-content-lightbox__nav[data-direction="previous"] {
-  @apply left-4;
+.k2b-ui .k2b-lightbox__edge:hover {
+  background: var(--k2b-overlay-surface-hover);
 }
-
-.k2b-ui .k2b-content-lightbox__nav[data-direction="next"] {
-  @apply right-4;
+.k2b-ui .k2b-lightbox__edge[data-direction="previous"] {
+  left: 12px;
 }
-
-.k2b-ui .k2b-content-lightbox__dots {
-  @apply absolute bottom-5 left-1/2 flex gap-2 rounded-full px-3 py-2;
-  transform: translateX(-50%);
+.k2b-ui .k2b-lightbox__edge[data-direction="next"] {
+  right: 12px;
 }
-
-.k2b-ui .k2b-content-lightbox__dot {
-  @apply h-2.5 w-2.5 rounded-full transition-colors;
-  padding: 0;
-  border: 0;
-  background: rgb(255 255 255 / 0.4);
-  cursor: pointer;
+.k2b-ui .k2b-lightbox__bar {
+  display: flex;
+  justify-content: center;
+  margin: 0 7px 7px;
 }
-
-.k2b-ui .k2b-content-lightbox__dot:hover {
-  background: rgb(255 255 255 / 0.6);
+.k2b-ui .k2b-lightbox__tools {
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
 }
-
-.k2b-ui .k2b-content-lightbox__dot[aria-current="true"] {
-  background: #fff;
+.k2b-ui .k2b-lightbox__percent {
+  min-width: 3.25rem;
+  justify-content: center;
 }
-
-/* From four images the gallery shows a thumbnail strip instead of dots. */
-.k2b-ui .k2b-content-lightbox__strip {
-  position: absolute;
-  bottom: 1rem;
-  left: 50%;
-  max-width: min(36rem, calc(100% - 2rem));
-  transform: translateX(-50%);
+.k2b-ui .k2b-lightbox__page {
+  min-width: 5.75rem;
+  justify-content: center;
+}
+.k2b-ui .k2b-lightbox__strip {
+  align-self: center;
+  max-width: calc(100% - 3rem);
+  margin: 0 0 7px;
+}
+/* Every file sits in the same box, so a placeholder, a failure and the file share one place and nothing moves. */
+.k2b-ui .k2b-lightbox__content {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  place-items: center;
+}
+.k2b-ui .k2b-lightbox__content[data-state="loading"] > :not(.k2b-lightbox__placeholder) {
+  visibility: hidden;
+}
+.k2b-ui .k2b-lightbox__content > * {
+  grid-area: 1 / 1;
+}
+.k2b-ui .k2b-lightbox__placeholder {
+  display: grid;
+  width: min(100%, 38rem, calc((100cqh - 5rem) / 1.4142));
+  aspect-ratio: 1 / 1.4142;
+  place-items: end center;
+  padding-bottom: 1rem;
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-lightbox__placeholder:is([data-kind="image"], [data-kind="video"]) {
+  width: min(100%, 60rem, calc((100cqh - 5rem) * 4 / 3));
+  aspect-ratio: 4 / 3;
+}
+.k2b-ui .k2b-lightbox__placeholder[data-kind="audio"] {
+  width: min(100%, 28rem);
+  aspect-ratio: 4 / 1;
+}
+.k2b-ui .k2b-lightbox__converting {
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+.k2b-ui .k2b-lightbox__image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100cqh - 4.25rem);
+  border-radius: var(--k2b-radius-control);
+  object-fit: contain;
+  transition: transform 120ms ease;
+  user-select: none;
+}
+.k2b-ui .k2b-lightbox__stage[data-zoomed] .k2b-lightbox__image {
+  cursor: grab;
+}
+.k2b-ui .k2b-lightbox__image[data-dragging] {
+  cursor: grabbing;
+  transition: none;
+}
+.k2b-ui .k2b-lightbox__pdf {
+  width: min(100%, 56rem);
+  height: 100%;
+}
+.k2b-ui .k2b-lightbox__video {
+  max-width: 100%;
+  max-height: calc(100cqh - 4.25rem);
+  border-radius: var(--k2b-radius-control);
+  background: #000;
+}
+.k2b-ui .k2b-lightbox__audio {
+  display: grid;
+  width: min(100%, 28rem);
+  justify-items: center;
+  gap: 1.25rem;
+}
+.k2b-ui .k2b-lightbox__audio audio {
+  width: 100%;
+}
+.k2b-ui .k2b-lightbox__text {
+  align-self: start;
+  width: min(100%, 46rem);
+  box-sizing: border-box;
+  padding: 2rem 2.5rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  font-size: calc(1rem * var(--k2b-lightbox-text-scale, 1));
+  --k2b-lightbox-text-scale: 1;
+}
+.k2b-ui .k2b-lightbox__notice {
+  display: grid;
+  max-width: 28rem;
+  justify-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+}
+.k2b-ui .k2b-lightbox__notice b {
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+}
+.k2b-ui .k2b-lightbox__notice-icon {
+  color: var(--k2b-text-muted);
+  font-size: 2.5rem;
+}
+.k2b-ui .k2b-lightbox__notice-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+/* A phone shows the file across the whole screen; a swipe steps, so the edge buttons step back. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-lightbox__stage {
+    padding: 3.5rem 0 0.5rem;
+  }
+  .k2b-ui .k2b-lightbox__edge {
+    display: none;
+  }
+  .k2b-ui :is(.k2b-lightbox__name span, .k2b-lightbox__action-label) {
+    display: none;
+  }
+  .k2b-ui .k2b-lightbox__text {
+    padding: 1.25rem;
+    border-radius: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui :is(.k2b-lightbox__image, .k2b-lightbox) {
+    transition: none;
+  }
 }
 
 /* ThumbnailStrip: 44 px high; it fades only on the side where more images follow (data-scroll-fade). */
@@ -5098,28 +5253,6 @@
   .k2b-ui .k2b-thumbnail-strip__thumb[aria-current="true"] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
-  }
-}
-
-@media (min-width: 40rem) {
-  .k2b-ui .k2b-content-lightbox__bar {
-    @apply p-6;
-  }
-
-  .k2b-ui .k2b-content-lightbox__button-label {
-    display: inline;
-  }
-
-  .k2b-ui .k2b-content-lightbox__stage {
-    @apply px-12 pb-24 pt-28;
-  }
-
-  .k2b-ui .k2b-content-lightbox__nav[data-direction="previous"] {
-    @apply left-6;
-  }
-
-  .k2b-ui .k2b-content-lightbox__nav[data-direction="next"] {
-    @apply right-6;
   }
 }
 
@@ -5852,14 +5985,6 @@
   .k2b-ui .k2b-content-doc-rows > article {
     grid-template-columns: 2rem 10rem minmax(0, 1fr);
   }
-
-  .k2b-ui .k2b-content-lightbox > div:first-child {
-    padding: 1.5rem;
-  }
-
-  .k2b-ui .k2b-content-lightbox > div:nth-of-type(2) {
-    padding: 7rem 3rem 6rem;
-  }
 }
 
 @media (max-width: 39.999rem) {
@@ -5867,10 +5992,6 @@
   .k2b-ui .k2b-content-calendar .k2b-segmented-control__option {
     padding-inline: 0.375rem;
     font-size: 0.75rem;
-  }
-
-  .k2b-ui .k2b-content-lightbox :is(a, button) span {
-    display: none;
   }
 }
 
@@ -5928,8 +6049,8 @@
 }
 
 @media (forced-colors: active) {
-  .k2b-ui .k2b-content-lightbox button:focus-visible,
-  .k2b-ui .k2b-content-lightbox a:focus-visible,
+  .k2b-ui .k2b-lightbox button:focus-visible,
+  .k2b-ui .k2b-lightbox a:focus-visible,
   .k2b-ui .k2b-content-file-tree [role="treeitem"]:focus-visible,
   .k2b-ui .k2b-content-calendar a:focus-visible,
   .k2b-ui .k2b-content-calendar button:focus-visible,
@@ -5939,7 +6060,7 @@
   .k2b-ui .k2b-content-file-tree__actions:focus-visible,
   .k2b-ui .k2b-content-file-view__action:focus-visible,
   .k2b-ui .k2b-content-structured-data__action:focus-visible,
-  .k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav, .k2b-content-lightbox__dot):focus-visible {
+  .k2b-ui .k2b-lightbox__edge:focus-visible {
     outline: var(--k2b-focus-width) solid CanvasText;
     outline-offset: calc(-1 * var(--k2b-focus-width));
   }

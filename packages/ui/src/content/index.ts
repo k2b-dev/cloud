@@ -102,7 +102,7 @@ export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";
 export type { LabelChipProps } from "./LabelChip";
 export { LabelChip } from "./LabelChip";
-export type { LightboxAction, LightboxImage } from "./Lightbox";
+export type { LightboxAction, LightboxItem, LightboxProps } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LoadMoreProps } from "./LoadMore";
 export { LoadMore } from "./LoadMore";
