@@ -364,6 +364,12 @@ export type CodeDecisionData<Input, Data extends { answers: Record<string, unkno
       }
     : Data["answers"];
 };
+/** Broad required lists cannot prove which fields are present. */
+type CodeJsonRequiredKeys<Schema> = Schema extends { required: readonly (infer Required)[] }
+  ? string extends Required
+    ? never
+    : Required
+  : never;
 /** The supported JSON output schema projected into its validated result. */
 export type CodeJsonOutput<Schema> = Schema extends { enum: readonly (infer Value)[] }
   ? Value
@@ -377,13 +383,9 @@ export type CodeJsonOutput<Schema> = Schema extends { enum: readonly (infer Valu
           ? CodeJsonOutput<Item>[]
           : Schema extends { type: "object"; properties: infer Properties }
             ? {
-                [Key in keyof Properties as Key extends (Schema extends { required: readonly (infer Required)[] } ? Required : never)
-                  ? Key
-                  : never]: CodeJsonOutput<Properties[Key]>;
+                [Key in keyof Properties as Key extends CodeJsonRequiredKeys<Schema> ? Key : never]: CodeJsonOutput<Properties[Key]>;
               } & {
-                [Key in keyof Properties as Key extends (Schema extends { required: readonly (infer Required)[] } ? Required : never)
-                  ? never
-                  : Key]?: CodeJsonOutput<Properties[Key]>;
+                [Key in keyof Properties as Key extends CodeJsonRequiredKeys<Schema> ? never : Key]?: CodeJsonOutput<Properties[Key]>;
               }
             : unknown;
 export type CodeGenerationOutput<Input> = Input extends { output: infer Output }

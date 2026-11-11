@@ -449,10 +449,10 @@ test("schema projection preserves recursive refs, tuples, literals and maps", ()
   const input = schemaTypes(root, "RecursiveInput", [{ name: "idempotencyKey", type: "string", required: true }]);
   expect(input.type).toContain("idempotencyKey");
   expect(input.declarations.join("\n")).not.toContain("idempotencyKey");
-  expect(schemaTypes({ type: "object", additionalProperties: { type: "number" } }, "Map").type).toContain("[key: string]: (number)");
+  expect(schemaTypes({ type: "object", additionalProperties: { type: "number" } }, "Map").type).toContain("[key: string]: number");
   expect(
     schemaTypes({ type: "object", patternProperties: { "^x-": { type: "number" } }, additionalProperties: false }, "Pattern").type,
-  ).toContain("[key: string]: (number)");
+  ).toContain("[key: string]: number");
   expect(() => schemaTypes({ $ref: "https://example.invalid" }, "External")).toThrow("only local");
   expect(() => schemaTypes({ $ref: "#/$defs/missing" }, "Missing")).toThrow("unresolved");
 });
@@ -834,4 +834,34 @@ const data: Code_DecisionData = ["value"];
   );
   const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+});
+
+test("repeated operation schemas are declared once and referenced by every named type", () => {
+  const first = fixture.queries.find((query) => query.localId === "catalog.list")!;
+  const dataSchema = {
+    type: "object",
+    properties: { marker: { type: "string", description: "A shared result field." } },
+    required: ["marker"],
+    additionalProperties: false,
+  };
+  const repeated = { ...fixture, queries: [first, { ...first, localId: "catalog.other" }].map((query) => ({ ...query, dataSchema })) };
+  const sdk = generateCodeSdk([repeated], { mode: "personal" });
+  expect(sdk.declarations.match(/marker: string/g)).toHaveLength(1);
+  expect(sdk.declarations).toContain("export type Work$hshop_Catalog_OtherData = Work$hshop_Catalog_ListData;");
+  expect(sdk.declarations).not.toMatch(/export type Work\$hshop_\w+(?:Input|Data) = S[0-9a-f]+;/);
+  expect(sdk.declarations).toContain("A shared result field.");
+});
+
+test("shared nested shapes keep the same diagnostic names across selected app catalogs", () => {
+  const first = fixture.queries[0]!;
+  const nested = { type: "object", properties: { stableLeaf: { type: "string" } }, required: ["stableLeaf"], additionalProperties: false };
+  const app = {
+    ...fixture,
+    queries: [{ ...first, dataSchema: { type: "object", properties: { nested }, required: ["nested"], additionalProperties: false } }],
+  };
+  const single = generateCodeSdk([app], { mode: "personal" });
+  const combined = generateCodeSdk([sdkFixture("ahead"), app], { mode: "personal" });
+  const name = (declarations: string) => declarations.match(/type (S[0-9a-f]+) = \{ stableLeaf: string \};/)?.[1];
+  expect(name(single.declarations)).toBeDefined();
+  expect(name(single.declarations)).toBe(name(combined.declarations));
 });

@@ -157,9 +157,13 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     throw new Error("Expected Code SDK authoring type source");
   const declarations = [
     "// Generated from Cloud capability manifests. Do not edit.",
+    "// Numbered InputN and DataN types are legacy aliases.",
     authoringTypes.default.replace(/^import[^\n]*\n/gm, "").trim(),
   ];
   const methods = new Map<CodeSdkOperation, string>();
+  const shapes = { types: new Map<string, string>(), names: new Set<string>() };
+  // Selecting other apps must not change the canonical exported alias for an operation.
+  const rootsByApp = new Map<string, Map<string, string>>();
   // Preserve the app boundary and every path separator. Encoding raw hyphens and
   // underscores avoids ambiguous PascalCase names and keeps names catalog-independent.
   const typeName = (value: string) =>
@@ -195,29 +199,33 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     const stem = typeName(`${op.appId}.${op.localId}`);
     const inputName = `${stem}Input`;
     const dataName = `${stem}Data`;
-    const input = schemaTypes(inputSchema, `Input${index}`, fields);
-    const output = schemaTypes(op.dataSchema, `Data${index}`);
+    let roots = rootsByApp.get(op.appId);
+    if (!roots) {
+      roots = new Map();
+      rootsByApp.set(op.appId, roots);
+    }
+    const input = schemaTypes(inputSchema, `Input${index}`, fields, shapes, { name: inputName, types: roots });
+    const output = schemaTypes(op.dataSchema, `Data${index}`, [], shapes, { name: dataName, types: roots });
     declarations.push(
       ...input.declarations,
       ...output.declarations,
-      jsdoc(`${entry.title}. ${entry.description} Input.`),
+      jsdoc(`${entry.title} input.`),
       `export type ${inputName} = ${input.type};`,
-      jsdoc(`${entry.title}. ${entry.description} Data.`),
+      jsdoc(`${entry.title} result.`),
       `export type ${dataName} = ${output.type};`,
-      `/** Compatibility alias for ${inputName}. */`,
       `type Input${index} = ${inputName};`,
-      `/** Compatibility alias for ${dataName}. */`,
       `type Data${index} = ${dataName};`,
     );
     const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<Data${index}>` : `Data${index}`;
     const optional =
       fields.every((field) => !field.required) && (!Array.isArray(inputSchema.required) || inputSchema.required.length === 0);
     let signature = `(input${optional ? "?" : ""}: Input${index}) => Promise<${result}>`;
+    // Original overloads bookend the precise one: preserve call resolution and ReturnType/Parameters.
     if (op.capability === "core.ai.decide") {
-      signature = `<const Input extends CodeDecisionInput<${inputName}>>(input: Input) => Promise<CodeQueryResult<CodeDecisionData<Input, ${dataName}>>>`;
+      signature = `(${signature}) & (<const Input extends CodeDecisionInput<${inputName}>>(input: Input) => Promise<CodeQueryResult<CodeDecisionData<Input, ${dataName}>>>) & (${signature})`;
     }
     if (op.capability === "core.ai.generate")
-      signature = `<const Input extends ${inputName}>(input: Input) => Promise<CodeQueryResult<Omit<${dataName}, "output"> & { output: CodeGenerationOutput<Input> }>>`;
+      signature = `(${signature}) & (<const Input extends ${inputName}>(input: Input) => Promise<CodeQueryResult<Omit<${dataName}, "output"> & { output: CodeGenerationOutput<Input> }>>) & (${signature})`;
     methods.set(op, Object.keys(op.refs).length ? `(${signature})` : `((${signature}) & CodeAiTool)`);
   }
   const handleNames = new Map<string, string>();
@@ -249,7 +257,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   }
   if (options.mode !== "code_run") {
     const events = manifest.events.map((event, index) => {
-      const data = schemaTypes(event.dataSchema, `Event${index}`);
+      const data = schemaTypes(event.dataSchema, `Event${index}`, [], shapes);
       declarations.push(...data.declarations);
       return `${quote(event.type)}: CodeEvent<${quote(event.type)}, ${data.type}>`;
     });
@@ -295,8 +303,8 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
         if (jsonSchema.type === "object" && jsonSchema.additionalProperties === undefined) jsonSchema.additionalProperties = false;
       },
     });
-  const pageType = schemaTypes(authoringSchema(CodePageTreeSchema), "CodePage");
-  const chartType = schemaTypes(authoringSchema(CodeChartDescriptionSchema), "CodeChart");
+  const pageType = schemaTypes(authoringSchema(CodePageTreeSchema), "CodePage", [], shapes);
+  const chartType = schemaTypes(authoringSchema(CodeChartDescriptionSchema), "CodeChart", [], shapes);
   declarations.push(
     ...pageType.declarations,
     `export type CodePageTree = ${pageType.type};`,
@@ -334,7 +342,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     databaseMessages: CODE_DATABASE_MESSAGES,
   };
   return {
-    declarations: `${declarations.join("\n\n")}\n`,
+    declarations: `${declarations.join("\n")}\n`,
     runtime: `// Generated from Cloud capability manifests. Do not edit.\nconst __codeSdk = (() => {\nconst manifest = ${JSON.stringify(stableJsonValue(runtimeManifest))};\nconst RESOURCE_ID_MAX = ${CLOUD_RESOURCE_ID_MAX_LENGTH};\n${CODE_SDK_RUNTIME}\nreturn __codeSdk;\n})();\n${runtimeExports.join("\n")}\n${CODE_PAGE_BUILDERS}\n`,
     manifest,
   };

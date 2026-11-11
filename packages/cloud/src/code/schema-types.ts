@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
+
 /** Projects manifest JSON Schema into structural TypeScript. Runtime constraints remain owned by the dispatcher. */
 export function schemaTypes(
   root: Record<string, unknown>,
   name: string,
   inputFields: ReadonlyArray<{ name: string; type: string; required: boolean }> = [],
+  shapes?: { types: Map<string, string>; names: Set<string> },
+  namedRoot?: { name: string; types: Map<string, string> },
 ): { type: string; declarations: string[] } {
   const declarations: string[] = [];
   const references = new Map<string, string>();
@@ -10,11 +14,12 @@ export function schemaTypes(
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name}: invalid JSON Schema object`);
     return Object.fromEntries(Object.entries(value));
   };
+  const property = (key: string) => (/^[a-z_$][\w$]*$/i.test(key) ? key : JSON.stringify(key));
   const literal = (value: unknown): string => {
     if (value !== null && typeof value === "object") {
       if (Array.isArray(value)) return `[${value.map(literal).join(", ")}]`;
       return `{ ${Object.entries(value)
-        .map(([key, item]) => `${JSON.stringify(key)}: ${literal(item)}`)
+        .map(([key, item]) => `${property(key)}: ${literal(item)}`)
         .join("; ")} }`;
     }
     return JSON.stringify(value);
@@ -79,12 +84,18 @@ export function schemaTypes(
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([key, item]) => {
               const schema = item && typeof item === "object" ? object(item) : {};
-              const description = [schema.title, schema.description].filter((value) => typeof value === "string").join(". ");
-              const comment = description ? `/** ${description.replaceAll("*/", "* /").replace(/[\r\n]+/g, " ")} */ ` : "";
-              return `${comment}${JSON.stringify(key)}${required.has(key) ? "" : "?"}: ${render(item)}`;
+              const description =
+                typeof schema.title === "string"
+                  ? schema.title
+                  : typeof schema.description === "string"
+                    ? (schema.description.split(/(?<=[.!?])\s/)[0] ?? "")
+                    : "";
+              const summary = description.length > 80 ? `${description.slice(0, 77).replace(/\s+\S*$/, "")}…` : description;
+              const comment = description ? `/** ${summary.replaceAll("*/", "* /").replace(/[\r\n]+/g, " ")} */ ` : "";
+              return `${comment}${property(key)}${required.has(key) ? "" : "?"}: ${render(item)}`;
             });
           if (includeInputFields) {
-            for (const field of inputFields) fields.push(`${JSON.stringify(field.name)}${field.required ? "" : "?"}: ${field.type}`);
+            for (const field of inputFields) fields.push(`${property(field.name)}${field.required ? "" : "?"}: ${field.type}`);
           }
           // JSON Schema applies additionalProperties only to undeclared keys; TS index signatures apply to all keys.
           // Use unknown for a mixed object so known fields retain their exact type without rejecting valid JSON.
@@ -104,9 +115,29 @@ export function schemaTypes(
     if (Array.isArray(schema.type)) parts.push(`(${schema.type.map(structural).join(" | ")})`);
     else if (schema.type !== undefined || schema.properties || schema.items)
       parts.push(structural(schema.type ?? (schema.properties ? "object" : "array")));
-    return parts.length ? parts.map((part) => `(${part})`).join(" & ") : "unknown";
+    return parts.length > 1 ? parts.map((part) => `(${part})`).join(" & ") : (parts[0] ?? "unknown");
   };
-  const render = (value: unknown): string => project(value);
+  // One pool per generated module lets operations, events and page schemas reuse shapes.
+  // Numbered legacy refs depend on the selected catalog, so keep their shapes local.
+  const share = (type: string): string => {
+    if (!shapes || (!type.startsWith("{") && !type.startsWith("[")) || /\b(?:Input|Data|Event)\d+Ref\d+\b/.test(type)) return type;
+    let alias = shapes.types.get(type);
+    if (!alias) {
+      const hash = createHash("sha256").update(type).digest("hex");
+      alias = `S${hash.slice(0, 12)}`;
+      if (shapes.names.has(alias)) alias = `S${hash}`;
+      shapes.types.set(type, alias);
+      shapes.names.add(alias);
+      declarations.push(`type ${alias} = ${type};`);
+    }
+    return alias;
+  };
+  const render = (value: unknown): string => share(project(value));
   const type = project(root, true);
+  if (namedRoot && /^(?:[\{\[]|Array<|Record<)/.test(type)) {
+    const existing = namedRoot.types.get(type);
+    if (existing) return { type: existing, declarations };
+    namedRoot.types.set(type, namedRoot.name);
+  }
   return { type, declarations };
 }

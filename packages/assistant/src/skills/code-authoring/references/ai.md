@@ -31,9 +31,13 @@ thresholds for the cost of a mistake.
 `decide` accepts `input` as an alias for `state` (`state` wins when both
 are supplied), and `type: "boolean"` as an alias for `"noul"`. Boolean answers
 retain `type: "noul"`, `value` and `probability`, with `confidence` as an equal
-alias for `probability`. Literal question names and types determine the answer
-types, so no answer-type narrowing is needed. Existing spellings remain valid.
-`generate` infers a string for text output and the fields of a literal JSON schema.
+alias for `probability`. Calls using the new aliases infer each answer's type.
+Existing spellings and result types remain valid. For precise types with an old
+`state`/`noul` request, import `Core_Ai_DecideInput`, declare it with
+`satisfies Core_Ai_DecideInput`, then use `core.ai.decide<typeof request>(request)`.
+Ordinary `generate` calls retain their JSON result type and narrowing checks.
+Opt into precise output with `core.ai.generate<typeof request>(request)`;
+text then returns a string, and a literal JSON schema determines its fields.
 
 ## Generate text
 
@@ -84,13 +88,16 @@ the effect. Check whether a step is already done before generating it. Text outp
 A JSON output schema is a strict object with 1–40 scalar or bounded list
 properties, `required` and
 `additionalProperties: false`. Strings may have `maxLength`, `enum` or
-`format: "date-time"`. Literal output schemas infer the result fields;
-optional properties remain optional. Validate business constraints before use. Lists require `maxItems`; items are scalars or
+`format: "date-time"`. For precise output, import `Core_Ai_GenerateInput`,
+declare the request with `satisfies Core_Ai_GenerateInput`, and call
+`core.ai.generate<typeof request>(request)`. Keep required names as a literal
+tuple, for example `required: ["item", "quantity"] as ["item", "quantity"]`.
+A broadly typed `required` list keeps fields optional. Validate business constraints before use. Lists require `maxItems`; items are scalars or
 strict objects of scalar fields. Nested lists are not supported.
 
 <!-- check: resource mail.mailbox -->
 ```ts
-import { app, core, mail, spaces } from "@sdk";
+import { app, core, mail, spaces, type Core_Ai_GenerateInput } from "@sdk";
 
 // Fictional Space; its manager shares it with this mailbox's service account (Edit).
 const orders = spaces.space("Spc001");
@@ -101,7 +108,7 @@ app.on("mail.message.received", async event => {
     ({ data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (!/order/i.test(message.subject) || !message.text) return;
-  const { data: result } = await core.ai.generate({
+  const request = {
     task: "mail.order",
     prompt: "Extract the ordered item and quantity. Use an empty item when the message orders nothing.",
     input: { subject: message.subject, body: message.text },
@@ -110,11 +117,12 @@ app.on("mail.message.received", async event => {
       schema: {
         type: "object",
         properties: { item: { type: "string", maxLength: 100 }, quantity: { type: "integer" } },
-        required: ["item", "quantity"],
+        required: ["item", "quantity"] as ["item", "quantity"],
         additionalProperties: false,
       },
     },
-  });
+  } satisfies Core_Ai_GenerateInput;
+  const { data: result } = await core.ai.generate<typeof request>(request);
   const output = result.output;
   if (typeof output !== "object" || output === null) return;
   const item = "item" in output && typeof output.item === "string" ? output.item.trim() : "";

@@ -71,20 +71,28 @@ app.get("/empty", {}, c => c.text(c.user?.name ?? ""));`);
   expect(result.warnings).toEqual([]);
 });
 
-test("AI output and answers follow literal questions and output schemas without narrowing", async () => {
-  const result = await check(`import { app, core } from "@sdk";
+test("AI output and answers offer precise opt-in types while preserving legacy calls", async () => {
+  const result = await check(`import { app, core, type Core_Ai_DecideInput, type Core_Ai_GenerateInput } from "@sdk";
 app.schedule({ cron: "0 8 * * *", name: "ai" }, async () => {
   const result = await core.ai.decide({ task: "triage", input: {}, questions: { yes: { type: "boolean", instructions: "Relevant?" }, category: { type: "choice", instructions: "Category?", criteria: { one: "One", two: "Two" } }, rating: { type: "score", instructions: "Rate?", criteria: ["Low", "High"] } } });
   const value: boolean = result.data.answers.yes.value;
   const confidence: number = result.data.answers.yes.confidence;
   const choice: "one" | "two" = result.data.answers.category.choice;
   const score: number = result.data.answers.rating.score;
-  const old = await core.ai.decide({ task: "old", state: {}, questions: { yes: { type: "noul", instructions: "Relevant?" } } });
+  const oldRequest = { task: "old", state: {}, questions: { yes: { type: "noul", instructions: "Relevant?" } } } satisfies Core_Ai_DecideInput;
+  const old = await core.ai.decide<typeof oldRequest>(oldRequest);
   const probability: number = old.data.answers.yes.probability;
-  const text = await core.ai.generate({ task: "text", prompt: "Summarize", input: {}, output: { type: "text" } });
+  const textRequest = { task: "text", prompt: "Summarize", input: {}, output: { type: "text" } } satisfies Core_Ai_GenerateInput;
+  const text = await core.ai.generate<typeof textRequest>(textRequest);
   const content: string = text.data.output;
-  const json = await core.ai.generate({ task: "json", prompt: "Extract", input: {}, output: { type: "json", schema: { type: "object", properties: { name: { type: "string" }, done: { type: "boolean" } }, required: ["name"], additionalProperties: false } } });
+  const jsonRequest = { task: "json", prompt: "Extract", input: {}, output: { type: "json", schema: { type: "object", properties: { name: { type: "string" }, done: { type: "boolean" } }, required: ["name"] as ["name"], additionalProperties: false } } } satisfies Core_Ai_GenerateInput;
+  const json = await core.ai.generate<typeof jsonRequest>(jsonRequest);
   const name: string = json.data.output.name; const done: boolean | undefined = json.data.output.done;
+  const required: string[] = ["name"];
+  const broadRequest = { ...jsonRequest, output: { ...jsonRequest.output, schema: { ...jsonRequest.output.schema, required } } };
+  const broad = await core.ai.generate<typeof broadRequest>(broadRequest);
+  const optionalFields: typeof broad.data.output = {};
+  const maybeName: string | undefined = broad.data.output.name;
 });`);
   expect(result.ok ? [] : result.diagnostics).toEqual([]);
 });
@@ -145,4 +153,25 @@ app.get("/legacy-public", handler as any, { public: true });`,
     { method: "GET", path: "/legacy", public: false },
     { method: "GET", path: "/legacy-public", public: true },
   ]);
+});
+
+test("legacy AI calls preserve broad JSON and decision discriminator narrowing", async () => {
+  const result = await check(`import { app, core, type Core_Ai_GenerateData, type Core_Ai_DecideData } from "@sdk";
+app.schedule({ cron: "0 8 * * *", name: "legacy-ai" }, async () => {
+  const generated = await core.ai.generate({ task: "summary", prompt: "Summarize", input: {}, output: { type: "text" } });
+  const envelope: Awaited<ReturnType<typeof core.ai.generate>> = generated;
+  const generatedData: Core_Ai_GenerateData = envelope.data;
+  const output = generated.data.output;
+  if (typeof output === "object" && output !== null && "text" in output && typeof output.text === "string") {
+    const summary: string = output.text;
+  }
+  const decision = await core.ai.decide({ task: "legacy", state: {}, questions: { yes: { type: "noul", instructions: "Relevant?" } } });
+  const decisionEnvelope: Awaited<ReturnType<typeof core.ai.decide>> = decision;
+  const decisionData: Core_Ai_DecideData = decisionEnvelope.data;
+  const answer = decision.data.answers.yes;
+  if (answer?.type === "choice") { const choice: string = answer.choice; }
+  if (answer?.type === "score") { const score: number = answer.score; }
+  if (answer?.type === "noul") { const value: boolean = answer.value; }
+});`);
+  expect(result.ok ? [] : result.diagnostics).toEqual([]);
 });

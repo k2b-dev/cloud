@@ -475,7 +475,8 @@ Required fields, refs and `idempotencyKey` still require an input object.
 
 Each operation exports types named after its application and local path, such
 as `Mail_Message_ReadInput` and `Mail_Message_ReadData`. Import them from `@sdk`
-for helper parameters. Their JSDoc describes the operation and its fields.
+for helper parameters. Their concise JSDoc describes the operation and its fields.
+Repeated structural schemas are declared once and referenced across operations.
 Names retain the app and path boundaries, independently of catalog order.
 Hyphens and underscores in IDs are encoded as `$h` and `$u`.
 The numbered `InputN` and `DataN` declarations remain compatibility aliases;
@@ -1309,9 +1310,13 @@ failures and byte limits follow
 `input` aliases the earlier `state` field; `state` takes precedence if both
 are supplied. `type: "boolean"` aliases `"noul"`. Boolean answers retain
 `type: "noul"`, `value` and `probability`, and add `confidence` with the same
-value as `probability`. Existing names remain supported. With literal
-questions, each answer has its question's type and named choices without
-an extra discriminator check.
+value as `probability`. Existing names and their result types remain supported.
+Calls using the new
+`input` or `boolean` aliases infer each answer's type and named choices.
+For a legacy `state`/`noul` request, import `Core_Ai_DecideInput`, declare the
+request with `satisfies Core_Ai_DecideInput`, and opt into precise answers with
+`core.ai.decide<typeof request>(request)`; otherwise keep the existing
+discriminator checks.
 
 ## Generate text and extract fields
 
@@ -1361,9 +1366,14 @@ export default async function summarize() {
 }
 ```
 
-The generated SDK types describe the request and JSON result. A literal schema
-infers its validated output fields. For a schema supplied with a broad type at
-runtime, narrow `output` before reading its fields. Cloud validates the declared schema before returning
+The generated SDK preserves the existing JSON result type for ordinary calls.
+Narrow `output` before reading its fields. To opt into a precise result, declare
+a request with `satisfies Core_Ai_GenerateInput` and call
+`core.ai.generate<typeof request>(request)`. Text output then has type `string`;
+a literal JSON schema determines its output fields. Keep required field names
+as a literal tuple, for example `required: ["item", "quantity"] as ["item", "quantity"]`.
+A broadly typed `required` list keeps fields optional in TypeScript.
+Cloud validates the declared schema before returning
 it. For lasting Code, call this helper from a schedule; its callback returns
 `void`. Summarizing or drafting does not send or save anything. A separate
 application capability performs that effect under its own permissions.
