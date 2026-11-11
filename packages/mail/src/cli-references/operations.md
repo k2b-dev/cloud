@@ -13,14 +13,14 @@ cld --json mail mailbox wait --health active --timeout-seconds 300
 
 `mailbox wait` stops early when the mailbox enters an incompatible failure health. A healthy command result does not replace checking the relevant durable command or sync run. `mail status` reports the mailbox's own health: its access, connection, and folder syncs. A message whose body failed to load does not change it; such messages are counted in the hydration line (`hydration.failed` under `--json`), and `mail repair hydration` retries them.
 
-Each attempt to sync a batch of one folder is a sync run, and a failed attempt stays failed when a retry completes the folder afterwards. `mail status` therefore counts the failed runs that started in the last 24 hours (`sync.failedRuns` under `--json`), and `mail operator status` counts completed, failed, cancelled, and superseded (`stale_fence`) runs of the same 24 hours in `sync.states`; both also count the runs that are still running. List the retained runs, newest first, with their folder and error code; the ones that started in the last 24 hours make up those counts:
+Mail records successful folder batches that changed mail or resolved an error; empty successful checks otherwise leave no history. A failed attempt stays failed when a retry completes the folder afterwards. `mail status` counts the failed runs that started in the last 24 hours (`sync.failedRuns` under `--json`), and `mail operator status` counts retained completed, failed, cancelled, and superseded (`stale_fence`) runs of the same 24 hours in `sync.states`; both also count runs that are still running. List retained runs, newest first, with their folder and error code; those started in the last 24 hours make up those counts:
 
 ```bash
 cld mail sync runs --state failed
 cld --json mail sync runs --state failed --limit 100 --cursor <next-cursor>
 ```
 
-`--state` takes `running`, `completed`, `failed`, `cancelled`, or `stale_fence`; without it the list shows every state. A page holds up to 100 runs, 50 by default; pass the printed `nextCursor` for the next page. Mail keeps finished runs for 30 days, so the list reaches back that far. It needs read access to the whole mailbox, like `mail status`. Failures that a later run of the same folder follows with `completed`, such as a dropped connection, were retried; the same folder failing with the same code run after run, or the mailbox staying `degraded`, needs attention.
+`--state` takes `running`, `completed`, `failed`, `cancelled`, or `stale_fence`; without it the list shows every state. A page holds up to 100 runs, 50 by default; pass the printed `nextCursor` for the next page. Mail keeps completed changed batches and error recoveries for 3 days, failures and other terminal runs for 30 days. Running rows remain. The list needs read access to the whole mailbox, like `mail status`. A later `completed` run of the same folder, even an empty batch, records recovery from a failure such as a dropped connection. After three days that recovery can disappear before its failure; check current mailbox health too. The same folder failing with the same code run after run, or the mailbox staying `degraded`, needs attention.
 
 Mailbox admins can inspect the redacted operator view. Text output includes one
 `Outbox:` line with the existing state counts, such as `290 scheduled, 1 sending`;

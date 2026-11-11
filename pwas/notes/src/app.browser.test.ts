@@ -445,16 +445,18 @@ describe("k2b notes · Produktions-SPA", () => {
           innerBorder: inner.borderTopWidth,
           innerOutline: inner.outlineStyle,
           innerRadius: inner.borderTopLeftRadius,
-          shellBorder: shell.borderTopColor,
+          shellBorder: shell.borderTopWidth,
           shellRing: shell.boxShadow,
+          shellOutline: shell.outlineStyle,
         };
       });
       expect(look.innerBorder).toBe("0px");
       expect(look.innerOutline).toBe("none");
       expect(look.innerRadius).toBe("0px");
-      // The shell draws the 2 px focus edge as a border plus an inset of the same colour: one shape.
-      expect(look.shellRing).toContain("inset");
-      expect(look.shellRing).toContain(look.shellBorder);
+      // The shell draws the 2 px focus edge as one border and nothing beside it: one shape.
+      expect(look.shellBorder).toBe("2px");
+      expect(look.shellRing).toBe("none");
+      expect(look.shellOutline).toBe("none");
     };
 
     await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();

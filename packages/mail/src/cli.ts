@@ -4884,7 +4884,7 @@ const specialistCommands = {
     command("sync runs", {
       summary: "List recent sync runs with their folder and error code",
       description:
-        "Lists the sync runs Mail keeps for 30 days, newest first. Each attempt to sync a folder batch is one run, also one that a retry completed afterwards.",
+        "Lists retained sync runs, newest first: changed batches and error recoveries for 3 days, failures and other terminal runs for 30 days. Empty successful checks leave no history unless they resolve an error.",
       examples: ["cld mail sync runs --state failed", "cld --json mail sync runs --state failed --limit 100"],
       flags: {
         ...mailboxFlag,

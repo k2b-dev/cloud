@@ -48,9 +48,12 @@ Selection keeps its fill independently of unread emphasis.
 Every control a person fills in shares one edge: text fields, number fields,
 selects, comboboxes, tag and date fields, colour fields, input buttons, the
 Markdown editor, and the signature pad. The field is white, and its edge is
-always `--k2b-edge-width` (2 px) wide, drawn inside the box as a 1 px border
-plus a 1 px inset in the same colour. A state changes only the colour or the
-fill, so the box and the text never move:
+always `--k2b-edge-width` (2 px) wide, drawn inside the box as one border and
+nothing else. A second source beside it, such as an inset shadow or an
+outline, leaves a lighter seam at fractional zoom. Parts inside the field, such
+as number steppers, fill up to that border and part from the value with one
+1 px line in `--k2b-edge`. A state changes only the colour or the fill, so the
+box and the text never move:
 
 | State | Edge | Fill |
 | --- | --- | --- |
@@ -63,9 +66,8 @@ fill, so the box and the text never move:
 
 The focus blue keeps 3:1 against the grey edge it replaces, so focus shows
 without a second width. No field casts a shadow. A control with its own edge
-reads `--k2b-edge-color`, the colour of the current state, for example a
-stepper that fills to the border. In forced-colors mode the border takes the
-system colour and focus adds the system outline.
+reads `--k2b-edge-color`, the colour of the current state. In forced-colors
+mode the border takes the system colour and focus adds the system outline.
 
 ### Filters, buttons, and clickable cards
 
