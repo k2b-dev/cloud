@@ -108,6 +108,8 @@ const entry = (item: Item) => ({
 
 // pdf.js draws the dialogs' pages and the server answers in steps; a flow takes a few seconds.
 setDefaultTimeout(30_000);
+/** Set FILES_SHOTS to a folder to keep screenshots of the states the tests reach. */
+const shots = process.env.FILES_SHOTS;
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
 
@@ -301,7 +303,7 @@ describe("Files selection pill in a browser", () => {
       await dialog.getByRole("button", { name: /Move Angebot-0413/ }).focus();
       await tab.keyboard.press("Home");
       await settled(tab);
-      await tab.screenshot({ path: "/tmp/files11-shots/merge-dialog-light-1440.png" });
+      if (shots) await tab.screenshot({ path: `${shots}/merge-dialog-light-1440.png` });
       await dialog.getByRole("button", { name: "Merge", exact: true }).click();
       // While the server works, the new file's row says so where it will appear, with Cancel.
       const making = tab.locator(".filesv2-list__row--operation");
@@ -317,7 +319,7 @@ describe("Files selection pill in a browser", () => {
         ],
         name: "Angebot-0412-Sekretär-Biedermeier-komplett.pdf",
       });
-      await tab.screenshot({ path: "/tmp/files11-shots/merge-progress-light-1440.png" });
+      if (shots) await tab.screenshot({ path: `${shots}/merge-progress-light-1440.png` });
       release();
       const toast = tab.locator(".k2b-toast", { hasText: "created" });
       await toast.waitFor();
@@ -326,7 +328,7 @@ describe("Files selection pill in a browser", () => {
       await row(tab, "-komplett.pdf").waitFor();
       expect(await row(tab, "-komplett.pdf").textContent()).toContain("Just created");
       expect(await making.count()).toBe(0);
-      await tab.screenshot({ path: "/tmp/files11-shots/merge-done-light-1440.png" });
+      if (shots) await tab.screenshot({ path: `${shots}/merge-done-light-1440.png` });
       await toast.getByRole("button", { name: "Undo" }).click();
       await tab.locator(".k2b-toast", { hasText: "The new file is in the trash." }).waitFor();
       expect(session.deleted).toEqual([[`${folder}/Angebot-0412-Sekretär-Biedermeier-komplett.pdf`]]);
@@ -355,7 +357,7 @@ describe("Files selection pill in a browser", () => {
       const failed = tab.locator('.filesv2-list__row--operation[data-state="failed"]');
       await failed.waitFor();
       expect(await failed.textContent()).toContain("is protected with a password.");
-      await tab.screenshot({ path: "/tmp/files11-shots/merge-failed-light-1440.png" });
+      if (shots) await tab.screenshot({ path: `${shots}/merge-failed-light-1440.png` });
       await failed.getByRole("button", { name: "Without this file" }).click();
       await row(tab, "-komplett.pdf").waitFor();
       expect(session.posts[1]!.paths).toEqual([
@@ -381,7 +383,7 @@ describe("Files selection pill in a browser", () => {
         expect(await dialog.getByRole("button", { name: "Save as new PDF" }).isDisabled()).toBe(true);
         await dialog.getByRole("button", { name: "Page 1" }).click();
         expect(await dialog.locator(".filesv2-pdf-dialog__count").textContent()).toBe("1 page chosen");
-        if (round === 0) await tab.screenshot({ path: "/tmp/files11-shots/extract-dialog-light-1440.png" });
+        if (round === 0 && shots) await tab.screenshot({ path: `${shots}/extract-dialog-light-1440.png` });
         await dialog.getByRole("button", { name: "Save as new PDF" }).click();
         const making = tab.locator(".filesv2-list__row--operation");
         if (round === 0) {
@@ -461,7 +463,7 @@ describe("Files selection pill in a browser", () => {
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(390);
       expect(await pillText(tab)).toBe("2 PDFs");
-      await tab.screenshot({ path: "/tmp/files11-shots/pill-light-390.png" });
+      if (shots) await tab.screenshot({ path: `${shots}/pill-light-390.png` });
     } finally {
       await tab.context().close();
     }
@@ -474,7 +476,7 @@ describe("Files selection pill in a browser", () => {
       await row(tab, "Angebot-0413").click({ modifiers: ["Shift"] });
       await pill(tab).waitFor();
       await settled(tab);
-      await tab.screenshot({ path: "/tmp/files11-shots/pill-light-1440.png" });
+      if (shots) await tab.screenshot({ path: `${shots}/pill-light-1440.png` });
     } finally {
       await tab.context().close();
     }
