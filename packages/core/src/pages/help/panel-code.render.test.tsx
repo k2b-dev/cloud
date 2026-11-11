@@ -75,7 +75,7 @@ test("the Help start lists the app's Code operations and events between the arti
   expect(rows.map((row) => row.querySelector("[data-help-code-path]")?.textContent)).toEqual(
     reference.operations.map((operation) => operation.path),
   );
-  expect(rows.map((row) => row.querySelector(".k2b-status-badge__label > span:not([aria-hidden])")?.textContent)).toEqual([
+  expect(rows.map((row) => row.querySelector(".k2b-status-badge__label")?.textContent)).toEqual([
     "Automatic",
     "Administrator approves",
     "Never",
@@ -126,7 +126,7 @@ test("an app without Code operations says so, and a failed read offers a reload 
 test("guests and people who cannot write Code see no Code section, and nothing is loaded for them", async () => {
   // The real loader decides; a guest is refused before the catalog or the policy is read.
   codeReference.mockImplementation(realLoadCodeHelpReference);
-  const catalog = spyOn(await import("../../code/authoring-check"), "loadCodeSdkManifests");
+  const catalog = spyOn(await import("@k2b/cloud/capabilities/server"), "getCapabilityCatalogApp");
   try {
     person.profile = "guest";
     const dom = await render(panelUrl("spaces"));

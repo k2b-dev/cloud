@@ -7,8 +7,14 @@ import { isCodeAiOperation } from "./policy-contracts";
 import { createRunnerCodeCheckHost } from "./runner-jobs";
 import { readCode } from "./store";
 
-/** The live catalog under this caller's authority, the one source of the generated SDK and its help reference. */
-export async function loadCodeSdkManifests(context: CodeContext): Promise<CapabilityManifest[]> {
+/** The live catalog under this caller's authority and the SDK mode of this Code; editor rights required. */
+export async function loadCodeSdkCatalog(
+  codeId: string,
+  context: CodeContext,
+): Promise<{ manifests: CapabilityManifest[]; options: CodeSdkOptions }> {
+  codePerson(context, true);
+  const { code } = await readCode(codeId, context);
+  await requireCodePermission(code, context, true);
   const manifests: CapabilityManifest[] = [];
   let cursor: string | undefined;
   let bytes = 0;
@@ -21,18 +27,8 @@ export async function loadCodeSdkManifests(context: CodeContext): Promise<Capabi
     manifests.push(...page.data.apps.map((app) => app.manifest));
     cursor = page.data.page.hasMore ? page.data.page.nextCursor : undefined;
   } while (cursor);
-  return manifests;
-}
-/** The live catalog under this caller's authority and the SDK mode of this Code; editor rights required. */
-export async function loadCodeSdkCatalog(
-  codeId: string,
-  context: CodeContext,
-): Promise<{ manifests: CapabilityManifest[]; options: CodeSdkOptions }> {
-  codePerson(context, true);
-  const { code } = await readCode(codeId, context);
-  await requireCodePermission(code, context, true);
   return {
-    manifests: await loadCodeSdkManifests(context),
+    manifests,
     options:
       code.owner.kind === "person"
         ? { mode: "personal" }

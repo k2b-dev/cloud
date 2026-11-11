@@ -469,22 +469,25 @@ Code** section. It lists what Code can do in that app:
 - **Events:** each automation event type with its one-line description,
   subject type, and place type.
 
-Both groups start closed. Cloud builds the section from the same capability
-catalog and index as Gustav's `code_sdk` tool, under the reader's authority
-and in the request language. Descriptions come from the app's capability
-presentation and fall back like the SDK index; the app writes no Help for it.
+Both groups start closed. Cloud builds the section from the app's capability
+catalog entry with the same index function as Gustav's `code_sdk` tool, under
+the reader's authority and in the request language. Descriptions come from
+the app's capability presentation and fall back like the SDK index; the app
+writes no Help for it.
 A new operation in an app's manifest appears without other changes. The
 policy label is the reader's effective [Code policy](/en/docs/platform/code-policy)
 for personal Code.
 
-Only signed-in members whose credential may write Code see the section.
-Guests, service accounts, and read-only credentials do not, and Cloud reads
-no catalog for them. As with the rest of Help, this is visibility, not
+Only signed-in members whose credential may write Code see the section. A
+personal API key that acts for such a member counts as that member. Guests,
+agents, Code accounts, and read-only credentials do not see it, and Cloud
+reads no catalog for them. As with the rest of Help, this is visibility, not
 authorization: Cloud checks every call when Code runs.
 
-An app without Code operations or events says so in one line. When the
-catalog or the policy cannot be read, the section says so and offers
-**Reload**; the rest of Help stays usable.
+An app without Code operations or events says so in one line. Cloud reads
+the policy only when the app has operations. When the catalog entry or the
+policy cannot be read, the section says so and offers **Reload**; the rest of
+Help stays usable.
 
 An app without Help articles shows a short note above the shortcuts. When
 Cloud could not read the app's Help metadata for the page, Help says so and

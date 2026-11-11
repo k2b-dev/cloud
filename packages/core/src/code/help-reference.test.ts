@@ -1,14 +1,14 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { join, resolve } from "node:path";
+import * as catalog from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityDefinitions, CapabilityManifest } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import * as logging from "@k2b/cloud/services/logging";
 import { declarationOf } from "../../../../scripts/checks/capability-presentation";
 import { packageIds } from "../../../../scripts/workspace";
-import * as catalog from "./authoring-check";
 import { codeChatSdkView } from "./chat-sdk";
-import { canAuthorCode, codeHelpReference, loadCodeHelpReference } from "./help-reference";
+import { canAuthorCode, codeHelpIndex, loadCodeHelpReference, withCodePolicy } from "./help-reference";
 import * as policy from "./policy";
 import { CODE_POLICY_ROWS, type CodePolicyRow, type CodePolicyValue } from "./policy-contracts";
 
@@ -25,6 +25,7 @@ for (const appId of packageIds(workspaceRoot)) {
 const value = (row: CodePolicyRow): CodePolicyValue =>
   row.startsWith("ask_") ? "never" : row === "read" ? "automatic" : row === "ai" ? "never" : "admin";
 const rows = CODE_POLICY_ROWS.map((row) => ({ row, value: value(row) }));
+const codeHelpReference = (appId: string, list: readonly CapabilityManifest[]) => withCodePolicy(codeHelpIndex(appId, list), rows);
 
 const person = (profile: "user" | "guest", overrides: Partial<RequestAuthority> = {}) =>
   ({
@@ -44,24 +45,24 @@ test("each app's reference lists exactly the methods and events of the code_sdk 
   if (index.kind !== "index") throw new Error("expected the index");
   expect(index.apps.length).toBeGreaterThan(5);
   for (const app of index.apps) {
-    const reference = codeHelpReference(app.appId, manifests, rows);
+    const reference = codeHelpReference(app.appId, manifests);
     expect(reference.export).toBe(app.export);
     expect(reference.operations).toEqual(app.methods.map((method) => ({ ...method, policy: value(method.policy) })));
     expect(reference.events).toEqual(index.events.filter((event) => event.type.startsWith(`${app.appId}.`)));
   }
-  expect(codeHelpReference("nope", manifests, rows)).toEqual({ export: null, operations: [], events: [] });
+  expect(codeHelpReference("nope", manifests)).toEqual({ export: null, operations: [], events: [] });
 });
 
 test("a new manifest operation appears in the reference without a hand edit", () => {
   const weather = manifests.find((manifest) => manifest.appId === "weather");
   const query = weather?.queries[0];
   if (!weather || !query) throw new Error("weather declares a query");
-  const before = codeHelpReference("weather", manifests, rows);
+  const before = codeHelpReference("weather", manifests);
   const added: CapabilityManifest = {
     ...weather,
     queries: [...weather.queries, { ...query, localId: "outlook", description: "Show the outlook for a place. More detail." }],
   };
-  const after = codeHelpReference("weather", [added], rows);
+  const after = codeHelpReference("weather", [added]);
   expect(after.operations).toHaveLength(before.operations.length + 1);
   expect(after.operations).toContainEqual({
     path: "weather.outlook",
@@ -80,8 +81,13 @@ test("only signed-in members with a writing credential can author Code; guests c
   ).toBe(false);
 });
 
-test("the loader reads nothing for a guest, reads no policy for an app without Code, and reports a failed read", async () => {
-  const load = spyOn(catalog, "loadCodeSdkManifests").mockResolvedValue(manifests);
+test("the loader reads one catalog entry, asks the policy only for operations, and reports a failed read", async () => {
+  const weather = manifests.find((manifest) => manifest.appId === "weather")!;
+  let entry: CapabilityManifest | null = weather;
+  const load = spyOn(catalog, "getCapabilityCatalogApp").mockImplementation(async () => ({
+    ok: true,
+    data: entry && { appId: entry.appId, appName: entry.appId, appIcon: "ti ti-box", appDescription: "", manifest: entry },
+  }));
   const effective = spyOn(policy, "effectiveCodePolicy").mockResolvedValue({
     revision: 1,
     rows: rows.map((row) => ({ ...row, source: "default", groupIds: [] })),
@@ -90,12 +96,19 @@ test("the loader reads nothing for a guest, reads no policy for an app without C
   expect(await loadCodeHelpReference("weather", { authority: person("guest") })).toBeNull();
   expect(load).not.toHaveBeenCalled();
 
-  expect(await loadCodeHelpReference("no-code-app", { authority: person("user") })).toEqual({ export: null, operations: [], events: [] });
-  expect(effective).not.toHaveBeenCalled();
+  expect(await loadCodeHelpReference("weather", { authority: person("user"), locale: "de" })).toEqual(
+    codeHelpReference("weather", manifests),
+  );
+  expect(load).toHaveBeenLastCalledWith("weather", "de", person("user"));
+  expect(effective).toHaveBeenCalledTimes(1);
 
-  const weather = await loadCodeHelpReference("weather", { authority: person("user"), locale: "de" });
-  expect(weather).toEqual(codeHelpReference("weather", manifests, rows));
-  expect(load).toHaveBeenLastCalledWith({ authority: person("user"), locale: "de" });
+  // An app the reader cannot use, or one whose manifest offers Code nothing, shows the empty state without a policy read.
+  effective.mockClear();
+  entry = null;
+  expect(await loadCodeHelpReference("weather", { authority: person("user") })).toEqual({ export: null, operations: [], events: [] });
+  entry = { ...weather, queries: [], actions: [] };
+  expect(await loadCodeHelpReference("weather", { authority: person("user") })).toEqual({ export: "weather", operations: [], events: [] });
+  expect(effective).not.toHaveBeenCalled();
 
   // The warning stays in the test; it must not try to write to Postgres.
   const warnings: unknown[] = [];
@@ -106,7 +119,13 @@ test("the loader reads nothing for a guest, reads no policy for an app without C
     warn: (...args: unknown[]) => warnings.push(args),
   });
   spies.push(log);
-  load.mockRejectedValueOnce(new Error("catalog down"));
+  load.mockResolvedValueOnce({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Cloud is unavailable.", status: 503 } });
   expect(await loadCodeHelpReference("weather", { authority: person("user") })).toBe("failed");
-  expect(warnings).toEqual([["Code help reference unavailable", { appId: "weather", error: "catalog down" }]]);
+  entry = weather;
+  effective.mockRejectedValueOnce(new Error("policy down"));
+  expect(await loadCodeHelpReference("weather", { authority: person("user") })).toBe("failed");
+  expect(warnings).toEqual([
+    ["Code help reference unavailable", { appId: "weather", error: "Cloud is unavailable." }],
+    ["Code help reference unavailable", { appId: "weather", error: "policy down" }],
+  ]);
 });
