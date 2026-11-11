@@ -792,18 +792,22 @@ for (const viewport of ["desktop", "phone"] as const)
             const style = getComputedStyle(shell);
             const probe = document.createElement("span");
             // Focus turns the field edge blue, also on an invalid field (its message stays).
-            probe.style.boxShadow = "inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-focus)";
+            probe.style.color = "var(--k2b-edge-focus)";
             shell.append(probe);
-            const expected = getComputedStyle(probe).boxShadow;
+            const expected = getComputedStyle(probe).color;
             probe.remove();
             return {
+              edge: style.borderTopColor,
+              edgeWidth: style.borderTopWidth,
               shadow: style.boxShadow,
               expected,
               height: shell.getBoundingClientRect().height,
               width: style.getPropertyValue("--k2b-focus-width").trim(),
             };
           });
-          expect(normal.shadow).toBe(normal.expected);
+          expect(normal.edge).toBe(normal.expected);
+          expect(normal.edgeWidth).toBe("2px");
+          expect(normal.shadow).toBe("none");
           expect(normal.height).toBe(26);
           await target.emulateMedia({ forcedColors: "active" });
           await settled(target);
