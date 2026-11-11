@@ -5,7 +5,7 @@ section: Platform services
 order: 970
 description: Build, check, test and submit lasting Code in a Gustav conversation.
 tags: [code, ai, sdk, versions]
-updated: 2026-11-08
+updated: 2026-11-11
 ---
 
 # Build Code in Gustav
@@ -24,14 +24,14 @@ background tasks cannot use these tools to edit lasting Code.
 
 | Tool | What it does |
 | --- | --- |
-| `code_init` | Creates Code and returns its initial editable project. Omit `owner` for personal Code. |
-| `code_pull` or `code_read({codeId})` | Returns the latest submitted files and `code.json` metadata, including `baseVersionId`. |
+| `code_init` | Creates Code, returns its initial editable project and initializes this chat's draft. Omit `owner` for personal Code. |
+| `code_pull` or `code_read({codeId})` | Returns the latest submitted files and `code.json` metadata, including `baseVersionId`, and resets this chat's draft. |
 | `code_sdk` | Without `apps`, returns an index of every app export, method path, policy row and automation event, one line each. With `apps` (at most two per call), returns the generated `@sdk` declarations of those apps and of the shared `app`, page, `db`, `http` and event types. |
-| `code_write({project,path,content})` | Replaces one file in the supplied project and returns the complete replacement project. |
-| `code_check` | Checks `{codeId,files,entry}` and lists permissions with source file and line. |
-| `code_test` | Checks source and runs the supplied `test/NAME.json` fixtures against fake data. |
-| `code_simulate` | Checks source and simulates one fixture with exactly one invocation. |
-| `code_submit` | Checks and saves an immutable version against the supplied `baseVersionId`. Pass the fixtures as `tests`: Core runs them and shows the result to reviewers. |
+| `code_write({codeId,path,content})` | Replaces one draft file and returns a compact summary of paths, byte counts, entry, base version and expiry. Use `{codeId,path,delete:true}` to remove a file or `{codeId,path,renameTo}` to rename it. |
+| `code_check({codeId})` | Checks the draft and lists permissions with source file and line. |
+| `code_test({codeId})` | Checks the draft and runs its `test/NAME.json` fixtures against fake data. Write fixtures through `code_write`. |
+| `code_simulate({codeId,fixture})` | Checks the draft and simulates one fixture with exactly one invocation. |
+| `code_submit({codeId})` | Checks and saves the draft as an immutable version against its saved base. Core runs the draft's fixtures and shows the result to reviewers; a successful submit advances the draft's base to that version. |
 | `code_diff` | Returns complete file differences and permissions for a submitted version. |
 
 Gustav loads the `code-authoring` Skill with these tools. It holds the
@@ -67,9 +67,33 @@ ordinary step. The Assistant workspace and the Cloud app on a phone both show it
 
 ## Draft and conflict rules
 
-Draft writes stay in the conversation. Pass the replacement project into the
-next write, and its files into check, test and submit. Pull retrieves submitted
-files, so submit before relying on a later pull to recover an edit.
+Core holds one draft per Code and chat. The draft is what the last
+`code_init`, `code_pull` or `code_read` returned, plus later writes. Those
+three tools reset the draft's files, entry and base version and clear its
+fixtures. Another conversation has its own draft.
+
+Write one file at a time. Paths under `test/` ending in `.json` are fixtures;
+other paths are source files. Parallel writes to different files both survive.
+Check, test, simulate and submit read this same draft, so later calls need
+only `codeId` (plus `fixture` for simulation).
+
+A draft expires seven days after its last change; checking it does not extend
+that time. Missing or expired drafts return `NOT_FOUND` with guidance to call
+`code_pull` or `code_init` first. Pull retrieves saved files, so unsaved edits
+cannot be recovered by pulling. On a version conflict, pull resets the draft
+to the latest version; re-apply edits and fixtures, check and submit again.
+
+Drafts share the checker limits: at most 64 source files, 256 KiB of UTF-8
+source in total and 8 MiB of source plus fixture content. A write exceeding
+these limits returns `BAD_INPUT` and leaves the previous draft intact.
+
+Existing chats can still supply `files`, `entry`, `tests` or `baseVersionId`
+where the command accepts them: each supplied part replaces that draft part
+before the command runs. A call with `files` can create a missing draft,
+using the supplied base or `null`. The legacy
+`code_write({project,path,content})` alias replaces the draft with that
+edited project and returns the complete replacement project as before.
+Alias inputs retain the request-size guard. HTTP and CLI inputs stay unchanged.
 
 The operation list names stored target handles, source locations and differences
 from the running version. It grants no permission and does not inspect current
@@ -145,7 +169,9 @@ Studio apps and direct app APIs have been retired.
 ## Maintainer contract: shared CLI and chat JSON
 
 Chat results use the same schemas and services as [cld code](/en/docs/platform/code-cli).
-There is no chat-specific success wrapper. The contracts are
+Chat-only inputs make draft parts optional, and `code_write` returns
+`CodeChatDraftSummarySchema` for single-file edits. Other success results
+remain unchanged. The shared HTTP/CLI contracts are
 `codeAuthoringContracts`, `CodeAuthoringInput<K>` and `CodeAuthoringData<K>` in
 `packages/core/src/code/authoring-contracts.ts`; `CodeProjectSchema`,
 `CodeAuthoringPermissionSchema` and `CodeAuthoringErrorSchema` describe metadata,
