@@ -233,6 +233,10 @@ for (const scenario of ["connection", "all connections", "authentication", "reci
       messageId: "<test@example.org>",
       accepted: ["recipient@example.org"],
       rejected: [],
+      response: "250 queued",
+      envelopeTime: 0,
+      messageTime: 0,
+      messageSize: 0,
     }));
     try {
       const sending = outgoingMailTest.send("alerts", "recipient@example.org", { actor: { uid: "admin" } });

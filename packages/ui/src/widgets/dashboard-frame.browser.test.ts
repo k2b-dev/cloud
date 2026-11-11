@@ -43,7 +43,7 @@ afterAll(async () => {
 
 const mount = async (page: Page, hostWidth: number, tableHeight?: string) => {
   await page.setContent(
-    `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" data-theme="light" style="margin:0"><div id="host" style="width:${hostWidth}px"></div></body></html>`,
+    `<!doctype html><html lang="en"><head><style>${css}</style></head><body tabindex="-1" class="k2b-ui" data-theme="light" style="margin:0"><div id="host" style="width:${hostWidth}px"></div></body></html>`,
   );
   if (tableHeight) await page.evaluate((height) => Object.assign(window, { tableHeight: height }), tableHeight);
   await page.addScriptTag({ content: script });

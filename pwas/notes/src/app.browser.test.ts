@@ -191,7 +191,12 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.goto(origin);
     await page.waitForURL(/\/n\/[A-Za-z0-9]{22}$/);
     await page.getByRole("textbox", { name: "Willkommen", exact: true }).waitFor();
+    // CodeMirror renders a viewport, so visit the final paragraph before reading it.
+    await editor().press("Control+End");
+    await settled(page);
     expect(await editor().innerText()).toContain("Tippe / für mehr.");
+    await editor().press("Control+Home");
+    await settled(page);
     // A real note, rendered like any other: notice, chart from its table, checklist boxes and a tag pill.
     await page.locator(".cm-notice-card-widget").first().waitFor();
     await page.locator(".cm-query-block-preview svg").first().waitFor();
