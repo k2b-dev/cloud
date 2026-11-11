@@ -74,17 +74,21 @@ fixtures. Another conversation has its own draft.
 
 Write one file at a time. Paths under `test/` ending in `.json` are fixtures;
 other paths are source files. Parallel writes to different files both survive.
+A rename never overwrites another draft file; it returns `CONFLICT` instead.
 Check, test, simulate and submit read this same draft, so later calls need
 only `codeId` (plus `fixture` for simulation).
 
 A draft expires seven days after its last change; checking it does not extend
-that time. Missing or expired drafts return `NOT_FOUND` with guidance to call
+that time. Deleting the chat removes its drafts at the next cleanup. A submit
+moves the draft to the new version only while the draft still holds what was
+submitted; a draft pulled or expired meanwhile keeps its state, and the saved
+version still reaches the chat. Missing or expired drafts return `NOT_FOUND` with guidance to call
 `code_pull` or `code_init` first. Pull retrieves saved files, so unsaved edits
 cannot be recovered by pulling. On a version conflict, pull resets the draft
 to the latest version; re-apply edits and fixtures, check and submit again.
 
 Drafts share the checker limits: at most 64 source files, 256 KiB of UTF-8
-source in total and 8 MiB of source plus fixture content. A write exceeding
+source in total and 8 MiB for the whole draft, paths included. A write exceeding
 these limits returns `BAD_INPUT` and leaves the previous draft intact.
 
 Existing chats can still supply `files`, `entry`, `tests` or `baseVersionId`

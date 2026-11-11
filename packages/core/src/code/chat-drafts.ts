@@ -34,6 +34,9 @@ function validate(draft: CodeChatDraftParts) {
     throw new CodeDataError("BAD_INPUT", `Code draft exceeds the ${CODE_CHECK_LIMITS.sourceBytes} source byte limit.`);
   if (sourceBytes + testBytes > CODE_CHECK_LIMITS.requestBytes)
     throw new CodeDataError("BAD_INPUT", `Code draft source and tests exceed the ${CODE_CHECK_LIMITS.requestBytes} byte limit.`);
+  // Paths and structure count too, so many empty fixtures cannot grow the stored draft past the request budget.
+  if (Buffer.byteLength(JSON.stringify(draft)) > CODE_CHECK_LIMITS.requestBytes)
+    throw new CodeDataError("BAD_INPUT", `Code draft exceeds the ${CODE_CHECK_LIMITS.requestBytes} byte limit.`);
 }
 /** Internal store: chat-tools must authorize this Code and supply its current conversation before every call.
  * The advisory lock also serializes first creation and replacement of expired rows; row locks protect existing edits.
@@ -76,6 +79,24 @@ export async function updateCodeChatDraft(
     return { ...next, codeId, expiresAt: expiresAt.toISOString() };
   });
 }
+/**
+ * After a submit, moves the draft to the new version only while it still holds exactly what was submitted. A draft
+ * replaced meanwhile, such as by a pull, or one that expired keeps its state; nothing fails because of it.
+ */
+export async function advanceCodeChatDraftBase(
+  codeId: string,
+  conversationId: string,
+  submitted: CodeChatDraftParts,
+  versionId: string,
+): Promise<void> {
+  const now = new Date();
+  await sql`UPDATE code.chat_drafts SET base_version_id=${versionId}::uuid,updated_at=${now},
+      expires_at=${new Date(now.getTime() + CODE_CHAT_DRAFT_LIFETIME_MS)}
+    WHERE code_id=${codeId} AND conversation_id=${conversationId}::uuid AND expires_at>${now}
+      AND entry=${submitted.entry} AND files=${JSON.stringify(submitted.files)}::text::jsonb
+      AND tests=${JSON.stringify(submitted.tests)}::text::jsonb
+      AND base_version_id IS NOT DISTINCT FROM ${submitted.baseVersionId}::uuid`;
+}
 export function codeChatDraftSummary(draft: CodeChatDraft): z.infer<typeof CodeChatDraftSummarySchema> {
   const list = (files: CodeSourceFiles) =>
     Object.keys(files)
@@ -93,10 +114,20 @@ export function codeChatDraftSummary(draft: CodeChatDraft): z.infer<typeof CodeC
     },
   };
 }
-/** One bounded batch in the existing sweep; replicas skip rows another sweep or edit owns. */
+/**
+ * One bounded batch in the existing sweep; replicas skip rows another sweep or edit owns. Drafts of a deleted chat go
+ * too. AI migrates after Code, so the draft has no foreign key to its chat; the sweep checks once the chats exist.
+ */
 export async function expireCodeChatDrafts({ now, limit }: { now: Date; limit: number }): Promise<void> {
   await sql`DELETE FROM code.chat_drafts WHERE ctid IN (
     SELECT ctid FROM code.chat_drafts WHERE expires_at<=${now} ORDER BY expires_at
+    LIMIT ${limit} FOR UPDATE SKIP LOCKED
+  )`;
+  const [chats] = await sql<{ table: string | null }[]>`SELECT to_regclass('ai.conversations')::text AS table`;
+  if (!chats?.table) return;
+  await sql`DELETE FROM code.chat_drafts WHERE ctid IN (
+    SELECT draft.ctid FROM code.chat_drafts draft
+    WHERE NOT EXISTS (SELECT 1 FROM ai.conversations chat WHERE chat.id=draft.conversation_id)
     LIMIT ${limit} FOR UPDATE SKIP LOCKED
   )`;
 }

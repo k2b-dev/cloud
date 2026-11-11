@@ -14,7 +14,13 @@ import {
   codeAuthoringContracts,
   codeChatAuthoringInputs,
 } from "./authoring-contracts";
-import { type CodeChatDraftParts, codeChatDraftSummary, requireCodeChatDraft, updateCodeChatDraft } from "./chat-drafts";
+import {
+  advanceCodeChatDraftBase,
+  type CodeChatDraftParts,
+  codeChatDraftSummary,
+  requireCodeChatDraft,
+  updateCodeChatDraft,
+} from "./chat-drafts";
 import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
 
 import { readCode } from "./store";
@@ -177,10 +183,9 @@ export function createCodeAuthoringChatTools() {
           },
           context,
         );
-        await updateCodeChatDraft(input.codeId, conversationId(chat), (current) => ({
-          ...requireCodeChatDraft(current),
-          baseVersionId: result.submission.version.id,
-        }));
+        // Only the draft that was submitted moves to the new base. A draft replaced meanwhile, such as by a pull, or one
+        // that expired keeps its state; the version is saved either way and the chat still gets it.
+        await advanceCodeChatDraftBase(input.codeId, conversationId(chat), draft, result.submission.version.id);
         return result;
       },
       "With {codeId}, check and submit the same server-held draft as code_check/code_test, including its baseVersionId and test fixtures as review evidence. Explicit files, entry, tests or baseVersionId replace that draft part first. Returns an immutable version for human review. Does not activate: the chat shows the person a card with the rights and who can switch it on, also possible in the UI or CLI. On unknown outcome pull before retrying.",
@@ -232,6 +237,8 @@ export function createCodeAuthoringChatTools() {
             else if (input.renameTo !== undefined) {
               if (!Object.hasOwn(next[bucket], input.path)) throw new CodeDataError("NOT_FOUND", "Code draft file not found.");
               const destination = isFixture(input.renameTo) ? "tests" : "files";
+              if (input.renameTo !== input.path && Object.hasOwn(next[destination], input.renameTo))
+                throw new CodeDataError("CONFLICT", "A draft file with the new name exists. Delete or rename it first.");
               next[destination] = { ...next[destination], [input.renameTo]: next[bucket][input.path]! };
               if (input.path !== input.renameTo) delete next[bucket][input.path];
               if (next.entry === input.path) next.entry = input.renameTo;

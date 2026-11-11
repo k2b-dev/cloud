@@ -32,7 +32,7 @@ import {
   CodeChatDraftSummarySchema,
   codeAuthoringContracts,
 } from "./authoring-contracts";
-import { CODE_CHAT_DRAFT_LIFETIME_MS } from "./chat-drafts";
+import { CODE_CHAT_DRAFT_LIFETIME_MS, expireCodeChatDrafts } from "./chat-drafts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 import * as origins from "./origins";
 import { codePolicyPreset } from "./policy-contracts";
@@ -255,6 +255,10 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       const renamed = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "code.ts", renameTo: "main.ts" }));
       expect(renamed.draft.files.map((item) => item.path)).toEqual(["a.ts", "b.ts", "main.ts"]);
       expect(renamed.draft.entry).toBe("main.ts");
+      // A rename never overwrites another draft file.
+      expect(CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: "a.ts", renameTo: "main.ts" })).error.code).toBe(
+        "CONFLICT",
+      );
       // Omitted entry must preserve main.ts, not the shared contract's code.ts default.
       expect(CodeChatCheckDataSchema.parse(await invoke("code_check", { codeId })).manifest?.entry).toBe("main.ts");
       await invoke("code_write", { codeId, path: "b.ts", delete: true });
@@ -321,6 +325,57 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     });
   });
 
+  test("a submit moves only the draft it submitted to the new version, and a draft gone meanwhile still gets the version", async () => {
+    await withDraftChat(async (invoke) => {
+      const { codeId } = codeAuthoringContracts.init.data.parse(await invoke("code_init", { title: "Submit bookkeeping" })).config;
+      await invoke("code_write", { codeId, path: "code.ts", content: "export const monday = async () => {}; // v1" });
+      const first = codeAuthoringContracts.submit.data.parse(await invoke("code_submit", { codeId }));
+      await invoke("code_write", { codeId, path: "code.ts", content: "export const monday = async () => {}; // v2" });
+      // While the submit checks, a pull replaces the draft with the saved version: it must keep that base.
+      runner.mockReturnValueOnce({
+        check: async (request) => {
+          await invoke("code_pull", { codeId });
+          return checked(request);
+        },
+      });
+      const second = codeAuthoringContracts.submit.data.parse(await invoke("code_submit", { codeId }));
+      const [replaced] = await sql<{ base_version_id: string }[]>`SELECT base_version_id FROM code.chat_drafts
+        WHERE code_id=${codeId} AND conversation_id=${id}::uuid`;
+      expect(replaced?.base_version_id).toBe(first.submission.version.id);
+      expect(second.submission.version.id).not.toBe(first.submission.version.id);
+      // A draft that expires during the submit leaves the saved version and its answer intact.
+      await invoke("code_pull", { codeId });
+      await invoke("code_write", { codeId, path: "code.ts", content: "export const monday = async () => {}; // v3" });
+      runner.mockReturnValueOnce({
+        check: async (request) => {
+          setSystemTime(new Date(Date.now() + CODE_CHAT_DRAFT_LIFETIME_MS + 1));
+          return checked(request);
+        },
+      });
+      expect(codeAuthoringContracts.submit.data.safeParse(await invoke("code_submit", { codeId })).success).toBe(true);
+    });
+  });
+
+  test("the sweep removes drafts of deleted chats once chats exist", async () => {
+    await withDraftChat(async (invoke) => {
+      const { codeId } = codeAuthoringContracts.init.data.parse(await invoke("code_init", { title: "Orphan draft" })).config;
+      const deleted = "33333333-3333-4333-8333-333333333334";
+      await invoke("code_check", { codeId, files: { "code.ts": "export default null;" } }, deleted);
+      // This suite does not migrate AI; stand in its chat table and drop only what the test created.
+      const [existing] = await sql<{ schema: string | null }[]>`SELECT to_regnamespace('ai')::text AS schema`;
+      await sql`CREATE SCHEMA IF NOT EXISTS ai`;
+      await sql`CREATE TABLE IF NOT EXISTS ai.conversations(id UUID PRIMARY KEY)`;
+      try {
+        await sql`INSERT INTO ai.conversations(id) VALUES(${id}::uuid) ON CONFLICT DO NOTHING`;
+        await expireCodeChatDrafts({ now: new Date(), limit: 100 });
+        const rows = await sql<{ conversation_id: string }[]>`SELECT conversation_id FROM code.chat_drafts WHERE code_id=${codeId}`;
+        expect(rows.map((row) => row.conversation_id)).toEqual([id]);
+      } finally {
+        if (!existing?.schema) await sql`DROP SCHEMA ai CASCADE`;
+      }
+    });
+  });
+
   test("chat draft budgets reject the post-write state atomically and retain the previous draft", async () => {
     await withDraftChat(async (invoke) => {
       const { codeId } = codeAuthoringContracts.init.data.parse(await invoke("code_init", { title: "Bounded draft" })).config;
@@ -334,11 +389,18 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       const stable = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "file0.ts", content: "" }));
       expect(stable.draft.files).toHaveLength(CODE_CHECK_LIMITS.files);
       expect(stable.draft.files.every((item) => item.bytes === 0)).toBe(true);
-      await invoke("code_write", { codeId, path: "test/one.json", content: "x".repeat(CODE_CHECK_LIMITS.requestBytes / 2) });
-      await invoke("code_write", { codeId, path: "test/two.json", content: "x".repeat(CODE_CHECK_LIMITS.requestBytes / 2) });
-      expect(CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: "test/three.json", content: "x" })).error.code).toBe(
-        "BAD_INPUT",
-      );
+      const half = CODE_CHECK_LIMITS.requestBytes / 2 - 4096;
+      await invoke("code_write", { codeId, path: "test/one.json", content: "x".repeat(half) });
+      await invoke("code_write", { codeId, path: "test/two.json", content: "x".repeat(half) });
+      expect(
+        CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: "test/three.json", content: "x".repeat(8192) })).error
+          .code,
+      ).toBe("BAD_INPUT");
+      // Paths count too: an empty fixture with a long name cannot grow the stored draft past the budget.
+      expect(
+        CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: `test/${"n".repeat(500)}.json`, content: "" })).error
+          .code,
+      ).toBe("BAD_INPUT");
       const after = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "test/absent.json", delete: true }));
       expect(after.draft.tests.map((item) => item.path)).toEqual(["test/one.json", "test/two.json"]);
     });
