@@ -1004,6 +1004,8 @@ export type CapabilityOperationPresentationTranslation = {
 export type CapabilityPresentationTranslation = {
   events?: Readonly<Record<string, { title?: string; description?: string }>>;
   types?: Readonly<Record<string, { title?: string; description?: string; codeAccount?: CodeAccountTypeLabels }>>;
+  /** The file provider's `title` in this locale; only for a provider that declares a `title`. */
+  fileProvider?: { title?: string };
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   actions?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   commands?: Readonly<
@@ -1142,7 +1144,18 @@ export type CapabilityCommandManifest = z.infer<typeof CapabilityCommandManifest
 type CapabilityDefinitionCatalog<T> = Readonly<Record<string, T>>;
 
 /** Offers files to other apps: local IDs of the list Query, the read Query, and the optional save Action. */
-export type CapabilityFileProviderDeclaration = { list: string; read: string; save?: string };
+export type CapabilityFileProviderDeclaration = {
+  list: string;
+  read: string;
+  save?: string;
+  /**
+   * The source's name in file dialogs, such as "Scanner", up to 80 characters in the presentation's base locale;
+   * translate it with `presentation.translations[locale].fileProvider.title`. Defaults to the application's name.
+   */
+  title?: string;
+  /** The source's Tabler icon class in file dialogs, such as `ti ti-scan`. Defaults to the application's icon. */
+  icon?: string;
+};
 
 export type CapabilityCalendarSourceDeclaration = { calendars: string; events: string; update?: string; move?: string; delete?: string };
 
@@ -1251,7 +1264,13 @@ export const CapabilityAppIdSchema = z
 const MAX_MANIFEST_ENTRIES = 200;
 
 export const CapabilityFileProviderManifestSchema = z
-  .object({ list: CapabilityLocalIdSchema, read: CapabilityLocalIdSchema, save: CapabilityLocalIdSchema.optional() })
+  .object({
+    list: CapabilityLocalIdSchema,
+    read: CapabilityLocalIdSchema,
+    save: CapabilityLocalIdSchema.optional(),
+    title: z.string().trim().min(1).max(80).optional(),
+    icon: z.string().min(1).max(120).optional(),
+  })
   .strict();
 
 export const CapabilityCalendarSourceManifestSchema = z

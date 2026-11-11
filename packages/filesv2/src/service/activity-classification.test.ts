@@ -83,6 +83,7 @@ const files: Record<string, Classification> = {
   list: base(),
   search: base(),
   folder: base(),
+  folderSearch: base(),
   publiclyShared: base(),
   folderLocation: base(),
   // Root resolution can provision a missing auto-created Cloud home.

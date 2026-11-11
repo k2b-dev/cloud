@@ -9,8 +9,8 @@ import {
   FILE_PROVIDER_NAME_CONFLICT,
   type FileProviderEntry,
   FileProviderListDataSchema,
-  FileProviderListInputSchema,
   FileProviderSaveInputSchema,
+  FileProviderTreeListInputSchema,
 } from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, isServiceError, ok, text } from "@k2b/stdlib";
@@ -18,7 +18,7 @@ import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
 import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
-import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, checkSearch, type FileEntry, SearchQuerySchema } from "./contracts";
+import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, checkSearch, type FileEntry, SEARCH_WORD_LIMIT, SearchQuerySchema } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { capabilityCall } from "./files-call";
@@ -144,22 +144,28 @@ const providerEntry = async (baseId: string, entry: FileEntry): Promise<FileProv
   return entry.directory ? { kind: "folder", ...facts } : { kind: "file", ...facts, size: entry.size, mediaType: mediaTypeOf(entry.name) };
 };
 
-/** The provider root: the caller's usable storage bases as folders, under the names Files shows. Never writable. */
-const providerRoot = async (c: CapabilityExecutionContext, input: z.output<typeof FileProviderListInputSchema>) => {
-  const offset = input.cursor === undefined ? 0 : /^\d{1,6}$/.test(input.cursor) ? Number(input.cursor) : -1;
-  if (offset < 0) throw new FilesError("cursor_invalid", 409);
+type ProviderListInput = z.output<typeof FileProviderTreeListInputSchema>;
+
+/** The caller's usable storage bases under the names Files shows, own storage first, in the provider root's order. */
+const rootBases = async (c: CapabilityExecutionContext) => {
   const locale = c.locale ?? "en";
   const messages = browserMessages.resolve([locale]).t;
-  const q = input.query?.trim().toLocaleLowerCase();
   const available = await filesService.bases(capabilityCall(c));
   // An outage must not look like lost storage: fail the whole root, even beside usable bases, so consumers offer a retry.
   if (available.issues.some((issue) => issue.code === "unavailable") || available.items.some((base) => base.reason === "unavailable"))
     throw new FilesError("unavailable", 503);
-  const bases = available.items
+  return available.items
     .filter((base) => base.status === "existing")
     .map((base) => ({ base, name: baseLabel(base, messages, locale) }))
-    .filter(({ name }) => !q || name.toLocaleLowerCase().includes(q))
     .sort((a, b) => (a.base.kind === b.base.kind ? a.name.localeCompare(b.name, locale) : a.base.kind === "users" ? -1 : 1));
+};
+
+/** The provider root: the caller's usable storage bases as folders, under the names Files shows. Never writable. */
+const providerRoot = async (c: CapabilityExecutionContext, input: ProviderListInput) => {
+  const offset = input.cursor === undefined ? 0 : /^\d{1,6}$/.test(input.cursor) ? Number(input.cursor) : -1;
+  if (offset < 0) throw new FilesError("cursor_invalid", 409);
+  const q = input.query?.trim().toLocaleLowerCase();
+  const bases = (await rootBases(c)).filter(({ name }) => !q || name.toLocaleLowerCase().includes(q));
   const page = bases.slice(offset, offset + input.limit);
   return {
     writable: false,
@@ -173,6 +179,98 @@ const providerRoot = async (c: CapabilityExecutionContext, input: z.output<typeo
     ),
     next: offset + page.length < bases.length ? String(offset + page.length) : null,
   };
+};
+
+const LOCATION_LIMIT = 1024;
+/** Filegate takes at most eight words; the first eight still find what the rest would narrow. */
+const searchWords = (query: string) => query.trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_WORD_LIMIT).join(" ");
+
+/** A search hit as a provider entry, with the folders between the searched folder and the hit as its location. */
+const providerHit = async (baseId: string, hit: FileEntry, searched: string, prefix: string[]): Promise<FileProviderEntry> => {
+  const below = searched ? hit.path.slice(searched.length + 1) : hit.path;
+  const location = [...prefix, ...below.split("/").slice(0, -1)].join(" / ");
+  const entry = await providerEntry(baseId, hit);
+  if (!location) return entry;
+  return { ...entry, location: location.length <= LOCATION_LIMIT ? location : `…${location.slice(-(LOCATION_LIMIT - 1))}` };
+};
+
+/**
+ * Filegate refuses a whole tree search under the person's Unix identity as soon as any folder below is unreadable, even
+ * one that would not match. Shared and group storage often has such folders; that is no lost access.
+ */
+const treeRefused = (error: unknown) => error instanceof FilegateError && error.status === 403;
+
+/**
+ * A name search in a folder and every folder below it, each hit with its location. Cursors say which way the search
+ * went: `s:` continues the tree search; `f:` continues the fallback when the tree was refused, which filters names
+ * inside the folder only and marks every page `incomplete`. Without a parent it searches every storage base of the
+ * caller, one search page per call (`t<base>:<cursor>`); a base whose tree is refused is left out and marks its page.
+ */
+const providerTreeSearch = async (c: CapabilityExecutionContext, input: ProviderListInput & { query: string }) => {
+  const q = searchWords(input.query);
+  const parent = input.parent;
+  if (parent !== undefined) {
+    const way = input.cursor === undefined ? "s" : input.cursor.slice(0, 2);
+    const after = input.cursor?.slice(2) || undefined;
+    if (way !== "s" && way !== "s:" && way !== "f:") throw new FilesError("cursor_invalid", 409);
+    if (way !== "f:") {
+      try {
+        const page = await filesService.folderSearch(capabilityCall(c), {
+          id: parent,
+          q,
+          after,
+          pageSize: input.limit,
+          signal: c.signal,
+        });
+        return {
+          writable: page.writable,
+          items: await Promise.all(page.items.map((hit) => providerHit(page.base.id, hit, page.path, []))),
+          next: page.next ? `s:${page.next}` : null,
+        };
+      } catch (error) {
+        // A refusal after the first page means the tree changed: the consumer restarts the search.
+        if (!treeRefused(error)) throw error;
+        if (after) throw new FilesError("cursor_invalid", 409, { cause: error });
+      }
+    }
+    const page = await filesService.folder(capabilityCall(c), {
+      id: parent,
+      q: input.query,
+      after: way === "f:" ? after : undefined,
+      pageSize: Math.ceil(input.limit / 2),
+    });
+    return {
+      writable: page.writable,
+      items: await Promise.all(page.items.map((entry) => providerEntry(page.base.id, entry))),
+      next: page.next ? `f:${page.next}` : null,
+      incomplete: true,
+    };
+  }
+  const cursor = /^t(\d{1,6})(?::(.+))?$/s.exec(input.cursor ?? "t0");
+  const index = cursor ? Number(cursor[1]) : -1;
+  const bases = await rootBases(c);
+  if (index < 0 || index >= Math.max(1, bases.length)) throw new FilesError("cursor_invalid", 409);
+  const current = bases[index];
+  if (!current) return { writable: false, items: [], next: null };
+  const following = index + 1 < bases.length ? `t${index + 1}` : null;
+  try {
+    const page = await filesService.search(capabilityCall(c), {
+      baseId: current.base.id,
+      q,
+      after: cursor?.[2],
+      pageSize: input.limit,
+      signal: c.signal,
+    });
+    return {
+      writable: false,
+      items: await Promise.all(page.items.map((hit) => providerHit(current.base.id, hit, "", [current.name]))),
+      next: page.next ? `t${index}:${page.next}` : following,
+    };
+  } catch (error) {
+    if (!treeRefused(error)) throw error;
+    // The base's hits on earlier pages stay; the rest of it is left out, and the search continues with the next base.
+    return { writable: false, items: [], next: following, incomplete: true };
+  }
 };
 
 const SavedFile = z
@@ -415,12 +513,17 @@ export const fileQueries = {
   "provider.list": {
     title: "Browse files for a file chooser",
     description:
-      "Read one page of a folder for choosing or saving files: without parent, the accessible storage bases; inside, readable folders first, then files. Continue with next until null, including empty filtered pages. Open files with content.read.",
-    input: FileProviderListInputSchema,
+      "Read one page of a folder for choosing or saving files: without parent, the accessible storage bases; inside, readable folders first, then files. With query and scope tree, find names in the folder and every folder below it, each hit with its location. Continue with next until null, including empty filtered pages. Open files with content.read.",
+    input: FileProviderTreeListInputSchema,
     data: FileProviderListDataSchema,
     openWorld: false,
-    run: async (input: z.output<typeof FileProviderListInputSchema>, c: CapabilityExecutionContext) =>
+    run: async (input: ProviderListInput, c: CapabilityExecutionContext) =>
       domain(c, async () => {
+        const query = input.query?.trim();
+        if (input.scope === "tree" && query) {
+          const data = await providerTreeSearch(c, { ...input, query });
+          return ok({ data, page: capabilityPage(data.next) });
+        }
         if (input.parent === undefined) {
           const data = await providerRoot(c, input);
           return ok({ data, page: capabilityPage(data.next) });

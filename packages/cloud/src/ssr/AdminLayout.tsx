@@ -21,6 +21,8 @@ type AdminLayoutContext = {
   get(key: "settings"): Record<string, any>;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
   get(key: "adminCodeApprovals"): number | undefined;
+  get(key: "sessionIdle"): AuthContext["Variables"]["sessionIdle"];
+  get(key: "credentialProof"): AuthContext["Variables"]["credentialProof"];
   req: { raw: { headers: Headers; url: string } };
 };
 type Props = {

@@ -9,7 +9,7 @@ import { cloudResourceSearchUrl, filterCloudResourceSearchItems, groupCloudResou
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
-import { commandSearchItem, matchingCommands, type PaletteCommand } from "./search-commands";
+import { commandSearchItem, isShellCommand, matchingCommands, type PaletteCommand } from "./search-commands";
 import {
   applySearchLine,
   breakSearchRun,
@@ -280,8 +280,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     return { context, commands: matching.filter((command) => previous.commands.some((shown) => shown.id === command.id)) };
   });
   const items = createMemo(() => {
-    const commands = shownCommands().commands.map((command) =>
-      commandSearchItem(command, command.context ? t().contextActions : t().actions),
+    // The shell's own commands apply on every page, so they form the group "Cloud" ahead of the page's commands.
+    const shown = shownCommands().commands;
+    const commands = [...shown.filter(isShellCommand), ...shown.filter((command) => !isShellCommand(command))].map((command) =>
+      commandSearchItem(command, isShellCommand(command) ? t().cloudActions : command.context ? t().contextActions : t().actions),
     );
     // Instant rows come first: streamed app sections are appended below them and never push them down.
     return [...commands, ...results()];

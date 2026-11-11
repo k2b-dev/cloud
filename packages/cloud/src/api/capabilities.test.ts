@@ -1331,7 +1331,7 @@ test("the browser file chooser browses and reads a provider through Core's route
   const [source] = await loadFileProviders(caller);
   expect(source).toMatchObject({ appId: "drive", list: "folder.list", read: "file.read", maxBytes: 64 });
   const page = await listProviderFolder(source!, {}, caller);
-  expect(page).toEqual({ items: [listed], next: null, writable: false });
+  expect(page).toEqual({ items: [listed], next: null, writable: false, incomplete: false });
   const file = await readProviderFile(source!, listed, { ...caller, maxBytes: 64, accept: "text/*" });
   expect(await file.text()).toBe(bytes);
   expect(file.type).toStartWith("text/plain");

@@ -56,6 +56,7 @@ import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
 import { migrate as migrateExtensions } from "./migrate/core/extensions";
+import { migrate as migrateFileChooserPlaces } from "./migrate/core/file-chooser-places";
 import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrateKnownApps } from "./migrate/core/known-apps";
 import { migrate as migrateLogging } from "./migrate/core/logging";
@@ -66,6 +67,7 @@ import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrat
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
+import { migrate as migrateScreenPreferences } from "./migrate/core/screen-preferences";
 import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateStorageBuckets } from "./migrate/core/storage-buckets";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
@@ -150,7 +152,9 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
     { name: "panel-context-consent", run: migratePanelContextConsent },
+    { name: "file-chooser-places", run: migrateFileChooserPlaces },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
+    { name: "screen-preferences", run: migrateScreenPreferences },
     { name: "app-approval", run: migrateAppApproval },
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },

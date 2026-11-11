@@ -7,6 +7,7 @@ import {
   Avatar,
   addPanesItem,
   BottomSheet,
+  Breadcrumbs,
   Button,
   ButtonLink,
   bottomSheetAdaptiveOptions,
@@ -2001,6 +2002,36 @@ const PageTitleDemo = () => (
   </DemoCard>
 );
 
+const breadcrumbLevels = ["Files", "Office", "Scanner inbox at the entrance", "Info sheets for all sites", "Notice signs"];
+
+const BreadcrumbsDemo = () => {
+  const [depth, setDepth] = createSignal(breadcrumbLevels.length);
+  return (
+    <DemoCard
+      id="breadcrumbs"
+      chip={{ kind: "component", name: "Breadcrumbs", from: "@k2b/ui" }}
+      description="A folder path inside a dialog or panel: the levels above as blue links, the current level as text, no Up arrow. A long path stays on one line, scrolls to its end, and fades on the side where more levels follow. Choose a level to go up."
+      code={`<Breadcrumbs label="Folder path" items={levels.map((label) => ({ label }))} onSelect={(index) => open(index)} />`}
+    >
+      <div style={{ "max-width": "22rem" }}>
+        <Breadcrumbs
+          label="Folder path"
+          items={breadcrumbLevels.slice(0, depth()).map((label) => ({ label }))}
+          onSelect={(index) => setDepth(index + 1)}
+        />
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={depth() === breadcrumbLevels.length}
+        onClick={() => setDepth(breadcrumbLevels.length)}
+      >
+        Open the deepest folder
+      </Button>
+    </DemoCard>
+  );
+};
+
 const ScrollAreaDemo = () => (
   <DemoCard
     id="scroll-area"
@@ -2487,6 +2518,7 @@ const items = [
   "page-title": () => (
     <DemoGrid columns="one">
       <PageTitleDemo />
+      <BreadcrumbsDemo />
     </DemoGrid>
   ),
   "pull-to-refresh": () => <PullToRefreshDemo />,

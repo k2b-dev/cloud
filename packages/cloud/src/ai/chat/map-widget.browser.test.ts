@@ -1,9 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { mapAddress } from "../map.test-fixture";
 import { startMapBrowserFixture } from "../map-browser.test-fixture";
 import type { AiMapCommand } from "../map-contracts";
+
+// Each case opens the map dialog and runs a flow through it, some with a reload; one step keeps Playwright's own wait.
+setDefaultTimeout(30_000);
 
 let fixture: Awaited<ReturnType<typeof startMapBrowserFixture>>;
 let browser: Browser;
@@ -36,31 +39,119 @@ const open = async (scenario: string, width = 1440, extra = "") => {
   expect(errors).toEqual([]);
   return { page, context };
 };
+/** The chat's tile: it keeps its place and size through every change of the map. */
 const dimensions = async (page: Page) =>
   page.locator(".ai-map").evaluate((el) => {
     const b = el.getBoundingClientRect();
     return { top: b.top, height: b.height, width: b.width };
   });
-test("places use numbered pins, keyboard/list/map selection and unknown hours", async () => {
-  fixture.get("places-keyboard").map.groups[0]!.places[5]!.website = "https://[";
-  const { page, context } = await open("places-keyboard");
+const tile = (page: Page) => page.locator(".ai-map .k2b-map-tile__open");
+const dialog = (page: Page) => page.locator("dialog[open]");
+const openDialog = async (page: Page) => {
+  await tile(page).click();
+  await dialog(page).locator(".k2b-map-dialog").waitFor();
+  return dialog(page);
+};
+/** Route tools sit in the dialog's "More actions" menu. */
+const menu = async (page: Page, name: string) => {
+  await dialog(page).getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+};
+const option = (page: Page, name: string | RegExp) => dialog(page).getByRole("option", { name });
+
+test.each([1440, 390])("a place's note, symbol and safe links show in the dialog, also after reload, at %i", async (width) => {
+  const { page, context } = await open(`places-details-${width}`, width);
   const errors = pageErrors(page);
   try {
-    expect(await page.locator(".ai-map__place").count()).toBe(6);
-    const list = page.getByRole("listbox", { name: "Orte" });
-    await list.focus();
-    await page.keyboard.press("End");
-    await page.getByText("◷ Öffnungszeiten unbekannt", { exact: true }).waitFor();
-    await page.keyboard.press("Home");
-    expect(await page.locator(".ai-map__place").first().getAttribute("aria-selected")).toBe("true");
-    expect(await page.locator(".ai-map__info").innerText()).toContain("heute 10:00–17:00 Uhr");
-    await page.locator('[data-id="museum-2"]').click();
-    expect(await page.locator(".ai-map__place").nth(2).getAttribute("aria-selected")).toBe("true");
+    await openDialog(page);
+    for (const reload of [false, true]) {
+      // The open map comes back with the reload.
+      if (reload) await page.reload();
+      const detail = dialog(page).locator(".k2b-map-dialog__detail");
+      await detail.getByText("Meet at the main entrance.").waitFor();
+      expect(await detail.innerText()).toContain("Visit notes");
+      expect(await detail.locator(".ti-notebook").count()).toBe(1);
+      const local = detail.getByRole("link", { name: "Open in Cloud" });
+      expect(new URL((await local.getAttribute("href"))!).pathname).toBe("/app/example/items/1");
+      expect(await local.getAttribute("target")).toBeNull();
+      const external = detail.getByRole("link", { name: "Read website" });
+      expect(await external.getAttribute("target")).toBe("_blank");
+      expect(await external.getAttribute("rel")).toBe("noopener noreferrer");
+    }
     expect(errors).toEqual([]);
   } finally {
     await context.close();
   }
 });
+test("a route stop shows its note with the stop's details", async () => {
+  const { page, context } = await open("route-details");
+  try {
+    await openDialog(page);
+    await dialog(page).locator('.k2b-map-dialog__place[data-place-id="stop-1"]').click();
+    expect(await dialog(page).locator(".k2b-map-dialog__detail").innerText()).toContain("Meet at the main entrance.");
+  } finally {
+    await context.close();
+  }
+});
+
+test("places open from a still tile; keyboard, list and map share the selection; unknown hours", async () => {
+  fixture.get("places-keyboard").map.groups[0]!.places[5]!.website = "https://[";
+  const { page, context } = await open("places-keyboard");
+  const errors = pageErrors(page);
+  try {
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("6 Orte");
+    expect(await page.locator(".ai-map button.k2b-map-view__pin").count()).toBe(0);
+    await tile(page).focus();
+    await page.keyboard.press("Enter");
+    const d = dialog(page);
+    await d.locator(".k2b-map-dialog").waitFor();
+    expect(await d.locator(".k2b-map-dialog__place").count()).toBe(6);
+    const list = d.getByRole("listbox", { name: "Orte" });
+    await list.focus();
+    await page.keyboard.press("End");
+    await d.locator(".k2b-map-dialog__detail").getByText("Öffnungszeiten unbekannt", { exact: true }).waitFor();
+    await page.keyboard.press("Home");
+    expect(await d.locator(".k2b-map-dialog__place").first().getAttribute("aria-selected")).toBe("true");
+    expect(await d.locator(".k2b-map-dialog__detail").innerText()).toContain("heute 10:00–17:00 Uhr");
+    await d.locator('[data-id="museum-2"]').click();
+    expect(await d.locator(".k2b-map-dialog__place").nth(2).getAttribute("aria-selected")).toBe("true");
+    // "Als Notebook speichern" is gone (decision F6); places keep "Route hierher" and "Mehr in der Nähe".
+    expect(await page.getByRole("button", { name: "Als Notebook speichern" }).count()).toBe(0);
+    expect(await d.getByRole("button", { name: "Route hierher" }).count()).toBe(1);
+    expect(await d.getByRole("button", { name: "Mehr in der Nähe" }).count()).toBe(1);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-map-tile__open"));
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("Back closes the map onto the tile; a reload with the map open opens it again", async () => {
+  // An older map of a long conversation: its address also names the message, so a reload loads that part.
+  fixture.get("places-history").map.anchorSeq = 12;
+  const { page, context } = await open("places-history");
+  try {
+    await openDialog(page);
+    const mapId = fixture.get("places-history").map.id;
+    expect(new URL(page.url()).searchParams.get("map")).toBe(mapId);
+    expect(new URL(page.url()).searchParams.get("message")).toBe("12");
+    await page.goBack();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-map-tile__open"));
+    expect(new URL(page.url()).searchParams.get("scenario")).toBe("places-history");
+    expect(new URL(page.url()).searchParams.has("map")).toBe(false);
+    expect(new URL(page.url()).searchParams.has("message")).toBe(false);
+    await openDialog(page);
+    await page.reload();
+    await dialog(page).locator(".k2b-map-dialog__place").first().waitFor();
+    await dialog(page).getByRole("button", { name: "Schließen" }).first().click();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]") && !new URL(location.href).searchParams.has("map"));
+  } finally {
+    await context.close();
+  }
+});
+
 describe.each([1440, 390])("saved map follow-up at %i", (width) => {
   let opened: Awaited<ReturnType<typeof open>>;
   beforeAll(async () => {
@@ -69,10 +160,10 @@ describe.each([1440, 390])("saved map follow-up at %i", (width) => {
   afterAll(async () => {
     await opened?.context.close();
   });
-  test("retains original map, conversation and measured dimensions through reload", async () => {
+  test("retains the original tile and conversation; the dialog lists both groups after reload", async () => {
     const { page } = opened;
     const before = await dimensions(page);
-    expect(before.height).toBe(width === 1440 ? 811 : 960);
+    expect(before.height).toBe(240);
     await page.evaluate(() =>
       window.mapFollowup({ type: "search", search: { title: "Cafés", categories: ["cafe"], placeId: "museum-0" } }),
     );
@@ -80,19 +171,19 @@ describe.each([1440, 390])("saved map follow-up at %i", (width) => {
     await settled(page);
     expect(await page.locator(".ai-map").count()).toBe(1);
     expect(await dimensions(page)).toEqual(before);
-    expect(await page.locator(".ai-map__place[data-second=true]").count()).toBe(4);
     expect(await page.locator("body").innerText()).toContain("Deine bisherigen Antworten bleiben erhalten");
     await page.reload();
-    await page.locator(".ai-map__place[data-second=true]").first().waitFor();
+    await page.locator(".ai-map").waitFor();
     await settled(page);
     expect(await dimensions(page)).toEqual(before);
-    if (width === 390) {
-      expect(await page.locator(".ai-map__list").evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
-      await page.getByRole("button", { name: "Alle 10 Orte" }).click();
-      expect(await page.locator(".ai-map__place:visible").count()).toBe(10);
-    }
+    const d = await openDialog(page);
+    await d.locator('.k2b-map-dialog__place[data-tone="second"]').first().waitFor();
+    expect(await d.locator('.k2b-map-dialog__place[data-tone="second"]').count()).toBe(4);
+    expect(await d.locator(".k2b-map-dialog__group").allTextContents()).toEqual(["Museen", "Cafés"]);
+    expect(await d.locator(".k2b-map-dialog__place").count()).toBe(10);
   });
 });
+
 describe.each(["/app/assistant", "/app/assistant/panel"])("older map navigation from %s", (path) => {
   describe.each([1440, 390])("at %i", (width) => {
     const scenario = `places-jump-${path.endsWith("panel") ? "panel" : "full"}-${width}`;
@@ -144,6 +235,20 @@ describe.each(["/app/assistant", "/app/assistant/panel"])("older map navigation 
     });
   });
 });
+
+test("a follow-up link jumps to the tile and focuses it", async () => {
+  const { page, context } = await open("places-jump-here");
+  try {
+    await page.evaluate(() =>
+      window.mapFollowup({ type: "search", search: { title: "Cafés", categories: ["cafe"], placeId: "museum-0" } }),
+    );
+    await page.getByRole("link", { name: /Zur Karte/ }).click();
+    await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-map-tile__open"));
+  } finally {
+    await context.close();
+  }
+});
+
 describe.each([1440, 390])("named place search at %i", (width) => {
   const scenario = `route-name-${width}`;
   let opened: Awaited<ReturnType<typeof open>>;
@@ -153,18 +258,15 @@ describe.each([1440, 390])("named place search at %i", (width) => {
   afterAll(async () => {
     await opened?.context.close();
   });
-  test("submits the provider name, fits all results and restores after reload", async () => {
+  test("submits the provider name, lists the results and restores them after reload", async () => {
     const { page } = opened;
     const before = await dimensions(page);
-    expect(before.height).toBe(width === 1440 ? 869 : 853);
-    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
-    await page.getByLabel("Ortsname (optional)", { exact: true }).fill(" Wasserfall ");
-    await settled(page);
-    expect(await dimensions(page)).toEqual(before);
-    if (process.env.PLACE_NAME_EVIDENCE_DIR)
-      await page.screenshot({ path: `${process.env.PLACE_NAME_EVIDENCE_DIR}/route-name-form-light-${width}.png`, fullPage: true });
-    await page.getByRole("button", { name: "Suchen", exact: true }).click();
-    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+    expect(before.height).toBe(240);
+    await openDialog(page);
+    await menu(page, "Stopp einfügen");
+    await dialog(page).getByLabel("Ortsname (optional)", { exact: true }).fill(" Wasserfall ");
+    await dialog(page).getByRole("button", { name: "Suchen", exact: true }).click();
+    await option(page, /^Fiktiver Wasserfall 3/).click();
     expect(fixture.commands.at(-1)).toMatchObject({
       type: "search",
       insert: true,
@@ -172,20 +274,23 @@ describe.each([1440, 390])("named place search at %i", (width) => {
     });
     expect(fixture.get(scenario).map.lastSearch?.name).toBe("Wasserfall");
     expect(fixture.placeSearches.at(-1)).toMatchObject({ name: "Wasserfall", categories: ["attraction"], limit: 5 });
-    await settled(page);
+    expect(await dialog(page).locator(".k2b-map-dialog__place").count()).toBe(5);
+    // settled: the tile's box behind the dialog depends only on its fixed size, not on any running animation.
     expect(await dimensions(page)).toEqual(before);
-    const stages = await page.locator(".ai-map__stages").boundingBox();
-    const lastChoice = await page.getByRole("button", { name: /5\. Fiktiver Wasserfall 5/ }).boundingBox();
-    expect(lastChoice!.y + lastChoice!.height).toBeLessThanOrEqual(stages!.y + stages!.height);
-    if (process.env.PLACE_NAME_EVIDENCE_DIR)
-      await page.screenshot({ path: `${process.env.PLACE_NAME_EVIDENCE_DIR}/route-name-results-light-${width}.png`, fullPage: true });
+    // The map stays open in its own history entry through the reload.
     await page.reload();
-    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
-    expect(await page.getByLabel("Ortsname (optional)", { exact: true }).inputValue()).toBe("Wasserfall");
-    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+    await dialog(page).locator(".k2b-map-dialog").waitFor();
+    // The results to pick from bring their form back; the other tools wait meanwhile.
+    expect(await dialog(page).getByLabel("Ortsname (optional)", { exact: true }).inputValue()).toBe("Wasserfall");
+    await option(page, /^Fiktiver Wasserfall 3/).click();
+    await dialog(page).getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+    expect(await page.getByRole("menuitem", { name: "Unterwegs essen", exact: true }).getAttribute("aria-disabled")).toBe("true");
+    await page.keyboard.press("Escape");
+    await dialog(page).getByRole("button", { name: "Vorschau für Fiktiver Wasserfall 3", exact: true }).waitFor();
   });
 });
-describe.each([1440, 390])("insert search and route dimensions at %i", (width) => {
+
+describe.each([1440, 390])("insert search and preview at %i", (width) => {
   const scenario = `route-insert-${width}`;
   let opened: Awaited<ReturnType<typeof open>>;
   let before: Awaited<ReturnType<typeof dimensions>>;
@@ -195,57 +300,65 @@ describe.each([1440, 390])("insert search and route dimensions at %i", (width) =
   afterAll(async () => {
     await opened?.context.close();
   });
-  // Ordered phases retain the selected stop, discarded preview and original dimensions.
+  // Ordered phases retain the selected stop, the discarded preview and the tile.
   test("searches, selects a stop and discards its real delta preview", async () => {
     const { page } = opened;
     before = await dimensions(page);
-    expect(before.height).toBe(width === 1440 ? 869 : 853);
-    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
-    await page.getByLabel("Ortsname (optional)", { exact: true }).fill("Wasserfall");
-    await page.getByRole("button", { name: "Suchen", exact: true }).click();
-    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
-    await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
-    await page.getByRole("button", { name: "Verwerfen", exact: true }).waitFor();
-    await settled(page);
-    expect(await page.locator(".ai-map__facts").innerText()).toContain("+12 min");
-    expect(await page.locator(".ai-map__facts").innerText()).toContain("+4 km");
-    expect(await dimensions(page)).toEqual(before);
+    await openDialog(page);
+    await menu(page, "Stopp einfügen");
+    await dialog(page).getByLabel("Ortsname (optional)", { exact: true }).fill("Wasserfall");
+    await dialog(page).getByRole("button", { name: "Suchen", exact: true }).click();
+    await option(page, /^Fiktiver Wasserfall 3/).click();
+    await dialog(page).getByRole("button", { name: "Vorschau für Fiktiver Wasserfall 3", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Verwerfen", exact: true }).waitFor();
+    const facts = await dialog(page).locator(".k2b-map-dialog__facts").innerText();
+    expect(facts).toContain("+12 min");
+    expect(facts).toContain("+4 km");
+    // The proposed stop is a "+" pin and a row until it is accepted or discarded.
+    expect(await dialog(page).locator(".k2b-map-dialog__place .k2b-map-dialog__mark").allTextContents()).toContain("+");
     expect(fixture.get(scenario).map.route?.stops).toHaveLength(4);
-    await page.getByRole("button", { name: "Verwerfen", exact: true }).click();
-    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).waitFor();
+    await dialog(page).getByRole("button", { name: "Verwerfen", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Verwerfen", exact: true }).waitFor({ state: "detached" });
+    expect(await dimensions(page)).toEqual(before);
   });
   test("accepts the selected stop and restores the route with timestamped undo", async () => {
     const { page } = opened;
-    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
-    await page.getByRole("button", { name: "Suchen", exact: true }).click();
-    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
-    await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
-    await page.getByRole("button", { name: "Fiktiver Wasserfall 3 einfügen", exact: true }).click();
-    await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
+    await menu(page, "Stopp einfügen");
+    await dialog(page).getByRole("button", { name: "Suchen", exact: true }).click();
+    await option(page, /^Fiktiver Wasserfall 3/).click();
+    await dialog(page).getByRole("button", { name: "Vorschau für Fiktiver Wasserfall 3", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Fiktiver Wasserfall 3 einfügen", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
     expect(fixture.get(scenario).map.route?.stops).toHaveLength(5);
-    await settled(page);
-    expect(await dimensions(page)).toEqual(before);
-    expect(await page.locator(".ai-map__receipt time").getAttribute("datetime")).toBe("2026-10-19T14:31:00.000Z");
-    await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+    expect(await dialog(page).locator(".ai-map__receipt time").getAttribute("datetime")).toBe("2026-10-19T14:31:00.000Z");
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("A → B → C → D → E");
+    await dialog(page).getByRole("button", { name: "Rückgängig", exact: true }).click();
     await page.waitForFunction(() => !document.querySelector(".ai-map__receipt button"));
     expect(fixture.get(scenario).map.route?.stops).toHaveLength(4);
-    await settled(page);
     expect(await dimensions(page)).toEqual(before);
   });
 });
-test("ambiguity calculates only after choosing server candidate; options preserve scope", async () => {
+
+test("ambiguity calculates only after choosing a server candidate; options preserve scope", async () => {
   const { page, context } = await open("route-ambiguous");
   try {
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("Welcher Ort ist gemeint?");
+    await openDialog(page);
     const calls = fixture.geo.calls.length;
-    await page.getByRole("option", { name: /2\. 2 Beispielgasse/ }).click();
+    await dialog(page).getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor();
+    await option(page, /^2 Beispielgasse/).click();
     expect(fixture.geo.calls.length).toBe(calls);
-    await page.getByRole("button", { name: /2 Beispielgasse.*Als Stopp übernehmen/ }).click();
-    await page.getByRole("button", { name: "Optionen", exact: true }).waitFor();
+    // A candidate is not a destination yet: its one main action takes it as the stop.
+    expect(await dialog(page).locator(".k2b-map-dialog__detail").getByRole("link", { name: "In OpenStreetMap öffnen" }).count()).toBe(0);
+    await dialog(page)
+      .getByRole("button", { name: /2 Beispielgasse.*Als Stopp übernehmen/ })
+      .click();
+    await dialog(page).getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor({ state: "detached" });
     expect(fixture.geo.calls.slice(calls)).toContain("calculate");
-    await page.getByRole("button", { name: "Optionen", exact: true }).click();
-    await page.getByLabel("Autobahn", { exact: true }).click();
-    await page.getByRole("button", { name: "Vorschau berechnen" }).click();
-    await page.getByRole("button", { name: "Verwerfen", exact: true }).waitFor();
+    await menu(page, "Optionen");
+    await dialog(page).getByLabel("Autobahn", { exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Vorschau berechnen" }).click();
+    await dialog(page).getByRole("button", { name: "Verwerfen", exact: true }).waitFor();
     expect(fixture.commands.at(-1)).toMatchObject({
       type: "preview",
       change: { type: "options", options: { mode: "car", avoid: ["highways"] } },
@@ -254,52 +367,58 @@ test("ambiguity calculates only after choosing server candidate; options preserv
     await context.close();
   }
 });
+
 test("unconfigured state makes no map/provider calls and hides admin links", async () => {
   const start = fixture.calls.length;
   const { page, context } = await open("places-unconfigured");
   try {
-    expect(await page.locator("body").innerText()).toContain("Orte und Karten sind nicht eingerichtet");
-    expect(await page.locator(".k2b-map-view").count()).toBe(0);
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("Karten sind nicht eingerichtet");
+    await openDialog(page);
+    expect(await dialog(page).innerText()).toContain("Orte und Karten sind nicht eingerichtet");
     expect(fixture.calls.slice(start)).toEqual([]);
     expect(await page.getByRole("link", { name: "Orte und Karten einrichten" }).count()).toBe(0);
   } finally {
     await context.close();
   }
 });
+
 test.each(["person", "cloud"])("budget %s shows reset and retained source list", async (scope) => {
   const { page, context } = await open(`places-budget-${scope}`);
   try {
-    expect(await page.locator("body").innerText()).toContain(scope === "person" ? "Tagesgrenze" : "Monatsbudget");
-    expect(await page.locator("body").innerText()).toContain("Wieder verfügbar");
-    expect(await page.locator(".k2b-map-view").count()).toBe(0);
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("Kartengrenze erreicht");
+    await openDialog(page);
+    const text = await dialog(page).innerText();
+    expect(text).toContain(scope === "person" ? "Tagesgrenze" : "Monatsbudget");
+    expect(text).toContain("Wieder verfügbar");
+    expect(await dialog(page).locator(".k2b-map-dialog__place").count()).toBeGreaterThan(0);
   } finally {
     await context.close();
   }
 });
-describe("empty search, failure retry, dark/tablet and compact panel regions", () => {
-  let opened: Awaited<ReturnType<typeof open>>;
-  beforeAll(async () => {
-    opened = await open("places-empty", 768, "&theme=dark");
-  });
-  afterAll(async () => {
-    await opened?.context.close();
-  });
-  test("expands the original query, retries failure and reserves the panel regions", async () => {
-    const { page } = opened;
-    await page.getByRole("button", { name: "Umkreis 10 km" }).click();
-    await page.locator(".ai-map__place").first().waitFor();
+
+test("empty search widens, a failure retries, and the tile keeps its size in dark and the panel", async () => {
+  const { page, context } = await open("places-empty", 768, "&theme=dark");
+  try {
+    await openDialog(page);
+    await dialog(page).getByRole("button", { name: "Umkreis 10 km" }).click();
+    await dialog(page).locator(".k2b-map-dialog__place").first().waitFor();
     expect(fixture.commands.at(-1)).toMatchObject({ type: "search", search: { categories: ["museum"], near: "Ulm", radiusMeters: 10000 } });
     await page.goto(`${fixture.server.url}?scenario=places-failure&panel=true&theme=dark`);
-    await page.getByRole("button", { name: "Erneut versuchen" }).click();
-    await page.locator(".ai-map__place").first().waitFor();
+    await page.locator(".ai-map").waitFor();
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("Karte nicht geladen");
+    await openDialog(page);
+    await dialog(page).getByRole("button", { name: "Erneut versuchen" }).click();
+    await dialog(page).locator(".k2b-map-dialog__place").first().waitFor();
+    await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 1440, height: 900 });
     await settled(page);
-    expect(await page.locator(".k2b-map-view").evaluate((el) => el.getBoundingClientRect().height)).toBe(200);
-    expect(await page.locator(".ai-map__info").evaluate((el) => el.getBoundingClientRect().height)).toBe(228);
-  });
+    expect((await dimensions(page)).height).toBe(240);
+  } finally {
+    await context.close();
+  }
 });
 
-describe.each([1440, 390, 768])("SSR and first browser render at %i", (width) => {
+describe.each([1440, 390, 768])("server render and mounted browser render at %i", (width) => {
   let opened: Awaited<ReturnType<typeof open>>;
   beforeAll(async () => {
     opened = await open(`places-ssr-${width}`, width, "&ssr=1");
@@ -307,57 +426,51 @@ describe.each([1440, 390, 768])("SSR and first browser render at %i", (width) =>
   afterAll(async () => {
     await opened?.context.close();
   });
-  test("reserve the same map and information regions", async () => {
+  test("reserve the same tile", async () => {
     const { page } = opened;
     const server = await dimensions(page);
-    const card = await page.locator(".ai-map__info").boundingBox();
+    const pill = await page.locator(".ai-map .k2b-map-tile__summary").innerText();
     await page.goto(`${fixture.server.url}?scenario=places-ssr-${width}`);
-    await page.locator(".ai-map__place").first().waitFor();
+    await page.locator(".ai-map .k2b-map-tile__open:not([disabled])").waitFor();
     await settled(page);
     expect(await dimensions(page)).toEqual(server);
-    expect(await page.locator(".ai-map__info").boundingBox()).toEqual(card);
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toBe(pill);
   });
 });
 
-describe("location denial and address route recovery", () => {
-  let opened: Awaited<ReturnType<typeof open>>;
-  beforeAll(async () => {
-    opened = await open("places-location");
-  });
-  afterAll(async () => {
-    await opened?.context.close();
-  });
-  test("keeps dimensions and offers address route recovery", async () => {
-    const { page } = opened;
-    const before = await dimensions(page);
+test("location denial keeps the map and offers an address route", async () => {
+  const { page, context } = await open("places-location");
+  try {
     await page.evaluate(() =>
       Object.defineProperty(navigator.geolocation, "getCurrentPosition", {
         configurable: true,
         value: (_ok: unknown, fail: (error: unknown) => void) => fail({ code: 1, PERMISSION_DENIED: 1 }),
       }),
     );
-    await page.getByRole("button", { name: "Ich bin hier", exact: true }).click();
-    await page.getByText("Standort nicht erlaubt · im Browser freigeben", { exact: true }).waitFor();
-    await settled(page);
-    expect(await dimensions(page)).toEqual(before);
-    await page.getByRole("button", { name: "Route hierher", exact: true }).click();
-    await page.getByLabel("Startort", { exact: true }).fill("Fiktiver Hauptbahnhof");
-    await page.getByRole("button", { name: "Route planen", exact: true }).click();
-    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).waitFor();
+    await openDialog(page);
+    await dialog(page).getByRole("button", { name: "Ich bin hier", exact: true }).click();
+    await dialog(page).getByText("Standort nicht erlaubt · im Browser freigeben", { exact: true }).waitFor();
+    await dialog(page).getByRole("button", { name: "Route hierher", exact: true }).click();
+    await dialog(page).getByLabel("Startort", { exact: true }).fill("Fiktiver Hauptbahnhof");
+    await dialog(page).getByRole("button", { name: "Route planen", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Weitere Aktionen", exact: true }).waitFor();
     expect(fixture.commands.at(-1)).toMatchObject({
       type: "route",
       stops: [{ address: "Fiktiver Hauptbahnhof" }, { placeId: "museum-0" }],
     });
-  });
+  } finally {
+    await context.close();
+  }
 });
 
 test("browser location routes to the selected verified place", async () => {
   const { page, context } = await open("places-location-success");
   try {
-    await page.getByRole("button", { name: "Ich bin hier", exact: true }).click();
-    await page.locator(".k2b-map-view__me").waitFor();
-    await page.getByRole("button", { name: "Route hierher", exact: true }).click();
-    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).waitFor();
+    await openDialog(page);
+    await dialog(page).getByRole("button", { name: "Ich bin hier", exact: true }).click();
+    await dialog(page).locator(".k2b-map-view__me").waitFor();
+    await dialog(page).getByRole("button", { name: "Route hierher", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Weitere Aktionen", exact: true }).waitFor();
     expect(fixture.commands.at(-1)).toMatchObject({
       type: "location",
       destinationId: "museum-0",
@@ -368,23 +481,44 @@ test("browser location routes to the selected verified place", async () => {
   }
 });
 
+test("offline, Route hierher is unavailable with its reason while navigation stays", async () => {
+  const { page, context } = await open("places-offline");
+  try {
+    await openDialog(page);
+    await context.setOffline(true);
+    const detail = dialog(page).locator(".k2b-map-dialog__detail");
+    await detail.getByText("Ohne Verbindung keine neue Route. Die Navi-App geht weiter.").waitFor();
+    expect(await detail.getByRole("button", { name: "Route hierher" }).getAttribute("aria-disabled")).toBe("true");
+    expect(await detail.getByRole("link", { name: "In OpenStreetMap öffnen" }).getAttribute("href")).toContain("openstreetmap.org");
+    await context.setOffline(false);
+  } finally {
+    await context.close();
+  }
+});
+
 test("whole and per-leg preferences calculate a real preview and retain the leg label after accept", async () => {
   const { page, context } = await open("route-per-leg");
   try {
-    await page.getByRole("button", { name: "Optionen", exact: true }).click();
-    await page.getByRole("combobox", { name: "Gilt für", exact: true }).click();
+    await openDialog(page);
+    await menu(page, "Optionen");
+    await dialog(page).getByRole("combobox", { name: "Gilt für", exact: true }).click();
     await page.getByRole("option", { name: "B → C", exact: true }).click();
-    await page.getByLabel("Autobahn", { exact: true }).click();
-    await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
-    await page.getByRole("button", { name: "Etappe ohne Autobahn", exact: true }).waitFor();
+    await dialog(page).getByLabel("Autobahn", { exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Etappe ohne Autobahn", exact: true }).waitFor();
+    // The proposal shows the proposed leg in C's row and marks it as changed; B's leg stays as it is.
+    expect(await dialog(page).locator(".k2b-map-dialog__place").nth(2).innerText()).toMatch(/ohne Autobahn · geändert/);
+    expect(await dialog(page).locator(".k2b-map-dialog__place").nth(1).innerText()).not.toContain("geändert");
     expect(fixture.commands.at(-1)).toMatchObject({
       type: "preview",
       change: { type: "options", leg: { fromStopId: "stop-1", toStopId: "stop-2" } },
     });
-    await page.getByRole("button", { name: "Etappe ohne Autobahn", exact: true }).click();
-    await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
-    expect(await page.locator(".ai-map__leg").nth(1).innerText()).toContain("ohne Autobahn");
-    expect(await page.locator(".ai-map__leg").first().innerText()).not.toContain("ohne Autobahn");
+    await dialog(page).getByRole("button", { name: "Etappe ohne Autobahn", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
+    // Each stop's row names the leg that reaches it: B → C now avoids the highway, A → B does not.
+    const rows = dialog(page).locator(".k2b-map-dialog__place");
+    expect(await rows.nth(2).innerText()).toContain("ohne Autobahn");
+    expect(await rows.nth(1).innerText()).not.toContain("ohne Autobahn");
   } finally {
     await context.close();
   }
@@ -393,10 +527,11 @@ test("whole and per-leg preferences calculate a real preview and retain the leg 
 test("optimize and move keep old letters until accept and render both stop orders", async () => {
   const { page, context } = await open("route-optimize");
   try {
-    await page.getByRole("button", { name: "Reihenfolge optimieren", exact: true }).click();
-    await page.getByRole("button", { name: "Neue Reihenfolge übernehmen", exact: true }).waitFor();
-    expect(await page.locator(".ai-map__facts [data-gain=true]").innerText()).toContain("-12 min");
-    expect(await page.locator(".ai-map__order li").allTextContents()).toEqual([
+    await openDialog(page);
+    await menu(page, "Reihenfolge optimieren");
+    await dialog(page).getByRole("button", { name: "Neue Reihenfolge übernehmen", exact: true }).waitFor();
+    expect(await dialog(page).locator(".k2b-map-dialog__facts").innerText()).toContain("-12 min");
+    expect(await dialog(page).locator(".ai-map__order li").allTextContents()).toEqual([
       "Ulm",
       "Bad Urach",
       "Blautopf",
@@ -406,14 +541,14 @@ test("optimize and move keep old letters until accept and render both stop order
       "Bad Urach",
       "Stuttgart",
     ]);
-    expect(await page.locator('[data-id="stop-1"]').innerText()).toBe("B");
-    await page.getByRole("button", { name: "Neue Reihenfolge übernehmen", exact: true }).click();
-    await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
-    expect(await page.locator('[data-id="stop-1"]').innerText()).toBe("C");
+    expect(await dialog(page).locator('[data-id="stop-1"]').innerText()).toBe("B");
+    await dialog(page).getByRole("button", { name: "Neue Reihenfolge übernehmen", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
+    expect(await dialog(page).locator('[data-id="stop-1"]').innerText()).toBe("C");
     await page.evaluate(() => window.mapFollowup({ type: "preview", change: { type: "move", stopId: "stop-1", toIndex: 1 } }));
-    await page.getByRole("button", { name: "Stopp verschieben", exact: true }).waitFor();
+    await dialog(page).getByRole("button", { name: "Stopp verschieben", exact: true }).waitFor();
     expect(fixture.get("route-optimize").map.route?.stops[1]?.id).toBe("stop-2");
-    await page.getByRole("button", { name: "Stopp verschieben", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Stopp verschieben", exact: true }).click();
     await page.waitForFunction(() => !document.querySelector(".ai-map__confirm"));
     expect(fixture.get("route-optimize").map.route?.stops[1]?.id).toBe("stop-1");
   } finally {
@@ -421,45 +556,35 @@ test("optimize and move keep old letters until accept and render both stop order
   }
 });
 
-test("along-route window reaches server search and navigation link retains destination", async () => {
+test("along-route window reaches server search; the stop's navigation link keeps its destination", async () => {
   const { page, context } = await open("route-along");
   try {
-    await page.getByRole("button", { name: "Unterwegs essen", exact: true }).click();
-    await page.getByRole("button", { name: "Suchen", exact: true }).click();
-    await page.locator(".ai-map__route-place").waitFor();
-    expect(await page.getByRole("button", { name: /km 44/ }).innerText()).toContain("0,3 km");
+    await openDialog(page);
+    await menu(page, "Unterwegs essen");
+    await dialog(page).getByRole("button", { name: "Suchen", exact: true }).click();
+    const along = option(page, /km 44/);
+    await along.waitFor();
+    expect(await along.innerText()).toContain("0,3 km");
     expect(fixture.get("route-along").map.groups).toHaveLength(1);
     expect(fixture.commands.at(-1)).toMatchObject({ type: "search", search: { along: { fromKm: 40, toKm: 80 } } });
-    expect(await page.getByRole("link", { name: "In Navi-App öffnen", exact: true }).getAttribute("href")).toContain("openstreetmap.org");
-    expect(await page.locator(".ai-map__provenance").innerText()).toContain("Zeiten ohne Verkehr");
+    // The selected result's navigation link leads to that result.
+    await along.click();
+    const result = fixture.get("route-along").map.groups[0]!.places.find((place) => Math.round((place.atMeters ?? 0) / 1000) === 44)!;
+    expect(
+      await dialog(page).locator(".k2b-map-dialog__detail").getByRole("link", { name: "In OpenStreetMap öffnen" }).getAttribute("href"),
+    ).toBe(`https://www.openstreetmap.org/directions?route=%3B${encodeURIComponent(`${result.point.lat},${result.point.lon}`)}`);
+    expect(await dialog(page).locator(".k2b-map-dialog__provenance").innerText()).toContain("Zeiten ohne Verkehr");
   } finally {
     await context.close();
   }
 });
 
-test.each(["save", "unknown-save"])("Notebook %s uses shared Markdown, stable idempotency and reload-safe outcome", async (suffix) => {
-  const { page, context } = await open(`places-${suffix}`);
-  try {
-    await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
-    await page.getByRole("combobox", { name: "Notebook auswählen", exact: true }).click();
-    await page.getByRole("option", { name: "Fiktive Reiseplanung", exact: true }).click();
-    await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
-    await page.getByRole("link", { name: suffix === "save" ? "Im Notebook gespeichert" : "Notebook prüfen", exact: true }).waitFor();
-    expect(JSON.stringify(fixture.commands.at(-1))).toContain(":::map");
-    await page.reload();
-    await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
-    await page.getByRole("link", { name: suffix === "save" ? "Im Notebook gespeichert" : "Notebook prüfen", exact: true }).waitFor();
-    if (suffix !== "save") expect(await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).isDisabled()).toBe(true);
-  } finally {
-    await context.close();
-  }
-});
-
-test.each(["places", "route"])("loading %s retains ready dimensions without replacing the conversation", async (kind) => {
+test.each(["places", "route"])("loading %s keeps the tile's size and does not open yet", async (kind) => {
   const { page, context } = await open(`${kind}-loading`);
   try {
-    expect(await page.locator(".ai-map__skeleton").count()).toBeGreaterThan(0);
-    expect((await dimensions(page)).height).toBe(kind === "places" ? 811 : 869);
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("Orte und Route werden geladen");
+    expect(await tile(page).isDisabled()).toBe(true);
+    expect((await dimensions(page)).height).toBe(240);
   } finally {
     await context.close();
   }
@@ -468,12 +593,12 @@ test.each(["places", "route"])("loading %s retains ready dimensions without repl
 test("retry in an unconfigured map never calls a provider; configuration links require administrator state", async () => {
   const { page, context } = await open("places-unconfigured-admin");
   try {
-    await page.getByRole("link", { name: "Orte und Karten einrichten", exact: true }).waitFor();
+    await openDialog(page);
+    await dialog(page).getByRole("link", { name: "Orte und Karten einrichten", exact: true }).waitFor();
     const before = fixture.geo.calls.length;
-    await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Erneut versuchen", exact: true }).click();
     await page.waitForFunction(() => document.querySelector(".ai-map")?.getAttribute("aria-busy") === "false");
     expect(fixture.geo.calls.slice(before)).toEqual(["availability"]);
-    expect(await page.locator(".k2b-map-view").count()).toBe(0);
   } finally {
     await context.close();
   }
@@ -486,42 +611,13 @@ test("stale map actions offer reload without running a provider", async () => {
     const stored = fixture.get(scenario);
     fixture.states.set(scenario, { ...stored, map: { ...stored.map, revision: stored.map.revision + 1 } });
     const before = fixture.geo.calls.length;
-    await page.getByRole("button", { name: "Reihenfolge optimieren", exact: true }).click();
-    await page.getByRole("alert").filter({ hasText: "Diese Karte wurde inzwischen geändert" }).waitFor();
+    await openDialog(page);
+    await menu(page, "Reihenfolge optimieren");
+    await dialog(page).getByRole("alert").filter({ hasText: "Diese Karte wurde inzwischen geändert" }).waitFor();
     expect(fixture.geo.calls.length).toBe(before);
-    await page.getByRole("button", { name: "Aktuellen Stand laden", exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('[role="alert"]'));
+    await dialog(page).getByRole("button", { name: "Aktuellen Stand laden", exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('dialog[open] [role="alert"]'));
     expect(fixture.geo.calls.length).toBe(before);
-  } finally {
-    await context.close();
-  }
-});
-
-const chooseNotebook = async (page: Page) => {
-  await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
-  await page.getByRole("combobox", { name: "Notebook auswählen", exact: true }).click();
-  await page.getByRole("option", { name: "Fiktive Reiseplanung", exact: true }).click();
-};
-const beginSave = async (page: Page) => {
-  await chooseNotebook(page);
-  await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
-};
-test("a follow-up cannot display an old receipt as saving the new map revision", async () => {
-  const scenario = "places-save-revision-followup";
-  const { page, context } = await open(scenario);
-  try {
-    await beginSave(page);
-    await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    await page.evaluate(() =>
-      window.mapFollowup({ type: "search", search: { title: "Cafés", categories: ["cafe"], placeId: "museum-0" } }),
-    );
-    await page.getByText(/Die Kartenquelle hat sich geändert/).waitFor();
-    expect(await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).count()).toBe(0);
-    await page.getByRole("link", { name: "Teilweise gespeicherte Notiz öffnen" }).waitFor();
-    await page.getByRole("button", { name: "Abbrechen", exact: true }).click();
-    await beginSave(page);
-    await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("cloud.ai.map-save:v1:")).length)).toBe(2);
   } finally {
     await context.close();
   }
@@ -532,11 +628,17 @@ test.each([390, 1440])("routing overrun shows charged costs and waits for an exp
   const before = fixture.commands.length;
   const { page, context } = await open(scenario, width);
   try {
-    await page.getByText("Letzter Versuch: 20 Credits gebucht. Mit unklarem Ergebnis reserviert: 2.", { exact: true }).waitFor();
+    expect(await page.locator(".ai-map .k2b-map-tile__summary").innerText()).toContain("Kosten bestätigen");
+    await openDialog(page);
+    await dialog(page).getByText("Letzter Versuch: 20 Credits gebucht. Mit unklarem Ergebnis reserviert: 2.", { exact: true }).waitFor();
     expect(fixture.commands.length).toBe(before);
-    expect(await page.getByRole("spinbutton").count()).toBe(0);
-    expect(await page.locator(".ai-map__state").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await page.getByRole("button", { name: "Berechnung fortsetzen", exact: true }).click();
+    expect(await dialog(page).getByRole("spinbutton").count()).toBe(0);
+    expect(
+      await dialog(page)
+        .locator(".ai-map__state")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await dialog(page).getByRole("button", { name: "Berechnung fortsetzen", exact: true }).click();
     await page.waitForFunction(() => !document.querySelector(".ai-map__state"));
     expect(fixture.commands.slice(before)).toEqual([{ type: "retry" }]);
     expect(fixture.get(scenario).map.preview).toBeDefined();
@@ -550,13 +652,16 @@ test("ambiguous address recovery after an overrun explains further costs before 
   const scenario = "route-overrun-ambiguous";
   const { page, context } = await open(scenario, 390);
   try {
-    await page
+    await openDialog(page);
+    await dialog(page)
       .getByText("Die Route war teurer als geschätzt. Die Berechnung wurde gestoppt. Beim Fortsetzen können weitere Kosten entstehen.", {
         exact: true,
       })
       .waitFor();
-    await page.getByRole("button", { name: / · Als Stopp übernehmen$/, exact: false }).click();
-    await page.getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor({ state: "detached" });
+    await dialog(page)
+      .getByRole("button", { name: / · Als Stopp übernehmen$/, exact: false })
+      .click();
+    await dialog(page).getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor({ state: "detached" });
     expect(fixture.get(scenario).map.issue).toBeUndefined();
     expect(fixture.get(scenario).map.route).toBeDefined();
   } finally {
@@ -579,24 +684,21 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
     };
     stored.map.issue = { code: "GEO_LIMIT_EXCEEDED", requiredCredits: 325, availableCredits: 300, shortfallCredits: 25 };
     opened = await open(name, width);
-    if (process.env.MAP_RECOVERY_EVIDENCE_DIR)
-      await opened.page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/01-reservation-light-${width}.png`, fullPage: true });
+    await openDialog(opened.page);
   });
   afterAll(async () => {
     await opened?.context.close();
   });
   const pick = async (mark: string) => {
     const { page } = opened;
-    await page.getByRole("button", { name: "Stopp ändern", exact: true }).click();
-    await page.getByRole("combobox", { name: "Stopp ändern", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Stopp ändern", exact: true }).click();
+    await dialog(page).getByRole("combobox", { name: "Stopp ändern", exact: true }).click();
     await page.getByRole("option", { name: new RegExp(`^${mark} ·`) }).click();
-    const field = page.getByRole("combobox", { name: "Startort", exact: true });
+    const field = dialog(page).getByRole("combobox", { name: "Startort", exact: true });
     await field.fill("Beispielgasse");
     const index = mark.charCodeAt(0) - 65;
     const suggestion = page.getByRole("option", { name: new RegExp(`${index + 1} Beispielgasse`) });
     await suggestion.waitFor();
-    if (mark === "C" && process.env.MAP_RECOVERY_EVIDENCE_DIR)
-      await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/02-suggestions-light-${width}.png`, fullPage: true });
     await suggestion.click();
     expect(await field.inputValue()).toBe(mapAddress(index).formatted);
     return field;
@@ -606,37 +708,37 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
     const field = await pick("C");
     await field.fill("Andere Adresse");
     await field.press("Escape");
+    // Escape closes the suggestions; the map dialog stays open.
+    await dialog(page).locator(".k2b-map-dialog").waitFor();
     const response = page.waitForResponse((r) => r.url().endsWith("/action") && r.request().method() === "POST");
-    await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
     await response;
     expect(fixture.commands.at(-1)).toEqual({ type: "repair", stopId: "c", address: "Andere Adresse" });
-    await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
+    await dialog(page).getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
   });
   describe.each(["C", "B", "A"])("selected %s coordinates", (mark) => {
     test("survive refusal and final calculation", async () => {
       const { page } = opened;
       await pick(mark);
       const response = page.waitForResponse((r) => r.url().endsWith("/action") && r.request().method() === "POST");
-      await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
+      await dialog(page).getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
       await response;
       const saved = fixture.get(name).map;
       expect(saved.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(mapAddress(mark.charCodeAt(0) - 65).point);
       if (mark !== "A") {
         expect(saved.issue?.code).toBe("GEO_BUDGET_EXHAUSTED");
-        await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
+        await dialog(page).getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
       } else {
         expect(saved.issue).toBeUndefined();
         expect(saved.route?.stops.map((stop) => stop.id)).toEqual(["a", "b", "c"]);
         expect(saved.route?.stops.map((stop) => stop.point)).toEqual([0, 1, 2].map((index) => mapAddress(index).point));
-        await page.getByRole("button", { name: "Optionen", exact: true }).waitFor();
-        if (process.env.MAP_RECOVERY_EVIDENCE_DIR)
-          await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/03-route-light-${width}.png`, fullPage: true });
+        await dialog(page).getByRole("button", { name: "Weitere Aktionen", exact: true }).waitFor();
       }
     });
     if (mark !== "A")
       test("remain available after reload before choosing the next stop", async () => {
         await opened.page.reload();
-        await opened.page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
+        await dialog(opened.page).getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
         expect(fixture.get(name).map.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(
           mapAddress(mark.charCodeAt(0) - 65).point,
         );

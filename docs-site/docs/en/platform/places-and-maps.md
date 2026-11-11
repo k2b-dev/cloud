@@ -5,7 +5,7 @@ section: Platform services
 order: 559
 description: Find addresses, places, and routes through Core with shared budgets, caching, and attribution.
 tags: [geo, addresses, places, capabilities, maps]
-updated: 2026-10-22
+updated: 2026-11-10
 ---
 
 # Places and maps
@@ -435,6 +435,43 @@ free availability after a failure and shows the person/day or Cloud/month
 reset time when a budget is exhausted. Core bundles its glyph files as server
 assets; production images need no runtime UI package or external font host.
 
+### Open the full map from a small one
+
+A small map in a page, a note, or a chat answer is a `MapTile` from `@k2b/ui`
+around a still `CloudMap`. The whole tile is one button that opens a
+`MapDialog`: map and list side by side, on a phone the map on the whole screen
+with the list as a sheet. Render the dialog's map with `CloudMap` as well, so
+both use the Cloud style, budget notice, and attribution:
+
+```tsx
+import { CloudMap } from "@k2b/cloud/geo/ui";
+import { MapDialog, MapTile } from "@k2b/ui";
+
+<MapTile
+  label="Open map: Jana Berger, Frauenstraße 28, 89073 Ulm"
+  summary="Frauenstraße 28, 89073 Ulm"
+  restoreId={address.id}
+  dialog={(close) => (
+    <MapDialog
+      title="Jana Berger"
+      places={[{ id: address.id, name: "Jana Berger", point, address: "Frauenstraße 28, 89073 Ulm" }]}
+      map={(map) => <CloudMap {...map} availability={availability} />}
+      provenance="Geoapify · OpenStreetMap"
+      onClose={close}
+    />
+  )}
+>
+  <CloudMap still height={160} availability={availability} markers={markers} />
+</MapTile>
+```
+
+Each place can carry a note, a source, and links that the application gives
+it; the dialog only shows them and knows nothing about the application.
+Back closes the dialog. With a stable `restoreId` the URL names the open map,
+and a reload opens it again. The
+[MapTile and MapDialog guide](/en/ui/content/map-dialog) describes every
+state.
+
 
 ## Export a map image for print or PDF
 
@@ -469,10 +506,14 @@ retain saved-source lists, or fail explicitly when map images are required.
 `MapViewFrame` remains a geometry fallback and does not supply a basemap PNG.
 ## Use maps in Assistant
 
-Assistant's native places and route widgets use these same permission-aware
-Queries and `CloudMap`. The conversation owns saved map state and proposals;
-Core remains stateless for routes. Follow-ups update the first widget, and saving
-to a notebook uses the shared map document format through Notebook capabilities.
+Assistant's native places and route maps use these same permission-aware
+Queries, `CloudMap`, `MapTile`, and `MapDialog`. The conversation owns saved
+map state and proposals; Core remains stateless for routes. Follow-ups update
+the first map. The chat map does not write to Notebooks.
+Callers may add per-place or per-stop notes, source labels with generic symbols,
+and links, which the map dialog shows with the selected place or stop; external
+HTTP(S) links require an already-read source, while root-relative Cloud paths
+need no fetch.
 See [Explore places and routes](/en/docs/ai/chat-interface#explore-places-and-routes)
 for selection, editing, recovery, and persistence behavior.
 ## Suggest addresses in forms
@@ -512,8 +553,10 @@ time instead of suggestions and sends no further requests.
 
 ## Link to a navigation app
 
-Cloud does no live navigation. `geoNavigationHref` from `@k2b/cloud/geo/ui`
-builds a link that hands a destination to the device's maps app:
+Cloud does no live navigation. `MapDialog` shows this link for the selected
+place. For a link of your own, `geoNavigationHref` from `@k2b/ui`, also
+exported by `@k2b/cloud/geo/ui`, builds a link that hands a destination to the
+device's maps app:
 `geo:` on Android, Apple Maps on iPhone and iPad, and OpenStreetMap
 directions elsewhere. Pass a `point` when one is known, otherwise the address
 text. Choose the platform with `geoNavigationPlatform(navigator.userAgent)`

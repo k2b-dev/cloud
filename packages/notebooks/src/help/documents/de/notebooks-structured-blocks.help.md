@@ -204,7 +204,7 @@ Die Buchansicht berechnet dieselben Tabellenformeln wie der Editor, auch berechn
 
 Tippe `/map` in einer bearbeitbaren Notiz, um einen Kartenblock einzufügen. Suche über der Karte einen Ort, wähle einen Treffer und verknüpfe den Pin mit einer Notiz, einer Überschrift oder einer Website. **Abbrechen** schließt die Verknüpfungsauswahl, ohne einen Pin hinzuzufügen. Eine Karte enthält bis zu 20 Pins.
 
-Wähle einen Pin in der Liste oder auf der Karte. In der Liste wechseln die Pfeiltasten sowie Pos1 und Ende die Auswahl. Im Menü **Kartenaktionen** ändert **Verknüpfung ändern** das Ziel; **Pin entfernen** entfernt ihn aus dieser Karte. Schreibgeschützte und gesperrte Notizen zeigen die gespeicherte Karte ohne Bearbeitungsaktionen.
+Wähle einen Pin in der Liste unter der Karte. In der Liste wechseln die Pfeiltasten sowie Pos1 und Ende die Auswahl. Wähle die Karte, um sie groß zu öffnen: Dort kannst du zoomen, Pins auf der Karte wählen und ihren Verknüpfungen folgen. Zurück oder **Schließen** bringt dich zur Notiz. Im Menü **Kartenaktionen** ändert **Verknüpfung ändern** das Ziel; **Pin entfernen** entfernt ihn aus dieser Karte. Schreibgeschützte und gesperrte Notizen zeigen die gespeicherte Karte ohne Bearbeitungsaktionen.
 
 Wähle ab zwei Pins unter **Kartenaktionen** die Aktion **Route durch die Pins speichern**, wähle das Verkehrsmittel und bestätige. Die Route folgt der Listenreihenfolge und bleibt mit Strecke, geschätzter Zeit und Berechnungsdatum gespeichert. Beim Lesen wird sie nicht neu berechnet. Eine gespeicherte Route kann auch vom Assistant kommen.
 

@@ -665,6 +665,79 @@ export function createFilesService(
       ? { uid: current.state.unix!.uid, gid: current.node.gid, [directory ? "dirMode" : "mode"]: mode }
       : { [directory ? "dirMode" : "mode"]: mode };
   };
+  /**
+   * One page of a name search below an authorized folder. `extras` adds what the Files page shows beside the hits: the
+   * folder's README and the exact total, which costs a second search inside the trash.
+   */
+  async function searchIn(
+    current: Awaited<ReturnType<typeof authorized>>,
+    input: { after?: string; signal?: AbortSignal } & Partial<SearchQuery>,
+    extras: boolean,
+    pageSize?: number,
+  ): Promise<SearchResult> {
+    const q = input.q?.trim() ?? "";
+    const scope = input.scope ?? "tree";
+    const within = input.in ?? "path";
+    const sort = searchSort({ q, sort: input.sort });
+    const options = {
+      match: input.match ?? "fuzzy",
+      in: within,
+      ext: input.ext,
+      minSize: input.minSize,
+      maxSize: input.maxSize,
+      modifiedAfter: input.modifiedAfter,
+      modifiedBefore: input.modifiedBefore,
+      path: current.target,
+      maxEntries: SEARCH_SCAN_LIMIT,
+    };
+    if (!q && !hasSearchFilters(options) && (input.type ?? "all") === "all") throw new FilesError("invalid_input");
+    const basePath = current.inspection.candidate.path;
+    // Files hides the base's trash, unreadable FreeIPA entries and, for one folder, deeper hits: only a plain subtree total stays exact.
+    const countable = extras && scope === "tree" && current.inspection.candidate.area === "cloud";
+    const trashInside = current.target === basePath;
+    const page = await browsePage(
+      { ...input, sort },
+      JSON.stringify([current.inspection.summary.locationKey, current.target, q, scope, options]),
+      async (paging) => {
+        const found = await searchPage(current.root, q, { ...options, ...paging, signal: input.signal });
+        let total = countable ? (found.total ?? null) : null;
+        if (total !== null && trashInside && !paging.after) {
+          const hidden = await trashHits(current.root, q, {
+            ...options,
+            ...paging,
+            path: joinPath(basePath, "trash"),
+            signal: input.signal,
+          });
+          total = hidden === null ? null : Math.max(0, total - hidden);
+        }
+        const items = found.items.map((node, index) => ({ node, ranges: found.matches?.[index] }));
+        return { items, next: found.next, total, truncated: !!found.truncated };
+      },
+      pageSize,
+    );
+    const items: SearchHit[] = [];
+    for (const { node, ranges } of page.items) {
+      if (!node.path.startsWith(`${current.target}/`)) continue;
+      const relative = node.path.slice(basePath.length + 1);
+      if (relative.split("/")[0] === "trash") continue;
+      const below = node.path.slice(current.target.length + 1);
+      if (scope === "folder" && below.includes("/")) continue;
+      const actions = await entryActions(current, node, node.path);
+      if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
+      items.push({ ...fileEntry(current.inspection.summary, relative, node), actions, highlight: highlight(below, ranges, within) });
+    }
+    return {
+      base: current.inspection.summary,
+      path: current.relative,
+      query: q,
+      scope,
+      items,
+      next: page.next ?? null,
+      total: page.total,
+      truncated: page.truncated,
+      readme: extras ? await folderReadme(current) : null,
+    };
+  }
   async function canWriteDirectory(current: Awaited<ReturnType<typeof authorized>>) {
     if (current.inspection.candidate.storage)
       return ["write", "admin"].includes(
@@ -1871,71 +1944,24 @@ export function createFilesService(
     },
     async search(
       call: UserFilesCall,
-      input: { baseId: string; path?: string; after?: string; signal?: AbortSignal } & Partial<SearchQuery>,
+      input: { baseId: string; path?: string; after?: string; pageSize?: number; signal?: AbortSignal } & Partial<SearchQuery>,
     ): Promise<SearchResult> {
-      const actor = call.actor;
-      const current = await authorized(actor, input.baseId, input.path ?? "", true);
-      const q = input.q?.trim() ?? "";
-      const scope = input.scope ?? "tree";
-      const within = input.in ?? "path";
-      const sort = searchSort({ q, sort: input.sort });
-      const options = {
-        match: input.match ?? "fuzzy",
-        in: within,
-        ext: input.ext,
-        minSize: input.minSize,
-        maxSize: input.maxSize,
-        modifiedAfter: input.modifiedAfter,
-        modifiedBefore: input.modifiedBefore,
-        path: current.target,
-        maxEntries: SEARCH_SCAN_LIMIT,
-      };
-      if (!q && !hasSearchFilters(options) && (input.type ?? "all") === "all") throw new FilesError("invalid_input");
-      const basePath = current.inspection.candidate.path;
-      // Files hides the base's trash, unreadable FreeIPA entries and, for one folder, deeper hits: only a plain subtree total stays exact.
-      const countable = scope === "tree" && current.inspection.candidate.area === "cloud";
-      const trashInside = current.target === basePath;
-      const page = await browsePage(
-        { ...input, sort },
-        JSON.stringify([current.inspection.summary.locationKey, current.target, q, scope, options]),
-        async (paging) => {
-          const found = await searchPage(current.root, q, { ...options, ...paging, signal: input.signal });
-          let total = countable ? (found.total ?? null) : null;
-          if (total !== null && trashInside && !paging.after) {
-            const hidden = await trashHits(current.root, q, {
-              ...options,
-              ...paging,
-              path: joinPath(basePath, "trash"),
-              signal: input.signal,
-            });
-            total = hidden === null ? null : Math.max(0, total - hidden);
-          }
-          const items = found.items.map((node, index) => ({ node, ranges: found.matches?.[index] }));
-          return { items, next: found.next, total, truncated: !!found.truncated };
-        },
-      );
-      const items: SearchHit[] = [];
-      for (const { node, ranges } of page.items) {
-        if (!node.path.startsWith(`${current.target}/`)) continue;
-        const relative = node.path.slice(basePath.length + 1);
-        if (relative.split("/")[0] === "trash") continue;
-        const below = node.path.slice(current.target.length + 1);
-        if (scope === "folder" && below.includes("/")) continue;
-        const actions = await entryActions(current, node, node.path);
-        if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
-        items.push({ ...fileEntry(current.inspection.summary, relative, node), actions, highlight: highlight(below, ranges, within) });
-      }
-      return {
-        base: current.inspection.summary,
-        path: current.relative,
-        query: q,
-        scope,
-        items,
-        next: page.next ?? null,
-        total: page.total,
-        truncated: page.truncated,
-        readme: await folderReadme(current),
-      };
+      return searchIn(await authorized(call.actor, input.baseId, input.path ?? "", true), input, true, input.pageSize);
+    },
+    /**
+     * Names in a folder named by its file ID and in every folder below it, for apps that choose files through Files:
+     * the same search as `search`, with the folder's write permission, without its README and exact total.
+     */
+    async folderSearch(
+      call: UserFilesCall,
+      input: { id: string; q: string; after?: string; pageSize: number; signal?: AbortSignal },
+    ): Promise<SearchResult & { writable: boolean }> {
+      const current = await located(call.actor, input.id, true);
+      const [result, writable] = await Promise.all([
+        searchIn(current, { q: input.q, after: input.after, signal: input.signal, scope: "tree" }, false, input.pageSize),
+        canWriteDirectory(current),
+      ]);
+      return { ...result, writable };
     },
     /**
      * One page of a folder named by its file ID, for apps that choose or save files through Files. Only readable

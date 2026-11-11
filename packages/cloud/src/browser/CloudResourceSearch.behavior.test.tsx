@@ -586,6 +586,65 @@ if (!isServer)
   });
 
 if (!isServer)
+  test("the shell's own commands form the group Cloud ahead of the page's, and their keywords find them", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => Response.json({ query: "", count: 0, apps: [], items: [] }), {
+      preconnect: originalFetch.preconnect,
+    });
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    delegateEvents(["input"]);
+    const dispose = render(
+      () => (
+        <CloudResourceSearch
+          onClose={() => {}}
+          onSelect={() => {}}
+          commands={[
+            { id: "mail.compose", title: "New mail", description: "Mail", context: true, action: () => {} },
+            { id: "cloud.shell.focus", title: "Hide sidebar", description: "App bar", context: true, action: () => {} },
+            {
+              id: "cloud.privacy.now",
+              title: "Privacy screen now",
+              description: "Hides content, does not lock.",
+              keywords: ["verdecken", "schulter"],
+              context: true,
+              action: () => {},
+            },
+            { id: "spaces.task", title: "New task", description: "Spaces", action: () => {} },
+          ]}
+          onCommand={() => {}}
+        />
+      ),
+      dom.root,
+    );
+    const type = (value: string) => {
+      const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const rows = () =>
+      [...dom.root.querySelectorAll(".cloud-resource-search__group, [role='option']")].map((row) =>
+        row.matches(".cloud-resource-search__group") ? `# ${row.textContent}` : (row.querySelector("b, strong, span")?.textContent ?? ""),
+      );
+    try {
+      type(">");
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 4, "all actions");
+      expect(rows().filter((row) => row.startsWith("# "))).toEqual(["# Cloud", "# On this page", "# Actions"]);
+      const options = [...dom.root.querySelectorAll('[role="option"]')].map((row) => row.textContent ?? "");
+      expect(options[0]).toContain("Hide sidebar");
+      expect(options[1]).toContain("Privacy screen now");
+      expect(options[2]).toContain("New mail");
+      type("> schulter");
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 1, "keyword match");
+      expect(dom.root.querySelector('[role="option"]')?.textContent).toContain("Privacy screen now");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
   test("context actions stay above results, and typing selects the first result instead of an action", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;

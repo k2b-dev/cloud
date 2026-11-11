@@ -61,8 +61,10 @@ import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../s
 import { coreSettings } from "../services/settings/api";
 
 import { lastingAccessApiMessages } from "./lasting-access-messages";
+import { createMeFileChooserRoutes } from "./me-file-chooser";
 import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
+import { createMeScreenRoutes } from "./me-screen";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
 
 const log = logger("api:me");
@@ -97,6 +99,20 @@ const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => 
   return next();
 });
 
+/**
+ * The shared workstation routes act on this browser: only its own session cookie counts. A session token sent as a
+ * bearer, such as a copied one, can neither lift the idle limit nor report input for it.
+ */
+const requireBrowserCookie = createMiddleware<AuthContext>(async (c, next) => {
+  if (!auth.session.usesBrowserCookie(c, c.get("sessionToken"))) {
+    return c.json(
+      { code: "BROWSER_SIGN_IN_REQUIRED", message: lastingAccessApiMessages.resolve([getLocale(c)]).t.browserSignInRequired },
+      403,
+    );
+  }
+  return next();
+});
+
 const requireBrowserSignIn = createMiddleware<AuthContext>(async (c, next) => {
   if (!(await auth.browserSignIn(c))) {
     return c.json(
@@ -117,6 +133,11 @@ const localizeLastingAccessResult = <T>(c: Context<AuthContext>, result: Result<
   !result.ok && (result.error.code === "REAUTHENTICATE" || result.error.code === "FORBIDDEN")
     ? fail({ ...result.error, message: lastingAccessMessage(c, result.error.code) })
     : result;
+
+const BrowserStateSchema = z.object({
+  sharedWorkstation: z.boolean(),
+  idle: z.object({ remainingSeconds: z.number().int().nonnegative(), timeoutSeconds: z.number().int().positive() }).nullable(),
+});
 
 const ExtendAccountResponseSchema = z.object({
   message: z.string(),
@@ -224,6 +245,8 @@ const app = new Hono<AuthContext>()
   .use(auth.requireUser())
   .route("/", mandateRoutes)
   .route("/", createMeRailRoutes())
+  .route("/", createMeScreenRoutes())
+  .route("/", createMeFileChooserRoutes())
   .route("/", createMePanelConsentRoutes())
   .route("/", createMeWebVitalsRoutes())
 
@@ -864,6 +887,99 @@ const app = new Hono<AuthContext>()
         } catch {
           return fail({ code: "SIGN_OUT_OTHERS_FAILED", status: 500, message: "Signing out your other sign-ins did not work. Try again." });
         }
+      }),
+  )
+
+  .get(
+    "/browser",
+    auth.rejectAppSession,
+    requireBrowserSignIn,
+    describeRoute({
+      tags: ["Me"],
+      summary: "Read this browser's sign-in state",
+      description:
+        "Whether this browser is marked as a shared workstation and, when this browser session has an idle limit, the seconds left before it ends. Reading never extends the session.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(BrowserStateSchema, "This browser's sign-in state"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Browser sign-in required (BROWSER_SIGN_IN_REQUIRED)"),
+      },
+    }),
+    async (c) =>
+      respond(c, async () => {
+        const token = c.get("sessionToken");
+        const current = token ? await auth.session.authenticateRequest(c, token) : null;
+        if (!current) return fail({ code: "UNAUTHORIZED", status: 401, message: "Authentication required" });
+        return ok({ sharedWorkstation: auth.session.isSharedWorkstation(c), idle: current.data.idle ?? null });
+      }),
+  )
+
+  .post(
+    "/browser/activity",
+    auth.rejectAppSession,
+    requireBrowserSignIn,
+    requireBrowserCookie,
+    describeRoute({
+      tags: ["Me"],
+      summary: "Record real input in this browser",
+      description:
+        "The shell sends this after typing, clicking, scrolling or touching, at most every few seconds. It is the only request that extends a browser session with an idle limit; other requests, live updates and background work never do. A session whose limit already passed is not revived.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(BrowserStateSchema, "Input recorded; idle is null when this session has no idle limit"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Browser sign-in required (BROWSER_SIGN_IN_REQUIRED)"),
+      },
+    }),
+    async (c) =>
+      respond(c, async () => {
+        const signIn = await auth.browserSignIn(c);
+        if (!signIn) throw new Error("Browser sign-in gate was not applied");
+        const token = c.get("sessionToken");
+        const current = token ? await auth.session.authenticateRequest(c, token) : null;
+        const idle = current?.data.idle ? await auth.session.recordInput(signIn) : null;
+        if (current?.data.idle && !idle) return fail({ code: "UNAUTHORIZED", status: 401, message: "Authentication required" });
+        return ok({ sharedWorkstation: auth.session.isSharedWorkstation(c), idle });
+      }),
+  )
+
+  .put(
+    "/browser/shared-workstation",
+    auth.rejectAppSession,
+    requireBrowserSignIn,
+    requireBrowserCookie,
+    describeRoute({
+      tags: ["Me"],
+      summary: "Mark this browser as a shared workstation",
+      description:
+        "Marks or unmarks the browser, not the person; the mark stays after sign-out. Sessions there end after the administrator's idle minutes without input and when the browser closes, and the sign-in page remembers nothing. Marking applies to this browser session at once and forgets what the sign-in page remembered; unmarking lifts the limit for this session.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(BrowserStateSchema, "This browser's new sign-in state"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Browser sign-in required (BROWSER_SIGN_IN_REQUIRED)"),
+      },
+    }),
+    v("json", z.object({ shared: z.boolean() }).strict()),
+    async (c) =>
+      respond(c, async () => {
+        const signIn = await auth.browserSignIn(c);
+        if (!signIn) throw new Error("Browser sign-in gate was not applied");
+        const { shared } = c.req.valid("json");
+        const state = await auth.session.setSharedWorkstation(c, signIn, shared);
+        const user = c.get("user");
+        try {
+          await audit.record({
+            action: shared ? "auth.session.shared_workstation.mark" : "auth.session.shared_workstation.unmark",
+            outcome: "allowed",
+            actor: toAccountsActor(user),
+            target: { type: "user", id: user.id, label: user.uid, provider: user.provider },
+          });
+        } catch {
+          log.warn("Shared workstation changed, but recording the audit event failed", { userId: user.id });
+        }
+        return ok(state);
       }),
   )
 

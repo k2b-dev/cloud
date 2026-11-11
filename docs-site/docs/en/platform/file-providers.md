@@ -5,7 +5,7 @@ section: Platform services
 order: 558
 description: Let people add files from any Cloud application with one chooser, save copies into applications such as Files, and implement the file-provider contract so your application can offer its files.
 tags: [capabilities, files, contracts, streams, upload]
-updated: 2026-10-16
+updated: 2026-11-10
 ---
 
 # Offer and choose files across applications
@@ -66,10 +66,22 @@ list is shared by choosing and saving for this document.
   after an empty or refused answer; its device control opens the native dialog
   from that new click. A refused answer is not kept: the next call asks the
   catalog again, so a session renewed in the meantime finds its providers.
-- **With providers:** it opens one compact file dialog on **This device**,
-  with every provider beside it. Inside a provider, people browse folders
-  page by page, filter by name, and choose files. See the
-  [file chooser](/en/ui/cloud/file-chooser) for the presentation.
+- **With providers:** it opens one file dialog with every provider beside
+  **This device**. Inside a provider, people browse folders page by page,
+  search by name, and choose files; on wide screens the file in focus shows
+  a preview. See the [file chooser](/en/ui/cloud/file-chooser) for the
+  presentation.
+- **Where it opens:** where the person was last, the same in every
+  application and on every device: the provider folder of their last
+  choice, or **This device**. Cloud keeps this place per person
+  (`GET` and `PUT /api/me/file-chooser/place`) and the chooser updates it as
+  it closes; your application passes nothing. The place is a provider app
+  and up to 16 folder IDs with their names, never access: the provider
+  authorizes each folder again. A folder that is gone opens the provider's
+  root, and a provider that is gone leaves **This device** open, both
+  without an error. Only a place the person moved to replaces the stored
+  one; closing where the chooser opened keeps it. If the place cannot be read or saved, the chooser opens
+  on **This device** and works as before.
 - **`accept`** (`<input accept>` syntax) limits what can be chosen. Provider
   files that do not match are shown disabled with the reason.
 - **`maxBytes`** is the largest single file you take from a provider. The
@@ -122,6 +134,15 @@ list is shared by choosing and saving for this document.
   take a file by its name or type. Serve stored files with
   `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` as
   for any upload.
+- **Previews** of PDFs and raster images read the file through the same
+  read stream, with the same limits, `accept`, and type proof, after the
+  focus rested 250 ms; only a file whose first bytes prove a PDF or an image
+  is drawn. **Add** reuses what a preview read when it still has the listed
+  size; otherwise it reads the file again within the choice's limits. The
+  browser keeps previews of the selected files and the one shown last, at
+  most `maxTotalBytes` together beyond that one, and drops them when the
+  folder changes or the dialog closes. Small screens show no preview and
+  read nothing for one.
 - **A provider that is gone:** when a provider's root answers 403 or 404, it
   leaves the sources of this dialog, and the status says it is no longer
   available. A folder deeper inside that answers 403 or 404 shows the
@@ -290,13 +311,19 @@ function, and `FILE_PROVIDER_FUNCTIONS` lists their names. `save` must declare
   shows a person's storage bases as root folders. `query` filters names inside
   the folder; `limit` is 1 to 100 and defaults to 50. `cursor` continues from
   the previous page; send it with the same `parent`, `query`, `limit`, and
-  optional `context`. A provider may reject a cursor with other values; Files answers
-  `409 cursor_invalid`.
+  optional `context` and `scope`. A provider may reject a cursor with other
+  values; Files answers `409 cursor_invalid`. A provider that can search
+  below a folder accepts `scope: "tree"`; see **Search below a folder**.
 - **Entries** are `folder` or `file`, with an opaque `id` of up to 2,048
   characters and a `name`. Files also carry `size` and may carry `mediaType`.
   Both kinds may carry `updatedAt`, a Tabler `icon` class, and up to three
   display `tags` of up to 40 characters with an optional `tone`. Tags describe
-  an entry; they do not filter or grant anything.
+  an entry; they do not filter or grant anything. A page may set `incomplete`
+  when a tree search left out folders it could not search (see **Search below
+  a folder**). A tree-search hit may carry
+  `location`, up to 1,024 characters: the folders between the searched folder
+  and the hit as people read them, for example `Team / Reports`. Consumers
+  show it as text, cleaned of control and bidi characters.
 - **`read`** takes a file `id` from `list` and returns a read stream. Report
   the file's media type in the stream descriptor.
 - **`save`** takes a `parent` folder `id`, a single file `name`, a
@@ -389,6 +416,31 @@ descriptors, receipts, and recovery.
 Omit `save` from `fileProvider` for a read-only provider. One application has
 one provider; offer several roots as virtual folders instead.
 
+### Name the source
+
+File dialogs show a provider under its application's name and icon. When
+your files are better known by another name, such as a scan inbox inside a
+warehouse application, declare `title` and `icon` in `fileProvider`:
+
+```ts
+defineCapabilities({
+  // …queries as above
+  fileProvider: { list: "folder.list", read: "document.read", title: "Scanner", icon: "ti ti-scan" },
+  presentation: { baseLocale: "en", translations: { de: { fileProvider: { title: "Scanner" } } } },
+});
+```
+
+- `title` has 1 to 80 characters in the presentation's base locale.
+  Translate it in `presentation.translations[locale].fileProvider.title`;
+  Core localizes it for the request locale like your other presentation. A
+  translation without a base `title` fails at start.
+- `icon` is a Tabler class of up to 120 characters, such as `ti ti-scan`.
+  Dialogs show only a valid `ti ti-…` class and otherwise the application's
+  icon.
+- Both are optional and change nothing else: the provider keeps one
+  declaration, its permissions, and its folders. Without them, a manifest
+  keeps its earlier shape and hash.
+
 Keep these rules in every call:
 
 - Authorize each call with the caller's own access. Listing a folder is not a
@@ -405,6 +457,58 @@ Keep these rules in every call:
   limit, and Core rejects larger transfers.
 - Make `save` idempotent per key: a retry with the same key returns the same
   transfer, never a second file and never a conflict with itself.
+
+## Search below a folder
+
+The chooser's name filter can search the open folder and every folder below
+it, as Files does. Use `FileProviderTreeListInputSchema` as your list Query's
+input to accept `scope`:
+
+```ts
+import { FileProviderListDataSchema, FileProviderTreeListInputSchema } from "@k2b/cloud/contracts";
+
+"folder.list": {
+  title: "Browse archived documents",
+  description: "List one folder, or with query and scope tree, find names below it with their location.",
+  input: FileProviderTreeListInputSchema,
+  data: FileProviderListDataSchema,
+  openWorld: false,
+  run: async (input, context) => ok({ data: await listOrSearch(context.accessSubject, input) }),
+},
+```
+
+- `scope: "tree"` comes only with a `query`. Return the matching entries in
+  `parent` and every folder below it, folders and files, best matches first,
+  each with its `location` below `parent`. Without `parent`, search your
+  root as you choose; Files walks every storage base of the person, one
+  search page per call.
+- `scope: "folder"`, or no `scope`, filters inside `parent` only, as before.
+- Keep pages bounded like any other: up to `limit` entries, `next` until the
+  last page, and the same `scope` with every cursor. Fail rather than answer
+  an outage or a cut-off search with an empty page.
+- Authorize every hit as for listing: list only entries the caller can open,
+  and never let a hit's `location` reveal a folder the caller cannot read.
+- When you cannot search part of the tree, such as an unreadable folder
+  below, answer what you can and set `incomplete: true` on the page; never
+  answer 403 or 404 for it, which consumers read as lost access. Only a
+  listing without `query` that answers 403 or 404 means the folder or the
+  provider is gone. Consumers keep the note once any page of a search sets
+  it; the chooser shows **Some subfolders could not be searched** in its
+  status line and keeps the hits, without an error.
+- Files searches as the person's Unix identity, and Filegate refuses such a
+  tree search as a whole when any folder below is unreadable, even one that
+  would not match. Files then filters names inside `parent` only
+  (`incomplete: true` on every page), and at the root it leaves out a base
+  whose tree is refused and continues with the next.
+- `writable` still describes `parent`.
+
+Consumers check `fileProviderSearchesTree(manifest)` before they send
+`scope`; like context support, it reads an explicitly named, compatible
+`scope` property from the list input. The chooser then labels its filter
+**Search here and in subfolders**; for other providers it says **Filter this
+folder**. It asks after 250 ms and stops a request that is still running when
+the person types again. A provider can accept both `context` and `scope`
+with an input that extends both schemas.
 
 ## Offer matching files
 
@@ -513,10 +617,17 @@ read shows **Try again** in that place instead of an empty list.
 
 ## Roll out a provider
 
-Adding context support needs no catalog-reader update: it is declared in the
-list input, with no new field in `fileProvider`. Older consumers keep listing
-the provider without context. Context-aware consumers use
-`fileProviderAcceptsContext` before sending it.
+Adding context or tree-search support needs no catalog-reader update: both
+are declared in the list input, with no new field in `fileProvider`. Older
+consumers keep listing the provider without them. Consumers use
+`fileProviderAcceptsContext` and `fileProviderSearchesTree` before sending
+`context` or `scope`.
+
+`title` and `icon` are new fields in `fileProvider`. A catalog reader from a
+release before them leaves out a declaration that carries them, so the
+provider disappears from that reader's dialogs while your other capabilities
+stay. Update Core and the other catalog readers, as listed below, before you
+declare them.
 
 `fileProvider` is optional. A manifest without it keeps its earlier shape and
 hash, so nothing changes for applications that do not offer files.

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { geoNavigationHref, geoNavigationPlatform } from "./navigation";
+import { geoNavigationHref, geoNavigationPlatform } from "./map-navigation";
 
 test("navigation links open the platform's maps app with only destination and name", () => {
   const target = { point: { lat: 48.39841, lon: 9.99155 }, text: "Frauenstraße 28, 89073 Ulm", name: "Jana Berger" };

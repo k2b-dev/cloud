@@ -136,7 +136,13 @@ const CALENDAR_SOURCE_FIELDS = {
   move: true,
   delete: true,
 } satisfies DefinedFields<CapabilityCalendarSourceDeclaration>;
-const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
+const FILE_PROVIDER_FIELDS = {
+  list: true,
+  read: true,
+  save: true,
+  title: true,
+  icon: true,
+} satisfies DefinedFields<CapabilityFileProviderDeclaration>;
 const TYPE_FIELDS = {
   assistant: true,
   codeAccount: true,
@@ -549,7 +555,8 @@ export const compileCapabilityPresentation = (
     }
     const raw = rawTranslation as Record<string, unknown>;
     const extra = Object.keys(raw).find(
-      (key) => key !== "types" && key !== "queries" && key !== "actions" && key !== "commands" && key !== "events",
+      (key) =>
+        key !== "types" && key !== "queries" && key !== "actions" && key !== "commands" && key !== "events" && key !== "fileProvider",
     );
     if (strict && extra) throw new Error(`Capability presentation translation ${canonical} contains unsupported field "${extra}"`);
     const compileGroup = <T>(
@@ -607,8 +614,21 @@ export const compileCapabilityPresentation = (
     const translatedQueries = compileGroup(raw.queries, queries, "Query", operationPresentation);
     const translatedActions = compileGroup(raw.actions, actions, "Action", operationPresentation);
     const translatedCommands = compileGroup(raw.commands, commands, "Command", operationPresentation);
+    const translatedProvider = ((): { title: string } | undefined => {
+      if (raw.fileProvider === undefined) return undefined;
+      try {
+        if (!manifest.fileProvider?.title) throw new Error("fileProvider translation needs a fileProvider title in the base locale");
+        const parsed = z.object({ title: z.string().trim().min(1).max(80).optional() });
+        const copy = (strict ? parsed.strict() : parsed).parse(raw.fileProvider);
+        return copy.title ? { title: copy.title } : undefined;
+      } catch (error) {
+        if (strict) throw error;
+        return undefined;
+      }
+    })();
     translations[canonical] = {
       ...(translatedEvents ? { events: translatedEvents } : {}),
+      ...(translatedProvider ? { fileProvider: translatedProvider } : {}),
       ...(translatedTypes ? { types: translatedTypes } : {}),
       ...(translatedQueries ? { queries: translatedQueries } : {}),
       ...(translatedActions ? { actions: translatedActions } : {}),
@@ -1147,7 +1167,16 @@ export const compileCapabilities = (
     // Omitted when unused so manifests without a provider keep their earlier hash.
     ...(calendarSource ? { calendarSource: { ...calendarSource } } : {}),
     ...(fileProvider
-      ? { fileProvider: { list: fileProvider.list, read: fileProvider.read, ...(fileProvider.save ? { save: fileProvider.save } : {}) } }
+      ? {
+          fileProvider: {
+            list: fileProvider.list,
+            read: fileProvider.read,
+            ...(fileProvider.save ? { save: fileProvider.save } : {}),
+            // Title and icon are omitted when unset, so providers without them keep their earlier hash.
+            ...(fileProvider.title !== undefined ? { title: fileProvider.title.trim() } : {}),
+            ...(fileProvider.icon !== undefined ? { icon: fileProvider.icon } : {}),
+          },
+        }
       : {}),
   };
   const manifest = StrictCapabilityManifestSchema.parse({
@@ -1357,7 +1386,14 @@ export const resolveCapabilityManifestPresentation = (
       ...(current.discussions ? { discussions: current.discussions } : {}),
       ...(current.resourcePages ? { resourcePages: current.resourcePages } : {}),
       ...(current.calendarSource ? { calendarSource: current.calendarSource } : {}),
-      ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
+      ...(current.fileProvider
+        ? {
+            fileProvider:
+              current.fileProvider.title && translation.fileProvider?.title
+                ? { ...current.fileProvider, title: translation.fileProvider.title }
+                : current.fileProvider,
+          }
+        : {}),
       ...(current.policies ? { policies: current.policies } : {}),
     };
     current = CapabilityManifestSchema.parse({ ...manifestBase, manifestHash: capabilityHash(manifestBase) });

@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-10-23
+updated: 2026-11-10
 ---
 
 # Universal search
@@ -724,7 +724,11 @@ actions first. This affects presentation only; it never resolves a shortcut
 conflict or grants permission. Remove selection actions when the object closes.
 
 Up to three context actions appear before typing, in both the global and
-app-scoped search. The Actions view exposes the full list. Actions are never
+app-scoped search. The Actions view exposes the full list. Cloud's own shell
+commands, such as **Hide sidebar** and **Privacy screen now**, apply on every
+page: they form the group **Cloud** ahead of the page's actions and show in the
+Actions view or when typed. Set optional `keywords` on a context command for
+more words the search matches, such as English terms on a German page. Actions are never
 implicitly selected in an empty search: click them, or select with
 an arrow key before pressing Enter. Typing a filter after `>` selects the first
 matching action for Enter. Asynchronous catalog updates preserve the selected
@@ -796,7 +800,9 @@ with their Solid owner and re-register when the target or permission changes.
 Unmodified shortcuts do not run in editable fields. Registered Control/Command
 combinations take priority over editor bindings; all other editor keys remain local.
 Events already prevented by another capture listener are ignored. Application shortcuts do
-not run behind an open dialog. The universal search shortcut remains available.
+not run behind an open dialog. The universal search shortcut and the privacy
+screen's `mod+.` remain available. A shortcut on `.` matches the character
+with or without Shift, because some layouts, such as French, need Shift for it.
 Repeated and IME composition events are ignored. The palette and keyboard share
 live ownership checks, prevent concurrent execution of one registration, and
 show an execution error once. Never bind destructive or send actions to casual

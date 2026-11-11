@@ -1,4 +1,4 @@
-import type { GeoPoint } from "../contracts/geo";
+import type { MapViewPoint } from "./map-view-types";
 
 export type GeoNavigationPlatform = "android" | "ios" | "desktop";
 
@@ -7,11 +7,11 @@ export const geoNavigationPlatform = (userAgent: string): GeoNavigationPlatform 
   /android/i.test(userAgent) ? "android" : /iphone|ipad|ipod/i.test(userAgent) ? "ios" : "desktop";
 
 /**
- * A link into a navigation app. Cloud does no live navigation; the link leaves Cloud only on click and carries
+ * A link into a navigation app. There is no live navigation; the link leaves the page only on click and carries
  * just the destination and an optional name. Without a point it navigates to the address text.
  */
 export const geoNavigationHref = (
-  target: { point?: GeoPoint | null; text: string; name?: string },
+  target: { point?: MapViewPoint | null; text: string; name?: string },
   platform: GeoNavigationPlatform,
 ): string => {
   const point = target.point ? `${target.point.lat},${target.point.lon}` : null;
