@@ -3,9 +3,10 @@ import { type CodeBridgeCall, CodeBridgeRefusal } from "@k2b/cloud/api";
 import { CODE_DATABASE_LIMITS, type CodeDatabaseRequest } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import type { SQL } from "bun";
-import type { CodeContext } from "./access";
+import { type CodeContext, codePerson } from "./access";
 import { authorizeCodeCall } from "./bridge";
 import { CodeIdSchema } from "./contracts";
+import { codeDatabaseOwnerCapacity, reserveCodeDatabaseCapacity } from "./database-budget";
 import { createCodeDatabaseClient } from "./database-client";
 import { codeDatabaseSettings } from "./database-settings";
 import { codeSettings } from "./settings";
@@ -42,19 +43,30 @@ export async function dispatchCodeDatabase(
   const config = await readCodeDatabaseConfig();
   const namespace = codeDatabaseNamespace(input.claims.codeId);
   const bytes = await codeSettings.get("core.code.database_bytes");
+  const ownerLimit = await codeSettings.get("core.code.database_owner_bytes");
   const prepared = await sql.begin(async (tx) => {
     await authorizeCodeCall(call, tx);
-    // Commit the intent before provisioning, including when the remote response is lost.
-    await tx`INSERT INTO code.databases(code_id,namespace,server_url) VALUES(${input.claims.codeId},${namespace},${config.url})
-      ON CONFLICT(code_id) DO NOTHING`;
-    const [mapping] = await tx<Mapping[]>`SELECT namespace,connected,server_url FROM code.databases WHERE code_id=${input.claims.codeId}`;
+    const capacity = await reserveCodeDatabaseCapacity(tx, input.claims.codeId, bytes, ownerLimit, input.request.operation !== "db.query");
+    let [mapping] = await tx<(Mapping & { reserved_bytes: string })[]>`
+      SELECT namespace,connected,server_url,reserved_bytes::text FROM code.databases WHERE code_id=${input.claims.codeId}`;
+    // Commit new intent before provisioning. An unchanged reservation must not lock the mapping:
+    // the provisioner holds it during remote creation, and concurrent calls must reach the nonblocking lifecycle guard.
+    if (!mapping) {
+      await tx`INSERT INTO code.databases(code_id,namespace,server_url,reserved_bytes) VALUES(${input.claims.codeId},${namespace},${config.url},${capacity})
+        ON CONFLICT(code_id) DO NOTHING`;
+      [mapping] = await tx<(Mapping & { reserved_bytes: string })[]>`
+        SELECT namespace,connected,server_url,reserved_bytes::text FROM code.databases WHERE code_id=${input.claims.codeId}`;
+    } else if (capacity > Number(mapping.reserved_bytes)) {
+      await tx`UPDATE code.databases SET reserved_bytes=${capacity}
+        WHERE code_id=${input.claims.codeId} AND reserved_bytes<${capacity}`;
+    }
     if (!mapping || mapping.namespace !== namespace) throw new CodeBridgeRefusal("code_db_unavailable", 503);
     sameServer(mapping, config.url);
     const wallMs = await codeSettings.get("core.code.wall_clock_ms");
     const [run] = await tx<{ remaining_ms: number }[]>`SELECT GREATEST(1, EXTRACT(EPOCH FROM
       (started_at + ${wallMs} * interval '1 millisecond' - clock_timestamp())) * 1000)::double precision AS remaining_ms
       FROM code.runs WHERE id=${input.claims.runId}::uuid`;
-    return { connected: mapping.connected, remainingMs: run?.remaining_ms ?? 1 };
+    return { connected: mapping.connected, remainingMs: run?.remaining_ms ?? 1, bytes: Math.min(bytes, capacity) };
   });
   const deadlineMs = Math.max(
     1,
@@ -74,14 +86,14 @@ export async function dispatchCodeDatabase(
       if (!mapping || mapping.namespace !== namespace) throw new CodeBridgeRefusal("code_db_unavailable", 503);
       sameServer(mapping, config.url);
       if (!mapping.connected) {
-        await client.create(namespace, bytes, CODE_DATABASE_LIMITS.statementMs);
+        await client.create(namespace, prepared.bytes, CODE_DATABASE_LIMITS.statementMs);
         await tx`UPDATE code.databases SET connected=TRUE WHERE code_id=${input.claims.codeId}`;
       }
     });
   }
   // Fixed server timeout avoids concurrent runs changing one another's statement budget.
   // Apply the current quota before issuance; remaining run time is enforced by the request signal.
-  await client.configure(namespace, bytes, CODE_DATABASE_LIMITS.statementMs);
+  await client.configure(namespace, prepared.bytes, CODE_DATABASE_LIMITS.statementMs);
   await sql.begin((tx) => authorizeCodeCall(call, tx));
   const data = await client.execute(namespace, input.request);
   if (Buffer.byteLength(JSON.stringify(data)) > CODE_DATABASE_LIMITS.resultBytes) throw new CodeBridgeRefusal("code_db_limit");
@@ -110,7 +122,13 @@ export async function deleteCodeDatabase(codeId: string, tx: SQL, factory: typeo
   await factory(config).remove(mapping.namespace);
 }
 
-export type CodeDatabaseUsage = { bytes: number | null; limit: number; state: "unused" | "ready" | "unavailable" };
+export type CodeDatabaseUsage = {
+  bytes: number | null;
+  limit: number;
+  state: "unused" | "ready" | "unavailable";
+  owner?: { reserved: number; limit: number };
+  canExport?: boolean;
+};
 /** Reading usage never creates a database; remote failure leaves the Code page usable. */
 export async function readCodeDatabaseUsage(
   codeId: string,
@@ -118,20 +136,25 @@ export async function readCodeDatabaseUsage(
   signal?: AbortSignal,
 ): Promise<CodeDatabaseUsage> {
   const limit = await codeSettings.get("core.code.database_bytes");
+  const owner = { reserved: await codeDatabaseOwnerCapacity(sql, codeId), limit: await codeSettings.get("core.code.database_owner_bytes") };
   const [mapping] = await sql<Mapping[]>`SELECT namespace,connected,server_url FROM code.databases WHERE code_id=${codeId}`;
-  if (!mapping) return { bytes: 0, limit, state: "unused" };
+  if (!mapping) return { bytes: 0, limit, state: "unused", owner };
   try {
     const config = await readCodeDatabaseConfig();
     sameServer(mapping, config.url);
     const deadline = AbortSignal.timeout(2000); // Keep the interactive Code read usable during an RSQL outage.
     const usageSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
-    return { bytes: await factory(config, usageSignal).size(mapping.namespace), limit, state: "ready" };
+    return { bytes: await factory(config, usageSignal).size(mapping.namespace), limit, state: "ready", owner };
   } catch {
-    return { bytes: null, limit, state: "unavailable" };
+    return { bytes: null, limit, state: "unavailable", owner };
   }
 }
 
 export async function readCodeDetails(codeId: string, context: CodeContext) {
   const result = await readCode(codeId, context);
-  return { ...result, code: { ...result.code, database: await readCodeDatabaseUsage(codeId, createCodeDatabaseClient, context.signal) } };
+  const database = await readCodeDatabaseUsage(codeId, createCodeDatabaseClient, context.signal);
+  // Export follows the same service guard on both surfaces; Core admins can export without an editor share.
+  database.canExport = result.permission === "editor" || codePerson(context).roles.includes("admin");
+  if (!database.canExport) delete database.owner;
+  return { ...result, code: { ...result.code, database } };
 }

@@ -325,3 +325,10 @@ test("approval describes calls rather than suggesting a grant change", () => {
   expect(html).toContain("Was der Code aufruft");
   expect(html).not.toContain("Was sich an den Rechten ändert");
 });
+
+test("administrator detail shows database size, owner capacity and the shared export link", () => {
+  const html = render({ sec: "code", id: "c_rechn" }, "normal", "en");
+  expect(renderedText(html, " ")).toContain("Database: 1.00 MB of 100.00 MB");
+  expect(renderedText(html, " ")).toContain("Owner reserved capacity: 200.00 MB of 1,000.00 MB");
+  expect(html).toContain("/api/code/authoring/database/c_rechn/export");
+});
