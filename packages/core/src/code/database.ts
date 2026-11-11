@@ -154,7 +154,9 @@ export async function readCodeDatabaseUsage(
     (Mapping & { unused_since: Date | null })[]
   >`SELECT namespace,connected,server_url,unused_since FROM code.databases WHERE code_id=${codeId}`;
   if (!mapping) return { bytes: 0, limit, state: "unused", owner };
-  const unused = await readDatabaseDeadline(codeId);
+  // Retention metadata must not take an active Code's page down. The sweep fails closed
+  // on the same unreadable setting; omitting an unavailable date never authorizes deletion.
+  const unused = mapping.unused_since ? await readDatabaseDeadline(codeId).catch(() => undefined) : undefined;
   try {
     const config = await readCodeDatabaseConfig();
     sameServer(mapping, config.url);

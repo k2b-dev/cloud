@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
+import * as storedSettings from "@k2b/cloud/services/settings";
 import type { SQL } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -9,6 +10,7 @@ import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import { readCodeDatabaseUsage } from "./database";
 import { codeDatabaseOwnerCapacity } from "./database-budget";
 import type { CodeDatabaseClient } from "./database-client";
 import { DATABASE_EXPIRY_NOTICE_MS, readDatabaseDeadline } from "./database-deadline";
@@ -52,7 +54,7 @@ const signal = () => new AbortController().signal;
 databaseSuite()("Unused Code database retention", () => {
   let db: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
-  let retentionSetting: ReturnType<typeof spyOn<typeof codeSettings, "read">>;
+  let retentionSetting: ReturnType<typeof spyOn<typeof storedSettings, "read">>;
   let connection: ReturnType<typeof spyOn<typeof codeDatabaseSettings, "read">>;
   let days = 30;
   let ordinal = 0;
@@ -118,8 +120,8 @@ databaseSuite()("Unused Code database retention", () => {
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) =>
       key === "core.code.database_unused_days" ? days : CODE_SETTINGS[key].default,
     );
-    retentionSetting = spyOn(codeSettings, "read").mockImplementation(async (key) => ({
-      value: key === "core.code.database_unused_days" ? days : CODE_SETTINGS[key].default,
+    retentionSetting = spyOn(storedSettings, "read").mockImplementation(async () => ({
+      value: days,
       stored: "readable" as const,
     }));
     const values = {
@@ -324,12 +326,36 @@ databaseSuite()("Unused Code database retention", () => {
       }),
     ).resolves.toEqual({ deleted: true });
   });
+  test("an unreadable retention setting leaves Code usage readable and automatic deletion stopped", async () => {
+    const id = await fixture();
+    retentionSetting.mockResolvedValueOnce({ value: 30, stored: "unreadable" });
+    const usage = await readCodeDatabaseUsage(id, () => client);
+    expect(usage.state).toBe("ready");
+    expect(usage.unused).toBeUndefined();
+    retentionSetting.mockResolvedValueOnce({ value: 30, stored: "unreadable" });
+    await expect(expireUnusedCodeDatabases(fixed, signal())).rejects.toThrow("code_database_retention_setting_unreadable");
+    expect(await unused(id)).toEqual(since);
+    await sql`UPDATE code.codes SET state='active' WHERE id=${id}`;
+    const reads = retentionSetting.mock.calls.length;
+    expect((await readCodeDatabaseUsage(id, () => client)).state).toBe("ready");
+    expect(retentionSetting.mock.calls.length).toBe(reads);
+  });
+  test("a full batch of pending legacy removals cannot starve later expiry candidates", async () => {
+    for (let i = 0; i < 50; i++) {
+      const id = await fixture();
+      await sql`INSERT INTO code.database_deletions(code_id,namespace,server_url) VALUES(${id},${`code_${id}`},'http://rsql.test')`;
+    }
+    const ready = await fixture();
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(1);
+    expect(await unused(ready)).toBeUndefined();
+    expect(await sql`SELECT code_id FROM code.databases`).toHaveLength(50);
+  });
   test("shortening retention persists the same visible advance notice in Code and admin before expiry", async () => {
     const id = await fixture();
     await changeDays(3);
     expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
     const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
-    expect(await readDatabaseDeadline(id)).toMatchObject({ deleteAt: deleteAt.toISOString() });
+    expect((await readCodeDatabaseUsage(id, () => client)).unused?.deleteAt).toBe(deleteAt.toISOString());
     expect((await listUnusedCodeDatabases(context)).items[0]?.deleteAt).toBe(deleteAt.toISOString());
     expect(await expireUnusedCodeDatabases(new Date(deleteAt.getTime() - 1), signal())).toBe(0);
     expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(1);
@@ -355,6 +381,26 @@ databaseSuite()("Unused Code database retention", () => {
     const deleteAt = new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS);
     expect((await readDatabaseDeadline(id))?.deleteAt).toBe(deleteAt.toISOString());
     expect(await expireUnusedCodeDatabases(deleteAt, signal())).toBe(1);
+  });
+  test("a setting change cannot commit across the expiry admission's policy lock", async () => {
+    const id = await fixture();
+    await sql.begin(async (admission) => {
+      const [before] = await admission<
+        { revision: string }[]
+      >`SELECT revision::text FROM code.database_retention_policy WHERE singleton FOR SHARE`;
+      await expect(
+        sql.begin(async (writer) => {
+          await writer`SET LOCAL lock_timeout='100ms'`;
+          await writer`INSERT INTO settings.entries(key,value) VALUES('core.code.database_unused_days','3')
+          ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+        }),
+      ).rejects.toThrow();
+      const [after] = await admission<{ revision: string }[]>`SELECT revision::text FROM code.database_retention_policy WHERE singleton`;
+      expect(after?.revision).toBe(before?.revision);
+    });
+    await changeDays(3);
+    expect(await expireUnusedCodeDatabases(fixed, signal())).toBe(0);
+    expect((await readDatabaseDeadline(id))?.deleteAt).toBe(new Date(fixed.getTime() + DATABASE_EXPIRY_NOTICE_MS).toISOString());
   });
   test("resource and app owners receive the same persisted visible advance notice", async () => {
     await fixture("resource");

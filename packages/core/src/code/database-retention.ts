@@ -113,7 +113,9 @@ export async function expireUnusedCodeDatabases(now: Date, signal: AbortSignal) 
     await tx`SET LOCAL statement_timeout='2s'`;
     const policy = await lockDatabaseRetentionPolicy(tx);
     return tx<{ code_id: string }[]>`SELECT code_id FROM code.databases
-      WHERE unused_since IS NOT NULL AND (unused_policy_revision IS DISTINCT FROM ${policy.revision}::bigint
+      WHERE unused_since IS NOT NULL
+        AND NOT EXISTS(SELECT 1 FROM code.database_deletions x WHERE x.namespace=code.databases.namespace)
+        AND (unused_policy_revision IS DISTINCT FROM ${policy.revision}::bigint
         OR unused_days IS DISTINCT FROM ${policy.days} OR (${policy.days}>0 AND (unused_shown_at IS NULL OR unused_delete_at<=${now})))
       ORDER BY unused_since,code_id LIMIT 50`;
   });

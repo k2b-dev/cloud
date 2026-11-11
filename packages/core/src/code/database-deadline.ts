@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { read as readSetting } from "@k2b/cloud/services/settings";
 import type { SQL } from "bun";
 import { codeSettings } from "./settings";
 
@@ -9,9 +10,9 @@ export const databaseDeletionDate = (since: Date, days: number, shownAt: Date = 
   days === 0 ? null : new Date(Math.max(since.getTime() + days * 86_400_000, shownAt.getTime() + DATABASE_EXPIRY_NOTICE_MS));
 
 /** Destructive maintenance never falls back over an unreadable operator setting. */
-export async function readUnusedDatabaseDays() {
-  const state = await codeSettings.read("core.code.database_unused_days");
-  if (state.stored === "unreadable") throw new Error("code_database_retention_setting_unreadable");
+export async function readUnusedDatabaseDays(tx?: SQL) {
+  const state = tx ? await readSetting("core.code.database_unused_days", tx) : await codeSettings.read("core.code.database_unused_days");
+  if (state.stored === "unreadable" || typeof state.value !== "number") throw new Error("code_database_retention_setting_unreadable");
   return state.value;
 }
 export type DatabaseRetentionPolicy = { revision: string; days: number };
@@ -21,7 +22,7 @@ export type DatabaseRetentionPolicy = { revision: string; days: number };
 export async function lockDatabaseRetentionPolicy(tx: SQL): Promise<DatabaseRetentionPolicy> {
   const [policy] = await tx<{ revision: string }[]>`SELECT revision::text FROM code.database_retention_policy WHERE singleton FOR SHARE`;
   if (!policy) throw new Error("code_database_retention_policy_missing");
-  return { revision: policy.revision, days: await readUnusedDatabaseDays() };
+  return { revision: policy.revision, days: await readUnusedDatabaseDays(tx) };
 }
 
 /** Persist before exposing the date. A setting change starts the same advance notice for
