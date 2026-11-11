@@ -13,7 +13,6 @@ import {
   fileKindLabel,
   formatFileViewSize,
   IconButton,
-  Kbd,
   Placeholder,
   prompts,
   Section,
@@ -330,9 +329,9 @@ export default function FileInspector(props: {
                     }
                   />
                   <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
-                    {/* The preview leads the body without a heading of its own: the icon in its corner, Space, or a click
-                        on a picture opens the quick view. Photos, PDFs and Office documents show the service's preview
-                        of their first page; texts, video and audio keep their own preview. */}
+                    {/* The preview leads the body without a heading of its own: the icon in its corner, or a click on a
+                        picture, opens it large. Photos, PDFs and Office documents show the service's preview of their
+                        first page; texts, video and audio keep their own preview. */}
                     <Show when={!item().directory && (pictured(item()) || previewKind(item()))}>
                       <div class="filesv2-inspector-preview" data-preview={previewSource(item()) ?? previewKind(item()) ?? undefined}>
                         <Show
@@ -362,7 +361,6 @@ export default function FileInspector(props: {
                         >
                           <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
                             <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
-                            <Kbd class="filesv2-hero__key" keys="space" />
                           </button>
                         </Show>
                         <div class="filesv2-inspector-preview__expand">

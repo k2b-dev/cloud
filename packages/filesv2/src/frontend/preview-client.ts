@@ -1,5 +1,4 @@
 import { previewSourceKind } from "@k2b/cloud/shared";
-import { apiClient } from "../api/client";
 import type { FileEntry } from "../contracts";
 
 export type PreviewVariant = "small" | "large" | "pdf" | "text";
@@ -93,16 +92,10 @@ export async function loadPreview(url: string, signal: AbortSignal): Promise<Pre
   return { state: "none" };
 }
 
-/** Clears a remembered failure for the file's current version and asks for a new attempt. */
-export async function retryPreview(baseId: string, entry: FileEntry) {
-  const response = await apiClient.bases[":baseId"].preview.retry.$post({ param: { baseId }, json: { path: entry.path } });
-  if (!response.ok) throw new Error(`preview retry ${response.status}`);
-}
-
 const prefetched = new Set<string>();
 /**
- * Warms the browser's cache with the large preview while the pointer rests on a file, so Space shows it without waiting.
- * A preview still being drawn is only requested; the quick view asks again when it opens.
+ * Warms the browser's cache with the large preview while the pointer rests on a file, so its details show it at once.
+ * A preview still being drawn is only requested; the details ask again when they open.
  */
 export function prefetchPreview(baseId: string, entry: FileEntry) {
   const kind = previewSource(entry);
