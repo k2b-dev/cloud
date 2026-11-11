@@ -5,7 +5,6 @@ packages/cloud/src/ai/memory-workflow-evidence.integration.test.ts | 1
 packages/cloud/src/ai/messages-page.integration.test.ts | 2
 packages/cloud/src/ai/prefs.integration.test.ts | 1
 packages/cloud/src/api/me-password-sign-out.integration.test.ts | 1
-packages/cloud/src/services/geoip/index.ts | 1
 packages/cloud/src/services/notifications/batches-claim.integration.test.ts | 1
 packages/cloud/src/services/notifications/batches.test.ts | 1
 packages/cloud/src/services/session/user.integration.test.ts | 1
