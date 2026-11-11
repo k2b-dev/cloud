@@ -16,6 +16,7 @@ import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
 import { publishMessageReceived } from "../app-events";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
+import { buildRuntimeHistoryIndexes } from "../migrate";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 import { isStorableMessageAddress, normalizeEmailAddress } from "./address-normalization";
 import { cleanupPublicAttachmentLinks } from "./attachment-links";
@@ -230,7 +231,7 @@ const initialCursor = (uidValidity: string, currentHighUid: number, highestModse
 // makes it active again. `pending`, `paused`, and `connection_required` stay
 // excluded, and the mailbox and binding checks still fence pause, credential
 // changes, and revocation.
-// `folderId` names the folder a sync run imports, so a requested sync can tell when it ran.
+// `folderId` names the folder in diagnostic history. Empty completed runs are removed at commit.
 export const claimFence = async (
   resourceId: string,
   bindingId: string,
@@ -2499,11 +2500,13 @@ export const commitSyncBatch = async (params: {
       SET
         envelope_cursor = ${params.cursor}::jsonb,
         sync_status = ${params.cursor.backfillComplete ? "current" : "syncing"},
-        last_reconciled_at = CASE WHEN ${params.reconcileWindow != null} THEN now() ELSE last_reconciled_at END
+        last_reconciled_at = CASE WHEN ${params.reconcileWindow != null} THEN now() ELSE last_reconciled_at END,
+        last_sync_snapshot = (
+          SELECT jsonb_build_object('startedAt', started_at, 'uidValidity', ${params.status.uidValidity}::text,
+            'statusHighUid', ${Math.max(0, params.status.uidNext - 1)}::bigint, 'statusModseq', ${params.status.highestModseq}::text)
+          FROM mail.sync_runs WHERE id = ${params.fence.runId}::uuid
+        )
       WHERE id = ${params.folderId}::uuid
-        AND (envelope_cursor IS DISTINCT FROM ${params.cursor}::jsonb
-          OR sync_status IS DISTINCT FROM ${params.cursor.backfillComplete ? "current" : "syncing"}
-          OR ${params.reconcileWindow != null})
     `;
     await tx`
       UPDATE mail.binding_folder_refs
@@ -2581,7 +2584,16 @@ export const commitSyncBatch = async (params: {
       WHERE mailbox.id = desired.id
         AND (mailbox.health, mailbox.health_reason) IS DISTINCT FROM (desired.health, desired.health_reason)
     `;
-    await tx`
+    const changed =
+      hydratedIds.length > 0 ||
+      draftImportSnapshotIds.length > 0 ||
+      draftExportSnapshotIds.length > 0 ||
+      flagsUpdated > 0 ||
+      removed > 0 ||
+      params.uidValidityChanged;
+    if (!changed) await tx`DELETE FROM mail.sync_runs WHERE id = ${params.fence.runId}::uuid AND state = 'running'`;
+    else
+      await tx`
       UPDATE mail.sync_runs
       SET
         state = 'completed',
@@ -2591,9 +2603,10 @@ export const commitSyncBatch = async (params: {
           envelopeKind: params.envelopeKind,
           imported: hydratedIds.length,
           draftImportsQueued: draftImportSnapshotIds.length,
+          draftExportsQueued: draftExportSnapshotIds.length,
           flagsUpdated,
           removed,
-          // The provider state this batch saw, so a requested sync can tell once Mail holds it.
+          // Diagnostic provider state; command progress uses the bounded folder checkpoint.
           statusHighUid: Math.max(0, params.status.uidNext - 1),
           statusModseq: params.status.highestModseq,
         }}::jsonb,
@@ -2709,8 +2722,8 @@ export const syncFolderBatch = async (
             const draftCounter = (uidValidity: string) => (maxUid: number) =>
               imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, uidValidity, maxUid, signal);
             // Most checks of a quiet folder find nothing new. Such a check reads STATUS first and ends
-            // before it claims a fence or records a run. A sync command waiting for the folder needs
-            // a recorded run, so its folder claims the fence first.
+            // before it claims a fence or records a run. A waiting sync command needs a fresh
+            // folder checkpoint, so its folder takes the fenced commit path.
             if (beforeCursor && mayBeUnchangedFolder(beforeCursor, draftsFolder) && !(await folderSyncAwaited(folderId))) {
               failedRun.claimFence = () => claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
               const status = await readStatus();
@@ -3870,7 +3883,7 @@ const submitDueWork = async (): Promise<{
   };
 };
 
-/** `awaited`: a sync command waits for the folders, so each records a completed run. */
+/** `awaited`: a sync command waits for a fresh committed checkpoint from each folder. */
 export const enqueueMailboxSync = async (
   mailboxId: string,
   options: { trigger?: FolderSyncTrigger; awaited?: boolean } = {},
@@ -3915,43 +3928,27 @@ export const requestedSyncProgress = async (params: {
   requests: Array<{ id: string; folderId: string | null; since: Date }>;
 }): Promise<Map<string, { folders: number; synced: number; failed: number }>> => {
   if (params.requests.length === 0) return new Map();
-  // One pass over the mailbox's runs since the earliest request, however many requests wait.
+  // One checkpoint per folder, independent of history volume and retention.
   const rows = await sql<{ id: string; folders: number; pending: string }[]>`
     WITH requests AS (
       SELECT id, "folderId" AS folder_id, since
       FROM jsonb_to_recordset(${params.requests}::jsonb) AS request(id text, "folderId" text, since timestamptz)
     ),
-    runs AS MATERIALIZED (
-      SELECT
-        run.stats ->> 'folderId' AS folder_id,
-        run.started_at,
-        run.cursor_after ->> 'uidValidity' AS uid_validity,
-        (run.stats ->> 'statusHighUid')::bigint AS high_uid,
-        (run.stats ->> 'statusModseq')::numeric AS modseq
-      FROM mail.remote_resources rr
-      JOIN mail.sync_runs run ON run.remote_resource_id = rr.id
-      WHERE rr.mailbox_id = ${params.mailboxId}::uuid
-        AND run.started_at >= (SELECT min(since) FROM requests)
-        AND run.state = 'completed'
-        AND run.stats ? 'statusHighUid'
-    ),
     folders AS (
       -- When the latest batch started whose provider state Mail holds.
       SELECT
         f.id::text AS id,
-        max(run.started_at) FILTER (
-          WHERE run.uid_validity = f.envelope_cursor ->> 'uidValidity'
-            AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= run.high_uid
-            AND (run.modseq IS NULL OR (f.envelope_cursor ->> 'highestModseq')::numeric >= run.modseq)
-        ) AS synced_since
+        CASE WHEN f.last_sync_snapshot ->> 'uidValidity' = f.envelope_cursor ->> 'uidValidity'
+            AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= (f.last_sync_snapshot ->> 'statusHighUid')::bigint
+            AND (f.last_sync_snapshot ->> 'statusModseq' IS NULL
+              OR (f.envelope_cursor ->> 'highestModseq')::numeric >= (f.last_sync_snapshot ->> 'statusModseq')::numeric)
+          THEN (f.last_sync_snapshot ->> 'startedAt')::timestamptz END AS synced_since
       FROM mail.folders f
       JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
-      LEFT JOIN runs run ON run.folder_id = f.id::text
       WHERE rr.mailbox_id = ${params.mailboxId}::uuid
         AND f.selected_for_sync = true
         AND f.discovery_state = 'active'
         AND f.sync_status <> 'excluded'
-      GROUP BY f.id
     )
     SELECT
       request.id,
@@ -4075,9 +4072,11 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
     });
     await mailScheduler().create({
       id: "mail:runtime-history-cleanup",
-      cron: "43 * * * *",
+      cron: "* * * * *",
       meta: { appId: "mail", family: "mail:runtime", label: "Mail runtime history cleanup" },
       process: async () => {
+        // Retry busy/interrupted background builds without holding up this sweep or Mail startup.
+        void buildRuntimeHistoryIndexes();
         await cleanupMailRuntimeHistory();
       },
     });

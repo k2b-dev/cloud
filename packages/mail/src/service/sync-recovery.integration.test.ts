@@ -22,7 +22,7 @@ import {
   releaseProviderLease,
 } from "./provider-operation-lock";
 import { takeFolderSyncActivity } from "./sync-activity";
-import { claimFence, commitSyncBatch, enqueueFolderSync, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import { claimFence, commitSyncBatch, enqueueFolderSync, requestedSyncProgress, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -246,10 +246,7 @@ suite("mail sync recovery", () => {
     const runs = await sql<{ state: string; error_code: string | null }[]>`
       SELECT state, error_code FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid ORDER BY started_at, id
     `;
-    expect(runs).toEqual([
-      { state: "failed", error_code: "CONNECT_TIMEOUT" },
-      { state: "completed", error_code: null },
-    ]);
+    expect(runs).toEqual([{ state: "failed", error_code: "CONNECT_TIMEOUT" }]);
   });
 
   test("a degraded mailbox still waits for a changed credential to be verified again", async () => {
@@ -643,7 +640,7 @@ suite("mail sync recovery", () => {
     }
   });
 
-  test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {
+  test("idle commits keep one folder checkpoint without history and preserve freshness and recovery", async () => {
     const fixture = await createSyncedMailbox("idle-writes");
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {
@@ -712,9 +709,10 @@ suite("mail sync recovery", () => {
       console.info("idle sync run", { statements, writes });
       expect(statements).toBe(16); // Includes BEGIN/COMMIT for both fence claim and commit; the Drafts role rides on the folder lock.
       expect(writes).toEqual([
+        { table_name: "folders", count: 1 },
         { table_name: "provider_bindings", count: 1 },
         { table_name: "remote_resources", count: 2 },
-        { table_name: "sync_runs", count: 2 },
+        { table_name: "sync_runs", count: 1 },
       ]);
       const health = await getMailboxOperationalHealth(ownerContext, fixture.mailboxId);
       const operations = await getMailboxOperations(ownerContext, fixture.mailboxId);
@@ -725,11 +723,10 @@ suite("mail sync recovery", () => {
       if (health.ok) expect(JSON.stringify(health.data)).toContain(state.last_sync_at!.toISOString());
       if (operations.ok) expect(JSON.stringify(operations.data)).toContain(state.last_sync_at!.toISOString());
       expect(state.health).toBe("active");
-      const [run] = await sql<{ state: string; cursor_after: unknown }[]>`
-        SELECT state, cursor_after FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid
-        ORDER BY started_at DESC LIMIT 1`;
-      expect(run?.state).toBe("completed");
-      expect(run?.cursor_after).toEqual(cursor);
+      expect(await sql`SELECT id FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`).toHaveLength(0);
+      const [checkpoint] = await sql<{ last_sync_snapshot: Record<string, unknown> }[]>`
+        SELECT last_sync_snapshot FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+      expect(checkpoint?.last_sync_snapshot).toMatchObject({ uidValidity: "10", statusHighUid: 0, statusModseq: "1" });
 
       // Count a whole warmed idle folder batch as well as the commit seam above.
       const originalUrl = connections().database.url;
@@ -773,10 +770,19 @@ suite("mail sync recovery", () => {
         await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit: () => undefined });
         expect(takeFolderSyncActivity()).toEqual({ triggers: {}, batches: { unchanged: 1 } });
 
-        // A sync command waiting for the folder settles on a completed run.
+        // A waiting sync command gets a checkpoint without an empty history row.
+        const [request] = await sql<{ since: Date }[]>`SELECT clock_timestamp() AS since`;
         await enqueueFolderSync(fixture.folderId, { trigger: "maintenance", awaited: true });
         expect(await syncFolderBatch(fixture.folderId, async () => undefined)).not.toHaveProperty("unchanged");
-        expect(await runs()).toBe(runsBefore + 1);
+        expect(await runs()).toBe(runsBefore);
+        expect(
+          (
+            await requestedSyncProgress({
+              mailboxId: fixture.mailboxId,
+              requests: [{ id: "checkpoint", folderId: fixture.folderId, since: request!.since }],
+            })
+          ).get("checkpoint"),
+        ).toEqual({ folders: 1, synced: 1, failed: 0 });
         expect(takeFolderSyncActivity().triggers).toEqual({ maintenance: 1 });
       } finally {
         idleStatus.mockRestore();
