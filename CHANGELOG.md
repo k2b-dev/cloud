@@ -3,6 +3,24 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.73.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.72.0...cloud-v0.73.0) (2026-11-11)
+
+
+### Features
+
+* **cloud:** a privacy screen blurs content after two idle minutes ([#3138](https://github.com/k2b-dev/cloud/issues/3138)) ([cedd5d5](https://github.com/k2b-dev/cloud/commit/cedd5d5c1f944e8f0dbeba56751b840f3fbaeb97))
+* **cloud:** assistant maps carry a note, source and links per place ([#3142](https://github.com/k2b-dev/cloud/issues/3142)) ([84e3c48](https://github.com/k2b-dev/cloud/commit/84e3c481533b5c8a7a5f6147749c26f502b6ef60))
+* **cloud:** chat maps open in the map dialog with their route tools ([#3145](https://github.com/k2b-dev/cloud/issues/3145)) ([6c8348e](https://github.com/k2b-dev/cloud/commit/6c8348e36dda3bf32a777100ab57a0b6c5e1ca00))
+* **cloud:** the file chooser remembers where you were, previews files, and searches subfolders ([#3131](https://github.com/k2b-dev/cloud/issues/3131)) ([217df5b](https://github.com/k2b-dev/cloud/commit/217df5bfacf0f6005396e9635d0ad2e652d267cb))
+* **core:** a shared workstation signs people out after they stop working ([#3133](https://github.com/k2b-dev/cloud/issues/3133)) ([84c4994](https://github.com/k2b-dev/cloud/commit/84c49943bbb74efce2a0be072f1ee930903afd49))
+* **ui:** a map opens as a small map app in a dialog ([#3139](https://github.com/k2b-dev/cloud/issues/3139)) ([86c351e](https://github.com/k2b-dev/cloud/commit/86c351ee337a0b7706d5d24f81e963ec046fa749))
+
+
+### Bug Fixes
+
+* **mail:** new mail arrives without dimming the conversation list ([#3137](https://github.com/k2b-dev/cloud/issues/3137)) ([85dcc1c](https://github.com/k2b-dev/cloud/commit/85dcc1cac87f302ce05c8974a127163654ddd86e))
+* **ui:** floating toolbars keep the same space around their buttons on every side ([#3136](https://github.com/k2b-dev/cloud/issues/3136)) ([4a71184](https://github.com/k2b-dev/cloud/commit/4a71184d3e8d5950e6dac8caaeb31f6fac202f6b))
+
 ## [0.72.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.71.0...cloud-v0.72.0) (2026-11-10)
 
 

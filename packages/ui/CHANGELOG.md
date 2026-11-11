@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.55.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.54.0...npm-ui-v0.55.0) (2026-11-11)
+
+
+### Features
+
+* **cloud:** chat maps open in the map dialog with their route tools ([#3145](https://github.com/k2b-dev/cloud/issues/3145)) ([6c8348e](https://github.com/k2b-dev/cloud/commit/6c8348e36dda3bf32a777100ab57a0b6c5e1ca00))
+* **cloud:** the file chooser remembers where you were, previews files, and searches subfolders ([#3131](https://github.com/k2b-dev/cloud/issues/3131)) ([217df5b](https://github.com/k2b-dev/cloud/commit/217df5bfacf0f6005396e9635d0ad2e652d267cb))
+* **ui:** a map opens as a small map app in a dialog ([#3139](https://github.com/k2b-dev/cloud/issues/3139)) ([86c351e](https://github.com/k2b-dev/cloud/commit/86c351ee337a0b7706d5d24f81e963ec046fa749))
+
+
+### Bug Fixes
+
+* **ui:** floating toolbars keep the same space around their buttons on every side ([#3136](https://github.com/k2b-dev/cloud/issues/3136)) ([4a71184](https://github.com/k2b-dev/cloud/commit/4a71184d3e8d5950e6dac8caaeb31f6fac202f6b))
+
 ## [0.54.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.53.0...npm-ui-v0.54.0) (2026-11-10)
 
 
