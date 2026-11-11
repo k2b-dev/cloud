@@ -1,5 +1,6 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import type { KeyboardPlatform } from "@k2b/ui";
+import type { JSX } from "solid-js";
 import type { LayoutHelpArticle } from "./help";
 
 export type LayoutHelpPanelProps = {
@@ -16,4 +17,6 @@ export type LayoutHelpPanelProps = {
   pageBase?: string;
   platform: KeyboardPlatform;
   state?: "failed" | "unavailable";
+  /** A server-rendered section of the provider, placed in the start after the articles and before the shortcuts. */
+  startSection?: JSX.Element;
 };

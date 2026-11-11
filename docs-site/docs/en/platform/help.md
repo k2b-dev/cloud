@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-10-19
+updated: 2026-11-11
 ---
 
 # In-product Help
@@ -426,7 +426,9 @@ The start lists guidance in this order:
 3. **Get started**, **Look up**, and **Solve problems:** articles with
    `kind: start`, `kind: reference`, and `kind: troubleshoot`, respectively. Each group uses the
    same sorting; empty groups are absent. Missing `kind` means `task`.
-4. **Keyboard shortcuts:** **Everywhere**, **In &lt;App&gt;**, and **With a
+4. **Use in Code:** the app's Code reference, for people who can write Code.
+   See [Code reference in Help](#code-reference-in-help).
+5. **Keyboard shortcuts:** **Everywhere**, **In &lt;App&gt;**, and **With a
    selection**. Commands without a shortcut and empty groups are absent.
 
 The shell's Search, Help, and panel shortcuts appear on the server under
@@ -454,6 +456,35 @@ declared order, removes duplicates, ignores IDs outside the reader's authorized
 manifest, and keeps at most three. Without a manifest, no page articles are
 shown. These articles also keep their place in the task tiles or kind groups,
 so the app's start stays consistent across pages.
+
+### Code reference in Help
+
+The panel Help start of every app, Core included, has a generated **Use in
+Code** section. It lists what Code can do in that app:
+
+- the `import` line with the app's SDK export;
+- **Operations:** each SDK method path, such as `spaces.space(id).item.list`,
+  its one-line description, and when the call runs in the reader's own Code:
+  **Automatic**, **Administrator approves**, or **Never**;
+- **Events:** each automation event type with its one-line description,
+  subject type, and place type.
+
+Both groups start closed. Cloud builds the section from the same capability
+catalog and index as Gustav's `code_sdk` tool, under the reader's authority
+and in the request language. Descriptions come from the app's capability
+presentation and fall back like the SDK index; the app writes no Help for it.
+A new operation in an app's manifest appears without other changes. The
+policy label is the reader's effective [Code policy](/en/docs/platform/code-policy)
+for personal Code.
+
+Only signed-in members whose credential may write Code see the section.
+Guests, service accounts, and read-only credentials do not, and Cloud reads
+no catalog for them. As with the rest of Help, this is visibility, not
+authorization: Cloud checks every call when Code runs.
+
+An app without Code operations or events says so in one line. When the
+catalog or the policy cannot be read, the section says so and offers
+**Reload**; the rest of Help stays usable.
 
 An app without Help articles shows a short note above the shortcuts. When
 Cloud could not read the app's Help metadata for the page, Help says so and
@@ -627,7 +658,10 @@ never inside an island. It renders the start and initial article as server HTML
 and mounts small islands for interaction. Search, menus, Markdown copy, and
 the client article reader load on demand.
 It receives the authorized documents, app identity and appearance, filtered
-view IDs, keyboard platform, and optional topic from the server. It reads no
+view IDs, keyboard platform, and optional topic from the server. The provider
+may pass `startSection`, server-rendered content that the start shows after
+the articles and before the keyboard shortcuts; Core uses it for the Code
+reference. It reads no
 host shell data and follows context and shortcuts through the panel API.
 Application authors normally use the automatic registration above.
 
