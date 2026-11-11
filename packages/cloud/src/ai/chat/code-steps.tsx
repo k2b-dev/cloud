@@ -176,19 +176,15 @@ const cases = (value: unknown): Case[] =>
     ? value.flatMap((item) => {
         if (!isRecord(item) || typeof item.name !== "string" || typeof item.ok !== "boolean") return [];
         const runs = Array.isArray(item.runs) ? item.runs.filter(isRecord) : [];
-        const failures = runs.flatMap((run) =>
-          run.ok === true
-            ? []
-            : [
-                [
-                  text(run.entrypoint),
-                  text(run.error),
-                  Array.isArray(run.failures) ? run.failures.filter((path) => typeof path === "string").join(", ") : "",
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-              ],
-        );
+        // A run can execute fine and still miss its expectations: a failed case names each run's error and failed
+        // assertion paths, whatever the run's own `ok`; a passing case shows none, also not an expected error.
+        const failures = item.ok
+          ? []
+          : runs.flatMap((run) => {
+              const paths = Array.isArray(run.failures) ? run.failures.filter((path) => typeof path === "string") : [];
+              if (run.ok === true && paths.length === 0) return [];
+              return [[text(run.entrypoint), run.ok === true ? null : text(run.error), paths.join(", ")].filter(Boolean).join(" · ")];
+            });
         return [{ name: item.name, file: text(item.file), ok: item.ok, failures }];
       })
     : [];
@@ -202,7 +198,22 @@ function TestView(props: { result: Record<string, unknown> }) {
   const error = () => text(props.result.error);
   return (
     <>
-      <Show when={all().length} fallback={<p class="ai-code-step__note">{error() ?? t().codeStepNoCases}</p>}>
+      <Show
+        when={all().length}
+        fallback={
+          <Show when={error()} fallback={<p class="ai-code-step__note">{t().codeStepNoCases}</p>}>
+            {(code) => (
+              <p class="ai-code-step__failure">
+                <i class="ti ti-alert-circle" aria-hidden="true" />
+                <span class="ai-code-step__text">
+                  <span>{t().codeStepTestsFailed}</span>
+                  <span class="ai-code-step__where">{code()}</span>
+                </span>
+              </p>
+            )}
+          </Show>
+        }
+      >
         <StepSection title={t().codeStepCases({ passed: passed(), total: all().length })}>
           <ul class="ai-code-step__list" aria-label={t().codeStepCases({ passed: passed(), total: all().length })}>
             <For each={all()}>

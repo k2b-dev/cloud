@@ -94,6 +94,44 @@ test("a test run counts passed cases and names what failed", () => {
   expect(html).toContain("test/empty.json · monday · code_assertion_failed · $.calls[0]");
 });
 
+test("a run that executed but missed its expectations still names what failed; a passing case names nothing", () => {
+  const html = step({
+    name: "code_simulate",
+    result: {
+      version: 1,
+      mode: "simulate",
+      ok: false,
+      error: null,
+      diagnostics: [],
+      cases: [
+        {
+          name: "wrong value",
+          file: null,
+          ok: false,
+          runs: [{ entrypoint: "monday", ok: true, error: null, value: 1, calls: [], failures: ["value"] }],
+        },
+        {
+          name: "expected refusal",
+          file: null,
+          ok: true,
+          runs: [{ entrypoint: "monday", ok: false, error: "FORBIDDEN", value: null, calls: [], failures: [] }],
+        },
+      ],
+    },
+  });
+  expect(html).toContain("monday · value");
+  expect(html).not.toContain("FORBIDDEN<");
+  expect(html).not.toMatch(/expected refusal<\/span><span class="ai-code-step__where"/);
+});
+
+test("tests that could not run say so in the reader's language and keep the stable code", () => {
+  const result = { version: 1, mode: "test", ok: false, error: "code_test_invalid_fixture", diagnostics: [], cases: [] };
+  const german = step({ name: "code_test", result }, "de");
+  expect(german).toContain("Die Tests konnten nicht laufen.");
+  expect(german).toContain("code_test_invalid_fixture");
+  expect(step({ name: "code_test", result })).toContain("The tests could not run.");
+});
+
 test("a refused command shows Core's message, not its error body", () => {
   const html = step({
     name: "code_write",
