@@ -28,6 +28,7 @@ const result = await Bun.build({
     let failures = Number(query.get("fail") ?? 0);
     window.opened = [];
     window.lightboxClosed = 0;
+    window.signed = 0;
     const items = [
       { name: "Kommode-vorher.jpg", meta: "JPG · 2.4 MB", src: picture("#a8a29e", 1200, 800), downloadUrl: "/kommode.jpg",
         actions: [{ label: "Rename", icon: "ti ti-pencil", onClick: () => void dialogCore.open((close) => {
@@ -44,7 +45,9 @@ const result = await Bun.build({
         open: { onOpen: () => window.opened.push("docx") },
         preview: () => failures-- > 0 ? later(Promise.reject(new Error("no libreoffice"))) : fetch("/doc.pdf").then((response) => response.blob()).then((blob) => later(blob)) },
       { name: "Archiv.zip", meta: "ZIP · 12 MB", downloadUrl: "/archiv.zip" },
-      { name: "Kaputt.png", meta: "PNG · 1 KB", src: "/missing.png", downloadUrl: "/missing.png" },
+      // A signed address resolved when shown: the first one has expired, "Try again" asks for a fresh one.
+      { name: "Kaputt.png", meta: "PNG · 1 KB", downloadUrl: "/missing.png",
+        src: () => later(window.signed++ === 0 ? "/missing.png" : picture("#93c5fd", 800, 600)) },
     ];
     const [index, setIndex] = createSignal(Number(query.get("index") ?? 0));
     const [open, setOpen] = createSignal(false);
@@ -209,6 +212,9 @@ describe("@k2b/ui Lightbox", () => {
       expect(await page.getByRole("button", { name: "Try again" }).count()).toBe(1);
       expect(await edge(page, "next")).toBe("hidden");
       await shot(page, "lightbox-fehler-light-1440.png");
+      await page.getByRole("button", { name: "Try again" }).click();
+      await page.locator(".k2b-lightbox__image").waitFor();
+      expect(await page.locator(".k2b-lightbox__content").getAttribute("data-state")).toBe("ready");
     } finally {
       await page.context().close();
     }

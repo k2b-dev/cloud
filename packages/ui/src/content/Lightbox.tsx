@@ -26,8 +26,11 @@ export type LightboxItem = {
   meta?: string;
   /** Path, media type and size; they choose the renderer as in `FileView`. Defaults to the name. */
   file?: FileViewFile;
-  /** An address on this site the browser reads directly: an image, video, audio file, or PDF. */
-  src?: string;
+  /**
+   * An address on this site the browser reads directly: an image, video, audio file, or PDF. A function resolves it
+   * when the file is shown, such as a short-lived signed address; "Try again" asks it for a fresh one.
+   */
+  src?: string | (() => Promise<string>);
   /** Loads text, Markdown, code, or a PDF's bytes. */
   load?: () => Promise<FileViewContent>;
   /** Loads a preview PDF, such as one converted from an Office file. A rejection shows "Preview not possible". */
@@ -367,19 +370,27 @@ function LightboxStage(props: {
   const [state, setState] = createSignal<"loading" | "ready" | "failed">(props.kind === "none" ? "ready" : "loading");
   const placeholder = createDelayedLoading(() => state() === "loading");
   const [document_, setDocument] = createSignal<Blob | string | null>(null);
+  // The address the browser reads; a resolver runs once per attempt, so a retry asks for a fresh signed address.
+  const [source, setSource] = createSignal<string | null>(null);
   const failed = () => setState("failed");
   const ready = () => setState("ready");
 
-  // PDFs from bytes and preview PDFs load here; the viewer then draws them.
+  // Addresses, PDFs from bytes and preview PDFs load here; the viewers then draw them.
   createEffect(
     on(attempt, () => {
       setState(props.kind === "none" ? "ready" : "loading");
       setDocument(null);
+      setSource(null);
+      const src = props.item.src;
+      const address = typeof src === "function" ? src() : Promise.resolve(src ?? null);
       if (props.kind === "office" && props.item.preview) props.item.preview().then(setDocument, failed);
-      else if (props.kind === "pdf") {
-        if (props.item.src) setDocument(props.item.src);
-        else props.item.load?.().then((content) => setDocument(bytes(content)), failed);
-      }
+      else if (props.kind === "pdf" && !src) props.item.load?.().then((content) => setDocument(bytes(content)), failed);
+      else if (src)
+        address.then((value) => {
+          if (!value) return failed();
+          setSource(value);
+          if (props.kind === "pdf") setDocument(value);
+        }, failed);
     }),
   );
 
@@ -424,8 +435,8 @@ function LightboxStage(props: {
       </Show>
       <Show keyed when={state() !== "failed" && attempt() + 1}>
         <Switch>
-          <Match when={props.kind === "image"}>
-            <LightboxImage src={props.item.src!} name={props.item.name} zoom={props.zoom} onReady={ready} onError={failed} />
+          <Match when={props.kind === "image" && source()}>
+            {(src) => <LightboxImage src={src()} name={props.item.name} zoom={props.zoom} onReady={ready} onError={failed} />}
           </Match>
           <Match when={(props.kind === "pdf" || props.kind === "office") && document_()}>
             {(data) => (
@@ -445,14 +456,18 @@ function LightboxStage(props: {
               />
             )}
           </Match>
-          <Match when={props.kind === "video"}>
-            <video class="k2b-lightbox__video" src={props.item.src} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
+          <Match when={props.kind === "video" && source()}>
+            {(src) => (
+              <video class="k2b-lightbox__video" src={src()} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
+            )}
           </Match>
-          <Match when={props.kind === "audio"}>
-            <div class="k2b-lightbox__audio">
-              <FileTypeIcon name={props.item.file?.path ?? props.item.name} size="lg" />
-              <audio src={props.item.src} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
-            </div>
+          <Match when={props.kind === "audio" && source()}>
+            {(src) => (
+              <div class="k2b-lightbox__audio">
+                <FileTypeIcon name={props.item.file?.path ?? props.item.name} size="lg" />
+                <audio src={src()} controls preload="metadata" onLoadedMetadata={ready} onError={failed} />
+              </div>
+            )}
           </Match>
           <Match when={props.kind === "text"}>
             <article class="k2b-lightbox__text" style={{ "--k2b-lightbox-text-scale": String(props.zoom()) }}>
