@@ -78,29 +78,35 @@ test.each([
   });
 });
 
-test.each(["code_init", "code_submit"])("the %s tool refuses a guest even when invoked directly", async (name) => {
+test.each([
+  ["code_init", { title: "Guest Code" }],
+  ["code_submit", { codeId: "c_guest", files: { "code.ts": "source" }, baseVersionId: null }],
+  ["code_write", { codeId: "c_guest", path: "code.ts", content: "changed" }],
+  ["code_write", { codeId: "c_guest", path: "code.ts", delete: true }],
+  ["code_write", { codeId: "c_guest", path: "code.ts", renameTo: "renamed.ts" }],
+  ["code_check", { codeId: "c_guest" }],
+  ["code_test", { codeId: "c_guest" }],
+  ["code_submit", { codeId: "c_guest" }],
+])("the %s tool refuses guest input %j before accessing Code or its draft", async (name, input) => {
   spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ input: "Build Code", actor: context.authority.actor });
   spyOn(capabilityActor, "resolveAiCapabilityActor").mockResolvedValue(context.authority);
   const tools: AiRuntimeTool[] = createCodeAuthoringChatTools();
   const tool = tools.find((entry) => entry.def.name === name);
   if (!tool || !("location" in tool) || tool.location !== "server") throw new Error("Missing server tool");
-  const result = await tool.run(
-    name === "code_init" ? { title: "Guest Code" } : { codeId: "c_guest", files: { "code.ts": "source" }, baseVersionId: null },
-    {
-      actor: context.authority.actor,
-      conversationId: id,
-      turnId: id,
-      callId: "guest-call",
-      locale: "en",
-      signal: new AbortController().signal,
-      requestApproval: async () => false,
-      requestClientTool: async () => {
-        throw new Error("Guest authoring must not request a client tool");
-      },
-      requestApprovalFor: async () => false,
-      requestRelayedApproval: async () => false,
+  const result = await tool.run(tool.def.inputSchema.parse(input), {
+    actor: context.authority.actor,
+    conversationId: id,
+    turnId: id,
+    callId: "guest-call",
+    locale: "en",
+    signal: new AbortController().signal,
+    requestApproval: async () => false,
+    requestClientTool: async () => {
+      throw new Error("Guest authoring must not request a client tool");
     },
-  );
+    requestApprovalFor: async () => false,
+    requestRelayedApproval: async () => false,
+  });
   expect(result).toEqual(failure);
 });
 

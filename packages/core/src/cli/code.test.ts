@@ -107,7 +107,7 @@ function context(
       throw new Error("unused");
     },
     fetch: async (path, init) => {
-      const input: Record<string, unknown> = JSON.parse(String(init?.body));
+      const input: Record<string, unknown> = init?.method === "GET" ? {} : JSON.parse(String(init?.body));
       requests.push({ path, input });
       return respond(path, input);
     },
@@ -1142,4 +1142,44 @@ test.each(["init", "submit"])("CLI %s preserves the HTTP guest refusal and local
     scope.mockRestore();
     authority.mockRestore();
   }
+});
+
+test("db export streams SQLite to a new private file and reports its size", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "code-db-export-"));
+  dirs.push(directory);
+  const output = join(directory, "database.sqlite");
+  const bytes = new Uint8Array(262144 + 4096).fill(42);
+  const { ctx, requests, printed } = context(
+    ["db", "export", "c_1234"],
+    { out: output },
+    "json",
+    () => new Response(bytes, { headers: { "content-length": String(bytes.length), "content-type": "application/vnd.sqlite3" } }),
+  );
+  expect(await code.run(ctx)).toBe(0);
+  expect(requests).toEqual([{ path: "/api/code/authoring/database/c_1234/export", input: {} }]);
+  expect((await readFile(output)).byteLength).toBe(bytes.length);
+  expect(printed).toEqual([{ codeId: "c_1234", path: output, bytes: bytes.length, format: "sqlite" }]);
+  expect(await readdir(directory)).toEqual(["database.sqlite"]);
+  expect(await code.run(ctx)).toBe(1);
+  expect((await readFile(output)).byteLength).toBe(bytes.length);
+});
+
+test("db export leaves no final file on a truncated stream or an authorization refusal", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "code-db-export-failed-"));
+  dirs.push(directory);
+  const output = join(directory, "database.sqlite");
+  const short = context(
+    ["db", "export", "c_1234"],
+    { out: output },
+    "json",
+    () => new Response(new Uint8Array(2), { headers: { "content-length": "3" } }),
+  );
+  expect(await code.run(short.ctx)).toBe(1);
+  expect(await readdir(directory)).toEqual([]);
+  const denied = context(["db", "export", "c_1234"], { out: output }, "json", () =>
+    Response.json({ version: 1, error: { code: "NOT_FOUND", message: "Code database not found.", details: null } }, { status: 404 }),
+  );
+  expect(await code.run(denied.ctx)).toBe(1);
+  expect(await readdir(directory)).toEqual([]);
+  expect(JSON.stringify(denied.printed)).toContain("NOT_FOUND");
 });

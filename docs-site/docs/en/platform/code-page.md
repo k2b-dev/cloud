@@ -248,3 +248,18 @@ an opaque secret marker and declared origin, then act. Never put a secret in
 the source or use a URL token as protection. Let `/hooks/` through a global
 access middleware, or apply the access check only to a private prefix.
 See the [complete example and secret binding](code-sdk.md#webhooks-r1-ohne-secret).
+
+## Database storage and export
+
+The Code page shows its database size and limit together with the owner's
+reserved capacity. Editors and Cloud administrators get an **Export SQLite
+database** control for an existing database. The download uses the same
+permission-aware service as `cld code db export`; ordinary readers cannot
+export. See [Code storage](/en/docs/operations/code-storage) for limits and
+database lifecycle.
+
+`CodeDatabaseStatus`, exported from `@k2b/cloud/ssr/code-page`, renders this
+status for Code and administrator details. Pass `codeId`, the authorized
+`database` usage object.
+It inherits the UI locale. `canExport` controls presentation only; the export
+service checks permission again.

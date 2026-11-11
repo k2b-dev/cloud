@@ -1,3 +1,5 @@
+import { CodeBridgeRefusal } from "@k2b/cloud/api";
+import { CODE_DATABASE_MESSAGES } from "@k2b/cloud/code";
 import {
   type AuthContext,
   auth,
@@ -20,11 +22,25 @@ import {
   CodeAuthoringErrorSchema,
   codeAuthoringContracts,
 } from "../code/authoring-contracts";
+import { CodeIdSchema } from "../code/contracts";
+import { exportCodeDatabase } from "../code/database-export";
 import { CodeJobError } from "../code/job-errors";
 import { CodeVersionError } from "../code/versions";
 
 /** One versioned failure for HTTP, CLI and chat. Unexpected exceptions keep their diagnostics in server logs. */
 export function codeAuthoringFailure(error: unknown): { status: 400 | 403 | 404 | 409 | 503 | 500; body: CodeAuthoringError } {
+  if (error instanceof CodeBridgeRefusal)
+    return {
+      status: 503,
+      body: {
+        version: 1,
+        error: {
+          code: error.code,
+          message: CODE_DATABASE_MESSAGES[error.code] ?? "Code command is temporarily unavailable. Try again.",
+          details: null,
+        },
+      },
+    };
   if (error instanceof CodeVersionError)
     return {
       status: 409,
@@ -132,6 +148,36 @@ export function createCodeAuthoringRoutes() {
       },
     );
   }
+  router.get(
+    "/database/:codeId/export",
+    middleware.openapi({
+      tags: ["Code"],
+      summary: "Export a Code database as SQLite",
+      responses: {
+        200: {
+          description: "Streamed SQLite snapshot",
+          content: { "application/vnd.sqlite3": { schema: { type: "string", format: "binary" } } },
+        },
+      },
+    }),
+    async (c) => {
+      setRequestTimeout(c, 120);
+      try {
+        const codeId = CodeIdSchema.safeParse(c.req.param("codeId"));
+        if (!codeId.success) throw new CodeDataError("BAD_INPUT", "Invalid Code ID.");
+        return await exportCodeDatabase(codeId.data, {
+          authority: auth.getAuthority(c),
+          locale: getLocale(c),
+          signal: c.req.raw.signal,
+        });
+      } catch (error) {
+        const failure = codeAuthoringFailure(error);
+        return c.json(failure.body, failure.status);
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
+  );
   register("init", codeAuthoringContracts.init, codeAuthoringServices.init, true);
   register("show", codeAuthoringContracts.show, codeAuthoringServices.show);
   register("pull", codeAuthoringContracts.pull, codeAuthoringServices.pull);
