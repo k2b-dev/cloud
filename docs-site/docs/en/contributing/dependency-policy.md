@@ -51,6 +51,7 @@ regression checks before including it in another group.
 | `hucre` | `1.1.0` | The update bypasses the existing ODS row-container patch and loses spreadsheet values; `packages/assistant/src/artifacts/runtime/sheet.test.ts` checks the read and round trip. |
 | `hono-openapi` | `1.3.3` | The update drops UUID metadata for transformed principal IDs and changes response schemas; Chat OpenAPI and Grids document-route tests check those contracts. |
 | `seroval` | `1.6.7` | The update makes unused SSR code change the measured island bundle size through minifier naming and chunk hashes; `scripts/fixtures/island-bundle-size.test.ts` checks both dead-code independence and real compressed growth. |
+| `@tabler/icons-webfont` | `3.48.0` | Version `3.50.0` splits one font face into 48 and reproduces WebKit Dashboard click/state timeouts. A package bisect and a font-only reversal isolate the update; the three affected tests in `packages/dashboard/src/frontend/dashboard-home.browser.test.ts` pass with this pin and all other updates retained. Revisit split-font delivery and rendering under #3165 and #3166 before adoption. |
 | `@babel/core`, `@babel/preset-typescript` in `@k2b/ssr` | `7.29.7` | The group upgrades these from major 7 to 8; the JSX builder, unused client imports, type-only island imports, and example compiler need a coordinated migration. Other packages retain their Babel 8 updates. |
 
 ## Root overrides

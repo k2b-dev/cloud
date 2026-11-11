@@ -89,7 +89,7 @@
     "@k2b/stdlib": "0.32.0",
     "@lezer/highlight": "1.2.5",
     "@lezer/markdown": "1.8.1",
-    "@tabler/icons-webfont": "3.50.0",
+    "@tabler/icons-webfont": "3.48.0",
     "dompurify": "3.4.17",
     "maplibre-gl": "6.17.0",
     "marked": "18.1.3",
