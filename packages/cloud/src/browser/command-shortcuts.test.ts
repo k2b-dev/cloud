@@ -134,6 +134,36 @@ test("a widget that moves with arrow keys keeps them; elsewhere an arrow shortcu
   }
 });
 
+test("the privacy shortcut matches the character, also with Shift on AZERTY, while typing and over a dialog", () => {
+  const dom = createDomTestHarness();
+  const calls: string[] = [];
+  const disposers = [
+    attachCommandShortcuts((command) => calls.push(command.id)),
+    registerContextAwareCommand(command("cloud.privacy.now", "mod+.")),
+    registerContextAwareCommand(command("other", "mod+,")),
+  ];
+  try {
+    expect(press(window, ".", { ctrlKey: true }).defaultPrevented).toBe(true);
+    // A French keyboard types "." with Shift.
+    expect(press(window, ".", { ctrlKey: true, shiftKey: true, code: "Comma" }).defaultPrevented).toBe(true);
+    const input = document.createElement("textarea");
+    dom.root.append(input);
+    press(input, ".", { ctrlKey: true });
+    const dialog = document.createElement("dialog");
+    dialog.open = true;
+    dom.root.append(dialog);
+    press(window, ".", { ctrlKey: true });
+    // Other commands still wait while a dialog is open; a plain "." or Ctrl+Alt+. is no shortcut.
+    press(window, ",", { ctrlKey: true });
+    press(window, ".");
+    press(window, ".", { ctrlKey: true, altKey: true });
+    expect(calls).toEqual(["cloud.privacy.now", "cloud.privacy.now", "cloud.privacy.now", "cloud.privacy.now"]);
+  } finally {
+    for (const dispose of disposers) dispose();
+    dom.cleanup();
+  }
+});
+
 test("AltGraph text input never becomes a Ctrl+Alt command", () => {
   const dom = createDomTestHarness();
   let calls = 0;

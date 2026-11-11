@@ -37,11 +37,13 @@ export const loadSearchCommands = async (locale: string, signal: AbortSignal): P
   } while (cursor);
   return commands;
 };
+/** A command the Cloud shell registers on every page, such as hiding the sidebar or the privacy screen. */
+export const isShellCommand = (command: PaletteCommand) => Boolean(command.context) && command.id.startsWith("cloud.");
 export const commandSearchItem = (command: PaletteCommand, group: string): SearchItem => ({
   ref: { type: "cloud.command", id: command.id },
   href: "",
   readable: false,
-  appId: command.context ? "cloud.context" : "cloud.commands",
+  appId: isShellCommand(command) ? "cloud.shell" : command.context ? "cloud.context" : "cloud.commands",
   appName: group,
   appIcon: "ti ti-command",
   title: command.title,

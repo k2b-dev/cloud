@@ -64,6 +64,7 @@ import { lastingAccessApiMessages } from "./lasting-access-messages";
 import { createMeFileChooserRoutes } from "./me-file-chooser";
 import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
+import { createMeScreenRoutes } from "./me-screen";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
 
 const log = logger("api:me");
@@ -243,6 +244,7 @@ const app = new Hono<AuthContext>()
   .use(auth.requireUser())
   .route("/", mandateRoutes)
   .route("/", createMeRailRoutes())
+  .route("/", createMeScreenRoutes())
   .route("/", createMeFileChooserRoutes())
   .route("/", createMePanelConsentRoutes())
   .route("/", createMeWebVitalsRoutes())

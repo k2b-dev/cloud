@@ -34,6 +34,7 @@
 @import "./file-chooser.css";
 @import "./profile-picture.css";
 @import "./panel.css";
+@import "./privacy-screen.css";
 
 @theme {
   --color-dark: rgb(9 9 11);
@@ -841,6 +842,11 @@ solid-island {
       left: calc(env(safe-area-inset-left, 0px) + 1.25rem);
       bottom: calc(env(safe-area-inset-bottom, 0px) + 1.25rem);
     }
+    /* The privacy screen's countdown (privacy-screen.css) floats 0.5rem above the avatar. */
+    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-actions > .cloud-privacy-countdown[aria-hidden] {
+      left: calc(env(safe-area-inset-left, 0px) + 1.25rem);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem);
+    }
   }
 }
 
@@ -851,6 +857,10 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
     left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
     bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 0.75rem);
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-actions > .cloud-privacy-countdown[aria-hidden] {
+    left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
+    bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 4rem);
   }
 }
 

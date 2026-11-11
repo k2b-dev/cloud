@@ -2,6 +2,7 @@ import type { KeyboardPlatform } from "@k2b/ui";
 import { createContext, type JSX, useContext } from "solid-js";
 import type { AppSearchLink } from "../contracts/app";
 import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
+import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
@@ -16,6 +17,8 @@ export type ShellData = {
   apps: RailApp[];
   /** Signed-in pages: the person's rail preferences. */
   rail?: RailSnapshot;
+  /** Signed-in pages: the privacy screen's timer in seconds, 0 for off; the app bar reserves the countdown's place while it is on. */
+  privacyTimerSeconds?: PrivacyTimerSeconds;
   /** Signed-in pages: the start page that `/` opens, for the phone bar's Home. */
   home?: string;
   legalLinks: AppLaunchpadLegalLink[];

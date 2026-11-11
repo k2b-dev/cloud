@@ -1,4 +1,4 @@
-import { type DropdownItem, toast, useLocale } from "@k2b/ui";
+import { type DropdownChoice, type DropdownItem, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { type IdleState, SHARED_WORKSTATION_EVENT, type SharedWorkstationEventDetail } from "../browser/idle-sign-out";
 import { importOnDemand } from "../browser/reload";
@@ -26,8 +26,8 @@ const readBrowserState = (body: unknown): { sharedWorkstation: boolean; idle: Id
   };
 };
 
-/** The profile menu's switch: marks this browser, not the person, as a shared workstation. */
-function createSharedWorkstationSwitch(userId: string | undefined, locale: () => string) {
+/** The shared workstation switch of the profile menu and /me: marks this browser, not the person. */
+export function createSharedWorkstationSwitch(userId: string | undefined, locale: () => string) {
   const [shared, setShared] = createSignal(useShellData()?.profile?.sharedWorkstation === true);
   const [pending, setPending] = createSignal(false);
   const messages = () => sharedWorkstationMessages.resolve([locale()]).t;
@@ -44,6 +44,9 @@ function createSharedWorkstationSwitch(userId: string | undefined, locale: () =>
     if (pending() || !userId) return;
     setPending(true);
     const next = !shared();
+    // The switch shows the choice at once and springs back when the server does not take it, so a native checkbox
+    // that already flipped follows the state again.
+    setShared(next);
     try {
       const response = await fetch("/api/me/browser/shared-workstation", {
         method: "PUT",
@@ -64,6 +67,7 @@ function createSharedWorkstationSwitch(userId: string | undefined, locale: () =>
           : messages().unmarked,
       );
     } catch {
+      setShared(!next);
       toast.error(messages().failed);
     } finally {
       setPending(false);
@@ -96,6 +100,16 @@ export function createProfileActions(initialTheme: CloudThemePreference, appHref
     }
   };
 
+  /** One line, like Light and English: the profile menu sets it beside the privacy screen; details live under /me. */
+  const sharedWorkstationItem = (): DropdownChoice => ({
+    choice: "checkbox",
+    checked: sharedWorkstation.shared,
+    label: sharedWorkstation.messages().label,
+    disabled: sharedWorkstation.pending(),
+    closeOnSelect: false,
+    action: () => void sharedWorkstation.toggle(),
+  });
+
   // Sign-out ends the session, so it stands apart in its own section at the end, in the danger tone.
   const items = createMemo<DropdownItem[]>(() => [
     {
@@ -108,19 +122,6 @@ export function createProfileActions(initialTheme: CloudThemePreference, appHref
           label: preferences.messages().profileSettings,
         },
         ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
-        ...(userId
-          ? [
-              {
-                choice: "checkbox" as const,
-                checked: sharedWorkstation.shared,
-                label: sharedWorkstation.messages().label,
-                description: sharedWorkstation.messages().description,
-                disabled: sharedWorkstation.pending(),
-                closeOnSelect: false,
-                action: () => void sharedWorkstation.toggle(),
-              },
-            ]
-          : []),
       ],
     },
     {
@@ -136,5 +137,5 @@ export function createProfileActions(initialTheme: CloudThemePreference, appHref
     },
   ]);
 
-  return { preferences, items, signOut, signingOut, sharedWorkstation };
+  return { preferences, items, signOut, signingOut, sharedWorkstation, sharedWorkstationItem };
 }

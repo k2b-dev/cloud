@@ -852,12 +852,8 @@ describe("profile menu in the rail", () => {
             radios: panel.querySelectorAll('[role="radio"]').length,
             items: [...panel.querySelectorAll(".menu-item")]
               .filter((item) => item.checkVisibility())
-              // A switch row starts with its check box; its label sits in the copy above the description.
-              .map((item) =>
-                (
-                  item.querySelector(":scope > .layout-profile-preferences__copy > span") ?? item.querySelector(":scope > span")
-                )?.textContent?.trim(),
-              ),
+              // Every entry is one line: an icon or check box, the label, perhaps a shortcut.
+              .map((item) => item.querySelector(":scope > span:last-of-type")?.textContent?.trim()),
             shortcut: panel.querySelector(".menu-item")?.querySelector(".k2b-kbd")?.checkVisibility(),
             signOutColor: getComputedStyle([...panel.querySelectorAll(".menu-item")].at(-1)!).color,
           };
@@ -873,8 +869,17 @@ describe("profile menu in the rail", () => {
         expect(menu.top).toBeLessThan(menu.avatarTop);
         expect(menu.items).toEqual(
           language === "de"
-            ? ["Seitenleiste ausblenden", "Hell", "English", "Profileinstellungen", "App", "Gemeinsam genutzter Arbeitsplatz", "Abmelden"]
-            : ["Hide sidebar", "Light", "Deutsch", "Profile settings", "App", "Shared workstation", "Sign out"],
+            ? [
+                "Seitenleiste ausblenden",
+                "Sichtschutz",
+                "Gemeinsam genutzter Arbeitsplatz",
+                "Hell",
+                "English",
+                "Profileinstellungen",
+                "App",
+                "Abmelden",
+              ]
+            : ["Hide sidebar", "Privacy screen", "Shared workstation", "Light", "Deutsch", "Profile settings", "App", "Sign out"],
         );
         expect(menu.shortcut).toBe(true);
         // Sign-out takes the danger tone (#b91c1c).

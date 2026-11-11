@@ -7,6 +7,7 @@ import LayoutHelpTrigger from "./LayoutHelpTrigger";
 import LayoutPreferences from "./LayoutPreferences";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PanelTrigger from "./PanelTrigger";
+import PrivacyCountdown from "./PrivacyCountdown";
 import ProfilePreferences from "./ProfilePreferences";
 import { platformMessages } from "./platform-messages";
 import RailApps from "./RailApps";
@@ -52,6 +53,7 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
           panel={data.panel?.providers.some((provider) => provider.id === "core")}
           helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
         />
+        <PrivacyCountdown timerSeconds={data.privacyTimerSeconds ?? 0} />
         <ProfilePreferences
           userId={data.profile.userId}
           appHref={data.profile.appHref}

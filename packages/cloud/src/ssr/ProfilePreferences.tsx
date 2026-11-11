@@ -1,8 +1,11 @@
-import { Avatar, Dropdown, type DropdownItem, Kbd, useLocale } from "@k2b/ui";
+import { Avatar, Dropdown, type DropdownAction, type DropdownChoice, type DropdownItem, Kbd, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { requestPrivacyScreen } from "../browser/privacy-timer";
 import { readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../browser/shell-focus";
 import type { CloudThemePreference } from "../shared/theme";
 import { platformMessages } from "./platform-messages";
+import { PRIVACY_SHORTCUT } from "./privacy-screen-constants";
+import { privacyScreenMessages } from "./privacy-screen-messages";
 import { createProfileActions } from "./profile-actions";
 import { SharedWorkstationCheck } from "./SharedWorkstationCheck";
 import { useShellData } from "./shell-data";
@@ -30,7 +33,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
   const locale = useLocale();
   const data = useShellData();
   const t = () => platformMessages.resolve([locale()]).t;
-  const { preferences, items, signOut, signingOut, sharedWorkstation } = createProfileActions(
+  const { preferences, items, signOut, signingOut, sharedWorkstation, sharedWorkstationItem } = createProfileActions(
     props.initialTheme,
     props.appHref,
     props.userId,
@@ -43,6 +46,18 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
     onCleanup(() => window.removeEventListener(SHELL_FOCUS_CHANGE_EVENT, sync));
   });
   const shortcut = () => <Kbd keys={"mod+\\"} platform={data?.platform} />;
+  // The screen section: the privacy screen, only on computers with a mouse or touchpad, and this browser's shared
+  // workstation mark. One line each, like Light and English; the timer and the details live under /me.
+  const privacyText = () => privacyScreenMessages.resolve([locale()]).t;
+  const [finePointer, setFinePointer] = createSignal(false);
+  onMount(() => setFinePointer(window.matchMedia("(any-pointer: fine)").matches));
+  const privacyKeys = () => <Kbd keys={PRIVACY_SHORTCUT} platform={data?.platform} />;
+  const screenItems = (): (DropdownAction | DropdownChoice)[] => [
+    ...(finePointer()
+      ? [{ icon: "ti ti-eye-off", label: privacyText().title, trailing: privacyKeys(), action: requestPrivacyScreen }]
+      : []),
+    ...(props.userId ? [sharedWorkstationItem()] : []),
+  ];
   const menuItems = createMemo<DropdownItem[]>(() => [
     {
       items: [
@@ -54,6 +69,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
         },
       ],
     },
+    ...(screenItems().length ? [{ items: screenItems() }] : []),
     ...items(),
   ]);
 
@@ -79,6 +95,36 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
             {shortcut()}
           </button>
         </div>
+        {/* The hover panel shows only with a mouse or touchpad, where the privacy screen exists. */}
+        <div class="layout-profile-preferences__section">
+          <button
+            type="button"
+            class="menu-item"
+            aria-keyshortcuts={data?.platform === "apple" ? "Meta+Period" : "Control+Period"}
+            onClick={(event) => {
+              // The open panel would show again around a focused entry once the content is back.
+              event.currentTarget.blur();
+              requestPrivacyScreen();
+            }}
+          >
+            <i class="ti ti-eye-off" aria-hidden="true" />
+            <span>{privacyText().title}</span>
+            {privacyKeys()}
+          </button>
+          {props.userId && (
+            <button
+              type="button"
+              class="menu-item"
+              role="switch"
+              aria-checked={sharedWorkstation.shared()}
+              disabled={sharedWorkstation.pending()}
+              onClick={() => void sharedWorkstation.toggle()}
+            >
+              <SharedWorkstationCheck checked={sharedWorkstation.shared()} />
+              <span>{sharedWorkstation.messages().label}</span>
+            </button>
+          )}
+        </div>
         <div class="layout-profile-preferences__section">
           <button type="button" class="menu-item" aria-label={preferences.themeCycleLabel()} onClick={preferences.cycleTheme}>
             <i class={preferences.themeOption(preferences.theme()).icon} aria-hidden="true" />
@@ -98,23 +144,6 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
               <span>{preferences.messages().app}</span>
             </a>
           )}
-          {props.userId && (
-            <button
-              type="button"
-              class="menu-item"
-              role="switch"
-              aria-checked={sharedWorkstation.shared()}
-              aria-describedby="cloud-shared-workstation-description"
-              disabled={sharedWorkstation.pending()}
-              onClick={() => void sharedWorkstation.toggle()}
-            >
-              <SharedWorkstationCheck checked={sharedWorkstation.shared()} />
-              <span class="layout-profile-preferences__copy">
-                <span>{sharedWorkstation.messages().label}</span>
-                <small id="cloud-shared-workstation-description">{sharedWorkstation.messages().description}</small>
-              </span>
-            </button>
-          )}
         </div>
         <div class="layout-profile-preferences__section">
           <button type="button" class="menu-item" data-danger="true" onClick={signOut} disabled={signingOut()}>
@@ -129,7 +158,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
         items={menuItems()}
         label={preferences.messages().menuLabel}
         position="right-start"
-        width="17rem"
+        width="18rem"
       >
         <Dropdown.Trigger
           appearance="plain"

@@ -5,7 +5,7 @@ section: Operations
 order: 1100
 description: Develop and operate an independent Cloud application through the shared gateway.
 tags: [operations, deployment, runtime]
-updated: 2026-09-07
+updated: 2026-11-10
 ---
 
 # Operations
@@ -57,3 +57,6 @@ Enroll and manage application public keys with [App keys](/en/docs/operations/ap
 
 Assign public application hostnames and configure their TLS ingress with
 [App domains](/en/docs/operations/app-domains).
+
+See [Privacy screen](/en/docs/operations/privacy-screen) for what the privacy
+screen stores and what it does not cover.

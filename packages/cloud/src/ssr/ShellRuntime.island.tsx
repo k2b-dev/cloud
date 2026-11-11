@@ -1,5 +1,5 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
-import { installPageSwap } from "@k2b/ssr/nav";
+import { documentNavigate, installPageSwap } from "@k2b/ssr/nav";
 import {
   followPageTrail,
   installAppWorkspaceController,
@@ -18,6 +18,8 @@ import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { type IdleState, type IdleWarning, installSharedWorkstation } from "../browser/idle-sign-out";
 import { navigationSearchItems } from "../browser/navigation-search";
 import { openPanel, type PanelRequest } from "../browser/panel";
+import { installPrivacyScreen } from "../browser/privacy-screen";
+import { onPrivacyTimer, requestPrivacyScreen } from "../browser/privacy-timer";
 import { importOnDemand } from "../browser/reload";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
 import { attachShellFocusControls, readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../browser/shell-focus";
@@ -29,10 +31,13 @@ import {
   serializeAnnouncementCookieState,
 } from "../contracts/announcement-cookie";
 import type { AnnouncementDisplayEntry } from "../contracts/announcements";
+import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
 import { createGlobalSearchHost } from "./global-search-host";
 import { LayoutHelpDocuments } from "./layout-help-registry";
 import { installPageTrailRuntime } from "./page-trail-runtime";
 import { platformMessages } from "./platform-messages";
+import { PRIVACY_SETTINGS_HREF, PRIVACY_SHORTCUT } from "./privacy-screen-constants";
+import { privacyScreenMessages, privacyTimerPhrase } from "./privacy-screen-messages";
 import { readShellData } from "./shell-data";
 import { shellShortcuts } from "./shell-shortcuts";
 import { syncTimezoneCookie } from "./timezone-cookie";
@@ -57,6 +62,11 @@ export type ShellRuntimeProps = {
   announcements?: { entries: AnnouncementDisplayEntry[]; latestVersion: number };
   /** Banners rendered by Layout: their dismiss buttons record the dismissal. */
   banners?: boolean;
+  /**
+   * Signed-in Layout pages: the privacy screen with the person's timer, on computers with a mouse or touchpad. `name`
+   * is the installation's name, which the tab shows while the privacy screen is on.
+   */
+  privacy?: { timerSeconds: PrivacyTimerSeconds; name: string };
   /** Signed-in browser sessions: with `idle` this browser is a shared workstation and signs out without input. */
   browserSession?: { userId: string; sid: string; idle?: IdleState };
 };
@@ -87,6 +97,52 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
     if (props.appAccess) onCleanup(installAppAccessRecovery(props.appAccess));
   });
   onMount(() => onCleanup(installInputModeController()));
+  if (props.privacy) {
+    const privacy = props.privacy;
+    const [available, setAvailable] = createSignal(false);
+    const [timer, setTimer] = createSignal(privacy.timerSeconds);
+    const text = () => privacyScreenMessages.resolve([locale()]).t;
+    // Installed before the command shortcuts, so its key handling sees a key first while the screen is on.
+    onMount(() => {
+      // Phones and touch-only tablets lock themselves, and every touch would lift the screen at once.
+      if (!window.matchMedia("(any-pointer: fine)").matches) return;
+      setAvailable(true);
+      onCleanup(onPrivacyTimer(setTimer));
+      onCleanup(
+        installPrivacyScreen({
+          timerSeconds: privacy.timerSeconds,
+          text: () => ({ ...text(), tabTitle: privacy.name }),
+          // Without the command menu, as in pop-out editors, the runtime owns Cmd/Ctrl+. itself.
+          shortcut: !props.commands,
+        }),
+      );
+    });
+    createEffect(() => {
+      if (!available()) return;
+      const messages = text();
+      onCleanup(
+        registerContextAwareCommand({
+          id: "cloud.privacy.now",
+          title: messages.commandNow,
+          description: messages.commandNowDescription,
+          icon: "ti ti-eye-off",
+          keywords: messages.keywords.split(" "),
+          shortcut: PRIVACY_SHORTCUT,
+          action: requestPrivacyScreen,
+        }),
+      );
+      onCleanup(
+        registerContextAwareCommand({
+          id: "cloud.privacy.timer",
+          title: messages.commandTimer,
+          description: messages.commandTimerDescription({ value: privacyTimerPhrase(messages, timer()) }),
+          icon: "ti ti-clock",
+          keywords: messages.keywords.split(" "),
+          action: () => documentNavigate(PRIVACY_SETTINGS_HREF),
+        }),
+      );
+    });
+  }
   onMount(() => {
     const browserSession = props.browserSession;
     if (!browserSession) return;

@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-11-04
+updated: 2026-11-10
 ---
 
 # Layout and navigation
@@ -130,6 +130,58 @@ direct backslash key, such as German, use the profile menu.
 
 Applications need no code. Keep actions people need available outside the
 sidebar too, through the application's own links.
+
+### Hide the content with the privacy screen
+
+On computers with a mouse or touchpad, the signed-in `Layout` covers the
+content when someone looks over the person's shoulder. It hides, it does not
+lock. People start it with **Privacy screen** in the profile menu, the
+command menu's **Cloud** group, or `Ctrl+.` (`Cmd+.` on macOS), also over an
+open dialog. Without input for the person's timer (default two minutes;
+30 s, 1, 2 or 5 min, or Off under Profile settings › At your screen, `/me#screen`)
+it starts on its own. Ten seconds before, a countdown shows
+above the profile in the app bar, or as a pill above the avatar while the app
+bar is hidden; any input cancels it. Phones and touch-only tablets have no
+privacy screen.
+
+While it is on:
+
+- Every part of the page blurs and becomes `inert`, dialogs included. The app
+  bar stays recognizable but unusable; its counts and the avatar blur. Nothing
+  moves: positions, scroll, focus, caret and unsaved input stay, because the
+  page is never rebuilt. The tab shows only the installation's name.
+- A primary click anywhere or a key shows the content again. That click or key
+  never reaches the page: the pointer sequence and the key until its release
+  are used up. Mouse movement, scrolling, right and middle clicks only light up
+  the hint. Modifier keys, Tab and IME composition do not lift it.
+- All Cloud tabs of the browser cover and show together and share the idle time.
+- The shared workstation's sign-out warning always comes first: while it is
+  open the privacy screen neither starts nor lifts, and its **Continue
+  working** also lifts the privacy screen.
+
+Applications need no code for this. Mark only the exceptions with
+`data-cloud-privacy`:
+
+| Value | Use it for | Effect |
+| --- | --- | --- |
+| `live` | A running dictation or call | Stays sharp and usable, and pauses the timer while it exists |
+| `keep` | Progress people watch, such as an upload | Stays sharp and usable |
+| `blur` | A part inside a `live` or `keep` element that names content, such as file names | Blurs and becomes inert |
+
+```tsx
+<section class="upload" data-cloud-privacy="keep">
+  <p>42 % · 3 files · about 1 min left</p>
+  <ol data-cloud-privacy="blur">{rows}</ol>
+</section>
+```
+
+Render `live` only while the work runs; when it ends, the idle time starts
+again. Keep islands small: everything inside one stays readable. A `blur` part
+also leaves the accessibility tree, so put a live region that names content
+inside it. An element with text of its own beside an island covers whole,
+the island included, because loose text cannot blur alone. Open dialogs and
+popovers cover too, also in pop-out pages without the app bar, and a tab that
+opens while the others are covered starts covered.
 
 ## Render the application layout
 
@@ -474,8 +526,12 @@ Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the Cloud app (the `pwa` application), the menu also shows **App**, which
 leads to `/me/app`, where people pair and remove devices. From 768 px the
-menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. It
-ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
+menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. A
+section without a heading follows with **Privacy screen** and its shortcut
+(computers with a mouse or touchpad only) and the **Shared workstation**
+switch for this browser. Every entry is one line; a label too long for the
+18 rem menu ends in an ellipsis. The privacy timer and the details live under
+`/me#screen`. The menu ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without
 profile actions, and `MinimalLayout` pages show them in their footer.
 Applications must not add a second theme or language control to their own

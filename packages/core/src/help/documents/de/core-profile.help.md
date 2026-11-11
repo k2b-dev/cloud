@@ -3,7 +3,7 @@ id: core-profile
 title: Profil und Konto
 icon: ti ti-user-circle
 description: Konto, Gruppen und Aktivitäten prüfen, FreeIPA-Zugang beantragen und API Keys und Passkeys nutzen.
-updated: 2026-10-12
+updated: 2026-11-10
 order: 110
 ---
 
@@ -40,3 +40,29 @@ ihn, um zur nächsten zu wechseln: **Automatisch**, **Hell**, **Dunkel**, dann
 wieder **Automatisch**. Das Menü bleibt offen. Automatisch ist die
 Standardeinstellung. Sie folgt der hellen oder dunklen Einstellung deines
 Geräts.
+
+## Inhalte mit dem Sichtschutz verdecken {icon="eye-off"}
+
+Der Sichtschutz verdeckt deine Inhalte, wenn jemand über deine Schulter schaut.
+Er sperrt nichts. Die App-Leiste bleibt sichtbar, aber du kannst sie nicht
+bedienen.
+
+:::reference
+- **Sofort:** Wähle im Profilmenü **Sichtschutz** oder drücke **Strg+.**
+  (**⌘+.** am Mac). Das Kürzel wirkt auch, wenn ein Dialog offen ist.
+- **Automatisch:** Wenn du Cloud zwei Minuten nicht benutzt, verdeckt Cloud
+  deine Inhalte. Wähle in den Profileinstellungen unter **Am Bildschirm** bei
+  **Automatisch verdecken** eine andere Zeit oder **Aus**. Die Einstellung gilt
+  auf allen Computern, an denen du dich anmeldest.
+- **Vorwarnung:** Zehn Sekunden vorher erscheint über deinem Profil ein Symbol
+  mit einem Ring, der sich leert. Jede Taste oder Mausbewegung hält den
+  Sichtschutz auf.
+- **Weiterarbeiten:** Drücke eine Taste oder wähle eine beliebige Stelle der
+  Seite. Die Seite bekommt diese Eingabe nicht. Eine Mausbewegung lässt nur den
+  Hinweis aufleuchten.
+:::
+
+Der Sichtschutz gilt für alle Cloud-Tabs dieses Browsers. Ein laufendes Diktat
+und der Fortschritt eines Uploads bleiben sichtbar. Benachrichtigungen des
+Betriebssystems verdeckt Cloud nicht. Auf Telefonen und Tablets ohne Maus oder
+Touchpad gibt es keinen Sichtschutz.

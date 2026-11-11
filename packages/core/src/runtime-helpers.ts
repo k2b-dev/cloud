@@ -53,6 +53,7 @@ import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrat
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
+import { migrate as migrateScreenPreferences } from "./migrate/core/screen-preferences";
 import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateStorageBuckets } from "./migrate/core/storage-buckets";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
@@ -128,6 +129,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "panel-context-consent", run: migratePanelContextConsent },
     { name: "file-chooser-places", run: migrateFileChooserPlaces },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
+    { name: "screen-preferences", run: migrateScreenPreferences },
     { name: "app-approval", run: migrateAppApproval },
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },

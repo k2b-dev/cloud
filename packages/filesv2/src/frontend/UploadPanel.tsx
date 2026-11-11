@@ -244,9 +244,11 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
   };
 
   return (
+    // Under Cloud's privacy screen the progress stays readable; the folder and file names blur.
     <section
       ref={panel}
       class="filesv2-upload"
+      data-cloud-privacy="keep"
       data-phase={batch.phase}
       data-expanded={String(expanded())}
       aria-labelledby={titleId}
@@ -262,12 +264,12 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
           <i class={`ti ${icon()}`} />
         </span>
         <div class="filesv2-upload__text">
-          <h2 class="k2b-toast__title filesv2-upload__title" id={titleId}>
+          <h2 class="k2b-toast__title filesv2-upload__title" id={titleId} data-cloud-privacy="blur">
             {title()}
           </h2>
           <p class="k2b-toast__description filesv2-upload__summary">{summary()}</p>
         </div>
-        <div class="filesv2-upload__end">
+        <div class="filesv2-upload__end" data-cloud-privacy="blur">
           <Show when={view()}>
             {(href) => (
               <ButtonLink
@@ -320,6 +322,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
         ref={scroll}
         id={listId}
         class="filesv2-upload__scroll"
+        data-cloud-privacy="blur"
         role="region"
         aria-label={u().list}
         tabIndex={0}
@@ -355,7 +358,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
           </For>
         </ol>
       </div>
-      <div class="filesv2-upload__foot">
+      <div class="filesv2-upload__foot" data-cloud-privacy="blur">
         <p class="filesv2-upload__count">{count()}</p>
         <Show when={batch.failed && batch.phase !== "errors"}>
           <p class="filesv2-upload__errors">{u().errors(batch.failed)}</p>
@@ -382,7 +385,8 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
           }}
         </Show>
       </div>
-      <div class="k2b-sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {/* Its sentences can name files, so under the privacy screen it leaves the accessibility tree like the list. */}
+      <div class="k2b-sr-only" role="status" aria-live="polite" aria-atomic="true" data-cloud-privacy="blur">
         {live()}
       </div>
     </section>
