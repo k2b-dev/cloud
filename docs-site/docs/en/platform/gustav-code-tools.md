@@ -28,7 +28,7 @@ background tasks cannot use these tools to edit lasting Code.
 | `code_pull` or `code_read({codeId})` | Returns the latest submitted files and `code.json` metadata, including `baseVersionId`, and resets this chat's draft. |
 | `code_sdk` | Without `apps`, returns an index of every app export, method path, policy row and automation event, one line each. With `apps` (at most two per call), returns the generated `@sdk` declarations of those apps and of the shared `app`, page, `db`, `http` and event types. |
 | `code_write({codeId,path,content})` | Replaces one draft file and returns a compact summary of paths, byte counts, entry, base version and expiry. Use `{codeId,path,delete:true}` to remove a file or `{codeId,path,renameTo}` to rename it. |
-| `code_check({codeId})` | Checks the draft and lists permissions with source file and line. |
+| `code_check({codeId})` | Checks the draft and lists permissions with source file and line. The checked bundle stays on the server; its hash is in `manifest.hashes.bundle`. |
 | `code_test({codeId})` | Checks the draft and runs its `test/NAME.json` fixtures against fake data. Write fixtures through `code_write`. |
 | `code_simulate({codeId,fixture})` | Checks the draft and simulates one fixture with exactly one invocation. |
 | `code_submit({codeId})` | Checks and saves the draft as an immutable version against its saved base. Core runs the draft's fixtures and shows the result to reviewers; a successful submit advances the draft's base to that version. |
@@ -170,8 +170,9 @@ Studio apps and direct app APIs have been retired.
 
 Chat results use the same schemas and services as [cld code](/en/docs/platform/code-cli).
 Chat-only inputs make draft parts optional, and `code_write` returns
-`CodeChatDraftSummarySchema` for single-file edits. Other success results
-remain unchanged. The shared HTTP/CLI contracts are
+`CodeChatDraftSummarySchema` for single-file edits. A chat `code_check`
+returns `CodeChatCheckDataSchema`: the CLI result without the checked bundle.
+Other success results remain unchanged. The shared HTTP/CLI contracts are
 `codeAuthoringContracts`, `CodeAuthoringInput<K>` and `CodeAuthoringData<K>` in
 `packages/core/src/code/authoring-contracts.ts`; `CodeProjectSchema`,
 `CodeAuthoringPermissionSchema` and `CodeAuthoringErrorSchema` describe metadata,

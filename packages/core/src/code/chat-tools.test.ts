@@ -94,3 +94,20 @@ test("chat commands can consume the draft while shared HTTP/CLI contracts still 
       }).success,
     ).toBe(true);
 });
+
+test("a passing chat check leaves the checked bundle on the server; its hash stays in the manifest", () => {
+  const check = tools.find((tool) => tool.def.name === "code_check");
+  if (!check) throw new Error("Missing tool code_check");
+  const hash = "a".repeat(64);
+  const manifest = {
+    version: 1,
+    permissions: [],
+    ai: false,
+    entrypoints: [{ kind: "schedule", entrypoint: "monday", cron: "0 8 * * 1", file: "code.ts", line: 1 }],
+    hashes: { source: hash, sdk: hash, bundle: hash },
+  };
+  const result = { ok: true, diagnostics: [], manifest, permissions: [] };
+  const answer = (value: object) => ({ version: 1, result: value, manifest: null, permissions: [] });
+  expect(check.def.outputSchema.safeParse(answer(result)).success).toBe(true);
+  expect(check.def.outputSchema.safeParse(answer({ ...result, bundle: "export {}" })).success).toBe(false);
+});

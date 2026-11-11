@@ -9,6 +9,7 @@ import {
   CODE_AUTHORING_REQUEST_BYTES,
   type CodeAuthoringData,
   CodeAuthoringErrorSchema,
+  CodeChatCheckDataSchema,
   CodeChatDraftSummarySchema,
   codeAuthoringContracts,
   codeChatAuthoringInputs,
@@ -245,12 +246,15 @@ export function createCodeAuthoringChatTools() {
     ),
     tool(
       "check",
-      { input: codeChatAuthoringInputs.check, data: codeAuthoringContracts.check.data },
+      { input: codeChatAuthoringInputs.check, data: CodeChatCheckDataSchema },
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
-        return codeAuthoringServices.check({ codeId: input.codeId, files: draft.files, entry: draft.entry }, context);
+        const checked = await codeAuthoringServices.check({ codeId: input.codeId, files: draft.files, entry: draft.entry }, context);
+        if (!checked.result.ok) return { ...checked, result: checked.result };
+        const { bundle: _bundle, ...result } = checked.result;
+        return { ...checked, result };
       },
-      "Check the server-held draft with {codeId}. Explicit files or entry replace that draft part first. Returns diagnostics, warnings and operation/target permissions at file/line locations. Fix errors before test and submit; address each warning or know why it is fine.",
+      "Check the server-held draft with {codeId}. Explicit files or entry replace that draft part first. Returns diagnostics, warnings and operation/target permissions at file/line locations; the checked bundle stays on the server. Fix errors before test and submit; address each warning or know why it is fine.",
     ),
   ];
 }

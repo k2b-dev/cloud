@@ -266,6 +266,14 @@ export const CodeChatDraftSummarySchema = z
   })
   .strict();
 
+/**
+ * Chat check result: the CLI contract without the checked bundle, which only costs the model tokens. The bundle's hash
+ * stays in `manifest.hashes.bundle`; submit checks the same draft again and stores its own bundle.
+ */
+export const CodeChatCheckDataSchema = check.extend({
+  result: z.discriminatedUnion("ok", [CodeCheckResultSchema.options[0], CodeCheckResultSchema.options[1].omit({ bundle: true })]),
+});
+
 /** Chat-only additive inputs. HTTP and CLI continue to require their complete source contracts. */
 export const codeChatAuthoringInputs = {
   check: codeAuthoringContracts.check.input.partial({ files: true, entry: true }).extend({ entry: source.shape.entry.unwrap().optional() }),

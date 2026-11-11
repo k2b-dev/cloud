@@ -28,6 +28,7 @@ import {
   CodeAuthoringConflictSchema,
   type CodeAuthoringData,
   CodeAuthoringErrorSchema,
+  CodeChatCheckDataSchema,
   CodeChatDraftSummarySchema,
   codeAuthoringContracts,
 } from "./authoring-contracts";
@@ -199,7 +200,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         const firstWrite = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "code.ts", content: source }));
         expect(firstWrite.draft.files).toEqual([{ path: "code.ts", bytes: Buffer.byteLength(source) }]);
         expect(firstWrite.draft.expiresAt).toBe(new Date(fixed.getTime() + CODE_CHAT_DRAFT_LIFETIME_MS).toISOString());
-        const hash1 = codeAuthoringContracts.check.data.parse(await invoke("code_check", { codeId })).manifest?.hashes.source;
+        const hash1 = CodeChatCheckDataSchema.parse(await invoke("code_check", { codeId })).manifest?.hashes.source;
         await invoke("code_write", { codeId, path: "lib.ts", content: "export const value = 42;" });
         const fixture = { version: 1, name: "Monday", now: fixed.getTime(), seed: 42, mocks: [], runs: [{ entrypoint: "monday" }] };
         const fixtureText = JSON.stringify(fixture);
@@ -208,7 +209,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         );
         expect(summary.draft.files.map((item) => item.path)).toEqual(["code.ts", "lib.ts"]);
         expect(summary.draft.tests).toEqual([{ path: "test/monday.json", bytes: Buffer.byteLength(fixtureText) }]);
-        const hash2 = codeAuthoringContracts.check.data.parse(await invoke("code_check", { codeId })).manifest?.hashes.source;
+        const hash2 = CodeChatCheckDataSchema.parse(await invoke("code_check", { codeId })).manifest?.hashes.source;
         expect(hash2).toBeTruthy();
         expect(hash2).not.toBe(hash1);
         expect(codeAuthoringContracts.test.data.parse(await invoke("code_test", { codeId })).cases).toHaveLength(1);
@@ -255,7 +256,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       expect(renamed.draft.files.map((item) => item.path)).toEqual(["a.ts", "b.ts", "main.ts"]);
       expect(renamed.draft.entry).toBe("main.ts");
       // Omitted entry must preserve main.ts, not the shared contract's code.ts default.
-      expect(codeAuthoringContracts.check.data.parse(await invoke("code_check", { codeId })).manifest?.entry).toBe("main.ts");
+      expect(CodeChatCheckDataSchema.parse(await invoke("code_check", { codeId })).manifest?.entry).toBe("main.ts");
       await invoke("code_write", { codeId, path: "b.ts", delete: true });
       const otherConversation = "22222222-2222-4222-8222-222222222222";
       for (const [name, input] of [
@@ -275,9 +276,8 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       // Supplying files can seed a missing draft without reading the saved version.
       const aliasFiles = { "other.ts": "other" };
       expect(
-        codeAuthoringContracts.check.data.parse(
-          await invoke("code_check", { codeId, files: aliasFiles, entry: "other.ts" }, otherConversation),
-        ).manifest?.entry,
+        CodeChatCheckDataSchema.parse(await invoke("code_check", { codeId, files: aliasFiles, entry: "other.ts" }, otherConversation))
+          .manifest?.entry,
       ).toBe("other.ts");
       const original = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "a.ts", content: "a" }));
       expect(original.draft.files.map((item) => item.path)).toEqual(["a.ts", "main.ts"]);
@@ -624,7 +624,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
           seen.push(event.name);
           if (["code_init", "code_write", "code_pull"].includes(event.name)) project = codeAuthoringContracts.pull.data.parse(event.result);
           if (event.name === "code_check") {
-            const check = codeAuthoringContracts.check.data.parse(event.result);
+            const check = CodeChatCheckDataSchema.parse(event.result);
             expect(check.permissions).toEqual([{ ...permission, status: "new", title: null, typeTitle: "Space", own: false }]);
             expect(check.manifest?.policyRows).toEqual(["silent_shared"]);
           }
