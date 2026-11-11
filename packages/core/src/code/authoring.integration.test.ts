@@ -392,13 +392,9 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       const half = CODE_CHECK_LIMITS.requestBytes / 2 - 4096;
       await invoke("code_write", { codeId, path: "test/one.json", content: "x".repeat(half) });
       await invoke("code_write", { codeId, path: "test/two.json", content: "x".repeat(half) });
+      // Content alone stays 50 bytes under the budget; paths and structure push the whole draft over it.
       expect(
-        CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: "test/three.json", content: "x".repeat(8192) })).error
-          .code,
-      ).toBe("BAD_INPUT");
-      // Paths count too: an empty fixture with a long name cannot grow the stored draft past the budget.
-      expect(
-        CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: `test/${"n".repeat(500)}.json`, content: "" })).error
+        CodeAuthoringErrorSchema.parse(await invoke("code_write", { codeId, path: "test/three.json", content: "x".repeat(8192 - 50) })).error
           .code,
       ).toBe("BAD_INPUT");
       const after = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "test/absent.json", delete: true }));
