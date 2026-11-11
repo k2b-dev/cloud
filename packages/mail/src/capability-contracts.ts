@@ -1,4 +1,9 @@
-import { CapabilitySemanticLinkSchema, CloudResourceReaderViewSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
+import {
+  CapabilityFileMetadataSchema,
+  CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
+  CloudResourceViewSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   completeConversationsSchema,
@@ -806,6 +811,16 @@ export const DraftAttachmentAddInputSchema = z
     attachment: InlineAttachmentInputSchema.describe("Attachment to add."),
   })
   .strict();
+export const DraftAttachmentImportInputSchema = z.strictObject({
+  draftId: DraftIdInputSchema,
+  expectedRevision: ExpectedRevisionInputSchema,
+  file: CapabilityFileMetadataSchema.describe("FileRef to attach to the draft; never sends the message."),
+});
+export const DraftAttachmentImportDataSchema = z.strictObject({
+  draftId: ResourceShortIdSchema,
+  uploadId: z.uuid(),
+  revision: z.number().int().positive().optional(),
+});
 export const DraftAttachmentRemoveInputSchema = z
   .object({
     draftId: DraftIdInputSchema,

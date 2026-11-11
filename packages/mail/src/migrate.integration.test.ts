@@ -349,6 +349,23 @@ suite("mail baseline schema", () => {
     await migrate();
   });
 
+  test("adds capability upload metadata to an existing installation and preserves it on rerun", async () => {
+    await migrate();
+    await sql`ALTER TABLE mail.draft_attachment_uploads DROP COLUMN capability_revision`;
+    await sql`ALTER TABLE mail.draft_attachment_uploads DROP COLUMN capability_write_started`;
+    await migrate();
+    await migrate();
+    const columns = await sql<{ column_name: string; data_type: string; is_nullable: string; column_default: string | null }[]>`
+      SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'draft_attachment_uploads'
+        AND column_name IN ('capability_revision', 'capability_write_started') ORDER BY column_name
+    `;
+    expect(columns).toEqual([
+      { column_name: "capability_revision", data_type: "bigint", is_nullable: "YES", column_default: null },
+      { column_name: "capability_write_started", data_type: "boolean", is_nullable: "NO", column_default: "false" },
+    ]);
+  });
+
   test("adds tables and indexes created after the baseline to a database installed before them", async () => {
     await migrate();
     await sql`DROP TABLE mail.personal_mailbox_preferences`;

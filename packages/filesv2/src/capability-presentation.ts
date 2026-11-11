@@ -129,6 +129,11 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "file.save.v1": {
+          title: "Datei in Dateien speichern",
+          description:
+            "Eine FileRef in einem beschreibbaren Ordner speichern. Ein belegter Name führt zunächst zu einem Konflikt; Ersetzen benötigt die aktuelle Version und eine ausdrückliche Freigabe.",
+        },
         "content.create": {
           title: "Dateiinhalt schreiben",
           description:

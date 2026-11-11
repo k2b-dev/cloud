@@ -358,4 +358,93 @@ suite("Mail capabilities check mailbox access before resolving IDs", () => {
     expect(existing).toMatchObject(forbidden);
     expect(await refusal(release(unknown()))).toEqual(existing);
   });
+
+  test("FileRef attachment imports check write access, limits and durable idempotent completion", async () => {
+    const action = mailCapabilities.actions["draft.attachment.import.v1"];
+    const input = { draftId: draftShortId, expectedRevision: 1, file: { name: "report.csv", mediaType: "text/csv", size: 4 } };
+    const context = { ...owner, target: { type: "mail.mailbox", id: mailboxShortId }, idempotencyKey: "chat-attachment-retry" };
+    expect(await refusal(action.run(input, { ...context, ...reader }))).toMatchObject(forbidden);
+    expect(await refusal(action.run({ ...input, file: { ...input.file, size: 100 * 1024 * 1024 + 1 } }, context))).toMatchObject({
+      status: 400,
+    });
+    const first = unwrap(await action.run(input, context));
+    const retried = unwrap(await action.run(input, context));
+    expect(retried.stream?.id).toBe(first.stream?.id);
+    if (!first.stream) throw new Error("Missing attachment stream");
+    const result = await action.stream.write(first.stream, new Blob(["data"]).stream(), context);
+    expect(result.data).toMatchObject({ draftId: draftShortId, revision: 2 });
+    expect(await action.stream.write(first.stream, new Blob(["data"]).stream(), context)).toEqual(result);
+    expect(await action.stream.status(first.stream, context)).toEqual({ state: "completed", result });
+    await action.stream.abort(first.stream, context);
+    expect(await action.stream.status(first.stream, context)).toEqual({ state: "completed", result });
+    const again = unwrap(await action.run(input, context));
+    expect(again.stream?.id).toBe(first.stream.id);
+    const [count] = await sql<{ count: string }[]>`
+      SELECT count(*) AS count FROM mail.draft_attachments attachment JOIN mail.drafts draft ON draft.id = attachment.draft_id
+      WHERE draft.short_id = ${draftShortId} AND draft.mailbox_id = ${mailboxId}::uuid AND attachment.removed_at IS NULL
+    `;
+    expect(Number(count?.count)).toBe(1);
+    for (const call of [
+      () => action.stream.write(first.stream!, new Blob(["data"]).stream(), { ...context, ...reader }),
+      () => action.stream.status(first.stream!, { ...context, ...reader }),
+      () => action.stream.abort(first.stream!, { ...context, ...reader }),
+    ])
+      await expect(call()).rejects.toMatchObject({ status: 403 });
+  });
+
+  test("slow FileRef writers leave the database pool available and competing writers cannot claim twice", async () => {
+    const action = mailCapabilities.actions["draft.attachment.import.v1"];
+    const input = { draftId: draftShortId, expectedRevision: 1, file: { name: "report.csv", mediaType: "text/csv", size: 4 } };
+    const context = { ...owner, target: { type: "mail.mailbox", id: mailboxShortId } };
+    // Exceed the configured pool, including its documented default of ten connections.
+    const count = Number(process.env.CLOUD_DATABASE_POOL_MAX ?? 10) + 1;
+    const offers = await Promise.all(
+      Array.from({ length: count }, async (_, i) => {
+        const caller = { ...context, idempotencyKey: `slow-import-${i}` };
+        const offer = unwrap(await action.run(input, caller));
+        if (!offer.stream) throw new Error("Missing attachment stream");
+        return { stream: offer.stream, caller };
+      }),
+    );
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const started = offers.map(() => Promise.withResolvers<void>());
+    const release = Promise.withResolvers<void>();
+    const writes = offers.map(({ stream, caller }, i) =>
+      action.stream.write(
+        stream,
+        new ReadableStream<Uint8Array>(
+          {
+            start(controller) {
+              controllers.push(controller);
+            },
+            pull() {
+              started[i]!.resolve();
+              return release.promise;
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+        caller,
+      ),
+    );
+    // Attach rejection handlers immediately; closing empty sources below deliberately aborts these reservations.
+    const settled = Promise.allSettled(writes);
+    try {
+      await Promise.all(started.map((item) => item.promise));
+      const [claims] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.draft_attachment_uploads upload
+        JOIN mail.drafts draft ON draft.id = upload.draft_id
+        WHERE draft.short_id = ${draftShortId} AND draft.mailbox_id = ${mailboxId}::uuid AND upload.capability_write_started
+      `;
+      expect(claims?.count).toBe(count);
+      const first = offers[0]!;
+      await expect(action.stream.write(first.stream, new Blob(["data"]).stream(), first.caller)).rejects.toMatchObject({ status: 409 });
+      expect(await action.stream.status(first.stream, first.caller)).toEqual({ state: "open" });
+    } finally {
+      for (const controller of controllers) controller.close();
+      release.resolve();
+      await settled;
+    }
+    for (const { stream, caller } of offers) expect(await action.stream.status(stream, caller)).toEqual({ state: "aborted" });
+  });
 });

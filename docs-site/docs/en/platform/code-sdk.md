@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-09
+updated: 2026-11-11
 ---
 
 # Code SDK
@@ -159,9 +159,9 @@ export default app;
 ```
 
 `imports` is a fictional receiving app with a write Action whose input names
-`file`. Choose a compatible Action from the live SDK. Existing Files and Mail
-Actions keep their current inputs and confirmation policies; generation does
-not add file inputs to them.
+`file`. Choose a compatible Action from the live SDK. Files offers
+`file.save.v1` and Mail offers `draft.attachment.import.v1` as receiving
+Actions; their existing confirmation and permission rules apply.
 
 Generation input fits the ordinary 256 KiB capability request budget. A run can
 attempt at most 64 files of up to 50 MiB each within a combined 250 MiB output
@@ -187,6 +187,62 @@ changed or deleted file, expired stream or second use fails. The stream lives
 ten minutes at most. The receiving Code host enforces its existing aggregate
 transfer limits and keeps the FileRef local to that run.
 Resource-owned Code cannot borrow a person's chat access.
+
+### Save in Files or attach to a Mail draft
+
+These one-off `code_run` examples use the current person's capability service.
+Replace the example IDs with exact IDs from authorized readers. Each call has
+its own idempotency key. Read the chat file again before each destination,
+because one FileRef can be used only once.
+
+Files accepts the storage-root entry target from `files.bases.list` and a path
+relative to that base, as its other upload Action does. It saves up
+to 50 MiB, with the same quota and versioning as an upload. The default
+`onConflict: "error"` refuses a taken name. To replace, read the file's current
+revision and pass `onConflict: "overwrite"` and `expectedRevision` with a new
+key; replacement asks again. Creating a file may remember approval for its
+storage base, except under an active public download share. This Action does
+not run unattended.
+
+<!-- chat-file-files-example -->
+```ts
+import { assistant, files } from "@sdk";
+
+export default async () => {
+  const file = await assistant.chat.file.read.v1({ chatId: "chat-one", path: "/report.csv" });
+  return files.entry("Root001").file.save.v1({
+    path: "Reports/report.csv", file,
+    idempotencyKey: "save-report:chat-one:revision-one",
+  });
+};
+```
+
+Mail accepts the same FileRef and a current `draft.read` revision. It requires
+write access and an available editor lock. Its limit is 100 MiB per attachment
+and in total per draft, with the existing attachment count limit. Chat files
+remain limited to 50 MiB. The Action uses the same `shared` policy as
+`draft.attachment.add`; it never sends the message.
+
+<!-- chat-file-mail-example -->
+```ts
+import { assistant, mail } from "@sdk";
+
+export default async () => {
+  const file = await assistant.chat.file.read.v1({ chatId: "chat-one", path: "/report.csv" });
+  return mail.mailbox("Mbx001").draft.attachment.import.v1({
+    draftId: "Drf001", expectedRevision: 2, file,
+    idempotencyKey: "attach-report:chat-one:revision-one",
+  });
+};
+```
+
+Both Actions prepare a write stream and return the final receipt only after
+publication. After a lost answer, inspect stream status before retrying with
+a fresh chat FileRef and the same key. A completed Mail transfer replays its
+original committed revision and never attaches twice. A cancelled Mail transfer
+cannot resume: use a new key after confirming cancellation. An incomplete
+transfer must be cancelled before a new one; abandoned Mail uploads are
+reclaimed by its existing upload cleanup.
 
 For chat-attachment integration, the one-off chat host must invoke this Query
 through its current person's capability service. The existing stream dispatcher

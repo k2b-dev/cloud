@@ -89,6 +89,8 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_revision bigint`;
+  await tx`ALTER TABLE mail.draft_attachment_uploads ADD COLUMN IF NOT EXISTS capability_write_started boolean NOT NULL DEFAULT false`;
   // One checkpoint per folder lets waiting sync commands finish without retaining empty runs.
   await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS last_sync_snapshot jsonb`;
   await tx`DO $$ BEGIN

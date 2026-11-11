@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
 import { capabilityCallFromTool, capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -12,7 +12,7 @@ import {
   typeViewIssues,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
-import { err, fail } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
 import type { z } from "zod";
 import { mailCapabilities } from "./capabilities";
 import {
@@ -334,7 +334,7 @@ describe("mail capabilities", () => {
   test("declares mailbox targets separately from domain input and keeps chat/MCP fields flat", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     const mailboxActions = manifest.actions.filter((action) => !action.localId.startsWith("code.access."));
-    expect(mailboxActions).toHaveLength(32);
+    expect(mailboxActions).toHaveLength(33);
     for (const action of mailboxActions) {
       expect(action.target).toBe("mailbox");
       expect(action.inputSchema.properties).not.toHaveProperty("mailboxId");
@@ -1006,6 +1006,7 @@ describe("mail capabilities", () => {
       "conversation.summary.write",
       "conversation.tag.update",
       "draft.attachment.add",
+      "draft.attachment.import.v1",
       "draft.create",
       "draft.patch",
       "draft.update",
@@ -1089,6 +1090,7 @@ describe("mail capabilities", () => {
       "conversation.tag.update",
       "delivery.cancel",
       "draft.attachment.add",
+      "draft.attachment.import.v1",
       "draft.attachment.remove",
       "draft.create",
       "draft.discard",
@@ -1128,6 +1130,7 @@ describe("mail capabilities", () => {
       "conversation.tag.update",
       "delivery.cancel",
       "draft.attachment.add",
+      "draft.attachment.import.v1",
       "draft.attachment.remove",
       "draft.create",
       "draft.discard",
@@ -1812,6 +1815,10 @@ describe("mail capabilities", () => {
         }),
         context,
       ),
+      await mailCapabilities.actions["draft.attachment.import.v1"].review(
+        { draftId, expectedRevision: 2, file: { name: "notes.pdf", mediaType: "application/pdf", size: 5 } },
+        context,
+      ),
       await mailCapabilities.actions["draft.attachment.add"].review(
         {
           draftId,
@@ -2284,11 +2291,47 @@ describe("mail capabilities", () => {
       },
     ];
 
-    expect(results).toHaveLength(Object.keys(mailCapabilities.actions).length);
-    expect(new Set(results.map((item) => item.localId)).size).toBe(results.length);
+    const importedUpload = {
+      id: "aaaaaaaa-0000-4000-8000-000000000099",
+      draftId: internalDraftId,
+      filename: "notes.pdf",
+      contentType: "application/pdf",
+      byteLength: 5,
+      receivedBytes: 5,
+      chunkSize: 1024 * 1024,
+      state: "attached" as const,
+      attachmentId: internalDraftAttachmentId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: importedUpload });
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { upload: importedUpload, expectedRevision: 2, finalizedRevision: 3 },
+    });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    const importCase = {
+      localId: "draft.attachment.import.v1",
+      action: mailCapabilities.actions["draft.attachment.import.v1"],
+      run: async () => {
+        const action = mailCapabilities.actions["draft.attachment.import.v1"];
+        const prepared = await action.run(
+          { draftId, expectedRevision: 2, file: { name: "notes.pdf", mediaType: "application/pdf", size: 5 } },
+          idempotentContext,
+        );
+        if (!prepared.ok || !prepared.data.stream) throw new Error("expected prepared attachment");
+        return {
+          ok: true as const,
+          data: await action.stream.write(prepared.data.stream, new Blob(["notes"]).stream(), idempotentContext),
+        };
+      },
+    };
+    const allResults = [...results, importCase];
+    expect(allResults).toHaveLength(Object.keys(mailCapabilities.actions).length);
+    expect(new Set(allResults.map((item) => item.localId)).size).toBe(allResults.length);
     const summaries = new Map<string, string>();
     const actionOutputs: unknown[] = [];
-    for (const { localId, action, run } of results) {
+    for (const { localId, action, run } of allResults) {
       const result = await run().catch((error) => {
         throw new Error(`Mail action ${localId} threw`, { cause: error });
       });
@@ -4129,4 +4172,200 @@ test("Code event lookup authorizes before classifying the message", async () => 
   expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
   parent.mockResolvedValue(null);
   expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
+});
+
+describe("draft FileRef attachment capability", () => {
+  const action = mailCapabilities.actions["draft.attachment.import.v1"];
+  const uploadId = "aaaaaaaa-0000-4000-8000-000000000099";
+  const upload = {
+    id: uploadId,
+    draftId: internalDraftId,
+    filename: "report.csv",
+    contentType: "text/csv",
+    byteLength: 4,
+    receivedBytes: 0,
+    chunkSize: 1024 * 1024,
+    state: "uploading" as const,
+    attachmentId: null,
+    createdAt: "2026-11-11T10:00:00.000Z",
+    updatedAt: "2026-11-11T10:00:00.000Z",
+  };
+  const input = { draftId, expectedRevision: 2, file: { name: "report.csv", mediaType: "text/csv", size: 4 } };
+  const caller = { ...context, locale: "en", idempotencyKey: "chat-attachment-one" };
+  beforeEach(() => {
+    setSystemTime(new Date(upload.createdAt));
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+  });
+  afterEach(() => setSystemTime());
+
+  test("prepares the existing uploader with actor, revision and a stable retry key", async () => {
+    const create = spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    const first = await action.run(input, caller);
+    expect(first).toMatchObject({
+      ok: true,
+      data: { data: { draftId, uploadId }, stream: { direction: "write", name: "report.csv", size: 4 } },
+    });
+    await action.run(input, caller);
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      context: { actor: caller.actor, accessSubject: caller.accessSubject },
+      mailboxId: internalMailboxId,
+      draftId: internalDraftId,
+      capability: { expectedRevision: 2 },
+    });
+    expect(create.mock.calls[0]?.[0].capability?.uploadId).toBe(create.mock.calls[1]?.[0].capability?.uploadId);
+    await action.run(input, { ...caller, idempotencyKey: "another-transfer" });
+    expect(create.mock.calls[0]?.[0].capability?.uploadId).not.toBe(create.mock.calls[2]?.[0].capability?.uploadId);
+  });
+
+  test("preserves source media metadata through preparation while the uploader owns storage sanitization", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { ...upload, contentType: "application/octet-stream" },
+    });
+    const prepared = await action.run({ ...input, file: { ...input.file, mediaType: "text/csv; charset=utf-8" } }, caller);
+    expect(prepared).toMatchObject({ ok: true, data: { stream: { mediaType: "text/csv; charset=utf-8" } } });
+  });
+
+  test("a cancelled stream stays visibly aborted and cancels rejected bodies", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: {
+        upload: { ...upload, state: "cancelled" },
+        expectedRevision: 2,
+        finalizedRevision: null,
+      },
+    });
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream");
+    const prepared = await action.run(input, caller);
+    if (!prepared.ok || !prepared.data.stream) throw new Error("expected stream");
+    expect(await action.stream.status(prepared.data.stream, caller)).toEqual({ state: "aborted" });
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel: () => {
+        cancelled = true;
+      },
+    });
+    await expect(action.stream.write(prepared.data.stream, body, caller)).rejects.toMatchObject({ status: 409 });
+    expect(cancelled).toBe(true);
+    expect(attach).not.toHaveBeenCalled();
+  });
+
+  test("completed preparations return a usable receipt stream after the original transfer window", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { ...upload, state: "attached", attachmentId: internalDraftAttachmentId },
+    });
+    setSystemTime(new Date("2026-11-13T10:00:00.000Z"));
+    const prepared = await action.run(input, caller);
+    expect(prepared).toMatchObject({ ok: true, data: { stream: { expiresAt: "2026-11-14T10:00:00.000Z" } } });
+  });
+
+  test("a second writer is refused without cancelling the first writer's reservation", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { upload, expectedRevision: 2, finalizedRevision: null },
+    });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(fail(err.conflict("Transfer already started")));
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream");
+    const cancel = spyOn(draftUploads, "cancelDraftAttachmentUpload");
+    const prepared = await action.run(input, caller);
+    if (!prepared.ok || !prepared.data.stream) throw new Error("expected stream");
+    await expect(action.stream.write(prepared.data.stream, new Blob(["data"]).stream(), caller)).rejects.toMatchObject({ status: 409 });
+    expect(attach).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test("cancelling during preparation closes the source without an unhandled node error", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    spyOn(draftUploads, "capabilityAttachmentUpload").mockResolvedValue({
+      ok: true,
+      data: { upload, expectedRevision: 2, finalizedRevision: null },
+    });
+    const abort = new AbortController();
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream").mockImplementation(async (params) => {
+      abort.abort();
+      // The real uploader can still be awaiting its initial database read here.
+      await Promise.resolve();
+      expect(params.signal?.aborted).toBe(true);
+      return fail(err.conflict("Transfer cancelled"));
+    });
+    const prepared = await action.run(input, caller);
+    if (!prepared.ok || !prepared.data.stream) throw new Error("expected stream");
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel: () => {
+        cancelled = true;
+      },
+    });
+    await expect(action.stream.write(prepared.data.stream, body, { ...caller, signal: abort.signal })).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(attach).toHaveBeenCalledTimes(1);
+    expect(cancelled).toBe(true);
+  });
+
+  test("refuses write denial and excessive size without transferring bytes", async () => {
+    const create = spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue(fail(err.forbidden("Access denied")));
+    expect(await action.run(input, caller)).toMatchObject({ ok: false, error: { status: 403 } });
+    create.mockClear();
+    expect(await action.run({ ...input, file: { ...input.file, size: 100 * 1024 * 1024 + 1 } }, caller)).toMatchObject({
+      ok: false,
+      error: { status: 400 },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  test("uses the sibling review sentence and refuses a changed draft", async () => {
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    const review = await action.review(input, caller);
+    expect(review.ok).toBe(true);
+    if (!review.ok) throw new Error("expected review");
+    expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBe(true);
+    expect(review.data.sentence.action).toContain("{file}");
+    expect(await action.review({ ...input, expectedRevision: 99 }, caller)).toMatchObject({ ok: false, error: { status: 409 } });
+  });
+
+  test("a completed stream replays its durable receipt without adding a second attachment", async () => {
+    spyOn(draftUploads, "createDraftAttachmentUpload").mockResolvedValue({ ok: true, data: upload });
+    spyOn(draftUploads, "claimCapabilityAttachmentWrite").mockResolvedValue(ok());
+    let completed = false;
+    const read = spyOn(draftUploads, "capabilityAttachmentUpload").mockImplementation(async () => ({
+      ok: true,
+      data: {
+        upload: completed ? { ...upload, state: "attached", attachmentId: internalDraftAttachmentId } : upload,
+        expectedRevision: 2,
+        finalizedRevision: completed ? 3 : null,
+      },
+    }));
+    const attach = spyOn(draftUploads, "uploadDraftAttachmentStream").mockImplementation(async (params) => {
+      const chunks = [];
+      for await (const chunk of params.stream) chunks.push(chunk);
+      expect(Buffer.concat(chunks).toString()).toBe("data");
+      expect(params).toMatchObject({ uploadId, expectedRevision: 2, mailboxId: internalMailboxId, draftId: internalDraftId });
+      completed = true;
+      return { ok: true, data: mutableDraftFixture };
+    });
+    const cancel = spyOn(draftUploads, "cancelDraftAttachmentUpload");
+    const offer = await action.run(input, caller);
+    if (!offer.ok || !offer.data.stream) throw new Error("expected prepared stream");
+    const stream = offer.data.stream;
+    const receipt = await action.stream.write(stream, new Blob(["data"]).stream(), caller);
+    expect(receipt.data).toEqual({ draftId, uploadId, revision: 3 });
+    expect(await action.stream.write(stream, new Blob(["data"]).stream(), caller)).toEqual(receipt);
+    expect(await action.stream.status(stream, caller)).toEqual({ state: "completed", result: receipt });
+    await action.stream.abort(stream, caller);
+    expect(attach).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
+    read.mockResolvedValue(fail(err.forbidden("Access denied")));
+    for (const call of [
+      () => action.stream.write(stream, new Blob(["data"]).stream(), caller),
+      () => action.stream.status(stream, caller),
+      () => action.stream.abort(stream, caller),
+    ])
+      await expect(call()).rejects.toMatchObject({ status: 403 });
+  });
 });

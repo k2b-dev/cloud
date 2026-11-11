@@ -134,6 +134,9 @@ mock.module("./service", () => ({
       if (serviceFailure) throw serviceFailure;
       return { base: { ...base, id: input.baseId }, entry: uploaded };
     },
+    abortUpload: async () => {
+      if (serviceFailure) throw serviceFailure;
+    },
     capabilityUploadStatus: async () => {
       if (serviceFailure) throw serviceFailure;
       return { state: "completed", entry: uploaded };
@@ -1141,7 +1144,16 @@ test("approval reviews name the file, its storage, and the change in the reader'
       .filter(([, action]) => "approval" in action && action.approval === "rememberable")
       .map(([id]) => id)
       .sort(),
-  ).toEqual(["content.create", "entry.copy", "entry.move", "entry.rename", "folder.create", "provider.save", "trash.restore"]);
+  ).toEqual([
+    "content.create",
+    "entry.copy",
+    "entry.move",
+    "entry.rename",
+    "file.save.v1",
+    "folder.create",
+    "provider.save",
+    "trash.restore",
+  ]);
   const trashed = await filesCapabilities.actions["entry.trash"].run(
     { path: "test.csv" },
     rootContext("home", { ...context, locale: "de" }),
@@ -1389,4 +1401,70 @@ test("the storage reader supplies Manage only after the machine storage service 
   } finally {
     storageReadAllowed = true;
   }
+});
+
+test("file.save.v1 adapts FileRef metadata to the normal upload, key and durable receipt", async () => {
+  uploadKeys.length = 0;
+  const action = filesCapabilities.actions["file.save.v1"];
+  ids.set("destination", { baseId: "base", path: "" });
+  const input = action.input.parse({
+    path: "Reports/report.csv",
+    file: { name: "source.csv", size: 4, mediaType: "text/csv" },
+  });
+  const caller = rootContext("base", { ...context, idempotencyKey: "chat-file-save" });
+  const first = await action.run(input, caller);
+  const retry = await action.run(input, caller);
+  expect(first.ok && retry.ok && first.data.stream?.id === retry.data.stream?.id).toBe(true);
+  expect(uploadKeys).toHaveLength(2);
+  expect(uploadKeys[0]).toBe(uploadKeys[1]);
+  expect(uploadInputs[0]).toMatchObject({ baseId: "base", path: "Reports/report.csv", size: 4, onConflict: "error" });
+  uploaded = { ...entry("Reports/report.csv"), name: "report.csv", size: 4 };
+  if (!first.ok || !first.data.stream) throw new Error("expected prepared upload");
+  const receipt = await action.stream.write(first.data.stream, new Blob(["data"]).stream(), caller);
+  const status = await action.stream.status(first.data.stream, caller);
+  expect(status).toEqual({ state: "completed", result: receipt });
+  expect(receipt.data).toMatchObject({ entry: { name: "report.csv", size: 4 } });
+});
+
+test("file.save.v1 refuses oversized files and requires a revision to overwrite", async () => {
+  const action = filesCapabilities.actions["file.save.v1"];
+  ids.set("destination", { baseId: "base", path: "" });
+  const fields = { path: "Reports/report.csv", file: { size: 50 * 1024 * 1024 + 1, mediaType: "text/csv" } };
+  expect(await action.run(action.input.parse(fields), rootContext("base", context))).toMatchObject({ ok: false });
+  expect(uploadInputs).toHaveLength(0);
+  expect(action.input.safeParse({ ...fields, onConflict: "overwrite" }).success).toBe(false);
+});
+
+test("file.save.v1 preserves the upload collision and explicit versioned overwrite policy", async () => {
+  const action = filesCapabilities.actions["file.save.v1"];
+  ids.set("destination", { baseId: "base", path: "" });
+  const input = action.input.parse({
+    path: "Reports/report.csv",
+    file: { size: 4, mediaType: "text/csv" },
+    onConflict: "overwrite",
+    expectedRevision: "revision-one",
+  });
+  const review = await action.review(input, rootContext("base", context));
+  expect(review.ok && review.data).not.toHaveProperty("approvalScope");
+  await action.run(input, rootContext("base", context));
+  expect(uploadInputs[0]).toMatchObject({ onConflict: "overwrite", expectedRevision: "revision-one" });
+  serviceFailure = new MockFilesError("path_conflict", 409);
+  await expect(action.run({ ...input, onConflict: "error" }, rootContext("base", context))).rejects.toMatchObject({
+    code: "path_conflict",
+    status: 409,
+  });
+});
+
+test("file.save.v1 rechecks write access at preparation, write, status and abort", async () => {
+  const action = filesCapabilities.actions["file.save.v1"];
+  ids.set("destination", { baseId: "base", path: "" });
+  const input = action.input.parse({ path: "Reports/report.csv", file: { size: 4, mediaType: "text/csv" } });
+  const offer = await action.run(input, rootContext("base", context));
+  if (!offer.ok || !offer.data.stream) throw new Error("expected prepared upload");
+  serviceFailure = new MockFilesError("forbidden", 403);
+  await expect(action.review(input, rootContext("base", context))).rejects.toMatchObject({ status: 403 });
+  await expect(action.run(input, rootContext("base", context))).rejects.toMatchObject({ status: 403 });
+  await expect(action.stream.write(offer.data.stream, new Blob(["data"]).stream(), context)).rejects.toMatchObject({ status: 403 });
+  await expect(action.stream.status(offer.data.stream, context)).rejects.toMatchObject({ status: 403 });
+  await expect(action.stream.abort(offer.data.stream, context)).rejects.toMatchObject({ status: 403 });
 });
