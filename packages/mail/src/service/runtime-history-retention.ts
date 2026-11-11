@@ -89,24 +89,33 @@ export const cleanupMailRuntimeHistory = async (
   const started = performance.now();
   const totals = { syncRuns: 0, automationLog: 0, automationOrder: 0 };
   const errors: unknown[] = [];
+  let hadError = false;
+  const deadline = started + maxDurationMs;
+  const progress = runtimeHistoryBatches.map((source) => ({ source, batches: 0, backlog: false }));
 
-  for (const source of runtimeHistoryBatches) {
-    // Fair shares: slow auxiliary tables cannot starve sync history.
-    const deadline = performance.now() + maxDurationMs / runtimeHistoryBatches.length;
+  for (const entry of progress) {
+    const { source } = entry;
+    // Only sync history requires its new indexes before attempting a bounded delete.
+    // Auxiliary cleanup already ran before these indexes existed and must continue during builds.
+    if (source.key !== "syncRuns") continue;
     const [index] = await db<{ ready: boolean }[]>`
       SELECT EXISTS (SELECT 1 FROM pg_index
         WHERE indexrelid = to_regclass(${source.index}) AND indisvalid AND indisready AND indislive) AS ready
     `;
     if (!index?.ready) {
       log.warn("Mail history cleanup waiting for background index", { index: source.index });
-      continue;
+      hadError = true;
+      entry.batches = maxBatches;
     }
+  }
+
+  const drain = async (entry: (typeof progress)[number], sourceDeadline: number) => {
+    const { source } = entry;
     const days = source.successful ? successDays : retentionDays;
     const cutoff = new Date(now.getTime() - days * 86_400_000);
-    let count = 0;
     try {
-      for (let batch = 0; batch < maxBatches; batch += 1) {
-        const remaining = Math.floor(deadline - performance.now());
+      while (entry.batches < maxBatches) {
+        const remaining = Math.floor(sourceDeadline - performance.now());
         if (remaining <= 0) break;
         // Commit each batch independently with database-enforced statement/lock budgets.
         const rows = await db.begin(async (tx) => {
@@ -114,21 +123,42 @@ export const cleanupMailRuntimeHistory = async (
             set_config('lock_timeout', ${String(Math.min(250, remaining))}, true)`;
           return tx.unsafe(source.query, source.key === "automationOrder" ? [cutoff, batchSize, now] : [cutoff, batchSize]);
         });
-        count = rows.length;
+        entry.batches += 1;
+        const count = rows.length;
         totals[source.key] += count;
+        entry.backlog = count === batchSize;
         if (count < batchSize) break;
       }
-      if (count === batchSize) log.info("Mail history cleanup continues next minute", { index: source.index, deleted: totals[source.key] });
     } catch (error) {
-      if (["57014", "55P03"].includes(databaseErrorCode(error) ?? "")) {
-        log.warn("Mail history cleanup budget exhausted; retrying next minute", { index: source.index, deleted: totals[source.key] });
+      hadError = true;
+      const code = databaseErrorCode(error);
+      // A full batch before statement-budget cancellation may borrow unused time in the second turn.
+      if (code !== "57014") entry.backlog = false;
+      if (["57014", "55P03"].includes(code ?? "")) {
+        log.warn("Mail history cleanup statement budget exhausted", { index: source.index, deleted: totals[source.key] });
       } else {
         log.error("Mail history cleanup failed", { index: source.index, error: String(error) });
         errors.push(error);
       }
     }
+  };
+  for (const entry of progress) {
+    // Reserve a fair first turn for every source; slow auxiliary tables cannot starve sync history.
+    await drain(entry, Math.min(deadline, performance.now() + maxDurationMs / progress.length));
   }
-  log.info("Mail runtime history cleanup", { ...totals, durationMs: Math.round(performance.now() - started) });
+  while (Math.floor(deadline - performance.now()) > 0) {
+    const backlogged = progress.filter((entry) => entry.source.key === "syncRuns" && entry.backlog && entry.batches < maxBatches);
+    if (backlogged.length === 0) break;
+    for (const [index, entry] of backlogged.entries()) {
+      // Reassign unused time again if one sync source empties before the other.
+      await drain(entry, performance.now() + Math.max(0, deadline - performance.now()) / (backlogged.length - index));
+    }
+  }
+  const deleted = totals.syncRuns + totals.automationLog + totals.automationOrder;
+  if (deleted > 0 || hadError) {
+    const durationMs = Math.max(1, Math.round(performance.now() - started));
+    log.info("Mail runtime history cleanup", { ...totals, durationMs, rowsPerMinute: Math.round((deleted * 60_000) / durationMs) });
+  }
   if (errors.length > 0) throw new AggregateError(errors, "Mail runtime history cleanup failed");
   return totals;
 };

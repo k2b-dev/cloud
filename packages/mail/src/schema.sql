@@ -2381,8 +2381,6 @@ CREATE INDEX sync_runs_resource_idx ON mail.sync_runs USING btree (remote_resour
 
 CREATE INDEX sync_runs_running_idx ON mail.sync_runs USING btree (remote_resource_id, state) WHERE (state = 'running'::text);
 
-CREATE INDEX sync_runs_terminal_retention_idx ON mail.sync_runs USING btree (COALESCE(finished_at, started_at), id) WHERE (state <> 'running'::text);
-
 CREATE INDEX sync_runs_completed_retention_idx ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed';
 CREATE INDEX sync_runs_error_retention_idx ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed');
 

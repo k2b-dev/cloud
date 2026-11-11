@@ -14,13 +14,17 @@ Mail keeps successful sync batches that imported messages, queued draft work,
 changed flags, removed placements or reset UID validity for **three days**.
 This covers a weekend and the following incident-response day. Failed,
 cancelled and stale-fence runs remain for **30 days**. Running rows are
-preserved. Empty successful batches leave no history row.
+preserved. An empty successful batch is also retained when it clears a binding,
+connection or resource error, or follows the folder's latest failed run. Other
+empty successes leave no history row. A recovery can expire before its failure;
+use current mailbox health alongside history when diagnosing older failures.
 
 A waiting `sync` command uses one current checkpoint per folder, independent
 of history retention. Health views use the resource's last-sync time; operator
 counts and `cld mail sync runs` show recorded work and failures, rather than
 every poll. A full batch briefly records its running fence; an empty successful
-commit removes that row atomically with the folder checkpoint.
+commit removes that row atomically with the folder checkpoint unless it records
+error recovery.
 
 ## Quiet checks and write rates
 
@@ -29,7 +33,7 @@ This needs CONDSTORE, completed import, no flag walk or reconciliation under
 way, a full reconciliation less than six hours old, and settled connection,
 binding, resource and mailbox health. Freshness advances at most once a minute.
 The Drafts folder, servers without CONDSTORE, recovery and waiting commands
-take a full batch; they also leave no successful history row when empty.
+take a full batch; only error recovery keeps a successful history row when empty.
 Binding last use follows full commits. Folder checkpoints advance on those
 commits; UID metadata and mailbox/connection health change only as needed.
 
@@ -62,8 +66,9 @@ ORDER BY hour, folder_id, run.state;
 `mail:runtime-history-cleanup` runs every minute while the Mail scheduler
 worker runs. Each pass gives successful runs, other terminal runs, automation
 logs and workflow ordering a separate 1.25-second share of a five-second work
-budget. Each share deletes at most 100 batches of 1,000 rows. Every batch has
-its own transaction, a statement deadline and a lock wait of at most 250 ms.
+budget. Unused time then goes to sync sources still returning full batches,
+with at most 100 batches of 1,000 rows per source over the entire pass. Every
+batch has its own transaction, a statement deadline and a lock wait of at most 250 ms.
 Locked rows are skipped. An auxiliary-table failure cannot roll back committed
 sync-history cleanup; it is logged and reported to the scheduler.
 
@@ -75,8 +80,17 @@ plan cannot replace the bounded delete with a hash join over the whole heap.
 The upgrade adds one nullable folder checkpoint column. It builds the four
 cleanup indexes with `CREATE INDEX CONCURRENTLY` after startup, using Mail's
 existing index-build lease. Busy or failed builds are retried by subsequent
-minute passes. Cleanup skips a source until its index is valid. No startup
-migration deletes the backlog or waits for these index builds.
+minute passes. The smaller auxiliary indexes build first. Sync-history cleanup
+waits for its matching index to be valid; auxiliary cleanup continues with
+bounded statements even before its new indexes exist. No startup migration
+deletes the backlog or waits for these index builds. Fresh installations use
+the same four retention indexes; the obsolete combined terminal index is no
+longer created.
+
+During the short deployment window with mixed Mail versions, a waiting
+`sync --wait` can time out because an older process does not write the new
+folder checkpoint. Synchronization continues without data loss; retry the
+command after the deployment finishes.
 
 The earlier age/order sync index existed in fresh-install SQL but was missing
 from upgrade additions. The old hourly worker also shared a transaction and
@@ -84,12 +98,15 @@ five seconds across all three tables, and only checked its deadline between
 batches. An index missing on an upgraded installation could therefore cause
 repeated heap scans and long transactions.
 
-Look for `Mail runtime history cleanup`: it reports committed row counts per
-table and duration. A budget warning means the next minute retries; an index
-warning means its background build is still needed. Check
+Look for `Mail runtime history cleanup`: after deletions or errors it reports
+committed row counts per table, duration and `rowsPerMinute` (the pass's rate,
+normalized to one minute). Empty, healthy passes are silent. A budget warning
+means that source used its turn; a sync source with full committed batches can
+borrow spare time in the same pass, and the next minute retries any remainder.
+An index warning means its background build is still needed. Check
 `pg_stat_progress_create_index` and `pg_index.indisvalid` to distinguish an
-active build from a failed one. Repeated errors or no cleanup logs while Mail
-runs require checking the scheduler registration and worker health in the
+active build from a failed one. Repeated errors or no cleanup logs despite
+expired rows require checking scheduler registration and worker health in the
 operator view. Code registration alone does not prove a job ran on a particular
 installation.
 

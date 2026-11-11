@@ -2253,6 +2253,17 @@ const confirmUnchangedFolder = async (params: {
         AND resource.status = 'active'
         AND resource.last_error_code IS NULL
         AND resource.last_error_message IS NULL
+        AND NOT COALESCE((
+          SELECT terminal.state = 'failed' AND NOT EXISTS (
+            SELECT 1 FROM mail.sync_runs completed
+            WHERE completed.remote_resource_id = resource.id AND completed.state = 'completed'
+              AND completed.stats ->> 'folderId' = ${params.folderId}
+              AND (completed.started_at, completed.id) > (terminal.started_at, terminal.id)
+          ) FROM mail.sync_runs terminal
+          WHERE terminal.remote_resource_id = resource.id AND terminal.stats ->> 'folderId' = ${params.folderId}
+            AND terminal.state <> 'completed' AND terminal.state <> 'running'
+          ORDER BY terminal.started_at DESC, terminal.id DESC LIMIT 1
+        ), false)
         AND mailbox.sync_enabled = true
         AND mailbox.deleted_at IS NULL
         AND mailbox.health = 'active'
@@ -2332,8 +2343,8 @@ export const commitSyncBatch = async (params: {
   liveInvalidated: boolean;
 }> => {
   const result = await (params.db ?? sql).begin(async (tx) => {
-    const [resource] = await tx<{ id: string }[]>`
-      SELECT id
+    const [resource] = await tx<{ id: string; recovering: boolean }[]>`
+      SELECT id, (last_error_code IS NOT NULL OR last_error_message IS NOT NULL) AS recovering
       FROM mail.remote_resources
       WHERE id = ${params.folder.remote_resource_id}::uuid
         AND current_fence_token = ${params.fence.token}
@@ -2349,10 +2360,29 @@ export const commitSyncBatch = async (params: {
     `;
     if (!resource) throw Object.assign(new Error("Stale mail sync fence"), { code: "STALE_SYNC_FENCE" });
     // The Drafts role is read again with the locked folder: an administrator may have moved it
-    // while the batch read the provider.
-    const [lockedFolder] = await tx<{ id: string; reconcile_next_low: string | null; is_drafts: boolean }[]>`
+    // while the batch read the provider. The partial non-completed index finds rare failures
+    // without walking every historical success of other folders on this resource.
+    const [lockedFolder] = await tx<{ id: string; reconcile_next_low: string | null; is_drafts: boolean; recovering: boolean }[]>`
       SELECT
         f.id,
+        (EXISTS (
+          SELECT 1 FROM mail.provider_bindings binding
+          JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+          WHERE binding.id = ${params.bindingId}::uuid
+            AND (binding.last_error_code IS NOT NULL OR binding.last_error_message IS NOT NULL
+              OR connection.last_error_code IS NOT NULL OR connection.last_error_message IS NOT NULL)
+        ) OR COALESCE((
+          SELECT terminal.state = 'failed' AND NOT EXISTS (
+            SELECT 1 FROM mail.sync_runs completed
+            WHERE completed.remote_resource_id = ${params.folder.remote_resource_id}::uuid AND completed.state = 'completed'
+              AND completed.stats ->> 'folderId' = ${params.folderId}
+              AND (completed.started_at, completed.id) > (terminal.started_at, terminal.id)
+          ) FROM mail.sync_runs terminal
+          WHERE terminal.remote_resource_id = ${params.folder.remote_resource_id}::uuid
+            AND terminal.stats ->> 'folderId' = ${params.folderId}
+            AND terminal.state <> 'completed' AND terminal.state <> 'running'
+          ORDER BY terminal.started_at DESC, terminal.id DESC LIMIT 1
+        ), false)) AS recovering,
         f.envelope_cursor ->> 'reconcileNextLow' AS reconcile_next_low,
         (
           EXISTS (
@@ -2501,11 +2531,11 @@ export const commitSyncBatch = async (params: {
         envelope_cursor = ${params.cursor}::jsonb,
         sync_status = ${params.cursor.backfillComplete ? "current" : "syncing"},
         last_reconciled_at = CASE WHEN ${params.reconcileWindow != null} THEN now() ELSE last_reconciled_at END,
-        last_sync_snapshot = (
+        last_sync_snapshot = COALESCE((
           SELECT jsonb_build_object('startedAt', started_at, 'uidValidity', ${params.status.uidValidity}::text,
             'statusHighUid', ${Math.max(0, params.status.uidNext - 1)}::bigint, 'statusModseq', ${params.status.highestModseq}::text)
           FROM mail.sync_runs WHERE id = ${params.fence.runId}::uuid
-        )
+        ), last_sync_snapshot)
       WHERE id = ${params.folderId}::uuid
     `;
     await tx`
@@ -2531,9 +2561,10 @@ export const commitSyncBatch = async (params: {
       RETURNING connection_id
     `;
     if (!binding) throw Object.assign(new Error("Sync binding changed before commit"), { code: "STALE_SYNC_BINDING" });
-    const [connection] = await tx<{ id: string }[]>`
+    const [connection] = await tx<{ id: string; recovering: boolean }[]>`
       WITH eligible AS MATERIALIZED (
-        SELECT id FROM mail.provider_connections
+        SELECT id, (last_error_code IS NOT NULL OR last_error_message IS NOT NULL) AS recovering
+        FROM mail.provider_connections
         WHERE id = ${binding.connection_id}::uuid
           AND status = 'active' AND secret_revision = ${params.secretRevision}
         FOR NO KEY UPDATE
@@ -2544,7 +2575,7 @@ export const commitSyncBatch = async (params: {
         WHERE connection.id = eligible.id
           AND (connection.last_error_code IS NOT NULL OR connection.last_error_message IS NOT NULL)
       )
-      SELECT id FROM eligible
+      SELECT id, recovering FROM eligible
     `;
     if (!connection) throw Object.assign(new Error("Sync credentials changed before commit"), { code: "STALE_SYNC_BINDING" });
     await tx`
@@ -2591,7 +2622,9 @@ export const commitSyncBatch = async (params: {
       flagsUpdated > 0 ||
       removed > 0 ||
       params.uidValidityChanged;
-    if (!changed) await tx`DELETE FROM mail.sync_runs WHERE id = ${params.fence.runId}::uuid AND state = 'running'`;
+    // Keep one successful recovery even if it changed no mail, so failures have a visible resolution.
+    if (!changed && !resource.recovering && !lockedFolder.recovering && !connection.recovering)
+      await tx`DELETE FROM mail.sync_runs WHERE id = ${params.fence.runId}::uuid AND state = 'running'`;
     else
       await tx`
       UPDATE mail.sync_runs
@@ -2923,8 +2956,8 @@ const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 // when the job would end. A request counts this long: it outlasts a long batch and a few retries.
 export const FOLDER_SYNC_REQUEST_MS = 10 * 60_000;
 const syncRequestKey = (folderId: string): string => `mail:sync-requested:${folderId}`;
-// A sync command waiting for the folder settles on a completed run after it (requestedSyncProgress),
-// so while the request counts, the folder's batches never end as unchanged without a run.
+// A waiting sync settles on the folder checkpoint (requestedSyncProgress), so its next batch
+// commits a fresh checkpoint even when STATUS is unchanged; history still omits empty successes.
 const awaitedSyncKey = (folderId: string): string => `mail:sync-awaited:${folderId}`;
 const folderSyncAwaited = async (folderId: string): Promise<boolean> =>
   Number(await redis.send("EXISTS", [awaitedSyncKey(folderId)]).catch(() => 1)) > 0;

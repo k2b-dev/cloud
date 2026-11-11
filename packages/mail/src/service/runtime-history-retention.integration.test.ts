@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { buildRuntimeHistoryIndexes, migrate } from "../migrate";
@@ -40,6 +40,23 @@ suite("Mail runtime history retention", () => {
       CASE WHEN ${state} = 'running' THEN NULL ELSE ${at}::timestamptz END,
       '{"highestSeenUid":1000}'::jsonb, '{"highestSeenUid":1001}'::jsonb, '{"imported":1}'::jsonb
     FROM generate_series(1,${count}::int) n`;
+
+  test("quiet passes are silent and deletion summaries include their rate", async () => {
+    const output = spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      expect(await cleanupMailRuntimeHistory({ now })).toEqual({ syncRuns: 0, automationLog: 0, automationOrder: 0 });
+      expect(output.mock.calls.filter(([source]) => source === "[mail:runtime-history]")).toHaveLength(0);
+      await seedRuns(1);
+      await cleanupMailRuntimeHistory({ now });
+      expect(output).toHaveBeenCalledWith(
+        "[mail:runtime-history]",
+        "Mail runtime history cleanup",
+        expect.objectContaining({ syncRuns: 1, rowsPerMinute: expect.any(Number) }),
+      );
+    } finally {
+      output.mockRestore();
+    }
+  });
 
   test("retains three days of successes and thirty days of errors, including null finish times", async () => {
     await seedRuns(1, "completed", "2026-11-07T12:00:00Z");
@@ -107,7 +124,10 @@ suite("Mail runtime history retention", () => {
     }
     await seedRuns(20_000);
     await seedRuns(20_000, "failed", "2026-10-01T12:00:00Z");
-    expect((await cleanupMailRuntimeHistory({ now })).syncRuns).toBe(0);
+    await sql`INSERT INTO mail.automation_log (mailbox_id, item, created_at)
+      VALUES (${mailbox}::uuid, '{}'::jsonb, '2026-10-01T12:00:00Z')`;
+    // Existing auxiliary cleanup keeps running while sync-history indexes are still unavailable.
+    expect(await cleanupMailRuntimeHistory({ now })).toEqual({ syncRuns: 0, automationLog: 1, automationOrder: 0 });
     await buildRuntimeHistoryIndexes();
     await sql`ANALYZE mail.sync_runs`;
     for (const source of runtimeHistoryBatches.filter((source) => source.key === "syncRuns")) {
@@ -124,6 +144,31 @@ suite("Mail runtime history retention", () => {
       expect(plan).toContain('"Node Type":"Tid Scan"');
       expect(plan).not.toContain('"Node Type":"Seq Scan"');
       expect(plan).not.toContain('"Node Type":"Sort"');
+    }
+  });
+
+  test("sync backlog borrows unused auxiliary time after full batches exhaust its first share", async () => {
+    await seedRuns(6);
+    await sql`CREATE TABLE mail.retention_budget_probe (timeout_ms int)`;
+    await sql
+      .unsafe(`CREATE FUNCTION mail.record_retention_budget() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        INSERT INTO mail.retention_budget_probe VALUES (extract(epoch FROM current_setting('statement_timeout')::interval) * 1000);
+        PERFORM pg_sleep(0.06); RETURN OLD;
+      END $$`)
+      .simple();
+    await sql
+      .unsafe(`CREATE TRIGGER record_retention_budget BEFORE DELETE ON mail.sync_runs
+      FOR EACH ROW EXECUTE FUNCTION mail.record_retention_budget()`)
+      .simple();
+    try {
+      expect((await cleanupMailRuntimeHistory({ now, batchSize: 1, maxDurationMs: 1_000 })).syncRuns).toBe(6);
+      const [budget] = await sql<{ largest: number }[]>`SELECT max(timeout_ms) AS largest FROM mail.retention_budget_probe`;
+      expect(budget!.largest).toBeGreaterThan(250);
+    } finally {
+      await sql`DROP TRIGGER record_retention_budget ON mail.sync_runs`;
+      await sql`DROP FUNCTION mail.record_retention_budget()`;
+      await sql`DROP TABLE mail.retention_budget_probe`;
     }
   });
 

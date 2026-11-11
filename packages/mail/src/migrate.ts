@@ -417,8 +417,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   if (!receiptPending?.present) {
     await tx`ALTER TABLE mail.message_contents ADD COLUMN IF NOT EXISTS receipt_pending boolean DEFAULT false NOT NULL`.simple();
   }
-  // A mailbox completes thousands of sync runs a day and keeps them for 30 days. Listing its rare
-  // failed, cancelled, superseded, or running runs seeks here instead of reading every completed one.
+  // Changed batches and error recoveries remain for three days; other terminal runs for 30 days.
+  // Listing failed, cancelled, superseded, or running runs seeks here instead of reading completed work.
   // Building it reads the table once, on the first start after the update; later starts skip the
   // statement, so they do not wait for the table lock that the build takes.
   const [syncRunStateIndex] = await tx<{ present: boolean }[]>`
@@ -779,18 +779,7 @@ const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", 
 
 type BackgroundIndex = { name: string; table: string; ddl: string };
 const runtimeHistoryIndexes: BackgroundIndex[] = [
-  {
-    name: "mail.sync_runs_completed_retention_idx",
-    table: "mail.sync_runs",
-    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_completed_retention_idx
-      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed'`,
-  },
-  {
-    name: "mail.sync_runs_error_retention_idx",
-    table: "mail.sync_runs",
-    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_error_retention_idx
-      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed')`,
-  },
+  // Build the smaller auxiliary indexes before the potentially large sync-history indexes.
   {
     name: "mail.automation_log_retention_idx",
     table: "mail.automation_log",
@@ -802,6 +791,18 @@ const runtimeHistoryIndexes: BackgroundIndex[] = [
     table: "mail.workflow_effect_order",
     ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS workflow_effect_order_expiry_idx
       ON mail.workflow_effect_order (expires_at, event_id)`,
+  },
+  {
+    name: "mail.sync_runs_completed_retention_idx",
+    table: "mail.sync_runs",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_completed_retention_idx
+      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state = 'completed'`,
+  },
+  {
+    name: "mail.sync_runs_error_retention_idx",
+    table: "mail.sync_runs",
+    ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS sync_runs_error_retention_idx
+      ON mail.sync_runs (COALESCE(finished_at, started_at), id) WHERE state NOT IN ('running', 'completed')`,
   },
 ];
 const backfillActivityIndex: BackgroundIndex = {
