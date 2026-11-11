@@ -37,8 +37,12 @@ chat and required inputs remain available before claiming equivalence.
 
 ## Map the behavior with the existing Skill
 
-Follow the main Skill's authoring workflow, including unchanged checked files,
-fictional tests and `baseVersionId` at submit. Use its existing patterns:
+Follow the main Skill's authoring workflow: init or pull initializes the
+server-held draft, `code_write({codeId, path, content})` edits one source or
+`test/NAME.json` fixture at a time, and `code_check({codeId})`,
+`code_test({codeId})` and `code_submit({codeId})` share that draft.
+On conflict, pull resets it to the latest version; re-apply edits and fixtures.
+Use its existing patterns:
 
 - **Mail arrives:** start from the [Mail automation template](template-mail-automation.md)
   and [Events](events.md). Use mailbox-owned Code and `mail.message.received`.

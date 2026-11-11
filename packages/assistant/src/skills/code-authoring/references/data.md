@@ -28,7 +28,20 @@ Each call spends one bridge call; a batch is one call. Inputs keep the ordinary
 A timed-out write may already have committed: check an application-owned
 idempotency key before retrying. `code_db_busy` means namespace initialization
 or deletion is in progress; retry shortly afterward.
-The Code page and `cld code show <code>` show database usage and the limit.
+The Code page and `cld code show <code>` show database usage, its limit and the
+owner's reserved capacity. `core.code.database_owner_bytes` defaults to ten
+100 MiB database ceilings. It counts full reserved ceilings, including small
+databases, so concurrency or an uncertain write cannot overspend it.
+`code_db_owner_full` is recoverable by deleting unused Code or asking an
+administrator to raise the owner limit. Reads and exports remain available.
+
+Editors and administrators can export through the Code page or
+`cld code db export <code> --out ./database.sqlite`. This streams a consistent
+SQLite snapshot to a new private file; failed downloads remove partial files
+and existing files are never overwritten. There is no database import command.
+Export does not create a database. Pausing a Code or removing its database
+import from a newer version preserves historical data. Deleting the Code
+removes its database through the durable deletion job.
 
 DB use is recorded by the checker and submission evidence. It needs no per-call
 approval. `code_run` has no `db` because no lasting Code owns its database.
