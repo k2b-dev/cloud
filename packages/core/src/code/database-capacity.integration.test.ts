@@ -143,6 +143,19 @@ databaseSuite()("Code database owner capacity and export", () => {
     });
   });
 
+  test("unfinished provisioning keeps its committed ceiling without waiting for its mapping lock", async () => {
+    const id = await code();
+    await mapping(id);
+    await sql`UPDATE code.databases SET connected=FALSE WHERE code_id=${id}`;
+    await sql.begin(async (provisioner) => {
+      await provisioner`SELECT code_id FROM code.databases WHERE code_id=${id} FOR UPDATE`;
+      await sql.begin(async (admission) => {
+        await admission`SET LOCAL lock_timeout='250ms'`;
+        expect(await reserveCodeDatabaseCapacity(admission, id, 209715200, ownerLimit, true)).toBe(104857600);
+      });
+    });
+  });
+
   test("ordinary calls do not contend with an owner's in-flight capacity reservation", async () => {
     const id = await code();
     await mapping(id);

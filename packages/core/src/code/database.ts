@@ -47,11 +47,19 @@ export async function dispatchCodeDatabase(
   const prepared = await sql.begin(async (tx) => {
     await authorizeCodeCall(call, tx);
     const capacity = await reserveCodeDatabaseCapacity(tx, input.claims.codeId, bytes, ownerLimit, input.request.operation !== "db.query");
-    // Commit the intent before provisioning, including when the remote response is lost.
-    await tx`INSERT INTO code.databases(code_id,namespace,server_url,reserved_bytes) VALUES(${input.claims.codeId},${namespace},${config.url},${capacity})
-      ON CONFLICT(code_id) DO UPDATE SET reserved_bytes=EXCLUDED.reserved_bytes
-      WHERE code.databases.reserved_bytes < EXCLUDED.reserved_bytes`;
-    const [mapping] = await tx<Mapping[]>`SELECT namespace,connected,server_url FROM code.databases WHERE code_id=${input.claims.codeId}`;
+    let [mapping] = await tx<(Mapping & { reserved_bytes: string })[]>`
+      SELECT namespace,connected,server_url,reserved_bytes::text FROM code.databases WHERE code_id=${input.claims.codeId}`;
+    // Commit new intent before provisioning. An unchanged reservation must not lock the mapping:
+    // the provisioner holds it during remote creation, and concurrent calls must reach the nonblocking lifecycle guard.
+    if (!mapping) {
+      await tx`INSERT INTO code.databases(code_id,namespace,server_url,reserved_bytes) VALUES(${input.claims.codeId},${namespace},${config.url},${capacity})
+        ON CONFLICT(code_id) DO NOTHING`;
+      [mapping] = await tx<(Mapping & { reserved_bytes: string })[]>`
+        SELECT namespace,connected,server_url,reserved_bytes::text FROM code.databases WHERE code_id=${input.claims.codeId}`;
+    } else if (capacity > Number(mapping.reserved_bytes)) {
+      await tx`UPDATE code.databases SET reserved_bytes=${capacity}
+        WHERE code_id=${input.claims.codeId} AND reserved_bytes<${capacity}`;
+    }
     if (!mapping || mapping.namespace !== namespace) throw new CodeBridgeRefusal("code_db_unavailable", 503);
     sameServer(mapping, config.url);
     const wallMs = await codeSettings.get("core.code.wall_clock_ms");

@@ -16,11 +16,12 @@ export async function codeDatabaseOwnerCapacity(db: SQL, codeId: string): Promis
  * Reservations survive ambiguous writes, outages and restarts; no Core connection is held during SQL execution.
  */
 export async function reserveCodeDatabaseCapacity(db: SQL, codeId: string, bytes: number, limit: number, grow: boolean) {
-  const [existing] = await db<{ reserved_bytes: string }[]>`
-    SELECT reserved_bytes::text FROM code.databases WHERE code_id=${codeId}`;
+  const [existing] = await db<{ reserved_bytes: string; connected: boolean }[]>`
+    SELECT reserved_bytes::text,connected FROM code.databases WHERE code_id=${codeId}`;
   const reserved = Number(existing?.reserved_bytes ?? 0);
   // Existing ceilings remain usable after an owner limit is lowered. Reads never need a quota increase.
-  if (reserved && (bytes <= reserved || !grow)) return reserved;
+  // An unfinished namespace uses its committed ceiling; reserve increases only after provisioning finishes.
+  if (reserved && (bytes <= reserved || !grow || !existing?.connected)) return reserved;
   const [owner] = await db<
     { key: string }[]
   >`SELECT jsonb_build_array(owner_kind,owner_user_id,owner_type,owner_id,owner_app_id)::text AS key
@@ -28,10 +29,12 @@ export async function reserveCodeDatabaseCapacity(db: SQL, codeId: string, bytes
   if (!owner) throw new CodeBridgeRefusal("code_not_active");
   // Only reservations serialize across an owner; ordinary calls never contend on this lock.
   await db`SELECT pg_advisory_xact_lock(hashtextextended(${`core.code.database-owner:${owner.key}`},0))`;
-  const [mapping] = await db<{ reserved_bytes: string }[]>`
-    SELECT reserved_bytes::text FROM code.databases WHERE code_id=${codeId} FOR UPDATE`;
+  // The owner lock serializes reservation writers; provisioning only changes connected.
+  // Re-read without a row lock so an intent committed while we acquired the owner lock cannot block admission.
+  const [mapping] = await db<{ reserved_bytes: string; connected: boolean }[]>`
+    SELECT reserved_bytes::text,connected FROM code.databases WHERE code_id=${codeId}`;
   const current = Number(mapping?.reserved_bytes ?? 0);
-  if (bytes <= current) return current;
+  if (current && (bytes <= current || !mapping?.connected)) return current;
   const total = await codeDatabaseOwnerCapacity(db, codeId);
   if (total + bytes - current > limit) throw new CodeBridgeRefusal("code_db_owner_full");
   return bytes;
