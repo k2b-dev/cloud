@@ -113,6 +113,7 @@ import {
   transferTicket,
 } from "./machine-access";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
+import { createPdfOperation } from "./pdf";
 import { permits, type UnixIdentity } from "./posix";
 import { enqueueFilePreview, filePreviewSource } from "./previews";
 import { rootSummary } from "./root-summary";
@@ -555,6 +556,7 @@ export function createFilesService(
     snapshot?: Awaited<ReturnType<typeof context>>,
     readOnly = false,
     budget?: ActivityReadBudget,
+    signal?: AbortSignal,
   ) {
     const state = snapshot ?? (await context(actor, budget));
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
@@ -565,7 +567,8 @@ export function createFilesService(
       item.storage ? { ...state.self.availability, localLinuxEnabled: true } : state.self.availability,
     );
     if (issue) throw new FilesError(issue, 403);
-    const service = deps.connect(state.config, budget?.signal).root(item.root);
+    signal?.throwIfAborted();
+    const service = deps.connect(state.config, signal ?? budget?.signal).root(item.root);
     const info = await readStep(budget, () => service.info());
     let inspection = await inspect(service, item, info, state.config.url, actor, false, undefined, readOnly, budget);
     if (!readOnly && !item.storage && inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
@@ -612,8 +615,9 @@ export function createFilesService(
     path: string,
     directory?: boolean,
     snapshot?: Awaited<ReturnType<typeof context>>,
+    signal?: AbortSignal,
   ) {
-    return authorizedPath(await authorizedBase(actor, baseId, snapshot), path, directory);
+    return authorizedPath(await authorizedBase(actor, baseId, snapshot, false, undefined, signal), path, directory);
   }
   function executionFor(current: { inspection: Inspection; state: Awaited<ReturnType<typeof context>> }): ExecutionIdentity | null {
     if (current.inspection.candidate.area !== "freeipa") return null;
@@ -634,11 +638,12 @@ export function createFilesService(
     path: string,
     base?: Awaited<ReturnType<typeof authorizedBase>>,
     writeDeniedCode?: "create_forbidden",
+    signal?: AbortSignal,
   ) {
     const relative = userPath(path);
     if (!relative) throw new FilesError("invalid_path");
     const parts = relative.split("/");
-    const selected = base ?? (await authorizedBase(actor, baseId));
+    const selected = base ?? (await authorizedBase(actor, baseId, undefined, false, undefined, signal));
     const parent = parts.slice(0, -1).join("/");
     const current = selected.item.storage
       ? await (async () => {
@@ -864,20 +869,22 @@ export function createFilesService(
     call: UserFilesCall,
     current: Awaited<ReturnType<typeof authorized>> & { target: string },
     body: Blob,
-    onConflict: "error" | "overwrite",
+    onConflict: "error" | "overwrite" | "rename",
     templateId?: string,
+    signal: AbortSignal = AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
   ): Promise<Node> {
     if (onConflict === "overwrite") await observeContact(current, current.target, { underRootLock: true });
     if (current.info.managed && onConflict === "overwrite" && !current.node.revision) throw new FilesError("write_conflict", 409);
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
     const writeOptions = {
       onConflict,
-      ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
-      precondition: current.info.managed
-        ? onConflict === "error"
-          ? { ifNoneMatch: true as const }
-          : { ifMatch: current.node.revision! }
-        : undefined,
+      ownership: onConflict !== "overwrite" ? ownershipFor(current, false) : undefined,
+      precondition:
+        current.info.managed && onConflict !== "rename"
+          ? onConflict === "error"
+            ? { ifNoneMatch: true as const }
+            : { ifMatch: current.node.revision! }
+          : undefined,
     };
     return fileAction(
       call,
@@ -893,20 +900,27 @@ export function createFilesService(
         itemId: onConflict === "overwrite" && current.info.stableIds ? current.node.id : null,
         revisionBefore: onConflict === "overwrite" ? current.node.revision : null,
         size: body.size,
+        onConflict: onConflict === "rename" ? "rename" : "error",
         writeOptions,
         detail: templateId ? { template: templateId } : undefined,
       },
-      () =>
-        current.root.put(
-          current.target,
-          body,
-          { ...writeOptions, metadata: { activity: currentActivityId() } },
-          AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
-        ),
+      () => {
+        signal.throwIfAborted();
+        return current.root.put(current.target, body, { ...writeOptions, metadata: { activity: currentActivityId() } }, signal);
+      },
       async (_tx, node) => {
-        if (node.root !== current.root.name || node.path !== current.target || node.directory || node.size !== body.size)
+        const expectedPath =
+          onConflict === "rename"
+            ? node.path.split("/").slice(0, -1).join("/") === current.target.split("/").slice(0, -1).join("/")
+            : node.path === current.target;
+        if (node.root !== current.root.name || !expectedPath || node.directory || node.size !== body.size)
           throw new FilesError("unavailable", 503);
-        return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
+        return {
+          pathAfter: node.path,
+          itemAfterId: current.info.stableIds ? node.id : null,
+          revisionAfter: node.revision,
+          size: node.size,
+        };
       },
     )
       .then(async (node) => {
@@ -2558,6 +2572,58 @@ export function createFilesService(
       const bytes = await readBoundedBody(await current.root.contentRaw(current.target, signal), TEMPLATE_LIMIT, signal);
       return { bytes: new Uint8Array(bytes), filename: current.relative.split("/").at(-1)! };
     },
+    preparePdf: createPdfOperation({
+      async source(call, baseId, path, signal) {
+        signal.throwIfAborted();
+        const current = await authorized(call.actor, baseId, path, false, undefined, signal);
+        return {
+          size: current.node.size,
+          async read(readSignal) {
+            readSignal.throwIfAborted();
+            // Reauthorize each source at the point of reading, just as download does.
+            const fresh = await authorized(call.actor, baseId, path, false, undefined, readSignal);
+            return fresh.root.contentRaw(fresh.target, readSignal);
+          },
+        };
+      },
+      async destination(call, baseId, path, signal) {
+        signal.throwIfAborted();
+        const current = await writableParent(call.actor, baseId, path, undefined, undefined, signal);
+        const storage = current.inspection.candidate.storage;
+        if (storage) await checkStorage(call.actor, storage, path.split("/").slice(0, -1).join("/"), "write", call.requestId);
+        signal.throwIfAborted();
+      },
+      async save(call, baseId, path, bytes, signal) {
+        signal.throwIfAborted();
+        const initial = await writableParent(call.actor, baseId, path, undefined, undefined, signal);
+        return publish(
+          initial.root.name,
+          async () => {
+            signal.throwIfAborted();
+            const current = await writableParent(call.actor, baseId, path, undefined, undefined, signal);
+            if (
+              current.root.name !== initial.root.name ||
+              current.state.config.url !== initial.state.config.url ||
+              current.inspection.binding?.id !== initial.inspection.binding?.id
+            )
+              throw new FilesError("configuration_changed", 409);
+            const storage = current.inspection.candidate.storage;
+            if (storage) await checkStorage(call.actor, storage, path.split("/").slice(0, -1).join("/"), "write", call.requestId);
+            const node = await writeBytes(
+              call,
+              { ...current, target: joinPath(current.target, current.name) },
+              new Blob([new Uint8Array(bytes)]),
+              "rename",
+              undefined,
+              signal,
+            );
+            const relative = userPath(node.path.slice(current.inspection.candidate.path.length + 1));
+            return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, relative, node) };
+          },
+          AbortSignal.any([signal, rootLockWait()]),
+        );
+      },
+    }),
     async createFromBytes(
       call: UserFilesCall,
       input: { baseId: string; path: string; templateId?: string },
