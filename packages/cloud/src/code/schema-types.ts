@@ -77,7 +77,12 @@ export function schemaTypes(
           const required = new Set(Array.isArray(schema.required) ? schema.required : []);
           const fields = Object.entries(props)
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([key, item]) => `${JSON.stringify(key)}${required.has(key) ? "" : "?"}: ${render(item)}`);
+            .map(([key, item]) => {
+              const schema = item && typeof item === "object" ? object(item) : {};
+              const description = [schema.title, schema.description].filter((value) => typeof value === "string").join(". ");
+              const comment = description ? `/** ${description.replaceAll("*/", "* /").replace(/[\r\n]+/g, " ")} */ ` : "";
+              return `${comment}${JSON.stringify(key)}${required.has(key) ? "" : "?"}: ${render(item)}`;
+            });
           if (includeInputFields) {
             for (const field of inputFields) fields.push(`${JSON.stringify(field.name)}${field.required ? "" : "?"}: ${field.type}`);
           }

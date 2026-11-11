@@ -35,6 +35,16 @@ host. Core and runner versions must be upgraded together. See
 [runner host prerequisites](/en/docs/operations/code-runner) for the required
 Linux features, file paths and verification probe.
 
+## Check SDK names when upgrading applications
+
+The application runtime now rejects conflicting Code SDK exports or camelCase
+paths during capability registration. If startup reports an SDK name collision,
+choose a distinct `sdkExportName` or capability path in the app declaration and
+restart that application. Its previously accepted manifest remains available
+while earlier replicas still run and renew its registration.
+Upgrade all application runtimes to enforce this check across the installation;
+older runtimes still publish without it. Existing Code method names remain valid.
+
 ## Wait for Mail during the Code upgrade
 
 Production Compose includes application readiness healthchecks for Core and

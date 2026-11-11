@@ -774,3 +774,64 @@ test("foreign app.on registrations reject duplicate pairs and keep distinct plac
   ]);
   expect(() => sdk.app.on(sdk.work_shop.workshop("one"), "work-shop.changed", () => {})).toThrow("code_duplicate_on");
 });
+
+test("named operation types stay stable across catalogs and cannot shadow SDK helpers", async () => {
+  const work = sdkFixture("work");
+  const catalog = work.queries.find((query) => query.localId === "catalog.list")!;
+  const expanded = {
+    ...work,
+    queries: [...work.queries, { ...catalog, localId: "shop.catalog.list" }, { ...catalog, localId: "stock-list" }],
+  };
+  const code = sdkFixture("code");
+  const manifests = [fixture, expanded, { ...code, queries: [...code.queries, { ...catalog, localId: "decision" }] }];
+  const combined = generateCodeSdk(manifests, { mode: "personal" });
+  const reversed = generateCodeSdk([...manifests].reverse(), { mode: "personal" });
+  const names = (declarations: string) =>
+    declarations
+      .split("\n")
+      .filter((line) => line.startsWith("export type ") && line.includes("Input ="))
+      .map((line) => line.split(" =")[0]);
+  const original = names(generateCodeSdk([fixture], { mode: "personal" }).declarations);
+  expect(names(combined.declarations)).toEqual(expect.arrayContaining(original));
+  expect(names(combined.declarations)).toEqual(names(reversed.declarations));
+  const dir = await temporaryDirectory("cloud-code-sdk-named-types-");
+  await writeFile(join(dir, "sdk.d.ts"), combined.declarations);
+  await writeFile(
+    join(dir, "consumer.ts"),
+    `import {
+    type Work$hshop_Catalog_ListInput,
+    type Work_Shop_Catalog_ListInput,
+    type Work_Stock$hlistInput,
+    type Work_Stock_ListInput,
+    type Code_DecisionInput,
+    type Code_DecisionData,
+    type CodeDecisionInput,
+  } from "./sdk";
+const first: Work$hshop_Catalog_ListInput = {};
+const second: Work_Shop_Catalog_ListInput = {};
+const hyphen: Work_Stock$hlistInput = {};
+const path: Work_Stock_ListInput = {};
+const custom: Code_DecisionInput = {};
+const data: Code_DecisionData = ["value"];
+`,
+  );
+  const compiler = resolve(import.meta.dir, "../../../../node_modules/.bin/tsc");
+  const proc = Bun.spawn(
+    [
+      compiler,
+      "--checkers",
+      "1",
+      "--ignoreConfig",
+      "--strict",
+      "--noEmit",
+      "--skipLibCheck",
+      "false",
+      "--target",
+      "esnext",
+      join(dir, "consumer.ts"),
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+});

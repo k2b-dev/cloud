@@ -146,7 +146,7 @@ repeated submissions within the 24-hour idempotency receipt window; it does not
 prevent duplicates after that window expires.
 
 Reference: [Return a page](/en/docs/platform/code-sdk#return-a-page),
-[Middleware and access checks](/en/docs/platform/code-sdk#zugriff-prufen).
+[Middleware and access checks](/en/docs/platform/code-sdk#check-access).
 
 ## Hand out a public survey
 

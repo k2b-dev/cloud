@@ -91,9 +91,9 @@ remaining rules for that message.
 
 <!-- check: resource mail.mailbox -->
 ```ts
-import { app, mail, owner } from "@sdk";
+import { app, mail, owner, type Mail_Message_ReadData } from "@sdk";
 
-type Message = Awaited<ReturnType<typeof mail.message.read>>["data"];
+type Message = Mail_Message_ReadData;
 
 async function tagInvoices(message: Message) {
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;

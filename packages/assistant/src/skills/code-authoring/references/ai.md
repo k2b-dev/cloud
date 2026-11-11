@@ -7,8 +7,8 @@ Four Core operations bring AI into Code. Discover their generated handles with
 | --- | --- | --- | --- |
 | Summary, draft text, extracted fields | `core.ai.generate` | Query, AI | all Code |
 | Category, yes/no or score with probabilities | `core.ai.decide` | Query, AI | all Code |
-| Append a finished text to the owner's Gustav chat | `core.ai.chat.deliver` | Action, not AI | personal Code |
-| Start a Gustav turn that uses tools | `core.ai.chat.run`, then `core.ai.chat.run.read` | Action, AI | personal Code |
+| Append a finished text to the owner's Gustav chat | `core.ai.chat(chatId).deliver` | Action, not AI | personal Code |
+| Start a Gustav turn that uses tools | `core.ai.chat(chatId).run`, then `core.ai.chat(chatId).run.read` | Action, AI | personal Code |
 
 Without Action tools, AI calls change no domain records. Saving, tagging or
 drafting requires an Action with its own access check. Model output can be wrong: validate it and choose
@@ -27,6 +27,13 @@ thresholds for the cost of a mistake.
   `code_ai_budget_reserved`, `code_ai_daily_budget_limit`,
   `code_ai_owner_daily_budget_limit`. A rerun does not reset the daily budget.
 - Mail catch-up refuses versions that use AI.
+
+`decide` accepts `input` as an alias for `state` (`state` wins when both
+are supplied), and `type: "boolean"` as an alias for `"noul"`. Boolean answers
+retain `type: "noul"`, `value` and `probability`, with `confidence` as an equal
+alias for `probability`. Literal question names and types determine the answer
+types, so no answer-type narrowing is needed. Existing spellings remain valid.
+`generate` infers a string for text output and the fields of a literal JSON schema.
 
 ## Generate text
 
@@ -77,8 +84,8 @@ the effect. Check whether a step is already done before generating it. Text outp
 A JSON output schema is a strict object with 1–40 scalar or bounded list
 properties, `required` and
 `additionalProperties: false`. Strings may have `maxLength`, `enum` or
-`format: "date-time"`. The result type is not narrowed at compile time;
-check each field before use. Lists require `maxItems`; items are scalars or
+`format: "date-time"`. Literal output schemas infer the result fields;
+optional properties remain optional. Validate business constraints before use. Lists require `maxItems`; items are scalars or
 strict objects of scalar fields. Nested lists are not supported.
 
 <!-- check: resource mail.mailbox -->
@@ -133,20 +140,20 @@ import { app, core, mail } from "@sdk";
 async function needsUrgentSupport(subject: string, text: string) {
   const { data: result } = await core.ai.decide({
     task: "mail.triage",
-    state: { subject, text },
+    input: { subject, text },
     questions: {
       category: {
         type: "choice",
         instructions: "What kind of message is this?",
         criteria: { support: "Help with an existing order", sales: "New orders and offers", spam: "Unsolicited or deceptive messages" },
       },
-      urgent: { type: "noul", instructions: "Does this message need attention today within its category?" },
+      urgent: { type: "boolean", instructions: "Does this message need attention today within its category?" },
     },
   });
   const category = result.answers.category;
   if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
   const urgent = result.answers.urgent;
-  return urgent?.type === "noul" && urgent.probability >= 0.9;
+  return urgent.confidence >= 0.9;
 }
 
 app.on("mail.message.received", async event => {
