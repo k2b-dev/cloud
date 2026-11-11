@@ -50,7 +50,7 @@ import { type CodePageMessages, codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
 import { type CodeOperationLabels, codeAutomationName, codeOperationText, codeTargetLabel, codeTargetName } from "./targets";
 
-export { CodeDatabaseStatus } from "./CodeDatabaseStatus";
+export { CodeDatabaseDelete, CodeDatabaseStatus } from "./CodeDatabaseStatus";
 export { CodeNavStatus, codeNavAttentionLabel } from "./CodeNavStatus";
 export type { CodeAttention, CodePageData, CodePageTab } from "./data";
 

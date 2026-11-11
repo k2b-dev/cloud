@@ -4,15 +4,19 @@ import type { Component } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import CoreSettingsForm from "../settings/_components/CoreSettingsForm.island.tsx";
 import CodeApprovalReview from "./CodeApprovalReview.island.tsx";
+import CodeDatabaseControls from "./CodeDatabaseControls.island.tsx";
 import CodeListFilters from "./CodeListFilters.island.tsx";
 import CodePauseAction from "./CodePauseAction.island.tsx";
 import CodePolicyEditor from "./CodePolicyEditor.island.tsx";
 import CodePolicyPicker from "./CodePolicyPicker.island.tsx";
+import CodeUnusedDatabases from "./CodeUnusedDatabases.island.tsx";
 
 /** Mounts every Code area island the way @k2b/ssr does: the server-rendered wrapper carries its props. */
 const islands: Record<string, Component<never>> = {
   "CodeApprovalReview.island.tsx": CodeApprovalReview as Component<never>,
   "CodeListFilters.island.tsx": CodeListFilters as Component<never>,
+  "CodeUnusedDatabases.island.tsx": CodeUnusedDatabases as Component<never>,
+  "CodeDatabaseControls.island.tsx": CodeDatabaseControls as Component<never>,
   "CodePauseAction.island.tsx": CodePauseAction as Component<never>,
   "CodePolicyEditor.island.tsx": CodePolicyEditor as Component<never>,
   "CodePolicyPicker.island.tsx": CodePolicyPicker as Component<never>,

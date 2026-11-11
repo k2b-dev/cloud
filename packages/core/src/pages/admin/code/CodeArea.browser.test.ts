@@ -324,3 +324,51 @@ test("asking rows stay at Never without a choice at desktop and phone widths", a
     }
   }
 }, 30_000);
+
+test("unused database delete requires confirmation, binds the shown incarnation, and keeps recovery visible", async () => {
+  await goto("sec=databases", { width: 390, height: 844 });
+  await settled(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const row = page.getByRole("row").filter({ has: page.locator('a[href="/admin/code?sec=code&id=c_rueck"]') });
+  const before = await row.boundingBox();
+  const actionBox = await page.getByRole("button", { name: "Jetzt löschen", exact: true }).boundingBox();
+  expect(actionBox !== null && actionBox.x >= 0 && actionBox.x + actionBox.width <= 390).toBe(true);
+  await page.getByRole("button", { name: "Ausgeblendete Werte der Zeile zeigen" }).click();
+  expect(await page.getByText("Lea Muster", { exact: true }).filter({ visible: true }).isVisible()).toBe(true);
+  await page.getByRole("button", { name: "Ausgeblendete Werte der Zeile zeigen" }).click();
+  const remove = page.getByRole("button", { name: "Jetzt löschen", exact: true });
+  await remove.click();
+  const dialog = page.getByRole("dialog");
+  expect(await dialog.textContent()).toContain("endgültig löschen");
+  await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  expect(fixture.requests).toHaveLength(0);
+  await remove.click();
+  await page.getByRole("dialog").getByRole("button", { name: "Jetzt löschen", exact: true }).click();
+  await page.getByText("Löschung beauftragt.", { exact: false }).waitFor();
+  expect((await row.boundingBox())?.height).toBe(before?.height);
+  expect(fixture.requests).toEqual([
+    {
+      path: "/api/code/authoring/database/delete",
+      body: { codeId: "c_rueck", namespace: "code_c_rueck_fixture", since: "2026-11-01T12:00:00.000Z" },
+    },
+  ]);
+  expect(await page.getByRole("button", { name: "Jetzt löschen", exact: true }).count()).toBe(0);
+  expect(await page.getByRole("button", { name: "Neu laden", exact: true }).isVisible()).toBe(true);
+  await goto("sec=databases&state=lost");
+  await page.getByRole("button", { name: "Jetzt löschen", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Jetzt löschen", exact: true }).click();
+  await page.getByText("Löschung unbestätigt.", { exact: false }).waitFor();
+  expect(await page.getByRole("button", { name: "Jetzt löschen", exact: true }).count()).toBe(0);
+  expect(await page.getByRole("button", { name: "Neu laden", exact: true }).isVisible()).toBe(true);
+});
+
+test("unused database pending deletion stays disabled and keeps its geometry in dark mode", async () => {
+  await goto("sec=databases&state=saving&theme=dark", { width: 390, height: 844 });
+  const remove = page.getByRole("button", { name: "Jetzt löschen", exact: true });
+  const before = await remove.boundingBox();
+  await remove.click();
+  await page.getByRole("dialog").getByRole("button", { name: "Jetzt löschen", exact: true }).click();
+  expect(await remove.isDisabled()).toBe(true);
+  expect(await remove.boundingBox()).toEqual(before);
+  expect(fixture.requests).toHaveLength(1);
+});

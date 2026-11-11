@@ -99,10 +99,46 @@ remove its database. Failed removals are retried; the mapping and reservation
 remain until RSQL confirms removal. Changing the RSQL server URL never redirects
 an existing mapping to a different server.
 
-Pausing a Code or removing its database import from a newer version preserves
-the database. Immutable historical versions remain until their Code is deleted,
-so a database-using historical version continues to declare that dependency.
-There is currently no automatic database removal based on inactivity.
+A database becomes unused when its Code is inactive and neither the latest nor
+selected version declares `database`. Historical versions that are neither
+latest nor selected do not keep it in use, unless an activation of that version
+is still pending or retrying. Cloud starts a visible **30-day**
+grace period at that moment. Reactivating the Code or selecting/saving a
+version that declares `database` ends the period immediately. A later unused
+period starts a fresh deadline. Existing unused databases receive the full
+period when this feature is installed.
+
+Owners and editors see the deletion date on the Code page. Export before the
+deadline if the contents are still needed. Editors and Cloud administrators
+can choose **Delete now**, with confirmation. Deletion keeps the Code and its
+versions; a later database call starts with a new, empty database.
+
+Change `core.code.database_unused_days` under **Administration › Code › Limits**
+or with `cld admin settings apply --from <file> --yes`. The file contains:
+
+```json
+{"updates":{"core.code.database_unused_days":30}}
+```
+
+Zero disables automatic deletion; confirmed manual deletion remains available.
+Changing the setting recalculates deadlines from the stored unused start.
+Reducing or re-enabling retention can delete already overdue databases on the
+next five-minute pass without a reminder. Review and export the unused list
+first. Last access does not extend
+the deadline. Personal owners receive a notification about seven days before
+deletion through their configured notification channels. Resource and app
+owners have no single notification recipient; use the administrator list for
+those databases.
+
+Every five minutes, a scheduled pass admits at most 50 databases within a
+ten-second budget. It rechecks current state while locking the Code, commits
+the deletion intent and audit entry, detaches the old database and releases
+its owner quota. An outbox removes detached databases from RSQL with bounded
+requests and automatic retries, including after outages. A reactivated Code
+uses a fresh database incarnation. **Cleanup** shows pending removals and retry
+errors; completed removals disappear. Audit actions are
+`core.code.database.deletion_requested` and `core.code.database.deleted`.
+The RSQL server must remain configured until pending removals finish.
 
 ## Export a Code database
 

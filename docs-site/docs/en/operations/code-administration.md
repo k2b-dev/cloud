@@ -5,7 +5,7 @@ section: Operations
 order: 1256
 description: Approve Code versions, edit the Code policy, see all Code, waiting cleanup, limits and runner capacity.
 tags: [operations, code, policy, approvals, administration]
-updated: 2026-11-04
+updated: 2026-11-11
 ---
 
 # Administration › Code
@@ -116,7 +116,7 @@ A stale revision, hash or comparison returns `409`.
 When a Code owner is deleted, Cloud stops its Code and schedules deletion.
 **Cleanup** shows pending deletion jobs, including jobs waiting for an
 activation to drain. Cloud retries automatically; completed jobs disappear.
-An empty list means no Code deletion jobs are pending.
+An empty list means no Code or unused-database deletion jobs are pending.
 
 To change a service account's access, use the target's normal share dialog.
 You must manage that target; the Cloud administrator role alone does not give
@@ -128,3 +128,19 @@ The runner section shows the `CodeRunnerMetrics` read model: live instances,
 their reported free slots, queued and running attempts, and the oldest waiting
 time. When the queue grows and the waiting time rises, add runner instances.
 Automatic scaling is not part of Phase 1.
+
+## Unused databases
+
+**Unused databases** lists inactive Code whose latest and selected versions do
+not declare `database`. Each page contains at most 20 rows, with Code, owner,
+last measured size, unused start, deletion date and last database access.
+A dash means no measurement or access has been recorded. Each row offers
+**Export** and confirmed **Delete now**. The selection and next page remain in
+the URL. Deleting a database preserves its Code and releases the owner quota
+immediately; failed RSQL removals appear under **Cleanup** and retry automatically.
+
+The default deadline is 30 days. Change **Unused database retention (days)**
+under **Limits**, or use `core.code.database_unused_days` with
+`cld admin settings apply`; zero switches automatic deletion off. See
+[Code storage](/en/docs/operations/code-storage#database-lifecycle) before
+shortening the period.

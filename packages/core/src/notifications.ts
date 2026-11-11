@@ -24,6 +24,9 @@ const notificationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codeDatabaseExpiryTitle: "Unused Code database",
+      codeDatabaseExpiryBody: ({ title, date }: { title: string; date: string }) =>
+        `The database of “${title}” will be deleted on ${date}. You can export it from the Code page first.`,
       newBrowserTitle: "New sign-in from a new browser",
       unknownBrowser: "Unknown browser",
       unknownSystem: "an unknown system",
@@ -75,6 +78,9 @@ const notificationMessages = i18n.define({
       phonePairedAt: ({ url }: { url: string }) => `at ${url}`,
     },
     de: {
+      codeDatabaseExpiryTitle: "Ungenutzte Code-Datenbank",
+      codeDatabaseExpiryBody: ({ title, date }) =>
+        `Die Datenbank von „${title}“ wird am ${date} gelöscht. Du kannst sie vorher auf der Code-Seite exportieren.`,
       newBrowserTitle: "Neue Anmeldung aus einem neuen Browser",
       unknownBrowser: "Unbekannter Browser",
       unknownSystem: "einem unbekannten System",
@@ -398,6 +404,22 @@ export const NOTIFICATIONS = {
       };
     },
   }),
+  codeDatabaseExpiry: notification({
+    recipient: "user",
+    label: "Unused Code database deletion",
+    delivery: { recommended: ["email", "browser"] },
+    description: "Notice before an unused personal Code database is deleted.",
+    presentation: presentation(
+      "Löschung ungenutzter Code-Datenbanken",
+      "Hinweis vor der Löschung einer ungenutzten persönlichen Code-Datenbank.",
+    ),
+    data: z.object({ codeId: z.string(), title: z.string(), deleteAt: z.iso.datetime() }),
+    render: ({ codeId, title, deleteAt }, { locale }) => ({
+      title: text(locale).codeDatabaseExpiryTitle,
+      body: text(locale).codeDatabaseExpiryBody({ title, date: dates.formatDate(deleteAt, { locale }) }),
+      targetHref: `/app/assistant/code/${codeId}`,
+    }),
+  }),
   accountExpiryReminder: notification({
     recipient: "user",
     label: "Account expiry reminders",
@@ -444,12 +466,24 @@ const fingerprint = (value: string): string => createHash("sha256").update(value
 
 export type CoreNotificationSender = AuthNotificationSender &
   AccountLifecycleNotificationSender & {
+    sendCodeDatabaseExpiry: (notice: { userId: string; codeId: string; title: string; deleteAt: string; key: string }) => Promise<unknown>;
     sendOAuthNewAccess: (notice: OAuthNewAccessNotice) => Promise<unknown>;
     sendDeviceEnrollment: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>;
     sendAppDevicePaired: (notice: PwaDevicePairedNotice) => Promise<unknown>;
   };
 
 export const createCoreNotificationSender = (definitions: CoreNotificationDescriptors): CoreNotificationSender => ({
+  sendCodeDatabaseExpiry: async ({ userId, codeId, title, deleteAt, key }) => {
+    const result = await notifications.send(definitions.codeDatabaseExpiry, {
+      recipient: { userId },
+      data: { codeId, title, deleteAt },
+      idempotencyKey: key,
+      locale: await configuredLocale(),
+    });
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("Code database notice could not be prepared");
+    return result;
+  },
   sendOAuthNewAccess: async ({ familyId, userId, kind, clientName, createdAt }) => {
     const result = await notifications.send(definitions.oauthNewAccess, {
       recipient: { userId },

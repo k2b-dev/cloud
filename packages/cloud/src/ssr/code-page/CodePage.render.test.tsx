@@ -1101,3 +1101,30 @@ test.each(["de", "en"])("Code page shows owner reservation and export in %s", (l
   data.state.code.database.canExport = false;
   expect(page()).not.toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
 });
+
+test.each(["de", "en"])("unused database notice shows the deletion date and confirmed delete control in %s", (locale) => {
+  const data = codePageFixture("overview", locale);
+  if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+  data.state.code.database = {
+    bytes: 4096,
+    limit: 104857600,
+    state: "ready",
+    canExport: true,
+    unused: {
+      since: "2026-11-01T12:00:00.000Z",
+      deleteAt: "2026-12-01T12:00:00.000Z",
+      namespace: "code_c_test_incarnation",
+      canDelete: true,
+    },
+  };
+  const html = renderMarkup(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(CodePage, { data });
+      },
+    }),
+  );
+  expect(html).toContain(locale === "de" ? "Diese Datenbank wird am" : "This database will be deleted on");
+  expect(html).toContain(locale === "de" ? "Jetzt löschen" : "Delete now");
+});

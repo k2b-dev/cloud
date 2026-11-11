@@ -326,7 +326,11 @@ export async function readCodeActivation(
   return receipt(row);
 }
 async function state(id: string, value: CodeActivation["state"], failure: CodeActivationFailure | null = null) {
-  await sql`UPDATE code.activations SET state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE ${value} END,failure=CASE WHEN cancel_requested THEN failure ELSE ${failure === null ? null : JSON.stringify(failure)}::text::jsonb END,updated_at=now() WHERE id=${id}::uuid`;
+  await sql.begin(async (tx) => {
+    // All activation transitions take Code before activation, including deadline refreshes.
+    await tx`SELECT id FROM code.codes WHERE id=(SELECT code_id FROM code.activations WHERE id=${id}::uuid) FOR UPDATE`;
+    await tx`UPDATE code.activations SET state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE ${value} END,failure=CASE WHEN cancel_requested THEN failure ELSE ${failure === null ? null : JSON.stringify(failure)}::text::jsonb END,updated_at=now() WHERE id=${id}::uuid`;
+  });
 }
 class ActivationRefused extends Error {
   constructor(readonly failure: CodeActivationFailure) {
@@ -351,6 +355,7 @@ async function checkpoint(row: ActivationRow, deps: CodeActivationDependencies):
 /** A failed switch changes no grants or active version; retain its durable terminal receipt. */
 async function rollback(row: ActivationRow, code: Code): Promise<void> {
   await sql.begin(async (tx) => {
+    await tx`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
     await tx`UPDATE code.activations SET state=CASE WHEN failure->>'code'='cancelled' THEN 'cancelled' ELSE 'failed' END,authority=NULL,updated_at=now() WHERE id=${row.id}::uuid`;
     await audit.record(
       {
@@ -527,6 +532,7 @@ export async function cancelCodeActivation(
   context: CodeContext,
 ): Promise<CodeActivation> {
   const result = await sql.begin(async (tx) => {
+    await tx`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
     await authorizedCode(input.codeId, context, tx);
     const [row] = await tx<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${input.activationId}::uuid FOR UPDATE`;
     if (!row || row.code_id !== input.codeId) throw new CodeDataError("NOT_FOUND", "Activation not found.");

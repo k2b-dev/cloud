@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { type CodeBridgeCall, CodeBridgeRefusal } from "@k2b/cloud/api";
 import { CODE_DATABASE_LIMITS, type CodeDatabaseRequest } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
+import { canRepairAppAccess } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { type CodeContext, codePerson } from "./access";
 import { authorizeCodeCall } from "./bridge";
@@ -41,7 +42,7 @@ export async function dispatchCodeDatabase(
     call: { capability: input.request.operation, target: null, refs: {}, input: input.request },
   };
   const config = await readCodeDatabaseConfig();
-  const namespace = codeDatabaseNamespace(input.claims.codeId);
+  const namespace = `${codeDatabaseNamespace(input.claims.codeId)}_${crypto.randomUUID().replaceAll("-", "")}`;
   const bytes = await codeSettings.get("core.code.database_bytes");
   const ownerLimit = await codeSettings.get("core.code.database_owner_bytes");
   const prepared = await sql.begin(async (tx) => {
@@ -60,19 +61,25 @@ export async function dispatchCodeDatabase(
       await tx`UPDATE code.databases SET reserved_bytes=${capacity}
         WHERE code_id=${input.claims.codeId} AND reserved_bytes<${capacity}`;
     }
-    if (!mapping || mapping.namespace !== namespace) throw new CodeBridgeRefusal("code_db_unavailable", 503);
+    if (!mapping) throw new CodeBridgeRefusal("code_db_unavailable", 503);
     sameServer(mapping, config.url);
     const wallMs = await codeSettings.get("core.code.wall_clock_ms");
     const [run] = await tx<{ remaining_ms: number }[]>`SELECT GREATEST(1, EXTRACT(EPOCH FROM
       (started_at + ${wallMs} * interval '1 millisecond' - clock_timestamp())) * 1000)::double precision AS remaining_ms
       FROM code.runs WHERE id=${input.claims.runId}::uuid`;
-    return { connected: mapping.connected, remainingMs: run?.remaining_ms ?? 1, bytes: Math.min(bytes, capacity) };
+    return {
+      namespace: mapping.namespace,
+      connected: mapping.connected,
+      remainingMs: run?.remaining_ms ?? 1,
+      bytes: Math.min(bytes, capacity),
+    };
   });
   const deadlineMs = Math.max(
     1,
     Math.floor(Math.min(CODE_DATABASE_LIMITS.statementMs, prepared.remainingMs, input.claims.exp * 1000 - Date.now())),
   );
   const client = factory(config, AbortSignal.any([input.signal, AbortSignal.timeout(deadlineMs)]));
+  const mappedNamespace = prepared.namespace;
   if (!prepared.connected) {
     await sql.begin(async (tx) => {
       await lockNamespaceChange(tx);
@@ -83,25 +90,29 @@ export async function dispatchCodeDatabase(
       const [mapping] = await tx<
         Mapping[]
       >`SELECT namespace,connected,server_url FROM code.databases WHERE code_id=${input.claims.codeId} FOR UPDATE`;
-      if (!mapping || mapping.namespace !== namespace) throw new CodeBridgeRefusal("code_db_unavailable", 503);
+      if (!mapping || mapping.namespace !== mappedNamespace) throw new CodeBridgeRefusal("code_db_unavailable", 503);
       sameServer(mapping, config.url);
       if (!mapping.connected) {
-        await client.create(namespace, prepared.bytes, CODE_DATABASE_LIMITS.statementMs);
+        await client.create(mappedNamespace, prepared.bytes, CODE_DATABASE_LIMITS.statementMs);
         await tx`UPDATE code.databases SET connected=TRUE WHERE code_id=${input.claims.codeId}`;
       }
     });
   }
   // Fixed server timeout avoids concurrent runs changing one another's statement budget.
   // Apply the current quota before issuance; remaining run time is enforced by the request signal.
-  await client.configure(namespace, prepared.bytes, CODE_DATABASE_LIMITS.statementMs);
+  await client.configure(mappedNamespace, prepared.bytes, CODE_DATABASE_LIMITS.statementMs);
   await sql.begin((tx) => authorizeCodeCall(call, tx));
-  const data = await client.execute(namespace, input.request);
+  const data = await client.execute(mappedNamespace, input.request);
+  // Telemetry must not turn an already committed RSQL write into a retryable failure.
+  await sql`UPDATE code.databases SET last_access_at=clock_timestamp() WHERE code_id=${input.claims.codeId} AND namespace=${mappedNamespace}`.catch(
+    () => {},
+  );
   if (Buffer.byteLength(JSON.stringify(data)) > CODE_DATABASE_LIMITS.resultBytes) throw new CodeBridgeRefusal("code_db_limit");
   return Response.json({ ok: true, data });
 }
 
 /** One nonblocking namespace lifecycle operation fleet-wide bounds the only remote work protected by a SQL transaction. */
-async function lockNamespaceChange(tx: SQL) {
+export async function lockNamespaceChange(tx: SQL) {
   const [lock] = await tx<
     { acquired: boolean }[]
   >`SELECT pg_try_advisory_xact_lock(hashtextextended('core.code.database-lifecycle',0)) AS acquired`;
@@ -128,6 +139,7 @@ export type CodeDatabaseUsage = {
   state: "unused" | "ready" | "unavailable";
   owner?: { reserved: number; limit: number };
   canExport?: boolean;
+  unused?: { since: string; deleteAt: string | null; namespace: string; canDelete?: boolean };
 };
 /** Reading usage never creates a database; remote failure leaves the Code page usable. */
 export async function readCodeDatabaseUsage(
@@ -137,16 +149,28 @@ export async function readCodeDatabaseUsage(
 ): Promise<CodeDatabaseUsage> {
   const limit = await codeSettings.get("core.code.database_bytes");
   const owner = { reserved: await codeDatabaseOwnerCapacity(sql, codeId), limit: await codeSettings.get("core.code.database_owner_bytes") };
-  const [mapping] = await sql<Mapping[]>`SELECT namespace,connected,server_url FROM code.databases WHERE code_id=${codeId}`;
+  const [mapping] = await sql<
+    (Mapping & { unused_since: Date | null })[]
+  >`SELECT namespace,connected,server_url,unused_since FROM code.databases WHERE code_id=${codeId}`;
   if (!mapping) return { bytes: 0, limit, state: "unused", owner };
+  const days = await codeSettings.get("core.code.database_unused_days");
+  const unused = mapping.unused_since
+    ? {
+        since: mapping.unused_since.toISOString(),
+        deleteAt: days ? new Date(mapping.unused_since.getTime() + days * 86400000).toISOString() : null,
+        namespace: mapping.namespace,
+      }
+    : undefined;
   try {
     const config = await readCodeDatabaseConfig();
     sameServer(mapping, config.url);
     const deadline = AbortSignal.timeout(2000); // Keep the interactive Code read usable during an RSQL outage.
     const usageSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
-    return { bytes: await factory(config, usageSignal).size(mapping.namespace), limit, state: "ready", owner };
+    const bytes = await factory(config, usageSignal).size(mapping.namespace);
+    await sql`UPDATE code.databases SET last_size_bytes=${bytes} WHERE code_id=${codeId} AND namespace=${mapping.namespace}`;
+    return { bytes, limit, state: "ready", owner, ...(unused ? { unused } : {}) };
   } catch {
-    return { bytes: null, limit, state: "unavailable", owner };
+    return { bytes: null, limit, state: "unavailable", owner, ...(unused ? { unused } : {}) };
   }
 }
 
@@ -155,6 +179,12 @@ export async function readCodeDetails(codeId: string, context: CodeContext) {
   const database = await readCodeDatabaseUsage(codeId, createCodeDatabaseClient, context.signal);
   // Export follows the same service guard on both surfaces; Core admins can export without an editor share.
   database.canExport = result.permission === "editor" || codePerson(context).roles.includes("admin");
-  if (!database.canExport) delete database.owner;
+  if (database.unused)
+    database.unused.canDelete =
+      result.permission === "editor" || (codePerson(context).roles.includes("admin") && canRepairAppAccess(context.authority));
+  if (!database.canExport) {
+    delete database.owner;
+    delete database.unused;
+  }
   return { ...result, code: { ...result.code, database } };
 }

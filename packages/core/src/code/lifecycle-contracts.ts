@@ -9,7 +9,7 @@ export const CodeCleanupJobSchema = z
     id: z.uuid(),
     codeId: CodeIdSchema,
     title: z.string(),
-    kind: z.literal("code.delete"),
+    kind: z.enum(["code.delete", "database.delete"]),
     state: z.enum(["pending", "running", "waiting"]),
     attempts: z.number().int().nonnegative(),
     lastError: z.string().nullable(),

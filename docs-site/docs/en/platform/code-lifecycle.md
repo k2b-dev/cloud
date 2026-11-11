@@ -5,7 +5,7 @@ section: Platform services
 order: 964
 description: Report owner deletion transactionally, clean up its account and pause Code whose owner is missing.
 tags: [code, identity, permissions]
-updated: 2026-11-09
+updated: 2026-11-11
 ---
 
 # Code owner lifecycle
@@ -72,7 +72,7 @@ Administration clients use `POST /api/code/cleanup` with
 
 Core exports `listCodeCleanupJobs`, `codeLifecycleContracts`,
 `CodeCleanupJobSchema` and `CodeCleanupJob` from `packages/core/src/code` for
-Administration › Code. Every item includes the Code title, job kind,
+Administration › Code. Every item includes the Code title, job kind (`code.delete` or `database.delete`),
 attempt count, next retry time and a stable `lastError` code. Its state is
 `pending`, `running` or `waiting`. Completed jobs disappear. The deletion job remains visible until cleanup succeeds.
 

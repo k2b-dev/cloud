@@ -21,6 +21,9 @@ export async function exportCodeDatabase(
   if (config.url !== mapping.server_url) throw new CodeBridgeRefusal("code_db_unavailable", 503);
   const signal = AbortSignal.any([AbortSignal.timeout(120000), ...(context.signal ? [context.signal] : [])]);
   const response = await factory(config, signal).export(mapping.namespace, Number(mapping.reserved_bytes));
+  await sql`UPDATE code.databases SET last_access_at=clock_timestamp() WHERE code_id=${codeId} AND namespace=${mapping.namespace}`.catch(
+    () => {},
+  );
   response.headers.set("content-disposition", `attachment; filename="${codeId}.sqlite"`);
   response.headers.set("cache-control", "no-store");
   response.headers.set("x-content-type-options", "nosniff");

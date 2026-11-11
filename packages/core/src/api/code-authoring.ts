@@ -9,6 +9,7 @@ import {
   REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   setRequestTimeout,
+  v,
 } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { Hono } from "hono";
@@ -24,6 +25,7 @@ import {
 } from "../code/authoring-contracts";
 import { CodeIdSchema } from "../code/contracts";
 import { exportCodeDatabase } from "../code/database-export";
+import { deleteUnusedCodeDatabase, unusedDatabaseInput } from "../code/database-retention";
 import { CodeJobError } from "../code/job-errors";
 import { CodeVersionError } from "../code/versions";
 
@@ -141,6 +143,26 @@ export function createCodeAuthoringRoutes() {
       },
     );
   }
+  router.post(
+    "/database/delete",
+    auth.requireOAuthScope("write", "admin"),
+    middleware.openapi({ tags: ["Code"], summary: "Delete one confirmed unused Code database" }),
+    v("json", unusedDatabaseInput),
+    async (c) => {
+      try {
+        return c.json({
+          data: await deleteUnusedCodeDatabase(c.req.valid("json"), {
+            authority: auth.getAuthority(c),
+            locale: getLocale(c),
+            signal: c.req.raw.signal,
+          }),
+        });
+      } catch (error) {
+        const failure = codeAuthoringFailure(error);
+        return c.json(failure.body, failure.status);
+      }
+    },
+  );
   router.get(
     "/database/:codeId/export",
     middleware.openapi({
