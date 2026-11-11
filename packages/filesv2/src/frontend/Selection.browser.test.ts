@@ -359,12 +359,13 @@ describe("Files selection pill in a browser", () => {
       expect(await failed.textContent()).toContain("is protected with a password.");
       if (shots) await tab.screenshot({ path: `${shots}/merge-failed-light-1440.png` });
       await failed.getByRole("button", { name: "Without this file" }).click();
-      await row(tab, "-komplett.pdf").waitFor();
+      // The row in the making carries the new name too; the file itself is there once that row is gone.
+      await tab.locator(".filesv2-list__row--operation").waitFor({ state: "detached" });
+      await tab.locator(".filesv2-list__row:not(.filesv2-list__row--operation)", { hasText: "-komplett.pdf" }).waitFor();
       expect(session.posts[1]!.paths).toEqual([
         `${folder}/Angebot-0412-Sekretär-Biedermeier.pdf`,
         `${folder}/Angebot-0413-Vitrine-Gründerzeit.pdf`,
       ]);
-      expect(await tab.locator(".filesv2-list__row--operation").count()).toBe(0);
     } finally {
       await tab.context().close();
     }
