@@ -4,6 +4,7 @@ import { createAllowedNetworkFetch } from "@k2b/cloud/services";
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
 import { z } from "zod";
+import { codeDatabaseStream } from "./database-stream";
 
 export type CodeRsqlConfig = { url: string; token: string; allowedTargets: string[] };
 export type CodeDatabaseClient = {
@@ -12,6 +13,7 @@ export type CodeDatabaseClient = {
   execute(namespace: string, request: CodeDatabaseRequest): Promise<unknown>;
   size(namespace: string): Promise<number>;
   remove(namespace: string): Promise<void>;
+  export(namespace: string, maximum: number): Promise<Response>;
 };
 const refuse = (code: string): never => {
   throw new CodeBridgeRefusal(code);
@@ -34,11 +36,13 @@ export function createCodeDatabaseClient(config: CodeRsqlConfig, signal?: AbortS
     token: config.token,
     fetch: Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const timeout = AbortSignal.timeout(CODE_DATABASE_LIMITS.statementMs);
+        const timeout = AbortSignal.timeout(
+          new URL(String(input)).pathname.endsWith("/export") ? 120000 : CODE_DATABASE_LIMITS.statementMs,
+        );
         const signals = [timeout, ...(signal ? [signal] : []), ...(init?.signal ? [init.signal] : [])];
         try {
           const response = await request(input, { ...init, redirect: "error", signal: AbortSignal.any(signals) });
-          if (!response.body) return response;
+          if (!response.body || (response.ok && new URL(String(input)).pathname.endsWith("/export"))) return response;
           const reader = response.body.getReader();
           const chunks: Uint8Array[] = [];
           let bytes = 0;
@@ -102,6 +106,14 @@ export function createCodeDatabaseClient(config: CodeRsqlConfig, signal?: AbortS
     async size(namespace) {
       const result = codeRsqlResult(await client.ns(namespace).overview.get());
       return z.object({ storage: z.object({ used_bytes: z.number().nonnegative() }) }).parse(result).storage.used_bytes;
+    },
+    async export(namespace, maximum) {
+      const response = codeRsqlResult(await client.namespaces.exportDb(namespace));
+      const body = codeDatabaseStream(response, maximum);
+      const headers = new Headers({ "content-type": "application/vnd.sqlite3", "cache-control": "no-store" });
+      const length = response.headers.get("content-length");
+      if (length !== null) headers.set("content-length", length);
+      return new Response(body, { headers });
     },
     async remove(namespace) {
       const result = await client.namespaces.delete(namespace);

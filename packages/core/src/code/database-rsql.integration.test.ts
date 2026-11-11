@@ -94,6 +94,13 @@ suiteFor("rsql")("Code database adapter against released RSQL", () => {
     ).rejects.toMatchObject({ code: "code_db_timeout" });
   });
 
+  test("export returns a consistent SQLite snapshot through the released RSQL export API", async () => {
+    const response = await client.export(first, quota);
+    const snapshot = new Uint8Array(await response.arrayBuffer());
+    expect(new TextDecoder().decode(snapshot.subarray(0, 16))).toBe("SQLite format 3\0");
+    expect(snapshot.byteLength).toBeLessThanOrEqual(quota);
+  });
+
   test("configuring or querying a deleted namespace cannot recreate it", async () => {
     await client.create(deleted, quota, 15000);
     await client.remove(deleted);

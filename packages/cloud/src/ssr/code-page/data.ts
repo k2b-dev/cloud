@@ -14,7 +14,15 @@ import type { CodeOperationLabels } from "./targets";
 const CodeSchema = z.object({
   id: z.string(),
   title: z.string(),
-  database: z.object({ bytes: z.number().nullable(), limit: z.number(), state: z.enum(["unused", "ready", "unavailable"]) }).optional(),
+  database: z
+    .object({
+      bytes: z.number().nullable(),
+      limit: z.number(),
+      state: z.enum(["unused", "ready", "unavailable"]),
+      owner: z.object({ reserved: z.number(), limit: z.number() }).optional(),
+      canExport: z.boolean().optional(),
+    })
+    .optional(),
   /** A2: the credentialless account handle; A3b uses this in the refusal notice. */
   serviceAccountHandle: z.string().nullable().optional(),
   state: z.enum(["draft", "active", "paused", "deleting"]),
