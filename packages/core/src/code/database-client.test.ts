@@ -85,3 +85,29 @@ test("a run deadline is a timeout rather than missing RSQL configuration", async
     message: "code_db_timeout",
   });
 });
+
+test("SQLite export streams beyond the bridge JSON limit with a separate byte budget", async () => {
+  const bytes = CODE_DATABASE_LIMITS.resultBytes + 4096;
+  let pulled = 0;
+  reply = () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          pulled++;
+          controller.enqueue(new Uint8Array(bytes));
+          controller.close();
+        },
+      }),
+      { headers: { "content-length": String(bytes), "content-type": "application/vnd.sqlite3" } },
+    );
+  const response = await client().export("code_c_first", bytes);
+  expect(response.headers.get("content-type")).toBe("application/vnd.sqlite3");
+  expect((await response.arrayBuffer()).byteLength).toBe(bytes);
+  expect(requests.at(-1)?.path).toBe("/v1/namespaces/code_c_first/export");
+  expect(pulled).toBe(1);
+});
+
+test("export error responses retain the ordinary JSON byte limit", async () => {
+  reply = () => new Response("x".repeat(CODE_DATABASE_LIMITS.resultBytes + 1), { status: 500 });
+  await expect(client().export("code_c_first", 1073741824)).rejects.toMatchObject({ code: "code_db_limit" });
+});

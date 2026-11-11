@@ -21,8 +21,12 @@ const snapshot = await import("@k2b/cloud/services/settings/snapshot");
 const rail = await import("@k2b/cloud/services/rail-snapshot");
 const { defaultRailPreferences } = await import("@k2b/cloud/contracts/rail-preferences");
 const help = await import("@k2b/cloud/services/help");
+// The Code reference reads the live catalog and policy; panel tests choose its result instead.
+const codeHelp = await import("../../code/help-reference");
+export const realLoadCodeHelpReference = codeHelp.loadCodeHelpReference;
+export const codeReference = spyOn(codeHelp, "loadCodeHelpReference").mockResolvedValue(null);
 /** Invented signed-in person. */
-const person: User = {
+export const person: User = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "mmuster",
   roles: ["user", "local"],
