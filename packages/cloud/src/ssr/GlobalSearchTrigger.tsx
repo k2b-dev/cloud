@@ -31,7 +31,7 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
         <button
           ref={target}
           type="button"
-          class={`rail-item text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300 ${props.class ?? ""}`}
+          class={`rail-item ${props.class ?? ""}`}
           onClick={open}
           aria-busy={action.busy() ? "true" : undefined}
           aria-label={t().openGlobalSearch}
