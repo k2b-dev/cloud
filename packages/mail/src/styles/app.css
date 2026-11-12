@@ -833,15 +833,6 @@
     color: var(--k2b-text-secondary);
   }
 
-  /* Mail's primary workspace action is Compose; other actions and status tones keep their own roles. */
-  .mail-workspace [data-workspace-primary] {
-    --k2b-action-solid: var(--app-accent);
-  }
-
-  .mail-workspace [data-workspace-primary] {
-    --k2b-action-solid-hover: color-mix(in srgb, var(--app-accent) 88%, black);
-  }
-
   .mail-sidebar-health {
     margin-inline-end: 0.25rem;
     color: var(--k2b-warning-text);
@@ -1101,13 +1092,6 @@
       white-space: nowrap;
       border: 0;
     }
-  }
-}
-
-@layer utilities {
-  .mail-compose-action {
-    --k2b-action-solid: color-mix(in srgb, var(--app-accent) 80%, black);
-    --k2b-action-solid-hover: color-mix(in srgb, var(--app-accent) 88%, black);
   }
 }
 

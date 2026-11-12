@@ -21,6 +21,12 @@ import {
 import { createDraftDocument, DRAFT_BODY, readDraftDocument, writeLocalDraftHeaders } from "../../lib/draft-document";
 
 const now = "2026-10-11T10:00:00.000Z";
+/** The composer's labelled send or reply action, found by its role and name like a person finds it. */
+const sendActionNames = new Set(["Send", "Reply", "Reply all", "Forward", "Senden", "Antworten", "Allen antworten", "Weiterleiten"]);
+const findSendAction = (root: ParentNode, enabled = false) =>
+  Array.from(root.querySelectorAll<HTMLButtonElement>("footer button")).find(
+    (button) => sendActionNames.has(button.textContent?.trim() ?? "") && (!enabled || !button.disabled),
+  ) ?? null;
 const identity = (id: string, label: string, signature: string): SenderIdentity => ({
   id,
   mailboxId: "Box001",
@@ -288,7 +294,7 @@ describe("MailComposer signature choice", () => {
     if (settle) {
       await settle();
       for (let attempt = 0; attempt < 100 && !dom.root.querySelector(".cm-content"); attempt++) await settle();
-    } else await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+    } else await waitFor(() => Boolean(findSendAction(dom.root, true)));
   };
   const trigger = () => dom.root.querySelector<HTMLButtonElement>("footer button.mail-composer-signature")!;
   const choose = (label: string, role: "menuitemradio" | "menuitem" = "menuitemradio") => {
@@ -352,7 +358,7 @@ describe("MailComposer signature choice", () => {
     try {
       delegateEvents(["click", "input"]);
       await mount("en", { ...initialDraft, editMode: "shared", generation: "1" }, undefined, undefined, settle);
-      await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+      await waitFor(() => Boolean(findSendAction(dom.root, true)));
       Array.from(dom.root.querySelectorAll("button"))
         .find((button) => button.textContent === "Cc/Bcc")!
         .click();
@@ -1014,7 +1020,7 @@ describe("MailComposer robustness", () => {
     await waitFor(() => Boolean(dom.root.querySelector(".cm-content")));
     if (options.ready !== false) await waitFor(() => Boolean(sendButton() && !sendButton().disabled));
   };
-  const sendButton = () => dom.root.querySelector<HTMLButtonElement>("button.mail-compose-action")!;
+  const sendButton = () => findSendAction(dom.root)!;
   const recipientInput = () => dom.root.querySelector<HTMLInputElement>(".mail-recipient-input input")!;
   const view = () => EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
   const type = (input: HTMLInputElement, value: string) => {
