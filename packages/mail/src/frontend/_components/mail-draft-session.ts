@@ -150,6 +150,8 @@ export const createMailDraftSession = (options: {
   // A retried acquire whose answer was lost gets this instance's lease back instead of reading it as another tab.
   const editorId = crypto.randomUUID();
   const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
+  /** The seed was discarded or its text moved elsewhere: it must never become a draft, not even on the way out. */
+  let seedAbandoned = false;
   let lastSavedContent = seedBaseline ?? "";
   const [confirmedContent, setConfirmedContent] = createSignal(lastSavedContent);
   const [journalContent, setJournalContent] = createSignal<string | null>(null);
@@ -810,7 +812,7 @@ export const createMailDraftSession = (options: {
         }
       }
       let currentDraft = draft();
-      if (!currentDraft && options.initialSeed && untrack(() => options.holdCreate?.())) return null;
+      if (!currentDraft && options.initialSeed && (seedAbandoned || untrack(() => options.holdCreate?.()))) return null;
       if (!currentDraft && options.initialSeed) {
         const nextContent = options.content();
         setStatus("saving");
@@ -1362,6 +1364,7 @@ export const createMailDraftSession = (options: {
     // A seed (the reply box before its first save) that holds typing creates its draft on the way out, unless another
     // send still holds the reply place; then the journal keeps the text on this device.
     const seedUnsaved =
+      !seedAbandoned &&
       !draft() &&
       Boolean(options.initialSeed) &&
       !options.holdCreate?.() &&
@@ -1508,6 +1511,12 @@ export const createMailDraftSession = (options: {
     revisionConflict,
     localCopyFailed,
     localRecoveryCopies,
+    /** The seed's text was discarded or carried elsewhere: no save, autosave, or save on the way out creates its draft. */
+    abandonSeed: () => {
+      if (draft()) return;
+      seedAbandoned = true;
+      stopScheduledSave();
+    },
     restoreCurrentInput: () => restoreRecoveryContent(options.content()),
     restoreLocalRecoveryCopy: (id: string) => {
       const selected = localRecoveryCopies().find((copy) => copy.id === id);

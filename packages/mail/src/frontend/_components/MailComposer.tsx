@@ -153,6 +153,8 @@ export type MailReplyBoxHost = {
   materialized: (draft: MailDraft) => void;
   /** "Open in a window": the draft is saved and released; the box hands it to a compose window. */
   detach: (draftId: string) => void;
+  /** The text typed while `holdCreate` is true, for the box to keep per conversation. */
+  buffer: (text: string) => void;
 };
 
 /**
@@ -1210,10 +1212,17 @@ export default function MailComposer(props: {
         previousAttempt !== null &&
         previousAttempt.scheduledAt === delivery.scheduledAt &&
         previousAttempt.contentFingerprint === deliveryFingerprint(delivery);
-      if (reusable) await send.retry();
-      else {
-        lastDeliveryAttempt = await prepareDelivery(delivery, preparation.signal);
-        await send.mutate(lastDeliveryAttempt);
+      // The reviews take time; the person may have turned the box to a note or left meanwhile. Nothing goes out then.
+      const stillSendable = (draftId: string | undefined) =>
+        !disposed && !boxBlocksSend() && (draftId === undefined || draft()?.id === draftId);
+      if (reusable) {
+        if (!stillSendable(previousAttempt?.draftId)) throw new ComposeSafetyCancelled();
+        await send.retry();
+      } else {
+        const prepared = await prepareDelivery(delivery, preparation.signal);
+        if (!stillSendable(prepared.draftId)) throw new ComposeSafetyCancelled();
+        lastDeliveryAttempt = prepared;
+        await send.mutate(prepared);
       }
     } catch (error) {
       if (error instanceof ComposeSafetyAttachmentRequested) attachAfterDeliveryReview = true;
@@ -1381,7 +1390,9 @@ export default function MailComposer(props: {
             variant: "danger",
           }));
         if (!confirmed || abortSignal.aborted) return false;
+        draftSession.abandonSeed();
         clearInitialSeed();
+        if (props.initialSeed) draftSession.forgetJournal(props.initialSeed.id, { closed: true });
         return true;
       }
       // Only a draft this click created and nobody changed goes without asking: it holds nothing to lose.
@@ -1560,7 +1571,9 @@ export default function MailComposer(props: {
       if (current && untrack(lease)) await releaseLease(current).catch(() => releaseLeaseOnExit());
     },
     forgetLocal: () => {
-      if (props.initialSeed && !untrack(draft)) draftSession.forgetJournal(props.initialSeed.id, { closed: true });
+      if (!props.initialSeed || untrack(draft)) return;
+      draftSession.abandonSeed();
+      draftSession.forgetJournal(props.initialSeed.id, { closed: true });
     },
   });
 
@@ -1964,6 +1977,15 @@ export default function MailComposer(props: {
       let emojiButton: HTMLButtonElement | undefined;
       const changedHere = () => serializeMailDraftContent(content()) !== initialSerializedContent;
       const holdActive = () => !draft() && box.holdCreate();
+      // While another send holds the place, the box keeps what is typed for this conversation, also across navigation.
+      // Only this seed's own typing writes the buffer, so mounting a fresh seed never wipes what an earlier one kept.
+      let bufferedHere = false;
+      createEffect(() => {
+        const text = body();
+        if (!holdActive()) return;
+        if (changedHere()) bufferedHere = true;
+        if (bufferedHere) box.buffer(changedHere() ? text : "");
+      });
       const activeUploads = () => uploads().filter((upload) => !upload.error);
       const uploadPercent = () => {
         const list = activeUploads();

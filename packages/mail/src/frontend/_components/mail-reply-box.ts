@@ -37,9 +37,14 @@ export const replyBoxDelivery = (messages: readonly Pick<MailWorkspaceMessage, "
   return null;
 };
 
-/** Unsaved note text survives navigation in this tab: one entry per mailbox and conversation, never in the draft. */
-export const mailReplyNoteKey = (mailboxId: string, conversationId: string): string =>
-  `cloud:mail:reply-note:${mailboxId}:${conversationId}`;
+/**
+ * The box's local text per conversation, in the signed-in person's Mail storage (cleared when they sign out):
+ * `note` is unsaved note text (never in the draft), `pending` what was typed while another send held the reply place,
+ * and `meanwhile` that text after Undo brought the earlier reply back.
+ */
+export type MailReplyBoxPart = "note" | "pending" | "meanwhile";
+export const mailReplyBoxKey = (mailboxId: string, conversationId: string, part: MailReplyBoxPart): string =>
+  `reply-box:${mailboxId}:${conversationId}:${part}`;
 
 export const readMailReplyNote = (storage: Pick<Storage, "getItem"> | null, key: string): string => {
   try {

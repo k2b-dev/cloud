@@ -111,7 +111,7 @@ describe("MailReplyBox", () => {
     typed = "";
     commentFailure = null;
     mailbox += 1;
-    dom.window.sessionStorage.clear();
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     const composer = await import("./MailComposer");
     composerMock = spyOn(composer, "default").mockImplementation(((props: {
       host: MailComposerHost;
@@ -186,6 +186,7 @@ describe("MailReplyBox", () => {
     composerMock?.mockRestore();
     globalThis.fetch = originalFetch;
     Reflect.deleteProperty(dom.window.navigator, "onLine");
+    Reflect.deleteProperty(globalThis, "localStorage");
     dom.cleanup();
   });
 
@@ -340,7 +341,7 @@ describe("MailReplyBox", () => {
       expect(mounts).toHaveLength(1);
       expect(noDraftWrites()).toEqual([]);
       noSend();
-      expect(dom.window.sessionStorage.getItem(`cloud:mail:reply-note:Box${mailbox}:Conv01`)).toBeNull();
+      expect(dom.window.localStorage.getItem(`cloud:user:Usr001:mail:reply-box:Box${mailbox}:Conv01:note`)).toBeNull();
     });
 
     test("switching modes with text keeps note text out of the draft and keeps it for later", async () => {

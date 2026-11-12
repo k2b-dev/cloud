@@ -934,10 +934,12 @@ describe("MailComposer robustness", () => {
   let hostControls: import("./MailComposer").MailInlineDraftControls | undefined;
   let materialized: string[] = [];
   let detached: string[] = [];
+  let buffered: string[] = [];
 
   beforeEach(() => {
     materialized = [];
     detached = [];
+    buffered = [];
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: OfflineWebSocket });
@@ -1055,6 +1057,7 @@ describe("MailComposer robustness", () => {
                             autofocus: false,
                             materialized: (draft: MailDraft) => materialized.push(draft.id),
                             detach: (draftId: string) => detached.push(draftId),
+                            buffer: (text: string) => buffered.push(text),
                           },
                         }
                       : {}),
@@ -1225,6 +1228,68 @@ describe("MailComposer robustness", () => {
     await waitFor(() => detached.length === 1);
     expect(detached).toEqual(["Draft1"]);
     expect(saves.at(-1)?.body).toBe("Hello More.");
+  });
+
+  test("discarding an unsaved seed creates no draft, also not when the box unmounts", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    try {
+      await mount({ host: true, seed: replySeed, box: {}, ready: false });
+      view().dispatch({ changes: { from: 0, insert: "Never mind" }, userEvent: "input.type" });
+      dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-discard]")!.click();
+      await waitFor(() => leaves.includes("discarded"));
+      dispose();
+      dispose = () => {};
+      // fixed wait: longer than the 700 ms autosave and the save on the way out.
+      await Bun.sleep(1_000);
+      expect(requests.some((request) => request.endsWith("/draft-seeds/materialize"))).toBe(false);
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  test("a seed whose text moved on (mode switch before the first save) creates no draft when it unmounts", async () => {
+    await mount({ host: true, seed: replySeed, box: {}, ready: false });
+    view().dispatch({ changes: { from: 0, insert: "Carried to the new mode" }, userEvent: "input.type" });
+    hostControls!.forgetLocal();
+    dispose();
+    dispose = () => {};
+    // fixed wait: longer than the 700 ms autosave and the save on the way out.
+    await Bun.sleep(1_000);
+    expect(requests.some((request) => request.endsWith("/draft-seeds/materialize"))).toBe(false);
+  });
+
+  test("a send waiting for its safety review stops when the box turns to a note meanwhile", async () => {
+    const [suspended, setSuspended] = createSignal(false);
+    const review = Promise.withResolvers<void>();
+    let reviewing = false;
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/safety-review")) {
+          reviewing = true;
+          await review.promise;
+        }
+        return serve(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount({ host: true, draft: replyDraft, box: { suspended } });
+    sendButton().click();
+    await waitFor(() => reviewing);
+    setSuspended(true);
+    review.resolve();
+    // fixed wait: the review answer and anything it would trigger settle well within this.
+    await Bun.sleep(150);
+    expect(sent()).toBe(false);
+    expect(leaves).toEqual([]);
+  });
+
+  test("text typed while another send holds the reply place reaches the box's buffer", async () => {
+    await mount({ host: true, seed: replySeed, box: { hold: () => true }, ready: false });
+    view().dispatch({ changes: { from: 0, insert: "Kept for this conversation" }, userEvent: "input.type" });
+    await waitFor(() => buffered.at(-1) === "Kept for this conversation");
   });
 
   test("the reply box's empty seed creates nothing until someone types", async () => {
