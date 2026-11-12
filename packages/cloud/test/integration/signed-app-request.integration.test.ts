@@ -12,13 +12,14 @@ import { requireInfra, suiteFor, useFreshDatabase } from "../../../../scripts/fi
 import { createIdentityInvocationRoutes } from "../../../core/src/api/identity-invocation";
 import { createIdentityMandateRoutes } from "../../../core/src/api/identity-mandates";
 import { createIdentityOAuthIssuanceRoutes } from "../../../core/src/api/identity-oauth-issuance";
+import { migrate as migrateAppApproval } from "../../../core/src/migrate/core/app-approval";
 import { migrateAppBootstrap } from "../../../core/src/migrate/core/app-bootstrap";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
+import { migrate as migrateOAuthClients } from "../../../core/src/migrate/core/oauth-clients";
 import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
-import { migrate as migrateOAuth } from "../../../oauth/src/migrate";
 import { BOOTSTRAP_PATH, signAppProof, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
 import { sql } from "../../src/runtime/clients";
 import { verifyAccessToken } from "../../src/services/oauth-tokens";
@@ -52,7 +53,8 @@ suiteFor(
     await migrateSettings();
     await migrateRailPreferences();
     await migrateRailShortcuts();
-    await migrateOAuth();
+    await migrateAppApproval();
+    await migrateOAuthClients();
     await migrateAppBootstrap();
     await sql`INSERT INTO auth.users (id, uid, provider, profile, admin) VALUES (${actor.id}::uuid, ${actor.uid}, 'local', 'user', true)`;
     const enroll = async (appId: string, fixture: { seed: string; publicKey: string } = APP_KEY_FIXTURES[0], grants?: "oauth:issue"[]) => {
@@ -218,26 +220,21 @@ suiteFor(
     );
     const clientId = "third-party-registry-client";
     const serviceAccountId = "44444444-4444-4444-8444-444444444444";
-    const grantId = "55555555-5555-4555-8555-555555555555";
-    const nonce = "66666666-6666-4666-8666-666666666666";
     await sql`INSERT INTO auth.service_accounts (id, name, kind) VALUES (${serviceAccountId}::uuid, 'Registry client', 'standalone')`;
-    await sql`INSERT INTO oauth.clients (client_id, name, redirect_uris, scopes, audiences, service_account_id)
-      VALUES (${clientId}, 'Third-party registry client', ARRAY[]::text[], ARRAY['read'], ARRAY['cloud'], ${serviceAccountId}::uuid)`;
-    await sql`INSERT INTO oauth.client_credentials_authority_grants (id, nonce, client_id, scopes, audiences)
-      VALUES (${grantId}::uuid, ${nonce}::uuid, ${clientId}, ARRAY['read'], ARRAY['cloud'])`;
+    expect((await sql`SELECT to_regclass('oauth.clients') AS issuer_table`)[0]?.issuer_table).toBeNull();
+    await sql`INSERT INTO auth.oauth_clients(client_id,issuer_app_id,service_account_id,status,name)
+      VALUES (${clientId},${thirdPartyKey.appId},${serviceAccountId}::uuid,'active','Third-party registry client')`;
     const target = "/api/_internal/identity/v1/oauth/token";
     const body = JSON.stringify({
-      tokens: [
-        {
-          kind: "service_access",
-          expiresIn: 60,
-          grant: {
-            kind: "client_credentials",
-            grantId,
-            nonce,
-          },
-        },
-      ],
+      clientId,
+      subject: { kind: "service_account", serviceAccountId },
+      scopes: ["read"],
+      audiences: ["cloud"],
+      resource: null,
+      nonce: null,
+      loginExpiresAt: null,
+      terminalLoginId: null,
+      tokens: [{ kind: "service_access", expiresIn: 60 }],
     });
     await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = true WHERE id = ${thirdPartyKey.keyId}::uuid`;
     try {
@@ -256,16 +253,31 @@ suiteFor(
         scopes: ["read"],
         payload: { token_use: "access", principal_type: "service_account" },
       });
-      const [grant] = await sql`SELECT consumed_at FROM oauth.client_credentials_authority_grants WHERE id = ${grantId}::uuid`;
-      expect(grant?.consumed_at).toBeInstanceOf(Date);
-      const replay = await signed(thirdPartyKey, body, "POST", target);
-      expect((await issuance.request(target, replay.init)).status).toBe(403);
-      await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
+      // The trusted issuer owns single-use semantics. A fresh app proof may sign another statement.
+      const retry = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, retry.init)).status).toBe(200);
+      const wrongIssuer = await signed(oauthKey, body, "POST", target);
+      expect((await issuance.request(target, wrongIssuer.init)).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET status='disabled' WHERE client_id=${clientId}`;
       expect(await verifyAccessToken(tokens[0], "cloud", verification)).toBeNull();
+      const disabled = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, disabled.init)).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET status='active' WHERE client_id=${clientId}`;
+      expect(await verifyAccessToken(tokens[0], "cloud", verification)).not.toBeNull();
+      await sql`UPDATE auth.oauth_clients SET service_account_id=NULL WHERE client_id=${clientId}`;
+      expect(await verifyAccessToken(tokens[0], "cloud", verification)).toBeNull();
+      const rebound = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, rebound.init)).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET status='deleted' WHERE client_id=${clientId}`;
+      expect(await verifyAccessToken(tokens[0], "cloud", verification)).toBeNull();
+      const deleted = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, deleted.init)).status).toBe(403);
       await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${thirdPartyKey.keyId}::uuid`;
       const denied = await signed(thirdPartyKey, body, "POST", target);
       expect((await issuance.request(target, denied.init)).status).toBe(403);
     } finally {
+      await sql`DELETE FROM auth.oauth_clients WHERE client_id=${clientId}`;
+      await sql`DELETE FROM auth.service_accounts WHERE id=${serviceAccountId}::uuid`;
       jwks.mockRestore();
       await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${thirdPartyKey.keyId}::uuid`;
     }

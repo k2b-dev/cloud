@@ -1,6 +1,8 @@
 import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import type { OAuthClient, OAuthScope } from "@/contracts";
+import { releaseOAuthAuthority } from "./issuer-authority";
+import { OAuthAuthorityRejectedError } from "./token-authority";
 
 type RefreshTokenStatus = "active" | "issuing" | "rotated" | "revoked" | "reused";
 type RefreshTokenFamilyStatus = "active" | "reserved" | "revoked";
@@ -19,7 +21,6 @@ type DbRefreshTokenGrant = {
   resource: string | null;
   family_status: RefreshTokenFamilyStatus;
   family_expires_at: Date;
-  authority_nonce: string | null;
   authority_reserved_at: Date | null;
   authority_issued_at: Date | null;
 };
@@ -120,7 +121,7 @@ export const reserve = async (params: {
   const { expiresAt } = params;
 
   return sql.begin(async (tx) => {
-    // A reservation is not access yet: Core clears notified_at when it activates the family.
+    // A reservation is not access yet: the issuer clears notified_at when it activates the family.
     const [family] = await tx<{ id: string }[]>`
       INSERT INTO oauth.refresh_token_families (
         client_id,
@@ -194,7 +195,7 @@ export const rotate = async (
     audiences: string[];
     resource: string | null;
     familyExpiresAt: Date;
-    authorityGrant: { kind: "refresh_token"; tokenId: string; nonce: string };
+    authorityGrant: { kind: "refresh_token"; tokenId: string };
   }) => Promise<void>,
 ): Promise<RefreshTokenRotationResult> => {
   const parsed = parseRefreshToken(refreshToken);
@@ -226,7 +227,6 @@ export const rotate = async (
         f.resource,
         f.status AS family_status,
         f.expires_at AS family_expires_at,
-        rt.authority_nonce,
         rt.authority_reserved_at,
         rt.authority_issued_at
       FROM oauth.refresh_tokens rt
@@ -277,10 +277,9 @@ export const rotate = async (
     const scopes = requestedScopes ?? (row.scopes as OAuthScope[]);
     const audiences = expectedAudience ? [expectedAudience] : row.audiences;
     const resource = row.resource ?? expectedAudience ?? null;
-    const authorityNonce = crypto.randomUUID();
     await tx`
       UPDATE oauth.refresh_tokens
-      SET status = 'issuing', authority_nonce = ${authorityNonce}::uuid, authority_reserved_at = now(),
+      SET status = 'issuing', authority_reserved_at = now(), authority_issued_at = NULL,
         authority_scopes = ${toPgTextArray(scopes)}::text[], authority_audiences = ${toPgTextArray(audiences)}::text[],
         authority_resource = ${resource}
       WHERE id = ${row.id}::uuid AND status = 'active'
@@ -295,7 +294,7 @@ export const rotate = async (
       scopes,
       audiences,
       resource,
-      authorityGrant: { kind: "refresh_token" as const, tokenId: row.id, nonce: authorityNonce },
+      authorityGrant: { kind: "refresh_token" as const, tokenId: row.id },
     };
   });
 
@@ -311,20 +310,12 @@ export const rotate = async (
       authorityGrant: reserved.authorityGrant,
     });
   } catch (error) {
-    // The database, not the transport error, decides whether issuance happened.
-    // Clearing the nonce fences a late Core claim; a committed claim prevents release.
-    const released = await sql<{ id: string }[]>`
-      UPDATE oauth.refresh_tokens
-      SET status = 'active', authority_nonce = NULL, authority_reserved_at = NULL,
-        authority_scopes = NULL, authority_audiences = NULL, authority_resource = NULL
-      WHERE id = ${reserved.tokenId}::uuid
-        AND status = 'issuing'
-        AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
-        AND authority_issued_at IS NULL
-      RETURNING id
-    `;
-    if (released.length === 1) throw error;
-    await revokeFamily(reserved.familyId, "authority_issuance_failed");
+    if (error instanceof SafeRefreshIssuanceRejectionError || error instanceof OAuthAuthorityRejectedError) {
+      await releaseOAuthAuthority(reserved.authorityGrant);
+    } else {
+      // No complete Core response: keep the credential consumed, and end the family as before.
+      await revokeFamily(reserved.familyId, "authority_issuance_failed");
+    }
     throw error;
   }
   const finalized = await sql.begin(async (tx) => {
@@ -342,7 +333,6 @@ export const rotate = async (
       FROM oauth.refresh_tokens
       WHERE id = ${reserved.tokenId}::uuid
         AND status = 'issuing'
-        AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
         AND authority_issued_at IS NOT NULL
       FOR UPDATE
     `;
@@ -359,7 +349,6 @@ export const rotate = async (
       SET status = 'rotated', used_at = now(), rotated_at = now()
       WHERE id = ${reserved.tokenId}::uuid
         AND status = 'issuing'
-        AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
       RETURNING id
     `;
     if (rotated.length !== 1) throw new Error("OAuth refresh reservation changed during finalization");
@@ -450,8 +439,8 @@ export const cleanup = async (): Promise<number> => {
   }
   const result = await sql`
     DELETE FROM oauth.refresh_token_families
-    WHERE expires_at < now()
-      OR (status = 'revoked' AND revoked_at < now() - INTERVAL '1 day')
+    WHERE notified_at IS NOT NULL AND (expires_at < now()
+      OR (status = 'revoked' AND revoked_at < now() - INTERVAL '1 day'))
   `;
   return result.count + reservations.count;
 };

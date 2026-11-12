@@ -176,10 +176,11 @@ directory, deploy it, and revoke every granted key for that app. A granted key
 can still issue during the rotation overlap. Revoke it immediately if issuance
 must stop immediately. There is no grant-editing UI.
 
-Issuance serves clients and one-shot grants registered in Cloud's OAuth
-registry. A third-party app holding `oauth:issue` uses that same registry and
-Core's issuance checks. A separate client or grant registry owned by a
-third-party identity provider is not supported by this contract.
+Each issuer owns its private clients, policy and one-shot grants. It registers
+only verifier facts through `oauthClients` and sends a closed authority
+statement to Core. Core checks the signed issuer against that registry and
+live platform identity facts. The built-in OAuth schema is optional; see
+[Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
 
 Core owns the issuer and OAuth signing keys. Every granted app uses the same
 Core issuance endpoint and internal JWKS; changing the granted app leaves the
@@ -189,6 +190,30 @@ Keys with `connections_allowed=false` can sign requests but cannot retrieve
 startup connections. Revoking a key rejects its next bootstrap or background
 request on every Core replica. An invocation already admitted keeps its
 existing short lifetime. See [background mandates](/en/docs/identity/background-mandates).
+
+## Roll out issuer ownership
+
+Update Core first. Its migration creates `auth.oauth_clients` and backfills
+existing built-in clients once when `oauth.clients` exists. It also preserves
+terminal approval display statements and grant deadlines. Then update all
+OAuth replicas. Before serving requests, the updated issuer upserts its
+clients in bounded pages, including clients created after Core's backfill,
+and marks registrations for clients deleted during that interval as `deleted`.
+These tombstones prevent client ID reuse by every issuer. Client writes and
+registry writes then share the issuer's transaction. This upgrade needs no
+client-write freeze.
+
+Replace old OAuth replicas before relying on registry synchronization: old
+writers do not maintain it. Verify an authorization-code exchange, refresh,
+terminal device approval and client-credentials exchange after rollout.
+Existing JWT shapes, public issuer and JWKS stay unchanged. In-flight old
+issuance requests may fail; start those sign-ins again. A lost signing
+response burns its reservation and has no recovery endpoint.
+
+The issuer retries access notices from its own maintenance; Core no longer
+probes optional OAuth tables. Pending notices remain with their family until
+delivery succeeds. Core may run with another trusted issuer or with no OAuth
+application installed.
 
 ## Create keys in Administration
 

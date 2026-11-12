@@ -1,5 +1,5 @@
-import { sql } from "@k2b/cloud";
-import { audit, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { connections, sql } from "@k2b/cloud";
+import { audit, isStandaloneServiceAccountKind, oauthClients, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import type {
   CreateOAuthClient,
   MutationResult,
@@ -13,6 +13,44 @@ import type {
   OAuthScope,
   UpdateOAuthClient,
 } from "@/contracts";
+
+const registerClient = (tx: typeof sql, client: Pick<OAuthClient, "clientId" | "serviceAccountId" | "name">) =>
+  oauthClients.upsert(tx, { clientId: client.clientId, serviceAccountId: client.serviceAccountId, name: client.name, status: "active" });
+
+/** Reconcile clients changed by the previous issuer while Core was rolling forward. */
+export const registerAll = async (): Promise<void> => {
+  const [last] = await sql<{ client_id: string }[]>`SELECT client_id FROM oauth.clients ORDER BY client_id DESC LIMIT 1`;
+  let after = "";
+  while (last) {
+    const page = await sql.begin(async (tx) => {
+      const rows = await tx<{ client_id: string; service_account_id: string | null; name: string }[]>`
+        SELECT client_id,service_account_id,name FROM oauth.clients WHERE client_id > ${after} AND client_id <= ${last.client_id}
+        ORDER BY client_id LIMIT 100 FOR UPDATE`;
+      for (const row of rows)
+        await registerClient(tx, { clientId: row.client_id, serviceAccountId: row.service_account_id, name: row.name });
+      return rows;
+    });
+    if (page.length < 100) break;
+    after = page[page.length - 1]!.client_id;
+  }
+  // Old-version deletions must also reach verifiers; preserve every other issuer's rows.
+  const appId = connections().appId;
+  const [lastRegistration] = await sql<{ client_id: string }[]>`SELECT client_id FROM auth.oauth_clients
+    WHERE issuer_app_id=${appId} ORDER BY client_id DESC LIMIT 1`;
+  after = "";
+  while (lastRegistration) {
+    const removed = await sql.begin(async (tx) => {
+      const rows = await tx<{ client_id: string }[]>`SELECT registry.client_id FROM auth.oauth_clients registry
+        WHERE registry.issuer_app_id=${appId} AND registry.status<>'deleted' AND registry.client_id>${after} AND registry.client_id<=${lastRegistration.client_id}
+          AND NOT EXISTS (SELECT 1 FROM oauth.clients client WHERE client.client_id=registry.client_id)
+        ORDER BY registry.client_id LIMIT 100 FOR UPDATE OF registry`;
+      for (const row of rows) await oauthClients.remove(tx, row.client_id);
+      return rows;
+    });
+    if (removed.length < 100) break;
+    after = removed[removed.length - 1]!.client_id;
+  }
+};
 
 // ==========================
 // OAuth Clients Service
@@ -362,6 +400,7 @@ export const create = async (params: {
     await replaceAccessPrincipals({ clientId: row.id, accessMode, userIds, groupIds, db: tx });
     const created = await get({ id: row.id, db: tx });
     if (!created) return { ok: false, error: "Failed to load created client", status: 500 } as const;
+    await registerClient(tx, created);
 
     await audit.record(
       {
@@ -416,6 +455,7 @@ export const registerDynamic = async (params: { name: string; redirectUris: stri
     if (!row) throw new Error("Failed to register dynamic OAuth client");
 
     const client = mapToClient(row);
+    await registerClient(tx, client);
     await audit.record(
       {
         action: "oauth.dynamic_client.register",
@@ -434,23 +474,23 @@ export const registerDynamic = async (params: { name: string; redirectUris: stri
 
 /** Remove abandoned DCR rows that have never reached authorization. */
 export const cleanupUnusedDynamic = async (): Promise<number> => {
-  const result = await sql`
-    DELETE FROM oauth.clients c
-    WHERE c.registration_kind = 'dynamic'
-      AND c.authorized_at IS NULL
-      AND c.created_at < now() - INTERVAL '1 hour'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM oauth.codes code
-        WHERE code.client_id = c.client_id
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM oauth.refresh_token_families family
-        WHERE family.client_id = c.client_id
-      )
-  `;
-  return result.count;
+  const [clock] = await sql<{ cutoff: Date }[]>`SELECT now()-interval '1 hour' AS cutoff`;
+  let count = 0;
+  while (true) {
+    const removed = await sql.begin(async (tx) => {
+      const rows = await tx<{ client_id: string }[]>`DELETE FROM oauth.clients WHERE id IN (
+        SELECT c.id FROM oauth.clients c
+        WHERE c.registration_kind='dynamic' AND c.authorized_at IS NULL AND c.created_at < ${clock!.cutoff}
+          AND NOT EXISTS (SELECT 1 FROM oauth.codes code WHERE code.client_id=c.client_id)
+          AND NOT EXISTS (SELECT 1 FROM oauth.refresh_token_families family WHERE family.client_id=c.client_id)
+        ORDER BY c.created_at,c.id LIMIT 100 FOR UPDATE SKIP LOCKED)
+        RETURNING client_id`;
+      for (const row of rows) await oauthClients.remove(tx, row.client_id);
+      return rows;
+    });
+    count += removed.length;
+    if (removed.length < 100) return count;
+  }
 };
 
 /** Persist that a dynamic registration reached explicit resource-owner approval. */
@@ -516,6 +556,7 @@ export const update = async (params: {
     `;
 
     await replaceAccessPrincipals({ clientId: id, accessMode, userIds, groupIds, db: tx });
+    await registerClient(tx, { clientId: existing.clientId, serviceAccountId, name: data.name ?? existing.name });
     await audit.record(
       {
         action: "oauth.client.update",
@@ -546,6 +587,7 @@ export const delete_ = async (params: { id: string; actor: OAuthClientAdminActor
       WHERE id = ${params.id}
     `;
     if (result.count === 0) return { ok: false, error: "Client not found", status: 404 } as const;
+    await oauthClients.remove(tx, existing.clientId);
 
     await audit.record(
       {

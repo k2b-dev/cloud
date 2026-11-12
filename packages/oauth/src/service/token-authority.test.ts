@@ -1,20 +1,27 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
 import { formatAppKey, importAppPublicKey } from "@k2b/cloud/app-key";
 import { env } from "@k2b/cloud/config";
+import type { OAuthAuthorityStatement } from "@k2b/cloud/contracts";
 import { decodeJwt, jwtVerify } from "jose";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import {
   issueOAuthTokenBatch,
   OAuthAuthorityGrantRejectedError,
-  type OAuthTokenRequest,
+  OAuthAuthorityRejectedError,
   probeOAuthTokenAuthority,
   startOAuthDeviceApproval,
 } from "./token-authority";
 
-const request: OAuthTokenRequest = {
-  kind: "user_access",
-  grant: { kind: "authorization_code", code: "opaque-code", nonce: "a5ae9b9c-94f4-49a8-a954-c87839affc3d" },
-  expiresIn: 3_600,
+const request: OAuthAuthorityStatement = {
+  clientId: "test-client",
+  subject: { kind: "user", userId: "68df7d96-aaab-420a-ab1e-62a67e44d3be", authEpoch: 7 },
+  scopes: ["read"],
+  audiences: ["cloud"],
+  resource: null,
+  nonce: null,
+  loginExpiresAt: "2030-01-02T05:04:05.000Z",
+  terminalLoginId: null,
+  tokens: [{ kind: "user_access", expiresIn: 3600 }],
 };
 
 describe("OAuth Core token authority client", () => {
@@ -27,13 +34,13 @@ describe("OAuth Core token authority client", () => {
     for (const brokerSecret of ["", "cld_old_workload_token", "a".repeat(63), "z".repeat(64)]) {
       const options = { brokerSecret, origin: "http://core.internal:3000", fetch };
       await expect(probeOAuthTokenAuthority(options)).rejects.toThrow("64 hexadecimal characters");
-      await expect(issueOAuthTokenBatch([request], options)).rejects.toThrow("64 hexadecimal characters");
+      await expect(issueOAuthTokenBatch(request, options)).rejects.toThrow("64 hexadecimal characters");
     }
     expect(calls).toBe(0);
   });
   test("sends one closed batch with broker authentication", async () => {
     const seen: Request[] = [];
-    const tokens = await issueOAuthTokenBatch([request], {
+    const tokens = await issueOAuthTokenBatch(request, {
       origin: "http://core.internal:3000",
       brokerSecret: "abababababababababababababababababababababababababababababababab",
       fetch: async (input, init) => {
@@ -46,7 +53,7 @@ describe("OAuth Core token authority client", () => {
     expect(seen[0]?.url).toBe("http://core.internal:3000/api/_internal/identity/v1/oauth/token");
     expect(seen[0]?.redirect).toBe("error");
     expect(seen[0]?.headers.get("authorization")).toBe("Bearer abababababababababababababababababababababababababababababababab");
-    expect(await seen[0]?.json()).toEqual({ tokens: [request] });
+    expect(await seen[0]?.json()).toEqual(request);
   });
 
   test("does not retry failed or malformed authority responses", async () => {
@@ -56,7 +63,7 @@ describe("OAuth Core token authority client", () => {
       return new Response(null, { status: 503 });
     };
     await expect(
-      issueOAuthTokenBatch([request], {
+      issueOAuthTokenBatch(request, {
         origin: "http://core.internal:3000",
         brokerSecret: "abababababababababababababababababababababababababababababababab",
         fetch,
@@ -65,12 +72,54 @@ describe("OAuth Core token authority client", () => {
     expect(calls).toBe(1);
 
     await expect(
-      issueOAuthTokenBatch([request], {
+      issueOAuthTokenBatch(request, {
         origin: "http://core.internal:3000",
         brokerSecret: "abababababababababababababababababababababababababababababababab",
         fetch: async () => Response.json({ tokens: [] }),
       }),
     ).rejects.toThrow("invalid token batch");
+  });
+
+  test.each([400, 403, 500, 503])("classifies complete Core errors as releasable without retry: %s", async (status) => {
+    let calls = 0;
+    await expect(
+      issueOAuthTokenBatch(request, {
+        origin: "http://core.internal:3000",
+        brokerSecret: "ab".repeat(32),
+        fetch: async () => {
+          calls += 1;
+          return new Response(null, { status });
+        },
+      }),
+    ).rejects.toBeInstanceOf(OAuthAuthorityRejectedError);
+    expect(calls).toBe(1);
+  });
+  test("transport loss and malformed success remain uncertain without retry", async () => {
+    for (const fetch of [
+      async () => {
+        throw new TypeError("Response was lost");
+      },
+      async () => new Response("not JSON", { status: 200 }),
+      async () => Response.json({ tokens: [] }),
+    ]) {
+      let calls = 0;
+      let caught: unknown;
+      try {
+        await issueOAuthTokenBatch(request, {
+          origin: "http://core.internal:3000",
+          brokerSecret: "ab".repeat(32),
+          fetch: async () => {
+            calls += 1;
+            return fetch();
+          },
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBeInstanceOf(OAuthAuthorityRejectedError);
+      expect(calls).toBe(1);
+    }
   });
 
   test("probes readiness once and distinguishes a definite grant rejection", async () => {
@@ -88,7 +137,7 @@ describe("OAuth Core token authority client", () => {
     expect(seen[0]?.redirect).toBe("error");
 
     await expect(
-      issueOAuthTokenBatch([request], {
+      issueOAuthTokenBatch(request, {
         origin: "http://core.internal:3000",
         brokerSecret: "abababababababababababababababababababababababababababababababab",
         fetch: async () => new Response(null, { status: 403 }),
@@ -102,6 +151,8 @@ describe("OAuth Core device approval client", () => {
     deviceAuthorizationId: "a5ae9b9c-94f4-49a8-a954-c87839affc3d",
     identifier: "alice@example.test",
     clientId: "cloud-cli",
+    clientName: "Cloud CLI",
+    grantExpiresAt: "2030-01-02T03:09:05.000Z",
     scopes: ["openid", "offline_access"],
     lifetimeSeconds: 28_800,
   };
@@ -231,13 +282,15 @@ test("OAuth signs readiness, each issuance and device approval without a broker 
       },
     };
     await probeOAuthTokenAuthority(options);
-    await issueOAuthTokenBatch([request], options);
-    await issueOAuthTokenBatch([{ ...request, expiresIn: 1800 }], options);
+    await issueOAuthTokenBatch(request, options);
+    await issueOAuthTokenBatch({ ...request, tokens: [{ kind: "user_access", expiresIn: 1800 }] }, options);
     await startOAuthDeviceApproval(
       {
         deviceAuthorizationId: "33333333-3333-4333-8333-333333333333",
         identifier: "alice@example.test",
         clientId: "cloud-cli",
+        clientName: "Cloud CLI",
+        grantExpiresAt: "2030-01-02T03:09:05Z",
         scopes: ["openid"],
         lifetimeSeconds: 3600,
       },

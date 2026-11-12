@@ -1,6 +1,7 @@
 import { afterAll } from "bun:test";
 import { bindProcessApplicationId } from "../../packages/cloud/src/_internal/process-identity";
 import { getProcessSync, startProcessSync } from "../../packages/cloud/src/_internal/process-sync";
+import { connections } from "../../packages/cloud/src/runtime/connections";
 import { createIdentityPublicRoutes, initializeIdentityAuthority } from "../../packages/cloud/src/services/identity";
 import { requireInfra, testInfra, usesMigratedDatabase } from "./test-infra";
 
@@ -35,6 +36,11 @@ if (testInfra.database && testInfra.nats) {
   const { createIdentityOAuthDeviceApprovalRoutes } = (await import(deviceApprovalPath)) as DeviceApprovalModule;
   const { default: oauthRoutes } = (await import(oauthPath)) as OAuthModule;
   bindProcessApplicationId("core");
+  // The HTTP authority is Core; client writes below run as the co-hosted OAuth application.
+  connections().appId = "oauth";
+  const clientsPath = "../../packages/oauth/src/service/clients";
+  const { registerAll } = (await import(clientsPath)) as { registerAll: () => Promise<void> };
+  await registerAll();
   // Reuse the package's test Sync when its preload owns the lifecycle.
   let runtime: Awaited<ReturnType<typeof startProcessSync>> | undefined;
   try {

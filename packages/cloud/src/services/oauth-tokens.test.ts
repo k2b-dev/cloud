@@ -20,6 +20,8 @@ const withFrozenTime = async (run: () => Promise<void>) => {
 const suite = databaseSuite();
 const userId = crypto.randomUUID();
 const uid = `oauth-verifier-${userId}`;
+const clientId = `verifier-${userId}`;
+const serviceClientId = `${clientId}-service`;
 const coreKid = crypto.randomUUID();
 const legacyKid = crypto.randomUUID();
 const serviceAccountId = crypto.randomUUID();
@@ -28,7 +30,7 @@ let corePrivateKey: CryptoKey;
 let legacyPrivateKey: CryptoKey;
 let jwks: { keys: JWK[] };
 
-const accessToken = (privateKey: CryptoKey, kid: string, authEpoch: unknown, principal = { userId, uid, clientId: "cloud-cli" }) => {
+const accessToken = (privateKey: CryptoKey, kid: string, authEpoch: unknown, principal = { userId, uid, clientId }) => {
   const now = Math.floor(Date.now() / 1_000);
   return new SignJWT({
     token_use: "access",
@@ -72,10 +74,14 @@ suite("OAuth access-token verifier", () => {
       INSERT INTO auth.service_accounts (id, name, kind, status, delegated_user_id)
       VALUES (${serviceAccountId}, 'OAuth verifier delegate', 'user_delegated', 'active', ${userId})
     `;
+    await sql`INSERT INTO auth.oauth_clients(client_id,issuer_app_id,service_account_id,status,name)
+      VALUES (${clientId},'oauth',NULL,'active','User verifier'),
+        (${serviceClientId},'oauth',${serviceAccountId}::uuid,'active','Service verifier')`;
   });
 
   afterAll(async () => {
     clearOAuthVerifierCachesForTest();
+    await sql`DELETE FROM auth.oauth_clients WHERE client_id IN (${clientId},${serviceClientId})`;
     await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}`;
     await sql`DELETE FROM auth.users WHERE id = ${userId}`;
   });
@@ -93,20 +99,20 @@ suite("OAuth access-token verifier", () => {
 
     expect(await verifyAccessToken(await accessToken(corePrivateKey, coreKid, 0), "cloud", options)).toMatchObject({
       kind: "user",
-      payload: { aud: ["cloud", "cloud-cli"], azp: "cloud-cli", client_id: "cloud-cli", token_use: "access" },
+      payload: { aud: ["cloud", clientId], azp: clientId, client_id: clientId, token_use: "access" },
       user: { id: userId },
       scopes: ["read"],
     });
     // One joined principal read plus one uncached authorization-policy read; no signing-key lookup.
-    expect(queries).toEqual([expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/)]);
+    expect(queries).toEqual([expect.stringMatching(/FROM auth\.oauth_clients/), expect.stringMatching(/FROM settings\.entries/)]);
     expect(await verifyAccessToken(await accessToken(legacyPrivateKey, legacyKid, 0), "cloud", options)).toMatchObject({
       kind: "user",
       user: { id: userId },
     });
     expect(queries).toEqual([
-      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM auth\.oauth_clients/),
       expect.stringMatching(/FROM settings\.entries/),
-      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM auth\.oauth_clients/),
       expect.stringMatching(/FROM settings\.entries/),
     ]);
     expect(queries.join("\n")).not.toMatch(/(?:auth|oauth)\.signing_keys/);
@@ -119,7 +125,7 @@ suite("OAuth access-token verifier", () => {
       const key = createLocalJWKSet(jwks);
       const options = { issuer, key, groupsAdmin: ["admins"] };
       await sql`INSERT INTO auth.users (id, uid, provider, profile, auth_epoch) VALUES (${id}::uuid, ${principal.uid}, 'local', 'user', 3)`;
-      await sql`INSERT INTO oauth.clients (name, client_id, redirect_uris) VALUES (${principal.clientId}, ${principal.clientId}, ARRAY[]::text[])`;
+      await sql`INSERT INTO auth.oauth_clients (name,client_id,issuer_app_id,status) VALUES (${principal.clientId},${principal.clientId},'oauth','active')`;
       try {
         for (const authEpoch of [undefined, "3", -1, 0.5, 2, Number.MAX_SAFE_INTEGER + 1]) {
           expect(await verifyAccessToken(await accessToken(corePrivateKey, coreKid, authEpoch, principal), "cloud", options)).toBeNull();
@@ -129,7 +135,7 @@ suite("OAuth access-token verifier", () => {
           user: { id },
         });
       } finally {
-        await sql`DELETE FROM oauth.clients WHERE client_id = ${principal.clientId}`;
+        await sql`DELETE FROM auth.oauth_clients WHERE client_id = ${principal.clientId}`;
         await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
       }
     }));
@@ -173,23 +179,23 @@ suite("OAuth access-token verifier", () => {
     });
 
     const user = await resolveOAuthTokenActor(
-      { token_use: "access", client_id: "cloud-cli", id: userId, uid, auth_epoch: 0, scope: "read write" },
+      { token_use: "access", client_id: clientId, id: userId, uid, auth_epoch: 0, scope: "read write" },
       ["admins"],
       countedSql,
     );
     // One joined principal read plus one uncached authorization-policy read; no signing-key lookup.
-    expect(queries).toEqual([expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/)]);
+    expect(queries).toEqual([expect.stringMatching(/FROM auth\.oauth_clients/), expect.stringMatching(/FROM settings\.entries/)]);
     expect(user).toMatchObject({ kind: "user", user: { id: userId, uid }, scopes: ["read", "write"] });
 
     const service = await resolveOAuthTokenActor(
-      { token_use: "access", client_id: "cloud-cli", service_account_id: serviceAccountId, scope: "read" },
+      { token_use: "access", client_id: serviceClientId, service_account_id: serviceAccountId, scope: "read" },
       ["admins"],
       countedSql,
     );
     expect(queries).toEqual([
-      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM auth\.oauth_clients/),
       expect.stringMatching(/FROM settings\.entries/),
-      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM auth\.oauth_clients/),
       expect.stringMatching(/FROM settings\.entries/),
     ]);
     expect(queries.join("\n")).not.toMatch(/(?:auth|oauth)\.signing_keys/);
@@ -202,7 +208,7 @@ suite("OAuth access-token verifier", () => {
   });
 
   test("rejects disabled service accounts and expired delegated users in the joined read", async () => {
-    const payload = { token_use: "access", client_id: "cloud-cli", service_account_id: serviceAccountId, scope: "read" };
+    const payload = { token_use: "access", client_id: serviceClientId, service_account_id: serviceAccountId, scope: "read" };
     await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${serviceAccountId}`;
     expect(await resolveOAuthTokenActor(payload, ["admins"])).toBeNull();
 

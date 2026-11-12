@@ -20,6 +20,21 @@ should use them only when a feature guide gives the exact import.
 `Preview` means the contract may still change before its feature is released,
 and such changes are not treated as breaking until then.
 
+## OAuth issuer services
+
+Applications granted `oauth:issue` use `oauthClients` and
+`OAuthClientRegistration` from `@k2b/cloud/services` to maintain verifier
+facts in the transaction that changes a private client. The service captures
+the running app ID and refuses a different existing owner or any deleted ID.
+Removal keeps a tombstone that permanently reserves the ID.
+`OAuthAuthorityStatementSchema`, `OAuthDeviceApprovalRequestSchema`,
+`OAuthNewAccessNoticeSchema` and their corresponding types are supported
+exports of `@k2b/cloud/contracts`. Send the closed requests through the
+app-signed transport described in
+[Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
+Client policy, single-use reservations, finalization and notice retries
+belong to the issuer; the platform registry contains no private OAuth grants.
+
 ## Application entry points
 
 | Entry point | Status | Use |

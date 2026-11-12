@@ -1,86 +1,42 @@
 import { sql } from "@k2b/cloud";
-import { AppTerminalLoginSchema } from "@k2b/cloud/contracts";
+import { AppTerminalLoginSchema, OAuthDeviceApprovalRequestSchema } from "@k2b/cloud/contracts";
 import { AppApprovalError, type AppTerminalLogins, appApproval, audit, toPgTextArray } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import type { SQL } from "bun";
 import { Hono } from "hono";
-import { z } from "zod";
-import type { CoreNotificationSender } from "../notifications";
-import { authorizeOAuthRequest, notifyOAuthNewAccessFamily } from "./identity-oauth-issuance";
-
-const Scope = z.string().regex(/^[a-z][a-z0-9_:.-]{0,39}$/);
-const RequestSchema = z
-  .object({
-    deviceAuthorizationId: z.string().uuid(),
-    identifier: z.string().trim().min(1).max(254),
-    clientId: z.string().min(1).max(256),
-    scopes: z
-      .array(Scope)
-      .min(1)
-      .max(16)
-      .refine((values) => new Set(values).size === values.length),
-    lifetimeSeconds: z.number().int().min(1).max(7_776_000),
-  })
-  .strict();
-
-/** Same profile, direct-user and recursive-group grants as the OAuth application. */
-const clientAccess = async (tx: SQL, clientId: string, user: { id: string; profile: "guest" | "user" }): Promise<boolean> => {
-  const [row] = await tx<{ allowed: boolean }[]>`
-    WITH RECURSIVE user_all_groups(group_id) AS (
-      SELECT group_id FROM auth.user_groups_v2 WHERE user_id=${user.id}::uuid
-      UNION
-      SELECT gg.parent_group_id FROM auth.group_groups_v2 gg JOIN user_all_groups ag ON ag.group_id=gg.child_group_id
-    )
-    SELECT (${user.profile}=ANY(c.allowed_profiles) AND (
-      c.access_mode='profiles' OR (c.access_mode='specific' AND (
-        EXISTS (SELECT 1 FROM oauth.client_access_users g WHERE g.client_id=c.id AND g.user_id=${user.id}::uuid)
-        OR EXISTS (SELECT 1 FROM oauth.client_access_groups g JOIN user_all_groups ag ON ag.group_id=g.group_id WHERE g.client_id=c.id)
-      )))) AS allowed
-    FROM oauth.clients c WHERE c.client_id=${clientId} AND c.is_public AND c.allow_device_grant`;
-  return row?.allowed === true;
-};
+import { authorizeOAuthRequest } from "./identity-oauth-issuance";
 
 const legalAccepted = async (tx: SQL, userId: string) =>
-  (await tx`SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid`).length > 0;
+  (await tx`SELECT 1 FROM auth.legal_acceptances WHERE user_id=${userId}::uuid`).length > 0;
 
-/** OAuth schema access stays in Core; Cloud only owns the sign-in lifecycle. */
+/** Display and decide only platform-owned evidence; issuer policy is checked at issuance. */
 export const terminalLogins: AppTerminalLogins = {
   describe: async (tx, ids) => {
     if (!ids.length) return new Map();
-    const rows = await tx<{ device_id: string; client_id: string; name: string }[]>`
-      SELECT d.id AS device_id,c.client_id,c.name FROM oauth.device_authorizations d
-      JOIN oauth.clients c ON c.client_id=d.client_id
-      WHERE d.id=ANY(${toPgTextArray(ids)}::uuid[]) AND d.status='pending' AND d.expires_at > now()
-        AND c.is_public AND c.allow_device_grant`;
-    return new Map(rows.map((row) => [row.device_id, { id: row.client_id, name: row.name }]));
+    const rows = await tx<{ id: string; client_id: string; name: string }[]>`
+      SELECT l.id,l.client_id,l.oauth_client_name AS name FROM auth.app_logins l
+      JOIN auth.oauth_clients c ON c.client_id=l.client_id AND c.issuer_app_id=l.oauth_issuer_app_id AND c.status='active'
+      WHERE l.id=ANY(${toPgTextArray(ids)}::uuid[]) AND l.kind='terminal' AND l.state='pending'
+        AND l.oauth_grant_expires_at > now()`;
+    return new Map(rows.map((row) => [row.id, { id: row.client_id, name: row.name }]));
   },
   decide: async (tx, input) => {
-    const deny = input.decision === "deny";
-    if (!deny && !(await clientAccess(tx, input.clientId, input.user))) return false;
-    const [row] = await tx<{ id: string; scopes: string[]; client_pk: string; name: string }[]>`
-      UPDATE oauth.device_authorizations d
-      SET status=${input.decision === "approve" ? "approved" : "denied"},user_id=${input.user.id}::uuid,decided_at=now(),
-        auth_epoch=l.auth_epoch,
-        login_lifetime_seconds=CASE WHEN ${deny} THEN d.login_lifetime_seconds ELSE l.lifetime_seconds END
-      FROM oauth.clients c, auth.app_logins l
-      WHERE d.id=${input.deviceAuthorizationId}::uuid AND d.client_id=${input.clientId}
-        AND d.status='pending' AND d.expires_at > clock_timestamp()
-        AND c.client_id=d.client_id
-        AND l.device_authorization_id=d.id AND l.kind='terminal' AND l.client_id=d.client_id
-        AND l.user_id=${input.user.id}::uuid AND l.state='pending' AND l.auth_epoch=${input.user.auth_epoch}::bigint
-        AND (${deny} OR (c.is_public AND c.allow_device_grant
-          AND d.scopes @> l.scopes AND l.scopes @> d.scopes AND d.scopes <@ c.scopes AND NOT ('admin'=ANY(d.scopes))
-          AND (d.login_lifetime_seconds IS NULL OR l.lifetime_seconds<=d.login_lifetime_seconds)))
-      RETURNING d.id,d.scopes,c.id AS client_pk,c.name`;
+    const [row] = await tx<{ id: string; scopes: string[]; name: string }[]>`
+      SELECT l.id,l.scopes,l.oauth_client_name AS name FROM auth.app_logins l
+      JOIN auth.oauth_clients c ON c.client_id=l.client_id AND c.issuer_app_id=l.oauth_issuer_app_id AND c.status='active'
+      WHERE l.id=${input.loginId}::uuid AND l.device_authorization_id=${input.deviceAuthorizationId}::uuid
+        AND l.kind='terminal' AND l.client_id=${input.clientId} AND l.user_id=${input.user.id}::uuid
+        AND l.state='pending' AND l.auth_epoch=${input.user.auth_epoch}::bigint
+        AND l.oauth_grant_expires_at > clock_timestamp() AND NOT ('admin'=ANY(l.scopes))`;
     if (!row) return false;
     await audit.record(
       {
         action: "oauth.device.authorize",
         outcome: input.decision === "approve" ? "allowed" : "denied",
         actor: { userId: input.user.id, uid: input.user.uid, provider: input.user.provider },
-        target: { type: "oauth_client", id: row.client_pk, label: row.name },
+        target: { type: "oauth_client", id: input.clientId, label: row.name },
         ...(input.decision === "deny" ? { reason: "resource_owner_denied" } : {}),
-        metadata: { clientId: input.clientId, deviceGrantId: row.id, scopes: row.scopes, via: "app-approval" },
+        metadata: { clientId: input.clientId, deviceGrantId: input.deviceAuthorizationId, scopes: row.scopes, via: "app-approval" },
       },
       tx,
     );
@@ -93,7 +49,7 @@ export const createIdentityOAuthDeviceApprovalRoutes = (
   db: SQL = sql,
   authorize = authorizeOAuthRequest,
 ) =>
-  new Hono()
+  new Hono<{ Variables: { oauthIssuerAppId: string } }>()
     .onError((error, c) => {
       console.error("[oauth-device-approval] operation failed", error.name);
       return c.json({ code: "UNAVAILABLE" }, 503);
@@ -102,8 +58,7 @@ export const createIdentityOAuthDeviceApprovalRoutes = (
       c.header("Cache-Control", "no-store");
       const denied = await authorize(c);
       if (denied) return denied;
-      const contentLength = Number(c.req.header("content-length") ?? 0);
-      if (Number.isFinite(contentLength) && contentLength > 262_144) return c.json({ code: "INVALID_REQUEST" }, 413);
+      if (Number(c.req.header("content-length") ?? 0) > 262_144) return c.json({ code: "INVALID_REQUEST" }, 413);
       let body: unknown;
       try {
         const text = await c.req.text();
@@ -112,30 +67,26 @@ export const createIdentityOAuthDeviceApprovalRoutes = (
       } catch {
         return c.json({ code: "INVALID_REQUEST" }, 400);
       }
-      const parsed = RequestSchema.safeParse(body);
+      const parsed = OAuthDeviceApprovalRequestSchema.safeParse(body);
       if (!parsed.success) return c.json({ code: "INVALID_REQUEST" }, 400);
       const input = parsed.data;
-      const [authorization] = await db`
-        SELECT d.id FROM oauth.device_authorizations d JOIN oauth.clients c ON c.client_id=d.client_id
-        WHERE d.id=${input.deviceAuthorizationId}::uuid AND d.client_id=${input.clientId}
-          AND d.status='pending' AND d.expires_at > now() AND c.is_public AND c.allow_device_grant
-          AND d.scopes @> ${toPgTextArray(input.scopes)}::text[] AND d.scopes <@ ${toPgTextArray(input.scopes)}::text[]
-          AND d.scopes <@ c.scopes AND NOT ('admin'=ANY(d.scopes))
-          AND (d.login_lifetime_seconds IS NULL OR ${input.lifetimeSeconds}<=d.login_lifetime_seconds)`;
-      if (!authorization || !AppTerminalLoginSchema.shape.client.shape.id.safeParse(input.clientId).success)
+      const appId = c.get("oauthIssuerAppId");
+      if (typeof appId !== "string") return c.json({ code: "FORBIDDEN" }, 403);
+      const [client] = await db`SELECT client_id FROM auth.oauth_clients
+      WHERE client_id=${input.clientId} AND issuer_app_id=${appId} AND status='active'`;
+      if (
+        !client ||
+        Date.parse(input.grantExpiresAt) <= Date.now() ||
+        !AppTerminalLoginSchema.shape.client.shape.id.safeParse(input.clientId).success
+      )
         return c.json({ code: "CONFLICT" }, 409);
       try {
         const hours = await settings.get<number>("user.session.expiry_hours");
         if (!Number.isFinite(hours) || hours < 1) throw new Error("user.session.expiry_hours must be a positive number");
         return c.json(
           await service.startTerminalLogin(
-            { ...input, lifetimeSeconds: Math.min(input.lifetimeSeconds, Math.floor(hours * 3600)) },
-            async (tx, user) => {
-              // Terminal sign-in cannot collect first-use legal consent; run both checks even for decoys.
-              const allowed = await clientAccess(tx, input.clientId, user);
-              const accepted = await legalAccepted(tx, user.id);
-              return allowed && accepted;
-            },
+            { ...input, issuerAppId: appId, lifetimeSeconds: Math.min(input.lifetimeSeconds, Math.floor(hours * 3600)) },
+            async (tx, user) => legalAccepted(tx, user.id),
           ),
         );
       } catch (error) {
@@ -144,45 +95,12 @@ export const createIdentityOAuthDeviceApprovalRoutes = (
       }
     });
 
-/** Retain approval evidence until the linked OAuth row is gone, including during issuance. OAuth is an optional app. */
+/** Retain approved evidence through the issuer's grant deadline, including during issuance. */
 export const cleanupTerminalLogins = async (db: SQL = sql): Promise<void> => {
-  const [schema] = await db`SELECT to_regclass('oauth.device_authorizations') IS NOT NULL AS installed`;
-  if (!schema?.installed) return;
   await db`DELETE FROM auth.app_logins WHERE id IN (
-    SELECT l.id FROM auth.app_logins l WHERE l.kind='terminal' AND l.state='approved' AND l.expires_at < now()
-      AND NOT EXISTS (SELECT 1 FROM oauth.device_authorizations d WHERE d.id=l.device_authorization_id)
-    ORDER BY l.expires_at LIMIT 100 FOR UPDATE OF l SKIP LOCKED)`;
-};
-
-/**
- * OAuth is optional; catch up a bounded page of activated families after delivery failures. A family
- * revoked or expired since then still gets its notice while OAuth keeps the row.
- */
-export const notifyPendingOAuthNewAccess = async (notify: CoreNotificationSender["sendOAuthNewAccess"], signal?: AbortSignal) => {
-  if (signal?.aborted) return;
-  const [schema] = await sql`
-    SELECT to_regclass('oauth.refresh_token_families') IS NOT NULL
-      AND EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='oauth' AND table_name='refresh_token_families' AND column_name='notified_at') AS installed`;
-  if (!schema?.installed || signal?.aborted) return;
-  const rows = await sql<{ id: string; user_id: string; client_id: string; client_name: string; created_at: Date }[]>`
-    SELECT f.id, f.user_id, f.client_id, c.name AS client_name, f.created_at
-    FROM oauth.refresh_token_families f JOIN oauth.clients c ON c.client_id=f.client_id
-    WHERE f.notified_at IS NULL AND f.status <> 'reserved'
-    ORDER BY f.created_at, f.id LIMIT 100`;
-  for (const row of rows) {
-    if (signal?.aborted) return;
-    await notifyOAuthNewAccessFamily(
-      {
-        familyId: row.id,
-        userId: row.user_id,
-        kind: row.client_id === "cloud-cli" ? "command_line" : "app",
-        clientName: row.client_name,
-        createdAt: row.created_at.toISOString(),
-      },
-      notify,
-    );
-  }
+    SELECT id FROM auth.app_logins WHERE kind='terminal' AND state='approved'
+      AND COALESCE(oauth_grant_expires_at,expires_at) < now()
+    ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
 };
 
 export default createIdentityOAuthDeviceApprovalRoutes();

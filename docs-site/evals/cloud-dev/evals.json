@@ -368,6 +368,19 @@
       "expectations": [
         "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL."
       ]
+    },
+    {
+      "id": 32,
+      "prompt": "Build an independent OAuth issuer for a Cloud installation that does not run the built-in OAuth app. Register clients, exchange a single-use grant and handle a lost Core response.",
+      "expected_output": "Uses an oauth:issue app key, transactional oauthClients registration and a closed authority statement. The issuer owns policy and reservation; Core reads only platform facts. A lost response burns the reservation without retry or recovery ledger.",
+      "files": [],
+      "expectations": [
+        "Reads the public OAuth issuer guide before choosing services and transport.",
+        "Maintains oauthClients with private client mutations, captures the running issuer ID rather than accepting it from input, and retains deleted client IDs as permanent tombstones.",
+        "Commits an issuer-owned exactly-once reservation before the app-signed Core request and finalizes only on success.",
+        "Releases on a complete 4xx/5xx response, keeps uncertain outcomes consumed and adds no recovery or notice ledger to Core.",
+        "Keeps client policy, terminal grant matching and notice retries in the issuer without requiring oauth.* tables in the platform."
+      ]
     }
   ]
 }

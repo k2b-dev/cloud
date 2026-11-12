@@ -2,7 +2,7 @@ import { lazySync, sql } from "@k2b/cloud";
 import { appApproval, knownBrowsers, pwaDevices } from "@k2b/cloud/services";
 import { cleanupBootstrapProofs } from "@k2b/cloud/services/app-bootstrap";
 import type { Worker } from "@k2b/sync";
-import { cleanupTerminalLogins, notifyPendingOAuthNewAccess } from "./api/identity-oauth-device-approval";
+import { cleanupTerminalLogins } from "./api/identity-oauth-device-approval";
 import type { CoreNotificationSender } from "./notifications";
 
 const scheduler = lazySync((sync) => sync.scheduler({ id: "core-app-approval", delivery: { maxAttempts: 2, backoffMs: [5000] } }));
@@ -19,7 +19,7 @@ export const appApprovalRuntime = {
       meta: {
         appId: "core",
         family: "app-approval",
-        label: "App device enrollment notices, expiry, new-browser and new-access notices, and known-browser cleanup",
+        label: "App device enrollment notices, expiry, new-browser notices, and known-browser cleanup",
       },
       process: async ({ signal }) => {
         // The steps are independent: a failing step never skips the later ones, and the run still fails.
@@ -33,7 +33,6 @@ export const appApprovalRuntime = {
             const result = await cleanupBootstrapProofs(sql, { signal });
             if (result.remaining > 0) console.warn("Bootstrap nonce cleanup backlog", result);
           },
-          () => notifyPendingOAuthNewAccess(sender.sendOAuthNewAccess, signal),
         ]) {
           try {
             await step();

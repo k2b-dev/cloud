@@ -6,6 +6,7 @@ import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { withActiveIdentitySigner } from "./identity";
+import { toPgTextArray } from "./postgres";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
 import * as registry from "../_internal/registry";
@@ -1678,13 +1679,17 @@ suite("isolated app approval protocol", () => {
   const terminalClients = new Map<string, { id: string; name: string }>();
   const terminalDecisions: Parameters<AppTerminalLogins["decide"]>[1][] = [];
   const terminal: AppTerminalLogins = {
-    describe: async (_tx, ids) =>
-      new Map(
-        ids.flatMap((id) => {
-          const client = terminalClients.get(id);
-          return client ? [[id, client] as const] : [];
+    describe: async (tx, ids) => {
+      const rows = await tx<
+        { id: string; device_authorization_id: string }[]
+      >`SELECT id,device_authorization_id FROM auth.app_logins WHERE id=ANY(${toPgTextArray(ids)}::uuid[])`;
+      return new Map(
+        rows.flatMap((row) => {
+          const client = terminalClients.get(row.device_authorization_id);
+          return client ? [[row.id, client] as const] : [];
         }),
-      ),
+      );
+    },
     decide: async (tx, input) => {
       // Visible here only through the decision transaction; a false hook must roll this back too.
       await tx`UPDATE auth.users SET display_name='Decision hook' WHERE id=${input.user.id}::uuid`;
@@ -1695,7 +1700,16 @@ suite("isolated app approval protocol", () => {
   const terminalStart = async (identifier: string, access = true) => {
     const deviceAuthorizationId = crypto.randomUUID();
     terminalClients.set(deviceAuthorizationId, { id: "test-cli", name: "Test\nCLI\u202e" });
-    const input = { deviceAuthorizationId, identifier, clientId: "test-cli", scopes: ["openid", "profile"], lifetimeSeconds: 3600 };
+    const input = {
+      issuerAppId: "oauth",
+      clientName: "Test CLI",
+      grantExpiresAt: new Date(Date.now() + 300_000).toISOString(),
+      deviceAuthorizationId,
+      identifier,
+      clientId: "test-cli",
+      scopes: ["openid", "profile"],
+      lifetimeSeconds: 3600,
+    };
     const response = await service.startTerminalLogin(input, async () => access);
     const [row] = await sql<{ id: string; user_id: string | null; challenge: string; comparison: string; state: string }[]>`
       SELECT id,user_id,challenge,comparison,state FROM auth.app_logins WHERE device_authorization_id=${deviceAuthorizationId}::uuid`;
@@ -1734,7 +1748,16 @@ suite("isolated app approval protocol", () => {
       const deviceAuthorizationId = crypto.randomUUID();
       terminalClients.set(deviceAuthorizationId, { id: clientId, name: clientName });
       await service.startTerminalLogin(
-        { deviceAuthorizationId, identifier: owner.uid, clientId, scopes, lifetimeSeconds: 3600 },
+        {
+          issuerAppId: "oauth",
+          clientName,
+          grantExpiresAt: new Date(Date.now() + 300_000).toISOString(),
+          deviceAuthorizationId,
+          identifier: owner.uid,
+          clientId,
+          scopes,
+          lifetimeSeconds: 3600,
+        },
         async () => true,
       );
     }
@@ -2187,6 +2210,7 @@ suite("isolated app approval protocol", () => {
     const signed = await proof(device, command);
     expect(await service.deviceCommand(signed, noActions, terminal)).toEqual({ state: "approved" });
     expect(terminalDecisions.at(-1)).toMatchObject({
+      loginId: waiting.id,
       deviceAuthorizationId: waiting.input.deviceAuthorizationId,
       clientId: waiting.input.clientId,
       user: { id: owner.id },

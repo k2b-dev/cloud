@@ -17,8 +17,9 @@ import { completeDeviceDecision, DeviceDecisionSchema } from "./frontend/device-
 import { resolveDeviceView } from "./frontend/device-view";
 import { migrate } from "./migrate";
 import oauthRoutes from "./oauth";
+import { InvalidIssuerAuthorityError, stageOAuthAuthority } from "./service/issuer-authority";
 import { oauth } from "./service/oauth";
-import { issueOAuthTokenBatch, OAuthAuthorityGrantRejectedError } from "./service/token-authority";
+import { issueOAuthTokenBatch } from "./service/token-authority";
 
 const withFrozenTime = async (run: () => Promise<void>) => {
   const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
@@ -273,10 +274,10 @@ suite("OAuth device authorization grant", () => {
       const result = await poll(started.device_code);
       expect(result.status).toBe(400);
       expect(result.body).toMatchObject({ error: "invalid_grant" });
-      const [row] = await sql<{ status: string; authority_nonce: string | null }[]>`
-      SELECT status, authority_nonce FROM oauth.device_authorizations WHERE device_code_hash = ${sha256(started.device_code)}
+      const [row] = await sql<{ status: string; authority_issued_at: Date | null }[]>`
+      SELECT status, authority_issued_at FROM oauth.device_authorizations WHERE device_code_hash = ${sha256(started.device_code)}
     `;
-      expect(row).toEqual({ status: "approved", authority_nonce: null });
+      expect(row).toEqual({ status: "approved", authority_issued_at: null });
       expect(await sql`SELECT id FROM oauth.refresh_token_families WHERE user_id = ${who.userId}::uuid`).toHaveLength(0);
     }));
 
@@ -700,7 +701,7 @@ suite("OAuth device authorization grant", () => {
     expect(await bearer.json()).toMatchObject({ kind: "result", outcome: "blocked" });
   });
 
-  test("Core signs a device grant once and only while the client still allows the grant", async () => {
+  test("the issuer stages a device grant once and enforces current device policy before Core signing", async () => {
     const who = await person();
     const actor = { id: who.userId, uid: `admin-${who.userId}`, provider: "local", roles: ["admin"] };
     const created = await oauth.clients.create({
@@ -732,15 +733,22 @@ suite("OAuth device authorization grant", () => {
       if (!result.ok) throw new Error(`poll failed: ${result.error}`);
       return result.authorityGrant;
     };
-    const request = (grant: Awaited<ReturnType<typeof consume>>) => [{ kind: "user_access" as const, grant, expiresIn: 3_600 }];
+    const issue = async (grant: Awaited<ReturnType<typeof consume>>) => {
+      const staged = await stageOAuthAuthority(
+        [{ kind: "user_access", grant, expiresIn: 3600 }],
+        "http://localhost:3000",
+        new Date(Date.now() + 3600_000),
+      );
+      return issueOAuthTokenBatch(staged.statement);
+    };
 
     const grant = await consume();
-    expect(await issueOAuthTokenBatch(request(grant))).toHaveLength(1);
-    await expect(issueOAuthTokenBatch(request(grant))).rejects.toBeInstanceOf(OAuthAuthorityGrantRejectedError);
+    expect(await issue(grant)).toHaveLength(1);
+    await expect(issue(grant)).rejects.toBeInstanceOf(InvalidIssuerAuthorityError);
 
     const disabledLater = await consume();
     await sql`UPDATE oauth.clients SET allow_device_grant = false WHERE id = ${created.data.id}::uuid`;
-    await expect(issueOAuthTokenBatch(request(disabledLater))).rejects.toBeInstanceOf(OAuthAuthorityGrantRejectedError);
+    await expect(issue(disabledLater)).rejects.toBeInstanceOf(InvalidIssuerAuthorityError);
   });
 
   test("cleanup prunes expired and redeemed authorizations", async () => {
