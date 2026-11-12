@@ -481,13 +481,17 @@ describe("Mail workspace folder switches", () => {
   test("caught-up folder, view, saved view, Drafts, Scheduled and search switches keep the mailbox frame", async () => {
     mount();
     await caughtUp();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Select conversations"]')!.click();
-    expect(dom.root.querySelector('.mail-list-entry input[type="checkbox"]')).not.toBeNull();
+    // The row checkboxes always show; the first check starts a selection that a switch ends.
+    dom.root.querySelector<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')!.click();
+    expect(dom.root.querySelector("[data-mail-head-selection]")).not.toBeNull();
     truth = { ...truth, unread: 7, total: 12, needsAction: 9, scheduled: 4 };
     await switchTo("folder=Filed1");
     assertList(`${path}?folder=Filed1`, "Filed");
     counts();
-    expect(dom.root.querySelector('.mail-list-entry input[type="checkbox"]')).toBeNull();
+    expect(dom.root.querySelector("[data-mail-head-selection]")).toBeNull();
+    expect([...dom.root.querySelectorAll<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')].some((box) => box.checked)).toBe(
+      false,
+    );
     for (const [query, title] of [
       ["view=waiting", "Waiting"],
       ["savedView=Saved1", "Priority"],

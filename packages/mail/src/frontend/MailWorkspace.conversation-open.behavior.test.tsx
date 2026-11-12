@@ -140,7 +140,6 @@ describe("Mail workspace conversation open", () => {
   let routeRequests: string[];
   let listRequests: string[];
   // Most cases pin "list and reader"; the columns view replaces the list when a conversation opens.
-  let largeView: "auto" | "split";
   let detailRequests: { id: string; folder: string | null }[];
   let detailSignals: (AbortSignal | undefined)[];
   let actionRequests: { conversationId: string; body: unknown }[];
@@ -298,7 +297,7 @@ describe("Mail workspace conversation open", () => {
     const unreadCount = unread.size;
     return {
       workspacePreference: { listShare: null, seenHints: [] },
-      viewPreference: { large: largeView, phone: "compact" },
+      viewPreference: { large: "auto", phone: "compact" },
       doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
       receivingAddress: null,
       initialLiveCursor: "s6t.mail.4",
@@ -316,7 +315,8 @@ describe("Mail workspace conversation open", () => {
         waiting: 0,
         done: 0,
         snoozed: 0,
-        send_problems: 0,
+        // One send problem, so the sidebar shows the place (it shows only when something waits there).
+        send_problems: 1,
         recently_active: 0,
         kept: 0,
       },
@@ -336,7 +336,6 @@ describe("Mail workspace conversation open", () => {
     Reflect.set(globalThis, "WebSocket", FakeWebSocket);
     routeRequests = [];
     listRequests = [];
-    largeView = "split";
     detailRequests = [];
     detailSignals = [];
     actionRequests = [];
@@ -487,21 +486,23 @@ describe("Mail workspace conversation open", () => {
     expect(detailRequests.map((request) => request.id)).toEqual([A, B, A, B]);
   });
 
-  test("in the automatic view, closing a conversation returns to the columns with every loaded row and focus on it", async () => {
-    largeView = "auto";
+  test("closing a conversation gives the list the full width again with every loaded row and focus on it", async () => {
     mount();
-    expect(dom.root.querySelector(".mail-columns")).not.toBeNull();
+    const reader = () => dom.root.querySelector(".mail-split")?.getAttribute("data-reader");
+    expect(reader()).toBe("closed");
     await loadSecondPage();
+    const before = rows();
 
     open(B);
     await until(() => shows(B), "conversation B");
-    expect(dom.root.querySelector(".mail-columns")).toBeNull();
-    expect(rows()).toHaveLength(100);
+    expect(reader()).toBe("open");
+    // The same list stands beside the reader: no row is drawn anew.
+    expect(rows().every((element, index) => element === before[index])).toBe(true);
 
     dom.root.querySelector<HTMLAnchorElement>("a[data-mail-reader-close]")!.click();
     await until(() => heading() === null, "the closed reader");
     await settle();
-    expect(dom.root.querySelector(".mail-columns")).not.toBeNull();
+    expect(reader()).toBe("closed");
     expect(rows()).toHaveLength(100);
     expect(dom.document.activeElement).toBe(rowLink(B));
     expect(routeRequests).toEqual([]);

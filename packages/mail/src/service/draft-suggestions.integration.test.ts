@@ -244,14 +244,14 @@ suite("Mail service-account suggestions", () => {
     expect(await adoption(draft.id)).toBeNull();
   });
 
-  test("delegated creation adopts immediately and does not reuse an untouched suggestion", async () => {
-    const suggestion = await suggest();
-    const thread = { id: suggestion.conversationId!, shortId: "unused", messageId: suggestion.sourceMessageId! };
-    const created = unwrap(await drafts.createDraft({ context: delegated, mailboxId, input: input(thread, "Person's own text") }));
-    expect(created.id).not.toBe(suggestion.id);
-    expect(created.suggestion).toBeFalse();
-    expect(await adoption(created.id)).not.toBeNull();
-    expect(unwrap(await drafts.getDraft(owner, mailboxId, suggestion.id)).suggestion).toBeTrue();
+  test("delegated creation continues the sole untouched suggestion without changing it", async () => {
+    const thread = await conversation();
+    const suggestion = unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread) }));
+    const continued = unwrap(await drafts.createDraft({ context: delegated, mailboxId, input: input(thread, "Person's own text") }));
+    expect(continued.id).toBe(suggestion.id);
+    expect(continued.suggestion).toBeTrue();
+    expect(continued.body).toBe(suggestion.body);
+    expect(await adoption(continued.id)).toBeNull();
   });
 
   test("GET draft and conversation drafts expose suggestion; REST PUT adopts", async () => {
@@ -288,50 +288,20 @@ suite("Mail service-account suggestions", () => {
     }
   });
 
-  test("each automated author keeps its own suggestion, named after its account, and adoption closes only that one", async () => {
+  test("another automated author skips the occupied reply box and adoption keeps its original author", async () => {
     const thread = await conversation();
     const fromGustav = unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread, "From Gustav") }));
-    const fromInvoices = unwrap(await drafts.createDraft({ context: invoices, mailboxId, input: input(thread, "From invoices") }));
-    // Two authors, two suggestions with their own content and their own name; neither gets the other's draft.
-    expect(fromInvoices.id).not.toBe(fromGustav.id);
-    expect([fromGustav.body, fromGustav.suggestion, fromGustav.suggestedBy]).toEqual(["From Gustav", true, "Gustav"]);
-    expect([fromInvoices.body, fromInvoices.suggestion, fromInvoices.suggestedBy]).toEqual(["From invoices", true, "Rechnungseingang"]);
-    // The same author again returns its own untouched suggestion unchanged.
-    const again = unwrap(await drafts.createDraft({ context: invoices, mailboxId, input: input(thread, "Second try") }));
-    expect([again.id, again.body]).toEqual([fromInvoices.id, "From invoices"]);
-    expect(unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread, "Gustav again") })).id).toBe(fromGustav.id);
-    const [open] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM mail.drafts
-      WHERE conversation_id = ${thread.id}::uuid AND state = 'draft'`;
-    expect(open?.count).toBe(2);
-    // The conversation's draft rows name each author.
-    if (owner.actor.kind !== "user") throw new Error("Expected human fixture");
-    const token = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
-      kind: "user",
-      payload: {},
-      user: owner.actor.user,
-      scopes: ["read", "write"],
-    });
-    try {
-      const list = await app.request(`/mailboxes/${mailboxShortId}/conversations/${thread.shortId}/drafts`, {
-        headers: { authorization: "Bearer suggestion-test" },
-      });
-      expect(list.status).toBe(200);
-      const rows = (await list.json()) as { createdByDisplayName: string; suggestion: boolean; bodyPreview: string }[];
-      expect(
-        rows.map(({ createdByDisplayName, suggestion, bodyPreview }) => [createdByDisplayName, suggestion, bodyPreview]).sort(),
-      ).toEqual([
-        ["Gustav", true, "From Gustav"],
-        ["Rechnungseingang", true, "From invoices"],
-      ]);
-    } finally {
-      token.mockRestore();
-    }
-    // A person takes over Gustav's suggestion: only that one closes to its author.
-    const taken = unwrap(await save(fromGustav, owner, { body: "Ada's reply" }));
-    expect([taken.suggestion, taken.suggestedBy]).toEqual([false, null]);
-    refused(await save(taken, gustav, { body: "Gustav overrides" }));
-    const revised = unwrap(await save(fromInvoices, invoices, { body: "Invoices revised" }));
-    expect([revised.body, revised.suggestion, revised.suggestedBy]).toEqual(["Invoices revised", true, "Rechnungseingang"]);
+    const skipped = unwrap(await drafts.createDraft({ context: invoices, mailboxId, input: input(thread, "From invoices") }));
+    expect(skipped.id).toBe(fromGustav.id);
+    expect(skipped.creationOutcome).toBe("suggestion_skipped");
+    expect([skipped.body, skipped.suggestedBy]).toEqual(["From Gustav", "Gustav"]);
+    expect(unwrap(await drafts.listConversationDrafts({ context: owner, mailboxId, conversationId: thread.id }))).toHaveLength(1);
+    const adopted = unwrap(await save(fromGustav, owner, { body: "Ada's reply" }));
+    expect([adopted.suggestion, adopted.suggestedBy]).toEqual([false, null]);
+    refused(await save(adopted, invoices, { body: "Must not override" }));
+    expect(unwrap(await drafts.createDraft({ context: invoices, mailboxId, input: input(thread) })).creationOutcome).toBe(
+      "suggestion_skipped",
+    );
   });
 
   for (const mode of ["lock", "shared"] as const)
@@ -603,7 +573,8 @@ suite("Mail service-account suggestions", () => {
     expect(unwrap(await drafts.getDraft(owner, mailboxId, first.id)).suggestion).toBeTrue();
     unwrap(await save(first, owner, { body: "Adopted content" }));
     const second = unwrap(await drafts.materializeDraftSeed({ context: gustav, mailboxId, input: request(crypto.randomUUID()) }));
-    expect(second.id).not.toBe(first.id);
+    expect(second.id).toBe(first.id);
+    expect(second.creationOutcome).toBe("suggestion_skipped");
     for (const key of keys) {
       const retry = unwrap(await drafts.materializeDraftSeed({ context: gustav, mailboxId, input: request(key) }));
       expect(retry.id).toBe(first.id);
@@ -619,29 +590,25 @@ suite("Mail service-account suggestions", () => {
       unwrap(await drafts.listConversationDrafts({ context: owner, mailboxId, conversationId: thread.id }))
         .map((draft) => draft.suggestion)
         .sort(),
-    ).toEqual([false, true]);
+    ).toEqual([false]);
     const [stored] = await sql<
       { origin: string; author_kind: string }[]
     >`SELECT origin, author_kind FROM mail.drafts WHERE id = ${second.id}::uuid`;
     expect(stored).toEqual({ origin: "user", author_kind: "service_account" });
-    // The database constraint also rejects bypasses of the transactional creation path.
-    await expect(sql`UPDATE mail.drafts SET adopted_at = NULL WHERE id = ${first.id}::uuid`.execute()).rejects.toThrow();
   });
 
-  test("a creation key that an earlier release mapped to another account's draft creates the caller's own suggestion", async () => {
+  test("an earlier cross-author creation key skips the occupied reply box", async () => {
     const thread = await conversation();
     const fromGustav = unwrap(await drafts.createDraft({ context: gustav, mailboxId, input: input(thread, "From Gustav") }));
     const origin = { kind: "compose" as const, input: input(thread, "From invoices") };
     const key = crypto.randomUUID();
     const request = { idempotencyKey: key, origin, draft: editableInput(origin.input) };
-    // Before suggestions were per author, this key of the invoices account returned Gustav's draft and was remembered.
     await sql`INSERT INTO mail.draft_suggestion_requests (mailbox_id, service_account_id, idempotency_key, request_hash, draft_id)
-      VALUES (${mailboxId}::uuid, ${invoicesAccountId}::uuid, ${key}::uuid, ${"0".repeat(64)}, ${fromGustav.id}::uuid)`;
-    const own = unwrap(await drafts.materializeDraftSeed({ context: invoices, mailboxId, input: request }));
-    expect(own.id).not.toBe(fromGustav.id);
-    expect([own.body, own.suggestedBy]).toEqual(["From invoices", "Rechnungseingang"]);
-    // The retry keeps returning the caller's own draft.
-    expect(unwrap(await drafts.materializeDraftSeed({ context: invoices, mailboxId, input: request })).id).toBe(own.id);
+      VALUES (${mailboxId}::uuid, ${invoicesAccountId}::uuid, ${key}::uuid, ${await sha256Json(origin)}, ${fromGustav.id}::uuid)`;
+    const skipped = unwrap(await drafts.materializeDraftSeed({ context: invoices, mailboxId, input: request }));
+    expect(skipped.id).toBe(fromGustav.id);
+    expect(skipped.creationOutcome).toBe("suggestion_skipped");
+    expect(skipped.body).toBe("From Gustav");
   });
 
   test("a pending send keeps its suggestion slot so undo can restore the draft", async () => {
@@ -694,7 +661,7 @@ suite("Mail service-account suggestions", () => {
     }
   });
 
-  test("service-account offline recovery keeps its content beside a newer suggestion", async () => {
+  test("service-account offline recovery saves a recovery copy on the existing reply draft", async () => {
     const draft = await suggest();
     await sql`UPDATE mail.drafts SET edit_mode = 'shared' WHERE id = ${draft.id}::uuid`;
     const initial = unwrap(await readDraftDocument({ context: owner, mailboxId, draftId: draft.id }));
@@ -721,9 +688,9 @@ suite("Mail service-account suggestions", () => {
       const recovered = unwrap(await drafts.recoverDraftDocumentRest(recovery));
       expect(recovered.status).toBe("recovered");
       if (recovered.status !== "recovered") throw new Error("Expected a distinct recovery draft");
-      expect(recovered.draft.id).not.toBe(newer.id);
-      expect(recovered.draft.suggestion).toBeFalse();
-      expect(recovered.draft.body).toBe("Offline recovered content");
+      expect(recovered.draft.id).toBe(newer.id);
+      const copies = unwrap(await drafts.listDraftRecoveryCopies({ context: owner, mailboxId, draftId: newer.id }));
+      expect(copies.some((copy) => copy.content.body === "Offline recovered content")).toBeTrue();
       expect(unwrap(await drafts.getDraft(owner, mailboxId, newer.id)).body).toBe("New suggestion");
       const retry = unwrap(await drafts.recoverDraftDocumentRest(recovery));
       expect(retry.status).toBe("recovered");
@@ -733,7 +700,7 @@ suite("Mail service-account suggestions", () => {
     }
   });
 
-  test("a second capability creation returns the suggestion without appending its inline attachment", async () => {
+  test("a second capability creation rejects supplied content and leaves the suggestion unchanged", async () => {
     const thread = await conversation();
     const [sender] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.sender_identities WHERE id = ${identityId}::uuid`;
     const [source] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.message_contents WHERE id = ${thread.messageId}::uuid`;
@@ -753,13 +720,15 @@ suite("Mail service-account suggestions", () => {
         { ...capability(gustav), idempotencyKey },
       );
     const first = unwrap(await create("Original", "first.txt", "original-attachment"));
-    const second = unwrap(await create("Different", "second.txt", "duplicate-attachment"));
-    expect(second.data.id).toBe(first.data.id);
-    expect(second.data.attachments.map((attachment) => attachment.filename)).toEqual(["first.txt"]);
+    const second = await create("Different", "second.txt", "duplicate-attachment");
+    expect(second).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
+    if (!second.ok) expect(second.error.message).toContain(first.data.id);
+    expect(first.data.attachments.map((attachment) => attachment.filename)).toEqual(["first.txt"]);
     const [stored] = await sql<{ id: string }[]>`SELECT id FROM mail.drafts WHERE short_id = ${first.data.id}`;
     const adopted = unwrap(await save(unwrap(await drafts.getDraft(owner, mailboxId, stored!.id)), owner, { body: "Adopted" }));
-    const retry = unwrap(await create("Different", "second.txt", "duplicate-attachment"));
-    expect(retry.data.id).toBe(first.data.id);
+    const retry = await create("Different", "second.txt", "duplicate-attachment");
+    expect(retry).toMatchObject({ ok: false, error: { code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409 } });
+    expect(unwrap(await create("Original", "first.txt", "original-attachment")).data.id).toBe(first.data.id);
     expect(unwrap(await drafts.getDraft(owner, mailboxId, adopted.id)).body).toBe("Adopted");
   });
 

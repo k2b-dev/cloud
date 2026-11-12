@@ -65,34 +65,23 @@ suite("conversation list draft summaries", () => {
     }
     await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id)
       VALUES (${conversations[0]}::uuid, ${users[1]}::uuid)`;
-    // Creator and last editor can differ; repeated contributors count once.
-    for (let i = 0; i < 4; i++) {
-      const date = new Date(Date.parse(at) + i * 1000);
-      await sql`INSERT INTO mail.drafts
-        (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
-          author_kind, author_id, last_editor_kind, last_editor_id, created_at, updated_at)
-        VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[0]}::uuid, ${messages[0]}::uuid, 'reply', ${identityId}::uuid,
-          'user', ${users[i]}::uuid, ${i === 3 ? "service_account" : "user"}, ${i === 3 ? accountId : users[i]}::uuid, ${date}, ${date})`;
-    }
-    // Visible conversation, hidden source: apply the complete draft visibility predicate.
+    // One reply can have different author/editor contributors; terminal drafts do not count.
     await sql`INSERT INTO mail.drafts
-      (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id, created_at, updated_at)
-      VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[0]}::uuid, ${messages[1]}::uuid, 'reply', ${identityId}::uuid,
-        'user', ${users[0]}::uuid, 'user', ${users[0]}::uuid, ${at}, ${at})`;
+      (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
+        author_kind, author_id, last_editor_kind, last_editor_id, created_at, updated_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[0]}::uuid, ${messages[0]}::uuid, 'reply', ${identityId}::uuid,
+        'user', ${users[0]}::uuid, 'service_account', ${accountId}::uuid, ${at}, ${at})`;
     await sql`INSERT INTO mail.drafts
-      (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id)
+      (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
+        author_kind, author_id, last_editor_kind, last_editor_id)
       VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[1]}::uuid, ${messages[1]}::uuid, 'reply', ${identityId}::uuid,
         'user', ${users[0]}::uuid, 'user', ${users[0]}::uuid)`;
-    for (const state of ["sent", "sending", "scheduled", "discarded"]) {
+    for (const state of ["sent", "discarded"]) {
       await sql`INSERT INTO mail.drafts (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
         author_kind, author_id, last_editor_kind, last_editor_id, state)
         VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[0]}::uuid, ${messages[0]}::uuid, 'reply', ${identityId}::uuid,
           'user', ${users[0]}::uuid, 'user', ${users[0]}::uuid, ${state})`;
     }
-    await sql`INSERT INTO mail.drafts (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
-      author_kind, author_id, last_editor_kind, last_editor_id, origin)
-      VALUES (${newShortId()}, ${mailboxId}::uuid, ${conversations[0]}::uuid, ${messages[0]}::uuid, 'reply', ${identityId}::uuid,
-        'workflow', ${users[0]}::uuid, 'workflow', ${users[0]}::uuid, 'workflow')`;
   });
   afterAll(async () => {
     if (mailboxId) {
@@ -105,14 +94,13 @@ suite("conversation list draft summaries", () => {
     await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${users}::jsonb))`;
   });
 
-  test("counts only open user drafts and caps distinct contributors at three, newest first", async () => {
+  test("counts the one editable reply and lists its distinct author and editor", async () => {
     const summaries = unwrap(await listConversationDraftSummaries({ context: owner, mailboxId, conversationIds: conversations }));
     const summary = summaries.get(conversations[0]!);
-    expect(summary?.count).toBe(5);
+    expect(summary?.count).toBe(1);
     expect(summary?.editors).toEqual([
       { kind: "service_account", id: accountId, displayName: "Draft assistant" },
-      { kind: "user", id: users[3]!, displayName: "Fourth" },
-      { kind: "user", id: users[2]!, displayName: "Third" },
+      { kind: "user", id: users[0]!, displayName: "Owner" },
     ]);
     expect(summaries.get(conversations[1]!)?.count).toBe(1);
   });
@@ -162,9 +150,20 @@ suite("conversation list draft summaries", () => {
       await listConversationDraftSummaries({ context: assigned, mailboxId, conversationIds: [...conversations, conversations[0]!] }),
     );
     const drafts = unwrap(await listConversationDrafts({ context: assigned, mailboxId, conversationId: conversations[0]! }));
-    expect(summaries.get(conversations[0]!)?.count).toBe(4);
+    expect(summaries.get(conversations[0]!)?.count).toBe(1);
     expect(summaries.get(conversations[0]!)?.count).toBe(drafts.length);
     expect(summaries.has(conversations[1]!)).toBe(false);
+    const [visible] = await sql<
+      { id: string }[]
+    >`SELECT id FROM mail.drafts WHERE conversation_id = ${conversations[0]}::uuid AND state = 'draft'`;
+    await sql`UPDATE mail.drafts SET source_message_id = ${messages[1]}::uuid WHERE id = ${visible!.id}::uuid`;
+    try {
+      const hidden = unwrap(await listConversationDraftSummaries({ context: assigned, mailboxId, conversationIds: conversations }));
+      expect(hidden.has(conversations[0]!)).toBe(false);
+      expect(unwrap(await listConversationDrafts({ context: assigned, mailboxId, conversationId: conversations[0]! }))).toHaveLength(0);
+    } finally {
+      await sql`UPDATE mail.drafts SET source_message_id = ${messages[0]}::uuid WHERE id = ${visible!.id}::uuid`;
+    }
     expect(unwrap(await listConversationDraftSummaries({ context: assigned, mailboxId, conversationIds: [] })).size).toBe(0);
   });
 });

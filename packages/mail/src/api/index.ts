@@ -606,7 +606,19 @@ const respondComposeTemplates = <T>(c: Context<MailApiContext>, result: Result<T
   respondPublic(c, result, "composeTemplates");
 const respondSenderIdentities = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
   respondPublic(c, result, "senderIdentities");
-const respondDrafts = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "drafts");
+const respondDrafts = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => {
+  const resolved = await result;
+  if (!resolved.ok && resolved.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in resolved.error)
+    return c.json(
+      {
+        code: resolved.error.code,
+        message: localizeMailError(resolved.error, getLocale(c)).message,
+        draftId: String(resolved.error.draftId),
+      },
+      409,
+    );
+  return respondPublic(c, resolved, "drafts");
+};
 const respondDeliveries = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => respondPublic(c, result, "deliveries");
 const projectAttachmentLinks = async <T extends AttachmentLink | { link: AttachmentLink } | AttachmentLinkPage>(
   result: Result<T> | Promise<Result<T>>,
@@ -3324,15 +3336,15 @@ const mailOperationsApi = new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/draft-seeds/materialize",
     v("param", mailboxParamSchema),
     v("json", materializeDraftSeedInputSchema),
-    async (c) =>
-      respondDrafts(
-        c,
-        drafts.materializeDraftSeed({
-          context: requestContext(c),
-          mailboxId: internalMailboxId(c),
-          input: await internalDraftSeedInput(c, c.req.valid("json")),
-        }),
-      ),
+    async (c) => {
+      const result = await drafts.materializeDraftSeed({
+        context: requestContext(c),
+        mailboxId: internalMailboxId(c),
+        input: await internalDraftSeedInput(c, c.req.valid("json")),
+        rejectDifferentContent: true,
+      });
+      return respondDrafts(c, result);
+    },
   )
   .post("/mailboxes/:mailboxId/drafts", v("param", mailboxParamSchema), v("json", draftContentInputSchema), async (c) =>
     respondDrafts(
@@ -3341,6 +3353,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         context: requestContext(c),
         mailboxId: internalMailboxId(c),
         input: await internalInput(c, c.req.valid("json")),
+        rejectOccupiedContent: drafts.hasDraftCreationContent(c.req.valid("json")),
       }),
     ),
   )
@@ -3360,6 +3373,47 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     );
   })
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/intent",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Switch reply mode, preserving body text",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(draftSchema, "Reply draft"),
+        409: jsonResponse(ErrorResponseSchema, "Stale revision or draft not editable"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", z.object({ expectedRevision: z.number().int().positive(), intent: z.enum(["reply", "reply_all", "forward"]) }).strict()),
+    async (c) =>
+      respondDrafts(
+        c,
+        drafts.switchDraftIntent({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+          ...c.req.valid("json"),
+        }),
+      ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Acknowledge the one-time draft consolidation notice",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(draftSchema, "Reply draft") },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) =>
+      respondDrafts(
+        c,
+        drafts.acknowledgeDraftConsolidation({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+        }),
+      ),
+  )
   .post(
     "/mailboxes/:mailboxId/drafts/:draftId/safety-review",
     v("param", mailboxAndIdParamSchema("draftId")),

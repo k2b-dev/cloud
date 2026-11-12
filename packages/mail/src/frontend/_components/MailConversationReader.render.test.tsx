@@ -142,7 +142,7 @@ const renderReader = (
         drafts: null,
       },
       presence: options.presence ?? [],
-      seenHints: ["reader-head-moved"],
+      hintSeen: (hint) => hint === "reader-head-moved",
       toolbarCustomized: false,
       onHintSeen: () => undefined,
       actionPending: false,

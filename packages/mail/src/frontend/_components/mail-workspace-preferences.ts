@@ -1,10 +1,6 @@
 import type { MailListMode } from "../../service/workspace";
 
 export type MailWorkspacePreferences = {
-  listCollapsed: boolean;
-  /** Browser-level discovery of the mailbox head search, read on the server too. */
-  searchDiscovered?: boolean;
-  searchHintDismissed?: boolean;
   /** The person opened the mailbox's Events tab once; until then it is marked new. */
   eventsDiscovered?: boolean;
   /** A draft in a conversation opens in full screen: this browser's last choice, never switched on by itself (F7). */
@@ -47,12 +43,7 @@ const customizedToolbar = (value: unknown): boolean => {
 };
 
 const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePreferences => ({
-  searchDiscovered: Boolean(value && typeof value === "object" && (value as { searchDiscovered?: unknown }).searchDiscovered === true),
-  searchHintDismissed: Boolean(
-    value && typeof value === "object" && (value as { searchHintDismissed?: unknown }).searchHintDismissed === true,
-  ),
   eventsDiscovered: Boolean(value && typeof value === "object" && (value as { eventsDiscovered?: unknown }).eventsDiscovered === true),
-  listCollapsed: Boolean(value && typeof value === "object" && (value as { listCollapsed?: unknown }).listCollapsed === true),
   draftFullscreen: Boolean(value && typeof value === "object" && (value as { draftFullscreen?: unknown }).draftFullscreen === true),
   toolbarCustomized: customizedToolbar(value),
   listMode: value && typeof value === "object" && (value as { listMode?: unknown }).listMode === "messages" ? "messages" : "conversations",

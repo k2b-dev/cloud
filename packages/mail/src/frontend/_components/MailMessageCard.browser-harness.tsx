@@ -106,7 +106,7 @@ window.mountReader = (locale) => {
             commentsCursor={null}
             detailErrors={NO_DETAIL_ERRORS}
             presence={[]}
-            seenHints={["reader-head-moved"]}
+            hintSeen={(hint) => hint === "reader-head-moved"}
             toolbarCustomized={false}
             onHintSeen={noop}
             actionPending={false}

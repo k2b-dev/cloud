@@ -79,3 +79,14 @@ describe("mail activity presentation", () => {
     expect(mailActivityIcon(carried)).toBe("ti-lock");
   });
 });
+
+test("F6 removals appear in the activity with localized consolidation text", () => {
+  const removed: MailActivityEvent = {
+    ...event({ reason: "reply_draft_consolidation", count: 1 }),
+    action: "draft.discarded",
+    actor: { kind: "system", id: null, displayName: "Mail", avatarHash: null },
+  };
+  expect(mailActivityLabel(removed)).toBe("removed a reply draft during consolidation");
+  expect(mailActivityLabel(removed, "de")).toContain("Antwortentwurf");
+  expect(presentMailActivity([removed, { ...removed, id: "next" }])[0]?.count).toBe(2);
+});

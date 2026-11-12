@@ -23,6 +23,7 @@ import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
 import { startDraftDocumentLogPolicy, stopDraftDocumentLogPolicy } from "./service/draft-document-log-policy";
+import { finishReplyDraftRetirements } from "./service/draft-retirement";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
 
 const mailNotifications = createMailNotificationService(app.notifications);
@@ -63,6 +64,7 @@ const result = await app.start({
     },
     start: async () => {
       try {
+        await finishReplyDraftRetirements();
         await mailNotifications.start();
         await mailRuntime.start();
         await commandRuntime.start();

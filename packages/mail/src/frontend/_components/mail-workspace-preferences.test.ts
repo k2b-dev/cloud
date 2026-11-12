@@ -2,18 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { mailWorkspaceCookie, readMailWorkspacePreferences, updateMailWorkspacePreferences } from "./mail-workspace-preferences";
 
 describe("Mail workspace preferences", () => {
-  test("reads the list layout preference", () => {
+  test("reads the workspace preferences", () => {
     const value = encodeURIComponent(
-      JSON.stringify({ listCollapsed: true, detailsOpen: true, draftFullscreen: true, toolbarActions: ["tags", "reply", "archive"] }),
+      JSON.stringify({ detailsOpen: true, draftFullscreen: true, toolbarActions: ["tags", "reply", "archive"] }),
     );
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
-      listCollapsed: true,
       draftFullscreen: true,
       toolbarCustomized: true,
       listMode: "conversations",
       lastMailboxId: null,
-      searchDiscovered: false,
-      searchHintDismissed: false,
       eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
@@ -26,47 +23,37 @@ describe("Mail workspace preferences", () => {
     expect(read({ toolbarActions: ["reply", "reply_all", "forward", "done", "spam", "trash"] }).toolbarCustomized).toBe(false);
     expect(read({ toolbarActions: ["reply", "reply_all", "forward", "archive", "spam", "trash"] }).toolbarCustomized).toBe(false);
     expect(read({}).toolbarCustomized).toBe(false);
-    const rewritten = readMailWorkspacePreferences(mailWorkspaceCookie({ ...read({ toolbarActions: ["trash"] }), listCollapsed: true }));
+    const rewritten = readMailWorkspacePreferences(mailWorkspaceCookie({ ...read({ toolbarActions: ["trash"] }), draftFullscreen: true }));
     expect(rewritten.toolbarCustomized).toBe(true);
   });
 
   test("ignores invalid and removed preferences", () => {
-    const value = encodeURIComponent(JSON.stringify({ listCollapsed: false, shortcutOverrides: { archive: "e" } }));
+    const value = encodeURIComponent(JSON.stringify({ listCollapsed: true, searchDiscovered: true, shortcutOverrides: { archive: "e" } }));
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`)).toEqual({
-      listCollapsed: false,
       draftFullscreen: false,
       toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
-      searchDiscovered: false,
-      searchHintDismissed: false,
       eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
     expect(readMailWorkspacePreferences("cloud_mail_workspace=%7Bbroken")).toEqual({
-      listCollapsed: false,
       draftFullscreen: false,
       toolbarCustomized: false,
       listMode: "conversations",
       lastMailboxId: null,
-      searchDiscovered: false,
-      searchHintDismissed: false,
       eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
   });
 
-  test("keeps search discovery and hint dismissal independently of the list preference", () => {
+  test("keeps the Events visit independently of other preferences", () => {
     const original = readMailWorkspacePreferences(null);
-    const used = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, listCollapsed: true, searchDiscovered: true }));
-    expect(used).toMatchObject({ listCollapsed: true, searchDiscovered: true, searchHintDismissed: false });
-    const dismissed = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, searchHintDismissed: true }));
-    expect(dismissed).toMatchObject({ listCollapsed: false, searchDiscovered: false, searchHintDismissed: true });
     // A visit to Events is stored once and survives every other write.
     const visited = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, eventsDiscovered: true }));
-    expect(readMailWorkspacePreferences(mailWorkspaceCookie({ ...visited, listCollapsed: true })).eventsDiscovered).toBe(true);
+    expect(readMailWorkspacePreferences(mailWorkspaceCookie({ ...visited, draftFullscreen: true })).eventsDiscovered).toBe(true);
   });
 
   test("reads the optional message list mode", () => {

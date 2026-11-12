@@ -547,8 +547,9 @@ separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
 above the newest message grow into the draft at that place; on a phone the bar
 waits at the bottom and the draft opens at the top over the full width. Mail
 creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
-An existing draft with the same purpose opens instead of a second one, and the
-conversation lists its other drafts as rows. **Compose** puts **New message**
+A conversation has one reply draft. Reply, Reply all and Forward use the same
+draft; content-free creation returns its current content. Supplying new content
+when it already exists returns a conflict instead of dropping that content. **Compose** puts **New message**
 at the top of the list with an empty conversation beside it.
 
 - The URL carries the open draft as `?draft=`, so reload and Back open it
@@ -564,6 +565,13 @@ at the top of the list with an empty conversation beside it.
   `quoteSource: { locale, timeZone }`, and the quote goes out after the
   signature with that person's date format.
 - A Gustav suggestion (`suggestion: true`) opens in plum until someone edits it.
+
+When a conversation already has a reply draft, Reply, Reply all and Forward
+open that draft and switch its mode. Replying to selected text opens it without
+inserting the selection, so existing text stays intact. If another draft appears
+while a new seed is being saved, Mail keeps the local text as a recovery copy and
+offers the existing draft. Retrying your own seed after a lost response resumes
+the same draft and saves later edits normally.
 
 ## Write signatures and snippets
 
@@ -850,7 +858,8 @@ visible messages, newest first, then MIME attachment order, counting repeated
 checksums once. Message rows cover only that message. Qualifying files are JPEG,
 PNG, GIF, or WebP from 4 KiB through 25 MiB; inline parts with a content ID are
 excluded. A failed image lookup leaves the list available without image metadata. The
-columns view shows the thumbnails only where the list itself is at least 52 rem wide.
+Mail workspace no longer draws these thumbnails in its rows; the fields remain for
+API clients.
 
 `GET /api/mail/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/thumbnail`
 uses the same access check as opening the attachment. It validates the declared
@@ -955,19 +964,51 @@ A changed copy saved in another mail client's Drafts folder also adopts the
 suggestion when Mail applies the edit. Reconciling an identical copy and
 retrying an export do not adopt it.
 
-Each conversation has at most one untouched suggestion per author, the service
-account that created it. Gustav and another automated account can each keep
-their own suggestion in the same conversation; each shows its account's name,
-for example "Suggestion from Gustav". Another `draft.create` by the same
-account returns that account's existing suggestion without changing its
-content or adding the new request's inline attachments; it never returns
-another account's suggestion. This also applies while its send is pending, so
-Undo can restore it. Update it explicitly with its current revision to
-revise it. Every creation key keeps returning its original draft after adoption,
-so retrying an earlier request cannot create another suggestion. Merging two
-conversations that both hold an untouched suggestion from the same account
-returns `DRAFT_SUGGESTION_CONFLICT` (409) and preserves both conversations.
-Edit or discard one of those suggestions before merging them.
+Each conversation has one open reply draft with `origin = 'user'`, including
+untouched and adopted suggestions and workflow review drafts. Private automatic
+replies use `origin = 'workflow'` and do not occupy that box. An untouched
+suggestion is the one draft. Content-free creation returns the existing draft;
+an autonomous request against another author's or an adopted draft reports
+`creationOutcome: suggestion_skipped`.
+
+API, CLI and capability creation with a new body, subject, recipients or
+attachments returns `DRAFT_REPLY_BOX_OCCUPIED` (409) when the box is occupied.
+The message includes the existing draft ID. Open that draft and update it
+explicitly with its current revision; the rejected content was not saved.
+Creation keys already mapped to a draft retain their original retry contract.
+Explicit API subjects are preserved, and `includeSourceAttachments` can copy
+source files into Reply, Reply all or Forward.
+
+Use `mail.draft.intent` with `intent` (`reply`, `reply_all`, `forward`) and the
+current `expectedRevision` to change modes. The equivalent HTTP operation is
+`POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/intent`. It re-derives
+To/Cc and forwarded source attachments, preserving body text, personal
+attachments and manually added Bcc while adding the sender's default Bcc.
+It changes Re:/Fwd: only while the subject still matches the derived source
+subject; a user-edited subject stays unchanged. Switching away from Forward
+removes the source attachments added for that mode. Files explicitly copied into
+Reply or Reply all remain as personal attachments through later mode changes.
+A stale revision returns 409. Shared documents advance their generation, so older editors must synchronize before writing again.
+
+Scheduled and sending drafts retain the reply place until sent or discarded.
+Automatic replies keep their separate lifecycle. A workflow review reply that
+finds the box occupied returns `DRAFT_REPLY_BOX_OCCUPIED`; it never schedules
+the person's existing text.
+Merging conversations that both have an open reply draft returns a recoverable
+409; send or discard one before merging. External-provider edits and offline
+recovery use recovery copies when a reply already exists, preserving both texts.
+
+The one-time upgrade preserves a committed send; two committed sends in one
+conversation require resolution before startup. Otherwise human or adopted
+drafts rank ahead of untouched suggestions, then by content edit evidence.
+It erases the other drafts and writes a conversation activity for each removal;
+terminal submission and command history stays intact.
+The draft read model returns `consolidatedCount`; show the notice before clearing
+it through `mail.draft.consolidation.acknowledge` or
+`POST /api/mail/mailboxes/:mailboxId/drafts/:draftId/consolidation/acknowledge`.
+Only people with write access can acknowledge an open draft's notice.
+See [F6 operator guidance](/en/docs/operations/mail-reply-draft-consolidation)
+for the irreversible migration and its logged counts.
 
 ## Check failed synchronization
 
@@ -1147,7 +1188,14 @@ Mark a hint seen with
 `filters-moved`, `toolbar-moved`, `density-by-width`, and `drafts-consolidated`.
 Unknown IDs are rejected. Marking a hint twice changes nothing; concurrent
 updates keep every hint and the saved width. The existing `/view` preference
-continues to support its current callers.
+continues to support its current callers; the Mail workspace no longer reads
+it, because the list's own width decides between one line and three lines
+per conversation.
+
+The workspace saves the share when a person ends a move of the handle between
+list and reader, one request for a series of key presses, and clears it with a
+reset. It shows `density-by-width` once when the person presses V, the old view
+key, and `filters-moved` once at the filter button beside the search field.
 
 ## Compose signature fragments
 

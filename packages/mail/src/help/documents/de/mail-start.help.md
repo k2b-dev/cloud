@@ -54,7 +54,7 @@ Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchr
 
 Die Seitenleiste enthält deine Postfächer, angeheftete zuerst. Das geöffnete Postfach zeigt darunter seine Ziele:
 
-- **Eingang**, **Entwürfe**, **Geplant**, **Versandprobleme** und **Gesendet**.
+- **Eingang**, **Entwürfe** und **Gesendet**. **Geplant** und **Versandprobleme** erscheinen nur, solange dort etwas wartet.
 - **Mehr** für Archiv, Papierkorb und Spam. Die Gruppe bleibt offen, solange einer dieser Ordner aktiv ist.
 - Standardordner zeigen ihren üblichen Namen in deiner Sprache, zum Beispiel **Gesendet** für „Sent Items“. Ein Ordner mit eigenem Namen behält diesen Namen. Die Ordnereinstellungen zeigen auch den Namen auf dem Mailserver.
 - Eigene Ordner des Anbieters mit ihrer Hierarchie und der Zahl ungelesener E-Mails.
@@ -63,13 +63,15 @@ Die Seitenleiste enthält deine Postfächer, angeheftete zuerst. Das geöffnete 
 
 Im Kopfbereich findest du:
 
-- Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort**, **Nicht zugewiesen**, **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Der Kopf zeigt so viele davon, wie in seine Breite passen, die übrigen stehen unter **Mehr**. Die geöffnete Ansicht bleibt immer sichtbar. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
-- Das **Tag**-Symbol neben **Suchen**, wenn Tags existieren, den Chip **Suche** für eine aktive strukturierte Suche und **Zurücksetzen** zum Entfernen der Filter. Entferne den Suche-Chip, um die Suche zu beenden. Die Lupe oder `/` öffnet die Suche im Kopf; **Weitere Filter** öffnet dort den Filterdialog.
-- **Unterhaltungen auswählen** ersetzt die Ansichten durch die Anzahl und Aktionen der Auswahl. **Auswahl beenden** bringt die Ansichten zurück.
-- **… → Listenansicht auswählen** wechselt zwischen Unterhaltungen und einzelnen Nachrichten. Das Menü enthält außerdem Postfachdetails, Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und **Einstellungen**. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**. Wer nur zugewiesene Unterhaltungen sieht, kann hier die Listenansicht wählen; das **…** des geöffneten Postfachs in der Seitenleiste bietet dann nur Anheften und Ausblenden.
+- Das Suchfeld des Postfachs. Mit `/` springst du hinein. Der Filter-Knopf daneben enthält **Ungelesen**, **Markiert**, **Mit Anhang**, den Zeitraum und einen Tag. Während du suchst, enthält er auch **Suchen in** und den Ort. Eine Zahl am Knopf zeigt, wie viele Filter aktiv sind. **Filter zurücksetzen** entfernt sie.
+- **…** mit **Automatisierungen**, **Postfach synchronisieren**, **Postfachstatus** und **Einstellungen** zuerst. Danach folgen Postfachdetails, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und die Wahl zwischen Unterhaltungen und einzelnen Nachrichten. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**.
 - **Verfassen** als Hauptaktion, wenn du senden kannst.
 
-Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Ansichten, Filter, Verfassen und **…** findest du im Kopfbereich.
+Über Liste und Leser stehen die Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort**, **Nicht zugewiesen**, **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Die Zeile zeigt so viele davon, wie in ihre Breite passen, die übrigen stehen unter **Mehr**. **Ereignisse** steht am Ende. Die geöffnete Ansicht bleibt immer sichtbar. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
+
+Jede Zeile hat ein Kästchen. Hakst du eines an, wird die Tab-Zeile zu den Aktionen für die Auswahl: **Erledigt**, **Archivieren**, **Löschen**, **Ungelesen**, **Später**, **Zuweisen**, **Verschieben**, **Tags** und **…** mit Spam und Kennzeichnen. Das Kästchen am Anfang der Tab-Zeile wählt alle angezeigten Unterhaltungen. Escape oder **Auswahl beenden** bringt die Tabs zurück.
+
+Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Suche, Filter, Verfassen und **…** findest du im Kopfbereich, die Ansichten in der Tab-Zeile.
 
 **Postfachdetails** zeigt allen, die das Postfach ansehen können, denselben Überblick. Personen mit Zugriff **Ansehen** sehen ihn als **Über dieses Postfach**. Der Überblick zeigt:
 
@@ -80,7 +82,7 @@ Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und di
 
 Bei Gruppen siehst du die Personen, die die Gruppe erreicht, soweit dein Konto sie sehen darf. Gastkonten sehen nur ihren eigenen Zugriff, den Zugriff ihrer Gruppen und wie viele weitere Einträge es gibt. Der Dialog ändert nichts. Mit Zugriff **Verwalten** wählst du **Zugriff verwalten** und machst unter **… → Einstellungen → Zugriff** weiter.
 
-Die mittlere Liste zeigt eine Zeile pro Unterhaltung: Absender und Zeit, den Betreff mit Zeichen für Anhang, Markierung und Zuweisung, und eine Vorschau. Tags und **Wartet** bekommen eine vierte Zeile. Auf einem breiten Bildschirm wird die Liste breiter, und Betreff und Nachrichten stehen in einer ruhigen Lesespalte. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung, die älteste zuerst und die neueste unten. Eine lange Unterhaltung zeigt ihre neuesten Nachrichten, **n ältere Nachrichten** darüber zeigt den Rest. Interne Notizen stehen zu ihrer Zeit zwischen den Nachrichten. **… → Aktivität anzeigen** listet, was Personen und Workflows geändert haben.
+Die Liste zeigt eine Zeile pro Unterhaltung. Ist die Liste 640 Pixel breit oder breiter, steht jede Unterhaltung in einer Zeile: Kästchen, Stern, Absender, Betreff und Vorschau, Zeichen und Datum. Eine schmalere Liste zeigt drei Zeilen: Absender und Datum, Betreff, Vorschau mit Zeichen. Die Zeichen zeigen einen Entwurf als **Entwurf**, Gustavs Vorschlag als **✦ Vorschlag**, die Zahl der Nachrichten, **Wartet**, „Später“ als Uhr mit Tag, aufbewahrte Unterhaltungen, Anhänge und wer zuständig ist. Der Lesebereich nutzt die volle Breite neben der Liste. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung. Eine lange Unterhaltung zeigt ihre neuesten Nachrichten, **n ältere Nachrichten** zeigt den Rest. Er ordnet aussagekräftige Änderungen an Status, Zuweisung, Tags, Zusammenfassung und Workflow ruhig zu dem Zeitpunkt ein, an dem sie geschahen. Technische Verarbeitungsvorgänge bleiben aus dem Lesefluss heraus.
 
 Der Kopf des Lesebereichs hat für alle dieselben Aktionen: **Erledigt**, **Archivieren**, **Löschen**, **Später**, **Zuweisen** und **…** mit allen weiteren Aktionen. **Später** zeigt die Unterhaltung zu einer gewählten Zeit wieder und setzt eine Erinnerung, die nur du bekommst. Wird der Lesebereich schmal, stehen die Aktionen, die nicht mehr passen, nur noch unter **…**. Hattest du vorher eine eigene Werkzeugleiste eingerichtet, zeigt Mail einmal, wo deine Aktionen jetzt sind.
 
@@ -88,17 +90,15 @@ Unter dem Betreff zeigen Chips den Zustand der Unterhaltung, ihre Tags und ihre 
 
 Neben einem Editor enthält der Unterhaltungsverlauf nur Nachrichten. Betriebliche Aktivitäten lenken dich beim Schreiben nicht ab.
 
-## Darstellung im Posteingang wählen {icon="layout-grid"}
+## Liste und Leser aufteilen {icon="layout-columns"}
 
-Wähle im Postfach unter **Darstellung**, wie Liste und Leser erscheinen. Auf großen Bildschirmen zeigt **Automatisch** zunächst Spalten. Sobald du einen Vorgang öffnest, stehen Liste und Leser nebeneinander. Du kannst auch **Immer Spalten** oder **Immer Liste + Leser** wählen. Auf dem Handy gibt es **Kompakt** und **Ausführlich**.
+Liste und Leser teilen sich die volle Breite. Ohne geöffnete Unterhaltung nutzt die Liste die ganze Breite. Mit einer geöffneten Unterhaltung bekommt die Liste zunächst 40 Prozent, der Leser den Rest.
 
-Während du neben der Liste liest, blendet **Darstellung → Unterhaltungsliste ausblenden** die Liste aus, und der Leser nutzt die volle Breite. Die Taste `[` blendet sie aus und wieder ein. Ohne Leser neben der Liste ist der Schalter gesperrt. Mail merkt sich die Wahl in diesem Browser.
+Um die Aufteilung zu ändern, ziehst du den Griff zwischen Liste und Leser. Du kannst den Griff auch fokussieren und die Pfeiltasten nutzen, mit Umschalt für größere Schritte, oder Pos1 und Ende. Ein Doppelklick auf den Griff oder Eingabe stellt wieder 40 Prozent ein. Mail merkt sich die Breite für dich und dieses Postfach. Die Liste bleibt mindestens 320 Pixel breit, der Leser mindestens 480 Pixel.
 
-In den Spalten zeigt **Beteiligt**, wer in der Unterhaltung geschrieben hat: bis zu drei Personen, dann „+N“. Zeige darauf, um die Namen zu sehen, getrennt nach **Extern**, **Team** und **Automationen**. Team und Automationen erkennt Mail an Antworten, die Mail gesendet hat. Eine Antwort aus einem anderen Mailprogramm zählt mit ihrer Absenderadresse. Wer nur zugewiesene Unterhaltungen sieht, sieht nur die Personen dieser Unterhaltungen. In einer schmalen Liste und auf dem Handy fehlt die Spalte. Liegt die Liste neben dem Lesebereich, stehen dieselben Gesichter am Ende der vierten Zeile, sobald außer dem genannten Absender noch jemand geschrieben hat.
+Die Breite der Liste bestimmt die Darstellung ihrer Zeilen: ab 640 Pixeln eine Zeile, darunter drei. Fenstergröße, Griff und ein geschlossener Leser schalten gleich um. Die Auswahl und die geöffnete Unterhaltung bleiben an ihrer Stelle. Auf dem Smartphone zeigt die Liste drei Zeilen, und der Leser öffnet sich an ihrer Stelle.
 
-In einem Team-Postfach zeigt **Zuständig** das Gesicht und den Namen der ersten zuständigen Person, dann „+N“ für weitere. Bist du zuständig, stehst du als „Du“ vorne. Zeige darauf, um alle Namen zu sehen. Ohne Zuständige steht dort „Niemand“.
-
-Mail merkt sich die Wahl für dich und dieses Postfach, getrennt nach Handys und großen Bildschirmen. Deine Handywahl gilt auch auf deinen anderen Handys. Ohne gespeicherte Wahl verwendet Mail Automatisch und auf Handys Kompakt. Die Administration legt keine Vorgabe für dich fest.
+Die Taste V und das Menü **Darstellung** gibt es nicht mehr. Drückst du V zum ersten Mal, zeigt Mail das am Griff.
 
 **Heute erledigt** zählt die für dich sichtbaren Vorgänge, die am heutigen Tag in der Cloud-Zeitzone erledigt wurden. Jeder Vorgang zählt einmal, auch wenn er danach wieder geöffnet wurde. Für den Automationsanteil zählt, wer den Vorgang heute zuletzt erledigt hat.
 

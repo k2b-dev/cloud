@@ -1,7 +1,14 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
-import type { ConversationDraftSummary, ConversationView, MailActivityKind, SenderIdentity } from "../contracts";
+import {
+  type ConversationDraftSummary,
+  type ConversationView,
+  MAIL_WORKSPACE_HINT_IDS,
+  type MailActivityKind,
+  type MailWorkspacePreference,
+  type SenderIdentity,
+} from "../contracts";
 import { mailFolderNames } from "../folder-names";
 import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
@@ -479,8 +486,23 @@ const eventsFixture = (url: URL): Pick<MailboxPageData, "eventsMode" | "eventsPa
   };
 };
 
+/**
+ * The person's list share and seen hints: `?share=0.55` sets the share, `?hints=new` leaves every hint unseen and
+ * `?hints=filters-moved` only the ones named (by default the person saw them all, so no hint covers other cases). What
+ * the fixture server stored wins.
+ */
+export const fixtureWorkspacePreference = (url: URL, stored?: Partial<MailWorkspacePreference>): MailWorkspacePreference => ({
+  listShare: stored?.listShare !== undefined ? stored.listShare : Number(url.searchParams.get("share")) || null,
+  seenHints:
+    stored?.seenHints ??
+    MAIL_WORKSPACE_HINT_IDS.filter((id) => {
+      const unseen = url.searchParams.get("hints");
+      return unseen !== "new" && !unseen?.split(",").includes(id);
+    }),
+});
+
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
-export function mailboxData(url: URL): MailboxPageData {
+export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>): MailboxPageData {
   const variant = fixturePermission(url);
   const permission = variant === "assigned-only" ? "write" : variant;
   const search = resolveMailSearchRoute(url);
@@ -500,16 +522,8 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
-    // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
-    // The reader's one-time hints stay seen unless a test opts in with ?hints=1.
-    workspacePreference: {
-      listShare: null,
-      seenHints: url.searchParams.get("hints") === "1" ? [] : ["reader-head-moved", "toolbar-moved"],
-    },
-    viewPreference: {
-      large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
-      phone: "compact",
-    },
+    workspacePreference: fixtureWorkspacePreference(url, stored),
+    viewPreference: { large: "auto", phone: "compact" },
     // ?done=19,14 sets today's completed conversations and how many automations completed.
     doneTodayCounts: (() => {
       const [done = 0, automated = 0] = (url.searchParams.get("done") ?? "").split(",").map((value) => Number(value) || 0);
@@ -812,12 +826,14 @@ export default function MailShellFixture(props: {
   source: string;
   locale?: "en" | "de";
   theme: "light" | "dark";
+  /** The list share and seen hints the fixture server stored for this browser. */
+  storedWorkspace?: Partial<MailWorkspacePreference>;
   /** `?notice=1` until the fixture server stored the person's click on "Got it". */
   focusNoticeOpen?: boolean;
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
-  const data = mailboxData(url);
+  const data = mailboxData(url, props.storedWorkspace);
   return (
     <LocaleProvider locale={locale}>
       <MailWorkspace
@@ -830,7 +846,6 @@ export default function MailShellFixture(props: {
         dateConfig={{ locale, timeZone: "UTC" }}
         initialPreferences={{
           ...readMailWorkspacePreferences(""),
-          listCollapsed: url.searchParams.get("list") === "hidden",
           // A person who had arranged their own toolbar before Mail v5 (`?toolbar=reply,archive`).
           toolbarCustomized: url.searchParams.has("toolbar"),
         }}
