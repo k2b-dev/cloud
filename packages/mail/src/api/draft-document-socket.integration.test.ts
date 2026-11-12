@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { getProcessSync, sql } from "@k2b/cloud";
+import { defineLive, subscribeIdentityAccessChanged } from "@k2b/cloud/events";
 import { startLiveOutbox } from "@k2b/cloud/events/testing";
 import { auth } from "@k2b/cloud/server";
 import { fromBase64, MalformedSharedTextEventError, toBase64 } from "@k2b/cloud/shared-text";
@@ -10,6 +11,7 @@ import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { useRegisteredTestApp } from "../../../cloud/src/services/identity/application.test-fixture";
 import { prepareDraftSendBinding } from "../../test/fixtures/draft-send";
@@ -65,6 +67,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
   let currentDraft: { id: string; short_id: string };
   let stopLive: (() => Promise<void>) | null = null;
   let authentication: { mockRestore(): void };
+  let authenticationReads = 0;
   let activeSession: Awaited<ReturnType<typeof auth.session.authenticate>>;
   const sockets = new Set<WebSocket>();
   const token = "socket-fixture-browser-session";
@@ -108,9 +111,10 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     };
     // Identity middleware is tested by Cloud. This fixture replaces ONLY credential verification;
     // cookie selection, socket transport, room admission, SQL snapshots and NATS remain real.
-    authentication = spyOn(auth.session, "authenticate").mockImplementation(async (credential) =>
-      credential === token ? activeSession : null,
-    );
+    authentication = spyOn(auth.session, "authenticate").mockImplementation(async (credential) => {
+      authenticationReads++;
+      return credential === token ? activeSession : null;
+    });
     mailboxId = value(await createMailbox(context, { name: `Socket ${newShortId()}`, description: "Transport fixture" })).id;
     const otherUid = `mail-socket-${newShortId()}`;
     const [other] = await sql<{ id: string }[]>`
@@ -291,6 +295,60 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     expect(after?.adopted_at).not.toBeNull();
     const projections = await sql`SELECT id FROM mail.draft_provider_snapshots WHERE draft_id = ${currentDraft.id}::uuid`;
     expect(projections.length).toBeGreaterThan(0);
+  });
+
+  test("identity events skip another account and close this account's revoked session", async () => {
+    if (otherContext.actor.kind !== "user" || context.actor.kind !== "user") throw new Error("User fixture required");
+    const coreLive = defineLive({ appId: "core", event: z.object({ type: z.literal("identity.access.changed"), userId: z.string() }) });
+    const stopCore = await startLiveOutbox("core");
+    const previous = activeSession;
+    let stopObserved = () => {};
+    try {
+      const deadline = Date.now() + 5000;
+      while ((await sql`SELECT 1 FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND next_attempt_at <= now() LIMIT 1`).length) {
+        if (Date.now() > deadline) throw new Error("Core fixture outbox did not drain");
+        await Bun.sleep(10);
+      }
+      await draft();
+      const client = await connect();
+      await client.ready();
+      const before = authenticationReads;
+      const observed = Promise.withResolvers<void>();
+      stopObserved = subscribeIdentityAccessChanged(() => observed.resolve(), { userId: otherContext.actor.user.id });
+      await sql.begin((tx) =>
+        coreLive.publish(tx, {
+          key: "identity.scope-fixture",
+          data: { type: "identity.access.changed", userId: otherContext.actor.kind === "user" ? otherContext.actor.user.id : "" },
+        }),
+      );
+      coreLive.wake();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          observed.promise,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Core identity event was not delivered")), 5000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      expect(authenticationReads).toBe(before);
+      activeSession = null;
+      await sql.begin((tx) =>
+        coreLive.publish(tx, {
+          key: "identity.scope-fixture",
+          data: { type: "identity.access.changed", userId: context.actor.kind === "user" ? context.actor.user.id : "" },
+        }),
+      );
+      coreLive.wake();
+      const message = await client.wait((packet) => packet.type === "error");
+      expect(message.type === "error" && message.payload.code).toBe("SESSION_EXPIRED");
+    } finally {
+      activeSession = previous;
+      stopObserved();
+      await stopCore?.();
+    }
   });
 
   test("event-only grant revocation closes an existing socket", async () => {

@@ -287,9 +287,13 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           );
           connection = room.connect(ctx);
           connections.add(stop);
-          stopIdentity = subscribeIdentityAccessChanged(() => {
-            if (ctx) void room.revalidate(ctx);
-          });
+          const proof = c.get("credentialProof");
+          stopIdentity = subscribeIdentityAccessChanged(
+            () => {
+              if (ctx) void room.revalidate(ctx);
+            },
+            { userId: actor.user.id, ...(proof?.kind === "session" ? { sid: proof.sid } : {}) },
+          );
           c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
           if (c.req.raw.signal.aborted) onAbort();
         },
