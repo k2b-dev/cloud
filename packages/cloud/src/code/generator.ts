@@ -323,6 +323,31 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     ...(options.owner ? ["export const owner = __codeSdk.owner;"] : []),
     ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;", "export const db = __codeSdk.db;"]),
   ];
+  // Aliases retain the exact generated Query signature, so the checker and policy
+  // attribute every helper to its ordinary versioned capability and stream.
+  const core = manifest.apps.find((app) => app.appId === "core");
+  if (core && options.mode !== "code_run") {
+    for (const name of ["pdf", "sheet", "finance", "chart"]) {
+      const helpers = manifest.operations.filter(
+        (op) =>
+          op.appId === "core" &&
+          op.kind === "query" &&
+          op.target === null &&
+          op.stream?.direction === "read" &&
+          op.methodPath.length === 4 &&
+          op.methodPath[0] === "file" &&
+          op.methodPath[1] === name &&
+          op.methodPath[3] === "v1",
+      );
+      if (!helpers.length || manifest.apps.some((app) => app.exportName === name)) continue;
+      declarations.push(
+        `export declare const ${name}: { ${helpers.map((op) => `readonly ${quote(op.methodPath[2])}: typeof ${core.exportName}${op.methodPath.map((part) => `[${quote(part)}]`).join("")}`).join("; ")} };`,
+      );
+      runtimeExports.push(
+        `export const ${name} = Object.freeze({ ${helpers.map((op) => `${quote(op.methodPath[2])}: ${core.exportName}${op.methodPath.map((part) => `[${quote(part)}]`).join("")}`).join(", ")} });`,
+      );
+    }
+  }
   const runtimeManifest = {
     apps: manifest.apps.map(({ exportName }) => ({ exportName })),
     handles: manifest.handles,

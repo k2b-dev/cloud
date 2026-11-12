@@ -128,6 +128,77 @@ and approval rules. Streams without the generic `file` input remain unavailable
 to Code; [Binary streams](/en/docs/platform/capabilities#binary-streams) describes
 the provider contract.
 
+## Generate a file
+
+Lasting Code can generate a file and pass its FileRef to a receiving app's
+Action. Read the `core` SDK declarations for the current inputs:
+
+| Helper | Output |
+| --- | --- |
+| `pdf.render({ name, html, title?, headerHtml?, footerHtml?, page?, tagged? })` | PDF from offline HTML; scripts and remote resources are disabled. |
+| `sheet.toCsv({ name, rows, delimiter?, bom? })` | UTF-8 CSV. Semicolon is the default separator; comma-separated files use dot decimals, other separators use the request locale. Text cells cannot become formulas. |
+| `sheet.toOds({ name, sheets })` | OpenDocument spreadsheet of plain cells. Worksheet names are unique, at most 31 characters. |
+| `finance.datev({ name, batch })` | DATEV CSV using stdlib's validation and exact amount strings. |
+| `finance.sepa({ name, batch })` | SEPA SCT XML using stdlib's validation and exact amount strings. |
+| `chart.render({ name, chart })` | SVG from the same checked chart description as Code pages, including a title. |
+
+Each helper is an alias of an ordinary versioned Core read Query under
+`core.file.*.v1`. The checker records its operation and `read` policy. File
+generation does not start an effect; storing or sending belongs to the
+receiving app's Action, with that app's access, review and idempotency rules.
+An existing app export keeps its name if it collides with a helper alias; use
+the corresponding `core.file.<helper>.<method>.v1` from the SDK in that case.
+
+```ts
+import { app, sheet, imports } from "@sdk";
+
+app.schedule({ cron: "0 8 * * 1", name: "weekly-file" }, async c => {
+  const file = await sheet.toCsv({
+    name: "weekly.csv",
+    rows: [{ item: "Example", amount: 12.5 }],
+  });
+  await imports.import({ file, idempotencyKey: `weekly-file:${c.scheduledAt ?? c.runId}` });
+});
+export default app;
+```
+
+`imports` is a fictional receiving app with a write Action whose input names
+`file`. Choose a compatible Action from the live SDK. Existing Files and Mail
+Actions keep their current inputs and confirmation policies; generation does
+not add file inputs to them.
+
+Generation input fits the ordinary 256 KiB capability request budget. A run can
+attempt at most 64 files of up to 50 MiB each within a combined 250 MiB output
+budget. In-progress and failed generation reserve budget too. Calls outside a
+Code run share the same limits per principal for ten minutes. Temporary output
+is encrypted, single-use and expires after ten minutes; its run-bound FileRef
+expires earlier when the run-token deadline does. Cancellation stops new work
+and propagates to PDF rendering. PDF generation needs the operator's existing
+Gotenberg configuration. Finance generation neither submits payments nor
+claims bank acceptance or XSD validation.
+
+## Pass a Gustav chat attachment to an app
+
+`assistant.chat.file.read.v1({ chatId, path })` opens one exact file from the
+person's chat as a read stream. Its generated SDK method returns the same
+FileRef that a receiving Action's `file` input accepts. Use an ID and path
+returned by the chat's file list; neither is a grant.
+
+The read checks chat ownership, archive state, allowed tools and current Project
+access when issuing the stream and again on transfer. It pins the file revision
+and checks its size before loading bytes, up to 50 MiB. A different account,
+changed or deleted file, expired stream or second use fails. The stream lives
+ten minutes at most. The receiving Code host enforces its existing aggregate
+transfer limits and keeps the FileRef local to that run.
+Resource-owned Code cannot borrow a person's chat access.
+
+For chat-attachment integration, the one-off chat host must invoke this Query
+through its current person's capability service. The existing stream dispatcher
+supports registering that read stream as a run-local FileRef and accepting it
+in a destination SDK write call. Automatic attachment selection in the chat
+host is a separate integration step.
+This adds no URL, bearer credential or separate file-download endpoint.
+
 ## Return a page
 
 Start with a TSX page:
@@ -743,7 +814,9 @@ app.schedule({ cron: "0 8 * * 1", name: "weekly-review",
 one line of plain text without HTML markup or control/format characters.
 Cloud displays it as escaped text. Declare a constant title; imported options
 need literal types, for example `as const`. The title appears wherever people
-see the automation; without one, Cloud shows its identifier. Changing a title
+see the automation; without one, Cloud names it by what starts it (an event
+and its place, a page's method and path, or a schedule's time) and otherwise
+shows its identifier. Changing a title
 creates a new checked version with the usual review and activation rules.
 Titles need not be unique; the stable name identifies the automation.
 
@@ -1158,7 +1231,11 @@ Every lasting Code, personal or resource-owned, has its own SQLite database.
 Import `db` from `@sdk`. Cloud creates the database on its first call; checking,
 submitting and opening the Code page do not create it. Data survives new Code
 versions. Deleting the Code, or deleting its owner, also deletes its database.
-Code pages and `cld code show <code>` show storage used and the current limit.
+Code pages and `cld code show <code>` show storage used, the current limit and
+the owner's reserved capacity. Editors and administrators can export a SQLite
+snapshot from the page or with `cld code db export <code> --out <file>`.
+Pausing a Code preserves its data, including data used by historical versions.
+See [Code storage](/en/docs/operations/code-storage) for lifecycle and exports.
 
 ```ts
 import { app, db } from "@sdk";
@@ -1193,7 +1270,12 @@ within the remaining run deadline. Results are limited to 256 KiB, so select onl
 the columns and rows you need. RSQL also enforces statement and storage limits.
 `core.code.database_bytes` sets the database quota. A write over the quota raises
 `CodeError` with `code_db_full`; a result over the response budget raises
-`code_db_limit`, and a statement timeout raises `code_db_timeout`. A timeout or
+`code_db_limit`, and a statement timeout raises `code_db_timeout`. The owner-wide
+`core.code.database_owner_bytes` limit reserves each database's full ceiling
+before provisioning or quota increases. Its default is ten times the default
+per-Code allowance (1,000 MiB). `code_db_owner_full` means the owner has no
+remaining capacity: delete unused Code or ask an administrator to raise the
+owner limit. Existing reads and SQLite exports remain available. A timeout or
 lost connection can leave a write outcome unknown: check an application-owned
 idempotency key before retrying. Concurrent namespace initialization or deletion
 can return `code_db_busy` (503); retry shortly afterward.

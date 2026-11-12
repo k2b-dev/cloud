@@ -242,6 +242,13 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         operationDeclarations.add(signature.declaration);
       }
   }
+  // Generated file helper aliases are SDK namespaces too. Keep their calls
+  // attributable when authors create inferred aliases, and reject type erasure.
+  for (const name of ["pdf", "sheet", "finance", "chart"]) {
+    if (request.sdk.manifest.apps.some((app) => app.exportName === name)) continue;
+    const namespace = sdkMemberType(name, []);
+    if (namespace) sdkNamespaces.add(namespace);
+  }
   const sdkMemberAccess = (node: ts.Node, receiver: ts.Expression): boolean => {
     if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
     if (node.expression !== receiver) return false;

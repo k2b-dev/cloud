@@ -20,6 +20,8 @@ name **feat/code**: a person who says feat/code means Code.
    gives resource Code that runs as the mailbox's service account and can react to
    incoming mail; creating it needs **Manage** access to the mailbox. For
    existing Code, `code_pull({codeId})` returns the project and its `baseVersionId`.
+   Both initialize this Code's server-held draft for this chat; pull resets it
+   to the latest saved version and clears fixtures.
 2. **Read the SDK in two steps.** `code_sdk({codeId})` returns an index: every
    app export with its method paths, policy row and one line each, plus every
    automation event. Pick the apps you need, then `code_sdk({codeId, apps:["mail"]})`
@@ -43,27 +45,36 @@ name **feat/code**: a person who says feat/code means Code.
    and read `event.data`, keeping the envelope and payload distinct.
    If the checker says an operation exists under another path, use that path;
    do not move operations or guess aliases.
-3. **Write.** `code_write({project, path, content})` replaces one file and
-   returns the complete project. Pass that project to the next write. Drafts
-   stay in this chat until submit. Default-export `app` from `code.ts` or `code.tsx`.
-4. **Check.** `code_check({codeId, files, entry})`. Fix every diagnostic
+3. **Write.** `code_write({codeId, path, content})` replaces one file in
+   the server-held draft and returns paths and byte counts. Write one file
+   per call; use `{codeId, path, delete: true}` to remove one or
+   `{codeId, path, renameTo}` to rename one. Write fixtures as
+   `test/NAME.json` through the same tool. Default-export `app` from `code.ts`
+   or `code.tsx`. Do not copy the project into later calls.
+4. **Check.** `code_check({codeId})` checks that draft. Fix every diagnostic
+   and address each warning; never suppress a type error
    ([Troubleshooting](references/troubleshooting.md)). Read the permission
    rows: each names an operation, its target and file and line. Tell the person
    what the Code will read and change, and which rows need a Cloud
    administrator's approval ([Capabilities](references/capabilities.md)).
-5. **Test.** Write `test/NAME.json` fixtures with a fixed `now`, a `seed` and
-   fictional replies; run them with `code_test({codeId, files, entry, tests})`.
-   `code_simulate` runs one fixture with one run. Nothing real is called
-   ([Tests and simulation](references/testing.md)).
-6. **Submit.** `code_submit({codeId, files, entry, baseVersionId, tests})`
-   with the unchanged base from init or pull. On a version conflict, pull,
-   reconcile the complete comparison, check again and submit with the new base.
-   After an uncertain submit, pull before trying again.
+5. **Test.** Write `test/NAME.json` fixtures through `code_write` with a fixed
+   `now`, a `seed` and fictional replies; run them with `code_test({codeId})`.
+   `code_simulate({codeId, fixture})` runs one fixture with one run on the same
+   draft. Nothing real is called ([Tests and simulation](references/testing.md)).
+6. **Submit.** `code_submit({codeId})` checks and submits the same draft,
+   including its fixtures and saved base. On a version conflict, `code_pull`
+   resets the draft to the latest version; re-apply the edits and fixtures,
+   check again and submit. After an uncertain submit, pull before trying again.
 7. **Hand over.** The chat shows a version card; the person chooses
    **Switch on** there, on the Code page or with `cld code activate`. You never
    switch Code on and never change access. For resource Code, say which
    resources the service account needs and that their managers share them
    with its handle ([Access and secrets](references/access.md)).
+
+The draft is what the last init/pull/read returned, plus your writes.
+Explicit `files`, `entry`, `tests` or `baseVersionId` replace that draft part
+before a command runs. Drafts expire seven days after their last change; on a
+missing or expired draft, call `code_pull` (or `code_init`) first.
 
 Authoring needs Code editor rights and an interactive chat; background tasks
 cannot edit lasting Code. A passing check or test grants nothing: every call
@@ -110,7 +121,9 @@ and start with the [database template](references/template-database.md).
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user` (`id`, `username`, `groupIds`, `groupNames`, `kind`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
+| Generate a PDF, CSV, ODS, chart or DATEV/SEPA file | `pdf`, `sheet`, `chart`, `finance` from `@sdk` | [FileRef](references/file-ref.md), [generated file](references/template-generated-file.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
+| Check something before an app sends it, such as a customer message | The app's submitted event, rules from a note, `core.ai.generate`, then the app's approve or reject Action | [Review before sending](references/review-before-send.md) |
 
 ## Check access
 
@@ -154,6 +167,8 @@ secret binding](references/access.md#webhooks-r1-ohne-secret).
   recover; otherwise let the run fail visibly.
 - Write examples, fixtures and names without real people, mailboxes or IDs
   from this chat.
+- When someone wants a check before something is sent, use the
+  [review-before-sending pattern](references/review-before-send.md).
 
 Studio apps and their data have been retired without transfer. For a one-off
 chat computation, load `assistant-code-mode` and use inline `code_run`.
@@ -172,6 +187,7 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
 | [Task due tomorrow](references/template-task-due-tomorrow.md) | personal | Spaces events and a daily schedule assign tomorrow’s tasks and notify a team chat |
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |
+| [Generate a file](references/template-generated-file.md) | personal | Generate a CSV as a FileRef and pass it to a receiving app Action |
 | [Mail invoices to an app](references/template-mail-invoices.md) | mailbox | Pass invoice attachments to an import app as FileRefs, then tag the conversation |
 
 In the Cloud repository the templates are the files in `templates/` beside

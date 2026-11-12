@@ -155,6 +155,7 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
       configure: async () => {},
       execute: async () => [],
       size: async () => 4096,
+      export: async () => new Response(new Uint8Array(4096)),
       remove: async (namespace) => {
         if (removeFails) throw new Error("offline");
         removed.push(namespace);

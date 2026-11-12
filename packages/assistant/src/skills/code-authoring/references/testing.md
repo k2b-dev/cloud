@@ -4,10 +4,11 @@ Tests run the checked bundle in the same sandbox as production, with a fake
 bridge. Every call needs a fictional reply; a missing reply fails the test and
 never reaches a real app. Nothing is sent, saved or charged.
 
-- `code_test({codeId, files, entry, tests})` runs every fixture in `tests`
-  (paths `test/NAME.json`). Pass the same `tests` to `code_submit`; Core runs
-  them again and shows the result to the reviewer.
-- `code_simulate({codeId, files, entry, fixture})` runs one fixture with
+- Write each fixture with `code_write({codeId, path: "test/NAME.json", content})`,
+  where `content` is the fixture's JSON text. `code_test({codeId})` runs the
+  draft's fixtures. `code_submit({codeId})` runs those same fixtures again and
+  shows the result to the reviewer.
+- `code_simulate({codeId, fixture})` runs one fixture on the draft with
   exactly one run, for example to explore a branch.
 - On the mailbox's Code page, **Preview without effects** runs the active
   version for one real message; see [Events](events.md).
