@@ -15,14 +15,8 @@ export const migrateAppBootstrap = async (): Promise<void> => {
       END IF;
     END $$`.simple();
   });
-  await sql`
-    CREATE TABLE IF NOT EXISTS auth.app_proof_replays (
-      key_id UUID NOT NULL REFERENCES auth.service_account_credentials(id) ON DELETE CASCADE,
-      jti TEXT NOT NULL CHECK (length(jti) BETWEEN 1 AND 64),
-      retain_until TIMESTAMPTZ NOT NULL,
-      PRIMARY KEY (key_id, jti)
-    )
-  `.simple();
+  // All Core replicas must use Valkey replay claims before serving signed traffic.
+  await sql`DROP TABLE IF EXISTS auth.app_proof_replays`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS auth.app_start_rejections (
       app_id TEXT PRIMARY KEY,
@@ -31,5 +25,4 @@ export const migrateAppBootstrap = async (): Promise<void> => {
       key_id UUID NULL
     )
   `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS app_proof_replays_retention ON auth.app_proof_replays (retain_until)`.simple();
 };

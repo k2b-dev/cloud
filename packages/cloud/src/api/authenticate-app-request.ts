@@ -101,9 +101,9 @@ export const authenticateSignedAppRequest = async (
     if (declaredApp && declaredApp !== verified.identity.appId) return reject(403, "wrong_app", "App identity does not match the proof");
     const rate = await (dependencies.admit ?? ((id) => admission("key", id)))(verified.identity.keyId);
     if (rate.limited) return limited(rate);
-    if (!(await consumeBootstrapProof(verified.identity.keyId, verified.jti, verified.exp, dependencies.db)))
+    if (!(await consumeBootstrapProof(verified.identity.keyId, verified.jti, verified.exp)))
       return reject(403, "replayed_proof", "App proof has already been used");
-    await touchAppKey(verified.identity, dependencies.db);
+    await touchAppKey(verified.key, dependencies.db);
     return {
       appId: verified.identity.appId,
       keyId: verified.identity.keyId,

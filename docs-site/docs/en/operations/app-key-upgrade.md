@@ -18,10 +18,20 @@ refuse app keys.
 
 ## Upgrade an existing installation
 
-Use an administrator CLI profile for the exact installation. The examples use
-`migration`. Back up Postgres and the encryption keys. Keep the previous
-immutable images and deployment files. Never rotate `APP_SECRET` as part of
-this upgrade.
+Stop all old Core replicas before starting the new Core version, as described
+in step 5. The migration removes the former workload, migration-observation
+and proof replay tables. Applications keep running during this Core-only
+maintenance window. All new Core replicas must share the same Valkey replay
+store before signed traffic resumes. See
+[Upgrade all Core replicas together](/en/docs/operations/app-keys#upgrade-all-core-replicas-together)
+for the shared Valkey requirement and recovery behavior.
+
+Use the same Compose infrastructure overlay and CLI profile throughout.
+The commands below use profile `migration`, already signed in as a Cloud
+administrator to the installation being upgraded. Keep the previous release's
+immutable image tag, Compose files, environment and still-valid credentials
+for rollback. Back up Postgres and the encryption keys before upgrading.
+Never generate a new `APP_SECRET` for this migration.
 
 1. On the previous parallel-support release, upgrade every Core replica and
    application to a version that supports signed app requests and resource
@@ -58,16 +68,16 @@ this upgrade.
    environment values for third-party apps that still use Bun globals.
 5. Stop **all old Core replicas before starting any Core replica on this
    release**. This Core-only maintenance window is required because the migration
-   drops the workload and migration-observation tables used by old Core versions.
-   Mixing versions can cause failed requests or block the migration on old broker
-   transactions. Applications keep running; requests and background work that
+   drops the workload, migration-observation and proof replay tables used by old
+   Core versions. Mixing versions can cause failed requests or block the
+   migration on old broker transactions. Applications keep running; requests and background work that
    need Core are briefly unavailable. Start the new Core version and wait for
    readiness, then upgrade Gateway and the applications. Core's migration
    revokes active app API tokens carrying former workload scopes and records each
    revocation once. Use this release's Compose template: ordinary apps receive
    their key file and direct Core origin; Core and Gateway retain infrastructure
-   configuration. Keep documented
-   third-party connection overrides. Across hosts use verified HTTPS to Core.
+   configuration. Keep documented third-party connection overrides. Across hosts
+   use verified HTTPS to Core.
 6. After all replicas are ready, check the complete inventory:
 
    ```bash
