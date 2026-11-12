@@ -21,6 +21,7 @@ import type { Code } from "./contracts";
 import { requireCodeEventAccess } from "./event-access";
 import { syncCodeEventSubscriptions } from "./event-subscriptions";
 import { findCode } from "./store";
+import { CodeVersionEvidenceSchema } from "./version-evidence";
 import { CodeVersionError, recordCodeVersionBaseline, requireCodeVersionApproval } from "./versions";
 
 const savedAuthoritySchema = z
@@ -149,9 +150,9 @@ export async function previewCodeActivation(
   const input = codeActivationContracts.preview.input.parse(raw);
   const person = codePerson(context, true);
   const code = await authorizeActivation(input.codeId, person, context);
-  const [version] = await sql<
-    { number: number; manifest: unknown }[]
-  >`SELECT number,manifest FROM code.versions WHERE id=${input.versionId}::uuid AND code_id=${code.id}`;
+  const [version] = await sql<{ number: number; manifest: unknown; evidence: unknown }[]>`SELECT v.number,v.manifest,s.evidence
+    FROM code.versions v LEFT JOIN code.version_submissions s ON s.version_id=v.id
+    WHERE v.id=${input.versionId}::uuid AND v.code_id=${code.id}`;
   if (!version) throw new CodeDataError("NOT_FOUND", "Code version not found.");
   const [numbers] = await sql<{ latest: number; running: number | null }[]>`SELECT
       (SELECT max(number) FROM code.versions WHERE code_id=${code.id})::int AS latest,
@@ -182,6 +183,7 @@ export async function previewCodeActivation(
     running: numbers?.running ?? null,
     latest: numbers?.latest ?? version.number,
     allowed,
+    ...previewTests(version.evidence),
   };
   const place = null;
   const page = await previewPage(code, catalog);
@@ -225,6 +227,13 @@ export async function previewCodeActivation(
       )
     : undefined;
   return { ...base, activated: null, readiness, place, page, ...(targets ? { targets, operationLabels } : {}) };
+}
+/** The test result Core recorded at submission, as counts only; nothing when it recorded none. */
+function previewTests(evidence: unknown): Pick<CodeActivationPreview, "tests"> {
+  const parsed = CodeVersionEvidenceSchema.safeParse(evidence);
+  if (!parsed.success) return {};
+  const { state, passed, total } = parsed.data.tests;
+  return { tests: { state, passed, total } };
 }
 /** The name of the app whose Code this is, as the registry names it; its service account is named after it. */
 async function previewAppName(appId: string, catalog: ReturnType<typeof catalogCache>): Promise<string | null> {

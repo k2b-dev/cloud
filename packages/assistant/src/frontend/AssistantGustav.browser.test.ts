@@ -20,13 +20,20 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
+import { AssistantLiveProvider, createAssistantLiveHub } from ${JSON.stringify(resolve(import.meta.dir, "assistant-live.tsx"))};
+
+// The person's AI live channel, as the workspace provides it; a test hands it the updates Core would send.
+const live = createAssistantLiveHub();
+window.harnessLive = live;
 
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>
       {window.harness.card ? (
         <div style="width:100%;padding:1rem">
-          <AssistantCodeVersionCard {...window.harness.card} timeZone="Europe/Berlin" />
+          <AssistantLiveProvider value={live}>
+            <AssistantCodeVersionCard {...window.harness.card} timeZone="Europe/Berlin" />
+          </AssistantLiveProvider>
         </div>
       ) : (
         <AssistantWorkspace {...window.harness.props} />
@@ -770,6 +777,57 @@ describe("Gustav", () => {
         await h.close();
       }
     }
+  }, 120_000);
+
+  test("a version waiting for a Cloud administrator shows the decision when it arrives live, on the desktop and the phone", async () => {
+    const decided = {
+      type: "ai.invalidated",
+      changeId: "77777777-7777-4777-8777-777777777777",
+      conversationId: null,
+      projectId: null,
+      domains: ["code-versions"],
+      at: at(0),
+    };
+    const tests = { state: "passed" as const, passed: 3, total: 3 };
+    for (const decision of ["approved", "rejected"] as const)
+      for (const view of [desktop, phone]) {
+        const scenario: Scenario = { cardPreview: cardPreview({ tests, readiness: { state: "approval_pending" } }) };
+        const h = await open(view, scenario, { path: "/app/assistant/panel" });
+        try {
+          const card = h.page.locator(".assistant-code-version");
+          await card.getByText("Die Karte zeigt die Entscheidung, sobald sie fällt.").waitFor();
+          expect(await card.locator(".assistant-code-version__checks").innerText()).toMatch(/^Prüfung bestanden\s*Tests 3\/3$/);
+          expect(await card.getByRole("button", { name: "Einschalten", exact: true }).count()).toBe(0);
+          const height = (await card.boundingBox())?.height;
+          if (decision === "approved") await shot(h.page, `l26-karte-wartet-${view.name}-light`);
+          scenario.cardPreview =
+            decision === "approved"
+              ? cardPreview({ tests })
+              : cardPreview({
+                  tests,
+                  readiness: { state: "refused", code: "code_approval_revoked", message: "This version approval is rejected or revoked." },
+                });
+          await h.page.evaluate(
+            (event) => (window as unknown as { harnessLive: { apply(events: unknown[]): Promise<void> } }).harnessLive.apply([event]),
+            decided,
+          );
+          if (decision === "approved") await card.getByRole("button", { name: "Einschalten", exact: true }).waitFor();
+          else {
+            await card.getByText("Ein Cloud-Admin hat diese Version nicht freigegeben.", { exact: false }).waitFor();
+            expect(await card.innerText()).toContain("Nichts geändert, Version 4 läuft weiter.");
+            expect(await card.innerText()).not.toContain("rejected or revoked");
+            // Rejected and waiting take the same room: the card does not jump when the decision arrives.
+            expect((await card.boundingBox())?.height).toBeLessThanOrEqual(height! + 1);
+          }
+          // The decision came on the live channel: the card asked Core once more and never polled.
+          expect(h.activationCalls).toEqual(["/api/code/activation/preview", "/api/code/activation/preview"]);
+          expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          expect(h.errors).toEqual([]);
+          await shot(h.page, `l26-karte-${decision === "approved" ? "freigegeben" : "abgelehnt"}-${view.name}-light`);
+        } finally {
+          await h.close();
+        }
+      }
   }, 120_000);
 
   test("a schedule says when it runs and an app's pages name its service account", async () => {

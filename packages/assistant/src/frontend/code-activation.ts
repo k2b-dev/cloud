@@ -45,6 +45,10 @@ const PreviewSchema = z.object({
     z.object({ allowed: z.literal(true) }),
     z.object({ allowed: z.literal(false), reason: z.enum(["phone", "credential"]) }),
   ]),
+  /** What Core saw at submission: the check passed, and the version's test cases ran with this result. */
+  tests: z
+    .object({ state: z.enum(["passed", "failed", "none", "unavailable"]), passed: z.number().int(), total: z.number().int() })
+    .optional(),
   readiness: z.union([
     z.object({ state: z.enum(["ready", "approval_pending"]) }),
     z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }),

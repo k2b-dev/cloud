@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { pinAssistantPwaClock, startAssistantPwaHarness } from "./AssistantPwa.browser-fixture";
@@ -22,6 +24,13 @@ const open = async (query: string, width = 390, height = 844): Promise<Page> => 
   await page.goto(`${harness.url}?${query}`);
   await page.waitForSelector("body[data-ready]", { state: "attached" });
   return page;
+};
+/** Screenshots only when asked for, as in the Gustav harness. */
+const shots = process.env.GUSTAV_SCREENSHOTS?.trim();
+const shot = async (page: Page, name: string) => {
+  if (!shots) return;
+  mkdirSync(shots, { recursive: true });
+  await page.screenshot({ path: resolve(shots, `${name}.png`) });
 };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 const attach = (page: Page) =>
@@ -363,6 +372,53 @@ describe("Code in the Cloud app", () => {
       await page.context().close();
     }
   }, 30_000);
+
+  test("on the phone the card loads, waits for a Cloud administrator, says a rejection, and retries an outage", async () => {
+    const fits = (page: Page) => page.locator(".assistant-code-version").evaluate((element) => element.scrollWidth <= element.clientWidth);
+    // Loading: the card holds its place with a skeleton until Core answers.
+    const loading = await open("screen=chat-x&chat=pflege&code=pending&hold=activation/preview");
+    try {
+      await loading.locator('.assistant-code-version[data-state="loading"]').waitFor();
+      await shot(loading, "l26-pwa-karte-laedt-390");
+      await loading.evaluate(() => (window as unknown as { harness: { release(): void } }).harness.release());
+      await loading.getByText("Die Karte zeigt die Entscheidung, sobald sie fällt.").waitFor();
+      const card = loading.locator(".assistant-code-version");
+      expect(await card.locator(".assistant-code-version__checks").innerText()).toMatch(/^Prüfung bestanden\s*Tests 3\/3$/);
+      expect(await card.innerText()).toContain("Diese Version muss erst ein Cloud-Admin freigeben.");
+      expect(await card.getByRole("button", { name: "Einschalten" }).count()).toBe(0);
+      expect(await fits(loading)).toBe(true);
+      await shot(loading, "l26-pwa-karte-wartet-390");
+    } finally {
+      await loading.context().close();
+    }
+    const rejected = await open("screen=chat-x&chat=pflege&code=rejected");
+    try {
+      const card = rejected.locator(".assistant-code-version");
+      await card.locator('[data-state="rejected"]').waitFor();
+      expect(await card.locator('[data-state="rejected"]').innerText()).toBe(
+        "Ein Cloud-Admin hat diese Version nicht freigegeben. Nichts geändert, Version 2 läuft weiter.",
+      );
+      expect(await card.locator('[data-tone="warning"]').innerText()).toBe("Tests 2/3");
+      expect(await card.innerText()).not.toContain("rejected or revoked");
+      expect(await fits(rejected)).toBe(true);
+      await shot(rejected, "l26-pwa-karte-abgelehnt-390");
+    } finally {
+      await rejected.context().close();
+    }
+    // An outage says so with Retry, which reads the card again once Core answers.
+    const down = await open("screen=chat-x&chat=pflege&code=pending&fail=activation/preview");
+    try {
+      const alert = down.locator('.assistant-code-version[data-state="error"]');
+      await alert.waitFor();
+      expect(await alert.innerText()).toContain("Diese Version konnte nicht geprüft werden.");
+      await shot(down, "l26-pwa-karte-fehler-390");
+      await down.evaluate(() => (window as unknown as { harness: Harness }).harness.fail.clear());
+      await alert.getByRole("button", { name: "Erneut" }).click();
+      await down.getByText("Die Karte zeigt die Entscheidung, sobald sie fällt.").waitFor();
+    } finally {
+      await down.context().close();
+    }
+  }, 60_000);
 
   test("the card names everything a version may do, and nothing is wider than the phone", async () => {
     const page = await open("screen=chat-x&chat=pflege&code=full");

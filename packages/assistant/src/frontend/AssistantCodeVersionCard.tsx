@@ -5,6 +5,7 @@ import { describeCodeTiming } from "@k2b/cloud/ssr/code-schedule";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { loadCodeNextRun } from "../code-summary";
+import { matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import {
   type CodeVersionActivation,
   type CodeVersionPreview,
@@ -69,9 +70,13 @@ function MayDoRow(props: { icon: string; what: string; where: string }) {
   );
 }
 
+/** The code a refused version carries when a Cloud administrator rejected it, or revoked its approval. */
+const REJECTED = "code_approval_revoked";
+
 /**
  * The saved version and its approval/credential state. Switching on creates no target rights.
- * Once switched on, a reload reads the same state from Core.
+ * Once switched on, a reload reads the same state from Core. While it waits for a Cloud administrator, their decision
+ * arrives on the person's live channel and the card reads its state again; nothing polls for it.
  */
 export default function AssistantCodeVersionCard(props: {
   codeId: string;
@@ -81,6 +86,7 @@ export default function AssistantCodeVersionCard(props: {
   onActivated?: () => void;
 }) {
   const locale = useLocale();
+  const live = useAssistantLive();
   const t = createMemo(() => assistantMessages.resolve([locale()]).t);
   // Targets read exactly as on the Code page.
   const pageT = createMemo(() => codePageMessages.resolve([locale()]).t);
@@ -196,6 +202,17 @@ export default function AssistantCodeVersionCard(props: {
     void load();
     // A card opened while an earlier attempt is unresolved continues with that attempt.
     if (pending.read()) void check();
+    // Only a card that waits for a decision follows them; every other state changes only by this person's own step.
+    const decided = matchesAssistantInvalidation(["code-versions"]);
+    onCleanup(
+      live.register({
+        matches: (invalidation) => {
+          const current = loaded();
+          return typeof current === "object" && current?.readiness.state === "approval_pending" && decided(invalidation);
+        },
+        invalidate: load,
+      }),
+    );
   });
 
   const preview = () => {
@@ -213,7 +230,11 @@ export default function AssistantCodeVersionCard(props: {
   };
   const refusedMessage = () => {
     const readiness = preview()?.readiness;
-    return readiness?.state === "refused" ? readiness.message : null;
+    return readiness?.state === "refused" && readiness.code !== REJECTED ? readiness.message : null;
+  };
+  const rejected = () => {
+    const readiness = preview()?.readiness;
+    return readiness?.state === "refused" && readiness.code === REJECTED;
   };
   const notAllowed = () => {
     const allowed = preview()?.allowed;
@@ -362,6 +383,20 @@ export default function AssistantCodeVersionCard(props: {
               <FeatCodeMark variant="glyph" decorative class="assistant-code-version__mark" />
               {t().codeVersionReady({ version: props.number, title: current().title })}
             </p>
+            <Show when={current().tests}>
+              {(tests) => (
+                <p class="assistant-code-version__checks">
+                  <span>
+                    <i class="ti ti-circle-check" aria-hidden="true" />
+                    {t().codeVersionChecked}
+                  </span>
+                  <span data-tone={tests().state === "passed" ? "ok" : tests().state === "failed" ? "warning" : undefined}>
+                    <i class={tests().state === "passed" ? "ti ti-test-pipe" : "ti ti-alert-triangle"} aria-hidden="true" />
+                    {t().codeVersionTests(tests())}
+                  </span>
+                </p>
+              )}
+            </Show>
             <Show when={current().automations?.length}>
               <p class="assistant-code-version__note">
                 {current()
@@ -475,7 +510,16 @@ export default function AssistantCodeVersionCard(props: {
               <p class="assistant-code-version__note">
                 <i class="ti ti-hourglass" aria-hidden="true" />
                 <span>
-                  {t().codeVersionApprovalPending} {t().codeVersionKeepsRunning({ version: current().running })}
+                  {t().codeVersionApprovalPending} {t().codeVersionKeepsRunning({ version: current().running })}{" "}
+                  {t().codeVersionApprovalLive}
+                </span>
+              </p>
+            </Show>
+            <Show when={rejected()}>
+              <p class="assistant-code-version__note" data-state="rejected">
+                <i class="ti ti-circle-x" aria-hidden="true" />
+                <span>
+                  {t().codeVersionRejected} {t().codeVersionNothingChanged({ version: current().running })}
                 </span>
               </p>
             </Show>

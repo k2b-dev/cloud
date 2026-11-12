@@ -654,6 +654,30 @@
 .assistant-code-version__note > .ti {
   margin-top: 0.125rem;
 }
+/* What Core saw at submission: the check and the test cases, side by side; they wrap onto two lines on a phone. */
+.assistant-code-version__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+.assistant-code-version__checks > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.assistant-code-version__checks > span[data-tone="ok"],
+.assistant-code-version__checks > span:first-child {
+  color: var(--k2b-success-text);
+}
+.assistant-code-version__checks > span[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+.assistant-code-version__note[data-state="rejected"] {
+  color: var(--k2b-danger-text);
+}
 /* What the version calls where, as the Code page lists it; plain rows on the card's own surface. */
 .assistant-code-version__targets {
   display: flex;

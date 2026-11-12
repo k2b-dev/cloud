@@ -66,8 +66,14 @@ credential's write scope.
 The chat version card and `cld code activate` use the preview. It contains the
 version's `number`, `running`, `latest`, optional `automations`, and
 `readiness`: `ready`, `approval_pending`, or `refused` with a stable code and
-message. `allowed` explains phone or credential restrictions. A running version
-also returns `activated`. For the version that would switch on next, optional
+message. A version that a Cloud administrator rejected is `refused` with
+`code_approval_revoked`. `allowed` explains phone or credential restrictions.
+`tests` gives what Core recorded at submission: `state` (`passed`, `failed`,
+`none` or `unavailable`) with `passed` and `total` test cases; it is absent for
+versions submitted before Core recorded it. A running version also returns
+`activated`. A card waiting with `approval_pending` reads the preview again
+when the decision arrives as `code-versions` on
+[AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates). For the version that would switch on next, optional
 `targets` lists each target its checked manifest calls, with `operations` and
 `isNew` against the running version, named from registry manifests as on the
 Code page; a `null` target collects calls with a target picked at run time.

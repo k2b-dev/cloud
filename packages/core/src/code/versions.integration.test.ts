@@ -870,6 +870,23 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await decideCodeVersion(second.binding, true, reviewer);
     await activate(code, second);
   });
+  // Runs last: it installs Core's AI live function, which every earlier decision in this suite ran without.
+  test("each decision reaches the submitting person's version card on Core's AI live channel, in its own transaction", async () => {
+    const code = await newCode(),
+      approved = await submitCodeVersion(input(code, "live approved"), author);
+    // Before the AI schema exists a decision still commits; nobody can follow it live there.
+    await decideCodeVersion(approved.binding, true, reviewer);
+    await sql`CREATE SCHEMA IF NOT EXISTS ai`;
+    await sql`CREATE TABLE ai.live_calls(user_id UUID, conversation TEXT, project TEXT, domains TEXT[])`;
+    await sql`CREATE FUNCTION ai.enqueue_live_for_user(p_change UUID, p_user UUID, p_conversation TEXT, p_project TEXT, p_domains TEXT[])
+      RETURNS void AS $$ INSERT INTO ai.live_calls VALUES(p_user, p_conversation, p_project, p_domains) $$ LANGUAGE sql`.simple();
+    const next = await submitCodeVersion(input(code, "live rejected", approved.version.id), author);
+    expect(await sql`SELECT * FROM ai.live_calls`).toHaveLength(0);
+    await decideCodeVersion(next.binding, false, reviewer);
+    expect(Array.from(await sql`SELECT * FROM ai.live_calls`)).toEqual([
+      { user_id: authorId, conversation: null, project: null, domains: ["code-versions"] },
+    ]);
+  });
 });
 
 // Imported session-fixture cleanup runs at file scope, after the suite's hooks.
