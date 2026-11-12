@@ -52,7 +52,8 @@ export async function mutateMachineGroupMember(params: {
       allowed = Boolean(credential);
       storedExpiration = credential?.expires_at ?? null;
     } else if (allowed) {
-      const [client] = await db`SELECT id FROM oauth.clients WHERE client_id=${actor.oauthClientId ?? null} FOR SHARE`;
+      const [client] = await db`SELECT client_id FROM auth.oauth_clients WHERE client_id=${actor.oauthClientId ?? null}
+        AND status='active' AND service_account_id=${actor.serviceAccount.id}::uuid FOR SHARE`;
       allowed = Boolean(client);
     }
     const [group] = allowed ? await db`SELECT id FROM auth.groups WHERE id=${params.id}::uuid AND provider='local' FOR SHARE` : [];

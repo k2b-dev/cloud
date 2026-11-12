@@ -28,8 +28,8 @@ const fixture = (kind: "standalone" | "agent") =>
     const [member] = await db<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile)
     VALUES(${`lifecycle-member-${suffix}`},'local','user') RETURNING id`;
     const clientId = `group-lifecycle-${suffix}`;
-    await db`INSERT INTO oauth.clients(name,client_id,redirect_uris)
-    VALUES(${clientId},${clientId},ARRAY[]::text[])`;
+    await db`INSERT INTO auth.oauth_clients(name,client_id,issuer_app_id,service_account_id,status)
+    VALUES(${clientId},${clientId},'oauth',${machine!.id}::uuid,'active')`;
     await db`INSERT INTO auth.group_manager_service_accounts(group_id,service_account_id)
     VALUES(${group!.id}::uuid,${machine!.id}::uuid)`;
     return {
@@ -45,7 +45,7 @@ const fixture = (kind: "standalone" | "agent") =>
         }),
       members: () => sql`SELECT 1 FROM auth.user_groups_v2 WHERE group_id=${group!.id}::uuid AND user_id=${member!.id}::uuid`,
       clean: async () => {
-        await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+        await sql`DELETE FROM auth.oauth_clients WHERE client_id=${clientId}`;
         await sql`DELETE FROM auth.service_accounts WHERE id=${machine!.id}::uuid`;
         await sql`DELETE FROM auth.groups WHERE id=${group!.id}::uuid`;
         await sql`DELETE FROM auth.users WHERE id=${member!.id}::uuid`;
@@ -96,7 +96,7 @@ suiteFor(
           deletion = sql.begin(async (revoker) => {
             const [row] = await revoker<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
             started.resolve(row!.pid);
-            await revoker`DELETE FROM oauth.clients WHERE client_id=${f.clientId}`;
+            await revoker`DELETE FROM auth.oauth_clients WHERE client_id=${f.clientId}`;
           });
           void deletion.catch(started.reject);
           const deletionPid = await started.promise;

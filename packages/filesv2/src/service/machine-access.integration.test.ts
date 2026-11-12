@@ -161,13 +161,11 @@ suite("Files machine storage through actual API tokens", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
     // Use real Core schemas and public services; no stand-in authentication or grant resolver.
-    for (const name of ["auth", "rail-preferences", "rail-shortcuts", "settings", "audit", "logging"]) {
+    for (const name of ["auth", "rail-preferences", "rail-shortcuts", "settings", "audit", "logging", "app-approval", "oauth-clients"]) {
       const path = `../../../core/src/migrate/core/${name}.ts`;
       const module = await import(path);
       await module.migrate();
     }
-    const { migrate: migrateOAuth } = await import("../../../oauth/src/migrate");
-    await migrateOAuth();
     await migrate();
     const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
     setSystemTime(clock!.now);
@@ -601,7 +599,7 @@ suite("Files machine storage through actual API tokens", () => {
       if (!created.ok) throw new Error(created.error.code);
       const owner = created.data;
       const clientId = `files-admin-oauth-${Bun.randomUUIDv7()}`;
-      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes) VALUES(${`Files administrator ${kind} fixture`},${clientId},ARRAY[]::text[],ARRAY['read','write','admin'])`;
+      await sql`INSERT INTO auth.oauth_clients(name,client_id,issuer_app_id,status) VALUES(${`Files administrator ${kind} fixture`},${clientId},'oauth','active')`;
       const [current] = await sql<
         { auth_epoch: number }[]
       >`SELECT auth_epoch::int AS auth_epoch FROM auth.users WHERE id=${admin.user.id}::uuid`;
@@ -692,7 +690,7 @@ suite("Files machine storage through actual API tokens", () => {
       const principal = { type: "service_account" as const, serviceAccountId: account.id };
       const grant = await service.grantStorage(call(), storage.id, { path: "", principal, permission: "admin" });
       const clientId = `files-oauth-${Bun.randomUUIDv7()}`;
-      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,service_account_id,scopes) VALUES(${`Files ${kind} fixture`},${clientId},ARRAY[]::text[],${account.id}::uuid,ARRAY['read','write','admin'])`;
+      await sql`INSERT INTO auth.oauth_clients(name,client_id,issuer_app_id,service_account_id,status) VALUES(${`Files ${kind} fixture`},${clientId},'oauth',${account.id}::uuid,'active')`;
       const sign = (scope: string, expires: number) =>
         new SignJWT({
           token_use: "access",
@@ -789,13 +787,13 @@ suite("Files machine storage through actual API tokens", () => {
       const rollback = new Error("Rollback OAuth authority fixture");
       await expect(
         sql.begin(async (tx) => {
-          await tx`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+          await tx`DELETE FROM auth.oauth_clients WHERE client_id=${clientId}`;
           await expect(issueInvocationToken(invocationInput, { db: tx })).rejects.toMatchObject({ code: "app_access_denied" });
           throw rollback;
         }),
       ).rejects.toBe(rollback);
       await data(await invoke());
-      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      await sql`DELETE FROM auth.oauth_clients WHERE client_id=${clientId}`;
       expect((await serviceAccounts.get({ id: account.id }))?.status).toBe("active");
       expect((await service.storageGrants(call(), storage.id)).items.some((item) => item.id === grant.id)).toBe(true);
       await expect(issueInvocationToken(invocationInput)).rejects.toMatchObject({ code: "app_access_denied" });

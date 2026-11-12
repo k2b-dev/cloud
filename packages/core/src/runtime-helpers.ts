@@ -47,6 +47,7 @@ import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrateKnownApps } from "./migrate/core/known-apps";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
+import { migrate as migrateOAuthClients } from "./migrate/core/oauth-clients";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
 import { migrate as migratePanelContextConsent } from "./migrate/core/panel-context-consent";
 import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrate/core/personal-group-history";
@@ -131,6 +132,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "screen-preferences", run: migrateScreenPreferences },
     { name: "app-approval", run: migrateAppApproval },
+    { name: "oauth-clients", run: migrateOAuthClients },
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },

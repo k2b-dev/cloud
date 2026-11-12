@@ -366,7 +366,7 @@ suite("live routes", () => {
     expect(await refusal({ ...hal.headers, "sec-fetch-site": "same-site" })).toEqual(refused("forbidden_origin"));
 
     const clientId = `live-${crypto.randomUUID()}`;
-    await sql`INSERT INTO oauth.clients (name, client_id, redirect_uris) VALUES ('Live test', ${clientId}, ARRAY['https://client.example/callback'])`;
+    await sql`INSERT INTO auth.oauth_clients (name,client_id,issuer_app_id,status) VALUES ('Live test',${clientId},'oauth','active')`;
     try {
       const signer = await prepareIdentitySigner("oauth");
       const { issuer } = await getIdentityRuntimeConfig();
@@ -388,7 +388,7 @@ suite("live routes", () => {
       expect(reader.of("s")[0]?.t).toBe("ready");
       reader.socket.close();
     } finally {
-      await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
+      await sql`DELETE FROM auth.oauth_clients WHERE client_id = ${clientId}`;
     }
 
     // A tab whose session ended while its socket was closed stops instead of retrying.

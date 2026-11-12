@@ -126,11 +126,11 @@ export const resolveOAuthTokenActor = async (
         sa.created_by AS service_account_created_by,
         sa.created_at AS service_account_created_at,
         ${userProjectionSql(groupsAdmin)}
-      FROM oauth.clients c
-      JOIN auth.service_accounts sa ON sa.id = ${serviceAccountId}::uuid AND sa.status = 'active'
+      FROM auth.oauth_clients c
+      JOIN auth.service_accounts sa ON sa.id = ${serviceAccountId}::uuid AND sa.id = c.service_account_id AND sa.status = 'active'
       LEFT JOIN auth.users u ON u.id = sa.delegated_user_id
       ${userProjectionJoin()}
-      WHERE c.client_id = ${clientId}
+      WHERE c.client_id = ${clientId} AND c.status = 'active'
     `;
     const row = rows[0];
     if (!row) return null;
@@ -150,10 +150,10 @@ export const resolveOAuthTokenActor = async (
   const predicate = userId ? sql`u.id = ${userId}::uuid` : sql`u.uid = ${uid}`;
   const rows = await query<Record<string, unknown>[]>`
     SELECT u.auth_epoch, ${userProjectionSql(groupsAdmin)}
-    FROM oauth.clients c
+    FROM auth.oauth_clients c
     JOIN auth.users u ON ${predicate}
     ${userProjectionJoin()}
-    WHERE c.client_id = ${clientId}
+    WHERE c.client_id = ${clientId} AND c.status = 'active'
   `;
   if (!rows[0] || !isOAuthTokenEpochCurrent(payload, rows[0].auth_epoch)) return null;
   const user = buildProjectedUser(rows[0]);

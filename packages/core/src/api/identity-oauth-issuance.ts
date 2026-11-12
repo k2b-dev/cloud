@@ -1,61 +1,20 @@
 import { sql } from "@k2b/cloud";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
-import {
-  type AppApprovalConfig,
-  AppApprovalError,
-  isAccountAllowed,
-  readAppApprovalConfig,
-  toPgTextArray,
-} from "@k2b/cloud/services";
+import { type OAuthAuthorityStatement, OAuthAuthorityStatementSchema, OAuthNewAccessNoticeSchema } from "@k2b/cloud/contracts";
+import { AppApprovalError, isAccountAllowed, readAppApprovalConfig, toPgTextArray } from "@k2b/cloud/services";
 import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
-import { z } from "zod";
-import type { CoreNotificationSender, OAuthNewAccessNotice } from "../notifications";
-
-const UUID = z.string().uuid();
-const bounded = z.string().min(1).max(2_048);
-const AuthorizationCodeGrantSchema = z
-  .object({ kind: z.literal("authorization_code"), code: bounded, nonce: UUID, familyId: UUID.optional() })
-  .strict();
-const RefreshTokenGrantSchema = z.object({ kind: z.literal("refresh_token"), tokenId: UUID, nonce: UUID }).strict();
-const DeviceCodeGrantSchema = z
-  .object({ kind: z.literal("device_code"), deviceAuthorizationId: UUID, nonce: UUID, familyId: UUID.optional() })
-  .strict();
-const ClientCredentialsGrantSchema = z.object({ kind: z.literal("client_credentials"), grantId: UUID, nonce: UUID }).strict();
-const UserGrantSchema = z.discriminatedUnion("kind", [AuthorizationCodeGrantSchema, RefreshTokenGrantSchema, DeviceCodeGrantSchema]);
-const common = { expiresIn: z.number().int().min(1).max(3600) };
-const OAuthTokenRequestSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("user_access"), grant: UserGrantSchema, ...common }).strict(),
-  z.object({ kind: z.literal("user_id"), grant: UserGrantSchema, ...common }).strict(),
-  z
-    .object({
-      kind: z.literal("service_access"),
-      grant: ClientCredentialsGrantSchema,
-      ...common,
-    })
-    .strict(),
-]);
-const OAuthTokenBatchSchema = z.object({ tokens: z.array(OAuthTokenRequestSchema).min(1).max(2) }).strict();
-type OAuthTokenRequest = z.infer<typeof OAuthTokenRequestSchema>;
+import type { CoreNotificationSender } from "../notifications";
 
 type AuthorityState = {
-  newAccess?: OAuthNewAccessNotice;
   authEpoch: number;
   clientId: string;
-  clientScopes: string[];
-  clientAudiences: string[];
-  clientServiceAccountId: string | null;
-  registrationKind: string;
-  allowedProfiles: string[];
-  accessMode: string;
-  specificAccess: boolean;
   grantedScopes: string[];
   grantedAudiences: string[];
-  resource: string | null;
   nonce: string | null;
   notAfter: Date | null;
   user: null | {
@@ -66,420 +25,200 @@ type AuthorityState = {
     givenName: string;
     familyName: string;
     email: string | null;
-    accountExpires: Date | null;
     groups: string[];
   };
   serviceAccount: null | {
     id: string;
     kind: string;
-    status: string;
-    delegatedUserId: string | null;
     appId: string | null;
     resourceType: string | null;
     resourceId: string | null;
   };
 };
 
-type AuthorityRow = {
-  client_name: string;
-  client_id: string;
-  client_scopes: string[];
-  client_audiences: string[];
-  client_service_account_id: string | null;
-  registration_kind: string;
-  allowed_profiles: string[];
-  access_mode: string;
-  specific_access: boolean;
-  user_id: string | null;
-  uid: string | null;
-  profile: string | null;
-  provider: "local" | "ipa" | null;
-  display_name: string | null;
-  given_name: string | null;
-  family_name: string | null;
-  mail: string | null;
-  account_expires: Date | null;
-  groups: string[];
-  service_account_id: string | null;
-  service_account_kind: string | null;
-  service_account_status: string | null;
-  delegated_user_id: string | null;
-  app_id: string | null;
-  resource_type: string | null;
-  resource_id: string | null;
-};
+class InvalidOAuthGrantAuthorityError extends Error {}
 
-type GrantRow = {
-  confirmed_at?: Date | null;
-  login_lifetime_seconds?: number | null;
-  family_expires_at: Date | null;
-  client_id: string;
-  user_id: string | null;
-  scopes: string[];
-  audiences: string[];
-  resource: string | null;
-  nonce: string | null;
-};
-
-const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: typeof sql }): Promise<AuthorityState | null> => {
-  const db = params.db ?? sql;
-  let grant: GrantRow | null = null;
-  let authEpoch = 0;
-  let terminalConfirmed = false;
-  let activatedFamily: { id: string; created_at: Date } | undefined;
-  if (params.request.kind === "service_access") {
-    const [row] = await db<GrantRow[]>`
-      UPDATE oauth.client_credentials_authority_grants
-      SET consumed_at = now()
-      WHERE id = ${params.request.grant.grantId}::uuid
-        AND nonce = ${params.request.grant.nonce}::uuid
-        AND consumed_at IS NULL
-        AND expires_at > now()
-      RETURNING client_id, NULL::uuid AS user_id, scopes, audiences, resource, NULL::text AS nonce, NULL::timestamptz AS family_expires_at
-    `;
-    grant = row ?? null;
-  } else {
-    // Lock user -> grant -> family, the order of account deletion and sign-out everywhere. FOR SHARE keeps the
-    // epoch still and allows the key-share lock that a concurrent device decision's user foreign key takes.
-    const userGrant = params.request.grant;
-    const [owner] =
-      userGrant.kind === "authorization_code"
-        ? await db<{ user_id: string }[]>`
-            SELECT user_id FROM oauth.codes WHERE code = ${userGrant.code} AND authority_nonce = ${userGrant.nonce}::uuid`
-        : userGrant.kind === "device_code"
-          ? await db<{ user_id: string }[]>`
-            SELECT user_id FROM oauth.device_authorizations
-            WHERE id = ${userGrant.deviceAuthorizationId}::uuid AND authority_nonce = ${userGrant.nonce}::uuid`
-          : await db<{ user_id: string }[]>`
-            SELECT family.user_id FROM oauth.refresh_tokens token
-            JOIN oauth.refresh_token_families family ON family.id = token.family_id
-            WHERE token.id = ${userGrant.tokenId}::uuid AND token.authority_nonce = ${userGrant.nonce}::uuid`;
-    if (!owner?.user_id) return null;
-    const [user] = await db<{ auth_epoch: string | number | bigint }[]>`
-      SELECT auth_epoch FROM auth.users WHERE id = ${owner.user_id}::uuid FOR SHARE
-    `;
-    if (!user) return null;
-    authEpoch = Number(user.auth_epoch);
-    if (!Number.isSafeInteger(authEpoch) || authEpoch < 0) return null;
-    if (params.request.grant.kind === "authorization_code") {
-      const [row] = await db<GrantRow[]>`
-        UPDATE oauth.codes
-        SET authority_issued_at = now()
-        WHERE code = ${params.request.grant.code}
-          AND authority_nonce = ${params.request.grant.nonce}::uuid
-          AND used = true
-          AND authority_issued_at IS NULL
-          AND expires_at >= now()
-          AND user_id = ${owner.user_id}::uuid
-          AND auth_epoch = ${authEpoch}::bigint
-        RETURNING client_id, user_id, scopes, audiences, resource, nonce, confirmed_at, NULL::timestamptz AS family_expires_at
-      `;
-      grant = row ?? null;
-    } else if (params.request.grant.kind === "device_code") {
-      // Only a consumed authorization of a client that still allows the device grant can mint tokens.
-      const [row] = await db<GrantRow[]>`
-        UPDATE oauth.device_authorizations device
-        SET authority_issued_at = now()
-        FROM oauth.clients client
-        WHERE device.id = ${params.request.grant.deviceAuthorizationId}::uuid
-          AND device.authority_nonce = ${params.request.grant.nonce}::uuid
-          AND device.status = 'consumed'
-          AND device.authority_issued_at IS NULL
-          AND device.expires_at > now()
-          AND client.client_id = device.client_id
-          AND client.is_public
-          AND client.allow_device_grant
-          AND device.user_id = ${owner.user_id}::uuid
-          AND device.auth_epoch = ${authEpoch}::bigint
-        RETURNING device.client_id, device.user_id, device.scopes, device.audiences, device.confirmed_at, device.login_lifetime_seconds, NULL::text AS resource, NULL::text AS nonce, NULL::timestamptz AS family_expires_at
-      `;
-      grant = row ?? null;
-      if (grant) {
-        // Keep the approval until this boundary, even after the sign-in UI expires.
-        const [login] = await db<
-          { id: string; issuer: string; user_id: string | null; approved_by: string | null; auth_epoch: string | null; bound: boolean }[]
-        >`
-          SELECT id,issuer,user_id,approved_by,auth_epoch,
-            (state='approved' AND client_id=${grant.client_id} AND user_id=${grant.user_id}::uuid
-              AND scopes @> ${toPgTextArray(grant.scopes)}::text[] AND scopes <@ ${toPgTextArray(grant.scopes)}::text[]
-              AND lifetime_seconds=${grant.login_lifetime_seconds ?? null}::integer) AS bound
-          FROM auth.app_logins
-          WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid AND kind='terminal' `;
-        if (login) {
-          if (!login.bound) return null;
-          // Same rule as browser completion, read on this transaction: a second pool connection could starve the pool.
-          let cfg: AppApprovalConfig;
-          try {
-            cfg = await readAppApprovalConfig(db);
-          } catch (error) {
-            if (error instanceof AppApprovalError) return null;
-            throw error;
-          }
-          if (!cfg.enabled || !cfg.appOrigin || login.issuer !== cfg.issuer) return null;
-          // The account row is already held FOR SHARE above, so authEpoch is live. The approval must belong to that
-          // account and carry the same epoch; then lock device before login, matching signed decisions.
-          if (login.user_id !== grant.user_id || login.auth_epoch === null || Number(login.auth_epoch) !== authEpoch) return null;
-          const [device] = await db`SELECT id FROM auth.app_devices
-            WHERE id=${login.approved_by}::uuid AND issuer=${cfg.issuer} AND revoked_at IS NULL
-              AND user_id=${grant.user_id}::uuid FOR UPDATE`;
-          if (!device) return null;
-          const [consumed] = await db`UPDATE auth.app_logins SET state='consumed'
-            WHERE id=${login.id}::uuid AND state='approved' AND approved_by=${login.approved_by}::uuid
-              AND kind='terminal' AND device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid
-              AND issuer=${cfg.issuer} AND auth_epoch=${authEpoch}::bigint
-              AND client_id=${grant.client_id} AND user_id=${grant.user_id}::uuid
-              AND scopes @> ${toPgTextArray(grant.scopes)}::text[] AND scopes <@ ${toPgTextArray(grant.scopes)}::text[]
-              AND lifetime_seconds=${grant.login_lifetime_seconds ?? null}::integer RETURNING id`;
-          if (!consumed) return null;
-          terminalConfirmed = true;
-        }
-      }
-    } else {
-      const [row] = await db<GrantRow[]>`
-        UPDATE oauth.refresh_tokens token
-        SET authority_issued_at = now()
-        FROM oauth.refresh_token_families family
-        WHERE token.id = ${params.request.grant.tokenId}::uuid
-          AND token.authority_nonce = ${params.request.grant.nonce}::uuid
-          AND token.status = 'issuing'
-          AND token.authority_issued_at IS NULL
-          AND token.expires_at > now()
-          AND family.id = token.family_id
-          AND family.status = 'active'
-          AND family.expires_at > now()
-          AND family.user_id = ${owner.user_id}::uuid
-          AND family.auth_epoch = ${authEpoch}::bigint
-        RETURNING family.client_id, family.user_id, token.authority_scopes AS scopes,
-          token.authority_audiences AS audiences, token.authority_resource AS resource, NULL::text AS nonce, family.expires_at AS family_expires_at
-      `;
-      grant = row ?? null;
-    }
-    if (!grant) return null;
-    if (userGrant.kind !== "refresh_token") {
-      // A grant with offline_access signs only after its reserved family becomes active in this transaction.
-      const familyId = userGrant.familyId;
-      if (grant.scopes.includes("offline_access") !== (familyId !== undefined)) return null;
-      if (familyId !== undefined) {
-        if (!grant.confirmed_at && !terminalConfirmed) return null;
-        const [activated] = await db<{ id: string; expires_at: Date; created_at: Date }[]>`
-          UPDATE oauth.refresh_token_families
-          SET status = 'active', notified_at = CASE WHEN ${terminalConfirmed} THEN now() ELSE NULL END
-          WHERE id = ${familyId}::uuid AND status = 'reserved'
-            AND client_id = ${grant.client_id} AND user_id = ${owner.user_id}::uuid
-            AND auth_epoch = ${authEpoch}::bigint AND expires_at > now()
-            AND (${grant.login_lifetime_seconds ?? null}::integer IS NULL
-              OR expires_at <= now() + ${grant.login_lifetime_seconds ?? null}::integer * interval '1 second')
-          RETURNING id, expires_at, created_at
-        `;
-        if (!activated) return null;
-        grant.family_expires_at = activated.expires_at;
-        if (!terminalConfirmed) activatedFamily = activated;
-      }
-    }
-  }
-  const clientId = grant?.client_id ?? null;
-  if (!clientId) return null;
-  const grantUserId = grant?.user_id ?? null;
-  const [row] = await db<AuthorityRow[]>`
-    WITH RECURSIVE user_all_groups AS (
-      SELECT ug.group_id, g.provider
-      FROM auth.user_groups_v2 ug
-      JOIN auth.groups g ON g.id = ug.group_id
-      WHERE ug.user_id = ${grantUserId}::uuid
-      UNION
-      SELECT gg.parent_group_id, parent.provider
-      FROM auth.group_groups_v2 gg
-      JOIN auth.groups parent ON parent.id = gg.parent_group_id
-      JOIN user_all_groups child ON child.group_id = gg.child_group_id
-      WHERE parent.provider = child.provider
-    )
-    SELECT c.client_id, c.name AS client_name, c.scopes AS client_scopes, c.audiences AS client_audiences, c.service_account_id AS client_service_account_id,
-      c.registration_kind, c.allowed_profiles, c.access_mode,
-      (
-        EXISTS (SELECT 1 FROM oauth.client_access_users cau WHERE cau.client_id = c.id AND cau.user_id = u.id)
-        OR EXISTS (SELECT 1 FROM oauth.client_access_groups cag JOIN user_all_groups ug ON ug.group_id = cag.group_id WHERE cag.client_id = c.id)
-      ) AS specific_access,
-      u.id AS user_id, u.uid, u.profile, u.provider, u.display_name, u.given_name, u.sn AS family_name,
-      u.mail, u.account_expires,
-      COALESCE(ARRAY(SELECT DISTINCT g.name FROM user_all_groups ug JOIN auth.groups g ON g.id = ug.group_id
-        WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
-        ORDER BY g.name), ARRAY[]::text[]) AS groups,
-      sa.id AS service_account_id, sa.kind AS service_account_kind, sa.status AS service_account_status,
-      sa.delegated_user_id, sa.app_id, sa.resource_type, sa.resource_id
-    FROM oauth.clients c
-    LEFT JOIN auth.users u ON u.id = ${grantUserId}::uuid
-    LEFT JOIN auth.service_accounts sa ON sa.id = c.service_account_id
-    WHERE c.client_id = ${clientId}
-    LIMIT 1
-  `;
-  if (!row) return null;
-  if (
-    row.user_id !== null &&
-    (!row.provider ||
-      (row.profile !== "guest" && row.profile !== "user") ||
-      !(await isAccountAllowed({ id: row.user_id, provider: row.provider, profile: row.profile }, db)))
-  )
-    return null;
-  if (row.user_id !== null && (row.uid === null || row.profile === null)) return null;
-  if (row.service_account_id !== null && (row.service_account_kind === null || row.service_account_status === null)) return null;
-  const resolvedUserId = row.user_id;
-  const uid = row.uid;
-  const profile = row.profile;
-  const serviceAccountId = row.service_account_id;
-  const serviceAccountKind = row.service_account_kind;
-  const serviceAccountStatus = row.service_account_status;
-  return {
-    ...(activatedFamily && resolvedUserId
-      ? {
-          newAccess: {
-            familyId: activatedFamily.id,
-            userId: resolvedUserId,
-            kind: row.client_id === "cloud-cli" ? ("command_line" as const) : ("app" as const),
-            clientName: row.client_name,
-            createdAt: activatedFamily.created_at.toISOString(),
-          },
-        }
-      : {}),
-    authEpoch,
-    clientId: row.client_id,
-    clientScopes: row.client_scopes,
-    clientAudiences: row.client_audiences,
-    clientServiceAccountId: row.client_service_account_id,
-    registrationKind: row.registration_kind,
-    allowedProfiles: row.allowed_profiles,
-    accessMode: row.access_mode,
-    specificAccess: row.specific_access,
-    grantedScopes: grant?.scopes ?? row.client_scopes,
-    grantedAudiences: grant?.audiences ?? [],
-    resource: grant?.resource ?? null,
-    nonce: grant?.nonce ?? null,
-    notAfter: grant?.family_expires_at ?? null,
-    user:
-      resolvedUserId !== null && uid !== null && profile !== null
-        ? {
-            id: resolvedUserId,
-            uid,
-            profile,
-            displayName: row.display_name ?? "",
-            givenName: row.given_name ?? "",
-            familyName: row.family_name ?? "",
-            email: row.mail,
-            accountExpires: row.account_expires,
-            groups: row.groups,
-          }
-        : null,
-    serviceAccount:
-      serviceAccountId !== null && serviceAccountKind !== null && serviceAccountStatus !== null
-        ? {
-            id: serviceAccountId,
-            kind: serviceAccountKind,
-            status: serviceAccountStatus,
-            delegatedUserId: row.delegated_user_id,
-            appId: row.app_id,
-            resourceType: row.resource_type,
-            resourceId: row.resource_id,
-          }
-        : null,
+/** Platform facts only: the trusted issuer owns client policy and consumes its own grants. */
+const resolveAuthorityState = async ({
+  request,
+  appId,
+  db = sql,
+}: {
+  request: OAuthAuthorityStatement;
+  appId: string;
+  db?: typeof sql;
+}): Promise<AuthorityState | null> => {
+  const state: AuthorityState = {
+    authEpoch: 0,
+    clientId: request.clientId,
+    grantedScopes: request.scopes,
+    grantedAudiences: request.audiences,
+    nonce: request.nonce,
+    notAfter: request.loginExpiresAt ? new Date(request.loginExpiresAt) : null,
+    user: null,
+    serviceAccount: null,
   };
+  if (request.subject.kind === "user") {
+    const [user] = await db<
+      {
+        id: string;
+        uid: string;
+        auth_epoch: string | number;
+        provider: "local" | "ipa";
+        profile: "user" | "guest";
+        display_name: string;
+        given_name: string;
+        sn: string;
+        mail: string | null;
+        account_expires: Date | null;
+      }[]
+    >`SELECT id,uid,auth_epoch,provider,profile,display_name,given_name,sn,mail,account_expires
+      FROM auth.users WHERE id=${request.subject.userId}::uuid FOR SHARE`;
+    if (
+      !user ||
+      Number(user.auth_epoch) !== request.subject.authEpoch ||
+      (user.profile !== "user" && user.profile !== "guest") ||
+      (user.account_expires !== null && user.account_expires.getTime() <= Date.now()) ||
+      !(await isAccountAllowed(user, db))
+    )
+      return null;
+    const groups = await db<{ name: string }[]>`WITH RECURSIVE user_all_groups AS (
+      SELECT ug.group_id,g.provider FROM auth.user_groups_v2 ug JOIN auth.groups g ON g.id=ug.group_id
+        WHERE ug.user_id=${user.id}::uuid
+      UNION
+      SELECT gg.parent_group_id,parent.provider FROM auth.group_groups_v2 gg
+        JOIN auth.groups parent ON parent.id=gg.parent_group_id
+        JOIN user_all_groups child ON child.group_id=gg.child_group_id WHERE parent.provider=child.provider
+    ) SELECT DISTINCT g.name FROM user_all_groups ug JOIN auth.groups g ON g.id=ug.group_id
+      WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id=g.id) ORDER BY g.name`;
+    state.authEpoch = request.subject.authEpoch;
+    state.user = {
+      id: user.id,
+      uid: user.uid,
+      profile: user.profile,
+      displayName: user.display_name,
+      givenName: user.given_name,
+      familyName: user.sn,
+      email: user.mail,
+      groups: groups.map((g) => g.name),
+    };
+    if (user.account_expires && (!state.notAfter || user.account_expires < state.notAfter)) state.notAfter = user.account_expires;
+  } else {
+    const [account] = await db<
+      {
+        id: string;
+        kind: string;
+        status: string;
+        delegated_user_id: string | null;
+        app_id: string | null;
+        resource_type: string | null;
+        resource_id: string | null;
+      }[]
+    >`SELECT id,kind,status,delegated_user_id,app_id,resource_type,resource_id FROM auth.service_accounts
+      WHERE id=${request.subject.serviceAccountId}::uuid FOR SHARE`;
+    // The driver will replace this eligibility check with serviceAccountMayHoldCredentials from feat/code.
+    if (!account || account.status !== "active" || account.delegated_user_id !== null || account.resource_type === "cloud.app") return null;
+    const resourceBound =
+      account.kind === "resource_bound" && account.app_id !== null && account.resource_type !== null && account.resource_id !== null;
+    const standalone =
+      (account.kind === "standalone" || account.kind === "agent") &&
+      account.app_id === null &&
+      account.resource_type === null &&
+      account.resource_id === null;
+    if (!resourceBound && !standalone) return null;
+    state.serviceAccount = {
+      id: account.id,
+      kind: account.kind,
+      appId: account.app_id,
+      resourceType: account.resource_type,
+      resourceId: account.resource_id,
+    };
+  }
+  const [client] = await db<{ service_account_id: string | null }[]>`SELECT service_account_id FROM auth.oauth_clients
+    WHERE client_id=${request.clientId} AND issuer_app_id=${appId} AND status='active' FOR SHARE`;
+  if (!client || (state.serviceAccount && client.service_account_id !== state.serviceAccount.id)) return null;
+  if (state.notAfter && state.notAfter.getTime() <= Date.now()) return null;
+  if (request.terminalLoginId !== null) {
+    if (!state.user || !state.notAfter) return null;
+    const [login] = await db<
+      { id: string; issuer: string; approved_by: string; device_authorization_id: string; lifetime_seconds: number }[]
+    >`
+      SELECT id,issuer,approved_by,device_authorization_id,lifetime_seconds FROM auth.app_logins
+      WHERE id=${request.terminalLoginId}::uuid AND kind='terminal' AND state='approved'
+        AND oauth_issuer_app_id=${appId} AND client_id=${request.clientId} AND user_id=${state.user.id}::uuid
+        AND auth_epoch=${state.authEpoch}::bigint AND device_authorization_id IS NOT NULL
+        AND oauth_grant_expires_at > clock_timestamp()
+        AND scopes @> ${toPgTextArray(request.scopes)}::text[] AND scopes <@ ${toPgTextArray(request.scopes)}::text[]
+        AND ${state.notAfter} <= now() + lifetime_seconds * interval '1 second'`;
+    if (!login) return null;
+    let cfg: Awaited<ReturnType<typeof readAppApprovalConfig>>;
+    try {
+      cfg = await readAppApprovalConfig(db);
+    } catch (error) {
+      if (error instanceof AppApprovalError) return null;
+      throw error;
+    }
+    if (!cfg.enabled || !cfg.appOrigin || login.issuer !== cfg.issuer) return null;
+    const [device] = await db`SELECT id FROM auth.app_devices WHERE id=${login.approved_by}::uuid
+      AND issuer=${cfg.issuer} AND user_id=${state.user.id}::uuid AND revoked_at IS NULL FOR UPDATE`;
+    if (!device) return null;
+    const [consumed] = await db`UPDATE auth.app_logins SET state='consumed'
+      WHERE id=${login.id}::uuid AND kind='terminal' AND state='approved' AND issuer=${cfg.issuer}
+        AND oauth_issuer_app_id=${appId} AND device_authorization_id=${login.device_authorization_id}::uuid
+        AND client_id=${request.clientId} AND user_id=${state.user.id}::uuid AND auth_epoch=${state.authEpoch}::bigint
+        AND approved_by=${login.approved_by}::uuid AND lifetime_seconds=${login.lifetime_seconds}
+        AND oauth_grant_expires_at > clock_timestamp()
+        AND scopes @> ${toPgTextArray(request.scopes)}::text[] AND scopes <@ ${toPgTextArray(request.scopes)}::text[]
+        RETURNING id`;
+    if (!consumed) return null;
+  }
+  return state;
 };
 
 type Dependencies = {
   notifyNewAccess: CoreNotificationSender["sendOAuthNewAccess"];
+  ownsClient: (clientId: string, appId: string) => Promise<boolean>;
   authenticate: typeof authenticateSignedAppRequest;
+  authorize: (c: Context) => Promise<Response | null>;
   withActiveSigner: typeof withActiveIdentitySigner;
   issuer: () => Promise<string>;
   resolve: typeof resolveAuthorityState;
   now: () => number;
 };
 
-/** Every issuer, including OAuth, needs the operator-owned oauth:issue key grant. */
+/** Every issuer needs the operator-owned oauth:issue key grant. */
 export const authorizeOAuthRequest = async (
   c: Context,
   authenticate: typeof authenticateSignedAppRequest = authenticateSignedAppRequest,
 ): Promise<Response | null> => {
   const authenticated = await authenticate(c, "oauth:issue");
-  return authenticated instanceof Response ? authenticated : null;
+  if (authenticated instanceof Response) return authenticated;
+  c.set("oauthIssuerAppId", authenticated.appId);
+  return null;
 };
 
 const defaultDependencies: Dependencies = {
   notifyNewAccess: async () => {
     throw new Error("New-access notification sender is not configured");
   },
+  ownsClient: async (clientId, appId) => {
+    const [client] = await sql`SELECT client_id FROM auth.oauth_clients
+      WHERE client_id=${clientId} AND issuer_app_id=${appId} AND status='active'`;
+    return !!client;
+  },
   authenticate: authenticateSignedAppRequest,
+  authorize: authorizeOAuthRequest,
   withActiveSigner: withActiveIdentitySigner,
   issuer: async () => publicCloudOrigin(await settings.get<string>("app.url")),
   resolve: resolveAuthorityState,
   now: () => Math.floor(Date.now() / 1_000),
 };
 
-class InvalidOAuthGrantAuthorityError extends Error {}
-
-const resolveAudiences = (state: AuthorityState, issuer: string): string[] | null => {
-  const resource = state.resource;
-  const granted = Array.from(new Set(state.grantedAudiences));
-  if (granted.length === 0) return null;
-  if (state.registrationKind === "dynamic") {
-    if (!resource || granted.length !== 1 || granted[0] !== resource) return null;
-    try {
-      return new URL(resource).origin === new URL(issuer).origin ? granted : null;
-    } catch {
-      return null;
-    }
-  }
-  if (resource) return granted.length === 1 && granted[0] === resource && state.clientAudiences.includes(resource) ? granted : null;
-  const currentlyAllowed = new Set(["cloud", state.clientId, ...state.clientAudiences]);
-  return granted.every((audience) => currentlyAllowed.has(audience)) ? granted : null;
-};
-
-const validateAuthority = (requests: OAuthTokenRequest[], state: AuthorityState, issuer: string, now: number): boolean => {
-  const first = requests[0];
-  if (!first) return false;
-  if (first.kind === "service_access") {
-    if (requests.length !== 1 || !state.serviceAccount || state.user) return false;
-    const account = state.serviceAccount;
-    const resourceBound =
-      account.kind === "resource_bound" && account.appId !== null && account.resourceType !== null && account.resourceId !== null;
-    const standalone =
-      (account.kind === "standalone" || account.kind === "agent") &&
-      account.appId === null &&
-      account.resourceType === null &&
-      account.resourceId === null;
-    return (
-      state.clientServiceAccountId === account.id &&
-      account.status === "active" &&
-      account.delegatedUserId === null &&
-      (resourceBound || standalone) &&
-      state.grantedScopes.every((scope) => state.clientScopes.includes(scope)) &&
-      resolveAudiences(state, issuer) !== null
-    );
-  }
-  const accessRequests = requests.filter((request) => request.kind === "user_access");
-  const idTokenRequests = requests.filter((request) => request.kind === "user_id");
-  const access = accessRequests[0];
-  const idToken = idTokenRequests[0];
-  if (
-    !access ||
-    accessRequests.length !== 1 ||
-    idTokenRequests.length > 1 ||
-    (idTokenRequests.length === 1 && !state.grantedScopes.includes("openid")) ||
-    !state.user ||
-    state.serviceAccount ||
-    requests.some((request) => request.kind === "service_access")
-  ) {
-    return false;
-  }
-  if (idToken && JSON.stringify(idToken.grant) !== JSON.stringify(access.grant)) return false;
-  const user = state.user;
-  return (
-    (!user.accountExpires || user.accountExpires.getTime() > now * 1_000) &&
-    state.allowedProfiles.includes(user.profile) &&
-    (state.accessMode === "profiles" || (state.accessMode === "specific" && state.specificAccess)) &&
-    state.grantedScopes.every((scope) => state.clientScopes.includes(scope)) &&
-    resolveAudiences(state, issuer) !== null
-  );
-};
-
-const claims = (request: OAuthTokenRequest, state: AuthorityState, grantedScopes: string[]): Record<string, unknown> => {
+const claims = (
+  request: OAuthAuthorityStatement["tokens"][number],
+  state: AuthorityState,
+  grantedScopes: string[],
+): Record<string, unknown> => {
   if (request.kind === "user_access") {
     const user = state.user;
     if (!user) throw new Error("Validated OAuth user authority is missing");
@@ -525,7 +264,7 @@ const claims = (request: OAuthTokenRequest, state: AuthorityState, grantedScopes
 };
 
 const sign = async (
-  request: OAuthTokenRequest,
+  request: OAuthAuthorityStatement["tokens"][number],
   state: AuthorityState,
   grantedScopes: string[],
   options: { issuer: string; kid: string; key: CryptoKey; now: number },
@@ -538,13 +277,13 @@ const sign = async (
     .setIssuedAt(options.now)
     .setExpirationTime(exp);
   if (request.kind === "service_access") {
-    const audiences = resolveAudiences(state, options.issuer);
+    const audiences = state.grantedAudiences;
     if (!audiences) throw new Error("Validated OAuth audience is missing");
     const account = state.serviceAccount;
     if (!account) throw new Error("Validated OAuth service authority is missing");
     token = token.setSubject(account.id).setAudience(audiences).setJti(crypto.randomUUID());
   } else if (request.kind === "user_access") {
-    const audiences = resolveAudiences(state, options.issuer);
+    const audiences = state.grantedAudiences;
     if (!audiences) throw new Error("Validated OAuth audience is missing");
     const user = state.user;
     if (!user) throw new Error("Validated OAuth user authority is missing");
@@ -557,26 +296,14 @@ const sign = async (
   return token.sign(options.key);
 };
 
-/** Send only after the family activation transaction committed; never throws, maintenance retries pending notices. */
-export const notifyOAuthNewAccessFamily = async (
-  notice: OAuthNewAccessNotice,
-  notify: CoreNotificationSender["sendOAuthNewAccess"],
-): Promise<void> => {
-  try {
-    await notify(notice);
-    await sql`UPDATE oauth.refresh_token_families SET notified_at=now() WHERE id=${notice.familyId}::uuid AND notified_at IS NULL`;
-  } catch {
-    console.error("[oauth-issuance] new-access notice could not be sent");
-  }
-};
-
-/** Closed Core authority endpoint for OAuth access and ID tokens. */
+/** Closed authority endpoint shared by built-in and third-party trusted issuers. */
 export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencies> = {}) => {
   const dependencies = { ...defaultDependencies, ...overrides };
-  const routes = new Hono();
+  const authorize = overrides.authorize ?? ((c: Context) => authorizeOAuthRequest(c, dependencies.authenticate));
+  const routes = new Hono<{ Variables: { oauthIssuerAppId: string } }>();
   routes.post("/oauth/ready", async (c) => {
     c.header("Cache-Control", "no-store");
-    const denied = await authorizeOAuthRequest(c, dependencies.authenticate);
+    const denied = await authorize(c);
     if (denied) return denied;
     await dependencies.withActiveSigner("oauth", async () => undefined, { timeoutMs: 5_000 });
     return c.body(null, 204);
@@ -584,9 +311,8 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
   routes.post("/oauth/token", async (c) => {
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");
-    const denied = await authorizeOAuthRequest(c, dependencies.authenticate);
+    const denied = await authorize(c);
     if (denied) return denied;
-
     const contentLength = Number(c.req.header("content-length") ?? 0);
     if (Number.isFinite(contentLength) && contentLength > 262_144) return c.json({ message: "Request too large" }, 413);
     let body: unknown;
@@ -597,38 +323,45 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
     } catch {
       return c.json({ message: "Invalid request" }, 400);
     }
-    const parsed = OAuthTokenBatchSchema.safeParse(body);
+    const parsed = OAuthAuthorityStatementSchema.safeParse(body);
     if (!parsed.success) return c.json({ message: "Invalid request" }, 400);
-
-    const first = parsed.data.tokens[0];
-    if (!first) return c.json({ message: "Invalid request" }, 400);
+    const appId = c.get("oauthIssuerAppId");
+    if (typeof appId !== "string") return c.json({ message: "Forbidden" }, 403);
     const issuer = await dependencies.issuer();
     try {
-      let newAccess: OAuthNewAccessNotice | undefined;
       const tokens = await dependencies.withActiveSigner(
         "oauth",
         async (signer, db) => {
-          const state = await dependencies.resolve({ request: first, db });
+          const state = await dependencies.resolve({ request: parsed.data, appId, db });
+          if (!state) throw new InvalidOAuthGrantAuthorityError();
           const now = dependencies.now();
-          if (!state || !validateAuthority(parsed.data.tokens, state, issuer, now)) throw new InvalidOAuthGrantAuthorityError();
-          const accessRequest = parsed.data.tokens.find((request) => request.kind === "user_access" || request.kind === "service_access");
-          if (!accessRequest) throw new InvalidOAuthGrantAuthorityError();
-          newAccess = state.newAccess;
-          const grantedScopes = state.grantedScopes;
           return Promise.all(
-            parsed.data.tokens.map((request) => sign(request, state, grantedScopes, { issuer, kid: signer.kid, key: signer.key, now })),
+            parsed.data.tokens.map((request) =>
+              sign(request, state, state.grantedScopes, { issuer, kid: signer.kid, key: signer.key, now }),
+            ),
           );
         },
         { timeoutMs: 5_000 },
       );
-      // Never on the response path: a slow notice would outlast the OAuth app's request budget and
-      // revoke the sign-in it reports. Maintenance sends what this attempt does not.
-      if (newAccess) void notifyOAuthNewAccessFamily(newAccess, dependencies.notifyNewAccess);
       return c.json({ tokens });
     } catch (error) {
       if (error instanceof InvalidOAuthGrantAuthorityError) return c.json({ message: "Forbidden" }, 403);
       throw error;
     }
+  });
+  // The issuer owns the retry record. Core only renders its existing platform notification.
+  routes.post("/oauth/new-access", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const denied = await authorize(c);
+    if (denied) return denied;
+    const parsed = OAuthNewAccessNoticeSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ message: "Invalid request" }, 400);
+    const appId = c.get("oauthIssuerAppId");
+    if (typeof appId !== "string") return c.json({ message: "Forbidden" }, 403);
+    const { clientId, ...notice } = parsed.data;
+    if (!(await dependencies.ownsClient(clientId, appId))) return c.json({ message: "Forbidden" }, 403);
+    await dependencies.notifyNewAccess({ ...notice, kind: appId === "oauth" && clientId === "cloud-cli" ? "command_line" : "app" });
+    return c.body(null, 204);
   });
   return routes;
 };

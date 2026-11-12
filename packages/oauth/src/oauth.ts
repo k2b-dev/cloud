@@ -695,8 +695,10 @@ const app = new Hono<AuthContext>()
             deviceAuthorizationId: started.id,
             identifier: body.login_hint,
             clientId: client.clientId,
+            clientName: client.name.slice(0, 120),
             scopes,
             lifetimeSeconds: lifetime,
+            grantExpiresAt: started.expiresAt,
           });
           return c.json({
             device_code: started.deviceCode,

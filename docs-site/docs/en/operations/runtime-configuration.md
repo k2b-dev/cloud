@@ -391,11 +391,11 @@ operator-owned `oauth_issue_allowed` credential grant, checked directly on
 every request regardless of app ID. Every new issuer key, including rotations,
 needs explicit `--grant oauth:issue` (or API `grants: ["oauth:issue"]`). Setup
 and development tooling must pass it for the built-in OAuth app's first
-enrollment. A migration introducing the grant starts every key without issuance
-permission; repeated migrations preserve stored operator grants. Grants are
-never inherited. Issuance serves clients and grants in
-Cloud's OAuth registry; separate third-party identity-provider registries are
-not supported.
+enrollment. The migration starts keys without issuance permission and preserves
+stored operator grants on repeat runs. Grants are never inherited. Issuers own client policy and grants;
+Core signs closed authority statements against the shared minimal client
+registry and live platform facts. Third-party issuers use the same contract.
+See [Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
 See [App keys](/en/docs/operations/app-keys#background-and-oauth-authority) for
 grant storage and administration. Mandates and OAuth grant checks stay unchanged.
 `connections_allowed=false` prevents startup connection delivery but still

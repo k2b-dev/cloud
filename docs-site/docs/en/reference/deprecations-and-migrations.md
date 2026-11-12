@@ -10,6 +10,32 @@ updated: 2026-11-12
 
 # Deprecations and migrations
 
+## OAuth issuers own their grant state
+
+Core's internal OAuth token endpoint now accepts a closed
+`OAuthAuthorityStatement`, authenticated by an app key granted `oauth:issue`.
+The old built-in grant-reference body and `authority_nonce` handshake are
+removed. The issuer reserves its own source, commits, asks Core to sign, then
+finalizes on success. Complete 4xx/5xx responses release the reservation;
+timeouts, lost responses and malformed success responses leave it consumed.
+There is no recovery ledger.
+
+Core and token verifiers use `auth.oauth_clients` for current issuer, status
+and service-account binding. Issuers call `oauthClients.upsert` or `remove`
+in the same transaction as private client mutations, including automatic
+cleanup. Removal retains a `deleted` tombstone; no issuer can register that
+ID again. The built-in OAuth schema is no longer a platform runtime dependency.
+
+Roll Core first, then OAuth back-to-back. OAuth token issuance and terminal
+approvals are unavailable between these updates because Core rejects the old
+request bodies with HTTP 400. Core backfills once; OAuth reconciles its existing
+clients before serving requests. No client-write freeze is needed. Complete
+replacement of old issuer replicas before relying on transactional registry
+updates. Access-notice retry ownership moves from Core to the issuer while
+keeping the existing notification content and idempotency key. See
+[rollout steps](/en/docs/operations/app-keys#roll-out-issuer-ownership) and the
+[public issuer contract](/en/docs/identity/oauth#implement-an-oauth-issuer).
+
 ## APP_SECRET supports overlapping roots
 
 Follow [Rotate APP_SECRET](/en/docs/operations/app-secret-rotation) instead of
