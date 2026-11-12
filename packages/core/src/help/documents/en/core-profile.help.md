@@ -3,7 +3,7 @@ id: core-profile
 title: Profile
 icon: ti ti-user-circle
 description: Review your account, groups, and activity, request FreeIPA access, and use API keys and passkeys.
-updated: 2026-11-10
+updated: 2026-11-11
 order: 110
 ---
 
@@ -42,7 +42,7 @@ device's light or dark setting.
 ## Hide your content with the privacy screen {icon="eye-off"}
 
 The privacy screen hides your content when someone looks over your shoulder.
-It locks nothing. The app bar stays visible, but you cannot use it.
+It locks nothing. It hides the whole screen, the app bar included.
 
 :::reference
 - **Now:** In the profile menu, choose **Privacy screen**, or press **Ctrl+.**

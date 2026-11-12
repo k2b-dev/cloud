@@ -120,6 +120,8 @@ const files: Record<string, Classification> = {
   // Reads the file like a download; a retry clears only the preview cache's remembered failure.
   preview: base(),
   retryPreview: base(),
+  // Reads the chosen PDFs like downloads and publishes the new file through the journaled create path.
+  preparePdf: mixed(),
   capabilityDownload: base(),
   capabilityUploadStatus: mixed(),
   capabilityUpload: mutation(),

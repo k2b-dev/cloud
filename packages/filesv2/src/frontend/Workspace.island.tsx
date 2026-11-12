@@ -1175,6 +1175,7 @@ export default function Workspace(props: {
                                 true,
                               );
                             }}
+                            selectionPillHint={!!props.initial.hints?.selectionPill}
                             onShare={(paths) =>
                               void openShareDialog({
                                 baseId: directory().base.id,

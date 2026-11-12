@@ -1,4 +1,4 @@
-import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { type Accessor, batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
@@ -725,7 +725,11 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       draft?: { content: AiDraftContentPart[] };
       preloadTools?: Array<{ name: string } | { appId: string; kind: "query" | "action"; id: string }>;
     } = {},
-    options: { activate?: boolean } = {},
+    options: {
+      activate?: boolean;
+      /** Runs in the same update that makes the new chat active, so views keyed by it never see it without their local state. */
+      beforeOpen?: (conversation: AiConversation) => void;
+    } = {},
   ) => {
     const generation = options.activate === false ? conversationOpenGeneration : ++conversationOpenGeneration;
     if (options.activate !== false) clearErrors();
@@ -740,9 +744,12 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       cache.set(conversation.id, projection);
       setHasMore(conversation.id, false);
       if (generation !== conversationOpenGeneration || options.activate === false) return conversation;
-      setState(reconcile(projection, { key: "id", merge: true }));
-      setActiveConversationIdSignal(conversation.id);
-      setLoadingConversationId(null);
+      batch(() => {
+        options.beforeOpen?.(conversation);
+        setState(reconcile(projection, { key: "id", merge: true }));
+        setActiveConversationIdSignal(conversation.id);
+        setLoadingConversationId(null);
+      });
       openStream(conversation.id);
       void markConversationViewed(conversation.id);
       return conversation;

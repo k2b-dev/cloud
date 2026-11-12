@@ -235,6 +235,9 @@ into a block's source for the person, also in a read-only editor that cannot
 take focus, adds `placeMarkdownCaret.of()` to its transaction. The math extension expects the
 host to load KaTeX’s stylesheet and fonts.
 
+On iOS, CodeMirror uses the browser's native highlight for the main selection
+and draws selection handles. Other selections keep their editor highlights.
+
 | Extension | Application options |
 | --- | --- |
 | `listsExtension`, `ligaturesExtension` | `excludedRanges(markdown)` returns source spans that stay literal, such as application directives. |

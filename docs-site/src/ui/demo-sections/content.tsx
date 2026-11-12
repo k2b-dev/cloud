@@ -56,6 +56,7 @@ import {
   Pagination,
   PanelDialog,
   Paper,
+  PdfThumbnails,
   PdfViewer,
   Placeholder,
   panelDialogFixedOptions,
@@ -1832,6 +1833,14 @@ const samplePdf = (): Blob => {
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
   const [strip, setStrip] = createSignal("0");
+  const [pickedPages, setPickedPages] = createSignal<ReadonlySet<number>>(new Set([0]));
+  const togglePage = (index: number) =>
+    setPickedPages((all) => {
+      const next = new Set(all);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   const openPreview = () =>
     dialogCore.open<void>(
       (close) => (
@@ -1857,6 +1866,7 @@ const MediaDemo = () => {
       id="media"
       chip={[
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
+        { kind: "component", name: "PdfThumbnails", from: "@k2b/ui" },
         { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
         { kind: "component", name: "ThumbnailStrip", from: "@k2b/ui" },
       ]}
@@ -1897,6 +1907,7 @@ const MediaDemo = () => {
       <div class="ui-pdf-viewer-demo">
         <PdfViewer data={samplePdf()} title="Sample report" />
       </div>
+      <PdfThumbnails data={samplePdf()} title="Sample report" size="md" selected={pickedPages()} onToggle={togglePage} />
     </DemoCard>
   );
 };

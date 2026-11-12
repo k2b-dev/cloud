@@ -172,6 +172,7 @@ and checked cards.
 | Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
+| Chosen page of a PDF | `PdfThumbnails` | `k2b-pdf-thumbnails` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
 | Selected range | `RangePicker` | `k2b-range-picker` |
 | Selected period preset | `PeriodPicker` | `k2b-period-picker` |

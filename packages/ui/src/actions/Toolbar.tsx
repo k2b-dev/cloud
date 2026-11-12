@@ -5,7 +5,7 @@ import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { formatShortcut, type KeyboardPlatform, keyboardPlatform } from "../intl/shortcut";
 import { IconButton } from "./Button";
-import { Dropdown, type DropdownAction } from "./Dropdown";
+import { Dropdown, type DropdownAction, type DropdownItem } from "./Dropdown";
 import { useToolbarMessages } from "./toolbar-messages";
 
 export type ToolbarProps = {
@@ -23,6 +23,11 @@ export type ToolbarProps = {
    * ignore it.
    */
   tone?: "danger";
+  /**
+   * Rarer commands of a floating toolbar that always live in More, such as Copy to or Move to trash for a selection.
+   * More then always shows; actions that move there on a narrow row come first, these follow in their own group.
+   */
+  moreItems?: readonly DropdownItem[];
   class?: string;
 };
 
@@ -319,6 +324,7 @@ const measureOverflow = (
   more: HTMLDivElement,
   actions: RegisteredAction[],
   available: number,
+  pinned = false,
 ): RegisteredAction[] => {
   for (const element of root.querySelectorAll(`[${overflowAttribute}]`)) if (element !== more) reveal(element);
   root.removeAttribute(compactAttribute);
@@ -393,10 +399,11 @@ const measureOverflow = (
     )
     .reverse()
     .sort((a, b) => b.props.priority! - a.props.priority!);
-  let movedAny = false;
-  tidy(false);
+  // With rarer commands of its own, More always shows and always takes its room.
+  let movedAny = pinned;
+  tidy(pinned);
   // Labels go before actions: a toolbar that does not fit with its labels drops them first.
-  if (used(false) > available && root.querySelector(".k2b-toolbar__action[data-text]")) root.setAttribute(compactAttribute, "");
+  if (used(pinned) > available && root.querySelector(".k2b-toolbar__action[data-text]")) root.setAttribute(compactAttribute, "");
   for (const action of candidates) {
     if (used(movedAny) <= available) break;
     hide(action.element);
@@ -438,7 +445,7 @@ export const Toolbar = Object.assign(
       // Cleared before measuring so the pending `visibility: hidden` does not hide every action from the check
       // below; the whole measurement still runs before the next paint.
       root.removeAttribute("data-overflow-pending");
-      const next = measureOverflow(root, more, ordered, available);
+      const next = measureOverflow(root, more, ordered, available, (props.moreItems?.length ?? 0) > 0);
       setMoved((previous) =>
         previous.length === next.length && previous.every((action, index) => action === next[index]) ? previous : next,
       );
@@ -503,7 +510,13 @@ export const Toolbar = Object.assign(
         mutations.disconnect();
       });
     });
-    const menuItems = (): DropdownAction[] => moved().map((action) => action.item);
+    // Actions that moved come first, in their order and in a group of their own; the host's rarer commands follow.
+    const menuItems = (): DropdownItem[] => {
+      const movedItems = moved().map((action) => action.item);
+      const pinnedItems = props.moreItems ?? [];
+      if (!pinnedItems.length) return movedItems;
+      return movedItems.length ? [{ items: movedItems }, ...pinnedItems] : [...pinnedItems];
+    };
     const content = (
       <ToolbarOrientationContext.Provider value={orientation}>
         <ToolbarDangerContext.Provider value={!!danger()}>
@@ -529,7 +542,7 @@ export const Toolbar = Object.assign(
                     position="top-left"
                     label={messages().moreActions}
                     // An open menu closes when its last row returns to the toolbar.
-                    disabled={moved().length === 0}
+                    disabled={moved().length === 0 && !props.moreItems?.length}
                   >
                     <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
                       <i class="ti ti-dots" aria-hidden="true" />

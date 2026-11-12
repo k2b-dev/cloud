@@ -70,6 +70,7 @@ import { apiError, describeError } from "./api-error";
 import { inlinePdfApi } from "./inline-pdf";
 import { machineStorageApi } from "./machine-storage";
 import { errorMessage } from "./messages";
+import { pdfApi } from "./pdf";
 import { previewApi } from "./previews";
 import { templateApi } from "./templates";
 import { wopiApi } from "./wopi";
@@ -99,6 +100,7 @@ const api = new Hono<AuthContext>()
   .route("/templates", templateApi)
   .route("/", inlinePdfApi)
   .route("/", previewApi)
+  .route("/", pdfApi)
   .route(
     "/",
     createActivityActionsApi({

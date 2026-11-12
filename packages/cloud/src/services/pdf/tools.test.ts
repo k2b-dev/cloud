@@ -55,6 +55,70 @@ function renderer() {
 }
 
 describe("bounded PDF operations", () => {
+  test("extract maps pages over ordered sources within one operation budget", async () => {
+    const upstream = renderer();
+    const progress: number[] = [];
+    const result = await runPdfToolWithConfig(
+      { files: [source([8, 9]), source([3, 4, 5])], operation: { kind: "extract", pages: [2, 3, 5] } },
+      config,
+      {
+        ...upstream,
+        onOperation: () => {
+          progress.push(upstream.calls.length);
+        },
+      },
+    );
+    expect(decode(result.data)).toBe("%PDF-9,3,5");
+    expect(upstream.calls.map((call) => call.path)).toEqual([
+      "/forms/pdfengines/metadata/read",
+      "/forms/pdfengines/merge",
+      "/forms/pdfengines/split",
+    ]);
+    expect(progress).toEqual([2, 3]);
+    expect(new Set(upstream.calls.map((call) => call.signal?.aborted))).toEqual(new Set([false]));
+  });
+
+  test("encrypted and unreadable metadata identifies the offending source", async () => {
+    for (const [metadata, code] of [
+      [{ Encryption: "Standard V4.4 (128-bit)", PageCount: 1 }, "encrypted_pdf"],
+      [{ Error: "File is password protected" }, "encrypted_pdf"],
+      [{ Error: "Invalid PDF" }, "unreadable_pdf"],
+    ] as const) {
+      await expect(
+        runPdfToolWithConfig({ files: [source(), source()], operation: { kind: "merge" } }, config, {
+          fetch: async () => Response.json({ "000001.pdf": { PageCount: 3 }, "000002.pdf": metadata }),
+        }),
+      ).rejects.toMatchObject({ code, fileIndex: 1 });
+    }
+  });
+
+  test("multi-source extraction does not reset work allowance after merging", async () => {
+    const upstream = renderer();
+    const large = new Blob(["%PDF-1", " ".repeat(5994)], { type: "application/pdf" });
+    await expect(
+      runPdfToolWithConfig({ files: [large, source()], operation: { kind: "extract", pages: [1] } }, config, {
+        fetch: async (url, init) => {
+          if (String(url).endsWith("/merge"))
+            return new Response("%PDF-1" + " ".repeat(8994), { headers: { "content-type": "application/pdf" } });
+          return upstream.fetch(url, init);
+        },
+      }),
+    ).rejects.toMatchObject({ code: "pdf_too_large" });
+  });
+
+  test("cancelling between merge and extract sends no extraction request", async () => {
+    const upstream = renderer();
+    const abort = new AbortController();
+    await expect(
+      runPdfToolWithConfig({ files: [source(), source()], operation: { kind: "extract", pages: [1] } }, config, {
+        ...upstream,
+        signal: abort.signal,
+        onOperation: () => abort.abort(),
+      }),
+    ).rejects.toMatchObject({ code: "timeout" });
+    expect(upstream.calls.map((call) => call.path)).toEqual(["/forms/pdfengines/metadata/read", "/forms/pdfengines/merge"]);
+  });
+
   test("merge bounds total inputs before allocation or admission", async () => {
     await expect(
       mergePdfsWithConfig({ files: [{ pdf: new Uint8Array(6000) }, { pdf: new Uint8Array(6000) }] }, config, {

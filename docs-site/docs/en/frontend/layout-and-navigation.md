@@ -150,9 +150,9 @@ privacy screen.
 
 While it is on:
 
-- Every part of the page blurs and becomes `inert`, dialogs included. The app
-  bar stays recognizable but unusable; its counts and the avatar blur. Nothing
-  moves: positions, scroll, focus, caret and unsaved input stay, because the
+- The whole screen blurs and becomes `inert`: the app bar with its icons,
+  counts, search, help and avatar, the navigation, the content, dialogs and
+  toasts. Only the hint and the islands below stay sharp. Nothing moves: positions, scroll, focus, caret and unsaved input stay, because the
   page is never rebuilt. The tab shows only the installation's name.
 - A primary click anywhere or a key shows the content again. That click or key
   never reaches the page: the pointer sequence and the key until its release

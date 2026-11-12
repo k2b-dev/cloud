@@ -308,6 +308,12 @@ const open = async (
   await page.goto(`${assets}page`);
   // Fonts first: a font that arrives late changes every text's height, which is not the row's doing.
   await page.evaluate(async () => {
+    // Tabler 3.50 splits glyphs across unicode ranges; loading a space only warms the first face.
+    await Promise.all(
+      Array.from(document.fonts)
+        .filter((face) => face.family === "tabler-icons")
+        .map((face) => face.load()),
+    );
     await Promise.all(
       [
         "400 15px 'IBM Plex Sans'",

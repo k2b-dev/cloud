@@ -4,7 +4,7 @@ import type { User } from "@k2b/cloud/contracts";
 import { accounts, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
 import { resolveOAuthJwksUrl } from "@k2b/cloud/services/identity/runtime-config";
 import * as jose from "jose";
-import { DYNAMIC_CLIENT_SCOPES, type OAuthClient, type OAuthScope } from "@/contracts";
+import { type OAuthClient, type OAuthScope, OAuthScopeSchema } from "@/contracts";
 import * as refreshTokens from "./refresh-tokens";
 import {
   issueOAuthTokenBatch,
@@ -173,7 +173,7 @@ export const getOpenIdConfiguration = (issuer: string) => ({
   response_types_supported: ["code"],
   subject_types_supported: ["public"],
   id_token_signing_alg_values_supported: ["RS256"],
-  scopes_supported: [...DYNAMIC_CLIENT_SCOPES],
+  scopes_supported: [...OAuthScopeSchema.options],
   token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
   claims_supported: [
     "sub",

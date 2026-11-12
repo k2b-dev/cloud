@@ -187,11 +187,23 @@ describe("privacy screen", () => {
         true,
       );
       expect(await page.locator("#reply").evaluate((element) => Boolean(element.closest("[inert]")))).toBe(true);
-      expect(await page.locator(".layout-rail").getAttribute("data-cloud-privacy-covered")).toBe("rail");
+      // The whole screen blurs and rests, the app bar with its icons, search, help and avatar included.
+      // settled: transitions are off and the fake clock holds animation frames; the filter applies with the attribute.
+      const bar = await page.evaluate(() =>
+        [".layout-rail [data-cloud-rail-apps] .rail-item", ".layout-rail .layout-profile-preferences", ".layout-rail-logo"].map(
+          (selector) => {
+            const element = document.querySelector(selector)!;
+            const cover = element.closest<HTMLElement>("[data-cloud-privacy-covered]");
+            return { inert: Boolean(element.closest("[inert]")), blur: cover ? getComputedStyle(cover).filter.includes("blur") : false };
+          },
+        ),
+      );
+      expect(bar).toEqual(Array(3).fill({ inert: true, blur: true }));
       expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Weiterarbeiten");
       expect(await page.locator(".cloud-privacy-hint").getAttribute("role")).toBe("dialog");
       expect(await page.locator(".cloud-privacy-hint").getAttribute("aria-modal")).toBeNull();
       // Blur and inert move nothing: the rail, the content and the scroll stay where they were.
+      // settled: transitions are off and the fake clock holds animation frames; covering is the moment measured.
       expect(await page.evaluate(measure)).toEqual(before);
       await page.clock.runFor(100);
       expect(await live(page)).toBe("Sichtschutz an, weil du Cloud eine Weile nicht benutzt hast.");

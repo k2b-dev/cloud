@@ -437,6 +437,17 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
       // 11 min * 1.61 + 2 min < the unchanged 20-minute execution budget (#1998).
       const targetMinutes = mode === "webkit" ? options.maxMinutes! * 0.55 : 15;
       expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(targetMinutes * 60);
+      if (mode === "unit") {
+        // Completed CI timings from #3189; the following Pulse page was closed by the shard deadline.
+        const observed = {
+          ...weights,
+          "@k2b/cloud-app-core": 491.3,
+          "@k2b/cloud-app-filesv2": 257.7,
+          "@k2b/cloud-app-filesv2 behavior": 71.2,
+          "@k2b/cloud-app-pulse": 187.9,
+        };
+        expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, observed), 0)).toBeLessThanOrEqual(targetMinutes * 60);
+      }
     }
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
