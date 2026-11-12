@@ -254,19 +254,17 @@ test("a second concurrent start is rejected while key bootstrap is still pending
   expect(result).toEqual({ requests: 1, statuses: ["fulfilled", "rejected"], errors: ["Platform has already started"] });
 });
 
-test("serving apps require a key before loading application code, including forced env mode", async () => {
-  for (const source of [undefined, "env"]) {
-    const result = await run(`
-      import { startPlatform } from ${JSON.stringify(start)};
-      let loaded = false, message;
-      try { await startPlatform({ appId: "inventory", source: ${JSON.stringify(source)}, load: async () => { loaded = true; } }); }
-      catch (error) { message = error.message; }
-      console.log(JSON.stringify({ loaded, message }));
-    `);
-    expect(result.loaded).toBe(false);
-    expect(result.message).toContain("CLOUD_APP_KEY_FILE");
-    expect(result.message).toContain("/operations/app-keys");
-  }
+test("serving apps require a key before loading application code", async () => {
+  const result = await run(`
+    import { startPlatform } from ${JSON.stringify(start)};
+    let loaded = false, message;
+    try { await startPlatform({ appId: "inventory", load: async () => { loaded = true; } }); }
+    catch (error) { message = error.message; }
+    console.log(JSON.stringify({ loaded, message }));
+  `);
+  expect(result.loaded).toBe(false);
+  expect(result.message).toContain("CLOUD_APP_KEY_FILE");
+  expect(result.message).toContain("/operations/app-keys");
 });
 
 test("Core and Gateway start without an app key", async () => {

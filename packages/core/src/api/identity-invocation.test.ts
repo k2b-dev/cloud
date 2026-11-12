@@ -95,6 +95,13 @@ const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callb
 };
 
 describe("identity invocation broker", () => {
+  test("rejects former workload bearer tokens with the default authenticator", async () => {
+    const response = await createIdentityInvocationRoutes().request(
+      request(invocation(), { Authorization: "Bearer cld_former_workload_token" }),
+    );
+    expect(response.status).toBe(401);
+  });
+
   test("keeps the invocation JWT on the Core-to-target hop", async () => {
     const targetRequests: Request[] = [];
     let signed: Record<string, unknown> | null = null;
@@ -133,7 +140,7 @@ describe("identity invocation broker", () => {
         },
         fetch: async (input, init) => {
           targetRequests.push(input instanceof Request ? input : new Request(input, init));
-          return Response.json({ data: { id: "one" } }, { headers: { "x-cloud-workload-auth": "required" } });
+          return Response.json({ data: { id: "one" } });
         },
       },
     });
@@ -142,7 +149,6 @@ describe("identity invocation broker", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.headers.get("x-cloud-workload-auth")).toBeNull();
     const body = await response.json();
     expect(body).toEqual({ data: { id: "one" } });
     expect(JSON.stringify(body)).not.toContain("target-only-invocation");

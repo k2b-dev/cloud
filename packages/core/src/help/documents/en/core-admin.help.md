@@ -83,4 +83,4 @@ signed calls. In **Apps**, open the app and choose **Keys**.
 Revocation stops new signed requests immediately. Revoking the only active key
 requires a new key before the app can restart. If background access is off,
 **Turn on again** restores the account; revoked keys stay revoked. OAuth issuer
-keys need an explicit `oauth:issue` grant when enrolled through the CLI.
+keys need explicit `oauth:issue` access when enrolled through the CLI.

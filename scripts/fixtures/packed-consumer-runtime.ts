@@ -2,27 +2,26 @@
 import { strict as assert } from "node:assert";
 import { getApp, sql, startProcessSync } from "@k2b/cloud";
 import { createAppBootstrapRoutes } from "@k2b/cloud/api";
-import { registerAppKey } from "@k2b/cloud/services/app-keys";
+import { appKeyFingerprint } from "@k2b/cloud/app-key";
 import { initializePlatform } from "@k2b/cloud/start";
 
 await initializePlatform({ appId: "consumer-observer", source: "env" });
 
 // A real enrolled identity reaches the packed app through the public bootstrap route.
-const [admin] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, admin)
-  VALUES ('packed-consumer-admin', 'local', 'user', true) RETURNING id`;
-if (!admin) throw new Error("Missing fixture administrator");
 const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
 const privateKey = await crypto.subtle.exportKey("jwk", pair.privateKey);
 const publicKey = await crypto.subtle.exportKey("jwk", pair.publicKey);
 if (!privateKey.d || !publicKey.x) throw new Error("Missing fixture key");
-const enrolled = await registerAppKey({
-  actor: { id: admin.id, uid: "packed-consumer-admin", provider: "local", roles: ["admin"] },
-  appId: "inventory",
-  publicKey: publicKey.x,
-  grants: [],
-});
-if (!enrolled.ok) throw new Error(enrolled.error.message);
-const appKey = `cloud-app-key-v1.${enrolled.data.installationId}.inventory.${enrolled.data.keyId}.${privateKey.d}`;
+const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+  VALUES ('Packed inventory', 'resource_bound', 'inventory', 'cloud.app', 'inventory') RETURNING id`;
+if (!account) throw new Error("Missing fixture service account");
+const fingerprint = await appKeyFingerprint(publicKey.x);
+const [credential] = await sql<{ id: string }[]>`INSERT INTO auth.service_account_credentials
+  (service_account_id, name, kind, public_key, fingerprint)
+  VALUES (${account.id}::uuid, 'Packed app key', 'app_key', ${publicKey.x}, ${fingerprint}) RETURNING id`;
+const [installation] = await sql<{ id: string }[]>`SELECT id FROM auth.installation WHERE singleton = true`;
+if (!credential || !installation) throw new Error("Missing fixture app identity");
+const appKey = `cloud-app-key-v1.${installation.id}.inventory.${credential.id}.${privateKey.d}`;
 const core = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createAppBootstrapRoutes().fetch });
 
 try {

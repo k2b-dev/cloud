@@ -110,10 +110,13 @@ are removed. The old authentication and JWKS override environment entries are
 removed from the configuration registry; Core's private origin supplies JWKS.
 
 Before upgrading, enroll and mount keys on the previous parallel-support
-release, verify real signed work, then upgrade all replicas. OAuth issuers need
-an explicit `oauth:issue` grant on each key, irrespective of app ID. Core's
-idempotent migration revokes active app API tokens with former workload scopes
-and audits each revocation once. Returning to old authentication requires the
+release and verify real signed work. Stop all old Core replicas before starting
+any new Core replica on this release: the migration drops tables that old Core
+still uses. This requires a Core-only maintenance window; applications keep
+running, while work that needs Core is briefly unavailable. Wait for new Core readiness,
+then upgrade Gateway and applications. OAuth issuers need an explicit
+`oauth:issue` grant on each key, irrespective of app ID. Core's idempotent
+migration revokes active app API tokens with former workload scopes and audits each revocation once. Returning to old authentication requires the
 previous release; revoked tokens do not reactivate. See
 [App key upgrade](/en/docs/operations/app-key-upgrade).
 

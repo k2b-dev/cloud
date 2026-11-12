@@ -56,11 +56,17 @@ this upgrade.
    routed request, representative background work, resource-principal reads
    and OAuth readiness and issuance where applicable. Retain explicit connection
    environment values for third-party apps that still use Bun globals.
-5. Upgrade all Core replicas first, then Gateway and the applications to this
-   release. Core's migration revokes active app API tokens carrying former
-   workload scopes and records each revocation once. Use this release's Compose
-   template: ordinary apps receive their key file and direct Core origin;
-   Core and Gateway retain infrastructure configuration. Keep documented
+5. Stop **all old Core replicas before starting any Core replica on this
+   release**. This Core-only maintenance window is required because the migration
+   drops the workload and migration-observation tables used by old Core versions.
+   Mixing versions can cause failed requests or block the migration on old broker
+   transactions. Applications keep running; requests and background work that
+   need Core are briefly unavailable. Start the new Core version and wait for
+   readiness, then upgrade Gateway and the applications. Core's migration
+   revokes active app API tokens carrying former workload scopes and records each
+   revocation once. Use this release's Compose template: ordinary apps receive
+   their key file and direct Core origin; Core and Gateway retain infrastructure
+   configuration. Keep documented
    third-party connection overrides. Across hosts use verified HTTPS to Core.
 6. After all replicas are ready, check the complete inventory:
 

@@ -1,18 +1,31 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { type AppKey, parseAppKey } from "@k2b/cloud/app-key";
 import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { appApproval } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
+import { enrollTestAppKey } from "../../../../scripts/fixtures/app-key-fixtures";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { signAppProof } from "../../../cloud/src/runtime/bootstrap-protocol";
 import { migrate } from "../migrate/core/app-approval";
 import { cleanupTerminalLogins, createIdentityOAuthDeviceApprovalRoutes, terminalLogins } from "./identity-oauth-device-approval";
 import { authorizeOAuthRequest, createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
 const headers = { authorization: `Bearer ${"ab".repeat(32)}`, "content-type": "application/json" };
-const request = (routes: ReturnType<typeof createIdentityOAuthDeviceApprovalRoutes>, body: unknown) =>
-  routes.request("/oauth/device-approval", { method: "POST", headers, body: JSON.stringify(body) });
+let oauthAppKey: AppKey | undefined;
+const request = async (routes: ReturnType<typeof createIdentityOAuthDeviceApprovalRoutes>, body: unknown) => {
+  const encoded = JSON.stringify(body);
+  const authorization = oauthAppKey
+    ? `Bearer ${await signAppProof(oauthAppKey, {
+        method: "POST",
+        path: "/oauth/device-approval",
+        body: new TextEncoder().encode(encoded),
+      })}`
+    : headers.authorization;
+  return routes.request("/oauth/device-approval", { method: "POST", headers: { ...headers, authorization }, body: encoded });
+};
 const input = (deviceAuthorizationId = crypto.randomUUID(), clientId = "test-cli", identifier = "alice") => ({
   deviceAuthorizationId,
   clientId,
@@ -65,11 +78,15 @@ describe("Core OAuth device approval broker", () => {
 });
 
 databaseSuite()("Core terminal authorization bridge", () => {
+  let oauthAccountId: string;
   const saved = new Map<string, unknown>();
   const configKeys = ["app.url", "user.app_approval.enabled", "user.app_approval.origin"];
   beforeAll(async () => {
     await migrate();
     await migrate();
+    const enrolled = await enrollTestAppKey(sql, `terminal-${crypto.randomUUID()}`, ["oauth:issue"]);
+    oauthAppKey = parseAppKey(enrolled.value);
+    oauthAccountId = enrolled.serviceAccountId;
     for (const key of configKeys) saved.set(key, await settings.get(key));
     await settings.set("app.url", "https://terminal-core.example.test");
     await settings.set("user.app_approval.enabled", true);
@@ -77,6 +94,8 @@ databaseSuite()("Core terminal authorization bridge", () => {
   });
   afterAll(async () => {
     for (const key of configKeys) await settings.set(key, saved.get(key));
+    oauthAppKey = undefined;
+    await sql`DELETE FROM auth.service_accounts WHERE id=${oauthAccountId}::uuid`;
   });
 
   const fixture = async () => {

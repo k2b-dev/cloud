@@ -352,10 +352,11 @@ an operator name or startup options. An application that still uses Bun-global
 clients shows no Cloud application name in `pg_stat_activity`.
 
 **Key-only production operation is supported.** Built-in applications use the
-platform connection handles. Upgrade Core and Gateway with their existing
-infrastructure environment first, enroll application keys with explicit grants,
-then adopt the key-file templates and recreate applications. Complete the strict
-status, signed probes and legacy-use observation before retiring old credentials.
+platform connection handles. Enroll application keys with explicit grants on the
+previous parallel-support release before upgrading. Stop all old Core replicas
+before starting the new Core version, then upgrade Gateway and applications with
+the key-file templates. Complete strict status and signed probes before retiring
+old credential injection.
 Follow [the upgrade steps](/en/docs/operations/app-key-upgrade). See
 [Runtime configuration](/en/docs/operations/runtime-configuration#bootstrap-application-connections-from-core)
 and [App keys](/en/docs/operations/app-keys#use-the-key-at-start).

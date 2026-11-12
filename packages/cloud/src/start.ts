@@ -9,14 +9,18 @@ import { resolveConnections } from "./runtime/resolve-connections";
 
 export type PlatformStartOptions = {
   appId: string;
-  /** Infrastructure-only initialization for scripts, preloads, migrations and data commands. */
-  source?: "env";
 };
 
 let initializing = false;
 
 /** Initialize before importing any application module, also in dev and data workers. */
-export const initializePlatform = async ({ appId, source }: PlatformStartOptions): Promise<void> => {
+export const initializePlatform = async ({
+  appId,
+  source,
+}: PlatformStartOptions & {
+  /** Infrastructure-only initialization for scripts, migrations and data commands. */
+  source?: "env";
+}): Promise<void> => {
   if (!/^[a-z][a-z0-9-]{0,79}$/.test(appId)) throw new Error("Platform start requires a valid appId");
   if (initializing || hasConnections()) throw new Error("Platform has already started");
   initializing = true;
@@ -50,8 +54,7 @@ export const initializePlatform = async ({ appId, source }: PlatformStartOptions
   }
 };
 
-export const startPlatform = async <T>({ load, ...options }: PlatformStartOptions & { load: () => Promise<T> }): Promise<T> => {
-  if (options.appId !== "core" && options.appId !== "gateway") requireAppKey(options.appId);
-  await initializePlatform(options);
+export const startPlatform = async <T>({ appId, load }: PlatformStartOptions & { load: () => Promise<T> }): Promise<T> => {
+  await initializePlatform({ appId });
   return load();
 };

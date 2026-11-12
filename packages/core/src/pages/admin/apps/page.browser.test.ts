@@ -218,7 +218,7 @@ test("key states: a running app without a key requires enrollment before its nex
   expect(await row("files").innerText()).toContain("Verbindungen aus Env");
   await open("?app=files");
   const notice = page.locator('[data-hint="envStart"]');
-  expect(await notice.innerText()).toContain("Dateien holt Datenbank, Valkey und NATS aus der eigenen Env.");
+  expect(await notice.innerText()).toContain("Dateien verwendet Verbindungen aus der eigenen Env.");
   expect(await notice.getByRole("link", { name: "Umstellung (Fibel)" }).getAttribute("href")).toBe(
     "/docs/en/operations/app-keys#use-the-key-at-start",
   );
