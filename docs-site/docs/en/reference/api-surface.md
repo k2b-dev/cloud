@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-05
+updated: 2026-11-11
 ---
 
 # API surface
@@ -252,8 +252,9 @@ projection and `provisioningIdentity` live check are documented under
 [application event operations](/en/docs/operations/app-events#check-files-home-provisioning).
 
 `readAccountCategoryPolicy` supplies server-side presentation settings;
-`isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
-not application resource authorization. The browser-safe contracts barrel
+`isAccountCategoryAllowed` and the per-account `isAccountAllowed` are for
+platform-owned credential eligibility checks, not application resource
+authorization. The browser-safe contracts barrel
 exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
 and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.

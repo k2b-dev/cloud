@@ -211,7 +211,7 @@ export type {
 } from "./sync-ops";
 
 export { latestTopicCursor } from "./topic-cursor";
-export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
+export { isAccountAllowed, isAccountCategoryAllowed, readAccountCategoryPolicy } from "./account-category-policy";
 export {
   AppApprovalError,
   appApproval,

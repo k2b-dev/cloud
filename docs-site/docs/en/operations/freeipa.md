@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1083
 description: Connect a Cloud deployment to FreeIPA identity infrastructure.
 tags: [freeipa, identity, directory]
-updated: 2026-10-28
+updated: 2026-11-11
 ---
 
 # FreeIPA setup
@@ -138,6 +138,16 @@ what happens when an IPA-backed account expires or leaves synchronization scope:
 Review the destination category's allowed-access policy before changing this.
 Retaining an account does not guarantee it can sign in, and a provider transition
 is not a migration of workstation file ownership.
+
+A disabled FreeIPA account is not a transition: Cloud keeps it as a FreeIPA
+account and locks it at the next synchronization. The lock ends its sessions,
+paired phones and Cloud Login devices. While it holds, the account cannot sign
+in, including with a passkey, and its API keys, OAuth tokens and background
+authorizations stop working. This also applies when the account has expired or
+left synchronization scope: Cloud applies the transition policy only after
+FreeIPA enables the account again. When you enable it, the next synchronization
+lifts the lock; the person signs in again, and existing passkeys and API keys
+work again.
 
 When approving a local guest's FreeIPA request, Cloud checks the existing
 username before creating an account. An expired or disabled account with the
