@@ -297,6 +297,7 @@ describe("Mail workspace conversation open", () => {
     } = conversation ? detailFor(conversation) : { ...detailFor("none"), detailMessages: [], selectedSubject: "" };
     const unreadCount = unread.size;
     return {
+      workspacePreference: { listShare: null, seenHints: [] },
       viewPreference: { large: largeView, phone: "compact" },
       doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
       receivingAddress: null,

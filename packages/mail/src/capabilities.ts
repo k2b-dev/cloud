@@ -1422,6 +1422,52 @@ const queryDefinitions = {
       });
     },
   },
+  "conversation.by_sender": {
+    title: "Find conversations from a sender",
+    description:
+      "Find up to five newest conversations where an exact From address sent mail in a known mailbox, with a visible total. Optionally leave out the open conversation. Open returned refs with conversation.read.",
+    input: c.ConversationBySenderInputSchema,
+    data: c.ConversationBySenderDataSchema,
+    openWorld: true,
+    run: async (input: z.output<typeof c.ConversationBySenderInputSchema>, context: CapabilityExecutionContext) => {
+      const scope = await resolveMailboxScope(input.mailboxId, context);
+      if (!scope.ok) return scope;
+      const excluded = input.excludeConversationId
+        ? await resolveConversationScope(input.mailboxId, input.excludeConversationId, context)
+        : null;
+      if (excluded && !excluded.ok) return excluded;
+      const result = await conversationContext.listSenderConversations({
+        context: requestContext(context),
+        mailboxId: scope.data.id,
+        email: input.email,
+        limit: input.limit,
+        excludeConversationId: excluded?.data.conversationId,
+      });
+      if (!result.ok) return result;
+      const ids = await publicResources.publicIds(
+        "conversations",
+        result.data.items.map((item) => item.id),
+      );
+      const t = mailCapabilityMessages(context.locale);
+      return ok({
+        data: {
+          total: result.data.total,
+          items: result.data.items.map((item) => {
+            const id = requirePublicId(ids, item.id);
+            const preview = boundedText(item.preview, 240).text;
+            return {
+              ref: { type: "mail.conversation" as const, id },
+              title: truncateText(item.subject || t.noSubject, 500).text,
+              participants: truncateText(item.participantSummary, 240).text,
+              latestMessageAt: item.latestMessageAt,
+              ...(preview ? { preview } : {}),
+              links: [openLink(conversationHref(scope.data.shortId, id))],
+            };
+          }),
+        },
+      });
+    },
+  },
   "conversation.related": {
     title: "Find related mail",
     description:

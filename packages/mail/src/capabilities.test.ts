@@ -17,6 +17,7 @@ import {
   AttachmentContentReadDataSchema,
   AttachmentReadDataSchema,
   CommentListDataSchema,
+  ConversationBySenderDataSchema,
   ConversationFocusListDataSchema,
   ConversationGetDataSchema,
   ConversationListDataSchema,
@@ -762,6 +763,7 @@ describe("mail capabilities", () => {
       "attachment.read-content",
       "comment.read",
       "conversation.activity.list",
+      "conversation.by_sender",
       "conversation.comment.list",
       "conversation.focus",
       "conversation.list",
@@ -2353,6 +2355,45 @@ describe("mail capabilities", () => {
     });
     expect(JSON.stringify(result)).not.toContain(internalAttachmentId);
     expect(JSON.stringify(result)).not.toContain(internalMessageId);
+  });
+
+  test("sender history keeps the service's visible total and publishes bounded refs and links", async () => {
+    const history = spyOn(conversationContext, "listSenderConversations").mockResolvedValue({
+      ok: true,
+      data: {
+        total: 9,
+        items: [
+          {
+            id: internalRelatedConversationId,
+            subject: "Previous conversation",
+            participantSummary: "Ada",
+            latestMessageAt: "2026-08-04T10:00:00.000Z",
+            preview: "Previous message",
+          },
+        ],
+      },
+    });
+    const query = mailCapabilities.queries["conversation.by_sender"];
+    expect(() => query.input.parse({ mailboxId, email: "ada@example.test", limit: 6 })).toThrow();
+    const result = await query.run(
+      query.input.parse({ mailboxId, email: "ada@example.test", excludeConversationId: conversationId }),
+      context,
+    );
+    expect(history.mock.calls[0]?.[0]).toMatchObject({
+      mailboxId: internalMailboxId,
+      email: "ada@example.test",
+      excludeConversationId: internalConversationId,
+      limit: 5,
+    });
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    const data = ConversationBySenderDataSchema.parse(result.data.data);
+    expect(data.total).toBe(9);
+    expect(data.items[0]).toMatchObject({
+      ref: { type: "mail.conversation", id: relatedConversationId },
+      links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${relatedConversationId}` }],
+    });
+    expect(JSON.stringify(result)).not.toContain(internalRelatedConversationId);
   });
 
   test("returns bounded related conversations with explainable reasons, refs, and links", async () => {

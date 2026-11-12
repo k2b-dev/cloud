@@ -436,6 +436,21 @@ export const ConversationRelatedDataSchema = z
   )
   .max(10);
 
+export const ConversationBySenderInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    email: z.email().max(320).describe("Exact sender From address."),
+    excludeConversationId: ConversationIdInputSchema.optional().describe("Open conversation to leave out of the preview and total."),
+    limit: z.number().int().min(1).max(5).default(5).describe("Maximum number of sender conversations to return, at most five."),
+  })
+  .strict();
+export const ConversationBySenderDataSchema = z
+  .object({
+    items: z.array(ConversationRelatedDataSchema.element.omit({ reasons: true })).max(5),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const AddressDataSchema = z.object({ name: z.string().max(200).nullable(), address: z.email() }).strict();
 export const AttachmentDataSchema = z
   .object({

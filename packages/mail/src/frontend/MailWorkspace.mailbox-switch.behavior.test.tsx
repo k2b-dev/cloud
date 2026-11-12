@@ -42,6 +42,7 @@ const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
   // Retained-pane cases use the explicit split view; auto may replace the reader with columns.
+  workspacePreference: { listShare: null, seenHints: [] },
   viewPreference: { large: "split", phone: "compact" },
   doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,

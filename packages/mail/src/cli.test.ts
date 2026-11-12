@@ -333,6 +333,54 @@ test("admin security commands expose report and policy management", async () => 
   ]);
 }, 20_000);
 
+test("conversation by-sender keeps the total, public permalinks, and exact query", async () => {
+  let query: URLSearchParams | undefined;
+  const server = withMailbox((request) => {
+    const url = new URL(request.url);
+    if (url.pathname !== `/api/mail/mailboxes/${MAILBOX_ID}/sender-conversations`) return api({ message: "unexpected" }, { status: 500 });
+    query = url.searchParams;
+    return api({
+      total: 12,
+      items: [
+        {
+          id: CONVERSATION_ID,
+          subject: "Earlier mail",
+          participantSummary: "Ada",
+          latestMessageAt: "2026-08-18T12:00:00.000Z",
+          preview: "Earlier context",
+        },
+      ],
+    });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const result = await runCli(origin, [
+    "--json",
+    "mail",
+    "conversation",
+    "by-sender",
+    "ada+sales@example.test",
+    "--mailbox",
+    MAILBOX_ID,
+    "--limit",
+    "3",
+    "--exclude",
+    CONVERSATION_ID,
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    total: 12,
+    items: [{ id: CONVERSATION_ID, permalink: `${origin}/open/mail.conversation/~${CONVERSATION_ID}` }],
+  });
+  expect(query?.get("email")).toBe("ada+sales@example.test");
+  expect(query?.get("limit")).toBe("3");
+  expect(query?.get("excludeConversationId")).toBe(CONVERSATION_ID);
+  const human = await runCli(origin, ["mail", "conversation", "by-sender", "ada@example.test", "--mailbox", MAILBOX_ID]);
+  expect(human.exitCode, human.stderr).toBe(0);
+  expect(human.stdout).toContain("12 conversations");
+  expect(human.stdout).toContain("Earlier mail");
+}, 20_000);
+
 test("conversation context commands expose Contacts and deterministic related mail", async () => {
   const requestedPaths: string[] = [];
   const server = withMailbox(async (request) => {

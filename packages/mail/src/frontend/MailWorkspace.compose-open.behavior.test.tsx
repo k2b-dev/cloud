@@ -131,6 +131,7 @@ const materializedDraft = (senderIdentityId: string): MailDraft => ({
 const MAILBOX_ID = "Box001";
 
 const data: MailboxPageData = {
+  workspacePreference: { listShare: null, seenHints: [] },
   viewPreference: { large: "auto", phone: "compact" },
   doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
