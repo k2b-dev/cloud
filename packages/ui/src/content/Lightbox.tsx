@@ -84,6 +84,8 @@ type Kind = "image" | "pdf" | "office" | "video" | "audio" | "text" | "none";
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 const SWIPE = 60;
 const PULL_CLOSE = 110;
+/** Seconds the arrows seek in a video or audio file, as `VideoPlayer`'s own keys do. */
+const MEDIA_SEEK = 5;
 const SPREADSHEET = /\.(xlsx?|ods|csv)$/i;
 
 const kindOf = (item: LightboxItem): Kind => {
@@ -132,6 +134,9 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
   const index = () => Math.max(0, Math.min(props.index, props.items.length - 1));
   const item = () => props.items[index()];
   const kind = () => (item() ? kindOf(item()!) : "none");
+  /** The shown video or audio element, once the file plays on the stage. */
+  const playing = () =>
+    kind() === "video" || kind() === "audio" ? (stage?.querySelector<HTMLMediaElement>("video, audio") ?? null) : null;
   createEffect(
     on(item, () => {
       setZoom(1);
@@ -172,19 +177,33 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
         case "Escape":
           close();
           return true;
-        case " ":
-          // Space plays media; elsewhere it closes, as it opened the Lightbox in a file list.
-          if (interactive(event.target) || kind() === "video" || kind() === "audio") return false;
-          close();
+        case " ": {
+          if (interactive(event.target)) return false;
+          // Space plays and pauses a video or audio file; elsewhere it closes, as it opened the Lightbox in a list.
+          const shown = playing();
+          if (!shown) {
+            close();
+            return true;
+          }
+          if (shown.paused) void shown.play().catch(() => {});
+          else shown.pause();
           return true;
+        }
         case "ArrowLeft":
+        case "ArrowRight": {
           if (media(event.target)) return false;
-          step(-1);
+          const direction = event.key === "ArrowRight" ? 1 : -1;
+          // A video or audio file keeps the arrows wherever the focus is, in every engine: they seek in it, as its own
+          // controls do. The edge buttons and the film strip still step to the next file.
+          const shown = playing();
+          if (shown) {
+            const end = Number.isFinite(shown.duration) ? shown.duration : shown.currentTime + MEDIA_SEEK;
+            shown.currentTime = Math.min(end, Math.max(0, shown.currentTime + direction * MEDIA_SEEK));
+            return true;
+          }
+          step(direction);
           return true;
-        case "ArrowRight":
-          if (media(event.target)) return false;
-          step(1);
-          return true;
+        }
         case "+":
         case "=":
           zoomBy(1);

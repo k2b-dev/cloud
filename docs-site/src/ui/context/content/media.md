@@ -44,7 +44,7 @@ Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns
 - `preview`: a preview PDF, such as one converted from an Office file; a rejection shows **Preview not possible** with Open and Download;
 - `file`: path, media type, and size, which choose the renderer as in `FileView`; it defaults to the name.
 
-Each loader receives an `AbortSignal` that aborts when the person moves to another file, closes the Lightbox, or tries again; pass it to `fetch` so nothing keeps loading. A video plays in `VideoPlayer`, which asks a `src` function for a fresh address when a signed one runs out and goes on at the same time; while the video has focus, the arrow keys seek in it instead of stepping to the next file.
+Each loader receives an `AbortSignal` that aborts when the person moves to another file, closes the Lightbox, or tries again; pass it to `fetch` so nothing keeps loading. A video plays in `VideoPlayer`, which asks a `src` function for a fresh address when a signed one runs out and goes on at the same time. On a video or audio file, ← and → seek five seconds and Space plays and pauses, wherever the focus is and in every engine; the edge buttons and the film strip step to the next file.
 
 Anything else shows its icon, **There is no preview for this file**, and Download. The Lightbox loads the file itself: a placeholder appears after a short wait, a failure offers **Try again**, and nothing around the file moves.
 
@@ -223,7 +223,7 @@ type ZoomPanViewportProps = {
 
 ## Accessibility
 
-The Lightbox is a native modal dialog named after the shown file. Its edge buttons, film strip, zoom controls, and actions are labeled controls; ← and → step, `+`, `-`, and `0` zoom, Space closes it except on video and audio, where it plays. Focus starts on the file, so the keys work at once, and returns to the opener on close. Loading is a polite status and a failure an alert with **Try again**. A dialog that an action opens above the Lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
+The Lightbox is a native modal dialog named after the shown file. Its edge buttons, film strip, zoom controls, and actions are labeled controls; ← and → step (on video and audio they seek), `+`, `-`, and `0` zoom, Space closes it (on video and audio it plays and pauses). Focus starts on the file, so the keys work at once, and returns to the opener on close. Loading is a polite status and a failure an alert with **Try again**. A dialog that an action opens above the Lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
 
 `PdfViewer` names its page area with `title`. The pill's icons carry their names as tooltips and accessible names; the state actions are native buttons named by their visible labels. Keep `loadLabel` specific when several documents appear on one page. The loading state is a polite status and the error state an alert; when a document turns out not to be drawable, the viewer announces that politely. While a placeholder shows, the viewer itself holds keyboard focus that would otherwise drop; once the first page is drawn, focus moves on to the pages.
 
