@@ -19,3 +19,11 @@ test("literal Assistant text calls have a German translation", async () => {
 
   expect(missingAssistantGermanText(values)).toEqual([]);
 });
+
+test("people never read an internal component name such as Core in Assistant text", () => {
+  for (const locale of assistantMessages.locales) {
+    const { t } = assistantMessages.resolve([locale]);
+    const internal = Object.entries(t).filter(([, value]) => typeof value === "string" && /\bCore\b/.test(value));
+    expect(internal.map(([key]) => `${locale}.${key}`)).toEqual([]);
+  }
+});

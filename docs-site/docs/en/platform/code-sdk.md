@@ -716,7 +716,9 @@ app.schedule({ cron: "0 8 * * 1", name: "weekly-review",
 one line of plain text without HTML markup or control/format characters.
 Cloud displays it as escaped text. Declare a constant title; imported options
 need literal types, for example `as const`. The title appears wherever people
-see the automation; without one, Cloud shows its identifier. Changing a title
+see the automation; without one, Cloud names it by what starts it (an event
+and its place, a page's method and path, or a schedule's time) and otherwise
+shows its identifier. Changing a title
 creates a new checked version with the usual review and activation rules.
 Titles need not be unique; the stable name identifies the automation.
 
