@@ -178,10 +178,11 @@ export default function MailReaderHead(props: {
   const measure = () => {
     const list = chipList;
     if (!list) return;
-    const items = [...list.querySelectorAll<HTMLElement>("[data-mail-head-chip]")];
+    const items = [...list.querySelectorAll<HTMLElement>("[data-mail-head-chip-slot]")];
     for (const item of items) item.removeAttribute("data-overflow");
     const available = list.clientWidth;
-    const reserve = 56;
+    // The room "+n" takes when chips wait behind it.
+    const reserve = 44;
     let used = 0;
     let fit = items.length;
     for (const [index, item] of items.entries()) {
@@ -360,7 +361,13 @@ export default function MailReaderHead(props: {
           {t().senderAndCount({ sender: props.senderLabel, count: props.messageCount })}
         </span>
         <div class="mail-reader-chip-list" ref={chipList}>
-          <For each={chips()}>{renderChip}</For>
+          <For each={chips()}>
+            {(chip) => (
+              <span class="mail-reader-chip-slot" data-mail-head-chip-slot>
+                {renderChip(chip)}
+              </span>
+            )}
+          </For>
           <Show when={hiddenChips().length > 0}>
             <Dropdown.Root position="bottom-left" width="18rem" items={hiddenChips().flatMap(chipMenuItems)}>
               <Dropdown.Trigger
@@ -374,15 +381,15 @@ export default function MailReaderHead(props: {
               </Dropdown.Trigger>
             </Dropdown.Root>
           </Show>
-          <Show when={props.onManageTags}>
-            {(manage) => (
-              <button type="button" class="mail-reader-chip" data-kind="add" aria-label={t().addTagLabel} onClick={manage()}>
-                <i class="ti ti-plus" aria-hidden="true" />
-                <span class="mail-reader-chip-label">{t().addTag}</span>
-              </button>
-            )}
-          </Show>
         </div>
+        <Show when={props.onManageTags}>
+          {(manage) => (
+            <button type="button" class="mail-reader-chip" data-kind="add" aria-label={t().addTagLabel} onClick={manage()}>
+              <i class="ti ti-plus" aria-hidden="true" />
+              <span class="mail-reader-chip-label">{t().addTag}</span>
+            </button>
+          )}
+        </Show>
         <Show when={presenceText()}>
           {(text) => (
             <span class="mail-reader-presence" data-mail-reader-presence role="status">
