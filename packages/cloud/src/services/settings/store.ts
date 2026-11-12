@@ -279,6 +279,15 @@ export const resetChangedSettings = async (
   prior?: SettingRead,
 ): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
+  if (key === "user.session.shared_workstation_idle_minutes" && typeof value === "number") {
+    const previous = prior ?? (await readKeyState(key, tx));
+    if (previous.value !== value) {
+      const [source] = await tx<
+        { ready: boolean }[]
+      >`SELECT to_regprocedure('auth.reschedule_room_idle_deadlines(integer)') IS NOT NULL AS ready`;
+      if (source?.ready) await tx`SELECT auth.reschedule_room_idle_deadlines(${Math.floor(value * 60)}::integer)`;
+    }
+  }
   if (!def?.resetOnChange?.length) return;
   const previous = prior ?? (await readKeyState(key, tx));
   if (previous.stored !== "unreadable" && JSON.stringify(previous.value) === JSON.stringify(value)) return;

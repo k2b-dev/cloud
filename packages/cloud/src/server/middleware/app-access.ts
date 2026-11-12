@@ -153,12 +153,44 @@ export const watchAppAccess = (options: WatchOptions): (() => void) => {
   return stop;
 };
 
-const subscribeApp = async (appId: string): Promise<(changed: () => void) => () => void> => {
+const subscribeApp = async (
+  appId: string,
+  subject?: import("../../events/app-access").IdentityAccessSubject,
+): Promise<(changed: () => void) => () => void> => {
   const { subscribeAppAccessChanged } = await import("../../events/app-access");
-  return (changed) => subscribeAppAccessChanged(appId, changed);
+  return (changed) => subscribeAppAccessChanged(appId, changed, subject);
 };
 
 /** Used by shared live updates and custom sockets; close always releases the watcher. */
+/** A known credential deadline is enforced locally even while Core cannot publish. */
+export const watchCredentialExpiry = (expiresAt: number, expired: () => void): (() => void) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const arm = () => {
+    if (stopped) return;
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+      expired();
+      return;
+    }
+    timer = setTimeout(arm, Math.min(remaining, 2_147_483_647));
+    timer.unref?.();
+  };
+  arm();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+};
+const identitySubject = (c: Context<AuthContext>) => {
+  const proof = c.get("credentialProof");
+  const actor = c.get("actor");
+  return {
+    userId: actor?.kind === "user" ? actor.user.id : undefined,
+    serviceAccountId: actor?.kind === "service_account" ? actor.serviceAccount.id : undefined,
+    sid: proof?.kind === "session" ? proof.sid : undefined,
+  };
+};
 export const guardAppAccessSocket = async (
   c: Context<AuthContext>,
   appId: string,
@@ -178,8 +210,18 @@ export const guardAppAccessSocket = async (
     return { onOpen: (_event, ws) => ws.close(1008, "app_access_denied") };
   }
   const revalidate = appAccessRevalidator(c, app);
-  const subscribe = await subscribeApp(appId);
+  const subscribe = await subscribeApp(appId, identitySubject(c));
   let stop: (() => void) | undefined;
+  let stopExpiry = () => {};
+  const proof = c.get("credentialProof");
+  const actor = c.get("actor");
+  const deadlines = [
+    proof?.kind === "session" ? proof.expiresAt : undefined,
+    actor?.kind === "user" ? actor.user.accountExpires : actor?.credentialExpiresAt,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(Date.parse)
+    .filter(Number.isFinite);
   let denied = false;
   let shutdown = () => {};
   return {
@@ -187,11 +229,20 @@ export const guardAppAccessSocket = async (
     onOpen: (event, ws) => {
       shutdown = () => {
         stop?.();
+        stopExpiry();
         connections.delete(shutdown);
         denied = true;
         ws.close(1012, "server_restarting");
       };
       connections.add(shutdown);
+      if (deadlines.length)
+        stopExpiry = watchCredentialExpiry(Math.min(...deadlines), () => {
+          denied = true;
+          stop?.();
+          connections.delete(shutdown);
+          ws.close(1008, "SESSION_EXPIRED");
+        });
+      if (denied) return;
       stop = watchAppAccess({
         check: revalidate,
         ...(options.eventOnly ? { intervalMs: false as const, checkInitially: false } : {}),
@@ -199,6 +250,7 @@ export const guardAppAccessSocket = async (
         denied: () => {
           connections.delete(shutdown);
           denied = true;
+          stopExpiry();
           ws.close(1008, "app_access_denied");
         },
       });
@@ -210,11 +262,13 @@ export const guardAppAccessSocket = async (
     onClose: (event, ws) => {
       connections.delete(shutdown);
       stop?.();
+      stopExpiry();
       return events.onClose?.(event, ws);
     },
     onError: (event, ws) => {
       connections.delete(shutdown);
       stop?.();
+      stopExpiry();
       ws.close(1011, "app_access_check_failed");
       return events.onError?.(event, ws);
     },
@@ -223,7 +277,7 @@ export const guardAppAccessSocket = async (
 
 const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Response): Promise<Response> => {
   if (!response.body) return response;
-  const subscribe = await subscribeApp(app.id);
+  const subscribe = await subscribeApp(app.id, identitySubject(c));
   const reader = response.body.getReader();
   let ended = false;
   let stop = () => {};

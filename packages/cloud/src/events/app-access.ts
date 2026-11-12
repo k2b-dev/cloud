@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 import { z } from "zod";
+import { sql } from "../runtime/clients";
 import { invalidateIdentityRuntimeConfig } from "../services/identity/runtime-config";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
@@ -14,23 +15,36 @@ export const publishAppAccessChanged = (tx: SQL, appId: string): Promise<void> =
   changes.publish(tx, { key: `app.access:${appId}`, data: { type: "app.access.changed", appId }, access: true });
 export const wakeAppAccessChanged = (): void => changes.wake();
 
-const listeners = new Map<string, Set<() => void>>();
+export type IdentityAccessSubject = { userId?: string | null; sid?: string | null; serviceAccountId?: string | null };
+const identityChange = z.object({
+  type: z.literal("identity.access.changed"),
+  userId: z.string().nullish(),
+  sid: z.string().nullish(),
+  serviceAccountId: z.string().nullish(),
+});
+type Listener = { changed(): void; subject?: IdentityAccessSubject };
+const listeners = new Map<string, Set<Listener>>();
+export const identityAccessAffects = (event: IdentityAccessSubject, subject: IdentityAccessSubject): boolean =>
+  (!event.userId || event.userId === subject.userId) &&
+  (!event.sid || !subject.sid || event.sid === subject.sid) &&
+  (!event.serviceAccountId || event.serviceAccountId === subject.serviceAccountId);
 let active: AbortController | undefined;
 
 /** One follower per process, released as soon as the last live connection ends. */
-export const subscribeAppAccessChanged = (appId: string, changed: () => void): (() => void) => {
+export const subscribeAppAccessChanged = (appId: string, changed: () => void, subject?: IdentityAccessSubject): (() => void) => {
   let callbacks = listeners.get(appId);
   if (!callbacks) {
     callbacks = new Set();
     listeners.set(appId, callbacks);
   }
-  callbacks.add(changed);
+  const listener = { changed, subject };
+  callbacks.add(listener);
   if (!active) {
     const controller = new AbortController();
     active = controller;
     const notifyAll = () => {
       invalidateIdentityRuntimeConfig();
-      for (const callbacks of listeners.values()) for (const callback of callbacks) callback();
+      for (const callbacks of listeners.values()) for (const callback of callbacks) callback.changed();
     };
     void superviseRuntimeTask({
       name: "App access invalidations",
@@ -43,14 +57,15 @@ export const subscribeAppAccessChanged = (appId: string, changed: () => void): (
         notifyAll();
         for await (const event of source.follow({ after, signal })) {
           const parsed = change.safeParse(event.data.d);
-          if (parsed.success) for (const callback of listeners.get(parsed.data.appId) ?? []) callback();
-          else if (
-            event.data.d &&
-            typeof event.data.d === "object" &&
-            "type" in event.data.d &&
-            event.data.d.type === "identity.access.changed"
-          )
-            notifyAll();
+          if (parsed.success) for (const callback of listeners.get(parsed.data.appId) ?? []) callback.changed();
+          else {
+            const identity = identityChange.safeParse(event.data.d);
+            if (!identity.success) continue;
+            if (!identity.data.userId && !identity.data.sid && !identity.data.serviceAccountId) invalidateIdentityRuntimeConfig();
+            for (const callbacks of listeners.values())
+              for (const callback of callbacks)
+                if (!callback.subject || identityAccessAffects(identity.data, callback.subject)) callback.changed();
+          }
         }
       },
       onError: ({ error }) => {
@@ -67,7 +82,7 @@ export const subscribeAppAccessChanged = (appId: string, changed: () => void): (
   return () => {
     if (!subscribed) return;
     subscribed = false;
-    callbacks.delete(changed);
+    callbacks.delete(listener);
     if (callbacks.size === 0) listeners.delete(appId);
     if (listeners.size === 0) {
       active?.abort();
@@ -84,13 +99,22 @@ export const scheduleSessionIdleAccessChanged = async (tx: SQL, sid: string, tim
   await tx`DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key = ${key}`;
   // Derive the absolute deadline from the family, not a remaining duration read
   // earlier by authentication: a delayed request must not extend the idle limit.
-  const [family] = await tx<{ deadline: string }[]>`SELECT (last_input_at + ${timeoutSeconds} * interval '1 second')::text AS deadline
+  const [family] = await tx<
+    { deadline: string; user_id: string }[]
+  >`SELECT user_id, (last_input_at + ${timeoutSeconds} * interval '1 second')::text AS deadline
     FROM auth.session_families WHERE sid = ${sid}::uuid AND last_input_at IS NOT NULL AND revoked_at IS NULL`;
   if (!family) return;
   const id = crypto.randomUUID();
-  await tx`SELECT events.enqueue(${id}::uuid, 'core', 'live', ${key}, ${JSON.stringify({ v: 1, k: key, d: { type: "identity.access.changed" } })}::text::jsonb)`;
+  await tx`SELECT events.enqueue(${id}::uuid, 'core', 'live', ${key}, ${JSON.stringify({ v: 1, k: key, d: { type: "identity.access.changed", userId: family.user_id, sid } })}::text::jsonb)`;
   await tx`UPDATE events.outbox SET attempts = 1, next_attempt_at = GREATEST(clock_timestamp(), ${family.deadline}::timestamptz) WHERE id = ${id}::uuid`;
 };
 
 /** Identity/group/session mutations and deadline events, on Core's existing shared live follower. */
-export const subscribeIdentityAccessChanged = (changed: () => void): (() => void) => subscribeAppAccessChanged("*", changed);
+export const subscribeIdentityAccessChanged = (changed: () => void, subject?: IdentityAccessSubject): (() => void) =>
+  subscribeAppAccessChanged("*", changed, subject);
+
+/** Run once during lifecycle.start before accepting event-only authenticated rooms. */
+export const requireIdentityAccessEvents = async (): Promise<void> => {
+  const [row] = await sql<{ ready: boolean }[]>`SELECT to_regprocedure('auth.publish_room_identity(jsonb)') IS NOT NULL AS ready`;
+  if (!row?.ready) throw new Error("Event-only rooms require Core identity access sources; upgrade and start Core before this application");
+};

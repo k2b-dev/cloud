@@ -128,7 +128,6 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
   });
   if (!loaded) return null;
   const { user, pwaDeviceId, idle } = loaded;
-  if (idle) await sql.begin((tx) => scheduleSessionIdleAccessChanged(tx, credential.sid, idle.timeoutSeconds));
   if (isAccountExpired(user.accountExpires)) {
     await endSessions(sql, user.id);
     return null;

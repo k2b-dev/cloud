@@ -114,3 +114,35 @@ test("identity source events notify application and room listeners on the existi
     reset.mockRestore();
   }
 });
+
+test("a scoped session/account event never revalidates another user's sockets", async () => {
+  const topic = createMemoryLiveTopic();
+  bindProcessSync({ topic: () => topic } as unknown as Sync);
+  let a = 0,
+    b = 0;
+  const delivered = Promise.withResolvers<void>();
+  const stopA = subscribeIdentityAccessChanged(
+    () => {
+      a++;
+      if (a > 1) delivered.resolve();
+    },
+    { userId: "a", sid: "session-a" },
+  );
+  const stopB = subscribeIdentityAccessChanged(
+    () => {
+      b++;
+    },
+    { userId: "b", sid: "session-b" },
+  );
+  try {
+    await Bun.sleep(0);
+    const beforeB = b;
+    topic.publish({ v: 1, k: "identity.access:a", d: { type: "identity.access.changed", userId: "a", sid: "session-a" } });
+    await delivered.promise;
+    expect(b).toBe(beforeB);
+    expect(a).toBe(2);
+  } finally {
+    stopA();
+    stopB();
+  }
+});
