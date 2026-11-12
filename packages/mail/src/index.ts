@@ -1,3 +1,4 @@
+import { requireIdentityAccessEvents } from "@k2b/cloud/events";
 import { stopRuntimeResources } from "@k2b/cloud/services";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
@@ -66,6 +67,7 @@ const result = await app.start({
     },
     start: async () => {
       try {
+        await requireIdentityAccessEvents();
         await finishReplyDraftRetirements();
         await draftDocumentSnapshots.start();
         await mailNotifications.start();

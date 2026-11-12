@@ -123,6 +123,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
         },
         getByShortId: async () => note,
         get: async () => (exists ? note : null),
+        getRoomAccessState: async () => (exists ? { ...note, restoreRevision: revision } : null),
         getAnchoredYjsState: async () => stored(),
         deliverAtRestoreRevision: async (input: { restoreRevision: string; deliver: () => undefined }) => {
           if (!exists) return "notFound";

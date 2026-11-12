@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const SHARED_TEXT_ROOM_ERROR_CODE = {
+  frozen: "DOCUMENT_FROZEN",
+  closed: "DOCUMENT_CLOSED",
   loginRequired: "LOGIN_REQUIRED",
   sessionExpired: "SESSION_EXPIRED",
   accessDenied: "ACCESS_DENIED",

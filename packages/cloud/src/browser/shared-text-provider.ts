@@ -459,7 +459,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       if (storageFailures >= MAX_SHARED_TEXT_STORAGE_RETRIES) terminate(error);
       return true;
     }
-    if (error.code === BUSY_ERROR_CODE) {
+    if (error.code === BUSY_ERROR_CODE || error.code === "DOCUMENT_FROZEN") {
       // Unacknowledged input stays pending; the next replay resends it after the backoff.
       ws?.close();
       return true;
@@ -468,7 +468,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       lastCursor = null;
       replayReady = false;
     }
-    if (terminalErrorCodes.has(error.code)) {
+    if (error.code === "DOCUMENT_CLOSED" || terminalErrorCodes.has(error.code)) {
       terminate(error);
     }
     return true;

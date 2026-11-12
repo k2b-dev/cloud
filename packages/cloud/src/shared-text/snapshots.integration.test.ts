@@ -554,11 +554,10 @@ testFor("nats")(
             throw new Error("writer did not start");
           }),
         ]);
-        await expect(f.second.flushNow("flush", { restoreRevision: "0", targetCursor: receipt.cursor })).rejects.toThrow();
+        const waiting = f.second.flushNow("flush", { restoreRevision: "0", targetCursor: receipt.cursor });
         expect(f.maxInFlight.get("flush")).toBe(1);
         release.resolve();
-        await until(() => f.states.get("flush")?.cursor === receipt.cursor, "background writer commits");
-        const stored = await f.second.flushNow("flush", { restoreRevision: "0", targetCursor: receipt.cursor });
+        const stored = await waiting;
         expect(stored?.text).toBe("visible");
         expect(stored?.cursor).toBe(receipt.cursor);
         expect(f.maxInFlight.get("flush")).toBe(1);

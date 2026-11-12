@@ -61,6 +61,7 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       note: {
         getByShortId: async () => note,
         get: async () => note,
+        getRoomAccessState: async () => ({ ...note, restoreRevision: "0" }),
         getAnchoredYjsState: async () => ({ yjsState: null, streamCursor: null, restoreRevision: "0", contentMd: null }),
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
         acceptYjsUpdate: async (input: { update: Uint8Array; validate: () => Promise<boolean> }) => {

@@ -72,6 +72,7 @@ const fixture = () => {
   };
   return {
     documents,
+    stored: () => stored,
     publications,
     events,
     saves,
@@ -137,6 +138,7 @@ test("an unreferenced freeze marker does not reject a pending edit from before t
   const vector = Y.encodeStateVector(doc);
   doc.getText(SHARED_TEXT_NAME).insert(5, " later");
   const admitted = await f.documents.accept("doc", {
+    snapshot: f.stored(),
     actor,
     update: Y.encodeStateAsUpdate(doc, vector),
     baseCursor: null,
@@ -210,6 +212,7 @@ test("admission validates application headers in the merged state before confirm
     const update = Y.encodeStateAsUpdate(f.own.doc, vector);
     let inspected = false;
     const result = await f.documents().accept("fixture", {
+      snapshot: f.stored(),
       actor: f.own.actor,
       update,
       baseCursor: f.own.cursor,
@@ -639,6 +642,7 @@ test("ordinary ingress accepts an idle shared-topic snapshot watermark and repla
   try {
     expect(
       await documents.accept("idle", {
+        snapshot: stored,
         actor: { kind: "user", id: "author" },
         update: Y.encodeStateAsUpdate(client, before),
         baseCursor: stored.cursor,
@@ -696,7 +700,15 @@ test("admission validates the merged text limit before confirming individually l
     expect(f.peer.text.length).toBe(6);
     const own = Y.encodeStateAsUpdate(f.own.doc, ownVector),
       peer = Y.encodeStateAsUpdate(f.peer.doc, peerVector);
-    const options = { actor: f.own.actor, baseCursor, restoreRevision: "0", originNodeId: "fixture", originPeerId: "peer", maxLength: 6 };
+    const options = {
+      snapshot: f.stored(),
+      actor: f.own.actor,
+      baseCursor,
+      restoreRevision: "0",
+      originNodeId: "fixture",
+      originPeerId: "peer",
+      maxLength: 6,
+    };
     expect((await f.documents().accept("fixture", { ...options, update: own })).status).toBe("accepted");
     const count = f.events.length,
       before = (await f.canonical()).text;
@@ -822,6 +834,7 @@ test("ordinary server edits admit concurrent browser input while table scaffold 
       expect(await f.documents.edit("doc", { actor: null }, () => next)).toMatchObject({ status: "edited" });
       expect(
         await f.documents.accept("doc", {
+          snapshot: f.stored(),
           actor: { kind: "user", id: "browser" },
           update: Y.encodeStateAsUpdate(browser, vector),
           baseCursor: current!.cursor,
@@ -834,5 +847,62 @@ test("ordinary server edits admit concurrent browser input while table scaffold 
     } finally {
       browser.destroy();
     }
+  }
+});
+
+test("a retained restore marker fences old opaque revisions before any SQL or outbox delivery", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  try {
+    source.getText(SHARED_TEXT_NAME).insert(0, "old input");
+    f.events.push({
+      cursor: "s6t.fixture.1",
+      data: { kind: "freeze", payload: "", restoreRevision: "restored:opaque", originNodeId: "other-node", originPeerId: null },
+    });
+    expect(
+      await f.documents.accept("doc", {
+        snapshot: f.stored(),
+        actor: { kind: "user", id: "user" },
+        update: Y.encodeStateAsUpdate(source),
+        baseCursor: null,
+        restoreRevision: "revision",
+        originNodeId: "fixture",
+        originPeerId: "peer",
+      }),
+    ).toEqual({ status: "recoveryRequired" });
+    expect(f.publications).toHaveLength(0);
+    expect(f.saves).toHaveLength(0);
+  } finally {
+    source.destroy();
+  }
+});
+
+test("admission uses its join snapshot and accepted base without loading SQL or replaying covered edits", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 513;
+  f.failures.load = new Error("Admission must not load the snapshot store");
+  let baseCursor: string | null = null;
+  try {
+    for (let n = 0; n < 50; n++) {
+      const vector = Y.encodeStateVector(source);
+      source.getText(SHARED_TEXT_NAME).insert(n, "x");
+      const result = await f.documents.accept("doc", {
+        snapshot: f.stored(),
+        actor: { kind: "user", id: "author" },
+        update: Y.encodeStateAsUpdate(source, vector),
+        baseCursor,
+        restoreRevision: "revision",
+        originNodeId: "node",
+        originPeerId: "peer",
+      });
+      expect(result.status).toBe("accepted");
+      if (result.status === "accepted") baseCursor = result.cursor;
+    }
+    expect(f.replays).toHaveLength(0);
+    expect(f.publications).toHaveLength(50);
+    expect(f.saves).toHaveLength(0);
+  } finally {
+    source.destroy();
   }
 });

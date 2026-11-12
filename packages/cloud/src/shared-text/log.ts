@@ -1,6 +1,7 @@
 import { RetentionGapError, type TopicConfig } from "@k2b/sync";
 import type * as Y from "yjs";
-import { getProcessSync } from "../_internal/process-sync";
+import { getProcessSync, lazySync } from "../_internal/process-sync";
+import { createSharedTextAdmission, SHARED_TEXT_ADMISSION_LEASE_MS } from "./admission";
 import { compareStreamCursor } from "./cursor";
 import { bindDocuments } from "./documents";
 import { applySharedTextEvent, MalformedSharedTextEventError } from "./events";
@@ -8,6 +9,13 @@ import { snapshots } from "./snapshots";
 import type { SharedTextContributor, SharedTextStore, SharedTextSyncEvent } from "./types";
 
 const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "whenFull" | "deadLetterRetention" | "maxPayloadBytes">>) => {
+  const writer = lazySync((sync) =>
+    sync.mutex({ id: `${topicConfig.id}:snapshot-writer`, ttlMs: 120_000, retry: { maxAttempts: 601, delayMs: 200 } }),
+  );
+  const admission = lazySync((sync) =>
+    sync.mutex({ id: `${topicConfig.id}:admission`, ttlMs: SHARED_TEXT_ADMISSION_LEASE_MS, retry: { maxAttempts: 101, delayMs: 25 } }),
+  );
+  const admit = createSharedTextAdmission(admission);
   const topic = () => getProcessSync().topic<SharedTextSyncEvent>(topicConfig);
   const replay = async (config: {
     docId: string;
@@ -79,6 +87,8 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "wh
     id: topicConfig.id,
     topicConfig,
     topic,
+    writer,
+    admit,
     replay,
     recover,
     async firstSequence(): Promise<number> {
@@ -92,6 +102,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "wh
         {
           topic,
           replay,
+          admit,
           maxPayloadBytes: topicConfig.maxPayloadBytes,
           async *events(docId, after, until, signal) {
             const handle = topic();

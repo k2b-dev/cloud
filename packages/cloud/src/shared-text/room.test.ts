@@ -16,7 +16,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 const waitFor = async (check: () => boolean) => {
-  for (let i = 0; i < 100 && !check(); i++) await Bun.sleep(1);
+  while (!check()) await Bun.sleep(1);
   expect(check()).toBe(true);
 };
 const stream = <T>() => {
@@ -49,6 +49,7 @@ const fixture = () => {
   const invalidations = stream<void>();
   const live = stream<TopicEvent<SharedTextEvent>>();
   let authenticateWait: Promise<void> | undefined;
+  let revalidateWait: Promise<void> | undefined;
   let denied = false,
     revoked = false;
   let sql = 0,
@@ -58,13 +59,15 @@ const fixture = () => {
   let sequence = 0,
     conflicts = 0;
   const entries: TopicEvent<SharedTextEvent>[] = [];
+  const replays: number[] = [];
   const topic = {
+    cursorSequence: (cursor: string) => Number(cursor.split(".").at(-1)),
     cursorAt: (sequence: number) => `s6t.room.${sequence}`,
     latestCursor: async () => head,
     publish: async (input: { data: SharedTextEvent; tenantId?: string }) => {
       if (conflicts > 0) {
         conflicts--;
-        throw new ConflictError("concurrent publish");
+        throw new ConflictError("Fixture document-head contention");
       }
       sequence++;
       head = `s6t.room.${sequence}`;
@@ -82,12 +85,21 @@ const fixture = () => {
     },
     replay: async function* (options: { after?: string; until?: string }) {
       if (failure) throw failure;
-      yield* entries.filter((e) => Number(e.cursor.split(".").at(-1)) > Number(options.after?.split(".").at(-1) ?? 0));
+      const batch = entries.filter(
+        (e) =>
+          Number(e.cursor.split(".").at(-1)) > Number(options.after?.split(".").at(-1) ?? 0) &&
+          (!options.until || Number(e.cursor.split(".").at(-1)) <= Number(options.until.split(".").at(-1))),
+      );
+      replays.push(batch.length);
+      yield* batch;
     },
     hub: () => ({ subscribe: ({ signal }: { signal: AbortSignal }) => live.read(signal) }),
     live: ({ signal }: { signal: AbortSignal }) => stream<TopicEvent<SharedTextEvent>>().read(signal),
   };
-  bindProcessSync({ topic: () => topic } as unknown as Sync);
+  bindProcessSync({
+    topic: () => topic,
+    mutex: () => ({ withLock: async (_input: unknown, run: () => Promise<unknown>) => run() }),
+  } as unknown as Sync);
   const messages: SharedTextRoomMessages = {
     notFound: "missing",
     sessionExpired: "expired",
@@ -112,6 +124,7 @@ const fixture = () => {
   };
   const sent: Array<{ type: string; payload: { code?: string; updates?: unknown[] } }> = [];
   const closed: number[] = [];
+  const ready = Promise.withResolvers<void>();
   const room = createSharedTextRoom({
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     protocol: {
@@ -155,7 +168,9 @@ const fixture = () => {
       awarenessUser: (user) => ({ userId: user.id, name: "User", color: "#fff" }),
       revalidate: async () => {
         sql++;
-        return { ok: !revoked, code: "ACCESS_REVOKED" };
+        const ok = !revoked;
+        await revalidateWait;
+        return { ok, code: "ACCESS_REVOKED" };
       },
       invalidations: (_ctx, signal) => invalidations.read(signal),
       recover: async () => {
@@ -164,7 +179,14 @@ const fixture = () => {
     },
   });
   const ctx = createSharedTextRoomContext<{ id: string }, SharedTextRoomMessages>(
-    { send: (data) => sent.push(JSON.parse(data)), close: (code) => closed.push(code) },
+    {
+      send: (data) => {
+        const message = JSON.parse(data);
+        sent.push(message);
+        if (message.type === "ready") ready.resolve();
+      },
+      close: (code) => closed.push(code),
+    },
     "credential",
     messages,
   );
@@ -172,12 +194,14 @@ const fixture = () => {
   const request = (type: string, payload: object) => connection.receive(JSON.stringify({ type, payload: { docId: "public", ...payload } }));
   return {
     room,
+    ready: ready.promise,
     ctx,
     connection,
     sent,
     closed,
     invalidations,
     entries,
+    replays,
     prune() {
       entries.length = 0;
       head = null;
@@ -189,6 +213,9 @@ const fixture = () => {
     snapshots: () => snapshots,
     holdAuthentication: (wait: Promise<void>) => {
       authenticateWait = wait;
+    },
+    holdRevalidation: (wait: Promise<void>) => {
+      revalidateWait = wait;
     },
     deny: () => {
       denied = true;
@@ -243,7 +270,7 @@ test("idle sessions schedule no access checks and execute zero SQL over virtual 
   const timeouts = spyOn(globalThis, "setTimeout");
   const f = fixture();
   await f.join();
-  for (let i = 0; i < 100 && !f.sent.some((m) => m.type === "ready"); i++) await Promise.resolve();
+  await f.ready;
   expect(f.sent.some((m) => m.type === "ready")).toBe(true);
   const joined = f.sql();
   try {
@@ -289,21 +316,93 @@ test("an identity invalidation during join cannot be lost before access subscrip
   }
 });
 
+test("each accepted edit advances the base: replay stays bounded across a long session", async () => {
+  const f = fixture();
+  const doc = new Y.Doc();
+  doc.clientID = 42;
+  try {
+    await f.join();
+    await f.ready;
+    const joined = f.sql();
+    let baseCursor = "s6t.room.0";
+    for (let index = 0; index < 50; index++) {
+      const vector = Y.encodeStateVector(doc);
+      doc.getText("codemirror").insert(index, "x");
+      await f.room.handle(f.ctx, {
+        type: "edit",
+        payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(doc, vector)), baseCursor, restoreRevision: "0" },
+      });
+      baseCursor = f.entries.at(-1)!.cursor;
+    }
+    expect(f.entries).toHaveLength(50);
+    expect(Math.max(...f.replays)).toBeLessThanOrEqual(1);
+    expect(f.sql()).toBe(joined);
+  } finally {
+    doc.destroy();
+    await f.connection.close();
+  }
+});
+
+test("retention loss during admission requires reopen rather than internal error", async () => {
+  const f = fixture();
+  try {
+    await f.join();
+    await f.ready;
+    f.fail(new RetentionGapError("s6t.room.0", "s6t.room.2"));
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: "AAA=", baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
+    expect(f.sent.at(-1)?.payload.code).toBe("RESYNC_REQUIRED");
+    expect(f.closed.at(-1)).toBe(1012);
+  } finally {
+    await f.connection.close();
+  }
+});
+
+test("revalidation is single-flight and an invalidation during its query is checked again", async () => {
+  const f = fixture();
+  const release = Promise.withResolvers<void>();
+  try {
+    await f.join();
+    await f.ready;
+    const joined = f.sql();
+    f.holdRevalidation(release.promise);
+    const first = f.room.revalidate(f.ctx);
+    const repeated = Array.from({ length: 20 }, () => f.room.revalidate(f.ctx));
+    expect(repeated.every((task) => task === first)).toBe(true);
+    f.revoke();
+    release.resolve();
+    await first;
+    await waitFor(() => f.closed.length > 0);
+    expect(f.sql() - joined).toBe(2);
+    expect(f.sent.at(-1)?.payload.code).toBe("ACCESS_REVOKED");
+  } finally {
+    release.resolve();
+    await f.connection.close();
+  }
+});
+
 test("an active room retains its authorized state when covered broker history is pruned", async () => {
   const f = fixture();
   const doc = new Y.Doc();
   doc.clientID = 42;
   try {
     await f.join();
-    await waitFor(() => f.sent.some((m) => m.type === "ready"));
+    await f.ready;
     doc.getText("codemirror").insert(0, "first");
-    await f.request("edit", { payload: toBase64(Y.encodeStateAsUpdate(doc)), baseCursor: "s6t.room.0", restoreRevision: "0" });
-    await waitFor(() => f.ctx.snapshot?.cursor === "s6t.room.1");
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(doc)), baseCursor: "s6t.room.0", restoreRevision: "0" },
+    });
     f.prune();
     const before = Y.encodeStateVector(doc);
     doc.getText("codemirror").insert(5, " second");
-    await f.request("edit", { payload: toBase64(Y.encodeStateAsUpdate(doc, before)), baseCursor: "s6t.room.1", restoreRevision: "0" });
-    await waitFor(() => f.entries.length === 1);
+    await f.room.handle(f.ctx, {
+      type: "edit",
+      payload: { docId: "public", payload: toBase64(Y.encodeStateAsUpdate(doc, before)), baseCursor: "s6t.room.1", restoreRevision: "0" },
+    });
+    expect(f.entries).toHaveLength(1);
     expect(f.entries[0]?.cursor).toBe("s6t.room.2");
     expect(f.closed).toEqual([]);
     expect(f.sql()).toBe(3);
@@ -312,18 +411,20 @@ test("an active room retains its authorized state when covered broker history is
     await f.connection.close();
   }
 });
-test("concurrent editor CAS conflicts retry the same identities without reconnect or SQL", async () => {
+test("exhausted admission contention closes for bounded reconnect without SQL or false acknowledgement", async () => {
   const f = fixture();
   const doc = new Y.Doc();
   doc.clientID = 42;
   try {
     await f.join();
-    await waitFor(() => f.sent.some((m) => m.type === "ready"));
+    await f.ready;
     f.contend();
     doc.getText("codemirror").insert(0, "once");
     await f.request("edit", { payload: toBase64(Y.encodeStateAsUpdate(doc)), baseCursor: "s6t.room.0", restoreRevision: "0" });
-    await waitFor(() => f.entries.length === 1);
-    expect(f.closed).toEqual([]);
+    await f.connection.settled();
+    expect(f.entries).toHaveLength(0);
+    expect(f.closed).toEqual([1012]);
+    expect(f.sent.at(-1)?.payload.code).toBe("STREAM_FAILED");
     expect(f.sql()).toBe(3);
   } finally {
     doc.destroy();

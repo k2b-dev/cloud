@@ -1,7 +1,7 @@
-import { type Job, type JobConfig, RetentionGapError, type Topic, type Worker } from "@k2b/sync";
+import { type Job, type JobConfig, type Mutex, RetentionGapError, type Topic, type Worker } from "@k2b/sync";
 import * as Y from "yjs";
-import { lazySync } from "../_internal/process-sync";
 import { logger } from "../services/logging";
+import { SharedTextBoundaryError } from "./boundary";
 import { validateChanges } from "./changes";
 import { compareStreamCursor } from "./cursor";
 import { createDoc } from "./documents";
@@ -71,6 +71,8 @@ export type SharedTextSnapshotBacklog = {
 };
 type SnapshotLog = {
   id: string;
+  /** Custom ordered transports may omit a writer; synchronous flush requires one. */
+  writer?(): Pick<Mutex, "withLock" | "extend">;
   topic(): Pick<Topic<SharedTextSyncEvent>, "head" | "latestCursor" | "cursorSequence" | "cursorAt" | "replay" | "publish">;
   firstSequence(): Promise<number>;
 };
@@ -117,7 +119,6 @@ const createSnapshots = <Input>(
     // A final unload at a newer cursor must not coalesce with an already settling snapshot.
     await job().submit({ key: `${request.docId}:${sequence}`, coalesce: true, orderingKey: request.docId, input: input.encode(request) });
   };
-  const mutex = lazySync((sync) => sync.mutex({ id: `${log.id}:snapshot-writer`, ttlMs: ACK_WAIT_MS, retry: { maxAttempts: 1 } }));
   const persist = async (request: SharedTextSnapshotRequest, signal: AbortSignal, heartbeat: () => Promise<void>) => {
     const { docId } = request;
     let heartbeatError: unknown;
@@ -146,6 +147,16 @@ const createSnapshots = <Input>(
       const contributors = new Map<string, SharedTextContributor>();
       try {
         let reachedTarget = covered;
+        let fenced = false;
+        if (covered && target && repair) {
+          for await (const event of topic.replay({
+            tenantId: docId,
+            after: topic.cursorAt(topic.cursorSequence(target) - 1),
+            until: target,
+            signal,
+          }))
+            fenced = event.data.room?.state === "closed" || (event.data.room?.state === "frozen" && event.data.room.expiresAt > Date.now());
+        }
         try {
           if (!covered && target)
             for await (const event of topic.replay({
@@ -154,6 +165,14 @@ const createSnapshots = <Input>(
               until: target,
               signal: signal,
             })) {
+              if (
+                event.data.kind === "freeze" &&
+                event.data.restoreRevision !== undefined &&
+                event.data.restoreRevision !== initial.restoreRevision
+              )
+                throw new SharedTextBoundaryError("GENERATION_CHANGED");
+              fenced =
+                event.data.room?.state === "closed" || (event.data.room?.state === "frozen" && event.data.room.expiresAt > Date.now());
               const applied = applySharedTextEvent(doc, event, docId, initial.restoreRevision);
               if (applied && event.data.actor)
                 contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
@@ -175,7 +194,7 @@ const createSnapshots = <Input>(
         await heartbeat();
         signal.throwIfAborted();
         let cursor = target && compareStreamCursor(target, head) > 0 ? target : head;
-        if (repair && !doc.store.pendingStructs && !doc.store.pendingDs) {
+        if (repair && !fenced && !doc.store.pendingStructs && !doc.store.pendingDs) {
           const text = doc.getText(SHARED_TEXT_NAME);
           const planned = repair.plan(text.toString());
           if (planned.some((change) => change.from !== change.to)) throw new RangeError("Snapshot repair may only insert text");
@@ -221,7 +240,9 @@ const createSnapshots = <Input>(
     }
   };
   const write = async (request: SharedTextSnapshotRequest, signal: AbortSignal, heartbeat: () => Promise<void>) => {
-    const lease = mutex();
+    // A custom ordered transport remains independent of the process runtime.
+    if (!log.writer) return persist(request, signal, heartbeat);
+    const lease = log.writer();
     // A flush and a queued job share the same document lease on every node.
     const result = await lease.withLock({ resource: request.docId, signal }, async (lock) => {
       let leaseLost = false;
@@ -236,7 +257,8 @@ const createSnapshots = <Input>(
     if (!result) throw new Error("Shared text snapshot writer is busy; retry the flush");
   };
   const flushNow = async (docId: string, options: { signal?: AbortSignal; restoreRevision?: string; targetCursor?: string } = {}) => {
-    const signal = options.signal ?? AbortSignal.timeout(ACK_WAIT_MS);
+    if (!log.writer) throw new Error("Synchronous flush requires the log snapshot writer lease");
+    const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(ACK_WAIT_MS)]) : AbortSignal.timeout(ACK_WAIT_MS);
     signal.throwIfAborted();
     const initial = await store.load(docId, { signal });
     if (!initial) return null;

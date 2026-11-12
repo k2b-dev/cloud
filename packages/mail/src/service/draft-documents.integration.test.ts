@@ -367,6 +367,7 @@ suite("Mail shared draft transaction store", () => {
     };
     const update = await createDraftRevisionUpdate(base.durable.state, next, { deadline: deadline() });
     const accepted = await roomDocuments.accept(created.id, {
+      snapshot: cached,
       actor: { kind: "user", id: users[0]! },
       update,
       baseCursor: base.durable.cursor,

@@ -38,7 +38,7 @@ type WsContext = SharedTextRoomContext<User, Messages> & {
   workspaceNotebookShortId: string | null;
   workspaceAbort: AbortController | null;
 };
-type AccessEvaluation = SharedTextRoomAccess & { notebookId?: string; noteId?: string };
+type AccessEvaluation = SharedTextRoomAccess & { notebookId?: string; noteId?: string; restoreRevision?: string };
 type PresenceChannel = { noteId: string; members: Set<WsContext>; abort: AbortController; task: Promise<void> };
 const presenceChannels = new Map<string, PresenceChannel>();
 const isWritablePermission = (permission: "none" | "read" | "write" | "admin") => permission === "write" || permission === "admin";
@@ -253,7 +253,7 @@ type ResolvedNote = NonNullable<Awaited<ReturnType<typeof notebooksService.note.
 type ResolvedNotebook = NonNullable<Awaited<ReturnType<typeof notebooksService.notebook.get>>>;
 
 const evaluateResolvedNoteAccess = async (
-  note: ResolvedNote,
+  note: Pick<ResolvedNote, "id" | "notebookId" | "lockedAt">,
   publicDocId: string,
   user: User,
   mode: "read" | "write" | "presence",
@@ -367,7 +367,7 @@ const refreshJoinedAccess = async (ctx: WsContext): Promise<AccessEvaluation> =>
     };
   }
 
-  const note = await notebooksService.note.get({ id: ctx.docId });
+  const note = await notebooksService.note.getRoomAccessState({ noteId: ctx.docId });
   if (!note) return { ok: false, code: ERROR_CODE.noteNotFound, message: ctx.messages.noteNotFound, noteId: ctx.publicDocId };
   const access = await evaluateResolvedNoteAccess(
     note,
@@ -382,7 +382,7 @@ const refreshJoinedAccess = async (ctx: WsContext): Promise<AccessEvaluation> =>
     return { ok: false, code: ERROR_CODE.accessRevoked, message: ctx.messages.accessRevoked };
   ctx.user = user;
   ctx.canWrite = access.canWrite ?? false;
-  return access;
+  return { ...access, restoreRevision: note.restoreRevision };
 };
 
 const refreshWorkspaceAccess = async (ctx: WsContext): Promise<AccessEvaluation> => {
@@ -422,7 +422,7 @@ const leaveReaderPresence = async (ctx: WsContext) => {
 };
 
 /** Re-evaluate the joined note. Readers leave only that note; collaboration failures remain terminal. */
-const revalidateReaderAccess = async (ctx: WsContext): Promise<boolean> => {
+const revalidateReaderAccessOnce = async (ctx: WsContext): Promise<boolean> => {
   if (ctx.restoreRevision !== null) return room.revalidate(ctx);
   if (ctx.phase !== "joined") return false;
   const noteId = ctx.docId;
@@ -455,8 +455,30 @@ const revalidateReaderAccess = async (ctx: WsContext): Promise<boolean> => {
   }
 };
 
+const revalidateReaderAccessTasks = new WeakMap<WsContext, { task: Promise<boolean>; again: boolean }>();
+const revalidateReaderAccess = (ctx: WsContext): Promise<boolean> => {
+  const existing = revalidateReaderAccessTasks.get(ctx);
+  if (existing) {
+    existing.again = true;
+    return existing.task;
+  }
+  const pending = { task: Promise.resolve(false), again: false };
+  pending.task = (async () => {
+    let result: boolean;
+    do {
+      pending.again = false;
+      result = await revalidateReaderAccessOnce(ctx);
+    } while (result && pending.again);
+    return result;
+  })().finally(() => {
+    revalidateReaderAccessTasks.delete(ctx);
+  });
+  revalidateReaderAccessTasks.set(ctx, pending);
+  return pending.task;
+};
+
 /** Re-evaluate the joined workspace's access. Returns false once it has been left. */
-const revalidateWorkspaceAccess = async (ctx: WsContext): Promise<boolean> => {
+const revalidateWorkspaceAccessOnce = async (ctx: WsContext): Promise<boolean> => {
   if (!ctx.workspaceNotebookId || !ctx.workspaceNotebookShortId) return false;
   try {
     const access = await refreshWorkspaceAccess(ctx);
@@ -484,6 +506,28 @@ const revalidateWorkspaceAccess = async (ctx: WsContext): Promise<boolean> => {
     await leaveCurrentWorkspace(ctx);
     return false;
   }
+};
+
+const revalidateWorkspaceAccessTasks = new WeakMap<WsContext, { task: Promise<boolean>; again: boolean }>();
+const revalidateWorkspaceAccess = (ctx: WsContext): Promise<boolean> => {
+  const existing = revalidateWorkspaceAccessTasks.get(ctx);
+  if (existing) {
+    existing.again = true;
+    return existing.task;
+  }
+  const pending = { task: Promise.resolve(false), again: false };
+  pending.task = (async () => {
+    let result: boolean;
+    do {
+      pending.again = false;
+      result = await revalidateWorkspaceAccessOnce(ctx);
+    } while (result && pending.again);
+    return result;
+  })().finally(() => {
+    revalidateWorkspaceAccessTasks.delete(ctx);
+  });
+  revalidateWorkspaceAccessTasks.set(ctx, pending);
+  return pending.task;
 };
 
 const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortId: string, afterCursor: string | null) => {
@@ -606,12 +650,13 @@ const handleWorkspacePresenceWatch = async (ctx: WsContext, payload: z.infer<typ
     });
     return;
   }
-  ctx.phase = "joined";
-  ctx.user = user;
-  ctx.docId = access.resolvedDocId;
-  ctx.publicDocId = payload.noteId;
-  ctx.accessScope = access.notebookId;
-  ctx.presencePeerId = payload.presencePeerId;
+  room.joinReader(ctx, {
+    user,
+    docId: access.resolvedDocId,
+    publicDocId: payload.noteId,
+    scope: access.notebookId,
+    presencePeerId: payload.presencePeerId,
+  });
   if (ctx.accessInvalidated && !(await revalidateReaderAccess(ctx))) return;
   await joinPresence(ctx);
 };
@@ -678,8 +723,7 @@ const room = createSharedTextRoom<User, Messages, WsContext>({
     revalidate: async (ctx) => {
       const access = await refreshJoinedAccess(ctx);
       if (!access.ok) return { ...access, docId: access.noteId };
-      const snapshot = await notebooksService.note.getYjsStateWithCursor({ noteId: ctx.docId! });
-      if (snapshot && snapshot.restoreRevision !== ctx.restoreRevision)
+      if (access.restoreRevision !== undefined && access.restoreRevision !== ctx.restoreRevision)
         return { ok: false, code: ERROR_CODE.resyncRequired, message: ctx.messages.reopenRequired };
       return { ...access, scope: access.notebookId };
     },
@@ -715,6 +759,7 @@ const app = new Hono<AuthContext>().get(
     const locale = getLocale(c);
     const expected = c.req.queries("expectedUserId");
     const actor = c.get("actor");
+    const proof = c.get("credentialProof");
     const accountChanged = expected && (expected.length !== 1 || actor?.kind !== "user" || actor.user.id !== expected[0]);
     let connection: ReturnType<typeof room.connect> | undefined;
     let stopIdentity = () => {};
@@ -737,11 +782,14 @@ const app = new Hono<AuthContext>().get(
               else await handleWorkspacePresenceWatch(ctx, message.data.payload);
             },
           });
-          stopIdentity = subscribeIdentityAccessChanged(() => {
-            if (ctx.workspaceNotebookId) void revalidateWorkspaceAccess(ctx);
-            if (ctx.docId) void revalidateReaderAccess(ctx);
-            else void room.revalidate(ctx);
-          });
+          stopIdentity = subscribeIdentityAccessChanged(
+            () => {
+              if (ctx.workspaceNotebookId) void revalidateWorkspaceAccess(ctx);
+              if (ctx.docId) void revalidateReaderAccess(ctx);
+              else void room.revalidate(ctx);
+            },
+            { userId: actor?.kind === "user" ? actor.user.id : undefined, sid: proof?.kind === "session" ? proof.sid : undefined },
+          );
           if (accountChanged) void fatal(ctx, ERROR_CODE.accessDenied, ctx.messages.accessDenied);
         },
         onMessage: (event) => connection?.receive(event.data),
