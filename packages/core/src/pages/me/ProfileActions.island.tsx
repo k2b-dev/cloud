@@ -5,7 +5,9 @@ import { AvatarStateSchema, SaveAvatarSchema } from "@k2b/cloud/contracts/profil
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Avatar, Button, IconButton, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
+import { z } from "zod";
+import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
 import { accountMessages } from "./messages";
 
 type Props = {
@@ -36,6 +38,17 @@ type Props = {
 };
 
 const SSH_KEY_PATTERN = /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521))\s+[A-Za-z0-9+/=]+/;
+const DETAILS_INTENT = { key: "edit", value: "details" };
+
+const DetailsDraftSchema = z.object({
+  phone: z.string(),
+  street: z.string(),
+  postalCode: z.string(),
+  city: z.string(),
+  state: z.string(),
+  sshKeys: z.array(z.string()),
+});
+type DetailsDraft = z.infer<typeof DetailsDraftSchema>;
 
 export default function ProfileActions(props: Props) {
   const locale = useLocale();
@@ -137,25 +150,35 @@ export default function ProfileActions(props: Props) {
   >({
     mutation: async (vars) => {
       const res = await apiClient.me.$patch({ json: vars });
+      await throwIfSignInNeeded(res.clone());
       if (!res.ok) {
         throw new Error(t().failedToUpdateDetails);
       }
     },
     onSuccess: () => window.location.reload(),
-    onError: (err) => prompts.error(err.message),
+    onError: async (err) => {
+      // A new SSH key needs a recent sign-in: sign in again and reopen the dialog with what was entered.
+      if (err instanceof SignInNeededError && err.code === "REAUTHENTICATE")
+        return confirmIdentity(
+          t().sshKeyReauthenticate,
+          DETAILS_INTENT,
+          { title: t().confirmIdentity, confirm: t().confirmIdentity },
+          submittedDetails,
+        );
+      prompts.error(err instanceof SignInNeededError ? t().sshKeysInBrowser : err.message);
+    },
   });
+  let submittedDetails: DetailsDraft | undefined;
 
-  const handleEditDetails = async () => {
-    const result = await prompts.dialog<
-      { phone: string; street: string; postalCode: string; city: string; state: string; sshKeys: string[] } | undefined
-    >(
+  const handleEditDetails = async (draft?: DetailsDraft) => {
+    const result = await prompts.dialog<DetailsDraft | undefined>(
       (close) => {
-        const [phone, setPhone] = createSignal(props.ipa?.phone ?? "");
-        const [street, setStreet] = createSignal(props.ipa?.address.street ?? "");
-        const [postalCode, setPostalCode] = createSignal(props.ipa?.address.postalCode ?? "");
-        const [city, setCity] = createSignal(props.ipa?.address.city ?? "");
-        const [state, setState] = createSignal(props.ipa?.address.state ?? "");
-        const [keys, setKeys] = createSignal<string[]>([...(props.ipa?.sshPublicKeys ?? [])]);
+        const [phone, setPhone] = createSignal(draft?.phone ?? props.ipa?.phone ?? "");
+        const [street, setStreet] = createSignal(draft?.street ?? props.ipa?.address.street ?? "");
+        const [postalCode, setPostalCode] = createSignal(draft?.postalCode ?? props.ipa?.address.postalCode ?? "");
+        const [city, setCity] = createSignal(draft?.city ?? props.ipa?.address.city ?? "");
+        const [state, setState] = createSignal(draft?.state ?? props.ipa?.address.state ?? "");
+        const [keys, setKeys] = createSignal<string[]>([...(draft?.sshKeys ?? props.ipa?.sshPublicKeys ?? [])]);
         const [newKey, setNewKey] = createSignal("");
         const [keyError, setKeyError] = createSignal<string | null>(null);
 
@@ -329,6 +352,7 @@ export default function ProfileActions(props: Props) {
       result.sshKeys.some((k, i) => k !== (props.ipa?.sshPublicKeys[i] ?? undefined));
 
     if (contactChanged || sshChanged) {
+      submittedDetails = result;
       await detailsMutation.mutate({
         ipa: {
           phone: result.phone || undefined,
@@ -338,7 +362,8 @@ export default function ProfileActions(props: Props) {
             city: result.city || undefined,
             state: result.state || undefined,
           },
-          sshPublicKeys: result.sshKeys,
+          // Keys only when they changed: any key change needs a recent sign-in.
+          ...(sshChanged ? { sshPublicKeys: result.sshKeys } : {}),
         },
       });
     }
@@ -365,6 +390,13 @@ export default function ProfileActions(props: Props) {
   });
 
   const enabledActions = new Set(props.actions ?? ["avatar", "profile", "details", "extend"]);
+
+  // Back from "Confirm identity": reopen the details dialog with what the person entered.
+  onMount(() => {
+    if (!isIpa || !enabledActions.has("details")) return;
+    const returned = takeReturnIntent(DETAILS_INTENT);
+    if (returned) void handleEditDetails(DetailsDraftSchema.safeParse(returned.draft).data);
+  });
   const actions = [
     {
       id: "avatar" as const,
