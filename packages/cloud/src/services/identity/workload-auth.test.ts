@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { AuthenticatedServiceAccountCredential, ServiceAccountCredential } from "../service-account-credentials";
+import type { ServiceAccountCredential } from "../service-account-credentials";
 import type { ServiceAccount } from "../service-accounts";
-import { authenticateWorkloadCredential, isReservedWorkloadApiCredential, type WorkloadScope } from "./workload-auth";
-
-const token = "cld_0123456789abcdef01234567_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+import { hasReservedWorkloadScope, isReservedWorkloadApiCredential } from "./workload-auth";
 
 const serviceAccount = (overrides: Partial<ServiceAccount> = {}): ServiceAccount => ({
   id: "9fe97b00-1578-42e8-9204-3da0928825f2",
@@ -36,34 +34,6 @@ const credential = (overrides: Partial<ServiceAccountCredential> = {}): ServiceA
   ...overrides,
 });
 
-const authenticator = (result: AuthenticatedServiceAccountCredential | null, options: { acceptsToken?: boolean } = {}) => {
-  let calls = 0;
-  return {
-    credentials: {
-      isApiToken: () => options.acceptsToken ?? true,
-      authenticateApiToken: async () => {
-        calls += 1;
-        return result;
-      },
-    },
-    calls: () => calls,
-  };
-};
-
-const authenticate = (
-  result: AuthenticatedServiceAccountCredential | null,
-  overrides: { token?: string | null; appId?: string; scope?: WorkloadScope } = {},
-) => {
-  const fake = authenticator(result);
-  return authenticateWorkloadCredential({
-    token: overrides.token === undefined ? token : overrides.token,
-    appId: overrides.appId ?? "reports",
-    scope: overrides.scope ?? "identity:invoke",
-    credentials: fake.credentials,
-    recordLegacy: async () => {},
-  });
-};
-
 describe("Cloud app workload authentication", () => {
   test("identifies both reserved scopes only on resource-bound credentials", () => {
     for (const scope of ["identity:invoke", "identity:oauth-issue"] as const) {
@@ -91,110 +61,9 @@ describe("Cloud app workload authentication", () => {
     ).toBeFalse();
   });
 
-  test("accepts an active, exactly bound workload with the required scope", async () => {
-    const authenticated = { credential: credential(), serviceAccount: serviceAccount(), delegatedUser: null };
-
-    expect(await authenticate(authenticated)).toEqual({
-      appId: "reports",
-      serviceAccountId: authenticated.serviceAccount.id,
-      credentialId: authenticated.credential.id,
-      scope: "identity:invoke",
-    });
-
-    const invocation = {
-      ...authenticated,
-      credential: credential({ scopes: ["identity:invoke"] }),
-      serviceAccount: serviceAccount({ appId: "assistant", resourceId: "assistant" }),
-    };
-    expect(await authenticate(invocation, { appId: "assistant", scope: "identity:invoke" })).toMatchObject({
-      appId: "assistant",
-      scope: "identity:invoke",
-    });
+  test("reserved invocation and retired OAuth scopes never become ordinary token scopes", () => {
+    expect(hasReservedWorkloadScope(["read", "identity:invoke"])).toBe(true);
+    expect(hasReservedWorkloadScope(["identity:oauth-issue"])).toBe(true);
+    expect(hasReservedWorkloadScope(["read", "write"])).toBe(false);
   });
-
-  test("rejects missing and non-cld credentials before secret verification", async () => {
-    const fake = authenticator(null, { acceptsToken: false });
-
-    expect(
-      await authenticateWorkloadCredential({
-        token: "ey.invalid.jwt",
-        appId: "reports",
-        scope: "identity:invoke",
-        credentials: fake.credentials,
-        recordLegacy: async () => {},
-      }),
-    ).toBeNull();
-    expect(
-      await authenticateWorkloadCredential({
-        token: null,
-        appId: "reports",
-        scope: "identity:invoke",
-        credentials: fake.credentials,
-        recordLegacy: async () => {},
-      }),
-    ).toBeNull();
-    expect(fake.calls()).toBe(0);
-  });
-
-  test("rejects inactive, delegated, and mismatched workload identities", async () => {
-    const base = { credential: credential(), serviceAccount: serviceAccount(), delegatedUser: null };
-    const invalid = [
-      { ...base, credential: credential({ status: "revoked" }) },
-      { ...base, credential: credential({ serviceAccountId: "356b1fd8-1763-4900-a9d6-60cbcb1e54d8" }) },
-      { ...base, serviceAccount: serviceAccount({ status: "disabled" }) },
-      {
-        ...base,
-        serviceAccount: serviceAccount({ kind: "user_delegated", delegatedUserId: "356b1fd8-1763-4900-a9d6-60cbcb1e54d8" }),
-      },
-      { ...base, serviceAccount: serviceAccount({ delegatedUserId: "356b1fd8-1763-4900-a9d6-60cbcb1e54d8" }) },
-      { ...base, serviceAccount: serviceAccount({ appId: "mail" }) },
-      { ...base, serviceAccount: serviceAccount({ resourceType: "mailbox" }) },
-      { ...base, serviceAccount: serviceAccount({ resourceId: "mail" }) },
-    ];
-
-    for (const candidate of invalid) expect(await authenticate(candidate)).toBeNull();
-  });
-
-  test("requires the exact dedicated scope and a non-empty expected app", async () => {
-    const base = { credential: credential(), serviceAccount: serviceAccount(), delegatedUser: null };
-    expect(await authenticate({ ...base, credential: credential({ scopes: [] }) })).toBeNull();
-    expect(await authenticate({ ...base, credential: credential({ scopes: ["identity:invoke:extra"] }) })).toBeNull();
-    expect(await authenticate(base, { appId: " " })).toBeNull();
-    expect(await authenticate(base, { appId: " reports " })).toBeNull();
-    expect(
-      await authenticateWorkloadCredential({
-        token,
-        appId: "reports",
-        scope: "identity:other" as WorkloadScope,
-        credentials: authenticator(base).credentials,
-      }),
-    ).toBeNull();
-  });
-
-  test("returns null when the current credential lookup denies access", async () => {
-    expect(await authenticate(null)).toBeNull();
-  });
-});
-
-test("accepted legacy bearer use records evidence and an unavailable recorder cannot silently lose it", async () => {
-  const fake = authenticator({ credential: credential(), serviceAccount: serviceAccount(), delegatedUser: null });
-  const seen: string[] = [];
-  const params = { token, appId: "reports", scope: "identity:invoke" as const, credentials: fake.credentials };
-  expect(
-    await authenticateWorkloadCredential({
-      ...params,
-      recordLegacy: async (path) => {
-        seen.push(path);
-      },
-    }),
-  ).not.toBeNull();
-  expect(seen).toEqual(["bearer"]);
-  await expect(
-    authenticateWorkloadCredential({
-      ...params,
-      recordLegacy: async () => {
-        throw new Error("observation unavailable");
-      },
-    }),
-  ).rejects.toThrow("observation unavailable");
 });

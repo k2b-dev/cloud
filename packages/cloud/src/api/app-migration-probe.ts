@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { recordAppMigrationProbe } from "../services/app-migration-evidence";
+import { recordAppMigrationProbe } from "../services/app-migration";
 import { authenticateSignedAppRequest } from "./authenticate-app-request";
 
 export { APP_MIGRATION_RECEIPT_PATH } from "../contracts/app-migration";

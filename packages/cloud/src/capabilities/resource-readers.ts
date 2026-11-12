@@ -1,6 +1,5 @@
 import { getProcessApplicationId } from "../_internal/process-identity";
 import { getCapability } from "../_internal/registry";
-import { getAppWorkloadCredential } from "../_internal/workload-credential";
 import { env } from "../config/env";
 import {
   CloudResourceRefSchema,
@@ -39,9 +38,7 @@ export const readResourcePrincipals = async (
   ),
 ): Promise<ResourceReadersResult> => {
   const ref = CloudResourceRefSchema.parse(options.ref);
-  // Core issues the credential automatically; an explicit CLOUD_APP_CREDENTIAL override wins.
-  const credential = getAppWorkloadCredential();
-  if (!env.CLOUD_APP_KEY && !credential) return { state: "not_configured", reason: "no_credential" };
+  if (!env.CLOUD_APP_KEY) return { state: "not_configured", reason: "no_credential" };
   if (!env.CLOUD_CORE_INTERNAL_ORIGIN) return { state: "not_configured", reason: "no_internal_origin" };
   const callerAppId = getProcessApplicationId();
   if (!callerAppId) return { state: "not_configured", reason: "no_app_identity" };
@@ -75,7 +72,6 @@ export const readResourcePrincipals = async (
     ResourceReadableDataSchema,
     {
       workload: { appId: callerAppId },
-      ...(credential ? { authorization: `Bearer ${credential}` } : {}),
       signal: options.signal,
       locale: options.locale,
       requestId: options.requestId,
@@ -100,8 +96,7 @@ export async function listResourceManagers(options: {
   const ref = CloudResourceRefSchema.parse(options.ref);
   const input = ResourceManagersInputSchema.parse({ id: ref.id, afterId: options.afterId, userId: options.userId, limit: options.limit });
   const callerAppId = getProcessApplicationId();
-  const credential = getAppWorkloadCredential();
-  if (!callerAppId || (!env.CLOUD_APP_KEY && !credential) || !env.CLOUD_CORE_INTERNAL_ORIGIN)
+  if (!callerAppId || !env.CLOUD_APP_KEY || !env.CLOUD_CORE_INTERNAL_ORIGIN)
     throw new Error("Resource manager workload identity unavailable");
   const separator = ref.type.indexOf(".");
   const appId = ref.type.slice(0, separator),
@@ -112,7 +107,6 @@ export async function listResourceManagers(options: {
   if (!entry.manifest.queries.some((query) => query.localId === capabilityId && query.appOnly)) return [];
   const result = await invokeCapabilityWithDataSchema({ appId, capabilityId, kind: "query", input }, ResourceManagersDataSchema, {
     workload: { appId: callerAppId },
-    ...(credential ? { authorization: `Bearer ${credential}` } : {}),
     signal: options.signal,
   });
   if (!result.ok) throw new Error(`Resource manager resolution unavailable: ${result.error.code}`);

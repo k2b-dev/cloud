@@ -355,19 +355,52 @@ export class Runtime {
         SYNC_NAMESPACE: this.prefix,
         APP_URL: this.origin,
         APP_SECRET: this.appSecret,
-        CLOUD_IDENTITY_JWKS_ORIGIN: "http://app-core:3000",
         CLOUD_CORE_INTERNAL_ORIGIN: "http://app-core:3000",
       };
       if (id === "core")
         Object.assign(env, {
           ADMIN_LOGIN_TOKEN: this.adminToken,
           CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", ""),
-          CLOUD_OAUTH_BROKER_SECRET: crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", ""),
         });
+      const identityMount: string[] = [];
+      if (id !== "core" && id !== "gateway") {
+        await command(
+          ["docker", "cp", join(repository, "scripts/fixtures/enroll-image-apps.ts"), `${this.name("app-core")}:/tmp/enroll-image-apps.ts`],
+          { signal: this.signal },
+        );
+        const issued = z
+          .record(z.string(), z.string())
+          .parse(
+            JSON.parse(
+              await command(
+                [
+                  "docker",
+                  "exec",
+                  this.name("app-core"),
+                  "bun",
+                  "/tmp/enroll-image-apps.ts",
+                  id,
+                  ...(id === "oauth" ? ["--oauth-issuer", id] : []),
+                ],
+                { signal: this.signal },
+              ),
+            ),
+          );
+        const key = issued[id];
+        if (!key) throw new Error("Image fixture returned no app key");
+        const keyDirectory = join(this.directory, "keys");
+        await mkdir(keyDirectory, { mode: 0o700, recursive: true });
+        const keyFile = join(keyDirectory, `${id}.key`);
+        // Docker mounts only this file; the private host directory protects the keys.
+        await writeFile(keyFile, key, { mode: 0o444 });
+        // Bind infrastructure remains explicit here for performance runs using Bun globals.
+        env.CLOUD_APP_KEY_FILE = `/tmp/${id}.key`;
+        identityMount.push("--volume", `${keyFile}:/tmp/${id}.key:ro`);
+      }
       await this.container(
         id === "gateway" ? "gateway" : `app-${id}`,
         this.image,
-        ["--user", "bun", "--workdir", "/app", "--volume", `${join(buildRoot, id, "dist")}:/app:ro`],
+        ["--user", "bun", "--workdir", "/app", "--volume", `${join(buildRoot, id, "dist")}:/app:ro`, ...identityMount],
         ["bun", "server.js"],
         env,
       );

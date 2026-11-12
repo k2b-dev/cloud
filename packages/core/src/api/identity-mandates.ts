@@ -1,8 +1,7 @@
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
-import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityAppIdSchema } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
 import { respond } from "@k2b/cloud/server";
 import { mandates } from "@k2b/cloud/services";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential, isAppRequestProof } from "@k2b/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -12,28 +11,13 @@ const NarrowPolicySchema = ExpectedRevisionSchema.extend({ policy: z.unknown() }
 const RevokeSchema = ExpectedRevisionSchema.extend({ reason: z.string().trim().min(1).max(500) }).strict();
 
 type OwnerMandateDependencies = {
-  authenticateWorkload: typeof authenticateWorkloadCredential;
+  authenticate: typeof authenticateSignedAppRequest;
   service: Pick<typeof mandates, "confirm" | "get" | "pause" | "revoke" | "updatePolicy">;
 };
 
 const dependencies: OwnerMandateDependencies = {
-  authenticateWorkload: authenticateWorkloadCredential,
+  authenticate: authenticateSignedAppRequest,
   service: mandates,
-};
-
-const bearerToken = (authorization: string | undefined): string | null => {
-  const match = authorization?.match(/^Bearer ([^\s]+)$/);
-  return match?.[1] ?? null;
-};
-
-const authenticateOwner = async (
-  c: Context,
-  authenticate: typeof authenticateWorkloadCredential,
-): Promise<AuthenticatedWorkload | Response | null> => {
-  if (isAppRequestProof(c.req.header("Authorization"))) return authenticateSignedAppRequest(c, "identity:invoke");
-  const appId = CapabilityAppIdSchema.safeParse(c.req.header("X-Cloud-App-Id"));
-  if (!appId.success) return null;
-  return authenticate({ token: bearerToken(c.req.header("Authorization")), appId: appId.data, scope: "identity:invoke" });
 };
 
 const body = async <T extends z.ZodType>(c: Context, schema: T): Promise<z.output<T> | Response | null> => {
@@ -76,13 +60,12 @@ const body = async <T extends z.ZodType>(c: Context, schema: T): Promise<z.outpu
 };
 
 export const createIdentityMandateRoutes = (overrides: Partial<OwnerMandateDependencies> = {}): Hono => {
-  const authenticate = overrides.authenticateWorkload ?? dependencies.authenticateWorkload;
+  const authenticate = overrides.authenticate ?? dependencies.authenticate;
   const service = overrides.service ?? dependencies.service;
 
   const ownerMandate = async (c: Context) => {
-    const workload = await authenticateOwner(c, authenticate);
+    const workload = await authenticate(c, "identity:invoke");
     if (workload instanceof Response) return { error: workload };
-    if (!workload) return { error: c.json({ code: "UNAUTHORIZED", message: "A valid app workload credential is required" }, 401) };
     const params = MandateParamsSchema.safeParse(c.req.param());
     if (!params.success) return { error: c.json({ code: "VALIDATION_FAILED", message: "Invalid mandate id" }, 400) };
     const mandate = await service.get(params.data.mandateId);

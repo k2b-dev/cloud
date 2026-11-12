@@ -197,7 +197,7 @@ export const routeSummary = (routes: readonly string[]): { shown: string; more: 
 const VIEWS: readonly AppView[] = ["access", "keys", "domains", "events", "routes", "runtime", "errors"];
 export const WINDOWS = ["1h", "6h", "24h", "7d", "30d"] as const;
 export type AppStatusWindow = (typeof WINDOWS)[number];
-export type MovedFrom = "gateway" | "credentials";
+export type MovedFrom = "gateway";
 /** The list's search and filter; they stay in the URL, so an open app, reload and back keep the same rows. */
 export type AppsListState = { q: string; problems: boolean };
 /** A search longer than any app name or ID finds nothing; the URL keeps at most this much of it. */
@@ -209,7 +209,7 @@ export function parseAppsQuery(query: Record<string, string | undefined>) {
   const requested = query.view === "traffic" ? "routes" : query.view;
   const view = app && VIEWS.includes(requested as AppView) ? (requested as AppView) : null;
   const window = WINDOWS.includes(query.window as AppStatusWindow) ? (query.window as AppStatusWindow) : "24h";
-  const moved = query.moved === "gateway" || query.moved === "credentials" ? (query.moved as MovedFrom) : null;
+  const moved = query.moved === "gateway" ? (query.moved as MovedFrom) : null;
   const list: AppsListState = { q: (query.q ?? "").trim().slice(0, SEARCH_MAX), problems: query.filter === "problems" };
   return { app, invalidApp: Boolean(query.app) && !app, view, window, moved, list };
 }

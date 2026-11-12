@@ -142,7 +142,7 @@ suite("chat skeleton", () => {
     expect(providersHtml).toContain("inventory.item");
     expect(providersHtml).toContain("archive.record");
     expect(providersHtml).toContain("Core has not admitted");
-    expect(providersHtml).toContain("app credential is unavailable");
+    expect(providersHtml).toContain("app key is unavailable");
     expect(providersHtml).not.toContain("Reader checks working");
   });
 });

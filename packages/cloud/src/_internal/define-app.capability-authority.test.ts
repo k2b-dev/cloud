@@ -4,7 +4,7 @@ import type { Sync } from "@k2b/sync";
 import { z } from "zod";
 import { appAccess } from "../contracts/app-access";
 import { type CapabilityExecutionContext, type CapabilityStream, defineCapabilities } from "../contracts/capabilities";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import type { RequestActor } from "../server/middleware/auth";
 import * as invocationActor from "../services/identity/invocation-actor";
 import * as invocationToken from "../services/identity/invocation-token";
@@ -22,6 +22,7 @@ import * as registry from "./registry";
 import * as watcher from "./runtime-watcher";
 
 test("generated capability routes hand resolved invocation authority to execute, review and every stream handler", async () => {
+  const identityStub = stubAppIdentity();
   const secretStub = stubConnections({ appSecret: { current: "authority-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -301,5 +302,6 @@ test("generated capability routes hand resolved invocation authority to execute,
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
     secretStub.mockRestore();
+    identityStub.mockRestore();
   }
 });

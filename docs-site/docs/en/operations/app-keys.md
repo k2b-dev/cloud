@@ -105,6 +105,7 @@ and needs the same protection as the final key.
 
 ## Use the key at start
 
+Every serving application except Core and Gateway requires its enrolled key.
 After enrollment, supply either `CLOUD_APP_KEY` or
 `CLOUD_APP_KEY_FILE=/run/secrets/inventory.key` to the application process, plus
 `CLOUD_CORE_INTERNAL_ORIGIN=https://core.example.internal`. Mount the key file
@@ -117,7 +118,7 @@ Chat readability checks. Keep `CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE` unset on
 those releases. Enable them only after Core and all applications run a release
 containing the resource-principal read fix ([#2377](https://github.com/k2b-dev/cloud/issues/2377)).
 With that fix, these checks accept app keys with the same `resources:readers`
-admission as legacy workload credentials. A key identifies the application;
+admission as other supported app calls. A key identifies the application;
 it grants no person or resource authority. Revocation and expiry are checked
 again before the provider runs the check.
 
@@ -144,10 +145,13 @@ already established database or NATS connections or recall delivered secrets.
 
 ### Upgrade all Core replicas together
 
-Upgrade every Core replica to this version together before resuming signed app
-traffic. The migration drops `auth.app_proof_replays` and its indexes. An older
-Core replica then returns HTTP 503 for signed calls until it is replaced; do
-not leave old replicas serving bootstrap or signed requests during the upgrade.
+Stop all old Core replicas before starting any Core replica on this version.
+Applications keep running during this Core-only maintenance window; work that
+needs Core is briefly unavailable. Resume signed traffic after all new Core
+replicas are ready. The migration drops `auth.app_proof_replays` and its indexes.
+An older Core replica then returns HTTP 503 for signed calls until it is
+replaced; do not leave old replicas serving bootstrap or signed requests during
+the upgrade.
 
 Core now stores proof replay claims in the installation's shared Valkey. Every
 verified request claims its proof once with `SET NX`; the claim expires five
@@ -192,9 +196,10 @@ and development tooling must run:
 cld --profile operator admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
 ```
 
-The one-time migration grants built-in issuer keys enrolled before this grant
-existed. Repeated migrations preserve operator changes. New keys always need
-an explicit grant, on upgraded installations too.
+A database migration that introduces this grant starts every existing key
+without issuance permission. Enroll a replacement with the explicit grant
+before starting the issuer. Repeated migrations preserve stored operator
+grants. No app ID receives an implicit grant.
 
 The administrator API accepts `grants: ["oauth:issue"]` on enrollment; an omitted
 `grants` or `grants: []` creates an ungranted key. `cld` also accepts `--no-grant`

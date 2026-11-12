@@ -1,8 +1,11 @@
+import { appKeyFixture } from "../../../../scripts/fixtures/app-key-fixtures";
+import { env } from "../config/env";
 import { initializePlatform } from "../start";
 import { defineApp } from "./define-app";
 
 const mode = process.argv[2];
 await initializePlatform({ appId: `drain-${mode}`, source: "env" });
+Object.defineProperty(env, "CLOUD_APP_KEY", { value: appKeyFixture(`drain-${mode}`), configurable: true });
 const report = (event: string, details = {}) => console.log(JSON.stringify({ event, ...details }));
 let finish: () => void = () => {};
 const held = new Promise<void>((resolve) => {

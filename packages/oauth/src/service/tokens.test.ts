@@ -1500,7 +1500,6 @@ suite("OAuth resource access tokens", () => {
 
   test("preserves public authority errors while releasing refresh attempts proven unclaimed", async () => {
     const userId = await insertUser();
-    const originalCredential = process.env.CLOUD_OAUTH_BROKER_SECRET;
     const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     const originalFetch = globalThis.fetch;
     let clientId: string | null = null;
@@ -1522,7 +1521,6 @@ suite("OAuth resource access tokens", () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
       clientId = created.data.id;
-      process.env.CLOUD_OAUTH_BROKER_SECRET = "abababababababababababababababababababababababababababababababab";
       process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
       let authorityCalls = 0;
       globalThis.fetch = Object.assign(
@@ -1612,8 +1610,6 @@ suite("OAuth resource access tokens", () => {
       expect(unclaimedFamily?.status).toBe("active");
     } finally {
       globalThis.fetch = originalFetch;
-      if (originalCredential === undefined) delete process.env.CLOUD_OAUTH_BROKER_SECRET;
-      else process.env.CLOUD_OAUTH_BROKER_SECRET = originalCredential;
       if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
       else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalCoreOrigin;
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;

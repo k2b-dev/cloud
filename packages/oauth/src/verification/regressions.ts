@@ -19,10 +19,7 @@ const env = {
   OAUTH_VERIFY_VERSION: "current",
   OAUTH_VERIFY_ISSUER: "http://localhost:3000",
   CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: "43".repeat(32),
-  CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
-  CLOUD_OAUTH_JWKS_ORIGIN: "http://127.0.0.1:4302",
   CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:4301",
-  CLOUD_OAUTH_BROKER_SECRET: "ab".repeat(32),
   // Host installs may contain macOS-only native packages. Resolve the matching
   // optional native dependency from the existing Linux image, without downloads.
   NAPI_RS_NATIVE_LIBRARY_PATH: Bun.resolveSync(`@firecrawl/anydoc-linux-${process.arch}-gnu`, nativePackage),

@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { type Handler, Hono } from "hono";
 import type { User } from "../contracts/shared";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import { getLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { runtime } from "../server/middleware/runtime";
@@ -71,6 +71,7 @@ const invocationCandidate = `${Buffer.from(
 test("internal invocation widgets receive runtime, settings, actor and locale like the public handler", async () => {
   let activeClaims = claims;
   let handlerCalls = 0;
+  const identityStub = stubAppIdentity();
   const secretStub = stubConnections({ appSecret: { current: "widget-context-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -206,6 +207,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     secretStub.mockRestore();
+    identityStub.mockRestore();
     for (const [index, signal] of signals.entries()) {
       for (const listener of process.listeners(signal)) {
         if (!previousListeners[index]!.has(listener)) process.removeListener(signal, listener);

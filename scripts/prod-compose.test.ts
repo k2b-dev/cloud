@@ -4,25 +4,12 @@ import { appIds } from "./workspace";
 const compose = await Bun.file(new URL("../compose.prod.yml", import.meta.url)).text();
 
 describe("production Compose release set", () => {
-  test("isolates the OAuth broker secret to Core during the key-mode rollout in both stacks", async () => {
-    for (const file of ["compose.dev.yml", "compose.prod.yml"]) {
-      const source = await Bun.file(new URL(`../${file}`, import.meta.url)).text();
-      const receivers: string[] = [];
-      let service = "";
-      for (const line of source.split(/\r?\n/)) {
-        const match = /^  ([a-z][a-z0-9-]*):$/.exec(line);
-        if (match) service = match[1]!;
-        if (line.includes("CLOUD_OAUTH_BROKER_SECRET:")) {
-          expect(line.startsWith("      CLOUD_OAUTH_BROKER_SECRET:")).toBeTrue();
-          receivers.push(service);
-          if (file === "compose.dev.yml") expect(line).toMatch(/:-[a-f0-9]{64}\}/);
-          else expect(line).toContain("${CLOUD_OAUTH_BROKER_SECRET:-}");
-        }
-      }
-      expect(receivers).toEqual(["app-core"]);
-      expect(source).not.toContain("CLOUD_OAUTH_APP_CREDENTIAL");
-      expect(source).not.toContain("CLOUD_MAIL_APP_CREDENTIAL");
-      expect(source).not.toMatch(/CLOUD_[A-Z]+_APP_CREDENTIAL/);
+  test("ordinary production apps receive their enrolled identity and Core origin", () => {
+    const parsed = Bun.YAML.parse(compose) as { services: Record<string, { environment: Record<string, string> }> };
+    for (const id of appIds().filter((id) => id !== "core" && id !== "gateway")) {
+      const service = parsed.services[`app-${id}`]!;
+      expect(Object.keys(service.environment).sort()).toEqual(["CLOUD_APP_KEY_FILE", "CLOUD_CORE_INTERNAL_ORIGIN"]);
+      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(`/run/secrets/${id}.key`);
     }
   });
   test("preserves the gateway host admission and private ingress listener", () => {

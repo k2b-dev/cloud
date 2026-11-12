@@ -1,27 +1,30 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { type AppKey, parseAppKey } from "@k2b/cloud/app-key";
 import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { appApproval } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
+import { enrollTestAppKey, signAppProof } from "../../../../scripts/fixtures/app-key-fixtures";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate/core/app-approval";
 import { cleanupTerminalLogins, createIdentityOAuthDeviceApprovalRoutes, terminalLogins } from "./identity-oauth-device-approval";
 import { authorizeOAuthRequest, createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
-const previousBroker = process.env.CLOUD_OAUTH_BROKER_SECRET;
-beforeAll(() => {
-  process.env.CLOUD_OAUTH_BROKER_SECRET = "ab".repeat(32);
-});
-afterAll(() => {
-  if (previousBroker === undefined) delete process.env.CLOUD_OAUTH_BROKER_SECRET;
-  else process.env.CLOUD_OAUTH_BROKER_SECRET = previousBroker;
-});
-
 const headers = { authorization: `Bearer ${"ab".repeat(32)}`, "content-type": "application/json" };
-const request = (routes: ReturnType<typeof createIdentityOAuthDeviceApprovalRoutes>, body: unknown) =>
-  routes.request("/oauth/device-approval", { method: "POST", headers, body: JSON.stringify(body) });
+let oauthAppKey: AppKey | undefined;
+const request = async (routes: ReturnType<typeof createIdentityOAuthDeviceApprovalRoutes>, body: unknown) => {
+  const encoded = JSON.stringify(body);
+  const authorization = oauthAppKey
+    ? `Bearer ${await signAppProof(oauthAppKey, {
+        method: "POST",
+        path: "/oauth/device-approval",
+        body: new TextEncoder().encode(encoded),
+      })}`
+    : headers.authorization;
+  return routes.request("/oauth/device-approval", { method: "POST", headers: { ...headers, authorization }, body: encoded });
+};
 const input = (deviceAuthorizationId = crypto.randomUUID(), clientId = "test-cli", identifier = "alice") => ({
   deviceAuthorizationId,
   clientId,
@@ -32,9 +35,7 @@ const input = (deviceAuthorizationId = crypto.randomUUID(), clientId = "test-cli
 
 describe("Core OAuth device approval broker", () => {
   test("authenticates before parsing even a malformed or oversized body", async () => {
-    const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
-      authorizeOAuthRequest(c, undefined, async () => {}),
-    );
+    const routes = createIdentityOAuthDeviceApprovalRoutes();
     for (const authorization of [undefined, "Bearer invalid", `Bearer ${"cd".repeat(32)}`]) {
       const response = await routes.request("/oauth/device-approval", {
         method: "POST",
@@ -48,7 +49,13 @@ describe("Core OAuth device approval broker", () => {
 
   test("strict bounded input rejects malformed bodies before any database query", async () => {
     const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
-      authorizeOAuthRequest(c, undefined, async () => {}),
+      authorizeOAuthRequest(c, async () => ({
+        appId: "oauth",
+        keyId: "22222222-2222-4222-8222-222222222222",
+        serviceAccountId: "33333333-3333-4333-8333-333333333333",
+        credentialId: "22222222-2222-4222-8222-222222222222",
+        scope: "identity:invoke",
+      })),
     );
     for (const body of [
       {},
@@ -70,11 +77,15 @@ describe("Core OAuth device approval broker", () => {
 });
 
 databaseSuite()("Core terminal authorization bridge", () => {
+  let oauthAccountId: string;
   const saved = new Map<string, unknown>();
   const configKeys = ["app.url", "user.app_approval.enabled", "user.app_approval.origin"];
   beforeAll(async () => {
     await migrate();
     await migrate();
+    const enrolled = await enrollTestAppKey(sql, `terminal-${crypto.randomUUID()}`, ["oauth:issue"]);
+    oauthAppKey = parseAppKey(enrolled.value);
+    oauthAccountId = enrolled.serviceAccountId;
     for (const key of configKeys) saved.set(key, await settings.get(key));
     await settings.set("app.url", "https://terminal-core.example.test");
     await settings.set("user.app_approval.enabled", true);
@@ -82,6 +93,8 @@ databaseSuite()("Core terminal authorization bridge", () => {
   });
   afterAll(async () => {
     for (const key of configKeys) await settings.set(key, saved.get(key));
+    oauthAppKey = undefined;
+    await sql`DELETE FROM auth.service_accounts WHERE id=${oauthAccountId}::uuid`;
   });
 
   const fixture = async () => {
@@ -157,7 +170,13 @@ databaseSuite()("Core terminal authorization bridge", () => {
   test("rejects decided, expired, wrong-client, scopes, admin, lifetime and duplicate links", async () => {
     const f = await fixture();
     const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
-      authorizeOAuthRequest(c, undefined, async () => {}),
+      authorizeOAuthRequest(c, async () => ({
+        appId: "oauth",
+        keyId: "22222222-2222-4222-8222-222222222222",
+        serviceAccountId: "33333333-3333-4333-8333-333333333333",
+        credentialId: "22222222-2222-4222-8222-222222222222",
+        scope: "identity:invoke",
+      })),
     );
     try {
       for (const invalid of [
@@ -209,7 +228,13 @@ databaseSuite()("Core terminal authorization bridge", () => {
     const groups = [crypto.randomUUID(), crypto.randomUUID()];
     try {
       const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
-        authorizeOAuthRequest(c, undefined, async () => {}),
+        authorizeOAuthRequest(c, async () => ({
+          appId: "oauth",
+          keyId: "22222222-2222-4222-8222-222222222222",
+          serviceAccountId: "33333333-3333-4333-8333-333333333333",
+          credentialId: "22222222-2222-4222-8222-222222222222",
+          scope: "identity:invoke",
+        })),
       );
       for (const kind of ["unknown", "real", "not-accepted", "disallowed", "direct", "nested"] as const) {
         await sql`UPDATE oauth.clients SET access_mode=${["disallowed", "direct", "nested"].includes(kind) ? "specific" : "profiles"} WHERE id=${f.clientPk}::uuid`;
@@ -329,7 +354,13 @@ databaseSuite()("Core terminal authorization bridge", () => {
     const f = await fixture();
     const { privateKey } = await generateKeyPair("RS256");
     const issuance = createIdentityOAuthIssuanceRoutes({
-      authenticate: () => true,
+      authenticate: async () => ({
+        appId: "oauth",
+        keyId: "22222222-2222-4222-8222-222222222222",
+        serviceAccountId: "33333333-3333-4333-8333-333333333333",
+        credentialId: "22222222-2222-4222-8222-222222222222",
+        scope: "identity:invoke",
+      }),
       issuer: async () => "https://terminal-core.example.test",
       withActiveSigner: (_purpose, callback) =>
         sql.begin((db) =>
@@ -463,7 +494,13 @@ databaseSuite()("Core terminal authorization bridge", () => {
     try {
       await sql`UPDATE auth.users SET auth_epoch=3 WHERE id=${f.userId}::uuid`;
       const routes = createIdentityOAuthDeviceApprovalRoutes(undefined, undefined, (c) =>
-        authorizeOAuthRequest(c, undefined, async () => {}),
+        authorizeOAuthRequest(c, async () => ({
+          appId: "oauth",
+          keyId: "22222222-2222-4222-8222-222222222222",
+          serviceAccountId: "33333333-3333-4333-8333-333333333333",
+          credentialId: "22222222-2222-4222-8222-222222222222",
+          scope: "identity:invoke",
+        })),
       );
       for (const decision of ["approve", "deny"] as const) {
         const id = await f.authorization(),

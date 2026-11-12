@@ -25,7 +25,7 @@ incorrect values. Repeated startup preserves repaired records and valid new data
 
 This JSON metadata change does not complete the rest of the release upgrade.
 Prepare NATS JetStream, Core's identity-key encryption key, and the Core/OAuth
-broker secret when running OAuth. Follow [Deployment requirements](/en/docs/operations/deployment-requirements),
+app key with `oauth:issue` when running OAuth. Follow [Deployment requirements](/en/docs/operations/deployment-requirements),
 [Runtime configuration](/en/docs/operations/runtime-configuration), and the
 [coordinated identity and OAuth migration](/en/docs/reference/deprecations-and-migrations#jwt-only-sessions-and-internal-invocations)
 before restoring traffic.
