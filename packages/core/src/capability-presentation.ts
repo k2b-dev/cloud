@@ -1,5 +1,6 @@
 import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
+import { generatedFilePresentation } from "./code/files/presentation";
 import { geoCapabilityPresentation } from "./geo-capability-presentation";
 
 const codePolicyDefinitionInput = {
@@ -107,6 +108,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        ...generatedFilePresentation,
         "code.event.catchup.read": {
           title: "Fortschritt des Code-Nachholens lesen",
           description: "Liest den dauerhaften Annahmefortschritt eines Vorgangs. Ausführungsergebnisse stehen unter Läufe.",

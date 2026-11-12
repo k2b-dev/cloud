@@ -6,6 +6,7 @@ import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeCronSchedule } from "../shared/cron-schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
+import { codeCheckerMessages } from "./checker-messages";
 import type { CodeSdkOperation } from "./types";
 
 export type CodeAnalysis = {
@@ -22,6 +23,7 @@ export type CodeAnalysis = {
 const root = "/code/";
 /** Pure compiler analysis: user modules are virtual files. Only TypeScript's bundled standard libraries may be read from disk. */
 export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
+  const t = codeCheckerMessages.resolve(request.locale ? [request.locale] : []).t;
   const options: ts.CompilerOptions = {
     strict: true,
     jsx: ts.JsxEmit.React,
@@ -96,6 +98,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const location = sf.getLineAndCharacterOfPosition(node.getStart(sf));
     list.push({
       code,
+      ...(code === "code_code_false" ? { aliases: ["code_false"] } : {}),
       message,
       file: sf.fileName.slice(root.length),
       line: location.line + 1,
@@ -172,6 +175,23 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     if (!call || !["core.ai.generate", "core.ai.decide"].includes(call.op.capability)) return null;
     return sdkOperation(node);
   }
+  const operationHint = (expression: ts.Expression): string => {
+    const { base, path } = member(expression);
+    const selected = handle(base);
+    const appId = selected?.type === "cloud.app" ? selected.ids?.[0] : selected?.type.split(".")[0];
+    if (!appId || !path.length) return "";
+    const candidates = request.sdk.manifest.operations.filter(
+      (op) => op.appId === appId && (op.methodPath.join(".") === path.join(".") || op.methodPath.at(-1) === path.at(-1)),
+    );
+    const paths = candidates.map((op) => {
+      const factory = request.sdk.manifest.handles.find((h) => h.appId === appId && h.type === op.target)!;
+      return `${factory.exportName}${op.target ? `.${factory.factoryPath.join(".")}(id)` : ""}.${op.methodPath.join(".")}`;
+    });
+    return [...new Set(paths)]
+      .sort()
+      .map((path) => `; ${t.exists_under({ path })}`)
+      .join("");
+  };
   const signatureInSdk = (node: ts.CallExpression) =>
     checker.getResolvedSignature(node)?.declaration?.getSourceFile().fileName === root + "sdk.d.ts";
   // Bind calls to declarations from this generated SDK, including namespace aliases and
@@ -221,6 +241,13 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         appOperations.set(signature.declaration, op);
         operationDeclarations.add(signature.declaration);
       }
+  }
+  // Generated file helper aliases are SDK namespaces too. Keep their calls
+  // attributable when authors create inferred aliases, and reject type erasure.
+  for (const name of ["pdf", "sheet", "finance", "chart"]) {
+    if (request.sdk.manifest.apps.some((app) => app.exportName === name)) continue;
+    const namespace = sdkMemberType(name, []);
+    if (namespace) sdkNamespaces.add(namespace);
   }
   const sdkMemberAccess = (node: ts.Node, receiver: ts.Expression): boolean => {
     if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
@@ -343,7 +370,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       ts.getCombinedNodeFlags(use) & ts.NodeFlags.Const
     )
       return;
-    report(node, "code_unresolved_call", "Verwende SDK-Handles und Namensräume direkt oder als const ohne Typangabe.");
+    report(node, "code_unresolved_call", t.unresolved_call);
   }
   const permission = (node: ts.Node, operation: string, target: ReturnType<typeof handle>) => {
     if (!collecting) return;
@@ -366,7 +393,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       for (const [field, expected] of Object.entries(op.refs)) {
         const refType = propertyType(checker.getTypeAtLocation(arg), field, arg);
         const ref = refType && handle(arg, refType);
-        if (!ref || ref.type !== expected) report(arg, "code_unresolved_ref", `Zusätzliches Ziel ${field} ist nicht erkennbar.`);
+        if (!ref || ref.type !== expected) report(arg, "code_unresolved_ref", t.unresolved_ref({ field: field }));
         else permission(node, op.capability, ref);
       }
   };
@@ -398,13 +425,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const arg = node.arguments[0];
     if (method === "allow") {
       if (!arg || !ts.isArrayLiteralExpression(arg) || arg.elements.some((item) => !ts.isStringLiteralLike(item))) {
-        report(node, "code_http_allow_literal", 'Deklariere Ursprünge mit http.allow(["https://api.example.com"]) als wörtliche Liste.');
+        report(node, "code_http_allow_literal", t.http_allow_literal);
         return;
       }
       for (const item of arg.elements) {
         if (!ts.isStringLiteralLike(item)) continue;
-        if (!CodeInternetOriginSchema.safeParse(item.text).success)
-          report(item, "code_http_origin_invalid", "Erlaubt sind genaue HTTPS-Ursprünge ohne Platzhalter, Zugangsdaten oder Pfad.");
+        if (!CodeInternetOriginSchema.safeParse(item.text).success) report(item, "code_http_origin_invalid", t.http_origin_invalid);
         else if (collecting) allowedOrigins.add(item.text);
       }
       return;
@@ -413,8 +439,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     if (values) {
       for (const value of values) {
         const parsed = origin(value);
-        if (!parsed)
-          report(node, "code_http_origin_invalid", "http.fetch benötigt einen genauen HTTPS-Ursprung ohne Platzhalter oder Zugangsdaten.");
+        if (!parsed) report(node, "code_http_origin_invalid", t.http_origin_invalid2);
         else if (collecting) origins.add(parsed);
       }
       return;
@@ -451,7 +476,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   }
   /** Blocks whose children are parts, with the parts they take. A Map, so no tag name reaches inherited properties. */
   const blockParts = new Map<string, { allows: (child: string) => boolean; names: string }>([
-    ["Form", { allows: (child) => child.startsWith("Field."), names: "Field-Bausteine" }],
+    ["Form", { allows: (child) => child.startsWith("Field."), names: t.field_parts }],
     ["Field.Select", { allows: (child) => child === "Option", names: "<Option>" }],
     ["Stats", { allows: (child) => child === "Stat", names: "<Stat>" }],
     ["Table", { allows: (child) => child === "Column", names: "<Column>" }],
@@ -482,11 +507,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const parentTag = parentBlock(node);
     const owner = partBlock(tag);
     const block = parentTag ? blockParts.get(parentTag) : undefined;
-    if (block && !block.allows(tag)) report(node, "code_page_child", `In <${parentTag}> stehen nur ${block.names}, nicht <${tag}>.`);
-    else if (owner && parentTag && parentTag !== owner) report(node, "code_page_child", `<${tag}> gehört in <${owner}>.`);
+    if (block && !block.allows(tag))
+      report(node, "code_page_child", t.page_child({ parent: parentTag ?? "", allowed: block.names, child: tag }));
+    else if (owner && parentTag && parentTag !== owner) report(node, "code_page_child", t.page_child2({ child: tag, parent: owner }));
     if (ts.isJsxElement(node) && blockParts.has(tag))
       for (const child of node.children)
-        if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", `In <${tag}> steht kein Text, nur seine Bausteine.`);
+        if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", t.page_child3({ tag: tag }));
   }
   function visit(node: ts.Node) {
     if (ts.isPropertyAccessExpression(node)) {
@@ -496,11 +522,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         (name === "CodeApp" && ["nav", "webhook", "fetch"].includes(node.name.text)) ||
         (name === "CodeUser" && ["provider", "groups"].includes(node.name.text))
       )
-        report(node, "code_removed_api", "This member is not part of the Code SDK.");
+        report(node, "code_removed_api", t.removed_api);
     }
     if (ts.isExpression(node)) checkNamespaceUse(node);
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) checkPageChild(node);
-    if (ts.isIdentifier(node) && node.text === "__codeSdk") report(node, "code_reserved_sdk", "__codeSdk ist für den Runner reserviert.");
+    if (ts.isIdentifier(node) && node.text === "__codeSdk") report(node, "code_reserved_sdk", t.reserved_sdk);
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const spec = node.moduleSpecifier;
       if (spec) {
@@ -508,7 +534,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           !ts.isStringLiteral(spec) ||
           (spec.text !== "@sdk" && !resolveLocal(spec.text, node.getSourceFile().fileName.slice(root.length), request.files))
         ) {
-          report(node, "code_import_forbidden", "Erlaubt sind nur @sdk und eigene Quelldateien im Code-Projekt.");
+          report(node, "code_import_forbidden", t.import_forbidden);
         }
         if (
           ts.isImportDeclaration(node) &&
@@ -520,17 +546,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         ) {
           for (const binding of node.importClause.namedBindings.elements)
             if (!binding.isTypeOnly && (binding.propertyName ?? binding.name).text === "db") {
-              if (request.sdk.manifest.mode === "code_run")
-                report(
-                  binding,
-                  "code_db_temporary",
-                  "db gehört zu einem dauerhaften Code. code_run hat keinen Code, der eine Datenbank besitzt.",
-                );
+              if (request.sdk.manifest.mode === "code_run") report(binding, "code_db_temporary", t.db_temporary);
               else if (collecting) result.database = true;
             }
         }
         if (ts.isExportDeclaration(node) && ts.isStringLiteral(spec) && spec.text === "@sdk")
-          report(node, "code_reserved_sdk", "Das SDK darf nicht weiter exportiert werden.");
+          report(node, "code_reserved_sdk", t.reserved_sdk2);
         if (
           ts.isImportDeclaration(node) &&
           ts.isStringLiteral(spec) &&
@@ -538,7 +559,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           node.importClause?.namedBindings &&
           ts.isNamespaceImport(node.importClause.namedBindings)
         )
-          report(node, "code_reserved_sdk", "Importiere benannte SDK-Exporte.");
+          report(node, "code_reserved_sdk", t.reserved_sdk3);
       }
     }
     if (
@@ -549,13 +570,17 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         .getCallSignatures()
         .some((signature) => signature.declaration && operationDeclarations.has(signature.declaration))
     )
-      report(node, "code_detached_sdk_method", "SDK-Methoden dürfen nicht durch Destrukturierung abgelöst werden.");
+      report(node, "code_detached_sdk_method", t.detached_sdk_method);
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-      const signatures = checker.getTypeAtLocation(node).getCallSignatures();
+      const memberType = checker.getTypeAtLocation(node);
+      if (memberType.flags & ts.TypeFlags.Any) {
+        const hint = operationHint(node);
+        if (hint) report(node, "code_unresolved_call", t.unresolved_call3 + hint);
+      }
+      const signatures = memberType.getCallSignatures();
       const tool = aiToolElement(node);
       if (tool) {
-        if (Object.keys(tool.op.refs).length)
-          report(node, "code_unresolved_ref", "Ein KI-Werkzeug darf keine ungebundenen zusätzlichen Ziele haben.");
+        if (Object.keys(tool.op.refs).length) report(node, "code_unresolved_ref", t.unresolved_ref2);
         else permission(node, tool.op.capability, tool.target);
       }
       if (
@@ -563,21 +588,19 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts" && !factoryDeclarations.has(s.declaration)) &&
         !isAllowedSdkReference(node, true)
       )
-        report(node, "code_detached_sdk_method", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
+        report(node, "code_detached_sdk_method", t.detached_sdk_method2);
     }
     if (ts.isImportTypeNode(node)) {
       const argument = node.argument;
       const specifier = ts.isLiteralTypeNode(argument) && ts.isStringLiteral(argument.literal) ? argument.literal.text : undefined;
       if (!specifier || (specifier !== "@sdk" && !resolveLocal(specifier, node.getSourceFile().fileName.slice(root.length), request.files)))
-        report(node, "code_import_forbidden", "Erlaubt sind nur @sdk und eigene Quelldateien im Code-Projekt.");
+        report(node, "code_import_forbidden", t.import_forbidden);
     }
-    if (ts.isImportEqualsDeclaration(node))
-      report(node, "code_import_forbidden", "Verwende benannte ESM-Importe aus @sdk oder eigenen Quelldateien.");
+    if (ts.isImportEqualsDeclaration(node)) report(node, "code_import_forbidden", t.import_forbidden2);
     if (ts.isCallExpression(node)) {
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword)
-        report(node, "code_import_forbidden", "Dynamische Importe sind nicht erlaubt.");
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) report(node, "code_import_forbidden", t.import_forbidden3);
       if (checker.getTypeAtLocation(node.expression).flags & ts.TypeFlags.Any)
-        report(node, "code_unresolved_call", "Der aufgerufenen Funktion fehlt ein erkennbarer Typ. Verwende typisierte SDK-Objekte.");
+        report(node, "code_unresolved_call", t.unresolved_call2 + operationHint(node.expression));
       const { base, path } = member(node.expression);
       const target = handle(base);
       const declaration = checker.getResolvedSignature(node)?.declaration;
@@ -601,15 +624,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           report(
             node,
             `code_${omitted.reason}`,
-            omitted.reason === "stream"
-              ? "Dieser Schreib-Stream deklariert keinen file-Metadateneingang für Code."
-              : omitted.reason === "code_false"
-                ? "Diese Action ist mit code: false für diesen Code gesperrt."
-                : "Diese Query ist nur für Apps verfügbar.",
+            omitted.reason === "stream" ? t.stream : omitted.reason === "code_false" ? t.code_false : t.app_only,
           );
         if (op) {
           operationCall(node, op, target);
-        } else if (!omitted) report(node, "code_unresolved_call", "Die Operation am Objekt ist nicht erkennbar.");
+        } else if (!omitted) report(node, "code_unresolved_call", t.unresolved_call3 + operationHint(node.expression));
       } else if (signatureInSdk(node)) {
         const method = path.at(-1);
         const appType = checker.getTypeAtLocation(base);
@@ -650,7 +669,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               !handler ||
               (!statement && !binding)
             )
-              report(node, "code_static_middleware", "Deklariere app.use auf Modulebene mit optionalem konstantem Pfadpräfix.");
+              report(node, "code_static_middleware", t.static_middleware);
             else {
               const prefix = paths[0] === "/" ? "/" : paths[0]!.replace(/\/$/, "");
               middleware.push({ path: prefix, handler, node });
@@ -661,7 +680,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                   report(
                     route.node,
                     "code_route_before_middleware",
-                    `Diese Route steht vor app.use in ${node.getSourceFile().fileName.slice(root.length)}:${line} und läuft ohne diese Middleware. Registriere sie danach.`,
+                    t.route_before_middleware({ file: node.getSourceFile().fileName.slice(root.length), line: line }),
                     result.warnings,
                   );
             }
@@ -679,20 +698,17 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                   : undefined;
             const name = eventNames?.length === 1 ? eventNames[0] : undefined;
             const spec = request.sdk.manifest.events.find((event) => event.type === name);
-            if (!name || !place?.ids || place.ids.length !== 1)
-              report(node, "code_dynamic_event", "Ereignis und Ort müssen als Konstanten erkennbar sein.");
-            else if (!spec || spec.place !== place.type)
-              report(node, "code_event_owner", "Das Ereignis muss den Typ des angegebenen Ortes als place deklarieren.");
+            if (!name || !place?.ids || place.ids.length !== 1) report(node, "code_dynamic_event", t.dynamic_event);
+            else if (!spec || spec.place !== place.type) report(node, "code_event_owner", t.event_owner);
             else if (!ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
-              report(node, "code_static_event", "Deklariere Ereignisse auf Modulebene.");
+              report(node, "code_static_event", t.static_event);
             else {
               const key = JSON.stringify([name, place.type, place.ids[0]]);
-              if (events.has(key))
-                report(node, "code_duplicate_on", "Ein zweites app.on für dasselbe Ereignis am selben Ort ist nicht erlaubt.");
+              if (events.has(key)) report(node, "code_duplicate_on", t.duplicate_on);
               events.add(key);
               const own = owner?.kind === "resource" && place.type === owner.ref.type && place.ids[0] === owner.ref.id;
               const entrypoint = `event:${name}@${spec.version}${own ? "" : `:place:${result.entrypoints.filter((entry) => entry.kind === "event").length}`}`;
-              if (entryNames.has(entrypoint)) report(node, "code_duplicate_on", "Der Ereignis-Name ist bereits vergeben.");
+              if (entryNames.has(entrypoint)) report(node, "code_duplicate_on", t.duplicate_on2);
               entryNames.add(entrypoint);
               const handler = node.arguments[explicit ? 2 : 1];
               if (handler) handlers.push({ handler, name: entrypoint });
@@ -709,12 +725,14 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           }
           if (["get", "post", "put", "delete", "all"].includes(method) && collecting) {
             const paths = node.arguments[0] && literals(node.arguments[0]);
-            const opts = node.arguments[2];
+            const handlerLast = !!node.arguments[1] && ts.isObjectLiteralExpression(node.arguments[1]);
+            const routeHandler = node.arguments[handlerLast ? 2 : 1];
+            const opts = node.arguments[handlerLast ? 1 : 2];
             // Public exposure and the layout must be explicit literals, never a computed flag or spread.
             let isPublic = false;
             let plain = false;
             let validOptions = !opts;
-            if (opts && ts.isObjectLiteralExpression(opts) && opts.properties.length > 0) {
+            if (opts && ts.isObjectLiteralExpression(opts)) {
               const seen = new Set<string>();
               validOptions = opts.properties.every((prop) => {
                 if (!ts.isPropertyAssignment(prop) || !(ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name))) return false;
@@ -738,16 +756,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               ...(plain ? { layout: "plain" } : {}),
             });
             if (!route.success || !validOptions || !ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
-              report(
-                node,
-                "code_static_route",
-                'Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false, layout: "plain" }.',
-              );
+              report(node, "code_static_route", t.static_route);
             else {
               const name = "route:" + route.data.method + ":" + route.data.path;
-              if (entryNames.has(name)) report(node, "code_duplicate_route", "Diese Route ist bereits registriert.");
+              if (entryNames.has(name)) report(node, "code_duplicate_route", t.duplicate_route);
               entryNames.add(name);
-              if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
+              if (routeHandler) handlers.push({ handler: routeHandler, name });
               // A parameterized route may overlap a literal middleware prefix. Attribute conservatively.
               const matching = middleware.filter((item) => routeUnder(item.path, route.data.path));
               for (const item of matching) handlers.push({ handler: item.handler, name });
@@ -755,7 +769,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 privateRoutes.push({
                   node,
                   path: route.data.path,
-                  handler: node.arguments[1],
+                  handler: routeHandler,
                   // Only middleware that surely runs counts as a check: its prefix covers every path of the route, and
                   // without a top-level await, a module evaluated earlier has registered it before this route.
                   middleware: matching
@@ -838,11 +852,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             const titles = titleValue && ts.isStringLiteralLike(titleValue) ? [titleValue.text] : titleType && strings(titleType);
             const title = titles?.length === 1 ? CodeAutomationTitleSchema.safeParse(titles[0]) : null;
             if (titleType && !(titleType.flags & ts.TypeFlags.Undefined) && (!title || !title.success))
-              report(
-                options!,
-                "code_static_title",
-                "Der Titel muss konstanter Klartext mit 1 bis 200 Zeichen sein, ohne Markup, Steuer- oder Formatzeichen.",
-              );
+              report(options!, "code_static_title", t.static_title);
             if (
               !staticTiming ||
               !name ||
@@ -850,22 +860,14 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               !ts.isExpressionStatement(node.parent) ||
               !ts.isSourceFile(node.parent.parent)
             )
-              report(
-                node,
-                "code_static_schedule",
-                "Deklariere Zeitpläne auf Modulebene als { cron | at, timeZone?, name, title? } mit konstanten Werten.",
-              );
+              report(node, "code_static_schedule", t.static_schedule);
             else {
               try {
                 if (!once?.success) normalizeCronSchedule({ cron: cron![0]!, timezone: timeZone?.[0] ?? "UTC" });
               } catch {
-                report(
-                  node,
-                  "code_invalid_cron",
-                  "Der Zeitplan benötigt einen gültigen Cron-Ausdruck mit fünf Feldern und eine IANA-Zeitzone.",
-                );
+                report(node, "code_invalid_cron", t.invalid_cron);
               }
-              if (entryNames.has(name)) report(node, "code_duplicate_schedule", "Der Name des Zeitplans ist bereits vergeben.");
+              if (entryNames.has(name)) report(node, "code_duplicate_schedule", t.duplicate_schedule);
               entryNames.add(name);
               if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
               const sf = node.getSourceFile();
@@ -895,7 +897,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             ["CodeContext", "CodeRequest", "CodeHttpResult", "CodePageComponent"].includes(declarationOwner.name.text)
           )
         ) {
-          report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
+          report(node, "code_unresolved_call", t.detached_sdk_method2);
         }
       }
     }
@@ -919,12 +921,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const sf = program.getSourceFile(root + name)!;
     if (files.has(sf.fileName) && sf.fileName !== root + "sdk.d.ts") {
       if (sf.referencedFiles.length || sf.typeReferenceDirectives.length || sf.libReferenceDirectives.length)
-        report(sf, "code_import_forbidden", "Referenz-Direktiven sind nicht erlaubt.");
+        report(sf, "code_import_forbidden", t.import_forbidden4);
       // A suppressed type error could hide an SDK call from permission analysis.
       const comments = new Set<number>();
       const checkComment = (start: number, end: number) => {
         if (!comments.has(start) && /@ts-(?:ignore|expect-error|nocheck)\b/.test(sf.text.slice(start, end)))
-          report(sf, "code_type_suppression", "Die Typprüfung darf nicht unterdrückt werden.");
+          report(sf, "code_type_suppression", t.type_suppression);
         comments.add(start);
       };
       const checkTokenComments = (node: ts.Node) => {
@@ -979,17 +981,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   };
   for (const route of privateRoutes) {
     const chain = [route.handler, ...route.middleware].map((handler) => (handler ? handlerFunction(checker, handler) : undefined));
-    if (!chain.some((fn) => fn && readsUser(fn)))
-      report(
-        route.node,
-        "code_route_unchecked",
-        "Diese Seite öffnet sich für alle Angemeldeten ohne Gäste und läuft mit den Rechten des Besitzers. Prüfe c.user im Handler oder in app.use davor, wenn nicht alle sie sehen sollen.",
-        result.warnings,
-      );
+    if (!chain.some((fn) => fn && readsUser(fn))) report(route.node, "code_route_unchecked", t.route_unchecked, result.warnings);
   }
   if (!allowedOrigins.size && request.sdk.manifest.mode !== "code_run")
-    for (const node of dynamicHttp)
-      report(node, "code_http_origin_dynamic", 'Der Ursprung ist dynamisch. Deklariere ihn mit http.allow(["https://api.example.com"]).');
+    for (const node of dynamicHttp) report(node, "code_http_origin_dynamic", t.http_origin_dynamic);
   result.internet = [...new Set([...origins, ...allowedOrigins])].sort();
   if (request.sdk.manifest.mode !== "code_run" && result.internet.length) {
     const grants =
@@ -999,7 +994,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       report(
         program.getSourceFile(root + request.entry)!,
         "code_http_grant_limit",
-        `Die Internet-Ursprünge und Operationsfreigaben überschreiten das Mandatsbudget von ${MANDATE_POLICY_MAX_IDENTIFIERS / 2} Freigaben. Teile den Code auf.`,
+        t.http_grant_limit({ limit: MANDATE_POLICY_MAX_IDENTIFIERS / 2 }),
       );
   }
   if (request.sdk.manifest.mode === "code_run") {
@@ -1007,15 +1002,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     const module = checker.getSymbolAtLocation(entry);
     const exported = module && checker.getExportsOfModule(module).find((s) => s.name === "default");
     if (!exported || !checker.getTypeOfSymbolAtLocation(exported, entry).getCallSignatures().length)
-      report(entry, "code_run_entrypoint", "code_run benötigt eine Funktion als default-Export.");
+      report(entry, "code_run_entrypoint", t.run_entrypoint);
     result.entrypoints.push({ kind: "manual", entrypoint: "run", cron: null, file: request.entry, line: 1 });
   }
   if (!result.entrypoints.length && !result.diagnostics.length)
-    report(
-      program.getSourceFile(root + request.entry)!,
-      "code_no_entrypoint",
-      "Lege mindestens einen Zeitplan oder eine Route auf Modulebene an.",
-    );
+    report(program.getSourceFile(root + request.entry)!, "code_no_entrypoint", t.no_entrypoint);
   return result;
 }
 

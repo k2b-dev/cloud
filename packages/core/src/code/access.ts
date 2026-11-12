@@ -23,7 +23,7 @@ export type CodeContext = {
 };
 export class CodeDataError extends Error {
   constructor(
-    readonly code: "FORBIDDEN" | "NOT_FOUND" | "BAD_INPUT" | "CONFLICT",
+    readonly code: "FORBIDDEN" | "NOT_FOUND" | "BAD_INPUT" | "CONFLICT" | "code_guests_cannot_author",
     message: string,
   ) {
     super(message);

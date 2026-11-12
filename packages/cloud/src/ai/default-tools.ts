@@ -275,6 +275,20 @@ export const createDefaultCloudAiTools = () => [
   createCloudAiChartTool(),
 ];
 
+/** Lasting Code authoring; one-off chat scripts and file tools keep their own access. */
+export const CLOUD_AI_CODE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "code_init",
+  "code_pull",
+  "code_sdk",
+  "code_test",
+  "code_simulate",
+  "code_submit",
+  "code_diff",
+  "code_read",
+  "code_write",
+  "code_check",
+]);
+
 /** Built-ins advertised through discovery and loaded only when needed. */
 export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
   "code_init",

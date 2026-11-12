@@ -720,6 +720,87 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
+  test.each(["user", "guest"] as const)("Code authoring offerings follow the current %s profile", async (profile) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const skillApp = await installAppSkill(
+      appSkill({ markdown: "---\nname: code-authoring\ndescription: Lasting Code authoring fixture.\n---\n\nBuild lasting Code.\n" }),
+    );
+    await sql`UPDATE auth.users SET profile=${profile} WHERE id=${userId}::uuid`;
+    const requests: unknown[] = [];
+    let calls = 0;
+    const authoring = defineAiTool({
+      name: "code_init",
+      description: "Member Code authoring fixture",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ ok: z.boolean() }),
+      approval: "never",
+    }).server(async () => {
+      calls++;
+      return { ok: true };
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("load-code", "load_tools", { names: ["code_init"] }),
+        ...(profile === "user" ? [toolCallCompletion("init-code", "code_init", {})] : []),
+        textCompletion("Done"),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(body);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        // A stale member snapshot must not keep authoring after the profile changes.
+        runConfig: { kind: "chat", input: "Build Code", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "default" } },
+        userMessage: userMessage("Build Code"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "code-eligibility-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor("code-eligibility-exec", undefined, fakeValidateToolTurn, undefined, [authoring]).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      const offered = JSON.stringify(requests);
+      expect(calls).toBe(profile === "user" ? 1 : 0);
+      expect(offered.includes("Member Code authoring fixture")).toBe(profile === "user");
+      expect(offered.includes("Lasting Code authoring fixture")).toBe(profile === "user");
+      expect(offered.includes("explain kindly that guests cannot create Code")).toBe(profile === "guest");
+      const authority = await capabilityExecution.resolveAiCapabilityActor({
+        conversationId: conversation.id,
+        persistedActor: { kind: "user", user: actorUser(userId) },
+        store: aiConversations,
+      });
+      const subject = { actor: authority.actor, accessSubject: authority.accessSubject };
+      const [skill] = await sql<{ short_id: string }[]>`SELECT short_id FROM ai.skills WHERE name='code-authoring'`;
+      expect(skill).toBeDefined();
+      expect(
+        (await aiSkills.search(subject, "Lasting Code authoring fixture", 30, { authority })).skills.some(
+          (entry) => entry.name === "code-authoring",
+        ),
+      ).toBe(profile === "user");
+      for (const selector of ["code-authoring", { id: skill!.short_id }]) {
+        const loaded = await aiSkills.loadForTurn(turn.id, selector, subject, authority);
+        expect(loaded?.name ?? null).toBe(profile === "user" ? "code-authoring" : null);
+      }
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await skillApp.remove();
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
   test("the executor adds place data only for a bound chat using the default Assistant tools", async () => {
     const userId = await insertUser();
     const actor: RequestActor = { kind: "user", user: actorUser(userId) };

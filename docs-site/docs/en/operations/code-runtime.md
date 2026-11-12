@@ -39,7 +39,7 @@ an anonymous binding cookie; public forms omit the token. Non-public mutations
 still require a session-bound CSRF token. Incoming request headers and cookies
 are not forwarded to Code. R1 webhooks use ordinary public POST routes without
 signature verification; handlers take an ID, read its state back with bound
-secret HTTP, then act ([example](/en/docs/platform/code-sdk#webhooks-r1-ohne-secret)).
+secret HTTP, then act ([example](/en/docs/platform/code-sdk#webhooks-without-signature-verification)).
 Keep the shared runner, NATS, Postgres and Valkey healthy; request
 capacity competes with scheduled runs and authoring checks.
 
@@ -165,3 +165,21 @@ transport or queue is installed. Handlers at one place share ordered admission
 and execution even when they react to different event types. Catch-up uses
 the same saved snapshots and checkpoints as Mail, only for events whose
 publisher declares a catch-up reader. See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries).
+
+## Temporary generated files
+
+Deploy Core and the platform together before authoring Code with `pdf`,
+`sheet`, `finance` or `chart` helpers. They use versioned `core.file.*.v1` read
+Queries; older stored Code versions continue using their checked SDK. PDF
+generation uses Core's existing Gotenberg configuration. All generated output
+uses encrypted, expiring Valkey entries: at most 50 MiB per file and 250 MiB
+per run, with at most 64 generation attempts. Calls outside Code share these
+limits per principal for ten minutes. These are output byte limits; Valkey
+capacity must also cover encryption and encoding overhead. Valkey loss or
+expiry makes an unspent reference unavailable; the run fails visibly. It never changes a
+destination Action's receipt or proves that an earlier transfer failed.
+
+Deploy Assistant's `chat.file.read.v1` capability before chat Code uses an
+attachment as a FileRef. It rechecks the person's chat and Project access at
+redemption. No new environment variables, storage bucket or public file URL
+is required.
