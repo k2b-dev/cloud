@@ -1049,6 +1049,10 @@ preloaded. See
 
 ## Deployment requirements
 
+Before expanding shared draft editing, check
+[Mail shared draft capacity](/en/docs/operations/mail-shared-draft-capacity)
+for connection limits, overload recovery, and retained storage budgets.
+
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.

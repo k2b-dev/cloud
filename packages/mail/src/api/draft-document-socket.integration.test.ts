@@ -19,6 +19,7 @@ import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { createActorCommand } from "../service/commands";
 import { reviewDraftComposeSafety } from "../service/compose-safety";
+import { DRAFT_SOCKET_LIMITS, draftDocumentBudget } from "../service/draft-document-budget";
 import { pruneDraftDocumentLog } from "../service/draft-document-log";
 import * as draftDocumentService from "../service/draft-documents";
 import {
@@ -29,7 +30,7 @@ import {
 } from "../service/draft-documents";
 import { recoverDraftDocumentRest } from "../service/drafts";
 import { createMailbox } from "../service/mailboxes";
-import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
+import { mailDraftConnectionStats, stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import type { MailApiContext } from "./public-resource-boundary";
 
 // Bun accepts headers; lib.dom's global constructor omits Bun's options overload.
@@ -53,8 +54,24 @@ const decode = (bytes: Uint8Array) => {
 suite("Mail document socket with real SQL, retained topic and WebSockets", () => {
   let server: Server<unknown>;
   let app: Hono<MailApiContext>;
+  let lastServerSocket: Parameters<NonNullable<typeof websocket.open>>[0] | undefined;
+  let requestAbort: AbortController | undefined;
   const startServer = () => {
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, runtime) => app.fetch(request, runtime), websocket });
+    server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request, runtime) => {
+        if (requestAbort) Object.defineProperty(request, "signal", { value: AbortSignal.any([request.signal, requestAbort.signal]) });
+        return app.fetch(request, runtime);
+      },
+      websocket: {
+        ...websocket,
+        open: (socket) => {
+          lastServerSocket = socket;
+          websocket.open?.(socket);
+        },
+      },
+    });
   };
   let context: MailRequestContext;
   let otherContext: MailRequestContext;
@@ -254,6 +271,131 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         packet.payload.snapshot === true &&
         decode(fromBase64(packet.payload.updates[0]!.payload)).body === body,
     );
+
+  test("per-draft admission rejects a ninth peer with retryable 1013 and releases every slot", async () => {
+    await draft();
+    for (let i = 0; i < DRAFT_SOCKET_LIMITS.peers; i++) await (await connect()).ready();
+    const rejected = await connect();
+    const closed = new Promise<CloseEvent>((resolve) => rejected.socket.addEventListener("close", resolve, { once: true }));
+    await rejected.wait((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE");
+    expect((await closed).code).toBe(1013);
+    expect(mailDraftConnectionStats().connections).toBe(DRAFT_SOCKET_LIMITS.peers);
+    await stopMailDraftConnections();
+    expect(mailDraftConnectionStats()).toMatchObject({ connections: 0, documents: 0, ingress: 0, delivery: 0, outbound: 0 });
+    // Last-peer cleanup retired the old hubs; reconnect provisions fresh followers.
+    await (await connect()).ready();
+  });
+
+  test("process admission includes slots still draining and exposes retryable backpressure", async () => {
+    await draft();
+    const leases: Array<() => boolean> = [];
+    try {
+      for (let i = 0; i < DRAFT_SOCKET_LIMITS.connections; i++) {
+        const release = draftDocumentBudget.acquire(`capacity-fixture-${i}`);
+        if (!release) throw new Error("Fixture could not reserve process budget");
+        leases.push(release);
+      }
+      const rejected = await connect();
+      const closed = new Promise<CloseEvent>((resolve) => rejected.socket.addEventListener("close", resolve, { once: true }));
+      await rejected.wait((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE");
+      expect((await closed).code).toBe(1013);
+    } finally {
+      for (const release of leases) release();
+    }
+    await (await connect()).ready();
+  });
+
+  for (const kind of ["ingress", "delivery", "outbound"] as const) {
+    test(`global ${kind} bytes reject overload and cleanup returns all reservations`, async () => {
+      await draft();
+      const client = await connect();
+      if (kind === "delivery") await client.ready();
+      const bytes = DRAFT_SOCKET_LIMITS[`${kind}Bytes`];
+      expect(draftDocumentBudget.claim(kind, bytes)).toBe(true);
+      try {
+        const closed = new Promise<CloseEvent>((resolve) => client.socket.addEventListener("close", resolve, { once: true }));
+        if (kind === "delivery") {
+          await mailDraftDocumentLog.topic().publish({
+            tenantId: currentDraft.id,
+            data: { kind: "freeze", payload: "", restoreRevision: "1", originNodeId: "fixture", originPeerId: null },
+          });
+        } else client.send({ type: "replayRequest", payload: { docId: currentDraft.short_id, generation: null, fromCursor: null } });
+        await client.wait((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE");
+        expect((await closed).code).toBe(1013);
+        await stopMailDraftConnections();
+        expect(mailDraftConnectionStats().connections).toBe(0);
+      } finally {
+        draftDocumentBudget.release(kind, bytes);
+        // The delivery overload fixture deliberately publishes an unmaterialized
+        // marker; retire it so it cannot pin the later pruning witness.
+        if (kind === "delivery") await sql`UPDATE mail.drafts SET state='discarded' WHERE id=${currentDraft.id}::uuid`;
+      }
+      expect(mailDraftConnectionStats()).toMatchObject({ ingress: 0, delivery: 0, outbound: 0 });
+    });
+  }
+
+  test("a non-reading consumer exceeding the native socket buffer closes with 1013", async () => {
+    await draft();
+    const client = await connect();
+    const hasBufferProbe = (socket: unknown): socket is { getBufferedAmount(): number } =>
+      !!socket &&
+      typeof socket === "object" &&
+      "getBufferedAmount" in socket &&
+      typeof socket.getBufferedAmount === "function" &&
+      typeof socket.getBufferedAmount() === "number";
+    if (!hasBufferProbe(lastServerSocket)) throw new Error("Missing native socket buffer probe");
+    // Deterministic kernel-buffer boundary; the load script separately uses a paused TCP reader.
+    const buffer = spyOn(lastServerSocket, "getBufferedAmount").mockImplementation(() => DRAFT_SOCKET_LIMITS.connectionBytes);
+    try {
+      const closed = new Promise<CloseEvent>((resolve) => client.socket.addEventListener("close", resolve, { once: true }));
+      client.send({ type: "replayRequest", payload: { docId: currentDraft.short_id, generation: null, fromCursor: null } });
+      await client.wait((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE");
+      expect((await closed).code).toBe(1013);
+      await stopMailDraftConnections();
+      expect(mailDraftConnectionStats()).toMatchObject({ connections: 0, documents: 0, ingress: 0, delivery: 0, outbound: 0 });
+    } finally {
+      buffer.mockRestore();
+    }
+  });
+
+  for (const joined of [false, true]) {
+    test(`idle ${joined ? "joined" : "unjoined"} connection expires and releases subscriptions`, async () => {
+      await draft();
+      const client = await connect();
+      if (joined) await client.ready();
+      const now = Date.now();
+      const clock = spyOn(Date, "now").mockReturnValue(now + (joined ? DRAFT_SOCKET_LIMITS.idleMs : DRAFT_SOCKET_LIMITS.joinMs) + 1);
+      try {
+        const closed = new Promise<CloseEvent>((resolve) => client.socket.addEventListener("close", resolve, { once: true }));
+        await client.wait((packet) => packet.type === "error" && packet.payload.code === "STREAM_FAILED", 12_000);
+        expect((await closed).code).toBe(1012);
+        await stopMailDraftConnections();
+        expect(mailDraftConnectionStats()).toMatchObject({ connections: 0, documents: 0, ingress: 0, delivery: 0, outbound: 0 });
+      } finally {
+        clock.mockRestore();
+      }
+    });
+  }
+
+  test("an abrupt disconnect during admission drains buffers and a new socket can join", async () => {
+    await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const local = new Y.Doc();
+    try {
+      Y.applyUpdate(local, base.durable.state);
+      local.getText("codemirror").insert(0, "Abrupt ");
+      publish(client, base, Y.encodeStateAsUpdate(local));
+      if (!("terminate" in client.socket) || typeof client.socket.terminate !== "function") throw new Error("Bun socket required");
+      client.socket.terminate();
+      await stopMailDraftConnections();
+      expect(mailDraftConnectionStats()).toMatchObject({ connections: 0, documents: 0, ingress: 0, delivery: 0, outbound: 0 });
+      await (await connect()).ready();
+    } finally {
+      local.destroy();
+    }
+  });
 
   test("old reconnect cursors receive a covering SQL snapshot after startup pruning", async () => {
     await draft();
@@ -657,6 +799,58 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       }
     });
   }
+
+  test("a blocked SQL delivery sheds a broker burst instead of retaining an unbounded queue", async () => {
+    const created = await draft();
+    const client = await connect();
+    await client.ready();
+    try {
+      await sql.begin(async (holder) => {
+        await holder`SELECT id FROM mail.drafts WHERE id = ${created.id}::uuid FOR UPDATE`;
+        const closed = new Promise<CloseEvent>((resolve) => client.socket.addEventListener("close", resolve, { once: true }));
+        await mailDraftDocumentLog.topic().publishBatch({
+          tenantId: created.id,
+          events: Array.from({ length: DRAFT_SOCKET_LIMITS.pendingMessages + 1 }, () => ({
+            data: { kind: "freeze" as const, payload: "", restoreRevision: "1", originNodeId: "fixture", originPeerId: null },
+          })),
+        });
+        await client.wait((packet) => packet.type === "error" && packet.payload.code === "BACKPRESSURE");
+        expect((await closed).code).toBe(1013);
+        await stopWithinFixtureBudget(stopMailDraftConnections());
+        expect(mailDraftConnectionStats()).toMatchObject({ connections: 0, documents: 0, ingress: 0, delivery: 0, outbound: 0 });
+      });
+    } finally {
+      await sql`UPDATE mail.drafts SET state='discarded' WHERE id=${created.id}::uuid`;
+    }
+  });
+
+  test("request abort cancels a blocked admission and returns all connection buffers", async () => {
+    const created = await draft();
+    const base = await read();
+    requestAbort = new AbortController();
+    const local = new Y.Doc();
+    try {
+      const client = await connect();
+      await client.ready();
+      Y.applyUpdate(local, base.durable.state);
+      local.getText("codemirror").insert(0, "Aborted ");
+      await sql.begin(async (holder) => {
+        await holder`SELECT id FROM mail.drafts WHERE id = ${created.id}::uuid FOR UPDATE`;
+        const [backend] = await holder<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (!backend) throw new Error("Missing blocker backend");
+        publish(client, base, Y.encodeStateAsUpdate(local));
+        const waiter = await waitForLock(backend.pid, "FOR UPDATE OF d");
+        requestAbort?.abort();
+        await client.wait((packet) => packet.type === "error" && packet.payload.code === "STREAM_FAILED");
+        await stopWithinFixtureBudget(stopMailDraftConnections());
+        await expectTransactionEnded(holder, waiter);
+        expect(mailDraftConnectionStats()).toMatchObject({ connections: 0, documents: 0, ingress: 0, delivery: 0, outbound: 0 });
+      });
+    } finally {
+      requestAbort = undefined;
+      local.destroy();
+    }
+  });
 
   test("stop cancels the initial service read after the first outbound fence", async () => {
     const created = await draft();

@@ -25,6 +25,7 @@ import {
 } from "../lib/draft-document-protocol";
 import { requireDraftAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { DRAFT_SOCKET_LIMITS, draftDocumentBudget } from "../service/draft-document-budget";
 import { lockDraftDocumentCoverage, replayDraftDocument } from "../service/draft-document-log";
 import {
   awaitDraftDocumentQuery,
@@ -42,9 +43,9 @@ import { draftDocumentAccountRejection } from "./draft-document-identity";
 import type { MailApiContext } from "./public-resource-boundary";
 
 const log = logger("mail:draft-document-socket");
-const MAX_PENDING_MESSAGES = 200;
+const MAX_PENDING_MESSAGES = DRAFT_SOCKET_LIMITS.pendingMessages;
 // Two maximum envelopes allow one send and one queued successor, like the provider's pending budget.
-const MAX_BUFFER_BYTES = 2 * (MAX_DRAFT_DOCUMENT_PAYLOAD + 1000);
+const MAX_BUFFER_BYTES = DRAFT_SOCKET_LIMITS.connectionBytes;
 const MAX_MESSAGE_LENGTH = MAX_DRAFT_DOCUMENT_PAYLOAD + 1000;
 const colors = ["#e06c75", "#61afef", "#98c379", "#d19a66", "#c678dd", "#56b6c2", "#e5c07b"] as const;
 const userColor = (id: string): string => {
@@ -63,7 +64,13 @@ const awarenessTopic = lazySync((sync) =>
     maxPayloadBytes: 300_000 + 4096,
   }),
 );
+// sharedText.topic() returns a new handle on each call. Cache this transport's
+// handle per Sync lifetime so peers of one draft share exactly one follower.
+const documentTopic = lazySync(() => mailDraftDocumentLog.topic());
 const connections = new Set<() => Promise<void>>();
+
+/** Internal process counters for bounded-load evidence; no document or identity data. */
+export const mailDraftConnectionStats = () => draftDocumentBudget.snapshot();
 
 /** Parent calls this before stopping the process Sync runtime. */
 export const stopMailDraftConnections = async (): Promise<void> => {
@@ -118,6 +125,28 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   let deliveryTail = Promise.resolve();
   let pendingMessages = 0;
   let pendingBytes = 0;
+  let pendingDeliveries = 0;
+  let outboundBytes = 0;
+  let releaseConnection: (() => boolean) | null = null;
+  let lastInputAt = Date.now();
+  const openedAt = lastInputAt;
+  const updateOutbound = (bytes: number): boolean => {
+    const delta = bytes - outboundBytes;
+    if (delta > 0 && !draftDocumentBudget.claim("outbound", delta)) return false;
+    if (delta < 0) draftDocumentBudget.release("outbound", -delta);
+    outboundBytes = bytes;
+    return true;
+  };
+  const bufferedAmount = (): number => {
+    const raw: unknown = socket?.raw;
+    const amount: unknown =
+      raw && typeof raw === "object" && "getBufferedAmount" in raw && typeof raw.getBufferedAmount === "function"
+        ? raw.getBufferedAmount()
+        : raw && typeof raw === "object" && "bufferedAmount" in raw
+          ? raw.bufferedAmount
+          : undefined;
+    return typeof amount === "number" && Number.isFinite(amount) && amount >= 0 ? amount : MAX_BUFFER_BYTES;
+  };
   /**
    * The newest state of a queued cursor message that has not started and is still the queue's last entry. A later
    * cursor message replaces it instead of queueing, so a selection drag waits as one message and never counts
@@ -137,21 +166,16 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   };
   const send = (packet: MailDraftDocumentMessage): boolean => {
     if (closed || !socket || socket.readyState !== 1) return false;
-    const raw: unknown = socket.raw;
-    const amount: unknown =
-      raw && typeof raw === "object" && "getBufferedAmount" in raw && typeof raw.getBufferedAmount === "function"
-        ? raw.getBufferedAmount()
-        : raw && typeof raw === "object" && "bufferedAmount" in raw
-          ? raw.bufferedAmount
-          : undefined;
-    const buffered = typeof amount === "number" && Number.isFinite(amount) && amount >= 0 ? amount : MAX_BUFFER_BYTES;
+    const buffered = bufferedAmount();
     const text = JSON.stringify(packet);
-    if (buffered + new TextEncoder().encode(text).byteLength > MAX_BUFFER_BYTES) {
+    const bytes = new TextEncoder().encode(text).byteLength;
+    if (buffered + bytes > MAX_BUFFER_BYTES || !updateOutbound(buffered + bytes)) {
       close("BACKPRESSURE", t.busy, 1013);
       return false;
     }
     try {
       socket.send(text);
+      updateOutbound(bufferedAmount());
       return true;
     } catch {
       close("STREAM_FAILED", t.network, 1012);
@@ -179,7 +203,16 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           log.warn("Draft awareness removal failed; protocol expiry remains active", { error });
         }
       }
-    })().finally(() => connections.delete(stop));
+    })().finally(() => {
+      updateOutbound(0);
+      // Hubs are shared by a draft's peers. Dispose only after the final peer's
+      // tasks have drained, so a reconnect cannot lose another peer's follower.
+      if (releaseConnection?.()) {
+        documentTopic().hub({ tenantId: draftId }).close();
+        awarenessTopic().hub({ tenantId: draftId }).close();
+      }
+      connections.delete(stop);
+    });
     try {
       socket?.close(1012, "STREAM_FAILED");
     } catch {
@@ -187,8 +220,9 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
     }
     return cleanup;
   };
-  function close(code: string, message: string, closeCode = 1008, reopen?: true): void {
+  function close(code: string, message: string, closeCode: 1008 | 1009 | 1012 | 1013 = 1008, reopen?: true): void {
     if (closed) return;
+    draftDocumentBudget.recordClose(closeCode);
     // Error delivery is deliberately bounded and never recursively calls send().
     try {
       socket?.send(JSON.stringify({ type: "error", payload: { docId, code, message, ...(reopen ? { reopen } : {}) } }));
@@ -329,9 +363,26 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
     deliveredCursor = event.cursor;
     flushCommittedSnapshot();
   };
-  const deliverEvent = (event: TopicEvent<SharedTextSyncEvent>): Promise<void> => deliver(() => emitEvent(event));
+  // Never wait for SQL while draining the broker iterator: queue SQL deliveries
+  // only after reserving their UTF-16 payload and envelope overhead. This bounds
+  // both retained and awareness events instead of parking an unbounded NATS live queue.
+  const queueDelivery = (payload: string, emit: () => void): boolean => {
+    const bytes = 2 * payload.length + 4096;
+    if (pendingDeliveries >= MAX_PENDING_MESSAGES || !draftDocumentBudget.claim("delivery", bytes)) {
+      close("BACKPRESSURE", t.busy, 1013);
+      return false;
+    }
+    pendingDeliveries++;
+    track(
+      deliver(emit).finally(() => {
+        pendingDeliveries--;
+        draftDocumentBudget.release("delivery", bytes);
+      }),
+    );
+    return true;
+  };
   const runDocumentStream = async (requestedAfter: string | null): Promise<void> => {
-    const topic = mailDraftDocumentLog.topic();
+    const topic = documentTopic();
     let after = requestedAfter;
     // Every replayed snapshot and event passes the same access check, right
     // before it is sent, as a live one: broker reads in between can outlast a grant.
@@ -405,15 +456,17 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
         if (closed) return;
         for await (const event of topic
           .hub({ tenantId: draftId })
-          .subscribe({ after: cursor, signal, bufferLimit: MAX_PENDING_MESSAGES })) {
-          await deliverEvent(event);
+          .subscribe({ after: cursor, signal, bufferLimit: DRAFT_SOCKET_LIMITS.hubMessages })) {
+          if (!queueDelivery(event.data.payload, () => emitEvent(event))) return;
           if (closed) return;
         }
         if (!closed) close("STREAM_FAILED", t.network, 1012);
       } catch (error) {
         if (error instanceof RetentionGapError && !closed && !signal.aborted) {
-          after = null;
-          continue;
+          // A live subscriber that cannot drain even one event must back off,
+          // rather than loop through SQL snapshots under overload.
+          close("BACKPRESSURE", t.busy, 1013);
+          return;
         }
         failure(error);
         return;
@@ -422,20 +475,30 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   };
   const runAwarenessStream = async (): Promise<void> => {
     try {
-      for await (const event of awarenessTopic().live({ tenantId: draftId, signal })) {
+      for await (const event of awarenessTopic()
+        .hub({ tenantId: draftId })
+        .subscribe({ signal, bufferLimit: DRAFT_SOCKET_LIMITS.hubMessages })) {
         if (closed) return;
         if (event.data.generation !== generation) continue;
-        await deliver(() => {
-          if (generation)
-            send({
-              type: "awarenessPush",
-              payload: { docId, generation, updates: [{ payload: event.data.payload, generation, originPeerId: event.data.originPeerId }] },
-            });
-        });
+        if (
+          !queueDelivery(event.data.payload, () => {
+            if (generation)
+              send({
+                type: "awarenessPush",
+                payload: {
+                  docId,
+                  generation,
+                  updates: [{ payload: event.data.payload, generation, originPeerId: event.data.originPeerId }],
+                },
+              });
+          })
+        )
+          return;
       }
       if (!closed) close("STREAM_FAILED", t.network, 1012);
     } catch (error) {
-      failure(error);
+      if (error instanceof RetentionGapError) close("BACKPRESSURE", t.busy, 1013);
+      else failure(error);
     }
   };
 
@@ -568,6 +631,14 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
     refreshTimer = setTimeout(() => {
       const task = (async () => {
         try {
+          if ((!joined && Date.now() - openedAt >= DRAFT_SOCKET_LIMITS.joinMs) || Date.now() - lastInputAt >= DRAFT_SOCKET_LIMITS.idleMs) {
+            close("STREAM_FAILED", t.network, 1012);
+            return;
+          }
+          if (!updateOutbound(bufferedAmount())) {
+            close("BACKPRESSURE", t.busy, 1013);
+            return;
+          }
           if (await refresh()) {
             if (generation !== null) await deliver(() => undefined);
             scheduleRefresh();
@@ -582,6 +653,11 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   const events: WSEvents = {
     onOpen: (_event, ws) => {
       socket = ws;
+      releaseConnection = draftDocumentBudget.acquire(draftId);
+      if (!releaseConnection) {
+        close("BACKPRESSURE", t.busy, 1013);
+        return;
+      }
       connections.add(stop);
       c.req.raw.signal.addEventListener("abort", onAbort, { once: true });
       if (signal.aborted) {
@@ -592,6 +668,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
     },
     onMessage: (event) => {
       if (closed) return;
+      lastInputAt = Date.now();
       if (typeof event.data !== "string" || event.data.length > MAX_MESSAGE_LENGTH) {
         close("INVALID_PAYLOAD", t.invalid, 1009);
         return;
@@ -610,12 +687,22 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           close("BACKPRESSURE", t.busy, 1013);
           return;
         }
-        pendingBytes += size - awarenessSlot.size;
+        const delta = size - awarenessSlot.size;
+        if (delta > 0 && !draftDocumentBudget.claim("ingress", 4 * delta)) {
+          close("BACKPRESSURE", t.busy, 1013);
+          return;
+        }
+        if (delta < 0) draftDocumentBudget.release("ingress", -4 * delta);
+        pendingBytes += delta;
         awarenessSlot.packet = packet;
         awarenessSlot.size = size;
         return;
       }
-      if ((!cursor && pendingMessages >= MAX_PENDING_MESSAGES) || pendingBytes + size > MAX_BUFFER_BYTES) {
+      if (
+        (!cursor && pendingMessages >= MAX_PENDING_MESSAGES) ||
+        pendingBytes + size > MAX_BUFFER_BYTES ||
+        !draftDocumentBudget.claim("ingress", 4 * size)
+      ) {
         close("BACKPRESSURE", t.busy, 1013);
         return;
       }
@@ -645,6 +732,9 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
         .finally(() => {
           if (!cursor) pendingMessages--;
           pendingBytes -= slot.size;
+          draftDocumentBudget.release("ingress", 4 * slot.size);
+          // Release parsed payload references even while a blocked predecessor drains.
+          slot.packet = undefined;
         });
     },
     onClose: () => {

@@ -43,3 +43,42 @@ bun --no-env-file packages/mail/scripts/memory-load.ts --profile guard --json
 The script takes the heavy lock, creates a disposable `mail_*_test` database and private Sync namespace, and runs real hydration, extraction, API reads and folder sync against simulated IMAP. `incident` (default) uses four mailboxes, each with 40 small folders and an INBOX with three 10–40 MiB messages and 20 small messages. `guard` keeps four mailboxes with fewer messages and targets a run under 90 seconds; host load can extend it. `--only`, `--html-mib` and `--csv-mib` isolate load paths; `--help` lists all overrides without connecting.
 
 Results go to `.local/mail-memory/<UTC timestamp>/`: `samples.ndjson`, `summary.json` and `summary.md`. RSS is sampled by a worker every 20 ms; heap and database state samples pause during main-thread stalls. API traffic stays in process; there is no browser or real IMAP/network latency. See [measurement details and limits](../../../docs-site/docs/en/contributing/performance-baseline.md#measure-mail-memory-under-hydration-load).
+
+## Measure collaborative draft capacity
+
+Export isolated `CLOUD_TEST_DATABASE_URL`, `CLOUD_TEST_NATS_SERVERS`, and
+`CLOUD_TEST_VALKEY_URL` targets, then run:
+
+```sh
+BUN_OPTIONS=--no-env-file nice -n 19 bun --smol packages/mail/scripts/draft-document-load.ts \
+  --drafts 50 --clients 3 --seconds 90 --rss-mib 1024
+```
+
+Use your own resource-limited Postgres, JetStream and Valkey containers and a
+process cgroup. `--smol` encourages GC; it is not a heap cap. The script creates
+and deletes a private database and broker namespace, replaces only browser
+credential verification, and drives the real Mail socket/service path. It does
+not start infrastructure or enable shared editing for mailboxes.
+
+Each client keeps at most one unconfirmed typing burst and resends its local
+state with the original base cursor after reconnecting. Awareness, graceful
+reconnect, abrupt disconnect, request abort, and a TCP peer that stops reading
+exercise cleanup. The result must pass final text convergence against committed
+SQL state. Scale in separate runs; the script stops above host load 40 or its RSS
+budget, and limits a measured step to ten minutes. `--body-bytes 262144
+--burst-bytes 65536 --interval-ms 100` adds repeated paste/delete pressure to the
+first editor of each draft; it is a separate stress profile. A closed-loop
+workload slows its offered rate when acknowledgements slow down.
+
+`--out` selects a new directory containing `samples.ndjson` and `summary.json`.
+Samples report RSS/heap, socket buffers, both topics' event and dead-letter stream
+states, and database row/byte growth. The summary includes peak/end/after-GC
+memory, a fixed-size 10 ms propagation latency histogram's p50/p95, close/error
+counts, and cleanup counters. One-second samples can miss short allocation
+spikes, and the same process includes simulated clients. No result establishes
+capacity for maximum-size documents or simultaneous Mail imports and sending.
+See [Mail shared draft capacity](../../../docs-site/docs/en/operations/mail-shared-draft-capacity.md)
+for the production limits. A stalled statistics read fails after 30 seconds;
+cleanup steps each have a ten-second deadline. If cleanup fails, the process
+exits nonzero after writing its summary. Remove the run's disposable database
+and Sync namespace before reusing its infrastructure.
