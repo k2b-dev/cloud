@@ -712,6 +712,26 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             "attachments[].base64": "Base64-codierter Inhalt; Der dekodierte Inhalt ist auf 105 KiB begrenzt.",
           },
         },
+        "draft.intent": {
+          title: "Antwortart wechseln",
+          description:
+            "Wechselt den Antwortentwurf einer Unterhaltung zwischen Antworten, Allen antworten und Weiterleiten. Text, eigene Anhänge, manuelles Bcc und ein geänderter Betreff bleiben erhalten.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
+            expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            intent: "Neue Antwortart: reply, reply_all oder forward.",
+          },
+        },
+        "draft.consolidation.acknowledge": {
+          title: "Zusammenführung der Entwürfe bestätigen",
+          description:
+            "Eine Person mit Schreibzugriff blendet den Hinweis auf zusammengeführte Antwortentwürfe aus. Inhalt und Revision bleiben unverändert.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
+          },
+        },
         "draft.discard": {
           title: "Entwurf verwerfen",
           description: "Verwerfen Sie einen Benutzerentwurf mit einer optimistischen Überarbeitung.",
