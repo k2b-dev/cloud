@@ -1,6 +1,8 @@
 import type { SQL } from "bun";
 import { formatAppKey } from "../../packages/cloud/src/app-key";
 
+export { signAppProof } from "../../packages/cloud/src/runtime/bootstrap-protocol";
+
 // RFC 8032 Ed25519 test vectors. Public, deterministic test keys only.
 export const APP_KEY_FIXTURES = [
   {

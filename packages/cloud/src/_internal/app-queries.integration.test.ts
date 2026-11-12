@@ -202,7 +202,7 @@ suiteFor(
           if (state === "revoked")
             await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now() WHERE id = ${credentialId}::uuid`;
           if (state === "expired")
-            await sql`UPDATE auth.service_account_credentials SET expires_at = '-infinity' WHERE id = ${credentialId}::uuid`;
+            await sql`UPDATE auth.service_account_credentials SET expires_at = now() - interval '1 second' WHERE id = ${credentialId}::uuid`;
           if (state === "disabled") await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${account.id}::uuid`;
           if (state === "wrong_resource") await sql`UPDATE auth.service_accounts SET resource_id = 'wrong' WHERE id = ${account.id}::uuid`;
           expect((await routes.fetch(issued.clone())).status).toBe(403);
