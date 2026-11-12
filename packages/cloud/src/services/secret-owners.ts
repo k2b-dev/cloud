@@ -3,6 +3,7 @@ import type { SecretOwnerCheck, SecretRotationMetadata } from "../contracts/app-
 import { appSecretRingId, appSecretRootId } from "../runtime/app-secret";
 import { sql } from "../runtime/clients";
 import { connections } from "../runtime/connections";
+import { logger } from "./logging";
 import { decryptSecretBytes, decryptWithSecretRing, encryptSecretBytes } from "./settings/crypto";
 
 export type SecretOwnerRow = { key: string[]; values: Record<string, string | null> };
@@ -69,19 +70,22 @@ export const createSecretOwner = (input: {
 /** One bounded page per existing registry heartbeat, with no overlapping process work. */
 export const createSecretMaintenance = (owners: readonly SecretOwner[] | undefined, changedAt = Date.now()) => {
   if (owners && new Set(owners.map((owner) => owner.id)).size !== owners.length) throw new Error("Duplicate secret owner IDs");
+  const log = logger("secrets:maintenance");
   const ring = connections().appSecret;
   const fingerprint = appSecretRingId(ring);
   type OwnerState = {
     owner: SecretOwner;
     after: readonly string[] | null;
+    startedAt: string | null;
     counts: { rows: number; previousOnly: number; unreadable: number };
     check: SecretOwnerCheck;
   };
   const state: OwnerState[] | undefined = owners?.map((owner) => ({
     owner,
     after: null,
+    startedAt: null,
     counts: { rows: 0, previousOnly: 0, unreadable: 0 },
-    check: { id: owner.id, rows: 0, previousOnly: 0, unreadable: 0, checkedAt: null },
+    check: { id: owner.id, rows: 0, previousOnly: 0, unreadable: 0, startedAt: null, checkedAt: null },
   }));
   let position = 0;
   let task: Promise<void> | undefined;
@@ -94,6 +98,7 @@ export const createSecretMaintenance = (owners: readonly SecretOwner[] | undefin
     const entry = state[position % state.length]!;
     if (appSecretRingId(connections().appSecret) !== fingerprint) throw new Error("Restart secret maintenance after changing the ring");
     try {
+      if (entry.after === null) entry.startedAt = new Date().toISOString();
       const rows = await entry.owner.scan(entry.after, pageSize);
       for (const row of rows) {
         if (stopped) return;
@@ -130,14 +135,17 @@ export const createSecretMaintenance = (owners: readonly SecretOwner[] | undefin
         entry.after = row.key;
       }
       if (rows.length < pageSize) {
-        entry.check = { id: entry.owner.id, ...entry.counts, checkedAt: new Date().toISOString() };
+        entry.check = { id: entry.owner.id, ...entry.counts, startedAt: entry.startedAt, checkedAt: new Date().toISOString() };
         entry.after = null;
+        entry.startedAt = null;
         entry.counts = { rows: 0, previousOnly: 0, unreadable: 0 };
       }
-      position++;
     } catch (error) {
       entry.check = { ...entry.check, checkedAt: null };
+      log.error("Secret owner maintenance failed; retrying on a later heartbeat", { ownerId: entry.owner.id });
       throw error;
+    } finally {
+      position++;
     }
   };
   return {

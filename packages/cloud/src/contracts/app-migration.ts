@@ -9,6 +9,7 @@ export const SecretOwnerCheckSchema = z.object({
   rows: z.number().int().nonnegative(),
   previousOnly: z.number().int().nonnegative(),
   unreadable: z.number().int().nonnegative(),
+  startedAt: z.iso.datetime().nullable(),
   checkedAt: z.iso.datetime().nullable(),
 });
 export type SecretOwnerCheck = z.infer<typeof SecretOwnerCheckSchema>;

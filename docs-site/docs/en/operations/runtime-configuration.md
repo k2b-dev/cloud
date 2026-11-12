@@ -487,6 +487,11 @@ keys, key-encryption material, OAuth secrets, or person sessions.
 
 `app.start()` refuses to boot without `APP_SECRET`.
 
+Use a randomly generated 64-hex-character `APP_SECRET` (32 random bytes). If an
+installation still uses a legacy passphrase or another human-chosen value, follow
+[APP_SECRET rotation](/en/docs/operations/app-secret-rotation) to move it to this
+random format. `APP_SECRET_NEXT` already requires that format.
+
 Core refuses to initialize identity issuance if its KEK is missing, malformed,
 or cannot decrypt and validate the active private/public key pairs. Existing
 applications can continue verifying with public JWKS material and warm caches,

@@ -27,7 +27,7 @@ export const secretCommands = [
               );
               for (const owner of ring?.owners ?? [])
                 ctx.print(
-                  `  ${owner.id}: rows=${owner.rows}, previousOnly=${owner.previousOnly}, unreadable=${owner.unreadable}, checkedAt=${owner.checkedAt ?? "pending"}`,
+                  `  ${owner.id}: rows=${owner.rows}, previousOnly=${owner.previousOnly}, unreadable=${owner.unreadable}, startedAt=${owner.startedAt ?? "pending"}, checkedAt=${owner.checkedAt ?? "pending"}`,
                 );
             }
             for (const reason of app.reasons) ctx.print(`${app.appId}: ${reason}`);

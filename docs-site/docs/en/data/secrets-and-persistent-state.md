@@ -221,6 +221,9 @@ delete or payload clear wins. Resolve CAS only after its database commit.
 The framework decrypts and re-encrypts raw plaintext without parsing domain JSON.
 It scans one page of at most 100 rows per registry maintenance heartbeat, rotates
 between owners, retries failed pages, and drains accepted work during shutdown.
+A failed owner does not block later owners. Completed checks retain the pass's
+start time; strict rotation status requires that start to follow every instance's
+ring change plus the registry instance TTL, as described in the rotation guide.
 
 Declare `secretOwners: []` when the app owns no durable ciphertext. Omission
 means unknown, so strict rotation status cannot certify that app.

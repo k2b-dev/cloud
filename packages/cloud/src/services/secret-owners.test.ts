@@ -1,6 +1,9 @@
-import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { APP_REGISTRY_TTL_MS } from "../_internal/registry";
 import { connectionFixture, stubConnections } from "../runtime/connections.test-fixture";
+import * as logging from "./logging";
 import { createSecretMaintenance, type SecretOwner, type SecretOwnerRow } from "./secret-owners";
+import { evaluateSecretRotation } from "./secret-status";
 import { decryptSecretBytes, encryptSecretBytes } from "./settings/crypto";
 
 const A = "ab".repeat(32),
@@ -24,6 +27,7 @@ const memoryOwner = (rows: SecretOwnerRow[]) => {
     id: "credentials",
     scan: async (after, limit) =>
       [...stored.values()]
+        .sort((left, right) => left.key.join("/").localeCompare(right.key.join("/")))
         .filter((row) => !after || row.key.join("/") > after.join("/"))
         .slice(0, limit)
         .map((row) => structuredClone(row)),
@@ -57,7 +61,14 @@ test("rewrap preserves raw plaintext and all columns without reserializing domai
   expect(row.values.cleared).toBeNull();
   expect(row.values.sentinel).toBe("");
   expect(maintenance.metadata().owners).toEqual([
-    { id: "credentials", rows: 1, previousOnly: 0, unreadable: 0, checkedAt: new Date().toISOString() },
+    {
+      id: "credentials",
+      rows: 1,
+      previousOnly: 0,
+      unreadable: 0,
+      startedAt: new Date().toISOString(),
+      checkedAt: new Date().toISOString(),
+    },
   ]);
   await maintenance.stop();
 });
@@ -174,4 +185,87 @@ test("shutdown waits for an in-flight CAS and invalidation without accepting the
   expect(fixture.stored.get("two")!.values.secret).toBe(encrypted);
   expect(fixture.invalidated).toEqual(["one"]);
   expect(maintenance.metadata().owners?.[0]?.checkedAt).toBeNull();
+});
+
+test("a pass crossing another writer's ring change cannot certify an old-root row inserted behind its cursor", async () => {
+  const encrypted = await encryptSecretBytes("retained");
+  const fixture = memoryOwner(Array.from({ length: 120 }, (_, index) => ({ key: [String(index + 100)], values: { secret: encrypted } })));
+  rotate();
+  const maintenance = createSecretMaintenance([fixture.owner], changedAt);
+  const firstStart = new Date().toISOString();
+  const writerChange = changedAt + 10_000;
+  const status = () => {
+    const metadata = maintenance.metadata();
+    return evaluateSecretRotation({
+      registeredApps: ["core", "mail"],
+      expect: [],
+      now: new Date(),
+      instances: [
+        { appId: "core", instanceId: "core-one", secrets: metadata },
+        { appId: "mail", instanceId: "mail-one", secrets: { ...metadata, changedAt: new Date(writerChange).toISOString(), owners: [] } },
+        { appId: "gateway", instanceId: "gateway-one", secrets: { ...metadata, owners: [] } },
+      ],
+    });
+  };
+  try {
+    await maintenance.tick();
+    // Another process still writing A inserts a row behind Core's keyset cursor.
+    // It then restarts with B, before Core's old pass finishes.
+    fixture.stored.set("000", { key: ["000"], values: { secret: encrypted } });
+    setSystemTime(writerChange + APP_REGISTRY_TTL_MS + 1);
+    await maintenance.tick();
+    expect(maintenance.metadata().owners?.[0]).toMatchObject({ rows: 120, previousOnly: 0, startedAt: firstStart });
+    await expect(decryptSecretBytes(fixture.stored.get("000")!.values.secret!, B)).rejects.toThrow();
+    expect(status().apps.find((app) => app.appId === "core")?.reasons).toContain("stale_owner_check:credentials");
+    expect(status().ready).toBe(false);
+
+    // Only a new complete pass after the writer's ring change and lease drain
+    // can find the late insert and certify the table.
+    const nextStart = new Date().toISOString();
+    await maintenance.tick();
+    setSystemTime(Date.now() + 1);
+    await maintenance.tick();
+    expect(await decryptSecretBytes(fixture.stored.get("000")!.values.secret!, B)).toBe("retained");
+    expect(maintenance.metadata().owners?.[0]).toMatchObject({ rows: 121, previousOnly: 0, startedAt: nextStart });
+    expect(status().ready).toBe(true);
+  } finally {
+    await maintenance.stop();
+  }
+});
+
+test("a persistently failing owner does not block later owners and logs only its identity", async () => {
+  const healthy = memoryOwner([{ key: ["one"], values: { secret: await encryptSecretBytes("retained") } }]);
+  const failures: { message: string; metadata?: Record<string, unknown> }[] = [];
+  const original = logging.logger;
+  const logger = spyOn(logging, "logger").mockImplementation((source) => ({
+    ...original(source),
+    error: (message, metadata) => failures.push({ message, metadata }),
+  }));
+  let failedScans = 0;
+  const failing: SecretOwner = {
+    id: "unavailable",
+    scan: async () => {
+      failedScans++;
+      throw new Error("fixture store unavailable");
+    },
+    compareAndSwap: async () => false,
+  };
+  rotate();
+  const maintenance = createSecretMaintenance([failing, healthy.owner], changedAt);
+  try {
+    for (let round = 0; round < 2; round++) {
+      await expect(maintenance.tick()).rejects.toThrow("fixture store unavailable");
+      await maintenance.tick();
+      expect(maintenance.metadata().owners?.[1]?.checkedAt).toBe(new Date().toISOString());
+    }
+    expect(failedScans).toBe(2);
+    expect(maintenance.metadata().owners?.[0]?.checkedAt).toBeNull();
+    expect(healthy.invalidated).toEqual(["one", "one"]);
+    expect(failures).toHaveLength(2);
+    expect(failures.map((failure) => failure.metadata)).toEqual([{ ownerId: "unavailable" }, { ownerId: "unavailable" }]);
+    expect(JSON.stringify(failures)).not.toContain("fixture store unavailable");
+  } finally {
+    await maintenance.stop();
+    logger.mockRestore();
+  }
 });

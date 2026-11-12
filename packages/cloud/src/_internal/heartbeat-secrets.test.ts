@@ -47,7 +47,16 @@ test("each membership renewal publishes the latest owner completion metadata", a
   const f = fixture();
   await f.membership.register();
   expect([...f.rows.values()][0]?.secrets?.owners).toEqual([]);
-  const owners = [{ id: "credentials", rows: 5, previousOnly: 0, unreadable: 0, checkedAt: new Date(epoch + 1_000).toISOString() }];
+  const owners = [
+    {
+      id: "credentials",
+      rows: 5,
+      previousOnly: 0,
+      unreadable: 0,
+      startedAt: new Date(epoch).toISOString(),
+      checkedAt: new Date(epoch + 1_000).toISOString(),
+    },
+  ];
   f.setSecrets({ current: "A".repeat(16), previous: null, next: null, changedAt: new Date(epoch).toISOString(), owners });
   await f.membership.renew();
   expect([...f.rows.values()][0]?.secrets?.owners).toEqual(owners);

@@ -36,6 +36,9 @@ ring: update that application's environment in both rollouts too.
 an explicit local current when supplied locally. NEXT must contain 64 hexadecimal
 characters representing 32 random bytes. Generate the new root through your
 secret manager or `openssl rand -hex 32`; store it outside Git and shell history.
+If the current `APP_SECRET` is a legacy passphrase or another human-chosen value,
+use this procedure to rotate it to a random 64-hex-character root. Keep that
+random format for future rotations.
 
 Ensure each application declares its retained ciphertext owners. `[]` means no
 application-owned encrypted rows; an omitted declaration is unknown and blocks
@@ -98,11 +101,15 @@ derived signing keys. Per owner, it reports:
 | `rows` | Retained rows containing at least one nonempty encrypted value in the completed pass |
 | `previousOnly` | Rows still requiring the previous root, including unresolved CAS conflicts |
 | `unreadable` | Rows with a value that no configured root can authenticate; they are never overwritten |
+| `startedAt` | Start time of the completed owner's pass, or null before a successful pass |
 | `checkedAt` | Completion time of the owner's pass, or null while no successful pass is available |
 
 Strict readiness requires every declared owner to have zero previous-only and
-unreadable rows, with a check newer than the latest reported ring change. A
-process restart conservatively starts a new ring observation. Missing processes,
+unreadable rows. Each completed pass must have started after the latest reported
+ring change of any instance plus the three-minute registry instance TTL. This
+allows old instance leases to drain before the pass starts; finishing an earlier
+pass after that deadline is insufficient. A process restart conservatively starts
+a new ring observation. Missing processes,
 missing declarations, differing declarations across replicas, invalid registry
 records, failed checks and stale checks block readiness.
 
@@ -117,6 +124,8 @@ Rewrap retries automatically after an application restart or the next maintenanc
 heartbeat. A failed cache invalidation is retried even when its database update
 already committed. Restore a missing root before investigating unreadable rows;
 never replace a credential merely to clear the status.
+An owner's maintenance failure is logged with its ID. Other owners continue on
+their maintenance turns while the failed owner waits for its next retry.
 
 ## Keep recovery roots with backups
 

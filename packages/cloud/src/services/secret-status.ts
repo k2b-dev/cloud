@@ -1,6 +1,6 @@
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
-import { APP_INSTANCE_PREFIX, appInstanceRegistry, readAppRegistrySnapshot } from "../_internal/registry";
+import { APP_INSTANCE_PREFIX, APP_REGISTRY_TTL_MS, appInstanceRegistry, readAppRegistrySnapshot } from "../_internal/registry";
 import { SecretRotationMetadataSchema } from "../contracts/app-migration";
 import type { SecretRotationStatus } from "../contracts/secret-status";
 import type { User } from "../contracts/shared";
@@ -50,8 +50,12 @@ export const evaluateSecretRotation = (input: {
       for (const owner of metadata.owners) {
         if (
           owner.checkedAt === null ||
+          owner.startedAt === null ||
           latestChange === null ||
-          Date.parse(owner.checkedAt) <= latestChange ||
+          // A completed scan can miss a late old-root write behind its cursor.
+          // Start after all instances changed rings and their old leases drained.
+          Date.parse(owner.startedAt) <= latestChange + APP_REGISTRY_TTL_MS ||
+          Date.parse(owner.checkedAt) < Date.parse(owner.startedAt) ||
           Date.parse(owner.checkedAt) > input.now.getTime()
         )
           reasons.add(`stale_owner_check:${owner.id}`);
