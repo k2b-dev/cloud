@@ -137,10 +137,11 @@ export function createMailboxSearch(props: {
         open();
       } else if (
         event.key === "Escape" &&
-        opened() &&
-        (target === input ||
-          (!target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])') &&
-            target.closest("[data-mail-head-search], [data-mail-head-search-options], [data-mail-conversation-list]")))
+        // The field always stands in the head: Escape in it clears what it holds, also before a search started.
+        ((target === input && (opened() || searchValue().trim())) ||
+          (opened() &&
+            !target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])') &&
+            target.closest("[data-mail-head-search], [data-mail-conversation-list]")))
       ) {
         event.preventDefault();
         close();

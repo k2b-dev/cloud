@@ -116,7 +116,6 @@ const renderReader = (
       readingFormat: options.readingFormat ?? "automatic",
       theme: options.theme === undefined ? "light" : options.theme,
       calendarIntegrationAvailable: false,
-      listAway: false,
       detailsOpen: false,
       toolbarActions: options.toolbarActions ?? ["reply", "reply_all"],
       onToggleDetails: () => undefined,

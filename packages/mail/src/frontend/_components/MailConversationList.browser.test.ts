@@ -134,12 +134,6 @@ const css =
   (await buildCss(resolve(import.meta.dir, "../../styles/app.css")));
 /** Milliseconds the preview endpoint waits before it answers. */
 let previewDelay = 0;
-/** A 2×2 PNG, and the attachments whose thumbnails the page requested. */
-const THUMBNAIL_PNG = Uint8Array.from(
-  atob("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg=="),
-  (char) => char.charCodeAt(0),
-);
-const thumbnailRequests: string[] = [];
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -147,13 +141,6 @@ const server = Bun.serve({
     const { pathname } = new URL(request.url);
     if (pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
-    // Thumbnails: an attachment named "Broken" fails, as an unreadable image does.
-    const thumbnail = /^\/api\/mail\/mailboxes\/Box001\/messages\/[^/]+\/attachments\/([^/]+)\/thumbnail$/u.exec(pathname);
-    if (thumbnail?.[1]) {
-      thumbnailRequests.push(thumbnail[1]);
-      if (thumbnail[1] === "Broken") return new Response(null, { status: 400 });
-      return new Response(THUMBNAIL_PNG, { headers: { "Content-Type": "image/png" } });
-    }
     const match = /^\/api\/mail\/mailboxes\/Box001\/conversations\/([^/]+)\/preview$/u.exec(pathname);
     if (match?.[1]) {
       if (previewDelay) await Bun.sleep(previewDelay);
@@ -197,7 +184,7 @@ const load = async (
     toolbarActions?: MailListHarnessOptions["toolbarActions"];
     deletedOnServer?: boolean;
     plainText?: string;
-    columns?: MailListHarnessOptions["columns"];
+    shared?: boolean;
     /** Serves this stylesheet in place of the compiled one. */
     css?: string;
   } = {},
@@ -236,7 +223,7 @@ const load = async (
     toolbarActions: options.toolbarActions,
     deletedOnServer: options.deletedOnServer,
     plainText: options.plainText,
-    columns: options.columns,
+    shared: options.shared,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -1368,174 +1355,103 @@ describe("Mail row actions", () => {
   }
 });
 
-describe("Mail image thumbnails in the columns view", () => {
-  const images = (ids: string[], count = ids.length) => ({
-    attachmentCount: count,
-    imageAttachments: ids.map((attachmentId) => ({ messageId: "Msg001", attachmentId })),
-    ...(count > ids.length ? { imageAttachmentCount: count } : {}),
-  });
-  const thumbnailItems = [item(1, images(["Img001", "Img002", "Img003"], 5)), item(2, images(["Broken"])), item(3), ...items.slice(4, 12)];
-  /** Per row: whether its thumbnails show, their boxes, and what each box holds. */
-  const thumbnails = (page: Page) =>
+describe("Mail rows by the list's own width (F2)", () => {
+  /** Every visible row's height and how many lines its parts stand on, in list order. */
+  const rows = (page: Page) =>
     page.evaluate(() =>
-      ["Cv0001", "Cv0002", "Cv0003"].map((id) => {
-        const row = document.querySelector(`.mail-list-entry[data-conversation-id="${id}"]`)!;
-        const group = row.querySelector<HTMLElement>("[data-mail-row-thumbnails]");
-        return {
-          id,
-          shown: group ? getComputedStyle(group).display !== "none" : false,
-          boxes: [...row.querySelectorAll(".mail-row-thumbnail")].map((box) => {
-            const { width, height } = box.getBoundingClientRect();
-            const image = box.querySelector("img");
-            return {
-              width,
-              height,
-              image: image ? image.complete && image.naturalWidth > 0 : box.querySelector(".ti-photo") ? "placeholder" : null,
-            };
-          }),
-          more: row.querySelector(".mail-row-thumbnail-more")?.textContent ?? null,
-          rowHeight: row.getBoundingClientRect().height,
-        };
+      [...document.querySelectorAll<HTMLElement>(".mail-list-entry")].map((entry) => {
+        const tops = new Set(
+          [".mail-row-from", ".mail-row-subject-line", ".mail-list-preview", ".mail-row-time-cell"].map((part) =>
+            Math.round(entry.querySelector(part)!.getBoundingClientRect().top),
+          ),
+        );
+        return { id: entry.dataset.conversationId, height: Math.round(entry.getBoundingClientRect().height), lines: tops.size };
       }),
     );
+  const marked = [
+    item(1, {
+      drafts: { count: 1, editors: [{ id: "Usr002", kind: "user", displayName: "Tom Behrens" }] },
+      messageCount: 3,
+      attachmentCount: 2,
+      assigneeUserIds: ["user-jule"],
+      unread: true,
+    }),
+    item(2, { drafts: { count: 1, editors: [], suggestedBy: "Gustav" }, messageCount: 2 }),
+    item(3, { workStatus: "waiting", flagged: true }),
+    // Snoozed until Saturday, two days after the pinned Thursday.
+    item(4, { snoozedUntil: new Date(NOW + 2 * 86_400_000).toISOString(), kept: true }),
+    ...items.slice(4, 8),
+  ];
 
-  test("a wide list shows up to three fixed 24 px thumbnails and +n, and a failed one keeps its box with a placeholder", async () => {
-    thumbnailRequests.length = 0;
-    const page = await load({
-      columns: "personal",
-      listSize: 1000,
-      items: thumbnailItems,
-      context: { viewport: { width: 1600, height: 900 } },
+  for (const [listSize, lines, height] of [
+    [430, 3, 78],
+    [700, 1, 44],
+  ] as const)
+    test(`a ${listSize} px list draws every conversation on ${lines} line${lines === 1 ? "" : "s"} of one height, with the date in each`, async () => {
+      const page = await load({ listSize, items: marked, shared: true });
+      const shown = await rows(page);
+      expect(shown.every((entry) => entry.height === height && entry.lines === lines)).toBe(true);
+      // The checkbox always shows, so the first check starts a selection.
+      expect(await page.locator(".mail-list-entry .mail-list-checkbox:visible").count()).toBe(marked.length);
+      expect(page.errors).toEqual([]);
+      await close(page);
+    }, 30_000);
+
+  test("marks: Draft in orange, ✦ Suggestion in plum, the count, Waiting, until Sat, lock, paperclip and who is responsible", async () => {
+    const page = await load({ listSize: 700, items: marked, shared: true });
+    const draft = page.locator(`${row("Cv0001")} [data-mail-row-draft]`);
+    expect((await draft.textContent())?.trim()).toBe("Draft");
+    expect(await draft.getAttribute("aria-label")).toBe("Draft: Tom Behrens");
+    const suggestion = page.locator(`${row("Cv0002")} [data-mail-row-draft]`);
+    expect((await suggestion.textContent())?.trim()).toBe("Suggestion");
+    expect(await suggestion.getAttribute("aria-label")).toBe("Suggestion from Gustav");
+    const colors = await page.evaluate(() => {
+      const probe = document.body.appendChild(document.createElement("i"));
+      probe.style.color = "var(--k2b-ai-accent)";
+      const plum = getComputedStyle(probe).color;
+      probe.style.color = "var(--color-orange-600)";
+      const orange = getComputedStyle(probe).color;
+      probe.remove();
+      const color = (selector: string) => getComputedStyle(document.querySelector(selector)!).color;
+      return {
+        plum,
+        orange,
+        draft: color('[data-conversation-id="Cv0001"] [data-mail-row-draft]'),
+        suggestion: color('[data-conversation-id="Cv0002"] [data-mail-row-draft]'),
+      };
     });
-    // settled: the boxes before any image arrives are the subject; the loaded state below is awaited.
-    const first = await thumbnails(page);
-    await page.waitForFunction(() =>
-      [...document.querySelectorAll(".mail-row-thumbnail")].every(
-        (box) =>
-          (box.querySelector("img")?.complete !== false && (box.querySelector("img")?.naturalWidth ?? 1) > 0) ||
-          box.querySelector(".ti-photo"),
-      ),
-    );
-    const loaded = await thumbnails(page);
-    expect(loaded).toEqual([
-      {
-        id: "Cv0001",
-        shown: true,
-        boxes: Array(3).fill({ width: 24, height: 24, image: true }),
-        more: "+2",
-        rowHeight: first[0]!.rowHeight,
-      },
-      { id: "Cv0002", shown: true, boxes: [{ width: 24, height: 24, image: "placeholder" }], more: null, rowHeight: first[1]!.rowHeight },
-      { id: "Cv0003", shown: false, boxes: [], more: null, rowHeight: first[2]!.rowHeight },
-    ]);
-    expect(first.map((row) => row.boxes.map(({ width, height }) => [width, height]))).toEqual(
-      loaded.map((row) => row.boxes.map(({ width, height }) => [width, height])),
-    );
-    expect([...thumbnailRequests].sort()).toEqual(["Broken", "Img001", "Img002", "Img003"]);
+    expect(colors.draft).toBe(colors.orange);
+    expect(colors.suggestion).toBe(colors.plum);
+    expect(await page.locator(`${row("Cv0001")} .mail-row-count`).getAttribute("aria-label")).toBe("3 messages");
+    expect(await page.locator(`${row("Cv0001")} [data-mail-assignees]`).getAttribute("aria-label")).toBe("Responsible: jule");
+    expect(await page.locator(`${row("Cv0001")} .mail-row-marks [aria-label="2 attachments"]`).count()).toBe(1);
+    expect((await page.locator(`${row("Cv0003")} .mail-row-waiting`).textContent())?.trim()).toBe("Waiting");
+    expect((await page.locator(`${row("Cv0004")} .mail-row-snooze`).textContent())?.trim()).toBe("until Sat");
+    expect(await page.locator(`${row("Cv0004")} [data-mail-kept-indicator]`).count()).toBe(1);
+    // The unread dot sits before the date.
+    const dot = (await page.locator(`${row("Cv0001")} .mail-row-dot`).boundingBox())!;
+    const time = (await page.locator(`${row("Cv0001")} .mail-row-time`).boundingBox())!;
+    expect(dot.x + dot.width).toBeLessThanOrEqual(time.x);
     expect(page.errors).toEqual([]);
     await close(page);
   }, 30_000);
 
-  test("a narrow list beside the reader, a narrow app area and a phone show no thumbnails and load none", async () => {
-    // A wide window with a narrow list keeps the subject readable: the list's own width decides, like its columns.
-    for (const { viewport, listSize } of [
-      { viewport: { width: 1600, height: 900 }, listSize: 620 },
-      { viewport: { width: 820, height: 900 }, listSize: undefined },
-      { viewport: { width: 390, height: 844 }, listSize: undefined },
-    ]) {
-      thumbnailRequests.length = 0;
-      const page = await load({ columns: "personal", items: thumbnailItems, listSize, context: { viewport } });
-      await page.locator(row("Cv0001")).waitFor();
-      const rows = await thumbnails(page);
-      expect(
-        rows.map((entry) => entry.shown),
-        `${viewport.width}`,
-      ).toEqual([false, false, false]);
-      // Lazy images inside a hidden group are never fetched.
-      await page.waitForLoadState("networkidle");
-      expect(thumbnailRequests, `${viewport.width}`).toEqual([]);
-      await close(page);
-    }
+  test("the star flags a conversation in place; three-line rows show it only when set", async () => {
+    const page = await load({ listSize: 700, items: marked });
+    const star = page.locator(`${row("Cv0002")} button.mail-row-star`);
+    expect(await star.getAttribute("aria-pressed")).toBe("false");
+    await star.click();
+    expect(await page.evaluate(() => window.mailItemActions)).toEqual(["Cv0002:flag"]);
+    // The click flags; it does not open the conversation.
+    expect(await page.evaluate(() => window.mailNavigations)).toEqual([]);
+    await page.locator(`${row("Cv0003")} button.mail-row-star`).click();
+    expect(await page.evaluate(() => window.mailItemActions)).toEqual(["Cv0002:flag", "Cv0003:unflag"]);
+    await close(page);
+    const narrow = await load({ listSize: 430, items: marked });
+    expect(await narrow.locator(`${row("Cv0002")} .mail-row-star`).isVisible()).toBe(false);
+    expect(await narrow.locator(`${row("Cv0003")} .mail-row-star`).isVisible()).toBe(true);
+    await close(narrow);
   }, 30_000);
-});
-
-describe("Mail columns view time column", () => {
-  /** The page renders shortly after NOW; each time is the longest of its kind in German or English. */
-  const longest = (unread: boolean): MailListItem[] => [
-    item(1, { latestMessageAt: new Date(NOW - 50_000).toISOString(), unread }),
-    item(2, { latestMessageAt: new Date(NOW - 59 * 60_000).toISOString(), unread }),
-    item(3, { latestMessageAt: new Date(NOW - 23.5 * 3_600_000).toISOString(), unread }),
-    item(4, { latestMessageAt: new Date(NOW - 30 * 3_600_000).toISOString(), unread }),
-    item(5, { latestMessageAt: "2025-09-28T08:00:00.000Z", unread }),
-    item(6, { latestMessageAt: "2025-05-02T08:00:00.000Z", unread: !unread }),
-  ];
-  /** Every time cell and the heading's: whether its text fits, and where the column starts and ends. */
-  const timeColumn = (page: Page) =>
-    page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>(".mail-row-cells .mail-row-time, .mail-columns-head-time")].map((cell) => {
-        const range = document.createRange();
-        range.selectNodeContents(cell.firstChild ?? cell);
-        const text = range.getBoundingClientRect();
-        const { left, right } = cell.getBoundingClientRect();
-        return { label: cell.textContent ?? "", left, right, textLeft: text.left, textRight: text.right };
-      }),
-    );
-
-  for (const locale of ["de", "en"] as const)
-    for (const columns of ["personal", "shared"] as const)
-      test(`${locale} ${columns}: the longest times fit at the narrowest list, and every row keeps one column`, async () => {
-        // 300 px is the list's smallest width; the shared columns need their fixed tracks beside it.
-        const page = await load({
-          locale,
-          columns,
-          listSize: columns === "personal" ? 300 : 620,
-          items: [
-            ...longest(true),
-            ...longest(false).map((entry) => ({ ...entry, id: `${entry.id}r`, conversationId: `${entry.conversationId}r` })),
-          ],
-        });
-        await page.locator(".mail-columns-head-time").waitFor();
-        const cells = await timeColumn(page);
-        expect(cells.length).toBe(13);
-        if (locale === "de") expect(cells.map((cell) => cell.label)).toContain("vor 23 Stunden");
-        for (const cell of cells) {
-          // The whole text lies inside its cell: nothing is cut off at either side.
-          expect(cell.textLeft, cell.label).toBeGreaterThanOrEqual(cell.left - 0.5);
-          expect(cell.textRight, cell.label).toBeLessThanOrEqual(cell.right + 0.5);
-          // Heading and rows share one column.
-          expect(Math.abs(cell.left - cells[0]!.left), cell.label).toBeLessThanOrEqual(0.5);
-          expect(Math.abs(cell.right - cells[0]!.right), cell.label).toBeLessThanOrEqual(0.5);
-        }
-        // A live update with another time moves no column.
-        await page.evaluate(() => window.setMailItems(window.mailItems().map((entry) => ({ ...entry, unread: !entry.unread }))));
-        await page.waitForFunction(
-          () => !document.querySelector('[data-conversation-id="Cv0001"]')?.classList.contains("mail-list-entry-unread"),
-        );
-        expect(await timeColumn(page)).toEqual(cells);
-        expect(page.errors).toEqual([]);
-        await close(page);
-      }, 30_000);
-});
-
-test("day group headings use the muted ink of every list group heading, not the rows' ink", async () => {
-  const page = await load({ locale: "de" });
-  await page.locator(".mail-day-group h3").first().waitFor();
-  const colors = await page.evaluate(() => {
-    const probe = document.createElement("span");
-    probe.style.color = "var(--k2b-text-muted)";
-    document.querySelector(".mail-day-group")!.append(probe);
-    const heading = document.querySelector(".mail-day-group h3")!;
-    return {
-      label: heading.textContent,
-      heading: getComputedStyle(heading).color,
-      muted: getComputedStyle(probe).color,
-      sender: getComputedStyle(document.querySelector(".mail-list-entry-unread .mail-row-sender")!).color,
-    };
-  });
-  expect(colors.label).toBe("Heute");
-  expect(colors.heading).toBe(colors.muted);
-  expect(colors.heading).not.toBe(colors.sender);
-  await close(page);
 });
 
 describe("Mail rows that an action takes out of the list", () => {

@@ -46,7 +46,6 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       listMode: "conversations",
       loading: false,
       liveDegraded: false,
-      onCollapse: () => {},
       onOpenHealth: () => {},
       onOpenDeliverySettings: () => {},
       onNavigate: () => {},
@@ -152,10 +151,11 @@ describe("Mail Assigned to me groups", () => {
     expect(html).not.toContain("data-mail-day-group");
   });
 
-  test("a waiting group that has not loaded yet gets no heading; other views keep day headings", () => {
+  test("a waiting group that has not loaded yet gets no heading; other views have no day headings at all", () => {
     const html = renderList({ ...mine, items: [mailTestRow("Conv01", { workStatus: "needs_action" })], nextCursor: "next" });
     expect(html).toContain("Your turn · 12");
     expect(html).not.toContain("Waiting for reply");
-    expect(renderList({ items: [mailTestRow("Conv01")] })).toContain("data-mail-day-group");
+    // The date stands in every row instead (v5).
+    expect(renderList({ items: [mailTestRow("Conv01")] })).not.toContain("data-mail-day-group");
   });
 });

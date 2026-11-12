@@ -48,7 +48,19 @@ type MailSearchFilterProps = {
   folderId: string | null;
   localTags: LocalTag[];
   /** The mailbox's search: while it runs, "Search in" and the place join the menu. */
-  quickSearch: ReturnType<typeof createMailboxSearch>;
+  quickSearch: Pick<
+    ReturnType<typeof createMailboxSearch>,
+    | "searchValue"
+    | "searchFields"
+    | "quickSearchFieldOptions"
+    | "updateSearchFields"
+    | "scopeFolderId"
+    | "originFolder"
+    | "updateScope"
+    | "structuredSummary"
+    | "openAdvancedSearch"
+    | "searchBuilderLoading"
+  >;
   onOpenHref: (href: string) => void;
   onEditSearch: (state: MailSearchState, source: URL) => void;
   /** The one-time note that the filters moved here from the head's chips. */
@@ -86,7 +98,8 @@ export function MailSearchFilter(props: MailSearchFilterProps) {
   };
   const dayCount = () => mailHeadFilterDayCount(knownQuick()?.dates ?? []);
   const searching = () => Boolean(props.quickSearch.searchValue().trim());
-  const structured = () => (knownQuick() ? null : props.quickSearch.structuredSummary());
+  /** A search tree the chips cannot show; a running text search is the field's own, not a filter. */
+  const structured = () => (knownQuick() || searching() ? null : props.quickSearch.structuredSummary());
   const placeLabel = (folderId: string) => {
     const match = props.folders.find((candidate) => candidate.id === folderId);
     return listText().onlyFolder({ name: match ? folderName()(match) : folderId });
@@ -116,7 +129,8 @@ export function MailSearchFilter(props: MailSearchFilterProps) {
     const sections: DropdownItem[] = [];
     if (folderFilters() && value) {
       sections.push({
-        sectionLabel: listText().showOnly,
+        // A direct link may filter another folder than the one the route shows; the section names it then.
+        sectionLabel: props.folderId !== folder()?.id ? messages().inFolder({ name: folderName()(folder()!) }) : listText().showOnly,
         items: [
           ...(folder()?.role === "sent"
             ? []
@@ -246,9 +260,14 @@ export function MailSearchFilter(props: MailSearchFilterProps) {
           label={label()}
           tooltip={label()}
           data-active={activeCount() > 0 ? "true" : undefined}
+          // The search builder loads on first use; the button says so and keeps its place and focus meanwhile.
+          aria-busy={props.quickSearch.searchBuilderLoading() ? "true" : undefined}
           data-mail-filter-button
         >
-          <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+          <i
+            class={props.quickSearch.searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-horizontal"}
+            aria-hidden="true"
+          />
           <span class="mail-search-filter-count" aria-hidden="true">
             {activeCount() > 0 ? activeCount() : ""}
           </span>

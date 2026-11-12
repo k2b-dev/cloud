@@ -127,7 +127,6 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   readingFormat: "automatic",
   theme: "light",
   calendarIntegrationAvailable: false,
-  listAway: false,
   detailsOpen: false,
   toolbarActions: ["reply"],
   onToggleDetails: () => undefined,
