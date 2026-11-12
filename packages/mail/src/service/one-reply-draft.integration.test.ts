@@ -8,6 +8,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";
 import { mailCapabilities } from "../capabilities";
 import { DraftCreateInputSchema, DraftSwitchIntentInputSchema } from "../capability-contracts";
+import { forwardMessageBody, quoteReplyBody } from "../compose-quotation";
 import { type DraftContentInput, draftSchema, type MailDraft } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -847,6 +848,70 @@ suite("one reply draft per conversation", () => {
       expect(unwrap(await drafts.getDraft(owner, mailboxId, edited.id)).state).toBe("draft");
       expect((await sql`SELECT state FROM mail.drafts WHERE id = ${empty.id}::uuid`)[0]?.state).toBe("discarded");
     });
+  }
+  for (const quoteStorage of ["separate", "embedded reply", "embedded forward"] as const) {
+    for (const scenario of ["older text", "both untouched", "signature only"] as const) {
+      test(`F6 recognizes revision-1 body evidence (${scenario}, ${quoteStorage})`, async () => {
+        const source = await thread();
+        const signatureName = `F6 ${scenario} ${quoteStorage}`;
+        const [signature] = await sql<{ id: string }[]>`INSERT INTO mail.compose_templates
+          (short_id, mailbox_id, kind, scope, name, normalized_name, shortcut, body_template, created_by_actor_kind, created_by_actor_id)
+          VALUES (${newShortId()}, ${mailboxId}::uuid, 'signature', 'mailbox', ${signatureName}, ${signatureName.toLowerCase()}, ${`f6_${newShortId().toLowerCase()}`},
+            'Best wishes, Ada', 'user', ${userId}::uuid) RETURNING id`;
+        const message = {
+          from: [{ address: "customer@example.test" }],
+          to: [{ address: "team@example.test" }],
+          subject: "Question",
+          internalDate: at,
+          plainText: "Source",
+        };
+        const dateContext = { locale: "en", timeZone: "UTC" };
+        const history =
+          quoteStorage === "embedded reply"
+            ? quoteReplyBody(message, "Source", dateContext)
+            : quoteStorage === "embedded forward"
+              ? forwardMessageBody(message, dateContext)
+              : "";
+        const markedSignature = "\u2063Best wishes, Ada\u2064";
+        const olderHasText = scenario !== "both untouched";
+        await beginLegacyMigration();
+        const insert = async (body: string, createdAt: string, selectedSignature: boolean) => {
+          const [row] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
+            (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id,
+              author_kind, author_id, last_editor_kind, last_editor_id, edit_mode, revision, body_markdown,
+              subject, to_addresses, signature_template_id, quote_source, created_at)
+            VALUES (${newShortId()}, ${mailboxId}::uuid, ${source.conversationId}::uuid, ${source.sourceMessageId}::uuid,
+              'reply', ${identityId}::uuid, 'user', ${userId}::uuid, 'user', ${userId}::uuid, 'lock', 1, ${body},
+              'Re: Question', '[{"address":"customer@example.test"}]', ${selectedSignature ? signature!.id : null}::uuid,
+              ${quoteStorage === "separate"}, ${createdAt}::timestamptz) RETURNING id`;
+          return row!.id;
+        };
+        // Older images could store a marked signature with no selected template ID. Current rows store it separately.
+        const olderBody = [olderHasText ? "Yes, we can deliver on Friday." : "", markedSignature, history].filter(Boolean).join("\n\n");
+        const newerBody = scenario === "signature only" ? markedSignature : history;
+        const older = await insert(olderBody, "2026-11-01T09:00:00Z", false);
+        const newer = await insert(newerBody, "2026-11-01T11:00:00Z", true);
+        expect(
+          await sql<
+            { revision: number; content_edited_at: Date | null }[]
+          >`SELECT revision::int, content_edited_at FROM mail.drafts WHERE id IN (${older}::uuid, ${newer}::uuid)`,
+        ).toEqual([
+          { revision: 1, content_edited_at: null },
+          { revision: 1, content_edited_at: null },
+        ]);
+        expect(await migrate()).toEqual({ deletedDrafts: 1, affectedConversations: 1, completed: true });
+        const survivor = olderHasText ? older : newer;
+        const loser = olderHasText ? newer : older;
+        expect(unwrap(await drafts.getDraft(owner, mailboxId, survivor))).toMatchObject({ state: "draft", consolidatedCount: 1 });
+        expect((await sql`SELECT body_markdown FROM mail.drafts WHERE id = ${survivor}::uuid`)[0]?.body_markdown).toBe(
+          olderHasText ? olderBody : newerBody,
+        );
+        expect((await sql`SELECT state, body_markdown FROM mail.drafts WHERE id = ${loser}::uuid`)[0]).toEqual({
+          state: "discarded",
+          body_markdown: "",
+        });
+      });
+    }
   }
   test("two committed sends refuse before the F6 marker and preserve both sends", async () => {
     const first = await create();

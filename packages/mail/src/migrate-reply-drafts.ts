@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
+import { splitQuotedHistory, withoutSignatureSegments } from "./service/compose-renderer";
 import { eraseRetiredDraftInTransaction, retireDraftInTransaction } from "./service/draft-retirement";
 
 export const REPLY_DRAFT_MIGRATION_VERSION = 4;
@@ -10,6 +11,49 @@ const BATCH_SIZE = 100;
 const occupied = () => sql`origin = 'user' AND intent <> 'new' AND state IN ('draft', 'scheduled', 'sending')`;
 const committedSend = () => sql`(d.state = 'scheduled' OR (d.state = 'sending' AND EXISTS (
   SELECT 1 FROM mail.outbox_submissions o WHERE o.draft_id = d.id AND o.state IN ('undo_window', 'scheduled'))))`;
+
+const editTimes = () => sql`CROSS JOIN LATERAL (SELECT coalesce(greatest(d.content_edited_at,
+  (SELECT max(r.created_at) FROM mail.draft_document_revisions r WHERE r.draft_id = d.id AND r.revision > 1)),
+  (SELECT max(s.created_at) FROM mail.draft_provider_snapshots s
+    WHERE s.draft_id = d.id AND s.direction = 'export' AND s.cloud_revision > 1)) AS edited_at) edits`;
+const priority = () => sql`${committedSend()} DESC,
+  (d.author_kind <> 'service_account' OR d.adopted_at IS NOT NULL) DESC`;
+const recency = () => sql`edits.edited_at DESC NULLS LAST, d.created_at DESC, d.id DESC`;
+
+/** Find the best body-evidence candidate without retaining every legacy duplicate's body in memory. */
+const bestBodyEvidenceDraft = async (db: typeof sql, conversationId: string): Promise<string | null> => {
+  let cursor = "00000000-0000-0000-0000-000000000000";
+  let best: string | null = null;
+  for (;;) {
+    const rows = await db<{ id: string; body_markdown: string; signature_source: string | null }[]>`SELECT
+      d.id, d.body_markdown, signature.body_template AS signature_source FROM mail.drafts d
+      LEFT JOIN LATERAL (SELECT t.body_template FROM mail.compose_templates t
+        WHERE t.mailbox_id = d.mailbox_id AND t.kind = 'signature' AND t.archived_at IS NULL
+          AND (t.id = d.signature_template_id OR (d.signature_template_id IS NULL
+            AND (t.scope = 'mailbox' OR (d.author_kind = 'user' AND t.owner_user_id = d.author_id))
+            AND strpos(d.body_markdown, ${"\u2063"} || t.body_template || ${"\u2064"}) > 0))
+        ORDER BY strpos(d.body_markdown, ${"\u2063"} || t.body_template || ${"\u2064"}), t.id LIMIT 1) signature ON true
+      WHERE d.conversation_id = ${conversationId}::uuid AND ${occupied()} AND d.id > ${cursor}::uuid
+      ORDER BY d.id LIMIT ${BATCH_SIZE}`;
+    if (!rows.length) return best;
+    const candidates = rows
+      .filter((row) => {
+        // Match resolveDraftSignature: remove only exact marked copies of the selected/recognized signature.
+        const body = row.signature_source === null ? row.body_markdown : withoutSignatureSegments(row.body_markdown, row.signature_source);
+        // quote_source is rendered separately; older images also embedded generated history in body_markdown.
+        return splitQuotedHistory(body).reply.trim().length > 0;
+      })
+      .map((row) => row.id);
+    if (best) candidates.push(best);
+    if (candidates.length) {
+      // Every candidate has body evidence, so only the other ranking keys decide which one could survive.
+      const [winner] = await db<{ id: string }[]>`SELECT d.id FROM mail.drafts d ${editTimes()}
+        WHERE d.id = ANY(${sql.array(candidates, "UUID")}) ORDER BY ${priority()}, ${recency()} LIMIT 1`;
+      best = winner?.id ?? null;
+    }
+    cursor = rows.at(-1)!.id;
+  }
+};
 
 /** Build a supporting partial index once; subsequent batches group only open user reply drafts. */
 const prepareConsolidationIndex = async () => {
@@ -108,18 +152,15 @@ const batch = () =>
       // Match send/cancellation's mailbox -> draft lock order. Mailboxes are visited in ID order.
       await tx`SELECT id FROM mail.mailboxes WHERE id = ${conversation.mailbox_id}::uuid FOR UPDATE`;
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`mail:reply-draft:${conversation.conversation_id}`}, 0))`;
-      // Derived subjects/recipients and signatures exist even on untouched replies. Only revision > 1
-      // is legacy lock-mode evidence when no actual edit timestamp can be recovered.
+      const bodyEvidenceDraftId = await bestBodyEvidenceDraft(tx, conversation.conversation_id);
+      // Body evidence also covers real text supplied at creation, before revision/timestamp evidence exists.
+      // Only the best body candidate needs the added signal: no other body candidate can outrank it.
       const rows = await tx<{ id: string; consolidated_count: number }[]>`SELECT d.id, d.consolidated_count FROM mail.drafts d
-        CROSS JOIN LATERAL (SELECT coalesce(greatest(d.content_edited_at,
-          (SELECT max(r.created_at) FROM mail.draft_document_revisions r WHERE r.draft_id = d.id AND r.revision > 1)),
-          (SELECT max(s.created_at) FROM mail.draft_provider_snapshots s
-            WHERE s.draft_id = d.id AND s.direction = 'export' AND s.cloud_revision > 1)) AS edited_at) edits
+        ${editTimes()}
         WHERE d.conversation_id = ${conversation.conversation_id}::uuid AND ${occupied()}
-        ORDER BY ${committedSend()} DESC,
-          (d.author_kind <> 'service_account' OR d.adopted_at IS NOT NULL) DESC,
-          (edits.edited_at IS NOT NULL OR (d.edit_mode = 'lock' AND d.revision > 1)) DESC,
-          edits.edited_at DESC NULLS LAST, d.created_at DESC, d.id DESC
+        ORDER BY ${priority()},
+          (edits.edited_at IS NOT NULL OR (d.edit_mode = 'lock' AND d.revision > 1) OR coalesce(d.id = ${bodyEvidenceDraftId}::uuid, false)) DESC,
+          ${recency()}
         LIMIT ${BATCH_SIZE - deleted + 1} FOR UPDATE OF d`;
       const [survivor, ...losers] = rows;
       if (!survivor || !losers.length) continue;
