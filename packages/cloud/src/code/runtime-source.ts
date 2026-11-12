@@ -57,10 +57,17 @@ function handle(appId, type, id) {
   handles.set(result, ref);
   Object.defineProperties(result, { type: { value: ref.type, enumerable: true }, id: { value: ref.id, enumerable: true } });
   for (const op of manifest.operations.filter(op => op.appId === appId && op.target === type)) {
-    const method = async (args) => {
+    const method = async (args = {}) => {
       if (!bridge) throw new CodeError("code_sdk_bridge_unbound");
       if (!args || typeof args !== "object" || Array.isArray(args)) throw new CodeError("code_sdk_invalid_input");
       const input = { ...args };
+      if (op.capability === "core.ai.decide") {
+        if (!Object.hasOwn(input, "state") && Object.hasOwn(input, "input")) input.state = input.input;
+        delete input.input;
+        if (input.questions && typeof input.questions === "object" && !Array.isArray(input.questions))
+          input.questions = Object.fromEntries(Object.entries(input.questions).map(([key, value]) =>
+            [key, value?.type === "boolean" ? { ...value, type: "noul" } : value]));
+      }
       if (op.capability === "core.ai.generate" || op.capability === "core.ai.decide") {
         if (input.tools !== undefined) {
           if (!Array.isArray(input.tools)) throw new CodeError("code_ai_tool_invalid");
@@ -86,7 +93,11 @@ function handle(appId, type, id) {
         delete input.idempotencyKey;
       }
       const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
-      return invoke(op.capability, { call, metadata });
+      const response = await invoke(op.capability, { call, metadata });
+      if (op.capability === "core.ai.decide" && response?.data?.answers)
+        return { ...response, data: { ...response.data, answers: Object.fromEntries(Object.entries(response.data.answers).map(([key, answer]) =>
+          [key, answer.type === "noul" ? { ...answer, confidence: answer.probability } : answer])) } };
+      return response;
     };
     if (Object.keys(op.refs).length === 0) aiTools.set(method, Object.freeze({ capability: op.capability,
       target: type === null ? null : Object.freeze(coordinate(result, type)) }));
@@ -167,7 +178,8 @@ app.on = (...args) => {
   schedules.push({ kind: "event", entrypoint, cron: null, event: { type: eventType, version: spec.version, place: { type: place.type, id: place.id } }, handler: fn });
   return app;
 };
-for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, handler, options) => {
+for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, second, third) => {
+  const [handler, options] = typeof second === "function" ? [second, third] : [third, second];
   if (typeof path !== "string" || typeof handler !== "function") throw new CodeError("code_sdk_invalid_route");
   const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
   const entrypoint = "route:" + route.method + ":" + path;
@@ -223,7 +235,7 @@ const __codeSdk = Object.freeze({
           id: input.user.id, username: input.user.username, groupIds: [...input.user.groupIds], groupNames: [...input.user.groupNames], kind: input.user.kind,
           name: input.user.name,
         },
-        req: { raw, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
+        req: { raw, path: new URL(raw.url).pathname, method: raw.method, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
           json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
         json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),
         text: (value, code = 200) => output({ kind: "text", status: status(code), body: String(value) }),

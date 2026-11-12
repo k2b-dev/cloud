@@ -240,7 +240,7 @@ Return 403 to deny or `return next()` to continue. Use a private path prefix
 when the app also serves public routes: matching middleware runs there too,
 with `c.user === null`. Resource page templates deny
 access until you fill their allowed group IDs. Public routes always receive
-`c.user === null`. See [explicit UID, handle, group and Grids checks](code-sdk.md#zugriff-prüfen).
+`c.user === null`. See [explicit UID, handle, group and Grids checks](code-sdk.md#check-access).
 
 ## Webhooks (R1: ohne Secret)
 
@@ -251,7 +251,7 @@ take only the ID from the body, read the real state through `http.fetch` with
 an opaque secret marker and declared origin, then act. Never put a secret in
 the source or use a URL token as protection. Let `/hooks/` through a global
 access middleware, or apply the access check only to a private prefix.
-See the [complete example and secret binding](code-sdk.md#webhooks-r1-ohne-secret).
+See the [complete example and secret binding](code-sdk.md#webhooks-without-signature-verification).
 
 ## Database storage and export
 

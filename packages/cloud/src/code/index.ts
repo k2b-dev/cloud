@@ -6,6 +6,7 @@ export type {
   CodeDatabaseStatement,
   CodeDatabaseValue,
   CodeError,
+  CodeErrorCode,
   CodeHandle,
   CodeHttp,
   CodeHttpResult,
@@ -16,6 +17,7 @@ export type {
   CodeScheduleHandler,
   CodeSecret,
   CodeUser,
+  KnownCodeErrorCode,
 } from "./authoring-types";
 export { requireCodeCapabilityDeclared } from "./capability-set";
 export type { CodeCheckHost } from "./checker";

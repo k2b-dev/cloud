@@ -39,7 +39,7 @@ an anonymous binding cookie; public forms omit the token. Non-public mutations
 still require a session-bound CSRF token. Incoming request headers and cookies
 are not forwarded to Code. R1 webhooks use ordinary public POST routes without
 signature verification; handlers take an ID, read its state back with bound
-secret HTTP, then act ([example](/en/docs/platform/code-sdk#webhooks-r1-ohne-secret)).
+secret HTTP, then act ([example](/en/docs/platform/code-sdk#webhooks-without-signature-verification)).
 Keep the shared runner, NATS, Postgres and Valkey healthy; request
 capacity competes with scheduled runs and authoring checks.
 

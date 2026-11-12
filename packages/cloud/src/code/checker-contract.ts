@@ -67,13 +67,15 @@ export const CodeVersionManifestSchema = z
 export type CodeVersionManifest = z.infer<typeof CodeVersionManifestSchema>;
 
 /** Stable checker diagnostics for CLI/chat. Lines and columns are one-based; no user code is executed by checking. */
-export type CodeCheckDiagnostic = { code: string; message: string; file: string; line: number; column: number };
+export type CodeCheckDiagnostic = { aliases?: string[]; code: string; message: string; file: string; line: number; column: number };
 /** The host supplies current grants and AI operation IDs from trusted platform metadata, never from source files. */
 export type CodeCheckRequest = {
   files: Record<string, string>;
   entry: string;
   sdk: GeneratedCodeSdk;
   aiOperations: readonly string[];
+  /** Request-scoped language for human diagnostics; codes remain stable. */
+  locale?: string;
   existingPermissions?: readonly Pick<CodePermission, "operation" | "target">[];
   limits?: CodeCheckLimits;
 };
@@ -92,6 +94,7 @@ export type CodeCheckResult =
 
 const CodeCheckDiagnosticSchema = z
   .object({
+    aliases: z.array(z.string()).optional(),
     code: z.string(),
     message: z.string(),
     file: z.string(),

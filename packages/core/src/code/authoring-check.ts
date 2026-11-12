@@ -51,6 +51,7 @@ export async function createCodeCheckRequest(
   return {
     files,
     entry,
+    locale: context.locale,
     sdk,
     aiOperations: sdk.manifest.operations
       .filter((operation) => isCodeAiOperation(operation.capability))
