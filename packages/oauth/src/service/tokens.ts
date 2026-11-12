@@ -110,7 +110,7 @@ export const getJwks = async (): Promise<jose.JSONWebKeySet> => {
 };
 
 const getOAuthVerificationKey = async (): Promise<jose.JWTVerifyGetKey> => {
-  const configuredOrigin = env.CLOUD_OAUTH_JWKS_ORIGIN ?? env.CLOUD_CORE_INTERNAL_ORIGIN;
+  const configuredOrigin = env.CLOUD_CORE_INTERNAL_ORIGIN;
   if (configuredOrigin) {
     const url = resolveOAuthJwksUrl(configuredOrigin);
     const cacheKey = url.toString();
@@ -364,7 +364,7 @@ export const verifyAccessToken = async (params: { token: string; issuer: string 
     });
     return payload;
   } catch (error) {
-    if (error instanceof jose.errors.JWKSNoMatchingKey && !env.CLOUD_OAUTH_JWKS_ORIGIN && !env.CLOUD_CORE_INTERNAL_ORIGIN) {
+    if (error instanceof jose.errors.JWKSNoMatchingKey && !env.CLOUD_CORE_INTERNAL_ORIGIN) {
       const now = Date.now();
       if (now - lastUnknownKeyRefreshAt < 1_000) return null;
       lastUnknownKeyRefreshAt = now;

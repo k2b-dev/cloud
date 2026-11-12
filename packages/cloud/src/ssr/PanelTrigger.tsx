@@ -36,7 +36,7 @@ export default function PanelTrigger(props: { open?: boolean }) {
       <button
         ref={target}
         type="button"
-        class="rail-item rail-item-panel text-blue-500 hover:bg-blue-500/10 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-500/15 dark:hover:text-blue-300"
+        class="rail-item rail-item-panel"
         aria-label={label()}
         aria-controls="cloud-panel"
         aria-expanded={open()}

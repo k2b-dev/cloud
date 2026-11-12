@@ -43,7 +43,7 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
   createEffect(() => setAppLaunchpadContext(data.apps, data.legalLinks, profile));
   return (
     <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t().apps}>
-      <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} />
+      <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} appearance={data.appearance} />
       <AppLaunchpadButton profile={profile} apps={data.apps} legalLinks={data.legalLinks} variant="rail" label={t().openApps} />
       <div class="layout-rail-actions mt-auto shrink-0 flex flex-col items-center gap-1">
         {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger open={props.panelOpen} />}

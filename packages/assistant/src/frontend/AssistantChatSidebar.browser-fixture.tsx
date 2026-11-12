@@ -14,6 +14,7 @@ export function SidebarHarness(props: {
   initialClosed?: boolean;
   locale?: string;
   onJump?: (target: ChatSidebarJump) => void;
+  onOpenFile?: (file: { path: string; title: string }) => void;
   onSheet?: () => void;
   /** Reloads the snapshot, as after a deletion; nothing changes without it. */
   refresh?: () => Promise<void>;
@@ -75,7 +76,7 @@ export function SidebarHarness(props: {
               refresh: async () => props.refresh?.(),
             }}
             actions={{
-              onOpenFile: () => undefined,
+              onOpenFile: (file) => props.onOpenFile?.(file),
               onOpenApp: () => undefined,
               onJump: (target) => props.onJump?.(target),
               onOpenSecrets: () => undefined,

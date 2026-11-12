@@ -4,7 +4,7 @@ import type { Sync } from "@k2b/sync";
 import { Hono } from "hono";
 import { z } from "zod";
 import { defineCapabilities } from "../contracts/capabilities";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import * as invocationMiddleware from "../server/middleware/invocation";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import * as linksRuntime from "../services/links/runtime";
@@ -20,6 +20,7 @@ import * as registry from "./registry";
 import * as watcher from "./runtime-watcher";
 
 test("forwards the Bun server and owns capability JSON timeouts until success or failure", async () => {
+  const identityStub = stubAppIdentity();
   const secretStub = stubConnections({ appSecret: { current: "request-timeout-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -243,5 +244,6 @@ test("forwards the Bun server and owns capability JSON timeouts until success or
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
     secretStub.mockRestore();
+    identityStub.mockRestore();
   }
 });

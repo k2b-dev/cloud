@@ -24,7 +24,7 @@ would declare `mail:send`. Deploying that declaration admits reader checks;
 there is no separate operator unlock for each application. **Administration →
 Apps** shows **Check resource readers** with its other platform services.
 
-Core resolves the caller from its workload credential and checks its current
+Core resolves the caller from its signed app-key proof and checks its current
 registry declaration. The target Query must carry `appOnly: true`, generated
 by the platform. Ordinary person, service-account, mandate, MCP, and Assistant
 invocations receive 403 for this Query. REST, MCP, and AI person catalogs hide
@@ -45,16 +45,16 @@ not an extra platform admission boundary.
 `readResourcePrincipals({ ref, container?, principals, signal?, locale?,
 requestId? })` from `@k2b/cloud/capabilities/server` resolves the generated
 Query from the live provider manifest and uses the current process's app
-identity and the workload credential Core issues to the app automatically
-(an explicit `CLOUD_APP_CREDENTIAL` override wins, for apps run on the host).
-`CLOUD_CORE_INTERNAL_ORIGIN` must name Core's direct listener origin. When Core
-rejects the credential before dispatch, the call refreshes it once and retries.
+identity and enrolled app key. The platform signs the exact request at send time.
+`CLOUD_CORE_INTERNAL_ORIGIN` must name Core's direct listener origin. A missing
+key returns `not_configured` with `no_credential`; rejected keys have no fallback or automatic
+credential-refresh retry.
 
 Handle all three outcomes:
 
 - `{ state: "checked", readable }`: only the returned principals passed.
   An empty array means not readable; omit their push.
-- `{ state: "not_configured", reason }`: no readable function, credential,
+- `{ state: "not_configured", reason }`: no app key, readable function,
   internal origin, process identity, or Core admission. Show the reason and
   omit push until configured. Core uses `APP_QUERY_NOT_ADMITTED` when the
   live caller entry lacks `resources:readers`; other authorization failures
@@ -67,19 +67,18 @@ Handle all three outcomes:
   within a bounded retry budget, without spending its short failure attempts.
   Every resubmission requires a fresh check.
 
-The typed capability client also supports `workload: { appId }` with Bearer
-workload authorization for the generated Query. It calls
+The typed capability client also supports `workload: { appId }` with signed
+app-key authentication for the generated Query. It calls
 `POST /api/_internal/identity/v1/invoke` with `kind: "query"`, `targetApp`,
 `capabilityId`, and `input`, omitting both mandate fields. A partial mandate
 is invalid; supplying both fields retains mandate semantics. A mandate-free
-call to another Query, an Action, or a stream is forbidden. The workload
-credential stays on the Core hop, and redirects cannot forward it.
+call to another Query, an Action, or a stream is forbidden. The proof stays on the Core hop, and redirects cannot forward it.
 
 Core forwards a separate signed `app_query` token to the framework-owned
 `/api/_internal/capabilities/v1/app-queries/:capabilityId` endpoint. The token
 lasts 30 seconds and binds caller, target, operation, schema hash, exact input,
 credential, and request ID. The provider checks the signature and live
-credential status, expiry, `identity:invoke` scope, and app resource binding.
+app-key status, expiry, enabled account and app resource binding.
 App tokens cannot enter the person authority resolver. App handlers receive
 no grant-bearing subject and cannot exchange their invocation for a nested
 Query. Execution history records the app as caller, without a person or

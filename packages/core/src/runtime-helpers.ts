@@ -26,7 +26,7 @@ import {
 } from "@k2b/cloud/services";
 import { appApproval } from "@k2b/cloud/services/app-approval";
 import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
-import { initializeIdentityAuthority, startAppWorkloadBroker, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
+import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
 import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
@@ -54,6 +54,7 @@ import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrat
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
+import { retireAppWorkloads } from "./migrate/core/retire-app-workloads";
 import { migrate as migrateScreenPreferences } from "./migrate/core/screen-preferences";
 import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateStorageBuckets } from "./migrate/core/storage-buckets";
@@ -61,7 +62,6 @@ import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
 
-let stopAppWorkloadBroker: (() => Promise<void>) | undefined;
 let stopAppEventBroker: (() => Promise<void>) | undefined;
 let stopPersonalGroupHistory: (() => Promise<void>) | undefined;
 let stopCloudAiRuntime: (() => void) | null = null;
@@ -136,6 +136,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },
+    { name: "app-key-cutover", run: retireAppWorkloads },
     { name: "personal-group-history", run: migratePersonalGroupHistory },
     { name: "geoip", run: migrateGeoIp },
     { name: "announcements", run: migrateAnnouncements },
@@ -168,7 +169,6 @@ export const startCoreServices = async (
   await outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
-    stopAppWorkloadBroker = await startAppWorkloadBroker();
     stopAppEventBroker = await startAppEventBroker();
     stopAppCatalogMaintenance = startAppCatalogMaintenance();
     await startAppSkillsWatcher();
@@ -212,8 +212,6 @@ export const startCoreServices = async (
     await lifecycleJobs.start({ notificationSender });
     stopPersonalGroupHistory = startPersonalGroupHistory();
   } catch (error) {
-    await stopAppWorkloadBroker?.();
-    stopAppWorkloadBroker = undefined;
     await stopAppEventBroker?.();
     stopAppEventBroker = undefined;
     await stopPersonalGroupHistory?.();
@@ -251,8 +249,6 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
   try {
     // Sign-in and reset requests already answered must reach the notification store before it stops.
     await drainDeferredAuthRequests();
-    await stopAppWorkloadBroker?.();
-    stopAppWorkloadBroker = undefined;
     await stopAppEventBroker?.();
     stopAppEventBroker = undefined;
     await stopPersonalGroupHistory?.();

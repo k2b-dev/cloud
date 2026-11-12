@@ -19,7 +19,6 @@ import { env } from "../../src/config/env";
 import { AppMigrationStatusSchema } from "../../src/contracts/app-migration";
 import { appKeys } from "../../src/services/app-keys";
 import { readAppMigrationStatus } from "../../src/services/app-migration";
-import { beginAppMigrationObservation, readAppMigrationObservation, recordLegacyAppUse } from "../../src/services/app-migration-evidence";
 import * as invocation from "../../src/services/identity/invocation-token";
 
 const NOW = Date.UTC(2030, 0, 2);
@@ -95,7 +94,7 @@ suiteFor(
     });
     await appInstanceRegistry().upsert({
       key: `${appInstancePrefix("core")}new`,
-      value: { appId: "core", instanceId: "new", hostname: "test", startedAt: NOW, entries: {}, legacyEvidence: 1 },
+      value: { appId: "core", instanceId: "new", hostname: "test", startedAt: NOW, entries: {} },
     });
     await appInstanceRegistry().upsert({
       key: `${appInstancePrefix("acme")}one`,
@@ -132,22 +131,13 @@ suiteFor(
     await sql.close();
     await database?.drop();
   });
-  const status = () => readAppMigrationStatus({ actor, expect: ["acme"], allowEnv: [], windowSeconds: 86400 });
-  test("fresh signed broker/OAuth receipts cross Core replicas, but no observation is never green", async () => {
+  const status = () => readAppMigrationStatus({ actor, expect: ["acme"], allowEnv: [] });
+  test("fresh signed broker and granted OAuth receipts prove the live app immediately", async () => {
     const result = await status();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.apps[0]?.probes).toEqual([{ keyId: key.keyId, broker: true, oauth: true }]);
-    expect(result.data.needsAttention).toBe(true);
-    const begun = await beginAppMigrationObservation({ actor }, replica);
-    expect(begun.ok).toBe(true);
-    const [audit] = await replica<{ action: string; actor_user_id: string }[]>`SELECT action, actor_user_id FROM audit.events
-      WHERE action = 'app_migration.observation_begin' ORDER BY id DESC LIMIT 1`;
-    expect(audit).toMatchObject({ action: "app_migration.observation_begin", actor_user_id: actor.id });
-    expect((await readAppMigrationObservation(86400)).complete).toBe(false);
-    await replica`UPDATE auth.app_migration_observation SET started_at = clock_timestamp() - interval '2 days'`;
-    const complete = await status();
-    expect(complete.ok && complete.data.needsAttention).toBe(false);
+    expect(result.data.needsAttention).toBe(false);
   });
   test("an explicit OAuth grant is required for the OAuth probe on the actual signed path", async () => {
     await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${key.keyId}::uuid`;
@@ -169,11 +159,7 @@ suiteFor(
     ).toBe(403);
     await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = true WHERE id = ${key.keyId}::uuid`;
   });
-  test("either legacy path on another Core replica restarts the observation and rejected starts remain visible", async () => {
-    for (const path of ["bearer", "broker-secret"] as const) {
-      await recordLegacyAppUse(path, replica);
-      expect((await readAppMigrationObservation(86400)).complete).toBe(false);
-    }
+  test("rejected starts remain visible across Core replicas", async () => {
     await replica`INSERT INTO auth.app_start_rejections(app_id,rejected_at,reason,key_id) VALUES ('acme',clock_timestamp(),'revoked',${key.keyId}::uuid)`;
     const result = await status();
     expect(result.ok).toBe(true);
@@ -181,72 +167,6 @@ suiteFor(
       expect(result.data.needsAttention).toBe(true);
       expect(result.data.apps[0]?.lastRejectedStart?.reason).toBe("revoked");
       expect(result.data.apps[0]?.attentionReasons).toContain("last_rejected_start");
-    }
-  });
-  test("an older live Core refuses observation and keeps status in attention", async () => {
-    const oldKey = `${appInstancePrefix("core")}old`;
-    await appInstanceRegistry().upsert({
-      key: oldKey,
-      value: { appId: "core", instanceId: "old", hostname: "old", startedAt: NOW, entries: {} },
-    });
-    try {
-      const result = await beginAppMigrationObservation({ actor }, replica);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.status).toBe(409);
-      const checked = await status();
-      expect(checked.ok && checked.data.registryIssues.some((issue) => issue.reason === "core_legacy_evidence_missing")).toBe(true);
-    } finally {
-      await appInstanceRegistry().delete({ key: oldKey });
-    }
-  });
-  test("legacy evidence coalesces concurrent calls, skips locked rows and retains conservative coverage", async () => {
-    const writer = new SQL(database.url);
-    const contender = new SQL(database.url);
-    let unlock!: () => void;
-    let locked!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    const released = new Promise<void>((resolve) => {
-      unlock = resolve;
-    });
-    try {
-      await replica`UPDATE auth.app_migration_legacy SET last_used_at = NULL WHERE path = 'bearer'`;
-      const holding = replica.begin(async (tx) => {
-        await tx`SELECT path FROM auth.app_migration_legacy WHERE path = 'bearer' FOR UPDATE`;
-        locked();
-        await released;
-      });
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([ready, holding]);
-        const results = await Promise.race([
-          Promise.allSettled(Array.from({ length: 20 }, () => recordLegacyAppUse("bearer", writer))),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error("Evidence queued behind row lock")), 1_000);
-          }),
-        ]);
-        expect(results.every((result) => result.status === "rejected")).toBe(true);
-      } finally {
-        clearTimeout(timer);
-        unlock();
-        await holding;
-      }
-      await Promise.all(Array.from({ length: 20 }, () => recordLegacyAppUse("bearer", writer)));
-      const [before] = await replica<{ at: Date }[]>`SELECT last_used_at AS at FROM auth.app_migration_legacy WHERE path = 'bearer'`;
-      expect((await readAppMigrationObservation(1)).complete).toBe(false);
-      await writer.close();
-      // Requests within committed coverage do not depend on another evidence write succeeding.
-      await recordLegacyAppUse("bearer", writer);
-      await replica.begin(async (tx) => {
-        await tx`SELECT path FROM auth.app_migration_legacy WHERE path = 'bearer' FOR UPDATE`;
-        await recordLegacyAppUse("bearer", contender);
-      });
-      const [after] = await replica<{ at: Date }[]>`SELECT last_used_at AS at FROM auth.app_migration_legacy WHERE path = 'bearer'`;
-      expect(after?.at).toEqual(before?.at);
-    } finally {
-      await writer.close();
-      await contender.close();
     }
   });
   test("a hanging app cannot starve a healthy probe or prevent a JSON status response", async () => {
@@ -308,7 +228,7 @@ suiteFor(
         });
         await next();
       });
-      const response = await routes.request("/status?windowSeconds=86400", { method: "POST" });
+      const response = await routes.request("/status", { method: "POST" });
       expect(response.status).toBe(200);
       const result = AppMigrationStatusSchema.parse(await response.json());
       expect(result.apps.find((app) => app.appId === "hang")?.attentionReasons).toContain(`probe_timeout:${hanging.data.keyId}`);

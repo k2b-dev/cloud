@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse } from "postcss";
 import { appIds } from "../../../../scripts/workspace";
+import { appBarTokens } from "./app-appearance";
 import { appColorStyle, appColorSurfaces, appColors, contrastRatio, mixHex, relativeLuminance } from "./app-color";
 
 type HexColor = `#${string}`;
@@ -217,6 +218,18 @@ describe("app colors", () => {
       expect(resolveColor("var(--k2b-app-workspace-hover)", theme, sidebar), `${theme}/--k2b-app-workspace-hover`).toBe(
         appColorSurfaces[theme].sidebarHover,
       );
+    }
+  });
+
+  test("the app bar's ground colors match the tokens global.css paints them with", () => {
+    for (const theme of themes) {
+      const tokens = appBarTokens[theme];
+      expect(resolveColor("var(--ui-canvas)", theme)).toBe(tokens.canvas);
+      expect(resolveColor("var(--color-zinc-400)", theme)).toBe(tokens.shell);
+      expect(resolveColor("var(--k2b-text)", theme)).toBe(tokens.text);
+      expect(resolveColor("var(--k2b-surface)", theme)).toBe(tokens.surface);
+      // The narrow bar's hover over a ground, here the plain canvas.
+      expect(resolveColor(required(themeTokens[theme], "--ui-hover"), theme)).toBe(mixHex(tokens.hover, tokens.canvas, tokens.hoverShare));
     }
   });
 

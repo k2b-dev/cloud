@@ -34,21 +34,13 @@ const coreOrigin = (): string => {
   return url.origin;
 };
 
-const sendOAuthRequest = (url: URL, init: RequestInit, options: { fetch?: AuthorityFetch; brokerSecret?: string }) =>
+const sendOAuthRequest = (url: URL, init: RequestInit, options: { fetch?: AuthorityFetch }) =>
   sendAppRequest(new Request(url, init), {
     appId: "oauth",
     transport: options.fetch,
-    bearer: () => {
-      const secret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
-      if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret))
-        throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
-      return secret;
-    },
   });
 
-export const probeOAuthTokenAuthority = async (
-  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
-): Promise<void> => {
+export const probeOAuthTokenAuthority = async (options: { fetch?: AuthorityFetch; origin?: string } = {}): Promise<void> => {
   const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/ready", options.origin ?? coreOrigin()),
     {
@@ -65,7 +57,7 @@ export const probeOAuthTokenAuthority = async (
 /** Ask Core to sign one validated, closed OAuth token batch. Deliberately never retries an uncertain request. */
 export const issueOAuthTokenBatch = async (
   statement: OAuthAuthorityStatement,
-  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
+  options: { fetch?: AuthorityFetch; origin?: string } = {},
 ): Promise<string[]> => {
   if (statement.tokens.length < 1 || statement.tokens.length > 2) throw new Error("OAuth authority accepts one or two tokens per batch");
 
@@ -103,7 +95,7 @@ export class OAuthDeviceApprovalUnavailableError extends Error {
 /** Hand one terminal sign-in to Core. An uncertain request is never retried. */
 export const startOAuthDeviceApproval = async (
   request: OAuthDeviceApprovalRequest,
-  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
+  options: { fetch?: AuthorityFetch; origin?: string } = {},
 ): Promise<{ comparison: string; expiresAt: string }> => {
   const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/device-approval", options.origin ?? coreOrigin()),

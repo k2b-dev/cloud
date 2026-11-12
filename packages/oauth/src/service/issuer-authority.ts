@@ -1,6 +1,6 @@
 import { connections, sql } from "@k2b/cloud";
 import type { OAuthAuthorityStatement } from "@k2b/cloud/contracts";
-import { isAccountCategoryAllowed, toPgTextArray } from "@k2b/cloud/services";
+import { isAccountAllowed, toPgTextArray } from "@k2b/cloud/services";
 import type { OAuthUserGrantReference } from "./token-authority";
 
 export type OAuthTokenRequest =
@@ -234,7 +234,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
     row.user_id !== null &&
     (!row.provider ||
       (row.profile !== "guest" && row.profile !== "user") ||
-      !(await isAccountCategoryAllowed({ provider: row.provider, profile: row.profile }, db)))
+      !(await isAccountAllowed({ id: row.user_id, provider: row.provider, profile: row.profile }, db)))
   )
     return null;
   if (row.user_id !== null && row.profile === null) return null;

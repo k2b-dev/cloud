@@ -1315,26 +1315,19 @@ suite("incoming automations", () => {
       idempotencyKey: `mandate-loss-${suffix}`,
       occurredAt: new Date(),
     });
-    const previousCredential = process.env.CLOUD_APP_CREDENTIAL;
-    process.env.CLOUD_APP_CREDENTIAL = "mandate-loss-test-credential";
-    try {
-      const caller = await resolveIncomingAutomationMandateCaller(runId);
-      expect(caller.mandate.callingAppId).toBe("mail");
-      const mandateId = caller.mandate.id;
+    const caller = await resolveIncomingAutomationMandateCaller(runId);
+    expect(caller.mandate.callingAppId).toBe("mail");
+    const mandateId = caller.mandate.id;
 
-      const access = await listMailboxAccess(ownerContext, mailboxId);
-      if (!access.ok) throw new Error(access.error.message);
-      const entry = access.data.find((item) => item.principal.type === "user" && item.principal.userId === row.id);
-      if (!entry) throw new Error("Expected mailbox access entry");
-      const revoked = await revokeMailboxAccess({ context: ownerContext, mailboxId, accessId: entry.id });
-      if (!revoked.ok) throw new Error(revoked.error.message);
+    const access = await listMailboxAccess(ownerContext, mailboxId);
+    if (!access.ok) throw new Error(access.error.message);
+    const entry = access.data.find((item) => item.principal.type === "user" && item.principal.userId === row.id);
+    if (!entry) throw new Error("Expected mailbox access entry");
+    const revoked = await revokeMailboxAccess({ context: ownerContext, mailboxId, accessId: entry.id });
+    if (!revoked.ok) throw new Error(revoked.error.message);
 
-      await expect(resolveIncomingAutomationMandateCaller(runId)).rejects.toMatchObject({ code: "FORBIDDEN" });
-      expect((await mandates.get(mandateId))?.state).toBe("paused");
-    } finally {
-      if (previousCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
-      else process.env.CLOUD_APP_CREDENTIAL = previousCredential;
-    }
+    await expect(resolveIncomingAutomationMandateCaller(runId)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await mandates.get(mandateId))?.state).toBe("paused");
   });
 
   test("lets a shared mailbox admin remove all Spaces effects and disable revoked authority", async () => {

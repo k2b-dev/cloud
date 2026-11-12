@@ -1,11 +1,8 @@
-import { timingSafeEqual } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
-import { env } from "@k2b/cloud/config";
 import { type OAuthAuthorityStatement, OAuthAuthorityStatementSchema, OAuthNewAccessNoticeSchema } from "@k2b/cloud/contracts";
-import { AppApprovalError, isAccountCategoryAllowed, readAppApprovalConfig, toPgTextArray } from "@k2b/cloud/services";
-import { recordLegacyAppUse } from "@k2b/cloud/services/app-migration-evidence";
-import { isAppRequestProof, withActiveIdentitySigner } from "@k2b/cloud/services/identity";
+import { AppApprovalError, isAccountAllowed, readAppApprovalConfig, toPgTextArray } from "@k2b/cloud/services";
+import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import type { Context } from "hono";
@@ -82,7 +79,7 @@ const resolveAuthorityState = async ({
       Number(user.auth_epoch) !== request.subject.authEpoch ||
       (user.profile !== "user" && user.profile !== "guest") ||
       (user.account_expires !== null && user.account_expires.getTime() <= Date.now()) ||
-      !(await isAccountCategoryAllowed(user, db))
+      !(await isAccountAllowed(user, db))
     )
       return null;
     const groups = await db<{ name: string }[]>`WITH RECURSIVE user_all_groups AS (
@@ -179,10 +176,9 @@ const resolveAuthorityState = async ({
 };
 
 type Dependencies = {
-  recordLegacy: typeof recordLegacyAppUse;
   notifyNewAccess: CoreNotificationSender["sendOAuthNewAccess"];
   ownsClient: (clientId: string, appId: string) => Promise<boolean>;
-  authenticate: (token: string | null) => boolean;
+  authenticate: typeof authenticateSignedAppRequest;
   authorize: (c: Context) => Promise<Response | null>;
   withActiveSigner: typeof withActiveIdentitySigner;
   issuer: () => Promise<string>;
@@ -190,32 +186,18 @@ type Dependencies = {
   now: () => number;
 };
 
-export const authenticateOAuthBroker = (token: string | null): boolean => {
-  const secret = env.CLOUD_OAUTH_BROKER_SECRET;
-  // OAuth is optional. Missing or malformed configuration disables its broker.
-  if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
-  return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
-};
-
-/** Signed OAuth calls additionally require the operator-owned oauth:issue key grant. */
+/** Every issuer needs the operator-owned oauth:issue key grant. */
 export const authorizeOAuthRequest = async (
   c: Context,
-  legacyAuthenticate: Dependencies["authenticate"] = authenticateOAuthBroker,
-  recordLegacy = recordLegacyAppUse,
+  authenticate: typeof authenticateSignedAppRequest = authenticateSignedAppRequest,
 ): Promise<Response | null> => {
-  if (isAppRequestProof(c.req.header("authorization"))) {
-    const authenticated = await authenticateSignedAppRequest(c, "oauth:issue");
-    if (authenticated instanceof Response) return authenticated;
-    c.set("oauthIssuerAppId", authenticated.appId);
-    return null;
-  }
-  if (!legacyAuthenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ code: "UNAUTHORIZED" }, 401);
-  await recordLegacy("broker-secret");
+  const authenticated = await authenticate(c, "oauth:issue");
+  if (authenticated instanceof Response) return authenticated;
+  c.set("oauthIssuerAppId", authenticated.appId);
   return null;
 };
 
 const defaultDependencies: Dependencies = {
-  recordLegacy: recordLegacyAppUse,
   notifyNewAccess: async () => {
     throw new Error("New-access notification sender is not configured");
   },
@@ -224,18 +206,12 @@ const defaultDependencies: Dependencies = {
       WHERE client_id=${clientId} AND issuer_app_id=${appId} AND status='active'`;
     return !!client;
   },
-  authenticate: authenticateOAuthBroker,
+  authenticate: authenticateSignedAppRequest,
   authorize: authorizeOAuthRequest,
   withActiveSigner: withActiveIdentitySigner,
   issuer: async () => publicCloudOrigin(await settings.get<string>("app.url")),
   resolve: resolveAuthorityState,
   now: () => Math.floor(Date.now() / 1_000),
-};
-
-export const oauthBrokerBearer = (value: string | undefined): string | null => {
-  if (!value?.startsWith("Bearer ")) return null;
-  const token = value.slice(7).trim();
-  return token || null;
 };
 
 const claims = (
@@ -323,7 +299,7 @@ const sign = async (
 /** Closed authority endpoint shared by built-in and third-party trusted issuers. */
 export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencies> = {}) => {
   const dependencies = { ...defaultDependencies, ...overrides };
-  const authorize = overrides.authorize ?? ((c: Context) => authorizeOAuthRequest(c, dependencies.authenticate, dependencies.recordLegacy));
+  const authorize = overrides.authorize ?? ((c: Context) => authorizeOAuthRequest(c, dependencies.authenticate));
   const routes = new Hono<{ Variables: { oauthIssuerAppId: string } }>();
   routes.post("/oauth/ready", async (c) => {
     c.header("Cache-Control", "no-store");

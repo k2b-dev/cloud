@@ -5,7 +5,7 @@ import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { FileTreeActions } from "../src/content/FileTree";
 import type { FileTreeEntry } from "../src/content/file-tree";
-import type { LightboxImage } from "../src/content/Lightbox";
+import type { LightboxItem } from "../src/content/Lightbox";
 import { createDomTestHarness } from "./dom";
 
 const flush = async (): Promise<void> => {
@@ -503,7 +503,7 @@ describe("@k2b/ui files and media runtime behavior", () => {
     }
   });
 
-  test("uses simple Lightbox navigation buttons and resyncs a reactive image index", async () => {
+  test("Lightbox steps with its edge buttons, follows the caller's index and leads its actions with Open", async () => {
     const dom = createDomTestHarness();
     const dialogPrototype = dom.window.HTMLDialogElement.prototype as typeof dom.window.HTMLDialogElement.prototype & {
       showModal: () => void;
@@ -516,59 +516,73 @@ describe("@k2b/ui files and media runtime behavior", () => {
       this.removeAttribute("open");
     };
     const { default: Lightbox } = await import("../src/content/Lightbox");
-    let setImages: (images: LightboxImage[]) => void = () => {};
-    let setInitialIndex: (index: number | undefined) => void = () => {};
-    const first = { src: "/a.png", alt: "A" };
-    const second = { src: "/b.png", alt: "B" };
-    const third = { src: "/c.png", alt: "C" };
+    let setItems: (items: LightboxItem[]) => void = () => {};
+    let setIndex: (index: number) => void = () => {};
+    const first = { src: "/a.png", name: "A.png" };
+    const second = { src: "/b.png", name: "B.png" };
+    const third = { src: "/c.png", name: "C.png" };
 
     const dispose = render(() => {
-      const [images, updateImages] = createSignal<LightboxImage[]>([first, second, third]);
-      const [initialIndex, updateInitialIndex] = createSignal<number | undefined>(1);
-      setImages = updateImages;
-      setInitialIndex = updateInitialIndex;
+      const [items, updateItems] = createSignal<LightboxItem[]>([first, second, third]);
+      const [index, updateIndex] = createSignal(1);
+      setItems = updateItems;
+      setIndex = updateIndex;
       return createComponent(Lightbox, {
-        get images() {
-          return images();
+        get items() {
+          return items();
         },
-        get initialIndex() {
-          return initialIndex();
+        get index() {
+          return index();
         },
+        onIndexChange: updateIndex,
         onClose: () => {},
       });
     }, dom.root);
     await flush();
 
-    const image = () => dom.root.querySelector<HTMLImageElement>(".k2b-content-lightbox__image");
+    const image = () => dom.root.querySelector<HTMLImageElement>(".k2b-lightbox__image");
+    const edge = (direction: string) => dom.root.querySelector<HTMLButtonElement>(`.k2b-lightbox__edge[data-direction="${direction}"]`)!;
     expect(image()?.src).toEndWith("/b.png");
-    expect(dom.root.querySelector('[role="tablist"], [role="tab"]')).toBeNull();
-    expect(dom.root.querySelector(".k2b-content-lightbox__dots")?.getAttribute("role")).toBe("group");
-    expect(dom.root.querySelectorAll(".k2b-content-lightbox__dot[aria-current='true']")).toHaveLength(1);
+    // No counter: the edge buttons and the strip say where one is.
+    expect(dom.root.textContent).not.toContain("2 / 3");
 
-    setImages([third, first, second]);
-    expect(image()?.src).toEndWith("/b.png");
-    expect(dom.root.querySelector(".k2b-content-lightbox__counter")?.textContent?.trim()).toBe("3 / 3");
-
-    setImages([third]);
+    // The caller owns the index: an index out of range shows the nearest file. Each file resolves its address first.
+    setIndex(99);
+    await flush();
     expect(image()?.src).toEndWith("/c.png");
-    expect(dom.root.querySelector(".k2b-content-lightbox__counter")).toBeNull();
-
-    setImages([first, second, third]);
-    setInitialIndex(99);
-    expect(image()?.src).toEndWith("/c.png");
-    setInitialIndex(-5);
+    expect(edge("next").style.visibility).toBe("hidden");
+    setIndex(-5);
+    await flush();
     expect(image()?.src).toEndWith("/a.png");
+    expect(edge("previous").style.visibility).toBe("hidden");
+    edge("next").click();
+    await flush();
+    expect(image()?.src).toEndWith("/b.png");
 
-    // An image's own actions sit before Download, in the same style, and act on that image only.
+    // A file's own actions sit before Download and act on that file only; Open leads when the caller gives a target.
     const saved: string[] = [];
-    const save = (src: string) => [{ label: "Save to Files", icon: "ti ti-folder-down", onClick: () => saved.push(src) }];
-    setImages([{ ...first, downloadUrl: "/a.png", actions: save("/a.png") }, second]);
-    const buttons = () => [...dom.root.querySelectorAll<HTMLElement>(".k2b-content-lightbox__actions .k2b-content-lightbox__button")];
-    expect(buttons().map((button) => button.getAttribute("aria-label"))).toEqual(["Save to Files", "Download image", "Close lightbox"]);
-    buttons()[0]!.click();
+    const opened: string[] = [];
+    setItems([
+      {
+        ...first,
+        downloadUrl: "/a.png",
+        open: { onOpen: () => opened.push("a") },
+        actions: [{ label: "Save to Files", icon: "ti ti-folder-down", onClick: () => saved.push("/a.png") }],
+      },
+      second,
+    ]);
+    setIndex(0);
+    const labels = () =>
+      [...dom.root.querySelectorAll<HTMLElement>(".k2b-lightbox__actions :is(button, a)")].map(
+        (control) => control.getAttribute("aria-label") ?? control.textContent?.trim(),
+      );
+    expect(labels()).toEqual(["Open", "Save to Files", "Download", "Close"]);
+    dom.root.querySelector<HTMLButtonElement>('.k2b-lightbox__actions [aria-label="Save to Files"]')!.click();
     expect(saved).toEqual(["/a.png"]);
-    dom.root.querySelector<HTMLButtonElement>('.k2b-content-lightbox__nav[data-direction="next"]')!.click();
-    expect(buttons().map((button) => button.getAttribute("aria-label"))).toEqual(["Close lightbox"]);
+    dom.root.querySelector<HTMLButtonElement>(".k2b-lightbox__open")!.click();
+    expect(opened).toEqual(["a"]);
+    edge("next").click();
+    expect(labels()).toEqual(["Close"]);
 
     dispose();
     dom.cleanup();

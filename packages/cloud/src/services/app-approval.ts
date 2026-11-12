@@ -29,7 +29,7 @@ import {
 import { sql } from "../runtime/clients";
 import { addressPrefix } from "../server/request-context/address";
 import { publicCloudOrigin } from "../shared/app-url";
-import { isAccountCategoryAllowed } from "./account-category-policy";
+import { isAccountAllowed } from "./account-category-policy";
 import { appApprovalText } from "./approvals/device";
 import { audit } from "./audit";
 import { countryHistory, findBrowser, trustState } from "./known-browsers";
@@ -448,7 +448,7 @@ export const createAppApprovalService = (
       candidate &&
       ((category !== undefined && accountCategory(candidate) !== category) ||
         (candidate.account_expires && new Date(candidate.account_expires).getTime() <= Date.now()) ||
-        !(await isAccountCategoryAllowed(candidate, tx)))
+        !(await isAccountAllowed(candidate, tx)))
     )
       return undefined;
     if (!candidate) return undefined;

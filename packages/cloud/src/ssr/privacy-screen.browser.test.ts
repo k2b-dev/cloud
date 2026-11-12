@@ -570,18 +570,78 @@ describe("privacy screen", () => {
     }
   });
 
-  test("a tab that opens while the others are covered is covered at once", async () => {
+  test("opening a tab while the others are covered shows every tab again and starts the idle time over", async () => {
+    timer = 30;
+    const first = await open();
+    try {
+      await ready(first.page);
+      await first.page.clock.runFor(31_000);
+      expect(await covered(first.page)).toBe(true);
+      const second = await first.context.newPage();
+      // Marks the page as soon as it covers, from before its first script: the new tab must never cover, not even briefly.
+      await second.addInitScript(() => {
+        new MutationObserver(() => {
+          if (document.documentElement.dataset.cloudPrivacy === "on") document.documentElement.dataset.testCovered = "";
+        }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-cloud-privacy"] });
+      });
+      await second.goto(`${origin}/app/privacy`);
+      await ready(second);
+      await first.page.waitForFunction(() => document.documentElement.dataset.cloudPrivacy !== "on");
+      expect(await covered(second)).toBe(false);
+      expect(await second.evaluate(() => "testCovered" in document.documentElement.dataset)).toBe(false);
+      // Both tabs count the idle time from the opening on; the context's one fake clock drives them both.
+      await second.clock.runFor(25_000);
+      expect(await covered(first.page)).toBe(false);
+      expect(await covered(second)).toBe(false);
+      await second.clock.runFor(6_000);
+      expect(await covered(second)).toBe(true);
+      await first.page.waitForFunction(() => document.documentElement.dataset.cloudPrivacy === "on");
+    } finally {
+      await first.context.close();
+    }
+  });
+
+  test("a tab opened in the background covers with the others and shows everything once the person switches to it", async () => {
     timer = 0;
     const first = await open();
     try {
       await ready(first.page);
       await shortcut(first.page);
       const second = await first.context.newPage();
-      await second.clock.install({ time: START });
+      // A background tab: hidden until the person switches to it.
+      await second.addInitScript(() => {
+        let visible = false;
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (visible ? "visible" : "hidden") });
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => !visible });
+        window.addEventListener("test:show", () => {
+          visible = true;
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+      });
       await second.goto(`${origin}/app/privacy`);
       await second.waitForFunction(() => document.documentElement.dataset.cloudPrivacy === "on");
+      expect(await covered(first.page)).toBe(true);
+      await second.evaluate(() => window.dispatchEvent(new Event("test:show")));
+      expect(await covered(second)).toBe(false);
+      await first.page.waitForFunction(() => document.documentElement.dataset.cloudPrivacy !== "on");
     } finally {
       await first.context.close();
+    }
+  });
+
+  test("a covered page that reloads, as after an update, stays covered; a return from the back-forward cache shows it", async () => {
+    timer = 0;
+    const { context, page } = await open();
+    try {
+      await ready(page);
+      await shortcut(page);
+      await page.reload();
+      await ready(page);
+      expect(await covered(page)).toBe(true);
+      await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+      expect(await covered(page)).toBe(false);
+    } finally {
+      await context.close();
     }
   });
 

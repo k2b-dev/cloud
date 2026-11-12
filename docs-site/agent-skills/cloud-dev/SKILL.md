@@ -61,7 +61,8 @@ An app has no permissions of its own on objects: alone, it reaches objects only 
 - For app-paid capabilities without a person, declare `platformPermissions` and use `appCaller()` from `@k2b/cloud/server` with the enrolled app key; it grants no resource access. Public visitors spend the app allowance: use `rateLimit({ keyBy: "ip" })` and `clientIp(c)` for abuse controls. Read **App capabilities**.
 - An OAuth issuer needs an operator-granted `oauth:issue` app key. Read **OAuth** (`/en/docs/identity/oauth#implement-an-oauth-issuer`) before implementing it: maintain `oauthClients` in the private client transaction, reserve grants in the issuer before sending a closed authority statement, and keep uncertain outcomes consumed. Core owns signing and platform facts; issuers own client policy, single-use grants, finalization and notice retries. No built-in OAuth schema is required by the platform.
 - Durable background work that calls another application stores one revocable
-  mandate for the workload. The platform signs each Core transmission with the app key; legacy workload credentials remain this release. Never store the user's session or personal API key.
+  mandate for the workload. The platform signs each Core transmission with the app key; serving apps require an enrolled key.
+  Never store the user's session or personal API key.
 - Keep transport conversion in handlers and domain rules in the application. Pass `c.req.raw.signal` to costly request work: the gateway cancels the upstream request when the client disconnects. A handler answering more than 10 seconds after the request raises its own idle timeout with `setRequestTimeout(c, seconds)` (at most 240) and restores it once answering; longer work streams or runs as a job.
 - Ship server-side files under `src/assets/` and resolve them with `appAssetPath()` from `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in the bundled image. Import Bun built-ins statically; the minified server
   bundle breaks `await import("bun")`.
@@ -90,7 +91,7 @@ alternative:
 - `@k2b/cloud/workflows` only when work needs a durable, inspectable,
   recoverable process rather than one bounded job.
 
-Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle; create them after startup, not while importing a module. Read **Platform start and connections** (`/en/docs/build/platform-start`).
+Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Keyless scripts and migrations use `initializePlatform({ appId, source: "env" })` with explicit connections; they do not serve HTTP or make signed calls. Explicit connection env still wins per value for third-party apps with existing Bun-global clients. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle; create them after startup, not while importing a module. Read **Platform start and connections** (`/en/docs/build/platform-start`).
 
 Declare Sync handles with `lazySync()`, use them after `app.start()`, start
 workers in lifecycle startup, and drain them before releasing dependencies.

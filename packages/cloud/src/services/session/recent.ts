@@ -1,6 +1,6 @@
 import type { SQL } from "bun";
 import { sql } from "../../runtime/clients";
-import { isAccountCategoryAllowed } from "../account-category-policy";
+import { isAccountAllowed } from "../account-category-policy";
 import { sharedWorkstationIdleSeconds, withinIdleLimit } from "./shared-workstation";
 
 export type EligibleAccount = {
@@ -29,7 +29,7 @@ export const requireEligibleAccount = async (tx: SQL, userId: string, reject: Re
   const [row] = await tx<EligibleAccount[]>`
     SELECT id, uid, display_name, provider, profile, auth_epoch, account_expires FROM auth.users WHERE id = ${userId}::uuid
   `;
-  if (!row || (row.account_expires && new Date(row.account_expires).getTime() <= Date.now()) || !(await isAccountCategoryAllowed(row, tx)))
+  if (!row || (row.account_expires && new Date(row.account_expires).getTime() <= Date.now()) || !(await isAccountAllowed(row, tx)))
     return reject("FORBIDDEN");
   return row;
 };

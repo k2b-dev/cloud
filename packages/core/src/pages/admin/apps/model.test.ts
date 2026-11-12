@@ -51,7 +51,7 @@ test("the address keeps the open app, its column and the routes window; old name
   expect(parseAppsQuery({ app: "mail", view: "traffic", window: "7d" })).toMatchObject({ app: "mail", view: "routes", window: "7d" });
   expect(parseAppsQuery({ app: "Mail!" })).toMatchObject({ app: null, invalidApp: true });
   expect(parseAppsQuery({ view: "keys" })).toMatchObject({ app: null, view: null });
-  expect(parseAppsQuery({ moved: "credentials" }).moved).toBe("credentials");
+  expect(parseAppsQuery({ moved: "credentials" }).moved).toBeNull();
   expect(appsHref({ app: "mail", view: "routes", window: "24h" })).toBe("/admin/apps?app=mail&view=routes");
   expect(appsHref({ app: "mail", view: "routes", window: "1h" })).toBe("/admin/apps?app=mail&view=routes&window=1h");
   expect(appsHref({})).toBe("/admin/apps");

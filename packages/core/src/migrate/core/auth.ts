@@ -303,6 +303,8 @@ export const migrate = async (): Promise<void> => {
     ON auth.user_ipa_data(uid_number)
     WHERE uid_number IS NOT NULL
   `.simple();
+  // When the sync first saw FreeIPA's own account lock (nsaccountlock); NULL while the account is not locked.
+  await sql`ALTER TABLE auth.user_ipa_data ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`.simple();
   console.log("  ✓ auth.user_ipa_data table");
 
   // Committed before remote mutation, retained if the local promotion rolls back.
@@ -842,18 +844,6 @@ export const migrate = async (): Promise<void> => {
   await migrateAppBootstrap();
   await enrollDevelopmentAppKeys(sql);
   console.log("  ✓ auth.service_account_credentials table");
-  await sql`
-    CREATE TABLE IF NOT EXISTS auth.app_workload_instances (
-      app_id TEXT NOT NULL,
-      instance_id TEXT NOT NULL,
-      credential_id UUID NOT NULL UNIQUE REFERENCES auth.service_account_credentials(id) ON DELETE CASCADE,
-      previous_credential_id UUID UNIQUE REFERENCES auth.service_account_credentials(id) ON DELETE SET NULL,
-      PRIMARY KEY (app_id, instance_id)
-    )
-  `.simple();
-
-  await sql`ALTER TABLE auth.app_workload_instances ADD COLUMN IF NOT EXISTS last_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
-
   await sql`
     CREATE TABLE IF NOT EXISTS auth.webauthn_credentials (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

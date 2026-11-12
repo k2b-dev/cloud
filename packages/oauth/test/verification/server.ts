@@ -72,6 +72,8 @@ if (core) {
 } else {
   assert(!process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY, "OAuth must not receive Core's KEK");
   if (current) {
+    const { enrollTestAppKey } = await import("../../../../scripts/fixtures/app-key-fixtures");
+    process.env.CLOUD_APP_KEY = (await enrollTestAppKey(sql, "oauth", ["oauth:issue"])).value;
     const { probeOAuthTokenAuthority } = await import("../../src/service/token-authority");
     await probeOAuthTokenAuthority();
   }

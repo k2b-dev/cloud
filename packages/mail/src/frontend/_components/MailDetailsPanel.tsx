@@ -26,6 +26,7 @@ import {
   formatFileViewSize,
   IconButton,
   IconButtonLink,
+  Lightbox,
   MarkdownView,
   MultiSelectInput,
   openSpotlightSearch,
@@ -53,7 +54,7 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationContext, { type MailContextParts } from "./MailConversationContext";
-import { canPreviewAttachment, downloadUrl, openAttachmentPreview, saveSource } from "./MailMessageAttachments";
+import { attachmentLightboxItem, canPreviewAttachment, downloadUrl, saveSource } from "./MailMessageAttachments";
 import { createRelatedConversations, MailRelatedConversationsView } from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
 import { useMailCloudId } from "./mail-cloud-id";
@@ -864,10 +865,26 @@ export default function MailDetailsPanel(props: {
   const attachmentHref = (file: MailDetailFile) =>
     `/api/mail/mailboxes/${props.mailboxId}/messages/${file.messageId}/attachments/${file.attachment.id}`;
   const fileName = (file: MailDetailFile) => file.attachment.filename ?? t().untitledAttachment;
+  // The conversation's files in the Lightbox, in the order the list shows them, so the arrow keys step through all.
+  const listedFiles = createMemo(() => {
+    if (arrangement() === "messages") return attachmentsByMessage(props.messages).flatMap(({ files }) => files);
+    const files = merged().files;
+    return [...files.filter((file) => !isThumbnailImage(file.attachment)), ...files.filter((file) => isThumbnailImage(file.attachment))];
+  });
+  const [shownFile, setShownFile] = createSignal<number | null>(null);
+  const lightboxItems = createMemo(() =>
+    listedFiles().map((file) => attachmentLightboxItem(file.attachment, attachmentHref(file), locale())),
+  );
+  /** A previewable file opens in the Lightbox; any other one downloads at once, as before. */
   const openFile = (file: MailDetailFile) => {
-    const href = attachmentHref(file);
-    if (canPreviewAttachment(file.attachment)) void openAttachmentPreview(file.attachment, href, `${href}?inline=true`);
-    else downloadUrl(href, fileName(file));
+    if (canPreviewAttachment(file.attachment))
+      setShownFile(
+        Math.max(
+          0,
+          listedFiles().findIndex((listed) => listed.key === file.key && listed.messageId === file.messageId),
+        ),
+      );
+    else downloadUrl(attachmentHref(file), fileName(file));
   };
   const fileMeta = (file: MailDetailFile) =>
     [
@@ -1025,6 +1042,9 @@ export default function MailDetailsPanel(props: {
           )}
           onOpen={openFile}
         />
+      </Show>
+      <Show when={shownFile() !== null && lightboxItems().length > 0}>
+        <Lightbox items={lightboxItems()} index={shownFile() ?? 0} onIndexChange={setShownFile} onClose={() => setShownFile(null)} />
       </Show>
     </Section>
   );

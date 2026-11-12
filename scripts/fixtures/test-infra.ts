@@ -62,7 +62,6 @@ export const initializeTestPlatform = async (appId?: string): Promise<void> => {
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  CLOUD_OAUTH_BROKER_SECRET: "abababababababababababababababababababababababababababababababab",
   CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
   SYNC_REPLICAS: "1",
   NATS_IGNORE_CLUSTER_UPDATES: "true",

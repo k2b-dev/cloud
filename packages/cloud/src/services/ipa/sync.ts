@@ -19,6 +19,40 @@ type LocalIpaRow = DbRow & { uid: string; mail: string | null };
 
 const log = logger("auth:ipa:sync");
 
+/** Preserve database microseconds: a Date can reorder this read before a lock from the same millisecond. */
+const observationStart = async (): Promise<string> =>
+  (await sql<{ now: string }[]>`SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS now`)[0]!.now;
+
+/**
+ * Records that FreeIPA locks an account (nsaccountlock); true when the lock is new. `locked_at` is the latest lock
+ * observation, so a read that started before it never lifts the lock. A new lock signs the account out everywhere
+ * (sessions, user OAuth tokens, phones, sign-in devices) in the same transaction, so lifting it later revives nothing.
+ * Takes the account row first: lock records and transitions of one account run one after another.
+ */
+const recordIpaLock = async (db: typeof sql, userId: string): Promise<boolean> => {
+  await db`SELECT id FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE`;
+  const [previous] = await db<{ locked: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM auth.user_ipa_data WHERE user_id = ${userId}::uuid AND locked_at IS NOT NULL) AS locked
+  `;
+  await db`
+    INSERT INTO auth.user_ipa_data (user_id, locked_at) VALUES (${userId}::uuid, clock_timestamp())
+    ON CONFLICT (user_id) DO UPDATE SET locked_at = EXCLUDED.locked_at
+  `;
+  if (previous?.locked) return false;
+  await session.revokeAllForUserInTransaction(db, userId);
+  return true;
+};
+
+/** True when a lock of the account was observed after `observedAt`: a transition based on that older read must wait. */
+const lockedSince = async (db: typeof sql, userId: string, observedAt: string): Promise<boolean> => {
+  await db`SELECT id FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE`;
+  const [row] = await db<{ locked: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM auth.user_ipa_data WHERE user_id = ${userId}::uuid AND locked_at >= ${observedAt}::timestamptz) AS locked
+  `;
+  return row?.locked === true;
+};
+
+/** Upserts the IPA mirror; true when it records a new lock. An unlocked observation lifts only older locks. */
 const upsertUserIpaData = async (
   db: typeof sql,
   params: {
@@ -38,8 +72,10 @@ const upsertUserIpaData = async (
     mobile: string | null;
     sshPublicKeys: string[];
     sshFingerprints: string[];
+    locked: boolean;
+    observedAt: string;
   },
-) => {
+): Promise<boolean> => {
   await mirrorIpaPosix(db, params);
   await db`
     INSERT INTO auth.user_ipa_data (
@@ -75,8 +111,13 @@ const upsertUserIpaData = async (
       last_login_ipa = EXCLUDED.last_login_ipa,
       synced_at = EXCLUDED.synced_at,
       ssh_public_keys = EXCLUDED.ssh_public_keys,
-      ssh_fingerprints = EXCLUDED.ssh_fingerprints
+      ssh_fingerprints = EXCLUDED.ssh_fingerprints,
+      locked_at = CASE
+        WHEN ${params.locked} OR auth.user_ipa_data.locked_at >= ${params.observedAt}::timestamptz THEN auth.user_ipa_data.locked_at
+        ELSE NULL
+      END
   `;
+  return params.locked && (await recordIpaLock(db, params.userId));
 };
 
 // ==========================
@@ -106,6 +147,8 @@ type SyncUser = {
   mobile: string | null;
   sshPublicKeys: string[];
   sshFingerprints: string[];
+  /** FreeIPA's nsaccountlock: the directory refuses this account. */
+  locked: boolean;
 };
 
 type SyncGroup = {
@@ -155,6 +198,7 @@ const transformSyncUser = (raw: Record<string, unknown>): SyncUser => {
     mobile: freeipa.util.str(raw.mobile) || null,
     sshPublicKeys: Array.isArray(raw.ipasshpubkey) ? raw.ipasshpubkey : [],
     sshFingerprints: Array.isArray(raw.sshpubkeyfp) ? raw.sshpubkeyfp : [],
+    locked: freeipa.util.str(raw.nsaccountlock).toLowerCase() === "true",
   };
 };
 
@@ -218,6 +262,7 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
   });
   await runCheckpoint(true);
 
+  const observedAt = await observationStart();
   const snapshotFetchStartedAt = Date.now();
   const [usersRes, groupsRes] = await Promise.all([
     freeipa.client.call({
@@ -326,10 +371,21 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
     uid: row.uid as string,
     mail: (row.mail as string | null) ?? null,
   }));
+  // A locked account stays a locked FreeIPA account, also when it expired or left sync scope: a transition would
+  // turn it into a local account whose passkeys and API keys work again. It transitions once FreeIPA unlocks it.
+  const remoteLocked = allUsers.filter((user) => user.locked);
+  const lockedUids = new Set(remoteLocked.map((user) => user.uid));
+  const lockedMails = new Set(remoteLocked.flatMap((user) => (user.mail ? [user.mail] : [])));
+  const outOfScopeLocked: LocalIpaRow[] = [];
   const staleLocalUsers = selectStaleLocalIpaRows({
     localRows: localIpaIdentityRows,
     activeRemoteUsers: activeUsers.map((user) => ({ uid: user.uid, mail: user.mail })),
+  }).filter((row) => {
+    if (!lockedUids.has(row.uid) && !(row.mail && lockedMails.has(row.mail))) return true;
+    outOfScopeLocked.push(row);
+    return false;
   });
+  const newlyLocked = new Set<string>();
   const affectedUserIds = new Set(staleLocalUsers.map((row) => row.id as string));
   for (const user of activeUsers) {
     const previousRow = currentRowForRemoteUser(user);
@@ -393,7 +449,8 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
           WHERE mail = ${u.mail} AND provider = 'ipa'
           RETURNING id`;
         if (updated.length > 0) {
-          await upsertUserIpaData(tx, { userId: updated[0]!.id as string, ...u });
+          if (await upsertUserIpaData(tx, { userId: updated[0]!.id as string, ...u, observedAt }))
+            newlyLocked.add(updated[0]!.id as string);
           matchedExistingUsersByMail += 1;
           continue;
         }
@@ -418,7 +475,8 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
               WHERE id = ${localMatches[0]!.id as string}::uuid
               RETURNING id`;
             if (migrated.length > 0) {
-              await upsertUserIpaData(tx, { userId: migrated[0]!.id as string, ...u });
+              if (await upsertUserIpaData(tx, { userId: migrated[0]!.id as string, ...u, observedAt }))
+                newlyLocked.add(migrated[0]!.id as string);
               migratedLocalUsers += 1;
               continue;
             }
@@ -460,7 +518,7 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
           display_name = EXCLUDED.display_name, mail = EXCLUDED.mail,
           account_expires = EXCLUDED.account_expires
         RETURNING id, (xmax = 0) AS inserted`;
-      await upsertUserIpaData(tx, { userId: upserted[0]!.id as string, ...u });
+      if (await upsertUserIpaData(tx, { userId: upserted[0]!.id as string, ...u, observedAt })) newlyLocked.add(upserted[0]!.id as string);
       upsertedUsersByUid += 1;
       if (Boolean(upserted[0]?.inserted)) {
         insertedUsersByUid += 1;
@@ -469,12 +527,19 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
       } else updatedUsersByUid += 1;
     }
 
+    for (const row of outOfScopeLocked) {
+      await runCheckpoint();
+      if (await recordIpaLock(tx, row.id as string)) newlyLocked.add(row.id as string);
+    }
+
     for (let staleIndex = 0; staleIndex < staleLocalUsers.length; staleIndex += 1) {
       await runCheckpoint();
       const stale = staleLocalUsers[staleIndex]!;
       const userId = stale.id as string;
       const uid = stale.uid as string;
       const previousProfile = (stale.profile as "user" | "guest" | null) ?? "guest";
+      // A lock seen after this snapshot keeps the account; the next sync decides with the newer state.
+      if (await lockedSince(tx, userId, observedAt)) continue;
 
       if (transitionPolicy === "delete") {
         await writeDeletedAccountAudit({
@@ -651,6 +716,8 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
     remoteUsersFetched: allRawUsers.length,
     remoteUsersInScope: users.length,
     remoteExpiredUsers: expiredUsers,
+    remoteLockedUsers: remoteLocked.length,
+    newlyLockedUsers: newlyLocked.size,
     activeUsersSynced: activeUsers.length,
     matchedExistingUsersByMail,
     migratedLocalUsers,
@@ -687,6 +754,7 @@ export type SyncUserOutcome =
   | { status: "skipped_disabled" }
   | { status: "fetch_failed"; error: string }
   | { status: "expired"; userId: string | null }
+  | { status: "locked"; userId: string | null }
   | { status: "out_of_scope"; userId: string | null }
   | { status: "not_found_local" };
 
@@ -704,11 +772,14 @@ const reconcileOutOfScopeUser = async (params: {
   previousProfile: "user" | "guest";
   reason: "ipa_expired_demoted" | "ipa_expired_deleted" | "sync_out_of_scope_demoted" | "sync_out_of_scope_deleted";
   meta?: Record<string, unknown>;
+  observedAt: string;
 }): Promise<void> => {
   const transitionPolicy = parseIpaAccountTransitionPolicy(await settings.get<string | null>("freeipa.account_transition_policy"));
 
   await session.revokeAllForUser(params.userId);
   await sql.begin(async (tx) => {
+    // A lock seen after this read keeps the account as a locked FreeIPA account.
+    if (await lockedSince(tx, params.userId, params.observedAt)) return;
     if (transitionPolicy === "delete") {
       await writeDeletedAccountAudit({
         db: tx,
@@ -780,6 +851,7 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
   });
 
   // Fetch user from FreeIPA
+  const observedAt = await observationStart();
   const userRes = await freeipa.client.call({
     url: config.url,
     ipaSession,
@@ -806,10 +878,18 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
   const existingUserId = (existingRow?.id as string | undefined) ?? null;
   const previousProfile: "user" | "guest" = (existingRow?.profile as "user" | "guest" | undefined) ?? "guest";
 
+  // A lock wins over expiry and scope: the account stays a locked FreeIPA account until FreeIPA unlocks it.
+  if (user.locked) {
+    log.warn("User locked in FreeIPA during single-user sync", { username });
+    if (existingUserId) await sql.begin((tx) => recordIpaLock(tx, existingUserId));
+    return { status: "locked", userId: existingUserId };
+  }
+
   if (isExpired(user)) {
     log.warn("User expired during single-user sync", { username });
     if (existingUserId) {
       await reconcileOutOfScopeUser({
+        observedAt,
         userId: existingUserId,
         uid: user.uid,
         mail: (existingRow?.mail as string | null) ?? user.mail,
@@ -861,6 +941,6 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
       account_expires = ${user.ipaAccountExpires}
     WHERE uid = ${user.uid}
   `;
-  await sql.begin((tx) => upsertUserIpaData(tx, { userId: existingUserId, ...user }));
+  await sql.begin((tx) => upsertUserIpaData(tx, { userId: existingUserId, ...user, observedAt }));
   return { status: "synced", userId: existingUserId };
 };

@@ -5,6 +5,7 @@ import type { CapabilityActionPolicy } from "../../contracts/capabilities";
 import { CapabilityAppIdSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { isAccountCategoryAllowed } from "../account-category-policy";
+import { accountLockedSql } from "../account-lock";
 import { audit } from "../audit";
 import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
 import { logger } from "../logging";
@@ -201,6 +202,7 @@ const validSubject = async (subject: MandateSubject, db: SQL): Promise<boolean> 
         SELECT provider, profile FROM auth.users
         WHERE id = ${subject.id}::uuid
           AND (account_expires IS NULL OR account_expires > now())
+          AND NOT ${accountLockedSql(sql`${subject.id}::uuid`)}
     `;
     return !!row && (await isAccountCategoryAllowed(row, db));
   }
@@ -687,6 +689,7 @@ export const validateMandateIssueAuthority = async (
       CASE mandate.subject_kind
         WHEN 'user' THEN user_account.id IS NOT NULL
           AND (user_account.account_expires IS NULL OR user_account.account_expires > now())
+          AND NOT ${accountLockedSql(sql`user_account.id`)}
         WHEN 'service_account' THEN service_account.id IS NOT NULL
           AND service_account.kind IN ('resource_bound', 'standalone', 'agent')
           AND service_account.status = 'active'

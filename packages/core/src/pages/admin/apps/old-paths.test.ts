@@ -1,9 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 
-// The App credentials page moved into each app's keys; its address keeps working and says where the content is now.
+// The retired token-management page has no replacement route.
 // Admission is replaced only inside a child process, so the package's other suites keep the real middleware.
 if (process.env.CORE_OLD_PATHS_CHILD !== "1") {
-  test("the old App credentials address opens the Apps page with its hint", async () => {
+  test("the retired credentials address is absent", async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
       env: { ...process.env, CORE_OLD_PATHS_CHILD: "1" },
       stdout: "pipe",
@@ -22,7 +22,6 @@ if (process.env.CORE_OLD_PATHS_CHILD !== "1") {
   const pages = new Hono().use("*", middleware.runtime()).use("*", middleware.settings()).route("/", createPagesRouter());
   test("redirect", async () => {
     const response = await pages.request("/admin/app-credentials");
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/admin/apps?moved=credentials");
+    expect(response.status).toBe(404);
   });
 }

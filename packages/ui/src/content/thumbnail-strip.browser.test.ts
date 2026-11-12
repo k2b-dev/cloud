@@ -23,8 +23,13 @@ render(() => createComponent(ThumbnailStrip, {
   onSelectItem: (id) => { window.selected.push(id); setCurrent(id); },
   onAddItems: () => window.added++,
 }), document.getElementById("strip"));
-const images = (count) => Array.from({ length: count }, (_, i) => ({ src: tile(i * 40), alt: "Image " + (i + 1) }));
-window.openLightbox = (count) => render(() => createComponent(Lightbox, { images: images(count), onClose: () => {} }), document.getElementById("lightbox"));
+const images = (count) => Array.from({ length: count }, (_, i) => ({ src: tile(i * 40), name: "Image " + (i + 1) + ".svg" }));
+window.openLightbox = (count) => {
+  const [index, setIndex] = createSignal(0);
+  render(() => createComponent(Lightbox, {
+    items: images(count), get index() { return index(); }, onIndexChange: setIndex, onClose: () => {},
+  }), document.getElementById("lightbox"));
+};
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the thumbnail strip fixture for the browser.");
@@ -111,22 +116,22 @@ describe("@k2b/ui ThumbnailStrip", () => {
     }
   });
 
-  test("a gallery shows dots up to three images and the strip from four, whose arrow keys do not switch the image", async () => {
+  test("a Lightbox shows the strip from two files, whose arrow keys move focus without switching the file", async () => {
     const page = await load();
+    const shown = () => page.evaluate(() => document.querySelector<HTMLImageElement>(".k2b-lightbox__image")?.alt ?? null);
     try {
-      await page.evaluate(() => (window as unknown as { openLightbox: (count: number) => void }).openLightbox(3));
-      await page.locator(".k2b-content-lightbox__dots").waitFor();
-      expect(await page.locator(".k2b-content-lightbox .k2b-thumbnail-strip").count()).toBe(0);
+      await page.evaluate(() => (window as unknown as { openLightbox: (count: number) => void }).openLightbox(1));
+      await page.locator(".k2b-lightbox__image").waitFor();
+      expect(await page.locator(".k2b-lightbox .k2b-thumbnail-strip").count()).toBe(0);
       await page.evaluate(() => document.getElementById("lightbox")!.replaceChildren());
       await page.evaluate(() => (window as unknown as { openLightbox: (count: number) => void }).openLightbox(6));
-      await page.locator(".k2b-content-lightbox .k2b-thumbnail-strip").waitFor();
-      expect(await page.locator(".k2b-content-lightbox__dots").count()).toBe(0);
-      await page.locator('.k2b-content-lightbox .k2b-thumbnail-strip__thumb[aria-current="true"]').focus();
+      await page.locator(".k2b-lightbox .k2b-thumbnail-strip").waitFor();
+      await page.locator('.k2b-lightbox .k2b-thumbnail-strip__thumb[aria-current="true"]').focus();
       await page.keyboard.press("ArrowRight");
-      // Focus moved in the strip; the shown image stayed the first.
-      expect(await page.locator(".k2b-content-lightbox__counter").textContent()).toContain("1 / 6");
+      // Focus moved in the strip; the shown file stayed the first.
+      expect(await shown()).toBe("Image 1.svg");
       await page.keyboard.press("Enter");
-      await page.waitForFunction(() => document.querySelector(".k2b-content-lightbox__counter")?.textContent?.includes("2 / 6"));
+      await page.waitForFunction(() => document.querySelector<HTMLImageElement>(".k2b-lightbox__image")?.alt === "Image 2.svg");
     } finally {
       await page.close();
     }

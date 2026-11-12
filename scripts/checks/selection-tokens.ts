@@ -123,36 +123,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Shell frame: owned by shell-soft-white-canvas.",
   },
   {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: "@utility rail-item-active { border }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: "@utility rail-item-active { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".rail-item-active:hover { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".dark .rail-item-active { border-color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".dark .rail-item-active { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/cloud/src/styles/utilities-navigation.css",
-    subject: ".dark .rail-item-active:hover { color }",
-    reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
     file: "packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx",
     subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"',
     reason: "Status: custom value-source badge.",

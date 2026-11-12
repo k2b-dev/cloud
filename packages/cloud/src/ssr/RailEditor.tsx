@@ -17,7 +17,7 @@ import {
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { coreClient } from "../clients/core";
 import { isRailShortcutHref, type RailPreferences, RailPreferencesSchema, type RailShortcut } from "../contracts/rail-preferences";
-import { appIconStyle } from "./app-icon-style";
+import { appTileStyle } from "./app-icon-style";
 import { publishRailPreferences, readRailContext } from "./rail-context";
 import { createRailSaver, type RailEdit, type RailSaveResult, type RailSaver } from "./rail-editor-model";
 import { railMessages } from "./rail-messages";
@@ -77,7 +77,7 @@ const railSaver = (initial: RailPreferences, locale: string) => {
 };
 
 const Tile = (props: { id: string; accent?: string; icon: string }) => (
-  <span class="rail-editor-tile" style={appIconStyle({ id: props.id, accent: props.accent })}>
+  <span class="rail-editor-tile" style={appTileStyle({ id: props.id, accent: props.accent })}>
     <i class={props.icon} aria-hidden="true" />
   </span>
 );

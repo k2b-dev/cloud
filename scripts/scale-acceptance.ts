@@ -64,7 +64,6 @@ export const composeEnvironment = (imageTag: string, run: string): Record<string
   POSTGRES_PASSWORD: randomBytes(24).toString("hex"),
   POSTGRES_DB: `scale_${run}_test`,
   APP_SECRET: randomBytes(32).toString("hex"),
-  CLOUD_OAUTH_BROKER_SECRET: randomBytes(32).toString("hex"),
   CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
   ADMIN_LOGIN_TOKEN: randomBytes(32).toString("hex"),
   SYNC_NAMESPACE: `scale-${run}`,

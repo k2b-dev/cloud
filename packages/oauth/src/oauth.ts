@@ -1,6 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { type AuthContext, auth, jsonResponse, rateLimit, v } from "@k2b/cloud/server";
-import { accounts, get, isAccountCategoryAllowed, logger, oauthTokens } from "@k2b/cloud/services";
+import { accounts, get, isAccountAllowed, logger, oauthTokens } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { getIdentityRuntimeConfig } from "@k2b/cloud/services/identity/runtime-config";
 import * as settings from "@k2b/cloud/services/settings";
@@ -362,7 +362,7 @@ const issueUserGrant = async (
     if (
       !user ||
       isAccountExpired(user.accountExpires) ||
-      !(await isAccountCategoryAllowed(user)) ||
+      !(await isAccountAllowed(user)) ||
       !(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))
     ) {
       return tokenError(c, "access_denied", "User is not allowed to access this client", 403);
@@ -844,7 +844,7 @@ const app = new Hono<AuthContext>()
             if (
               !user ||
               isAccountExpired(user.accountExpires) ||
-              !(await isAccountCategoryAllowed(user)) ||
+              !(await isAccountAllowed(user)) ||
               grant.scopes.some((scope) => !client.scopes.includes(scope)) ||
               !audiencesAllowed ||
               !(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))

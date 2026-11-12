@@ -385,7 +385,7 @@ export async function findMuseums(caller: CapabilityCaller) {
 
 Pass caller authorization or cookie only to Core, plus request locale,
 request ID, and cancellation signal. Durable background work passes its
-revocable mandate and the owning app's workload credential. The shared broker
+revocable mandate and the owning app's signed app-key proof. The shared broker
 preserves identity and mandate limits; never call the provider from an app.
 See [deployment requirements](/en/docs/operations/deployment-requirements#enable-addresses-and-places)
 for operator responsibilities.

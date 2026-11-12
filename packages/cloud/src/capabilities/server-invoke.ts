@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { getProcessApplicationId } from "../_internal/process-identity";
-import { refreshAppWorkloadCredential } from "../_internal/workload-credential";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
 import { env } from "../config/env";
 import {
@@ -202,26 +201,7 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
     const workloadAppId = caller.app?.appId ?? caller.mandate?.callingAppId ?? caller.workload?.appId;
     const send = (request: Request) =>
       workloadAppId ? sendAppRequest(request, { appId: workloadAppId, transport: caller.transport }) : (caller.transport ?? fetch)(request);
-    // Only Core's pre-dispatch legacy rejection is safe to refresh and retry.
-    // A configured app key is never downgraded to a reusable credential.
-    const retryRequest = workloadAppId ? brokerRequest.clone() : undefined;
-    let response = await send(brokerRequest);
-    const credentialRejected = (reply: Response) => reply.status === 401 && reply.headers.get("x-cloud-workload-auth") === "required";
-    if (!caller.app && workloadAppId && retryRequest && !env.CLOUD_APP_KEY && credentialRejected(response)) {
-      await response.body?.cancel();
-      let token: string | undefined;
-      try {
-        token = await refreshAppWorkloadCredential(workloadAppId);
-      } catch {
-        // This rejection happened before dispatch; credential state is retryable unavailability.
-      }
-      if (token) retryRequest.headers.set("authorization", `Bearer ${token}`);
-      response = await send(retryRequest);
-      if (credentialRejected(response)) {
-        await response.body?.cancel();
-        return unavailable(undefined, undefined, caller.locale ?? undefined);
-      }
-    }
+    const response = await send(brokerRequest);
     return readCapabilityResponse(
       response,
       capabilityResultSchema(dataSchema, { consumer: true }),

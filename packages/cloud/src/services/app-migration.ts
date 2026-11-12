@@ -10,10 +10,9 @@ import { sql } from "../runtime/clients";
 import { isDevelopmentPublicKey } from "../runtime/development-keys";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import type { LastRejectedStart } from "./app-keys";
-import { coreEvidenceIssues, readAppMigrationObservation } from "./app-migration-evidence";
 import { signMigrationProbe } from "./identity/invocation-token";
 
-export type MigrationInstance = { appId: string; instanceId: string; hostname: string; bootstrap?: unknown; legacyEvidence?: unknown };
+export type MigrationInstance = { appId: string; instanceId: string; hostname: string; bootstrap?: unknown };
 /** A missing process or an old producer cannot prove completion. Check every replica. */
 export const evaluateAppMigration = (input: {
   activeKeys: { appId: string; keyId: string }[];
@@ -22,17 +21,9 @@ export const evaluateAppMigration = (input: {
   expect: string[];
   allowEnv: string[];
   probes?: (AppMigrationStatus["apps"][number]["probes"][number] & { appId: string })[];
-  observation?: AppMigrationStatus["observation"];
   rejections?: { appId: string; lastRejectedStart: LastRejectedStart }[];
   registryIssues?: { key: string; reason: string }[];
 }): AppMigrationStatus => {
-  const observation = input.observation ?? {
-    startedAt: null,
-    lastLegacyUseAt: null,
-    observedAt: new Date(0).toISOString(),
-    windowSeconds: null,
-    complete: false,
-  };
   const keyedApps = [...new Set(input.activeKeys.map((key) => key.appId))];
   const ids = new Set([...keyedApps, ...input.registeredApps, ...input.instances.map((i) => i.appId), ...input.expect]);
   ids.delete("core");
@@ -45,7 +36,7 @@ export const evaluateAppMigration = (input: {
         const parsed = AppBootstrapMetadataSchema.safeParse(i.bootstrap);
         const bootstrap = parsed.success ? parsed.data : null;
         const status =
-          !bootstrap || (bootstrap.mode === "core" && !input.activeKeys.some((key) => key.appId === appId && key.keyId === bootstrap.keyId))
+          !bootstrap || bootstrap.mode !== "core" || !input.activeKeys.some((key) => key.appId === appId && key.keyId === bootstrap.keyId)
             ? "unknown"
             : bootstrap.mode === "core" &&
                 Object.values(bootstrap.sources).every((group) => Object.values(group).every((s) => s === "core"))
@@ -91,7 +82,6 @@ export const evaluateAppMigration = (input: {
         ? ["signed_probe_incomplete"]
         : []),
       ...probes.flatMap((probe) => (probe.reason ? [`${probe.reason}:${probe.keyId}`] : [])),
-      ...(!observation.complete ? ["legacy_observation_incomplete"] : []),
       ...(lastRejectedStart ? ["last_rejected_start"] : []),
     ];
     return {
@@ -110,10 +100,9 @@ export const evaluateAppMigration = (input: {
       instances,
     };
   });
-  const registryIssues = [...(input.registryIssues ?? []), ...coreEvidenceIssues(input.instances)];
+  const registryIssues = input.registryIssues ?? [];
   return {
-    observation,
-    needsAttention: !observation.complete || registryIssues.length > 0 || apps.length === 0 || apps.some((a) => a.needsAttention),
+    needsAttention: registryIssues.length > 0 || apps.length === 0 || apps.some((a) => a.needsAttention),
     registryIssues,
     apps,
   };
@@ -134,7 +123,6 @@ export const readAppMigrationStatus = async (input: {
   actor: Pick<User, "roles">;
   expect: string[];
   allowEnv: string[];
-  windowSeconds?: number;
   signal?: AbortSignal;
 }) => {
   if (!input.actor.roles.includes("admin")) return fail(err.forbidden("Administrator access required"));
@@ -150,7 +138,6 @@ export const readAppMigrationStatus = async (input: {
     instanceId: z.string().min(1),
     hostname: z.string(),
     bootstrap: z.unknown().optional(),
-    legacyEvidence: z.unknown().optional(),
   });
   for (const entry of instances.entries) {
     const parsed = instanceSchema.safeParse(entry.value);
@@ -213,7 +200,6 @@ export const readAppMigrationStatus = async (input: {
       registeredApps: registry.apps.map((a) => a.id),
       instances: validInstances,
       registryIssues,
-      observation: await readAppMigrationObservation(input.windowSeconds),
       probes: liveKeys.map((key, index) => {
         const result = results[index];
         return result?.status === "fulfilled"
@@ -235,4 +221,12 @@ export const readAppMigrationStatus = async (input: {
       })),
     }),
   );
+};
+
+export const recordAppMigrationProbe = async (
+  input: { keyId: string; scope: "identity:invoke" | "oauth:issue"; nonce: string },
+  db: SQL = sql,
+): Promise<void> => {
+  await db`INSERT INTO auth.app_migration_probes (key_id, scope, nonce) VALUES (${input.keyId}::uuid, ${input.scope}, ${input.nonce}::uuid)
+    ON CONFLICT (key_id, scope) DO UPDATE SET nonce = EXCLUDED.nonce`;
 };

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { connections, sql } from "@k2b/cloud";
 import { OAuthNewAccessNoticeSchema } from "@k2b/cloud/contracts";
-import { toPgTextArray } from "@k2b/cloud/services";
+import { isAccountCategoryAllowed, toPgTextArray } from "@k2b/cloud/services";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../../../core/src/migrate/core/app-approval";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
@@ -98,6 +98,16 @@ databaseSuite()("OAuth issuer owns policy, reservations and notices", () => {
       expect((await sql`SELECT authority_issued_at FROM oauth.codes WHERE code=${f.code}`)[0].authority_issued_at).toBeNull();
     },
   );
+  test("refuses a blocked account while its category remains allowed", async () => {
+    const f = await fixture();
+    await sql`UPDATE auth.users SET provider='ipa' WHERE id=${f.userId}::uuid`;
+    await sql`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES (${f.userId}::uuid,now())`;
+    expect(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" })).toBe(true);
+    await expect(stage(f.grant)).rejects.toBeInstanceOf(InvalidIssuerAuthorityError);
+    expect((await sql`SELECT authority_issued_at FROM oauth.codes WHERE code=${f.code}`)[0].authority_issued_at).toBeNull();
+    await sql`UPDATE auth.user_ipa_data SET locked_at=NULL WHERE user_id=${f.userId}::uuid`;
+    expect((await stage(f.grant)).statement.subject).toEqual({ kind: "user", userId: f.userId, authEpoch: 7 });
+  });
   test("specific access follows the current explicit user grant", async () => {
     const f = await fixture();
     await sql`UPDATE oauth.clients SET access_mode='specific' WHERE client_id=${f.clientId}`;

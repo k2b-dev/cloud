@@ -509,6 +509,8 @@ User access tokens carry an `auth_epoch` claim matching the account's current
 authentication epoch. Applications and `/oauth/userinfo` check it on every
 request; tokens with a missing or invalid claim, or a different epoch, are
 rejected. ID tokens and client-credentials tokens do not carry this claim.
+An account locked by FreeIPA cannot obtain or use OAuth user tokens, even when
+its account category remains enabled.
 
 Signing an account out everywhere ends its OAuth sign-ins: refresh families,
 authorization codes and device codes approved but not yet redeemed (in the
@@ -531,7 +533,7 @@ Core signs OAuth tokens. The OAuth application owns the public protocol,
 clients, consent, authorization codes, refresh grants and discovery. An issuer
 calls Core with its enrolled app key and the operator-granted `oauth:issue`
 permission; see [App keys](/en/docs/operations/app-keys#background-and-oauth-authority).
-If the signer is unavailable, OAuth cannot start or issue tokens.
+If the signer or app key is unavailable, OAuth cannot start or issue tokens.
 
 A rejected grant returns `invalid_grant`. An uncertain issuance outcome returns
 `server_error` and is not retried automatically. A complete Core error response

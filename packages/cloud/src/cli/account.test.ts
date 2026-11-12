@@ -6,7 +6,7 @@ function fixture(
   args: string[],
   flags: CloudCliFlags = {},
   output: CloudCliOutputMode = "text",
-  options: { createdAccess?: "full" | "models"; revokeFails?: boolean; creationCode?: string } = {},
+  options: { createdAccess?: "full" | "models"; revokeFails?: boolean; creationCode?: string; profileCode?: string; user?: unknown } = {},
 ) {
   const lines: string[] = [];
   const tables: Record<string, unknown>[][] = [];
@@ -28,6 +28,8 @@ function fixture(
       const body: unknown = init?.body ? JSON.parse(String(init.body)) : undefined;
       calls.push({ path: String(path), method: init?.method ?? "GET", body });
       if (init?.method === "POST" && options.creationCode) return Response.json({ code: options.creationCode }, { status: 403 });
+      if (init?.method === "PATCH" && options.profileCode) return Response.json({ code: options.profileCode }, { status: 403 });
+      if (!init?.method && String(path) === "/api/me" && options.user) return Response.json(options.user);
       if (init?.method === "DELETE") return Response.json({ message: "Revoked." }, { status: options.revokeFails ? 500 : 200 });
       const access = options.createdAccess ?? flags.access ?? "full";
       return Response.json(
@@ -112,6 +114,17 @@ describe("account API key access", () => {
 });
 
 for (const code of ["BROWSER_SIGN_IN_REQUIRED", "REAUTHENTICATE"]) {
+  test(`changing SSH keys explains ${code} without retrying`, async () => {
+    const user = { ipa: { sshPublicKeys: [] } };
+    const f = fixture(["ssh-keys", "add", "ssh-ed25519", "AAAAC3Nza"], {}, "text", { profileCode: code, user });
+    await expect(account.run(f.ctx)).rejects.toThrow(
+      code === "BROWSER_SIGN_IN_REQUIRED"
+        ? "Change SSH keys in the browser: http://cloud.test/me"
+        : "Sign in again in the browser, then change the SSH keys: http://cloud.test/me",
+    );
+    expect(f.calls.map((call) => call.method)).toEqual(["GET", "PATCH"]);
+    expect(f.lines).toHaveLength(0);
+  });
   test(`API key creation explains ${code} without retrying`, async () => {
     const f = fixture(["api-keys", "create", "Client"], {}, "text", { creationCode: code });
     await expect(account.run(f.ctx)).rejects.toThrow(

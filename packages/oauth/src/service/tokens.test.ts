@@ -1,20 +1,17 @@
-import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { createMcpRoutes } from "@k2b/cloud/api";
-import { formatAppKey } from "@k2b/cloud/app-key";
 import { OAuthAuthorityStatementSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
-import { appKeys } from "@k2b/cloud/services/app-keys";
 import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
 import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
 import { Hono } from "hono";
 import * as jose from "jose";
-import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
-import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import adminApiRoutes from "../api";
 import { type OAuthAllowedProfile, type OAuthClient, type OAuthScope, OAuthScopeSchema } from "../contracts";
@@ -36,37 +33,6 @@ const withFrozenTime = async (run: () => Promise<void>) => {
 };
 
 const suite = databaseSuite();
-
-// Exercise Core's real signed issuer admission; a broker secret has no issuer identity.
-const previousAppKey = process.env.CLOUD_APP_KEY;
-let issuerOperatorId: string | undefined;
-let issuerKeyId: string | undefined;
-beforeAll(async () => {
-  if (!testInfra.database || !testInfra.nats) return;
-  issuerOperatorId = crypto.randomUUID();
-  await sql`INSERT INTO auth.users(id,uid,provider,profile,admin)
-    VALUES (${issuerOperatorId}::uuid,${`oauth-issuer-operator-${issuerOperatorId}`},'local','user',true)`;
-  const enrolled = await appKeys.register({
-    actor: { id: issuerOperatorId, uid: `oauth-issuer-operator-${issuerOperatorId}`, provider: "local", roles: ["admin"] },
-    appId: "oauth",
-    publicKey: APP_KEY_FIXTURES[2].publicKey,
-    grants: ["oauth:issue"],
-  });
-  if (!enrolled.ok) throw new Error(enrolled.error.message);
-  issuerKeyId = enrolled.data.keyId;
-  process.env.CLOUD_APP_KEY = formatAppKey({
-    appId: "oauth",
-    keyId: issuerKeyId,
-    installationId: enrolled.data.installationId,
-    seed: APP_KEY_FIXTURES[2].seed,
-  });
-});
-afterAll(async () => {
-  if (previousAppKey === undefined) delete process.env.CLOUD_APP_KEY;
-  else process.env.CLOUD_APP_KEY = previousAppKey;
-  if (issuerKeyId) await sql`DELETE FROM auth.service_account_credentials WHERE id=${issuerKeyId}::uuid`;
-  if (issuerOperatorId) await sql`DELETE FROM auth.users WHERE id=${issuerOperatorId}::uuid`;
-});
 
 const insertUser = async (options: { admin?: boolean } = {}) => {
   const suffix = crypto.randomUUID();
@@ -1544,7 +1510,6 @@ suite("OAuth resource access tokens", () => {
 
   test("preserves public authority errors while releasing refresh attempts proven unclaimed", async () => {
     const userId = await insertUser();
-    const originalCredential = process.env.CLOUD_OAUTH_BROKER_SECRET;
     const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     const originalFetch = globalThis.fetch;
     let clientId: string | null = null;
@@ -1566,7 +1531,6 @@ suite("OAuth resource access tokens", () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
       clientId = created.data.id;
-      process.env.CLOUD_OAUTH_BROKER_SECRET = "abababababababababababababababababababababababababababababababab";
       process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
       let authorityCalls = 0;
       globalThis.fetch = Object.assign(
@@ -1656,8 +1620,6 @@ suite("OAuth resource access tokens", () => {
       expect(unclaimedFamily?.status).toBe("revoked");
     } finally {
       globalThis.fetch = originalFetch;
-      if (originalCredential === undefined) delete process.env.CLOUD_OAUTH_BROKER_SECRET;
-      else process.env.CLOUD_OAUTH_BROKER_SECRET = originalCredential;
       if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
       else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalCoreOrigin;
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;

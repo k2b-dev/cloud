@@ -172,6 +172,8 @@ const mailListScope = (href: string): string => {
   url.searchParams.delete("conversation");
   url.searchParams.delete("message");
   url.searchParams.delete("cursor");
+  // The open draft belongs to the reader, like the open conversation.
+  url.searchParams.delete("draft");
   return `${url.pathname}${url.search}`;
 };
 
@@ -512,9 +514,12 @@ function createMailboxController(props: MailboxControllerProps) {
     const { href, listMode } = decodeRouteSource(source);
     const url = mailRouteUrl(href);
     if (url.searchParams.has("message")) return source;
-    // A starting cursor is part of the list; the mailing list parameter only opens the subscription dialog.
+    // A starting cursor is part of the list; the mailing list parameter only opens the subscription dialog, and the
+    // open draft belongs to the reader. A draft that opens or closes keeps the list, so a later reload of page 1 commits
+    // the route with the draft instead of closing it.
     url.searchParams.delete("conversation");
     url.searchParams.delete("mailingList");
+    url.searchParams.delete("draft");
     return JSON.stringify({ list: `${url.pathname}${url.search}`, listMode });
   };
   const sameRouteList = (left: string, right: string) => left === right || routeListKey(left) === routeListKey(right);

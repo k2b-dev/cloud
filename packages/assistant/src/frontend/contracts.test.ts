@@ -73,7 +73,7 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain("<AppWorkspace.Detail");
     expect(context).toContain("AssistantChatContextContent");
     expect(context).toContain("openAssistantContextFiles");
-    expect(context).toContain("loadAssistantContextImages");
+    expect(context).toContain("assistantFileLightboxItem");
     expect(context).toContain("openAssistantKnowledgeSearch");
     expect(context).not.toContain("AssistantChatDetailPanel");
     expect(context).not.toContain("IconButton");

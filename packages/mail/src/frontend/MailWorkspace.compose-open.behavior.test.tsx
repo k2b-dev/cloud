@@ -234,8 +234,21 @@ class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
+  static instances: FakeWebSocket[] = [];
   readyState = FakeWebSocket.CONNECTING;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  constructor() {
+    FakeWebSocket.instances.push(this);
+  }
   send() {}
+  open() {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.();
+  }
+  message(frame: unknown) {
+    this.onmessage?.({ data: JSON.stringify(frame) });
+  }
   close() {
     this.readyState = FakeWebSocket.CLOSED;
   }
@@ -279,6 +292,7 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
     document.documentElement.lang = "en";
     Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+    FakeWebSocket.instances = [];
     Reflect.set(globalThis, "WebSocket", FakeWebSocket);
     dom.window.history.replaceState(null, "", path);
     navigation = navigationSpies();
@@ -309,6 +323,8 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
         if (url.pathname.endsWith("/compose-signature-defaults")) return Response.json([]);
         if (url.pathname.endsWith("/sender-identities")) return Response.json(identities);
         if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
+        // A live refresh reloads page 1; the server ignores the reader's `draft`.
+        if (url.pathname === "/api/mail/mailboxes/Box001/workspace-route") return Response.json({ ...data, identities });
         throw new Error(`Unexpected fetch: ${request.method} ${url.pathname}`);
       },
       { preconnect: originalFetch.preconnect },
@@ -418,6 +434,24 @@ describe.skipIf(isServer)("mailbox compose opens one new message", () => {
     expect(navigation.document).not.toHaveBeenCalled();
     responseGate.resolve(Response.json(seed));
     await expectNewMessage();
+  });
+
+  test("a4 the live refresh that follows the new draft keeps the new message open", async () => {
+    mount();
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    composeLink().click();
+    await expectNewMessage();
+    await waitFor(() => dom.root.querySelector("[data-mail-new-message]") !== null);
+    // Creating the draft is a change of the mailbox: its live event reloads page 1 of the list.
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: null } });
+    await waitFor(() => requests.some((request) => request.path.endsWith("/workspace-route")));
+    await dom.window.happyDOM.waitUntilComplete();
+    await Bun.sleep(20);
+    expect(dom.root.querySelector("[data-mail-new-message]")).not.toBeNull();
+    expect(dom.root.querySelector("[data-mail-new-message-row]")).not.toBeNull();
+    expect(new URL(window.location.href).searchParams.get("draft")).toBe("Drf0New1");
   });
 
   test("a3 mail.compose retains its shortcut and opens one new message", async () => {

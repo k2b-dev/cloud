@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Layout and navigation
@@ -38,7 +38,7 @@ when people navigate.
 | Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card down to the screen's bottom edge | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
 | 768 to 1023 px (tablets) | No header. A 60 px app bar in a rounded gradient container sits beside the app card. Both have 20 px corners, 8 px spacing to the window edges, and 8 px between them | The same header controls; header, content, and footer as cards on the app background |
 | From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
-| From 1680 px | As from 1024 px, but the app bar shows each entry's name beside its icon and is 216 px wide, unless the person turned names off | As from 1024 px |
+| From 1680 px | As from 1024 px, but the app bar shows each entry's name beside its icon and is 208 px wide, unless the person turned names off | As from 1024 px |
 
 Where the app area is a card, the outermost workspace is that card. It has
 rounded corners and the card's frame, also when it is `flat`. Render that
@@ -52,21 +52,27 @@ workspace paints past the card's corners.
 
 From 768 px the app bar holds Home, the apps, the app grid, the panel button
 when more than one panel is offered, search, help, and the profile avatar. Its
-controls are 44 px targets. The panel button, search, and help are blue; the
-panel button's arrow and name say whether a click opens or closes the panel,
-and an open panel keeps its fill. From 768 to 1023 px the app bar's container carries the app
+controls are 44 px targets. Each app's icon carries its app's color, held at
+3:1 on the app background (see
+[Set the application appearance](/en/docs/build/define-app#set-the-application-appearance));
+names, counts, and the bar's own controls stay neutral. From 1024 px the open
+app has the tinted fill of a selected sidebar row, without an edge, with its
+icon in the app ink. The panel button's arrow and name say whether a click
+opens or closes the panel, and an open panel keeps a blue fill. From 768 to 1023 px the app bar's container carries the app
 gradient on a neutral canvas. The selected app has a surface background, and
 there is no separator between shortcuts and apps. Announcements and account
 notices above the app are cards with the same 8 px spacing.
 
 From 1680 px the app bar shows names: the installation's name beside the logo,
 each app, shortcut, and the app grid with its name, search with its shortcut,
-help, and the person's name beside the avatar. Rows are 40 px high and stay on
-the app background without a surface, edge, or shadow; icons keep their
-column, so turning names on moves no icon. A name too long for the row ends in
-an ellipsis, and the entry's hint shows it in full. Entries show their hint
-only while their name is hidden or cut off. A count stands at the end of its
-row. The width follows the window alone; the person's setting only allows it
+help, and the person's name beside the avatar. Rows take the measures of a
+sidebar row: 32 px high, 15 px icons, and 13 px names in the regular weight,
+the open app's name semibold. They stay on the app background without a
+surface, edge, or shadow; icons keep their column, so turning names on moves
+no icon. A name too long for the row ends in an ellipsis, and the entry's hint
+shows it in full. Entries show their hint only while their name is hidden or
+cut off. A count stands at the end of its row as the sidebar's quiet number
+on a light ground. The width follows the window alone; the person's setting only allows it
 (see [Personalize the app bar](#personalize-the-app-bar)). The server renders
 the setting, so the first frame already has the final width. Hiding the
 sidebar hides the wide app bar as it hides the narrow one.
@@ -155,6 +161,13 @@ While it is on:
   are used up. Mouse movement, scrolling, right and middle clicks only light up
   the hint. Modifier keys, Tab and IME composition do not lift it.
 - All Cloud tabs of the browser cover and show together and share the idle time.
+- Opening or loading a Cloud page counts as input, like a click: that page
+  never covers on arrival, every other tab shows its content again, and the
+  idle time starts over. A tab opened in the background or a prerendered page
+  counts once the person sees it; until then it covers with the other tabs.
+  A return with Back from the back-forward cache counts too. A covered page
+  that reloads stays covered, because the reload may be automatic, such as
+  after an update.
 - The shared workstation's sign-out warning always comes first: while it is
   open the privacy screen neither starts nor lifts, and its **Continue
   working** also lifts the privacy screen.
@@ -180,8 +193,7 @@ again. Keep islands small: everything inside one stays readable. A `blur` part
 also leaves the accessibility tree, so put a live region that names content
 inside it. An element with text of its own beside an island covers whole,
 the island included, because loose text cannot blur alone. Open dialogs and
-popovers cover too, also in pop-out pages without the app bar, and a tab that
-opens while the others are covered starts covered.
+popovers cover too, also in pop-out pages without the app bar.
 
 ## Render the application layout
 

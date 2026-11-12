@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { OAuthAuthorityStatement } from "@k2b/cloud/contracts";
+import { isAccountCategoryAllowed } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { decodeJwt, generateKeyPair, jwtVerify } from "jose";
@@ -80,6 +81,26 @@ const setup = (overrides: Parameters<typeof createIdentityOAuthIssuanceRoutes>[0
   });
 
 describe("Core closed OAuth issuer contract", () => {
+  test("rejects former broker and workload bearers before signer or grant access", async () => {
+    let signerCalls = 0;
+    const routes = createIdentityOAuthIssuanceRoutes({
+      withActiveSigner: async () => {
+        signerCalls++;
+        throw new Error("Unexpected signer access");
+      },
+      resolve: async () => {
+        throw new Error("Unauthorized request reached grant resolution");
+      },
+    });
+    for (const authorization of [undefined, "Bearer ", "Bearer invalid", `Bearer ${"ab".repeat(32)}`, "Bearer cld_old_workload_token"]) {
+      for (const path of ["/oauth/ready", "/oauth/token", "/oauth/new-access"]) {
+        const response = await routes.request(path, { method: "POST", headers: authorization ? { authorization } : {}, body: "not JSON" });
+        expect(response.status).toBe(401);
+      }
+    }
+    expect(signerCalls).toBe(0);
+  });
+
   test("authenticates before parsing, resolving or using the signer", async () => {
     let calls = 0;
     const routes = setup({
@@ -97,6 +118,42 @@ describe("Core closed OAuth issuer contract", () => {
       expect((await routes.request(path, { method: "POST", body: "not JSON" })).status).toBe(401);
     }
     expect(calls).toBe(0);
+  });
+  test("signed admission retains the authenticated issuer for token and notice ownership", async () => {
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: async (_c, scope) => {
+        expect(scope).toBe("oauth:issue");
+        return { appId: "third-party-issuer", keyId: USER_ID, serviceAccountId: USER_ID, credentialId: USER_ID, scope: "identity:invoke" };
+      },
+      issuer: async () => issuer,
+      withActiveSigner: signer,
+      now: () => NOW / 1000,
+      resolve: async ({ appId }) => {
+        expect(appId).toBe("third-party-issuer");
+        return authorityState();
+      },
+      ownsClient: async (_clientId, appId) => {
+        expect(appId).toBe("third-party-issuer");
+        return true;
+      },
+      notifyNewAccess: async () => {},
+    });
+    expect((await request(routes, statement())).status).toBe(200);
+    expect(
+      (
+        await request(
+          routes,
+          {
+            familyId: USER_ID,
+            userId: USER_ID,
+            clientId: "test-client",
+            clientName: "Test client",
+            createdAt: new Date(NOW).toISOString(),
+          },
+          "/oauth/new-access",
+        )
+      ).status,
+    ).toBe(204);
   });
   test("keeps the authenticated third-party issuer and derives current JWT claims", async () => {
     const response = await request(setup(), statement());
@@ -292,6 +349,19 @@ databaseSuite()("Core platform facts for OAuth issuers", () => {
     } finally {
       if (saved) await sql`UPDATE settings.entries SET value=${saved.value} WHERE key='user.category.login.enabled'`;
       else await sql`DELETE FROM settings.entries WHERE key='user.category.login.enabled'`;
+    }
+  });
+  test("refuses a blocked account while its category remains allowed", async () => {
+    await sql`UPDATE auth.users SET provider='ipa' WHERE id=${userId}::uuid`;
+    await sql`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES (${userId}::uuid,now())`;
+    try {
+      expect(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" })).toBe(true);
+      expect((await request(liveRoutes(), liveStatement())).status).toBe(403);
+      await sql`UPDATE auth.user_ipa_data SET locked_at=NULL WHERE user_id=${userId}::uuid`;
+      expect((await request(liveRoutes(), liveStatement())).status).toBe(200);
+    } finally {
+      await sql`DELETE FROM auth.user_ipa_data WHERE user_id=${userId}::uuid`;
+      await sql`UPDATE auth.users SET provider='local' WHERE id=${userId}::uuid`;
     }
   });
   test("allows user tokens for a client also bound to a service account", async () => {
