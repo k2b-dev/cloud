@@ -22,8 +22,7 @@ import {
   updateCodeChatDraft,
 } from "./chat-drafts";
 import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
-
-import { readCode } from "./store";
+import { codeAuthor, readCode } from "./store";
 
 type ServerTool = Extract<AiRuntimeTool, { location: "server" }>;
 type ChatContext = Omit<Parameters<ServerTool["run"]>[1], "reportResult">;
@@ -41,6 +40,7 @@ export function createCodeAuthoringChatTools() {
       store: aiConversations,
     });
     const result: CodeContext = { authority, locale: context.locale, signal: context.signal, requestId: context.callId };
+    codeAuthor(result);
     if (codeId) await requireCodePermission((await readCode(codeId, result)).code, result, true);
     return result;
   }

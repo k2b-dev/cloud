@@ -1,9 +1,12 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import { codeTestFailure } from "@k2b/cloud/code";
+import { UserSchema } from "@k2b/cloud/contracts";
+import { auth } from "@k2b/cloud/server";
+import { createCodeAuthoringRoutes } from "../api/code-authoring";
 import type { CodeAuthoringData, CodeProject } from "../code/authoring-contracts";
 import type { Code } from "../code/contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
@@ -89,7 +92,7 @@ function context(
   args: string[],
   flags: CloudCliFlags = {},
   output: CloudCliOutputMode = "json",
-  respond: (path: string, input: Record<string, unknown>) => Response = () => Response.json(checked),
+  respond: (path: string, input: Record<string, unknown>) => Response | Promise<Response> = () => Response.json(checked),
 ) {
   const printed: unknown[] = [],
     errors: string[] = [],
@@ -1076,6 +1079,69 @@ test("human runs keep the command identifier beside a reviewed title and JSON pr
   const machine = context(["runs", directory], {}, "json", () => Response.json(data));
   expect(await code.run(machine.ctx)).toBe(0);
   expect(machine.printed).toEqual([data]);
+});
+
+test.each(["init", "submit"])("CLI %s preserves the HTTP guest refusal and local files", async (command) => {
+  const { root, directory } = await project();
+  const user = UserSchema.parse({
+    id: uuid,
+    uid: "guest",
+    provider: "local",
+    profile: "guest",
+    roles: ["guest"],
+    displayName: "Guest",
+    givenname: "Guest",
+    sn: "Fixture",
+    mail: null,
+    avatarHash: null,
+    ipa: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+  });
+  const role = spyOn(auth, "requireRole").mockReturnValue(async (_c, next) => next());
+  const scope = spyOn(auth, "requireOAuthScope").mockReturnValue(async (_c, next) => next());
+  const authority = spyOn(auth, "getAuthority").mockReturnValue({
+    actor: { kind: "user", user },
+    accessSubject: { type: "user", userId: uuid },
+    credentialKind: "session",
+    scopes: [],
+  });
+  try {
+    const routes = createCodeAuthoringRoutes();
+    const run = context(
+      command === "init" ? ["init"] : ["submit", directory],
+      command === "init" ? { title: "Guest Code", out: join(root, "guest") } : {},
+      "json",
+      (_path, input) =>
+        routes.request(`/${command}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-cloud-locale": "de" },
+          body: JSON.stringify(input),
+        }),
+    );
+    expect(await code.run(run.ctx)).toBe(1);
+    expect(run.printed).toEqual([
+      {
+        version: 1,
+        error: {
+          code: "code_guests_cannot_author",
+          message: "Gäste können keinen Code erstellen oder Versionen einreichen. Bitte wende dich an ein Cloud-Mitglied.",
+          details: null,
+        },
+      },
+    ]);
+    expect((await loadCodeProject(directory)).config.baseVersionId).toBe(uuid);
+    expect(await readFile(join(directory, "code.ts"), "utf8")).toBe(source);
+    expect((await readdir(root)).includes("guest")).toBe(false);
+  } finally {
+    role.mockRestore();
+    scope.mockRestore();
+    authority.mockRestore();
+  }
 });
 
 test("db export streams SQLite to a new private file and reports its size", async () => {

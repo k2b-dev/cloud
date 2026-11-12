@@ -1588,6 +1588,7 @@ for (const width of [1440, 390])
       expect(await sourceView.innerText()).toContain("code.ts · Zeile 6");
       // The file name carries the AI colour while it is written.
       const title = sourceView.locator(".k2b-content-code-display__title");
+      await settled(page, ".ai-turn-work");
       expect(await title.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(142, 27, 111)");
       await emit(page, { ...base, seq: 3, type: "block_set", block: live(30) });
       await settled(page, ".ai-turn-work");

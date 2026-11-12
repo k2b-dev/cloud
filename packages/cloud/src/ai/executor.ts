@@ -37,7 +37,7 @@ import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { createCloudCompactFn } from "./compaction";
-import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
 import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
@@ -982,6 +982,8 @@ export class AiTurnExecutor {
       return;
     }
     if (toolAuthority) material.actor = toolAuthority.actor;
+    if (aiActorUser(material.actor)?.profile === "guest")
+      material.tools = material.tools.filter((tool) => !CLOUD_AI_CODE_AUTHORING_TOOL_NAMES.has(tool.def.name));
     // Skills and Help need current authority even when application operations are disabled.
     // Keep the appTools switch responsible for exposing and executing those operations.
     const capabilityAuthority = appToolsEnabled ? toolAuthority : null;
@@ -1502,6 +1504,9 @@ export class AiTurnExecutor {
       turnInstructions: [
         material.systemPrompt,
         audioUnavailableInstruction,
+        user?.profile === "guest"
+          ? "This person is a guest. Code authoring is available to Cloud members only. If asked to create or change lasting Code, explain kindly that guests cannot create Code or submit versions and suggest asking a Cloud member for help."
+          : undefined,
         guidance.offerHint,
         workingPlan
           ? `Current working plan (new todo_write results supersede this):\n${JSON.stringify({ todos: workingPlan.todos })}`

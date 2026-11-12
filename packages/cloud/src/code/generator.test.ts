@@ -449,10 +449,10 @@ test("schema projection preserves recursive refs, tuples, literals and maps", ()
   const input = schemaTypes(root, "RecursiveInput", [{ name: "idempotencyKey", type: "string", required: true }]);
   expect(input.type).toContain("idempotencyKey");
   expect(input.declarations.join("\n")).not.toContain("idempotencyKey");
-  expect(schemaTypes({ type: "object", additionalProperties: { type: "number" } }, "Map").type).toContain("[key: string]: (number)");
+  expect(schemaTypes({ type: "object", additionalProperties: { type: "number" } }, "Map").type).toContain("[key: string]: number");
   expect(
     schemaTypes({ type: "object", patternProperties: { "^x-": { type: "number" } }, additionalProperties: false }, "Pattern").type,
-  ).toContain("[key: string]: (number)");
+  ).toContain("[key: string]: number");
   expect(() => schemaTypes({ $ref: "https://example.invalid" }, "External")).toThrow("only local");
   expect(() => schemaTypes({ $ref: "#/$defs/missing" }, "Missing")).toThrow("unresolved");
 });
@@ -773,4 +773,143 @@ test("foreign app.on registrations reject duplicate pairs and keep distinct plac
     "event:work-shop.changed@1:place:1",
   ]);
   expect(() => sdk.app.on(sdk.work_shop.workshop("one"), "work-shop.changed", () => {})).toThrow("code_duplicate_on");
+});
+
+test("named operation types stay stable across catalogs and cannot shadow SDK helpers", async () => {
+  const work = sdkFixture("work");
+  const catalog = work.queries.find((query) => query.localId === "catalog.list")!;
+  const expanded = {
+    ...work,
+    queries: [...work.queries, { ...catalog, localId: "shop.catalog.list" }, { ...catalog, localId: "stock-list" }],
+  };
+  const code = sdkFixture("code");
+  const manifests = [fixture, expanded, { ...code, queries: [...code.queries, { ...catalog, localId: "decision" }] }];
+  const combined = generateCodeSdk(manifests, { mode: "personal" });
+  const reversed = generateCodeSdk([...manifests].reverse(), { mode: "personal" });
+  const names = (declarations: string) =>
+    declarations
+      .split("\n")
+      .filter((line) => line.startsWith("export type ") && line.includes("Input ="))
+      .map((line) => line.split(" =")[0]);
+  const original = names(generateCodeSdk([fixture], { mode: "personal" }).declarations);
+  expect(names(combined.declarations)).toEqual(expect.arrayContaining(original));
+  expect(names(combined.declarations)).toEqual(names(reversed.declarations));
+  const dir = await temporaryDirectory("cloud-code-sdk-named-types-");
+  await writeFile(join(dir, "sdk.d.ts"), combined.declarations);
+  await writeFile(
+    join(dir, "consumer.ts"),
+    `import {
+    type Work$hshop_Catalog_ListInput,
+    type Work_Shop_Catalog_ListInput,
+    type Work_Stock$hlistInput,
+    type Work_Stock_ListInput,
+    type Code_DecisionInput,
+    type Code_DecisionData,
+    type CodeDecisionInput,
+  } from "./sdk";
+const first: Work$hshop_Catalog_ListInput = {};
+const second: Work_Shop_Catalog_ListInput = {};
+const hyphen: Work_Stock$hlistInput = {};
+const path: Work_Stock_ListInput = {};
+const custom: Code_DecisionInput = {};
+const data: Code_DecisionData = ["value"];
+`,
+  );
+  const compiler = resolve(import.meta.dir, "../../../../node_modules/.bin/tsc");
+  const proc = Bun.spawn(
+    [
+      compiler,
+      "--checkers",
+      "1",
+      "--ignoreConfig",
+      "--strict",
+      "--noEmit",
+      "--skipLibCheck",
+      "false",
+      "--target",
+      "esnext",
+      join(dir, "consumer.ts"),
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+});
+
+test("repeated operation schemas are declared once and referenced by every named type", () => {
+  const first = fixture.queries.find((query) => query.localId === "catalog.list")!;
+  const dataSchema = {
+    type: "object",
+    properties: { marker: { type: "string", description: "A shared result field." } },
+    required: ["marker"],
+    additionalProperties: false,
+  };
+  const repeated = { ...fixture, queries: [first, { ...first, localId: "catalog.other" }].map((query) => ({ ...query, dataSchema })) };
+  const sdk = generateCodeSdk([repeated], { mode: "personal" });
+  expect(sdk.declarations.match(/marker: string/g)).toHaveLength(1);
+  expect(sdk.declarations).toContain("export type Work$hshop_Catalog_OtherData = Work$hshop_Catalog_ListData;");
+  expect(sdk.declarations).not.toMatch(/export type Work\$hshop_\w+(?:Input|Data) = S[0-9a-f]+;/);
+  expect(sdk.declarations).toContain("A shared result field.");
+});
+
+test("shared nested shapes keep the same diagnostic names across selected app catalogs", () => {
+  const first = fixture.queries[0]!;
+  const nested = { type: "object", properties: { stableLeaf: { type: "string" } }, required: ["stableLeaf"], additionalProperties: false };
+  const app = {
+    ...fixture,
+    queries: [{ ...first, dataSchema: { type: "object", properties: { nested }, required: ["nested"], additionalProperties: false } }],
+  };
+  const single = generateCodeSdk([app], { mode: "personal" });
+  const combined = generateCodeSdk([sdkFixture("ahead"), app], { mode: "personal" });
+  const name = (declarations: string) => declarations.match(/type (S[0-9a-f]+) = \{ stableLeaf: string \};/)?.[1];
+  expect(name(single.declarations)).toBeDefined();
+  expect(name(single.declarations)).toBe(name(combined.declarations));
+});
+
+test("shape pooling ignores documentation but preserves comment-like string literals", () => {
+  const shapes = { types: new Map<string, string>(), names: new Set<string>() };
+  const schema = (description: string, marker: string) => ({
+    type: "object",
+    properties: {
+      nested: {
+        type: "object",
+        properties: { marker: { const: marker, description } },
+        required: ["marker"],
+        additionalProperties: false,
+      },
+    },
+    required: ["nested"],
+    additionalProperties: false,
+  });
+  const first = schemaTypes(schema("First description.", '/** "literal" */'), "First", [], shapes);
+  const second = schemaTypes(schema("Different description.", '/** "literal" */'), "Second", [], shapes);
+  const different = schemaTypes(schema("First description.", ""), "Different", [], shapes);
+  expect(second.type).toBe(first.type);
+  expect(second.declarations).toEqual([]);
+  expect(different.type).not.toBe(first.type);
+  expect(first.declarations.join("\n")).toContain(JSON.stringify('/** "literal" */'));
+});
+
+test("named operation roots retain their own field documentation", () => {
+  const first = fixture.queries.find((query) => query.localId === "catalog.list")!;
+  const inputSchema = (description: string) => ({
+    type: "object",
+    properties: { id: { type: "string", description } },
+    required: ["id"],
+    additionalProperties: false,
+  });
+  const sdk = generateCodeSdk(
+    [
+      {
+        ...fixture,
+        queries: [
+          { ...first, inputSchema: inputSchema("Workshop ID.") },
+          { ...first, localId: "catalog.other", inputSchema: inputSchema("Item ID.") },
+        ],
+      },
+    ],
+    { mode: "personal" },
+  );
+  expect(sdk.declarations).toContain("export type Work$hshop_Catalog_ListInput = { /** Workshop ID. */ id: string };");
+  expect(sdk.declarations).toContain("export type Work$hshop_Catalog_OtherInput = { /** Item ID. */ id: string };");
 });
