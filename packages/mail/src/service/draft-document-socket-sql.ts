@@ -1,5 +1,6 @@
 import { createSql, sql } from "@k2b/cloud";
 import type { SQL } from "bun";
+import { draftTrace, draftTraceSpan } from "./draft-document-diagnostics";
 import { afterDraftDocumentCommit } from "./draft-document-log";
 
 // Each SQL statement uses the socket's existing access-refresh budget.
@@ -37,7 +38,7 @@ export const awaitDraftDocumentQuery = async <T>(
   const abort = () => void Promise.resolve(query.cancel()).catch(() => undefined);
   signal?.addEventListener("abort", abort, { once: true });
   try {
-    const result = await query;
+    const result = await draftTraceSpan("sql_row_query", async () => await query);
     signal?.throwIfAborted();
     return result;
   } finally {
@@ -64,7 +65,8 @@ export const withDraftDocumentTransaction = async <T>(
       }),
     );
   signal.throwIfAborted();
-  const reserved = await sql.reserve({ signal });
+  const reserved = await draftTraceSpan("sql_pool_wait", () => sql.reserve({ signal }));
+  draftTrace("sql_setup_start");
   // A closed client socket does not wake a backend waiting on a row lock: it
   // notices only when it next writes. Cancel that backend's statement through
   // a separate, single-connection cancellation pool. The cancelled statement
@@ -103,7 +105,9 @@ export const withDraftDocumentTransaction = async <T>(
       `,
           signal,
         );
+        draftTrace("sql_operation_start");
         const result = await operation(db);
+        draftTrace("sql_operation_end");
         signal.throwIfAborted();
         return result;
       }),
@@ -117,5 +121,6 @@ export const withDraftDocumentTransaction = async <T>(
     // open or aborted transaction; one that cannot even roll back is closed.
     if (signal.aborted) await reserved`ROLLBACK`.catch(() => reserved.close({ timeout: 0 }).catch(() => undefined));
     reserved.release();
+    draftTrace("sql_released");
   }
 };

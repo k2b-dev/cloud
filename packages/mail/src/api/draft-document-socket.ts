@@ -26,6 +26,14 @@ import {
 import { requireDraftAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { DRAFT_SOCKET_LIMITS, draftDocumentBudget } from "../service/draft-document-budget";
+import {
+  draftDocumentDiagnostics,
+  draftTrace,
+  draftTraceContext,
+  draftTraceError,
+  draftTraceSpan,
+  withDraftTrace,
+} from "../service/draft-document-diagnostics";
 import { lockDraftDocumentCoverage, replayDraftDocument } from "../service/draft-document-log";
 import {
   awaitDraftDocumentQuery,
@@ -222,6 +230,10 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   };
   function close(code: string, message: string, closeCode: 1008 | 1009 | 1012 | 1013 = 1008, reopen?: true): void {
     if (closed) return;
+    // Bun can abort the request synchronously inside socket.close(). Mark the
+    // connection first so onAbort cannot re-enter error delivery and cleanup.
+    closed = true;
+    draftTrace("close", { peerId, code, closeCode, ...(draftDocumentDiagnostics.hasSubscribers ? { stack: new Error().stack } : {}) });
     draftDocumentBudget.recordClose(closeCode);
     // Error delivery is deliberately bounded and never recursively calls send().
     try {
@@ -236,9 +248,13 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
     }
     void stop().catch((error: unknown) => log.error("Draft socket cleanup failed", { error }));
   }
-  const onAbort = () => close("STREAM_FAILED", t.network, 1012);
+  const onAbort = () => {
+    draftTrace("request_abort", { peerId });
+    close("STREAM_FAILED", t.network, 1012);
+  };
   const reopen = () => close("RESYNC_REQUIRED", t.reopen, 1012, true);
-  const failure = (error: unknown) => {
+  const failure = (error: unknown, source = "message-handler") => {
+    draftTraceError(error, source);
     if (closed || signal.aborted) return;
     log.error("Draft document connection failed", { draftId, error });
     if (error instanceof RetentionGapError || error instanceof CursorMismatchError) close("RESYNC_REQUIRED", t.network, 1012);
@@ -253,16 +269,17 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       return false;
     }
     context = contextFor(current);
-    const allowed = await requireDraftAccess(context, mailboxId, draftId, "write");
-    if (!allowed.ok) {
-      close("ACCESS_DENIED", t.access);
-      return false;
-    }
+    // Each operation below checks current draft access in its SQL transaction.
+    // Repeating four standalone pool queries here starves behind reservations
+    // and holds the next edit behind its preceding awareness packet.
     return true;
   };
 
-  /** No await between checking the locked row and sending bytes. The send/send-cancel transaction uses this same row. */
-  const deliver = (emit: (db: typeof sql) => void | Promise<void>): Promise<void> => {
+  /** Read fences coexist, but still exclude send/cancel/admission's FOR UPDATE.
+   * Initial replay takes an exclusive fence because it may seed/project state.
+   * No await between the final checks and sending bytes.
+   */
+  const deliver = (emit: (db: typeof sql) => void | Promise<void>, exclusive = false): Promise<void> => {
     const work = deliveryTail.then(async () => {
       if (closed || signal.aborted) return;
       await withDraftDocumentTransaction(signal, async (db) => {
@@ -271,7 +288,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           db<FenceRow[]>`
           SELECT state, edit_mode, author_kind, doc_generation, doc_history_complete, doc_frozen_cursor
           FROM mail.drafts WHERE id = ${draftId}::uuid AND mailbox_id = ${mailboxId}::uuid AND origin = 'user'
-          FOR UPDATE
+          ${exclusive ? db`FOR UPDATE` : db`FOR SHARE`}
         `,
           signal,
         );
@@ -299,7 +316,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
         await emit(db);
       });
     });
-    deliveryTail = work.catch(failure);
+    deliveryTail = work.catch((error) => failure(error, "delivery-sql"));
     return deliveryTail;
   };
 
@@ -343,6 +360,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       close("INVALID_PAYLOAD", t.invalid);
       return;
     }
+    draftTrace("peer_send");
     send({
       type: "syncPush",
       payload: {
@@ -366,19 +384,59 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
   // Never wait for SQL while draining the broker iterator: queue SQL deliveries
   // only after reserving their UTF-16 payload and envelope overhead. This bounds
   // both retained and awareness events instead of parking an unbounded NATS live queue.
+  type Delivery = { bytes: number; scope: ReturnType<typeof draftTraceContext>; emit: () => void };
+  const queuedDeliveries: Delivery[] = [];
+  let deliveryPump: Promise<void> | undefined;
+  const releaseDeliveries = (batch: Delivery[]) => {
+    for (const item of batch) {
+      pendingDeliveries--;
+      draftDocumentBudget.release("delivery", item.bytes);
+    }
+  };
+  const pumpDeliveries = () => {
+    if (deliveryPump || closed || !queuedDeliveries.length) return;
+    deliveryPump = (async () => {
+      while (!closed && queuedDeliveries.length) {
+        let batch: Delivery[] = [];
+        try {
+          await withDraftTrace(queuedDeliveries[0]?.scope, () =>
+            deliver(() => {
+              // Drain only after acquiring the fence: packets arriving while SQL
+              // waits share one current access check and synchronous emission.
+              // The existing per-socket count and process byte budgets bound this batch.
+              batch = queuedDeliveries.splice(0);
+              for (const item of batch) {
+                if (closed) break;
+                withDraftTrace(item.scope, () => {
+                  draftTrace("fanout_fence_acquired");
+                  draftTrace("fanout_emit");
+                  item.emit();
+                });
+              }
+            }),
+          );
+        } finally {
+          releaseDeliveries(batch);
+        }
+      }
+    })().finally(() => {
+      deliveryPump = undefined;
+      if (closed) releaseDeliveries(queuedDeliveries.splice(0));
+      else pumpDeliveries();
+    });
+    track(deliveryPump);
+  };
   const queueDelivery = (payload: string, emit: () => void): boolean => {
+    const scope = draftTraceContext(payload, peerId, "delivery");
+    draftTrace("fanout_received", {}, scope);
     const bytes = 2 * payload.length + 4096;
     if (pendingDeliveries >= MAX_PENDING_MESSAGES || !draftDocumentBudget.claim("delivery", bytes)) {
       close("BACKPRESSURE", t.busy, 1013);
       return false;
     }
     pendingDeliveries++;
-    track(
-      deliver(emit).finally(() => {
-        pendingDeliveries--;
-        draftDocumentBudget.release("delivery", bytes);
-      }),
-    );
+    queuedDeliveries.push({ bytes, scope, emit });
+    pumpDeliveries();
     return true;
   };
   const runDocumentStream = async (requestedAfter: string | null): Promise<void> => {
@@ -452,7 +510,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           deliveredCursor = base;
           flushCommittedSnapshot();
           send({ type: "replayReady", payload: { docId, generation, cursor: base, peerId } });
-        });
+        }, true);
         if (closed) return;
         for await (const event of topic
           .hub({ tenantId: draftId })
@@ -468,7 +526,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
           close("BACKPRESSURE", t.busy, 1013);
           return;
         }
-        failure(error);
+        failure(error, "document-topic-follow/replay");
         return;
       }
     }
@@ -498,7 +556,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       if (!closed) close("STREAM_FAILED", t.network, 1012);
     } catch (error) {
       if (error instanceof RetentionGapError) close("BACKPRESSURE", t.busy, 1013);
-      else failure(error);
+      else failure(error, "awareness-topic-follow");
     }
   };
 
@@ -508,7 +566,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       close("INVALID_PAYLOAD", t.invalid);
       return;
     }
-    if (!(await refresh())) return;
+    if (!(await draftTraceSpan("refresh_access", refresh))) return;
     if (message.type === "replayRequest") {
       if (generation !== null) {
         close("INVALID_PAYLOAD", t.invalid);
@@ -585,40 +643,47 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       await deliver(flushCommittedSnapshot);
       return;
     }
-    if (!trusted) {
-      const reservation = await awarenessTopic().publish({
-        tenantId: draftId,
-        data: { kind: "awareness", payload: "AA==", generation, originNodeId: sharedTextNodeId, originPeerId: peerId },
-      });
-      if (closed) return;
-      if (context.actor.kind !== "user") {
-        close("SESSION_EXPIRED", t.session);
+    // Check access and fence both awareness identity reservation and publication.
+    const awarenessGeneration = generation;
+    await deliver(async () => {
+      if (!trusted) {
+        const reservation = await awarenessTopic().publish({
+          tenantId: draftId,
+          data: {
+            kind: "awareness",
+            payload: "AA==",
+            generation: awarenessGeneration,
+            originNodeId: sharedTextNodeId,
+            originPeerId: peerId,
+          },
+        });
+        if (closed) return;
+        if (context.actor.kind !== "user") {
+          close("SESSION_EXPIRED", t.session);
+          return;
+        }
+        trusted = createTrustedTextAwareness({
+          clientId: 2 ** 32 + reservation.streamSequence,
+          textName: "codemirror",
+          user: {
+            userId: context.actor.user.id,
+            name: context.actor.user.displayName,
+            color: userColor(context.actor.user.id),
+          },
+        });
+      }
+      let payload: string;
+      try {
+        payload = toBase64(trusted.publish(fromBase64(message.payload.payload)));
+      } catch (error) {
+        if (!(error instanceof InvalidSharedTextAwarenessError)) throw error;
+        close("INVALID_PAYLOAD", t.invalid);
         return;
       }
-      trusted = createTrustedTextAwareness({
-        clientId: 2 ** 32 + reservation.streamSequence,
-        textName: "codemirror",
-        user: {
-          userId: context.actor.user.id,
-          name: context.actor.user.displayName,
-          color: userColor(context.actor.user.id),
-        },
-      });
-    }
-    let payload: string;
-    try {
-      payload = toBase64(trusted.publish(fromBase64(message.payload.payload)));
-    } catch (error) {
-      if (!(error instanceof InvalidSharedTextAwarenessError)) throw error;
-      close("INVALID_PAYLOAD", t.invalid);
-      return;
-    }
-    if (payload.length > MAX_DRAFT_AWARENESS_PAYLOAD) {
-      close("INVALID_PAYLOAD", t.invalid, 1009);
-      return;
-    }
-    // Fence awareness writes with the same row lock too; no stale generation can publish after send/cancel.
-    await deliver(async () => {
+      if (payload.length > MAX_DRAFT_AWARENESS_PAYLOAD) {
+        close("INVALID_PAYLOAD", t.invalid, 1009);
+        return;
+      }
       if (generation)
         await awarenessTopic().publish({
           tenantId: draftId,
@@ -632,6 +697,7 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
       const task = (async () => {
         try {
           if ((!joined && Date.now() - openedAt >= DRAFT_SOCKET_LIMITS.joinMs) || Date.now() - lastInputAt >= DRAFT_SOCKET_LIMITS.idleMs) {
+            draftTrace("timeout", { peerId, joined, openedAgoMs: Date.now() - openedAt, idleMs: Date.now() - lastInputAt });
             close("STREAM_FAILED", t.network, 1012);
             return;
           }
@@ -706,6 +772,12 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
         close("BACKPRESSURE", t.busy, 1013);
         return;
       }
+      const tracePacket = draftDocumentDiagnostics.hasSubscribers ? mailDraftDocumentRequestSchema.safeParse(packet) : undefined;
+      const scope =
+        tracePacket?.success && tracePacket.data.type === "syncPublish"
+          ? draftTraceContext(tracePacket.data.payload.payload, peerId, "ingress")
+          : undefined;
+      draftTrace("socket_receive", {}, scope);
       const slot = { packet, size };
       if (cursor) awarenessSlot = slot;
       else {
@@ -726,7 +798,11 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
             close("INVALID_PAYLOAD", t.invalid);
             return;
           }
-          await handle(parsed.data);
+          await withDraftTrace(scope, async () => {
+            draftTrace("handler_start");
+            await handle(parsed.data);
+            draftTrace("handler_end");
+          });
         })
         .catch(failure)
         .finally(() => {
@@ -740,7 +816,10 @@ export const upgradeMailDraftDocumentSocket = async (c: Context<MailApiContext>)
     onClose: () => {
       void stop().catch((error: unknown) => log.error("Draft socket cleanup failed", { error }));
     },
-    onError: () => close("STREAM_FAILED", t.network, 1012),
+    onError: () => {
+      draftTrace("socket_error", { peerId });
+      close("STREAM_FAILED", t.network, 1012);
+    },
   };
   return upgradeWebSocket(c, events);
 };

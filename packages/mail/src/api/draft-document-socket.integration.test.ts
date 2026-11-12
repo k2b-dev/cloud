@@ -363,12 +363,14 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       await draft();
       const client = await connect();
       if (joined) await client.ready();
+      const closesBefore = mailDraftConnectionStats().closes[1012];
       const now = Date.now();
       const clock = spyOn(Date, "now").mockReturnValue(now + (joined ? DRAFT_SOCKET_LIMITS.idleMs : DRAFT_SOCKET_LIMITS.joinMs) + 1);
       try {
         const closed = new Promise<CloseEvent>((resolve) => client.socket.addEventListener("close", resolve, { once: true }));
         await client.wait((packet) => packet.type === "error" && packet.payload.code === "STREAM_FAILED", 12_000);
         expect((await closed).code).toBe(1012);
+        expect(mailDraftConnectionStats().closes[1012] - closesBefore).toBe(1);
         await stopMailDraftConnections();
         expect(mailDraftConnectionStats()).toMatchObject({ connections: 0, documents: 0, ingress: 0, delivery: 0, outbound: 0 });
       } finally {
@@ -800,6 +802,84 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     });
   }
 
+  test("live read fences coexist while still excluding draft writers", async () => {
+    const created = await draft();
+    const publisher = await connect();
+    await publisher.ready();
+    const receiver = await connect();
+    await receiver.ready();
+    const doc = new Y.Doc();
+    doc.clientID = 777;
+    const awareness = new Awareness(doc);
+    try {
+      awareness.setLocalState({ cursor: null });
+      await sql.begin(async (reader) => {
+        await reader`SELECT id FROM mail.drafts WHERE id=${created.id}::uuid FOR SHARE`;
+        publisher.send({
+          type: "awarenessPublish",
+          payload: {
+            docId: created.short_id,
+            generation: "1",
+            payload: toBase64(encodeAwarenessUpdate(awareness, [doc.clientID])),
+          },
+        });
+        expect(
+          (await receiver.wait((packet) => packet.type === "awarenessPush" && packet.payload.updates.some((u) => u.payload !== "AA==")))
+            .type,
+        ).toBe("awarenessPush");
+      });
+    } finally {
+      awareness.destroy();
+      doc.destroy();
+    }
+  });
+
+  test("a bounded delivery batch preserves every event in broker order", async () => {
+    const created = await draft();
+    const base = await read();
+    const client = await connect();
+    await client.ready();
+    const updates = await Promise.all(
+      ["One", "Two", "Three"].map((body) =>
+        createDraftRevisionUpdate(base.fresh.state, { ...created.content, body }, { deadline: Date.now() + 5000 }),
+      ),
+    );
+    try {
+      await sql.begin(async (writer) => {
+        await writer`SELECT id FROM mail.drafts WHERE id=${created.id}::uuid FOR UPDATE`;
+        await mailDraftDocumentLog.topic().publishBatch({
+          tenantId: created.id,
+          events: updates.map((u) => ({
+            data: {
+              kind: "sync" as const,
+              payload: toBase64(u),
+              restoreRevision: base.generation,
+              originNodeId: "fixture",
+              originPeerId: null,
+            },
+          })),
+        });
+        const deadline = Date.now() + 5000;
+        while (mailDraftConnectionStats().delivery < updates.reduce((n, u) => n + 2 * toBase64(u).length + 4096, 0)) {
+          if (Date.now() > deadline) throw new Error("Batch did not queue behind writer");
+          await Bun.sleep(10);
+        }
+      });
+      await client.wait(
+        (packet) =>
+          packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(updates[2]!)),
+      );
+      expect(
+        client.messages.flatMap((packet) =>
+          packet.type === "syncPush" && !packet.payload.snapshot ? packet.payload.updates.map((u) => u.payload) : [],
+        ),
+      ).toEqual(updates.map(toBase64));
+    } finally {
+      // This fixture intentionally publishes unmaterialized updates.
+      await sql`UPDATE mail.drafts SET state='discarded' WHERE id=${created.id}::uuid`;
+    }
+  });
+
   test("a blocked SQL delivery sheds a broker burst instead of retaining an unbounded queue", async () => {
     const created = await draft();
     const client = await connect();
@@ -1164,6 +1244,32 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     client.send({ type: "syncPublish", payload: { docId: "Other1", generation: "1", payload: "AAA=", baseCursor: null } });
     expect(await client.wait((packet) => packet.type === "error")).toMatchObject({ type: "error", payload: { code: "INVALID_PAYLOAD" } });
   });
+  for (const kind of ["edit", "awareness"] as const) {
+    test(`withdrawn write permission rejects ${kind} inside the operation before publication`, async () => {
+      const created = await draft();
+      const base = await read();
+      const client = await connect();
+      await client.ready();
+      const topic = mailDraftDocumentLog.topic();
+      const head = await topic.latestCursor({ tenantId: created.id });
+      const update = await createDraftRevisionUpdate(
+        base.fresh.state,
+        { ...created.content, body: "Refused" },
+        { deadline: Date.now() + 5000 },
+      );
+      await sql`UPDATE auth.access SET permission = 'read' WHERE id IN (SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid)`;
+      try {
+        if (kind === "edit") publish(client, base, update);
+        else client.send({ type: "awarenessPublish", payload: { docId: created.short_id, generation: base.generation, payload: "AA==" } });
+        expect(await client.wait((packet) => packet.type === "error")).toMatchObject({ type: "error", payload: { code: "ACCESS_DENIED" } });
+        expect(await topic.latestCursor({ tenantId: created.id })).toBe(head);
+        const [row] = await sql<{ body_markdown: string }[]>`SELECT body_markdown FROM mail.drafts WHERE id=${created.id}::uuid`;
+        expect(row?.body_markdown).toBe(created.content.body);
+      } finally {
+        await sql`UPDATE auth.access SET permission = 'admin' WHERE id IN (SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid)`;
+      }
+    });
+  }
   test("withdrawn write permission stops retained deliveries before exposing their bytes", async () => {
     const created = await draft();
     const base = await read();

@@ -17,12 +17,18 @@ maximum-size documents, imports, sending, and synchronization at the same time.
 
 ## Current validation does not clear broad rollout
 
-A constrained in-process test completed 50 concurrent drafts with three editors
-each for 90 seconds. The latest 200-draft, two-editor run failed with
-`STREAM_FAILED` and a propagation p95 of about 22 seconds. It released all sockets
-and accounted buffers during cleanup. Broad enablement remains blocked: the
-512-connection admission ceiling is a memory budget, not verified throughput
-capacity. Resolve the failed load profile before relying on higher concurrency.
+A constrained test with separate server and client processes reached a propagation
+p95 of **5.04 seconds at 50 drafts × 3 editors** and **13.94 seconds at
+200 drafts × 2 editors**. The server had two CPUs and a 1 GiB RSS abort budget;
+Postgres had one CPU and 768 MiB. The 200-draft run peaked at 656 MiB server RSS
+and released every socket and accounted buffer. These short runs do not prove
+long-term memory stability or capacity alongside other Mail workloads.
+
+Broad enablement remains blocked: the target is propagation p95 below one second
+at 200 concurrent drafts. SQL work and pool contention dominate this profile;
+JetStream publication acknowledgements and network delivery stay below 10 ms p95.
+The 512-connection ceiling bounds admission, not usable editing capacity. Verify
+latency as well as memory before increasing the number of shared mailboxes.
 
 ## Allow room for draft connections
 
@@ -57,7 +63,10 @@ exponential delays from one to 30 seconds. It resumes from its cursor and clears
 the error after synchronization succeeds. A slow reader is subject to the same
 buffer limits.
 
-A socket must complete its initial replay within ten seconds. A connection receiving no client
+A socket must complete its initial replay within ten seconds. If SQL backlog
+prevents a reconnect from completing replay, it also closes with
+`STREAM_FAILED` / **1012**. This code alone does not identify a broker failure.
+Check SQL saturation and replay completion as well as JetStream health. A connection receiving no client
 packets for 60 seconds closes with **1012** (`STREAM_FAILED`). Checks run every ten
 seconds; busy checks can delay closure. Active browser cursor/awareness packets
 keep a connection alive. Request cancellation and Mail shutdown cancel outstanding

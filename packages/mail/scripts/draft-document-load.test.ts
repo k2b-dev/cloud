@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { options } from "./draft-document-load";
+import { upgradeComplete } from "./draft-document-load/common";
 
 test("load arguments enforce the bounded workload and preserve explicit resource budgets", () => {
-  expect(options(["--drafts", "50", "--clients", "3", "--seconds", "90", "--rss-mib", "768"])).toMatchObject({
+  expect(options(["--bounded", "--drafts", "50", "--clients", "3", "--seconds", "90", "--rss-mib", "768"])).toMatchObject({
+    bounded: true,
     drafts: 50,
     clients: 3,
     seconds: 90,
@@ -32,4 +34,12 @@ test("help does not import Mail or reach configured infrastructure", async () =>
   expect(stderr).toBe("");
   expect(stdout).toContain("--rss-mib");
   expect(stdout).toContain("CLOUD_TEST_DATABASE_URL");
+});
+
+test("slow consumer waits for a fragmented upgrade response and bounds its headers", () => {
+  expect(upgradeComplete("HTTP/1.1 ")).toBe(false);
+  expect(upgradeComplete("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n")).toBe(false);
+  expect(upgradeComplete("HTTP/1.1 101 Switching Protocols\r\n\r\n")).toBe(true);
+  expect(() => upgradeComplete("HTTP/1.1 403 Forbidden\r\n\r\n")).toThrow("403");
+  expect(() => upgradeComplete("x".repeat(16385))).toThrow("16 KiB");
 });

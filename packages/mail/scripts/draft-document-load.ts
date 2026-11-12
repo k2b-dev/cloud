@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 
 export const help = `Usage: bun --smol --no-env-file packages/mail/scripts/draft-document-load.ts [options]
 
-Runs real Mail Yjs WebSockets, SQL and JetStream in one process, with simulated
+Runs real Mail Yjs WebSockets, SQL and JetStream in separate server/client processes, with simulated
 browser identity only. Uses CLOUD_TEST_DATABASE_URL (ending _test),
 CLOUD_TEST_NATS_SERVERS and CLOUD_TEST_VALKEY_URL; creates/drops a private DB
 and Sync namespace. Never starts containers or enables shared mailbox editing.
@@ -15,29 +15,35 @@ and Sync namespace. Never starts containers or enables shared mailbox editing.
   --body-bytes N   Initial ASCII body size (default 4096)
   --burst-bytes N  First editor's paste/delete burst (default 0, up to 256 KiB;
                    requires body-bytes >= burst-bytes)
-  --rss-mib N      Abort RSS budget, including clients (default 1024)
+  --rss-mib N      Server RSS abort budget (default 1024)
+  --bounded       Separate systemd scopes: server 2 CPUs/1536 MiB, clients 1 CPU/512 MiB
   --out PATH      New result directory (default .local/mail-draft-load/<timestamp>)
   --help          Show this help
 
 Includes awareness, reconnect, abrupt transport termination, request abort and
 one TCP consumer that stops reading. Samples every second, records latency in
 fixed 10 ms histogram buckets, checks final convergence and drains all sockets.
-Aborts when the one-minute host load exceeds 40. Run with nice -n 19 and an
-external memory/CPU cgroup for a hard process budget; --smol is a GC hint, not a
-heap cap. RSS includes the load-generator clients. No production throughput claim.
+Aborts when the one-minute host load exceeds 40. Run with nice -n 19 and
+--bounded for hard process budgets; --smol is a GC hint, not a heap cap.
+Client RSS is reported separately. No production throughput claim.
 `;
 
 export function options(args: string[]) {
   const { values } = parseArgs({
     args,
-    options: Object.fromEntries(
-      ["drafts", "clients", "seconds", "interval-ms", "body-bytes", "burst-bytes", "rss-mib", "out"].map((key) => [
-        key,
-        { type: "string" as const },
-      ]),
-    ),
+    options: {
+      bounded: { type: "boolean" },
+      drafts: { type: "string" },
+      clients: { type: "string" },
+      seconds: { type: "string" },
+      "interval-ms": { type: "string" },
+      "body-bytes": { type: "string" },
+      "burst-bytes": { type: "string" },
+      "rss-mib": { type: "string" },
+      out: { type: "string" },
+    },
   });
-  const number = (key: string, fallback: number, min: number, max: number) => {
+  const number = (key: Exclude<keyof typeof values, "bounded">, fallback: number, min: number, max: number) => {
     const value = values[key] === undefined ? fallback : Number(values[key]);
     if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`--${key} must be ${min}..${max}`);
     return value;
@@ -47,6 +53,7 @@ export function options(args: string[]) {
   const burstBytes = number("burst-bytes", 0, 0, 256 * 1024);
   if (burstBytes > bodyBytes) throw new Error("--body-bytes must cover --burst-bytes");
   return {
+    bounded: values.bounded === true,
     drafts: number("drafts", 10, 1, 500),
     clients: number("clients", 3, 2, 8),
     seconds: number("seconds", 60, 1, 600),

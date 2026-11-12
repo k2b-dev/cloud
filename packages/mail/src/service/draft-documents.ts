@@ -16,6 +16,7 @@ import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
+import { draftTrace, draftTraceSpan } from "./draft-document-diagnostics";
 import {
   draftDocumentSnapshotWritten,
   draftDocumentStreamFull,
@@ -455,6 +456,7 @@ export const lockDraftDocumentInTransaction = async (
     // exact base64 envelope and metadata at publication.
     if (input.update.byteLength > MAX_LOG_ENVELOPE_BYTES) return recovery("Draft update exceeds the document log payload budget");
     let invalid: string | null = null;
+    draftTrace("accept_start");
     const admitted = await bound
       .accept(draftId, {
         actor: documentActor,
@@ -491,13 +493,15 @@ export const lockDraftDocumentInTransaction = async (
     if (!admitted) return draftDocumentStreamFull(db);
     if (admitted.status !== "accepted") return recovery(invalid ?? "Draft update requires recovery; retain the submitted content");
     publishedCursor = admitted.cursor;
+    draftTrace("publish_accepted");
     try {
       await refreshDraftAdoption({ db, draftId, signal: input.signal ?? params.signal });
       // Read all types, not only the body. The row lock prevents another Mail
       // admission/freeze from publishing before this snapshot is committed.
-      const fresh = await bound.read(draftId, { signal: input.signal ?? params.signal });
+      const fresh = await draftTraceSpan("post_publish_reconstruct", () => bound.read(draftId, { signal: input.signal ?? params.signal }));
       if (!fresh?.state || fresh.cursor !== admitted.cursor) throw new Error("Accepted draft cursor could not be reconstructed exactly");
-      const saved = await persistSnapshot(fresh.state, admitted.cursor, input.signal ?? params.signal);
+      const state = fresh.state;
+      const saved = await draftTraceSpan("persist_snapshot", () => persistSnapshot(state, admitted.cursor, input.signal ?? params.signal));
       return ok({ status: "accepted", cursor: admitted.cursor, revision: saved.revision, durable: saved.durable });
     } catch {
       return ok({
@@ -720,7 +724,7 @@ export const acceptDraftDocumentUpdate = async (params: Target & AcceptInput): P
   const outcome: { admitted: DraftDocumentAdmission | null } = { admitted: null };
   try {
     return await withDraftDocumentTransaction(params.signal, async (db) => {
-      const locked = await lockDraftDocumentInTransaction({ ...params, db });
+      const locked = await draftTraceSpan("lock_and_access", () => lockDraftDocumentInTransaction({ ...params, db }));
       if (!locked.ok) return locked;
       const result = await locked.data.accept(params);
       if (result.ok) outcome.admitted = result.data;
