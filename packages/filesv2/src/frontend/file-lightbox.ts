@@ -62,7 +62,8 @@ export function fileLightboxItem(
     commands.push({
       label: t.openInTab,
       icon: "ti ti-external-link",
-      onClick: () => window.open(inlinePdfHref(baseId, entry.path), "_blank"),
+      // The tab reloads from a Files page, so it signs in again when the session has expired; it gets no opener.
+      onClick: () => window.open(inlinePdfHref(baseId, entry.path), "_blank", "noopener"),
     });
   if (actions.onShare) commands.push({ label: t.share, icon: "ti ti-share", onClick: () => actions.onShare!(entry) });
   const facts = [fileKindLabel({ name: entry.name }, locale), text.pprintBytes(entry.size, { locale })];
