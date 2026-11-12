@@ -363,6 +363,87 @@ suite("one reply draft per conversation", () => {
     }
   });
   for (const mode of ["lock", "shared"] as const) {
+    test(`REST materialization rejects different seed content without touching the occupant (${mode})`, async () => {
+      const source = await thread();
+      const occupant = unwrap(await drafts.createDraft({ context: owner, mailboxId, input: input(source) }));
+      await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${occupant.id}::uuid`;
+      if (owner.actor.kind !== "user") throw new Error("Missing user");
+      const token = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+        kind: "user",
+        payload: {},
+        user: owner.actor.user,
+        scopes: ["read", "write"],
+      });
+      try {
+        const headers = { authorization: "Bearer b1", "content-type": "application/json" };
+        const response = await api.request(`/mailboxes/${mailboxShortId}/draft-seeds`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            origin: {
+              kind: "compose",
+              input: {
+                ...input(source),
+                conversationId: source.conversationShortId,
+                sourceMessageId: source.sourceShortId,
+                senderIdentityId: identityShortId,
+              },
+            },
+          }),
+        });
+        expect(response.status).toBe(200);
+        const seed = await response.json();
+        const materialize = (body: string) =>
+          api.request(`/mailboxes/${mailboxShortId}/draft-seeds/materialize`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ idempotencyKey: seed.id, origin: seed.origin, draft: { ...seed.content, body } }),
+          });
+        const [publicOccupant] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.drafts WHERE id = ${occupant.id}::uuid`;
+        const conflict = await materialize("Local recovery text");
+        expect(conflict.status).toBe(409);
+        expect(await conflict.json()).toMatchObject({ code: "DRAFT_REPLY_BOX_OCCUPIED", draftId: publicOccupant!.short_id });
+        expect(unwrap(await drafts.getDraft(owner, mailboxId, occupant.id)).body).toBe("My text");
+        const same = await materialize("My text");
+        expect(same.status).toBe(200);
+        expect(await same.json()).toMatchObject({ creationOutcome: "existing", body: "My text" });
+        const retry = await materialize("Later local text");
+        expect(retry.status).toBe(409);
+        // A retry of a seed that created the row also cannot replace that row's content.
+        const ownSource = await thread();
+        const ownResponse = await api.request(`/mailboxes/${mailboxShortId}/draft-seeds`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            origin: {
+              kind: "compose",
+              input: {
+                ...input(ownSource),
+                conversationId: ownSource.conversationShortId,
+                sourceMessageId: ownSource.sourceShortId,
+                senderIdentityId: identityShortId,
+              },
+            },
+          }),
+        });
+        const ownSeed = await ownResponse.json();
+        const ownMaterialize = (body: string) =>
+          api.request(`/mailboxes/${mailboxShortId}/draft-seeds/materialize`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ idempotencyKey: ownSeed.id, origin: ownSeed.origin, draft: { ...ownSeed.content, body } }),
+          });
+        const created = await ownMaterialize("First text");
+        expect(created.status).toBe(200);
+        expect(await created.json()).toMatchObject({ creationOutcome: "created", body: "First text" });
+        expect((await ownMaterialize("First text")).status).toBe(200);
+        expect((await ownMaterialize("Different retry text")).status).toBe(409);
+      } finally {
+        token.mockRestore();
+      }
+    });
+  }
+  for (const mode of ["lock", "shared"] as const) {
     test(`mode switch derives recipients, subject and attachments in both directions (${mode})`, async () => {
       let draft = await create();
       await sql`UPDATE mail.drafts SET edit_mode = ${mode} WHERE id = ${draft.id}::uuid`;
@@ -456,6 +537,29 @@ suite("one reply draft per conversation", () => {
       expect(draft.subject).toBe("Re: My own subject");
     });
   }
+  test("mode switches recognize UI and localized derived prefixes", async () => {
+    for (const subject of [
+      "Re: Question",
+      "Fwd: Re: Question",
+      "RE: Question",
+      "Fwd: Question",
+      "AW: WG: Question",
+      "SV: Antw: RV: re[2]: Question",
+      "RE: Foo",
+    ]) {
+      const source = await thread();
+      const core = subject.endsWith("Foo") ? "Foo" : "Question";
+      await sql`UPDATE mail.message_contents SET subject = ${core} WHERE id = ${source.sourceMessageId}::uuid`;
+      let draft = unwrap(await drafts.createDraft({ context: owner, mailboxId, input: { ...input(source), subject } }));
+      expect(draft.subject).toBe(subject);
+      for (const intent of ["forward", "reply"] as const) {
+        draft = unwrap(
+          await drafts.switchDraftIntent({ context: owner, mailboxId, draftId: draft.id, intent, expectedRevision: draft.revision }),
+        );
+        expect(draft.subject).toBe(`${intent === "forward" ? "Fwd" : "Re"}: ${core}`);
+      }
+    }
+  });
   test("creation preserves caller subjects and copies requested source attachments for reply and reply-all", async () => {
     let first = await create();
     first = unwrap(await attach(first));
@@ -499,7 +603,7 @@ suite("one reply draft per conversation", () => {
             intent: mode,
           }),
         );
-        expect(switched.attachments).toHaveLength(mode === "forward" ? 2 : 1);
+        expect(switched.attachments).toHaveLength(1);
       }
       unwrap(await drafts.discardDraft({ context: owner, mailboxId, draftId: switched.id, expectedRevision: switched.revision }));
     }
@@ -621,6 +725,28 @@ suite("one reply draft per conversation", () => {
       expect((await sql`SELECT state FROM mail.drafts WHERE id = ${suggestion.id}::uuid`)[0]?.state).toBe("discarded");
     }
   });
+  for (const evidence of ["timestamp", "legacy content", "legacy revision"] as const) {
+    test(`F6 prefers an older edited draft over a newer empty draft (${evidence})`, async () => {
+      const edited = await create();
+      await sql`UPDATE mail.drafts SET edit_mode = 'lock', created_at = '2026-11-01T09:00:00Z',
+        content_edited_at = ${evidence === "timestamp" ? "2026-11-01T10:00:00Z" : null}::timestamptz,
+        revision = ${evidence === "legacy revision" ? 2 : 1},
+        body_markdown = ${evidence === "legacy revision" ? "" : "Edited text"}, subject = '', to_addresses = '[]', cc_addresses = '[]', bcc_addresses = '[]'
+        WHERE id = ${edited.id}::uuid`;
+      // Historical timestamps are restored separately: the content-update trigger records the fixture write itself.
+      await sql`UPDATE mail.drafts SET content_edited_at = ${evidence === "timestamp" ? "2026-11-01T10:00:00Z" : null}::timestamptz WHERE id = ${edited.id}::uuid`;
+      await beginLegacyMigration();
+      const empty = await legacySuggestion(edited);
+      await sql`UPDATE mail.drafts SET author_kind = 'user', author_id = ${userId}::uuid, adopted_at = '2026-11-01T12:00:00Z',
+        edit_mode = 'lock', revision = 1, content_edited_at = NULL, created_at = '2026-11-01T11:00:00Z',
+        body_markdown = '', subject = '', to_addresses = '[]', cc_addresses = '[]', bcc_addresses = '[]'
+        WHERE id = ${empty.id}::uuid`;
+      await sql`UPDATE mail.drafts SET content_edited_at = NULL WHERE id = ${empty.id}::uuid`;
+      expect(await migrate()).toMatchObject({ deletedDrafts: 1 });
+      expect(unwrap(await drafts.getDraft(owner, mailboxId, edited.id)).state).toBe("draft");
+      expect((await sql`SELECT state FROM mail.drafts WHERE id = ${empty.id}::uuid`)[0]?.state).toBe("discarded");
+    });
+  }
   test("two committed sends refuse before the F6 marker and preserve both sends", async () => {
     const first = await create();
     await sql`UPDATE mail.drafts SET state = 'scheduled' WHERE id = ${first.id}::uuid`;

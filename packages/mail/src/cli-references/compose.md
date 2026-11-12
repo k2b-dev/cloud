@@ -224,11 +224,14 @@ cld --json mail draft acknowledge-consolidation <draft-id>
 
 `draft intent` re-derives To/Cc and copied source attachments. Body text,
 personal uploads and manually added Bcc remain; the sender's default Bcc is
-added. Re:/Fwd: changes only if the subject still matches the derived source
-subject. A user-edited subject stays unchanged. Creation preserves an explicit
+added. Mail strips repeated reply/forward prefixes, including case and known
+language variants such as RE:, AW: and WG:, from both subjects before comparing
+their cores. If the cores match, it replaces the prefix with Re: or Fwd:.
+A subject with a different core stays unchanged. Creation preserves an explicit
 API subject, and `--include-source-attachments` also works for Reply and Reply
 all. Leaving Forward removes the source copies added for that mode. Files
-explicitly copied into Reply or Reply all remain as personal attachments.
+explicitly copied into Reply or Reply all remain as personal attachments;
+Forward deduplicates them by source message and content hash.
 A stale revision or a scheduled/sending draft returns a conflict. Shared editors synchronize a new document generation after a mode change.
 `consolidatedCount` reports how many other drafts the F6 upgrade erased. Clear
 it only after displaying the notice. Only a person with write access can

@@ -66,6 +66,7 @@ import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases"
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { enqueueDraftProjection, enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { enqueueMailInvalidation, mailLive } from "./live";
+import { stripMailSubjectPrefixes } from "./message-threading";
 import type { AttachmentDownload } from "./messages";
 
 const InternalIdSchema = z.string().uuid();
@@ -484,7 +485,7 @@ const deriveReplyMode = async (params: {
   const [source] = await params.db<{ subject: string }[]>`SELECT subject FROM mail.message_contents
     WHERE id = ${params.sourceMessageId}::uuid AND mailbox_id = ${params.mailboxId}::uuid`;
   if (!source) return fail(err.notFound("Message"));
-  const base = source.subject.replace(/^(?:\s*(?:re|fw|fwd)\s*:\s*)+/iu, "");
+  const base = stripMailSubjectPrefixes(source.subject);
   const recipients =
     params.intent === "forward"
       ? ok({ to: [] as MailAddress[], cc: [] as MailAddress[] })
@@ -552,6 +553,9 @@ const copyForwardAttachments = async (params: {
     JOIN mail.message_parts part ON part.id = attachment.part_id
     JOIN mail.message_part_blobs blob ON blob.id = attachment.blob_id AND blob.complete = true
     WHERE attachment.message_id = ${params.sourceMessageId}::uuid
+      AND (NOT ${params.forwarded} OR NOT EXISTS (SELECT 1 FROM mail.draft_attachments existing
+        WHERE existing.draft_id = ${params.draftId}::uuid AND existing.removed_at IS NULL
+          AND existing.copied_source_message_id = ${params.sourceMessageId}::uuid AND existing.content_hash = blob.content_hash))
     ORDER BY ${attachmentMimeOrder()}
   `;
   const [next] = await params.db<{ position: number }[]>`SELECT coalesce(max(position), -1)::int + 1 AS position
@@ -562,10 +566,10 @@ const copyForwardAttachments = async (params: {
       "draftAttachment",
       (db, shortId) => db`
       INSERT INTO mail.draft_attachments (
-        short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position, forwarded_source_message_id
+        short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position, forwarded_source_message_id, copied_source_message_id
       ) VALUES (
         ${shortId}, ${params.draftId}::uuid, ${attachment.blob_id}::uuid, ${attachment.filename},
-        ${attachment.content_type}, ${attachment.byte_length}, ${attachment.content_hash}, ${(next?.position ?? 0) + Number(attachment.position)}, ${params.forwarded ? params.sourceMessageId : null}::uuid
+        ${attachment.content_type}, ${attachment.byte_length}, ${attachment.content_hash}, ${(next?.position ?? 0) + Number(attachment.position)}, ${params.forwarded ? params.sourceMessageId : null}::uuid, ${params.sourceMessageId}::uuid
       )
     `,
     );
@@ -808,6 +812,7 @@ const insertComposeDraftInTransaction = async (params: {
   content: DraftEditableContent;
   adopted?: true;
   rejectOccupiedContent?: boolean;
+  rejectDifferentContent?: boolean;
   materializationKey?: string;
   materializationRequestHash?: string;
 }): Promise<Result<MailDraft>> => {
@@ -840,6 +845,12 @@ const insertComposeDraftInTransaction = async (params: {
       const access = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", params.db);
       if (!access.ok) return access;
       if (params.rejectOccupiedContent) return fail(replyDraftOccupied(existing.short_id));
+      if (params.rejectDifferentContent) {
+        const stored = internalDraftEditableContentSchema.strip().parse(mapDraft(existing));
+        const incoming = internalDraftEditableContentSchema.strip().parse(params.content);
+        if ((await sha256Json(quoteHashContent(stored))) !== (await sha256Json(quoteHashContent(incoming))))
+          return fail(replyDraftOccupied(existing.short_id));
+      }
       const adopted = await refreshDraftAdoption({ db: params.db, draftId: existing.id });
       const suggestionRequest = params.actor.kind === "service_account" && !humanDraftEditor(params.context) && !params.adopted;
       const ownSuggestion = existing.author_kind === "service_account" && existing.author_id === actorId(params.actor) && adopted === null;
@@ -1253,6 +1264,7 @@ export const materializeDraftSeed = async (params: {
   mailboxId: string;
   input: MaterializeDraftSeedInput;
   rejectOccupiedContent?: boolean;
+  rejectDifferentContent?: boolean;
 }): Promise<Result<MailDraft>> => {
   const parsed = internalMaterializeDraftSeedInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid compose request"));
@@ -1306,9 +1318,19 @@ export const materializeDraftSeed = async (params: {
           });
           if (!originAccess.ok) return originAccess;
         }
-        return existing.request_hash === requestHash
-          ? ok(mapDraft(existing))
-          : fail(capabilityIdempotencyConflict("Compose idempotency key conflicts with a different request"));
+        if (existing.request_hash !== requestHash)
+          return fail(capabilityIdempotencyConflict("Compose idempotency key conflicts with a different request"));
+        if (params.rejectDifferentContent && existing.intent !== "new") {
+          const stored = internalDraftEditableContentSchema.strip().parse(mapDraft(existing));
+          const incoming = internalDraftEditableContentSchema.strip().parse({
+            ...parsed.data.draft,
+            signatureTemplateId:
+              parsed.data.draft.signatureTemplateId === undefined ? existing.signature_template_id : parsed.data.draft.signatureTemplateId,
+          });
+          if ((await sha256Json(quoteHashContent(stored))) !== (await sha256Json(quoteHashContent(incoming))))
+            return fail(replyDraftOccupied(existing.short_id));
+        }
+        return ok({ ...mapDraft(existing), creationOutcome: "existing" as const });
       }
       const validationOrigin: DraftSeedOrigin =
         parsed.data.origin.kind === "compose"
@@ -1376,6 +1398,7 @@ export const materializeDraftSeed = async (params: {
         prepared,
         content,
         rejectOccupiedContent: params.rejectOccupiedContent,
+        rejectDifferentContent: params.rejectDifferentContent,
         materializationKey: parsed.data.idempotencyKey,
         materializationRequestHash: requestHash,
       });
@@ -1864,7 +1887,9 @@ const prepareReplyModeChange = async (params: {
           conversationId: row.conversation_id,
           subject: previous.data.subject,
         });
-  const customSubject = row.subject !== previousSubject;
+  const coreSubject = stripMailSubjectPrefixes(row.subject);
+  const customSubject =
+    coreSubject !== stripMailSubjectPrefixes(previous.data.subject) && coreSubject !== stripMailSubjectPrefixes(previousSubject);
   const prepared = await prepareComposeDraftInTransaction({
     db: params.db,
     context: params.context,
@@ -1880,8 +1905,16 @@ const prepareReplyModeChange = async (params: {
       includeSourceAttachments: params.intent === "forward",
     },
   });
-  if (!prepared.ok || !customSubject) return prepared;
-  return ok({ ...prepared.data, content: { ...prepared.data.content, subject: row.subject } });
+  if (!prepared.ok) return prepared;
+  const copied = await params.db<{ content_hash: string }[]>`SELECT content_hash FROM mail.draft_attachments
+    WHERE draft_id = ${row.id}::uuid AND removed_at IS NULL AND forwarded_source_message_id IS NULL
+      AND copied_source_message_id = ${row.source_message_id}::uuid`;
+  const hashes = new Set(copied.map((attachment) => attachment.content_hash));
+  return ok({
+    ...prepared.data,
+    content: customSubject ? { ...prepared.data.content, subject: row.subject } : prepared.data.content,
+    attachments: prepared.data.attachments.filter((attachment) => !hashes.has(attachment.contentHash)),
+  });
 };
 
 export const previewDraftIntent = async (params: {

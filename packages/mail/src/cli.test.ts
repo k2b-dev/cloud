@@ -6482,7 +6482,7 @@ test("reply without content opens the existing draft and supplied content fails 
         return api(
           {
             code: "DRAFT_REPLY_BOX_OCCUPIED",
-            message: `Reply draft ${DRAFT_ID} already exists. Open it and apply your content explicitly; no supplied content was saved.`,
+            message: `Reply draft ${DRAFT_ID} already exists. Open it and apply your content explicitly; no supplied content was saved. Switch its mode with cld mail draft intent ${DRAFT_ID} --intent forward --revision <current-revision>.`,
           },
           { status: 409 },
         );
@@ -6500,4 +6500,8 @@ test("reply without content opens the existing draft and supplied content fails 
   expect(occupied.exitCode).not.toBe(0);
   expect(occupied.stderr).toContain(DRAFT_ID);
   expect(occupied.stderr).toContain("no supplied content was saved");
+  const forward = await runCli(origin, ["mail", "forward", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--to", "forward@example.test"]);
+  expect(forward.exitCode).not.toBe(0);
+  expect(forward.stderr).toContain(DRAFT_ID);
+  expect(forward.stderr).toContain(`cld mail draft intent ${DRAFT_ID} --intent forward --revision`);
 });

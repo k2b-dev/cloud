@@ -50,3 +50,26 @@ test("an executed non-AI condition is recorded alongside its comparison", async 
 });
 
 useUnitClients();
+
+test("an occupied reply box is a calm skipped automation outcome with no effect", async () => {
+  const audit = await projectAutomationAudit(sql, {
+    steps: [],
+    outcomes: [
+      {
+        step_key: "reply",
+        source_path: [],
+        action: "createReplyDraft",
+        kind: "action",
+        state: "completed",
+        outcome: null,
+        effect_output: { applied: false, skipped: "reply_draft_occupied", conversationId: "source" },
+      },
+    ],
+    conversationId: "source",
+    evidenceConversationId: "source",
+    ai: [],
+  });
+  expect(audit.skipped).toBe(true);
+  expect(audit.effects).toEqual([]);
+  expect(audit.reasons).toEqual([{ kind: "reply_draft_occupied" }]);
+});

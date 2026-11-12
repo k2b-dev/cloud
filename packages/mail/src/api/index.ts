@@ -3286,15 +3286,24 @@ const mailOperationsApi = new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/draft-seeds/materialize",
     v("param", mailboxParamSchema),
     v("json", materializeDraftSeedInputSchema),
-    async (c) =>
-      respondDrafts(
-        c,
-        drafts.materializeDraftSeed({
-          context: requestContext(c),
-          mailboxId: internalMailboxId(c),
-          input: await internalDraftSeedInput(c, c.req.valid("json")),
-        }),
-      ),
+    async (c) => {
+      const result = await drafts.materializeDraftSeed({
+        context: requestContext(c),
+        mailboxId: internalMailboxId(c),
+        input: await internalDraftSeedInput(c, c.req.valid("json")),
+        rejectDifferentContent: true,
+      });
+      if (!result.ok && result.error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in result.error)
+        return c.json(
+          {
+            code: result.error.code,
+            message: localizeMailError(result.error, getLocale(c)).message,
+            draftId: String(result.error.draftId),
+          },
+          409,
+        );
+      return respondDrafts(c, result);
+    },
   )
   .post("/mailboxes/:mailboxId/drafts", v("param", mailboxParamSchema), v("json", draftContentInputSchema), async (c) =>
     respondDrafts(

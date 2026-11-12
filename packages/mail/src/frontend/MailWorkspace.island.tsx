@@ -1132,7 +1132,7 @@ function createMailboxController(props: MailboxControllerProps) {
     const stale = () => disposed || data.mailbox.id !== mailboxId || requestPath() !== routeAtStart;
     if (stale()) {
       endComposeStart();
-      if (!disposed)
+      if (!disposed && draft.creationOutcome === "created")
         void apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard
           .$post({ param: { mailboxId, draftId: draft.id }, json: { expectedRevision: draft.revision } })
           .catch(() => undefined);
@@ -1148,7 +1148,7 @@ function createMailboxController(props: MailboxControllerProps) {
     }
     endComposeStart();
     if (disposed || hasSelection() || data.scheduledMode || data.draftsMode) return;
-    setNewMessage({ draftId: draft.id, initialDraft: draft, fresh: true });
+    setNewMessage({ draftId: draft.id, initialDraft: draft, fresh: draft.creationOutcome === "created" });
     setDraftParam(draft.id);
   };
   onMount(() => {

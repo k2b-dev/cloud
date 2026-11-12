@@ -3957,6 +3957,7 @@ export const automationLogReasonSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("skipped_upper_rule"), workflowId: z.string().uuid(), name: z.string() }),
   z.object({ kind: z.literal("already_assigned") }),
   z.object({ kind: z.literal("undone_before") }),
+  z.object({ kind: z.literal("reply_draft_occupied") }),
   z.object({
     kind: z.literal("manual"),
     before: z.object({ kind: z.enum(["user", "group"]), name: z.string(), byRule: z.string().nullable() }).nullable(),

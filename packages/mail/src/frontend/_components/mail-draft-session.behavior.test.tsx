@@ -185,6 +185,7 @@ describe("Mail draft session", () => {
     if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
     else delete (globalThis as { localStorage?: unknown }).localStorage;
     dom.cleanup();
+    setSystemTime();
   });
 
   const respondWith = (handler: (method: string, url: string, body: unknown) => Response | Promise<Response>) => {
@@ -200,6 +201,56 @@ describe("Mail draft session", () => {
       { preconnect: originalFetch.preconnect },
     );
   };
+
+  for (const editMode of ["lock", "shared"] as const) {
+    for (const answer of ["conflict", "existing"] as const) {
+      test(`occupied seed preserves the journal and never writes the other draft (${editMode}, ${answer})`, async () => {
+        setSystemTime(new Date(now));
+        const local = content("Local recovery text", "first@example.test");
+        const occupant = { ...draft(7, content("Other person's text", "first@example.test")), editMode, creationOutcome: "existing" };
+        respondWith((_method, url) => {
+          if (url.endsWith("/materialize"))
+            return answer === "conflict"
+              ? Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: "Existing draft", draftId: DRAFT_ID }, { status: 409 })
+              : Response.json(occupant);
+          throw new Error(`Unexpected occupant write: ${url}`);
+        });
+        const { createMailDraftSession } = await import("./mail-draft-session");
+        const [current, setCurrent] = createSignal(local);
+        const materialized = jest.fn();
+        const session = createRoot((disposeRoot) => {
+          dispose = disposeRoot;
+          return createMailDraftSession({
+            mailboxId: MAILBOX_ID,
+            currentActor: { kind: "user", id: "Usr001" },
+            initialSeed: { ...seed, intent: "reply", conversationId: "Cnv001", content: local },
+            hasVerifiedIdentity: () => true,
+            content: current,
+            applyDraftContent: setCurrent,
+            isDisposed: () => false,
+            onRecovered: () => undefined,
+            onMaterialized: materialized,
+            locale: () => "en",
+          });
+        });
+        await session.ensureDraft();
+        expect(await session.persist()).toBeNull();
+        expect(session.occupiedReplyDraftId()).toBe(DRAFT_ID);
+        expect(session.draft()).toBeNull();
+        expect(materialized).not.toHaveBeenCalled();
+        setCurrent({ ...current(), body: "Later local text" });
+        await Bun.sleep(0);
+        expect(await session.persist()).toBeNull();
+        const journal = openMailUserDraftStorage(localStorage, "Usr001").getItem(mailDraftJournalKey(MAILBOX_ID, seed.id));
+        expect(JSON.parse(journal!).content.body).toBe("Later local text");
+        expect(requests).toHaveLength(1);
+        expect(FakeWebSocket.instances).toHaveLength(0);
+        dispose();
+        await Bun.sleep(0);
+        expect(requests).toHaveLength(1);
+      });
+    }
+  }
 
   const sharedFixture = async (fromSeed = false, initializing = false) => {
     const editable = content("Saved shared text", "first@example.test");

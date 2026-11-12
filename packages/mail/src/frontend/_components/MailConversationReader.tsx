@@ -418,7 +418,7 @@ export default function MailConversationReader(props: {
     void summaryGenerate().mutate({ mailboxId: props.mailboxId, conversationId, expectedSummaryRevision: current.summaryRevision, mode });
   };
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
-  let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
+  let closeDraftDialog: ((value: ConversationDraftSummary | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
   let readerScrollFrame: number | null = null;
   let followingNewest = true;
@@ -565,7 +565,7 @@ export default function MailConversationReader(props: {
   const chooseConversationDraft = async (lookup: DraftLookup, existingDrafts: ConversationDraftSummary[]) => {
     if (!isCurrentLookup(lookup)) return dropWindow(lookup);
     if (existingDrafts.length === 0) return void createConversationDraft(lookup);
-    const selected = await prompts.dialog<ConversationDraftSummary | null>(
+    const selected = await prompts.dialog<ConversationDraftSummary>(
       (close) => {
         closeDraftDialog = close;
         createEffect(() => {
@@ -614,10 +614,6 @@ export default function MailConversationReader(props: {
               <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
                 {t().cancel}
               </Button>
-              <Button size="sm" type="button" onClick={() => close(null)}>
-                <i class="ti ti-plus" aria-hidden="true" />
-                {t().newIntent({ intent: intentLabel(lookup.request.intent) })}
-              </Button>
             </div>
           </div>
         );
@@ -630,8 +626,7 @@ export default function MailConversationReader(props: {
     );
     closeDraftDialog = null;
     if (selected === undefined || !isCurrentLookup(lookup)) return dropWindow(lookup);
-    if (selected) return void openConversationDraft(lookup, selected.id);
-    void createConversationDraft(lookup);
+    void openConversationDraft(lookup, selected.id);
   };
 
   const conversationDrafts = createMemo(
@@ -1003,12 +998,13 @@ export default function MailConversationReader(props: {
       const draft = await response.json();
       if (!stillHere()) {
         // The person moved on while the empty draft was created; it goes again instead of waiting in that conversation.
-        void apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard
-          .$post({ param: { ...param, draftId: draft.id }, json: { expectedRevision: draft.revision } })
-          .catch(() => undefined);
+        if (draft.creationOutcome === "created")
+          void apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard
+            .$post({ param: { ...param, draftId: draft.id }, json: { expectedRevision: draft.revision } })
+            .catch(() => undefined);
         return;
       }
-      await openInlineDraft({ conversationId, draftId: draft.id, initialDraft: draft, fresh: true });
+      await openInlineDraft({ conversationId, draftId: draft.id, initialDraft: draft, fresh: draft.creationOutcome === "created" });
     } catch (error) {
       if (stillHere())
         void prompts.error(error instanceof Error ? error.message : t().createDraftFailed, { title: t().startMessageFailed });

@@ -204,7 +204,7 @@ export const projectAutomationAudit = async (
           workflowId: output.workflowId,
           name: typeof output.name === "string" ? output.name : "",
         });
-    } else if (output.skipped === "already_assigned" || output.skipped === "undone_before") {
+    } else if (output.skipped === "already_assigned" || output.skipped === "undone_before" || output.skipped === "reply_draft_occupied") {
       skipped = true;
       reasons.push({ kind: output.skipped });
     } else if (output.skipped) {

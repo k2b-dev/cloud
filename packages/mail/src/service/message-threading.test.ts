@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { hasReplySubjectPrefix, normalizeMailSubject } from "./message-threading";
+import { hasReplySubjectPrefix, normalizeMailSubject, stripMailSubjectPrefixes } from "./message-threading";
 
 describe("mail subject threading", () => {
   test("keeps tags containing digits or hashes in the normalized subject", () => {
@@ -31,4 +31,12 @@ describe("mail subject threading", () => {
       expect(hasReplySubjectPrefix(subject)).toBe(false);
     }
   });
+});
+
+test("derived subject cores strip repeated localized prefixes while retaining identifying tags", () => {
+  for (const prefix of ["Re:", "RE:", "Fw:", "Fwd:", "AW:", "WG:", "RV:", "SV:", "Antw:", "re[2]:"]) {
+    expect(stripMailSubjectPrefixes(`${prefix} Fwd: Re: Foo`)).toBe("Foo");
+    expect(stripMailSubjectPrefixes(`[Ticket#2] ${prefix} Re: Foo`)).toBe("[Ticket#2] Foo");
+  }
+  expect(stripMailSubjectPrefixes("Re: My own subject")).toBe("My own subject");
 });

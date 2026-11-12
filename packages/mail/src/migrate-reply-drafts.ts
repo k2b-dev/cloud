@@ -51,8 +51,8 @@ const initialize = () =>
         '{"deletedDrafts":0,"affectedConversations":0,"completed":false}')`;
   });
 
-/** Classify legacy forward copies once, before people can change modes after the upgrade. */
-const backfillForwardAttachments = async () => {
+/** Classify legacy source copies once, before people can change modes after the upgrade. */
+const backfillSourceAttachments = async () => {
   let cursor = { conversationId: "00000000-0000-0000-0000-000000000000", id: "00000000-0000-0000-0000-000000000000" };
   for (;;) {
     const rows = await sql.begin(async (tx) => {
@@ -62,11 +62,12 @@ const backfillForwardAttachments = async () => {
         FROM mail.schema_migrations WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION}`;
       if (marker?.completed) return [];
       const drafts = await tx<{ id: string; conversation_id: string }[]>`SELECT id, conversation_id FROM mail.drafts
-        WHERE ${occupied()} AND intent = 'forward'
+        WHERE ${occupied()}
           AND (conversation_id, id) > (${cursor.conversationId}::uuid, ${cursor.id}::uuid)
         ORDER BY conversation_id, id LIMIT ${BATCH_SIZE} FOR UPDATE`;
       if (drafts.length)
-        await tx`UPDATE mail.draft_attachments a SET forwarded_source_message_id = d.source_message_id
+        await tx`UPDATE mail.draft_attachments a SET copied_source_message_id = d.source_message_id,
+          forwarded_source_message_id = CASE WHEN d.intent = 'forward' THEN d.source_message_id ELSE a.forwarded_source_message_id END
           FROM mail.drafts d WHERE d.id = ANY(${sql.array(
             drafts.map((draft) => draft.id),
             "UUID",
@@ -108,13 +109,18 @@ const batch = () =>
       await tx`SELECT id FROM mail.mailboxes WHERE id = ${conversation.mailbox_id}::uuid FOR UPDATE`;
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`mail:reply-draft:${conversation.conversation_id}`}, 0))`;
       const rows = await tx<{ id: string; consolidated_count: number }[]>`SELECT d.id, d.consolidated_count FROM mail.drafts d
+        CROSS JOIN LATERAL (SELECT coalesce(greatest(d.content_edited_at,
+          (SELECT max(r.created_at) FROM mail.draft_document_revisions r WHERE r.draft_id = d.id AND r.revision > 1)),
+          (SELECT max(s.created_at) FROM mail.draft_provider_snapshots s
+            WHERE s.draft_id = d.id AND s.direction = 'export' AND s.cloud_revision > 1)) AS edited_at) edits
         WHERE d.conversation_id = ${conversation.conversation_id}::uuid AND ${occupied()}
         ORDER BY ${committedSend()} DESC,
           (d.author_kind <> 'service_account' OR d.adopted_at IS NOT NULL) DESC,
-          coalesce(greatest(d.content_edited_at,
-            (SELECT max(r.created_at) FROM mail.draft_document_revisions r WHERE r.draft_id = d.id AND r.revision > 1)),
-            (SELECT max(s.created_at) FROM mail.draft_provider_snapshots s WHERE s.draft_id = d.id AND s.direction = 'export' AND s.cloud_revision > 1),
-            d.created_at) DESC, d.created_at DESC, d.id DESC
+          (edits.edited_at IS NOT NULL OR (d.edit_mode = 'lock' AND (d.revision > 1
+            OR btrim(d.body_markdown) <> '' OR btrim(d.subject) <> ''
+            OR jsonb_array_length(d.to_addresses) > 0 OR jsonb_array_length(d.cc_addresses) > 0
+            OR jsonb_array_length(d.bcc_addresses) > 0))) DESC,
+          edits.edited_at DESC NULLS LAST, d.created_at DESC, d.id DESC
         LIMIT ${BATCH_SIZE - deleted + 1} FOR UPDATE OF d`;
       const [survivor, ...losers] = rows;
       if (!survivor || !losers.length) continue;
@@ -152,7 +158,7 @@ export const migrateReplyDrafts = async (): Promise<ReplyDraftMigrationResult> =
     WHERE version = ${REPLY_DRAFT_MIGRATION_VERSION}`;
   if (!previous?.details.completed) await prepareConsolidationIndex();
   await initialize();
-  if (!previous?.details.completed) await backfillForwardAttachments();
+  if (!previous?.details.completed) await backfillSourceAttachments();
   let result = await batch();
   if (result.completed) return result;
   for (;;) {

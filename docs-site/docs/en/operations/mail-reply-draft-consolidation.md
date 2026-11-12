@@ -39,13 +39,19 @@ uncertain and inconsistent deliveries also require reconciliation first.
 
 A committed send has first priority. Otherwise human-authored and adopted
 drafts rank ahead of untouched service-account suggestions. Within that
-priority, F6 uses the later of `content_edited_at` and stored shared-document
-revisions after revision 1. When neither direct signal exists, an exported
-provider revision snapshot after revision 1 is the best available proxy, though
-export can lag behind the edit. Creation time is the final fallback; creation
-time and ID break ties. Legacy rows without revision evidence have no trustworthy
-last-edit timestamp. `updated_at` is excluded because adoption, document
-checkpoints and idle maintenance also update it.
+priority, drafts with edit evidence always beat drafts without it, even if the
+empty draft was created later. F6 then compares edit timestamps, creation time
+and ID, in that order. The edit timestamp is the later of `content_edited_at`
+and stored shared-document revisions after revision 1; an exported provider
+snapshot after revision 1 is the fallback when neither exists.
+
+For legacy lock-mode rows, revision greater than 1 or non-empty body, subject
+or recipients also count as evidence. These rows may have no recoverable edit
+timestamp; the evidence still takes priority over a newer empty draft.
+Revision is a historical proxy: content writes and send cancellation can
+advance it, while idle checkpoints and adoption alone do not. `updated_at`
+is excluded because adoption, document checkpoints and idle maintenance also
+update it.
 
 Removed drafts have no active submissions. F6 leaves their terminal
 `failed`, `reconciled_unsent` and `cancelled` submissions and command history
@@ -88,9 +94,10 @@ fixed number of scans over the table, including historical sent rows; it does
 not rescan those millions of rows for each conversation. Each batch groups the
 open reply index once, then handles several duplicate conversations, up to
 100 deletions per transaction. A conversation with more than 100 losers spans
-batches. The same index supports a bounded keyset pass that identifies legacy Forward
-attachment copies before mode switching becomes available. Explicit source
-copies created in Reply or Reply all after the upgrade remain personal files.
+batches. The same index supports a bounded keyset pass that identifies legacy
+source attachment copies before mode switching becomes available. Explicit source
+copies created in Reply or Reply all remain personal files. Switching to Forward
+does not duplicate copies with the same source message and content hash.
 The supporting index is removed after the final unique index is valid.
 
 Each batch uses Mail's existing transaction-scoped migration lock and locks the
@@ -107,3 +114,8 @@ return the same ID. Supplied content to an occupied box must return
 `DRAFT_REPLY_BOX_OCCUPIED` (409), with the existing draft ID in the message.
 Switch modes with the current revision and inspect recipients and attachments.
 Show any consolidation notice before acknowledging it.
+
+Seed materialization also rejects different content with 409 and a structured
+`draftId`. The composer keeps local text in its device journal and offers the
+existing draft; it does not save over it. Review-reply automation encountering
+an occupied box finishes as skipped, with the reason in the automation log.

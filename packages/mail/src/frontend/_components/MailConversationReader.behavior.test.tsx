@@ -734,9 +734,10 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
   }
 });
 
-test.skipIf(isServer)(
-  "changing the conversation while its reply draft is created drops the stale reply and removes that draft",
-  async () => {
+test.skipIf(isServer).each(["created", "existing"] as const)(
+  "changing the conversation during materialization discards only a created draft (%s)",
+  async (creationOutcome) => {
+    setSystemTime(new Date(now));
     const dom = createDomTestHarness();
     const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
@@ -843,7 +844,7 @@ test.skipIf(isServer)(
           await seedAnswer.promise;
           return Response.json(seed);
         }
-        if (path.endsWith("/draft-seeds/materialize")) return Response.json(created);
+        if (path.endsWith("/draft-seeds/materialize")) return Response.json({ ...created, creationOutcome });
         if (path.endsWith("/discard")) return Response.json({ ...created, state: "discarded" });
         return Response.json([]);
       },
@@ -878,8 +879,13 @@ test.skipIf(isServer)(
       await waitFor(() => calls.some((call) => call.endsWith("/draft-seeds")));
       setConversationId("Conv02");
       seedAnswer.resolve();
-      // The draft was created before the answer could stop it; it goes again instead of waiting in the other conversation.
-      await waitFor(() => calls.some((call) => call === "POST /api/mail/mailboxes/Box001/drafts/DrfNew/discard"));
+      await waitFor(() => calls.some((call) => call.endsWith("/draft-seeds/materialize")));
+      if (creationOutcome === "created")
+        await waitFor(() => calls.some((call) => call === "POST /api/mail/mailboxes/Box001/drafts/DrfNew/discard"));
+      else {
+        await waitFor(() => Boolean(dom.root.querySelector('[data-mail-toolbar-action="reply"]:not(:disabled)')));
+        expect(calls.some((call) => call.endsWith("/discard"))).toBe(false);
+      }
       expect(dom.root.querySelector("[data-mail-inline-draft], [data-mail-inline-draft-frame]")).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
     } finally {
@@ -890,6 +896,7 @@ test.skipIf(isServer)(
       if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
       else Reflect.deleteProperty(globalThis, "localStorage");
       dom.cleanup();
+      setSystemTime();
     }
   },
 );

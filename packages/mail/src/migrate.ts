@@ -97,6 +97,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   END $$`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS content_edited_at timestamptz`.simple();
   await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS forwarded_source_message_id uuid`.simple();
+  await tx`ALTER TABLE mail.draft_attachments ADD COLUMN IF NOT EXISTS copied_source_message_id uuid`.simple();
   await tx`CREATE TABLE IF NOT EXISTS mail.reply_draft_retirements (
     draft_id uuid PRIMARY KEY REFERENCES mail.drafts(id) ON DELETE CASCADE)`.simple();
   await tx`CREATE OR REPLACE FUNCTION mail.touch_draft_attachment_edit() RETURNS trigger LANGUAGE plpgsql AS $$

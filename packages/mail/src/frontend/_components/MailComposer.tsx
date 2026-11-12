@@ -1839,7 +1839,24 @@ export default function MailComposer(props: {
             role="status"
           >
             <span class="min-w-0 flex-1">{collaborationStatus()}</span>
-            <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+            <Show when={draftSession.occupiedReplyDraftId()}>
+              {(id) => (
+                <ButtonLink
+                  variant="secondary"
+                  size="sm"
+                  href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
+                >
+                  {t().openExistingReplyDraft}
+                </ButtonLink>
+              )}
+            </Show>
+            <Show
+              when={
+                !draftSession.occupiedReplyDraftId() &&
+                !isShared() &&
+                (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
+              }
+            >
               <Button
                 variant="secondary"
                 size="sm"
@@ -2146,7 +2163,24 @@ export default function MailComposer(props: {
               {readonlyActionLabel()}
             </Button>
           </Show>
-          <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+          <Show when={draftSession.occupiedReplyDraftId()}>
+            {(id) => (
+              <ButtonLink
+                variant="secondary"
+                size="sm"
+                href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
+              >
+                {t().openExistingReplyDraft}
+              </ButtonLink>
+            )}
+          </Show>
+          <Show
+            when={
+              !draftSession.occupiedReplyDraftId() &&
+              !isShared() &&
+              (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
+            }
+          >
             <Button
               variant="secondary"
               size="sm"
@@ -2201,7 +2235,24 @@ export default function MailComposer(props: {
           <span class="min-w-0 flex-1" classList={{ "basis-full": status() === "error" }}>
             {collaborationStatus()}
           </span>
-          <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+          <Show when={draftSession.occupiedReplyDraftId()}>
+            {(id) => (
+              <ButtonLink
+                variant="secondary"
+                size="sm"
+                href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
+              >
+                {t().openExistingReplyDraft}
+              </ButtonLink>
+            )}
+          </Show>
+          <Show
+            when={
+              !draftSession.occupiedReplyDraftId() &&
+              !isShared() &&
+              (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
+            }
+          >
             <Button
               variant="secondary"
               size="sm"

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Deployment requirements
@@ -1319,7 +1319,8 @@ draft for every conversation with `origin = 'user'`, including suggestions and
 workflow review replies. Private automatic replies remain outside this box.
 The irreversible F6 migration preserves committed sends (refusing two in one
 conversation), then prefers human/adopted drafts to untouched suggestions,
-then content edit evidence. It erases the other drafts, writes activity entries,
+then drafts with edit evidence before empty drafts, followed by edit time and
+creation time. It erases the other drafts, writes activity entries,
 records schema marker `4 (one_reply_draft)`, and logs counts.
 Back up before upgrading; there is no SQL downgrade. Follow
 [Mail reply draft consolidation](/en/docs/operations/mail-reply-draft-consolidation)

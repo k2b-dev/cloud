@@ -960,6 +960,7 @@ CREATE TABLE mail.draft_attachments (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     removed_at timestamp with time zone,
     forwarded_source_message_id uuid,
+    copied_source_message_id uuid,
     CONSTRAINT draft_attachments_byte_length_check CHECK ((byte_length >= 0)),
     CONSTRAINT draft_attachments_content_hash_check CHECK ((char_length(content_hash) = 64)),
     CONSTRAINT draft_attachments_content_type_check CHECK (((char_length(content_type) >= 1) AND (char_length(content_type) <= 255))),
