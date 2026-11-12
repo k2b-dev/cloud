@@ -33,6 +33,7 @@ import { metricsCommands } from "./metrics";
 import { natsCommands } from "./nats";
 import { notificationCommands } from "./notifications";
 import { outgoingMailCommands } from "./outgoing-mail";
+import { secretCommands } from "./secrets";
 import { settingsCommands } from "./settings";
 import { syncCommands } from "./sync";
 import { telemetryCommands } from "./telemetry";
@@ -44,6 +45,7 @@ const build = (locale?: string) =>
     name: "admin",
     summary: "Inspect and operate Cloud administration surfaces.",
     groupSummaries: {
+      secrets: "Inspect installation secret rotation and owner checks.",
       capabilities: "Inspect registered capabilities and their executions.",
       "capabilities executions": "List and inspect capability executions.",
       "ai enrichment": "Run AI enrichment for configured resources.",
@@ -167,6 +169,7 @@ const build = (locale?: string) =>
       ...metricsCommands,
       ...natsCommands,
       ...syncCommands,
+      ...secretCommands,
       ...settingsCommands,
       ...administrationCommands,
     ],
@@ -176,5 +179,13 @@ const admin = build();
 export default {
   ...admin,
   help: (locale?: string) => build(locale).help?.(locale) ?? "",
-  run: (ctx: CloudCliContext) => build(ctx.options.locale).run(ctx),
+  run: async (ctx: CloudCliContext) => {
+    try {
+      return await build(ctx.options.locale).run(ctx);
+    } catch (error) {
+      if (ctx.args[0] !== "secrets") throw error;
+      ctx.error(error instanceof Error ? error.message : "Secret status failed");
+      return 2;
+    }
+  },
 };

@@ -303,3 +303,8 @@ export { links } from "./links";
 export { previews, PreviewSourceChanged } from "./previews";
 export type { PreviewSource, PreviewReader, PreviewReadResult, PreviewVariant } from "./previews";
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
+
+export { createSecretOwner, createSecretMaintenance } from "./secret-owners";
+export type { SecretOwner, SecretOwnerRow } from "./secret-owners";
+
+export { platformSecretOwners } from "./platform-secret-owners";

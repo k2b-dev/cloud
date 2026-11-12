@@ -668,7 +668,8 @@ environment fallback.
 
 | Configuration | Recipient | When required |
 | --- | --- | --- |
-| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Core and Gateway directly; ordinary apps through Core bootstrap | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
+| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Core and Gateway directly; ordinary apps through Core bootstrap | Common application baseline. Every app must use the installation encryption ring for settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
+| `APP_SECRET_NEXT`, `APP_SECRET_PREVIOUS` | **Core and Gateway**, plus locally pinned apps | Optional, mutually exclusive overlap roots. Other apps bootstrap the whole ring from Core. Follow [APP_SECRET rotation](/en/docs/operations/app-secret-rotation) before replacing or removing a root. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | **Core only** | Core identity issuance; generate an independent 32-byte key as 64 hex characters. `CLOUD_IDENTITY_NEXT_KEY` / `CLOUD_IDENTITY_PREVIOUS_KEY` are temporary rotation inputs, also Core-only. |
 | `CLOUD_APP_KEY_FILE` | Every ordinary application | Enrolled Ed25519 identity, mounted as a readable private file. OAuth issuance requires the explicit `oauth:issue` grant. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Every ordinary application and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |

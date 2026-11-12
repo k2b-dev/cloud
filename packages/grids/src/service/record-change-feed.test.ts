@@ -11,7 +11,7 @@ describe("Record change feed cursor", () => {
   const boundary = {
     txid: "4294967301",
     eventId: "018f8df0-d9d3-7b31-8bf0-2cf733d4a003",
-    occurredAt: new Date().toISOString(),
+    occurredAt: "2030-01-02T00:00:00.000Z",
   };
 
   test("round-trips only in the signed Base and Table scope", () => {
@@ -49,4 +49,13 @@ describe("Record change feed cursor", () => {
       error: { code: "BAD_INPUT", status: 400, message: "Der Cursor des Datensatz-Änderungsfeeds ist ungültig." },
     });
   });
+});
+
+test("change-feed cursors survive root overlap while retaining rescan and scope checks", () => {
+  const scope = { baseId: "base", tableId: "table" };
+  const boundary = { txid: "4294967301", eventId: "00000000-0000-4000-8000-000000000001", occurredAt: "2030-01-02T00:00:00.000Z" };
+  const cursor = encodeRecordChangeFeedCursor(scope, boundary, "A");
+  expect(decodeRecordChangeFeedCursor(cursor, scope, ["B", "A"])).toEqual(boundary);
+  expect(decodeRecordChangeFeedCursor(cursor, { ...scope, tableId: null }, ["B", "A"])).toBeNull();
+  expect(decodeRecordChangeFeedCursor(cursor, scope, ["B"])).toBeNull();
 });

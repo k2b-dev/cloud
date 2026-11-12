@@ -109,15 +109,15 @@ suite("unreadable settings preserve stored data", () => {
       expect((await settings.getAll()).find((entry) => entry.key === key)).toMatchObject({ unreadable: false, isCustom: false });
     });
 
-  test("shared plaintext cache cannot hide an unreadable stored row", async () => {
+  test("a pre-ring plaintext cache is ignored and cannot hide an unreadable stored row", async () => {
     const ciphertext = await foreignCiphertext();
     await insert(ciphertext);
     const cacheKey = `settings:${key}`;
     const cached = JSON.stringify("https://saved.test");
     try {
-      // A process with the right APP_SECRET can populate the shared value cache.
+      // A pre-rotation plaintext cache does not attest the reader's ring.
       await redis.set(cacheKey, cached);
-      expect(await settings.get<string>(key)).toBe("https://saved.test");
+      expect(await settings.get<string>(key)).toBe(fallback);
       expect(await settings.read(key)).toEqual({ stored: "unreadable", value: fallback });
       expect((await settings.getAll()).find((entry) => entry.key === key)).toMatchObject({
         unreadable: true,
@@ -128,7 +128,7 @@ suite("unreadable settings preserve stored data", () => {
       await expect(settings.set(key, "https://replacement.test")).rejects.toBeInstanceOf(settings.SettingUnreadableError);
       expect((await row())?.value).toBe(ciphertext);
       expect((await row())?.updated_at.toISOString()).toBe(stamp);
-      expect(await redis.get(cacheKey)).toBe(cached);
+      expect(await redis.get(cacheKey)).not.toBe(cached);
     } finally {
       await redis.del(cacheKey);
     }

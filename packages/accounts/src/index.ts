@@ -17,6 +17,7 @@ const router = new Hono<AuthContext>()
 router.get("/app/accounts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners: [],
   fetch: router.fetch,
   capabilities: accountsCapabilities,
   help: accountsHelp,

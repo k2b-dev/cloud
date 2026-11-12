@@ -1,6 +1,14 @@
 import { sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type RequestActor, type Result } from "@k2b/cloud/server";
-import { escapeLikePattern, isUniqueViolation, requestPublicHttps, secrets, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import {
+  createSecretOwner,
+  escapeLikePattern,
+  isUniqueViolation,
+  requestPublicHttps,
+  secrets,
+  toPgTextArray,
+  toPgUuidArray,
+} from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
 
 type InventoryItem = {
@@ -11,6 +19,16 @@ type InventoryItem = {
   metadata: Record<string, unknown> | null;
   createdAt: string;
 };
+
+// Pass these owners to app.start({ secretOwners: inventorySecretOwners }).
+export const inventorySecretOwners = [
+  createSecretOwner({
+    id: "integration-credentials",
+    table: "inventory.integration_credentials",
+    primaryKey: ["id"],
+    columns: ["value_encrypted"],
+  }),
+];
 
 type DbInventoryItem = {
   id: string;

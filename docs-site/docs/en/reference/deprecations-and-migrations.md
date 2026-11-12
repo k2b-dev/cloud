@@ -10,6 +10,19 @@ updated: 2026-11-12
 
 # Deprecations and migrations
 
+## APP_SECRET supports overlapping roots
+
+Follow [Rotate APP_SECRET](/en/docs/operations/app-secret-rotation) instead of
+replacing the encryption secret directly. Ciphertext and token formats stay
+unchanged. Readers accept current plus NEXT or PREVIOUS; writers use current.
+Rewrap runs automatically in the application that owns each table.
+
+Third-party apps declare `secretOwners` at startup, including `[]` when none
+are needed. Omission blocks strict readiness. Use `appKeys(name)` for purpose
+signature verification during overlap; `appKey(name)` keeps its byte-identical
+current-key derivation. Settings caches now require an encrypted envelope
+bound to the full ring; earlier cache entries are refreshed from Postgres.
+
 ## App proof replay protection moves to Valkey
 
 Stop all old Core replicas before starting any new Core replica. Applications

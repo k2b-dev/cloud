@@ -185,11 +185,12 @@ log.info("Import completed", { itemCount: 42 });
 Use the capability guide to choose the narrow API:
 
 - [Retained service-account authority](/en/docs/identity/authentication#retain-service-account-authority): `isServiceAccountOAuthAuthorityCurrent` from `@k2b/cloud/services` revalidates protected OAuth references before domain authorization.
+- [Encrypted data owners](/en/docs/data/secrets-and-persistent-state#declare-encrypted-data-for-rotation): `createSecretOwner`, `SecretOwner` and `SecretOwnerRow` from `@k2b/cloud/services`, declared through `app.start({ secretOwners })`, provide automatic CAS rewrap and owner checks.
 - [Settings](/en/docs/platform/settings): `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` from `@k2b/cloud/services`; `app.settings.read()` reports stored state before a partial update.
 - [Saved maps](/en/docs/platform/saved-map-documents): `GeoDocumentSchema`, pin/link schemas and `serializeGeoDocument` from `@k2b/cloud/geo/document` save Geo results and complete routes as Notebook blocks.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
 - [Object store](/en/docs/platform/object-store): `storage` from `@k2b/cloud/services` supplies app-bound private documents and permanent public image URLs.
-- [One-time links](/en/docs/identity/one-time-links): `links.create(input, { tx }?)`, `links.peek(token, { purpose }, { tx }?)`, and `links.redeem(token, { purpose }, { tx }?)` from `@k2b/cloud/services` share single-use credentials within an application package; synchronous `appKey(name): string` from `@k2b/cloud/server` derives app-specific signing keys.
+- [One-time links](/en/docs/identity/one-time-links): `links.create(input, { tx }?)`, `links.peek(token, { purpose }, { tx }?)`, and `links.redeem(token, { purpose }, { tx }?)` from `@k2b/cloud/services` share single-use credentials within an application package; synchronous `appKey(name): string` signs with current and `appKeys(name): string[]` returns current-first verification keys from `@k2b/cloud/server`.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.

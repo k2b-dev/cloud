@@ -9,6 +9,7 @@ import { assistantCapabilities } from "./capabilities";
 import { app } from "./config";
 import { assistantHelp } from "./help";
 import { apiRoutes, router } from "./router";
+import { secretOwners } from "./secret-owners";
 
 let hostTimer: ReturnType<typeof setInterval> | undefined;
 let hostSweep: Promise<unknown> | undefined;
@@ -22,6 +23,7 @@ const sweep = () =>
     }));
 
 const result = await app.start({
+  secretOwners,
   fetch: router.fetch,
   help: assistantHelp,
   capabilities: assistantCapabilities,

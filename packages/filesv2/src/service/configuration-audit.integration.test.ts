@@ -95,7 +95,7 @@ suite("Files configuration security audit", () => {
     await settings.set(key, JSON.stringify(previous));
     expect(await app.settings.get(key)).toBe(JSON.stringify(previous));
     const cached = await redis.get(cacheKey);
-    expect(cached).toStartWith("!cloud:encrypted-setting:v2:");
+    expect(cached).toStartWith("!cloud:encrypted-setting:v3:");
     expect(cached).not.toContain(previous.token);
     expect(cached).not.toContain(JSON.stringify(previous));
   }

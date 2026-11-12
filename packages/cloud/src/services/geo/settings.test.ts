@@ -55,7 +55,7 @@ test("warm generic settings reads decrypt the provider key in one cache read wit
   const cache = spyOn(redis, "requestCacheRedis").mockResolvedValue(cacheClient);
   const mget = spyOn(cacheClient, "mget").mockResolvedValue([
     await encodeSecretCache("geo.api_key", GEO_TEST_KEY),
-    JSON.stringify("Cloud"),
+    await encodeSecretCache("app.name", "Cloud"),
   ]);
   const state = spyOn(settingsStore, "readKeyState").mockRejectedValue(new Error("No direct DB access permitted"));
   expect(await settingsStore.bulkRead(["geo.api_key", "app.name"])).toEqual(

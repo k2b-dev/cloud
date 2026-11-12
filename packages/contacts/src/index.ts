@@ -21,6 +21,7 @@ router.get("/app/contacts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/admin/contacts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 const result = await app.start({
+  secretOwners: [],
   capabilities: contactsCapabilities,
   fetch: router.fetch,
   help: contactsHelp,

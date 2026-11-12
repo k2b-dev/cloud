@@ -7,6 +7,7 @@ import pageRoutes from "./frontend";
 import adminPages from "./frontend/admin/page";
 import { pulseHelp } from "./help";
 import { migrate } from "./migrate";
+import { secretOwners } from "./secret-owners";
 import { pulseService } from "./service";
 import { pulseRuntime } from "./service/runtime";
 
@@ -20,6 +21,7 @@ const router = new Hono<AuthContext>()
 router.get("/app/pulse/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners,
   fetch: router.fetch,
   capabilities: pulseCapabilities,
   help: pulseHelp,

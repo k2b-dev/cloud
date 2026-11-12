@@ -121,7 +121,7 @@ await app.settings.remove("inventory.low_stock_threshold");
 Use `app.settings.read(key)` when the stored state matters. It returns
 `{ value, stored }`, where `stored` is `"none"`, `"readable"`, or `"unreadable"`.
 Each call reads the stored row from Postgres and reports this process's view
-under its `APP_SECRET`, without reading or filling the shared cache. Use `get()`
+under its startup secret ring, without reading or filling the shared cache. Use `get()`
 for hot paths that only need a value.
 For an unreadable row, `value` is the environment fallback or default in use.
 The administration list marks it with `unreadable: true` and `isCustom: true`;
@@ -202,11 +202,12 @@ to accept fractions. Validation applies to administration and API writes.
 `get()` and request snapshots use shared Valkey entries with a five-minute TTL
 and one bulk cache read per warm request for unbound settings. Only settings
 listed in another setting's `resetOnChange` bypass this cache and read with
-their endpoints in one database snapshot. Secret-kind entries use encrypted
-values bound to the setting key. Each process reuses validated ciphertext in
-a local LRU cache bounded by its declared secret count. Old plaintext secret
-cache entries are ignored and replaced, with one warning per process and key;
-non-secret entries retain their JSON format. Missing database rows are cached
+their endpoints in one database snapshot. Cached values use encrypted envelopes bound to the setting key and complete
+secret ring. Each process reuses validated ciphertext in a local LRU bounded by
+its declared setting count. Pre-ring plaintext cache entries are ignored and
+refreshed from Postgres, with one warning per process and key. Removing an overlap
+root also invalidates memoized decryptions; a shared cache cannot hide a row
+that the new ring cannot read. Missing database rows are cached
 too; each application still resolves its own environment fallback and default.
 Saving or removing an override invalidates that key after the database commit.
 A concurrent reader cannot refill an invalidated entry with its older value.
@@ -235,8 +236,8 @@ attempt. Temporary Valkey failures retry within the remainder of the five-minute
 NATS and settings recovery allowance; a failed attempt after that allowance stops
 startup. The allowance limits recovery retries, including their delays, while a
 successful cleanup and settings normalization can finish.
-Encrypted database rows and non-secret JSON cache values retain their existing
-formats. Secret cache entries use an encrypted, versioned representation. These cache optimizations require no database migration. Core's
+Encrypted database rows retain their existing format. All setting cache entries
+use an encrypted, versioned representation bound to the complete ring. These cache optimizations require no database migration. Core's
 settings migration also invalidates its account-request setting after commit,
 so an earlier missing-row marker cannot hide an upgrade backfill. If
 invalidation fails, the next start retries it and cached values still expire.
@@ -256,3 +257,12 @@ rejects that key, including for an administrator. Supply a named CLI command
 for the owning API; environment diagnostics remain readable without values.
 For example, Assistant's rsql target allowlist uses `assistant studio-admin
 configure`, preserving its connection preflight.
+
+## Rotate the installation secret
+
+Core maintains every persisted settings row, including retired or application-owned
+keys, during [APP_SECRET rotation](/en/docs/operations/app-secret-rotation).
+Applications do not register separate settings rewrap owners. Rewrap preserves
+the original plaintext and row metadata and invalidates the shared cache after
+commit. Applications that own other encrypted tables declare those through
+[`secretOwners`](/en/docs/data/secrets-and-persistent-state#declare-encrypted-data-for-rotation).

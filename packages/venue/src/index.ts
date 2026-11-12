@@ -17,6 +17,7 @@ const router = new Hono<AuthContext>()
 router.get("/app/venue/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
+  secretOwners: [],
   capabilities: venueCapabilities,
   fetch: router.fetch,
   help: venueHelp,

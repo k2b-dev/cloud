@@ -50,3 +50,11 @@ test("Custom App file tokens cannot be replayed across publication, page context
     }),
   ).toBe(false);
 });
+
+test("preview tokens keep their five-minute expiry during root overlap", () => {
+  const token = createCustomAppFileToken(payload, "A", 1_000);
+  expect(verifyCustomAppFileToken(token, ["B", "A"], 1_001)).toMatchObject(payload);
+  expect(verifyCustomAppFileToken(token, ["A", "B"], 1_001)).toMatchObject(payload);
+  expect(verifyCustomAppFileToken(token, ["B", "A"], 301_001)).toBeNull();
+  expect(verifyCustomAppFileToken(token, ["B"], 1_001)).toBeNull();
+});

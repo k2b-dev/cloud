@@ -4,8 +4,8 @@
  * Resolution order: DB value -> env fallback -> code default.
  *
  * Custom DB values are encrypted at rest using APP_SECRET. Value reads use
- * Redis cache-aside in `./store.ts` (5-minute TTL); secret cache entries
- * remain encrypted. Stored-state reads use DB.
+ * Redis cache-aside in `./store.ts` (5-minute TTL); all cached values are
+ * encrypted and bound to the complete secret ring. Stored-state reads use DB.
  * `loadCache()` runs once at boot to normalize legacy rows and bootstrap
  * env-backed entries into Postgres. Startup never replaces an existing row;
  * env bootstrap only fills missing keys.

@@ -53,13 +53,22 @@ export const createCustomAppFileToken = (
   return `${encoded}.${signature(encoded, secret)}`;
 };
 
-export const verifyCustomAppFileToken = (token: string, secret: string, now = Date.now()): CustomAppFileTokenPayload | null => {
+export const verifyCustomAppFileToken = (
+  token: string,
+  secret: string | readonly string[],
+  now = Date.now(),
+): CustomAppFileTokenPayload | null => {
   const [encoded, supplied, extra] = token.split(".");
   if (!encoded || !supplied || extra) return null;
-  const expected = signature(encoded, secret);
   const suppliedBytes = Buffer.from(supplied);
-  const expectedBytes = Buffer.from(expected);
-  if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) return null;
+  const keys = typeof secret === "string" ? [secret] : secret;
+  if (
+    !keys.some((key) => {
+      const expectedBytes = Buffer.from(signature(encoded, key));
+      return suppliedBytes.length === expectedBytes.length && timingSafeEqual(suppliedBytes, expectedBytes);
+    })
+  )
+    return null;
   try {
     const parsed = PayloadSchema.safeParse(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")));
     return parsed.success && parsed.data.expiresAt >= now ? parsed.data : null;

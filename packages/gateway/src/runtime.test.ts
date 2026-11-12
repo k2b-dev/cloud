@@ -77,6 +77,7 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     }));
     let domainChanged: (() => Promise<void>) | undefined;
     mock.module("@k2b/cloud/services", () => ({
+      createSecretMaintenance: () => ({ metadata: () => undefined }),
       watchGatewayDomainChanges: ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }) => {
         domainChanged = onChange;
         return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));

@@ -954,8 +954,8 @@ export const createCustomAppsApi = (
     )
     .get("/runtime/:shortId/:pageId/:blockId/files/:token", loadOptionalActor, async (c) => {
       const runtime = await resolvePublishedRuntime(c);
-      const secret = connections().appSecret.current;
-      const token = secret ? verifyCustomAppFileToken(c.req.param("token") ?? "", secret) : null;
+      const roots = Object.values(connections().appSecret).filter((root): root is string => root !== undefined);
+      const token = verifyCustomAppFileToken(c.req.param("token") ?? "", roots);
       if (
         !runtime ||
         !token ||

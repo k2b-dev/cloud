@@ -32,6 +32,8 @@ test.each([
   'env["REDIS_URL"]',
   "process.env.VALKEY_URL",
   "Bun.env.APP_SECRET",
+  "process.env.APP_SECRET_NEXT",
+  "env.APP_SECRET_PREVIOUS",
   'import { env as config } from "@k2b/cloud/config"; config.NATS_SERVERS',
   "const { SYNC_NAMESPACE: namespace } = env;",
   "env.SYNC_REPLICAS",

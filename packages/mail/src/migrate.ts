@@ -80,6 +80,17 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`CREATE OR REPLACE FUNCTION mail.touch_provider_connection_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF (to_jsonb(NEW) - 'encrypted_secret') IS DISTINCT FROM (to_jsonb(OLD) - 'encrypted_secret') THEN
+        NEW.updated_at = now();
+      END IF;
+      RETURN NEW;
+    END $$`.simple();
+  await tx`DROP TRIGGER IF EXISTS provider_connections_touch_updated_at ON mail.provider_connections`.simple();
+  await tx`CREATE TRIGGER provider_connections_touch_updated_at BEFORE UPDATE ON mail.provider_connections
+    FOR EACH ROW EXECUTE FUNCTION mail.touch_provider_connection_updated_at()`.simple();
+
   // One checkpoint per folder lets waiting sync commands finish without retaining empty runs.
   await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS last_sync_snapshot jsonb`;
   await tx`DO $$ BEGIN

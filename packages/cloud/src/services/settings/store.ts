@@ -1,7 +1,7 @@
 /**
  * Settings store — Redis cache-aside read/write primitives.
  *
- * Pattern: keys are cached in Redis with a 5-minute TTL; secret values stay encrypted. Value reads try Redis
+ * Pattern: keys are cached in Redis with a 5-minute TTL; values stay encrypted and ring-bound. Value reads try Redis
  * first, fall back to DB on miss, and populate Redis. Writes update DB and
  * delete the Redis key (next reader repopulates with fresh DB state).
  *
@@ -29,7 +29,7 @@ import { ENCRYPTED_SETTING_PREFIX, encodeSecretCache, readSecretCache } from "./
 
 export { SettingUnreadableError } from "./errors";
 
-const REDIS_KEY = (k: string) => `settings:${k}`;
+const REDIS_KEY = (key: string) => `settings:${key}`;
 const warnedPlaintextKeys = new Set<string>();
 
 type SqlClient = typeof sql;
@@ -87,7 +87,7 @@ export const readKeyState = async (key: string, db: SqlClient = sql): Promise<Se
   return state;
 };
 
-/** One warm MGET; secret entries contain encrypted, key-bound values. */
+/** One warm MGET; values are encrypted and bound to their setting key and ring. */
 export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
   const result = new Map<string, unknown>();
   if (keys.length === 0) return result;
@@ -121,15 +121,13 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
       }
       if (value !== null) {
         try {
-          const def = SETTINGS_MAP.get(key);
-          if (def?.kind === "secret") {
-            // Never accept a previous release's plaintext JSON secret cache.
-            if (!value.startsWith("!cloud:") && !warnedPlaintextKeys.has(key)) {
-              warnedPlaintextKeys.add(key);
-              console.warn(`[settings] ignoring plaintext cache entry for "${key}"; update all application processes`);
-            }
-            result.set(key, await readSecretCache(key, value));
-          } else result.set(key, JSON.parse(value));
+          // Pre-ring plaintext caches cannot prove which root read the DB row.
+          // Ignore them and refill from the authoritative encrypted value.
+          if (!value.startsWith("!cloud:") && !warnedPlaintextKeys.has(key)) {
+            warnedPlaintextKeys.add(key);
+            console.warn(`[settings] ignoring a pre-rotation cache entry for "${key}"; refreshing from Postgres`);
+          }
+          result.set(key, await readSecretCache(key, value));
           return;
         } catch {
           // Another process may use the correct APP_SECRET. Preserve its cache
@@ -161,7 +159,7 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
           const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
           if (!validated.ok) return;
           result.set(key, validated.value);
-          const cachedValue = def?.kind === "secret" ? await encodeSecretCache(key, validated.value) : JSON.stringify(validated.value);
+          const cachedValue = await encodeSecretCache(key, validated.value);
           await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, cachedValue, REDIS_TTL_SEC);
         } catch {
           /* Preserve legacy undecryptable-row fallback behavior. */
@@ -174,7 +172,7 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
 };
 
 /**
- * Stored state is per process (APP_SECRET); secret cache entries also require it.
+ * Stored state and cached values are bound to this process's complete secret ring.
  * State reads go directly to Postgres without reading or filling the cache;
  * value reads (`get`, snapshot) keep using the cache.
  */

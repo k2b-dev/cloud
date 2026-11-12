@@ -110,8 +110,8 @@ const auditCursorSigningKey = (): string => {
   return key;
 };
 
-const cursorSignature = (payload: string): string =>
-  createHmac("sha256", auditCursorSigningKey()).update(AUDIT_CURSOR_SIGNATURE_DOMAIN).update(payload).digest("base64url");
+const cursorSignature = (payload: string, key = auditCursorSigningKey()): string =>
+  createHmac("sha256", key).update(AUDIT_CURSOR_SIGNATURE_DOMAIN).update(payload).digest("base64url");
 
 const encodeCursor = (cursor: AuditCursor): string => {
   const payload = Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
@@ -123,9 +123,15 @@ const decodeCursor = (value: string | null | undefined): AuditCursor | null => {
   try {
     const [payload, signature, extra] = value.split(".");
     if (!payload || !signature || extra !== undefined) return null;
-    const expected = Buffer.from(cursorSignature(payload), "utf8");
     const received = Buffer.from(signature, "utf8");
-    if (expected.length !== received.length || !timingSafeEqual(expected, received)) return null;
+    if (
+      !Object.values(connections().appSecret).some((key) => {
+        if (key === undefined) return false;
+        const expected = Buffer.from(cursorSignature(payload, key), "utf8");
+        return expected.length === received.length && timingSafeEqual(expected, received);
+      })
+    )
+      return null;
     const parsed = AuditCursorSchema.safeParse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")));
     return parsed.success ? parsed.data : null;
   } catch {

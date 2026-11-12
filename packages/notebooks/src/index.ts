@@ -8,6 +8,7 @@ import { app, ssr } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { notebookHelp } from "./help";
 import { migrate } from "./migrate";
+import { secretOwners } from "./secret-owners";
 import { notebooksService, reindexRuntime, snapshotRuntime, yjsSnapshotWorker } from "./service";
 import { snapshotAllowlist } from "./service/backup";
 import { workspaceOutbox } from "./service/workspace-events";
@@ -24,6 +25,7 @@ router.get("/app/notebooks/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/admin/notebooks/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 const result = await app.start({
+  secretOwners,
   capabilities: notebooksCapabilities,
   fetch: router.fetch,
   help: notebookHelp,
