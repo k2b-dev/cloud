@@ -113,25 +113,33 @@ export default function AssistantCodeVersionCard(props: {
     disposed = true;
   });
   const [nextRun, setNextRun] = createSignal<string | null>(null);
-  /** Reads overlap when a decision arrives during a read; only the newest one decides what the card shows. */
+  /**
+   * Reads overlap when a decision arrives during a read; only the newest one decides what the card shows, and an older
+   * one ends with the newest one's outcome, so nobody takes it as done before the card shows a state read after it.
+   */
   let reads = 0;
+  let newest: Promise<boolean> = Promise.resolve(true);
   /**
    * Reads the card's state from Core; false when Core did not answer. `live`: a read for a live update, which keeps a
    * card that was shown as it is when it fails, so the update is tried again instead of turning the card into an error.
    */
-  const load = async (live = false): Promise<boolean> => {
+  const load = (live = false): Promise<boolean> => {
     const read = ++reads;
     // A reload after a step keeps the card as it is until the new state arrives, so nothing jumps under the pointer.
     if (typeof loaded() !== "object") setLoaded(null);
-    const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
-    // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
-    const next =
-      typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null;
-    if (read !== reads) return preview !== "failed";
-    if (preview === "failed" && live && loaded() !== null) return false;
-    setNextRun(next);
-    setLoaded(preview);
-    return preview !== "failed";
+    const run = (async (): Promise<boolean> => {
+      const preview = await loadCodeVersionPreview(props.codeId, props.versionId);
+      // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
+      const next =
+        typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null;
+      if (read !== reads) return newest;
+      if (preview === "failed" && live && loaded() !== null) return false;
+      setNextRun(next);
+      setLoaded(preview);
+      return preview !== "failed";
+    })();
+    newest = run;
+    return run;
   };
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   const pending = pendingCodeVersionActivation(props.codeId, props.versionId);
