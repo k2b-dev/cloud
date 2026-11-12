@@ -30,6 +30,7 @@ window.openWindow = (title, options = {}) => {
     },
     onStateChange: (state) => window.changes.push([title, state]),
     ...options,
+    ...(options.action ? { actions: Object.assign(document.createElement("button"), { textContent: options.action }) } : {}),
     get children() {
       const field = document.createElement("textarea");
       field.setAttribute("aria-label", title + " text");
@@ -66,6 +67,7 @@ const open = async (width: number, height: number): Promise<Page> => {
       `<body class="k2b-ui"><main id="area"><button id="content">Behind</button></main></body></html>`,
   );
   await page.addScriptTag({ content: script });
+  await settled(page);
   return page;
 };
 const frame = (page: Page, title: string) =>
@@ -75,8 +77,8 @@ const box = async (page: Page, selector: string, title?: string): Promise<Box> =
   const rect = await target.first().evaluate((element) => element.getBoundingClientRect().toJSON());
   return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
 };
-/** The window changes geometry without animation; one frame lets layout and focus land. */
-const frameDone = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))));
+/** A window that grows or shrinks under a resting pointer hovers another control; the pointer leaves the area first. */
+const pointerAway = (page: Page) => page.mouse.move(2, 2);
 const focusedLabel = (page: Page) =>
   page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? "");
 
@@ -92,7 +94,7 @@ describe("@k2b/ui FloatingWindow states", () => {
       const before = await box(page, "", "Workbench order");
 
       await frame(page, "Workbench order").getByRole("button", { name: "Minimize" }).click();
-      await frameDone(page);
+      await settled(page);
       const bar = await box(page, "", "Workbench order");
       expect(bar.height).toBe(42);
       expect(await field.count()).toBe(1);
@@ -101,7 +103,7 @@ describe("@k2b/ui FloatingWindow states", () => {
       expect(await frame(page, "Workbench order").getByRole("button", { name: "Minimize" }).count()).toBe(0);
 
       await page.getByRole("button", { name: "Restore Workbench order" }).click();
-      await frameDone(page);
+      await settled(page);
       expect(await box(page, "", "Workbench order")).toEqual(before);
       expect(await field.inputValue()).toBe("Oak, 2.4 m");
       expect(await focusedLabel(page)).toBe("Workbench order text");
@@ -112,7 +114,7 @@ describe("@k2b/ui FloatingWindow states", () => {
         window.openWindow("Course plan", { placement: "dock", defaultState: "minimized" });
       });
       await frame(page, "Workbench order").getByRole("button", { name: "Minimize" }).click();
-      await frameDone(page);
+      await settled(page);
       const bars = await Promise.all(["Workbench order", "Plane repair", "Course plan"].map((title) => box(page, "", title)));
       const area = await box(page, "#area");
       const sorted = [...bars].sort((a, b) => b.x - a.x);
@@ -147,7 +149,8 @@ describe("@k2b/ui FloatingWindow states", () => {
       const window_ = frame(page, "Oak planks");
 
       await window_.getByRole("button", { name: "Maximize" }).click();
-      await frameDone(page);
+      await pointerAway(page);
+      await settled(page);
       const area = await box(page, "#area");
       expect(await box(page, ".k2b-floating-window-scrim")).toEqual(area);
       const maximized = await box(page, "", "Oak planks");
@@ -163,7 +166,7 @@ describe("@k2b/ui FloatingWindow states", () => {
       }
       await page.getByLabel("Oak planks text").focus();
       await page.keyboard.press("Escape");
-      await frameDone(page);
+      await settled(page);
       expect(await box(page, "", "Oak planks")).toEqual(before);
       expect(await page.locator(".k2b-floating-window-scrim").count()).toBe(0);
       expect(await window_.getAttribute("aria-modal")).toBe("false");
@@ -172,14 +175,16 @@ describe("@k2b/ui FloatingWindow states", () => {
       // The button restores too and keeps the focus on itself.
       await window_.getByRole("button", { name: "Maximize" }).click();
       await window_.getByRole("button", { name: "Restore size" }).click();
-      await frameDone(page);
+      await pointerAway(page);
+      await settled(page);
       expect(await box(page, "", "Oak planks")).toEqual(before);
       expect(await focusedLabel(page)).toBe("Maximize");
 
       // A click on the scrim restores as well.
       await window_.getByRole("button", { name: "Maximize" }).click();
       await page.mouse.click(area.x + 4, area.y + area.height / 2);
-      await frameDone(page);
+      await pointerAway(page);
+      await settled(page);
       expect(await box(page, "", "Oak planks")).toEqual(before);
       expect(await box(page, "#content")).toEqual(behind);
     } finally {
@@ -215,6 +220,41 @@ describe("@k2b/ui FloatingWindow states", () => {
       expect(await page.locator(".k2b-floating-window").count()).toBe(0);
     } finally {
       await page.close();
+    }
+  });
+
+  test("content actions stand in the header: before the window controls, at the end of a phone sheet, never on a bar", async () => {
+    const page = await open(1440, 900);
+    try {
+      await page.evaluate(() => window.openWindow("Workbench order", { action: "Send" }));
+      await settled(page);
+      const workbench = frame(page, "Workbench order");
+      const send = await workbench.getByRole("button", { name: "Send" }).boundingBox();
+      const minimize = await workbench.getByRole("button", { name: "Minimize" }).boundingBox();
+      const header = await workbench.locator("header").boundingBox();
+      expect(send!.x + send!.width).toBeLessThanOrEqual(minimize!.x);
+      expect(send!.y).toBeGreaterThanOrEqual(header!.y);
+      expect(send!.y + send!.height).toBeLessThanOrEqual(header!.y + header!.height);
+      await workbench.getByRole("button", { name: "Minimize" }).click();
+      await settled(page);
+      expect(await workbench.getByRole("button", { name: "Send" }).count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+    const phone = await open(390, 844);
+    try {
+      await phone.evaluate(() => window.openWindow("New message with a very long subject that does not fit", { action: "Send" }));
+      await settled(phone);
+      const sheet = frame(phone, "New message with a very long subject that does not fit");
+      const close = await sheet.getByRole("button", { name: "Close window" }).boundingBox();
+      const send = await sheet.getByRole("button", { name: "Send" }).boundingBox();
+      const title = await sheet.locator(".k2b-floating-window__title > span").boundingBox();
+      expect(close!.x).toBeLessThan(title!.x);
+      expect(send!.x).toBeGreaterThan(title!.x + title!.width);
+      expect(send!.x + send!.width).toBeLessThanOrEqual(390);
+      expect(title!.height).toBeLessThan(24);
+    } finally {
+      await phone.close();
     }
   });
 });

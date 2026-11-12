@@ -542,19 +542,18 @@ and restores unsaved changes kept in this browser.
 
 ## Write in the conversation
 
-Replies, forwards, and new messages are written in the conversation, not on a
-separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
+Replies and forwards are written in the conversation, not on a separate page. **Reply**, **Reply all**, and **Forward** in the floating bar
 above the newest message grow into the draft at that place; on a phone the bar
 waits at the bottom and the draft opens at the top over the full width. Mail
 creates the shared draft (`draft-seeds` and `materialize`) before anyone types.
 A conversation has one reply draft. Reply, Reply all and Forward use the same
 draft; content-free creation returns its current content. Supplying new content
-when it already exists returns a conflict instead of dropping that content. **Compose** puts **New message**
-at the top of the list with an empty conversation beside it.
+when it already exists returns a conflict instead of dropping that content.
 
-- The URL carries the open draft as `?draft=`, so reload and Back open it
-  again. Old `/compose/:draftId` links open the conversation with the draft;
-  `?window=1` and drafts with an open approval keep the compose page.
+- The URL carries the open reply draft as `?conversation=…&draft=`, so reload
+  and Back open it again. Old `/compose/:draftId` links open the conversation
+  with the draft; drafts with an open approval and drafts that are no longer
+  open keep the compose page.
 - Opening another conversation saves typing the autosave has not sent yet
   before Mail releases the editing lease.
 - **Full screen** moves the list aside and is remembered per
@@ -565,6 +564,30 @@ at the top of the list with an empty conversation beside it.
   `quoteSource: { locale, timeZone }`, and the quote goes out after the
   signature with that person's date format.
 - A Gustav suggestion (`suggestion: true`) opens in plum until someone edits it.
+
+## New messages in floating windows
+
+**Compose** (and `mod+alt+n`) creates the draft first and opens it as a
+`FloatingWindow` from `@k2b/ui`, docked at the bottom end of the Mail area. The
+list and the open conversation behind it stay usable; several windows can be
+open, and minimized ones line up as bars at the bottom. The window's head shows
+the subject (else "New message") and the save status; on a phone it is a
+full-screen sheet with **Send** in its head.
+
+- **Close** saves and releases the draft; a notice says it waits in **Drafts**
+  and **Open** brings the window back. A new message in **Drafts** opens as a
+  window. **Send** and **Send later** close the window; the notice offers
+  **Undo** or **Change**, which cancel the queued send (`scheduled-sends/:id/cancel`
+  with `disposition: "draft"`) and reopen the window. A failed send keeps the
+  window open with the reason in its bottom bar and **Send again**.
+- Open windows are a state of the tab: `sessionStorage` remembers draft IDs,
+  state, and place per mailbox, so a reload or a return from another app opens
+  them again. Drafts that are gone by then are dropped quietly. Nothing is stored
+  on the server.
+- `?draft=<id>` without a conversation opens that draft's window and leaves the
+  URL. `/app/mail/compose` (with `mailto=` and `autostart=1`) creates the draft
+  and opens Mail with its window; `/compose/:draftId` of a new message and every
+  `?window=1` link open the draft's window.
 
 When a conversation already has a reply draft, Reply, Reply all and Forward
 open that draft and switch its mode. Replying to selected text opens it without

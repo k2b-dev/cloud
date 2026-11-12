@@ -5,7 +5,7 @@ section: Operations
 order: 1555
 description: Know what the privacy screen stores, which route saves it, and what it does not protect.
 tags: [operations, privacy, shell, preferences]
-updated: 2026-11-10
+updated: 2026-11-12
 ---
 
 # Privacy screen operations
@@ -13,7 +13,8 @@ updated: 2026-11-10
 The privacy screen hides the content of every signed-in Cloud page in a
 browser after the person's idle time, or at once from the profile menu or
 `Ctrl+.` (`Cmd+.` on macOS). It covers; it does not lock and does not end a
-session. People continue with a click or a key. See
+session. People continue with a click or a key, or by opening or loading a
+Cloud page in that browser. See
 [Hide the content with the privacy screen](/en/docs/frontend/layout-and-navigation#hide-the-content-with-the-privacy-screen)
 for the behavior and the application contract.
 
@@ -38,5 +39,7 @@ for the behavior and the application contract.
 - Phones and tablets without a mouse or touchpad have no privacy screen; the
   person's timer applies on their computers only.
 - The privacy screen protects nothing against someone who sits down at the
-  computer: one click shows everything again. On computers that several
+  computer: one click, or opening a Cloud page, shows everything again. On a
+  shared workstation, opening a page never extends the session; only typing,
+  clicking, scrolling and touching do. On computers that several
   people use, people still sign out.

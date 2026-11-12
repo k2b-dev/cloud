@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, Placeholder, useLocale } from "@k2b/ui";
-import { createResource, Show } from "solid-js";
+import { createEffect, createResource, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailDraft, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
@@ -9,6 +9,9 @@ import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { createDefaultMailComposerPanesLayout } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
+
+/** The draft is gone for this person: sent, discarded, deleted, or no longer theirs to see. */
+class InlineDraftUnavailable extends Error {}
 
 type InlineDraftData = {
   draft: MailDraft;
@@ -37,6 +40,8 @@ export default function MailInlineDraft(props: {
   calendarIntegrationAvailable: boolean;
   liveDictation: boolean;
   returnHref: string;
+  /** Called instead of showing the error when the draft no longer exists or is no longer a draft. */
+  onUnavailable?: () => void;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -52,8 +57,12 @@ export default function MailInlineDraft(props: {
       apiClient.mailboxes[":mailboxId"]["compose-templates"].$get({ param }),
       apiClient.mailboxes[":mailboxId"]["compose-signature-defaults"].$get({ param }),
     ]);
-    if (draftResponse && !draftResponse.ok) throw new Error(await readApiError(draftResponse, t().draftCouldNotBeSaved));
+    if (draftResponse && !draftResponse.ok) {
+      const message = await readApiError(draftResponse, t().draftCouldNotBeSaved);
+      throw [403, 404, 410].includes(draftResponse.status) ? new InlineDraftUnavailable(message) : new Error(message);
+    }
     const draft = draftResponse ? await draftResponse.json() : props.initialDraft!;
+    if (draft.state !== "draft" && props.onUnavailable) throw new InlineDraftUnavailable(t().draftCouldNotBeSaved);
     // Uploads and signatures make the draft complete, but a draft without them is still safe to edit.
     const uploads = uploadsResponse.ok ? await uploadsResponse.json() : [];
     const templates = templatesResponse.ok ? await templatesResponse.json() : [];
@@ -72,6 +81,9 @@ export default function MailInlineDraft(props: {
   };
   // The server renders the placeholder; the browser loads the draft with the person's session, after hydration.
   const [data, { refetch }] = createResource(() => (typeof window === "undefined" ? false : props.draftId), load);
+  createEffect(() => {
+    if (data.error instanceof InlineDraftUnavailable) props.onUnavailable?.();
+  });
   return (
     <Show
       when={data.state === "ready" ? data() : undefined}

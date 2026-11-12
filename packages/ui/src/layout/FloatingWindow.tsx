@@ -31,6 +31,11 @@ export type FloatingWindowProps = {
   icon?: string;
   /** A short status right after the title, such as "Saved". On a phone it sits below the title. */
   status?: JSX.Element;
+  /**
+   * Actions of the content in the header, such as Send, after the title and before the window controls. A minimized bar
+   * hides them. On a phone sheet they stand at the end of the header, within reach above the keyboard.
+   */
+  actions?: JSX.Element;
   children: JSX.Element;
   onClose: () => void;
   /** The current state when the application owns it; pair it with `onStateChange`. */
@@ -269,8 +274,9 @@ export default function FloatingWindow(props: FloatingWindowProps): JSX.Element 
     };
     window.addEventListener("resize", measure);
     window.addEventListener("keydown", escape);
+    // The content may already have placed the focus, such as an editor that opened with the window.
     const focus = requestAnimationFrame(() => {
-      if (state() !== "minimized") frame?.focus();
+      if (state() !== "minimized" && !focusInside()) frame?.focus();
     });
     onCleanup(() => {
       stopActivePointerInteraction();
@@ -443,6 +449,9 @@ export default function FloatingWindow(props: FloatingWindowProps): JSX.Element 
               <span class="k2b-floating-window__status">{props.status}</span>
             </Show>
           </div>
+          <Show when={props.actions !== undefined && state() !== "minimized"}>
+            <div class="k2b-floating-window__actions">{props.actions}</div>
+          </Show>
           <div class="k2b-floating-window__controls">
             <Show when={!mobile()}>
               <Show when={state() !== "minimized"}>

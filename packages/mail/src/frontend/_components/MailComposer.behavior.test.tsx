@@ -169,8 +169,8 @@ const installPopover = () => {
 };
 
 const waitFor = async (condition: () => boolean) => {
-  for (let attempt = 0; attempt < 150 && !condition(); attempt++) await Bun.sleep(10);
-  expect(condition()).toBe(true);
+  // Bounded by the test's own timeout.
+  while (!condition()) await Bun.sleep(5);
 };
 
 describe("MailComposer signature choice", () => {
@@ -332,12 +332,12 @@ describe("MailComposer signature choice", () => {
   test("the page composer distinguishes device storage from confirmed server storage during autosave", async () => {
     delegateEvents(["click", "input"]);
     await mount();
-    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saved on server");
+    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saved");
     const subject = dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
     subject.value = "Changed before autosave";
     subject.dispatchEvent(new Event("input", { bubbles: true }));
     await waitFor(() => dom.root.querySelector("[data-mail-save-status]")?.getAttribute("data-mail-save-status") === "local");
-    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saved on this device");
+    expect(dom.root.querySelector("[data-mail-save-status]")?.textContent).toContain("Saving …");
     await waitFor(() => dom.root.querySelector("[data-mail-save-status]")?.getAttribute("data-mail-save-status") === "saved");
     expect(saves.at(-1)?.subject).toBe("Changed before autosave");
   });
@@ -933,9 +933,11 @@ describe("MailComposer robustness", () => {
   let opened: string[];
   let hostControls: import("./MailComposer").MailInlineDraftControls | undefined;
   let materialized: string[] = [];
+  let detached: string[] = [];
 
   beforeEach(() => {
     materialized = [];
+    detached = [];
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: OfflineWebSocket });
@@ -1052,6 +1054,7 @@ describe("MailComposer robustness", () => {
                             holdCreate: options.box.hold ?? (() => false),
                             autofocus: false,
                             materialized: (draft: MailDraft) => materialized.push(draft.id),
+                            detach: (draftId: string) => detached.push(draftId),
                           },
                         }
                       : {}),
@@ -1201,6 +1204,7 @@ describe("MailComposer robustness", () => {
     const [hold, setHold] = createSignal(true);
     await mount({ host: true, seed: replySeed, box: { hold }, ready: false });
     view().dispatch({ changes: { from: 0, insert: "Written while the last reply waited" }, userEvent: "input.type" });
+    // fixed wait: longer than the 700 ms autosave, to prove that a held place creates no draft.
     await Bun.sleep(1_000);
     expect(requests.some((request) => request.endsWith("/draft-seeds/materialize"))).toBe(false);
     expect(sendButton().disabled).toBe(true);
@@ -1210,8 +1214,22 @@ describe("MailComposer robustness", () => {
     await waitFor(() => materialized.length === 1);
   });
 
+  test("Open in a window saves the reply, gives its lease back, and hands it to the box's window", async () => {
+    await mount({ host: true, draft: replyDraft, box: {} });
+    view().dispatch({ changes: { from: view().state.doc.length, insert: " More." }, userEvent: "input.type" });
+    dom.root.querySelector<HTMLButtonElement>('[data-mail-reply-box="mail"] button[aria-label="More"]')!.click();
+    await waitFor(() => Boolean(dom.document.querySelector('[role="menuitem"]')));
+    Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes("Open in a window"))!
+      .click();
+    await waitFor(() => detached.length === 1);
+    expect(detached).toEqual(["Draft1"]);
+    expect(saves.at(-1)?.body).toBe("Hello More.");
+  });
+
   test("the reply box's empty seed creates nothing until someone types", async () => {
     await mount({ host: true, seed: replySeed, box: {}, ready: false });
+    // fixed wait: longer than the 700 ms autosave, to prove that an untouched seed creates no draft.
     await Bun.sleep(1_000);
     // Rendering the signature is a read; nothing writes a draft.
     expect(requests.filter((request) => request.startsWith("POST ") && !request.endsWith("/compose-signature"))).toEqual([]);

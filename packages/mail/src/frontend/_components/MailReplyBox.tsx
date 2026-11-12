@@ -10,6 +10,7 @@ import type { MailComposerHost, MailInlineDraftControls } from "./MailComposer";
 import { preloadMailComposerEditor } from "./MailComposerEditor";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { deriveReplyIdentityId, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
+import { draftWindowOpen, openDraftWindow, recallDraftWindow } from "./mail-compose-windows";
 import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { createDefaultMailComposerPanesLayout } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
@@ -136,7 +137,12 @@ export default function MailReplyBox(props: {
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [noSender, setNoSender] = createSignal(false);
   const [switching, setSwitching] = createSignal(false);
-  const [detached, setDetached] = createSignal(false);
+  /** The draft this box handed to a compose window; the box shows a line to bring it back while the window holds it. */
+  const [detachedId, setDetachedId] = createSignal<string | null>(null);
+  const detached = () => {
+    const id = detachedId();
+    return id !== null && draftWindowOpen(id);
+  };
   const [justSent, setJustSent] = createSignal(false);
   const [meanwhile, setMeanwhile] = createSignal<string | null>(null);
   const [consolidated, setConsolidated] = createSignal(0);
@@ -269,7 +275,7 @@ export default function MailReplyBox(props: {
 
   /** The box's place: the reply draft where one exists, a fresh seed otherwise; never while scheduled or detached. */
   const settle = (options: { autofocus?: boolean } = {}) => {
-    if (disposed || detached() || scheduled() || justSent() || switching()) return;
+    if (disposed || detachedId() !== null || scheduled() || justSent() || switching()) return;
     const existing = replyDraft();
     if (existing && !gone.has(existing.id)) return void load({ kind: "draft", id: existing.id }, options);
     const message = sourceMessage();
@@ -284,7 +290,7 @@ export default function MailReplyBox(props: {
       () => [replyDraft()?.id ?? null, scheduled()?.submissionId ?? null, hold()] as const,
       ([existingId]) => {
         const current = untrack(mount);
-        if (untrack(switching) || untrack(detached)) return;
+        if (untrack(switching) || untrack(detachedId) !== null) return;
         if (!current) return void untrack(() => (loading || loadError() || noSender() ? undefined : settle()));
         if (untrack(scheduled)) return;
         if (current.kind === "seed" && existingId && !gone.has(existingId) && existingId !== untrack(draftId)) {
@@ -326,7 +332,7 @@ export default function MailReplyBox(props: {
     const typed = takeTypedText();
     if (typed) setMeanwhile(typed);
     batch(() => {
-      setDetached(false);
+      setDetachedId(null);
       setJustSent(false);
       if (mode() === "note") setMode(mailMode());
     });
@@ -474,6 +480,28 @@ export default function MailReplyBox(props: {
     openDraft,
   });
 
+  /** Takes the draft back from its window into the box. */
+  const bringBack = async () => {
+    const id = detachedId();
+    if (!id) return;
+    await recallDraftWindow(id);
+    if (disposed) return;
+    openDraft(id);
+  };
+  // A window closed by itself (sent, discarded, or just closed): the box fills again with the conversation's draft.
+  createEffect(
+    on(
+      detached,
+      (now, before) => {
+        if (before && !now && untrack(detachedId)) {
+          setDetachedId(null);
+          if (!untrack(mount)) settle();
+        }
+      },
+      { defer: true },
+    ),
+  );
+
   const acknowledge = async () => {
     const id = draftId();
     if (!id) return;
@@ -617,7 +645,7 @@ export default function MailReplyBox(props: {
       const id = untrack(draftId);
       if (outcome === "moved") {
         batch(() => {
-          setDetached(true);
+          setDetachedId(id);
           setMount(null);
         });
         return;
@@ -649,6 +677,15 @@ export default function MailReplyBox(props: {
       holdCreate: hold,
       autofocus: current.autofocus,
       materialized: (draft) => setDraftId(draft.id),
+      detach: (id) => {
+        if (current.key !== untrack(mount)?.key) return;
+        batch(() => {
+          setControls(null);
+          setMount(null);
+          setDetachedId(id);
+        });
+        openDraftWindow(id, { mailboxId: props.mailboxId });
+      },
     },
   });
 
@@ -665,7 +702,7 @@ export default function MailReplyBox(props: {
 
   return (
     <div ref={frame} class="mail-reply-box-frame" data-mail-reply-box-frame data-mode={mode()}>
-      <Show when={scheduled() && !detached()}>
+      <Show when={scheduled() && detachedId() === null}>
         <section class="mail-reply-box mail-reply-box-state" data-mail-reply-box="scheduled" aria-label={t().boxLabel}>
           <i class="ti ti-clock" aria-hidden="true" />
           <span class="min-w-0 flex-1" role="status">
@@ -679,26 +716,18 @@ export default function MailReplyBox(props: {
           </Button>
         </section>
       </Show>
-      <Show when={detached() && !scheduled()}>
+      <Show when={detachedId() !== null && !scheduled()}>
         <section class="mail-reply-box mail-reply-box-state" data-mail-reply-box="detached" aria-label={t().boxLabel}>
           <i class="ti ti-app-window" aria-hidden="true" />
           <span class="min-w-0 flex-1" role="status">
             {t().detached}
           </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            type="button"
-            onClick={() => {
-              setDetached(false);
-              settle({ autofocus: true });
-            }}
-          >
+          <Button variant="secondary" size="sm" type="button" onClick={() => void bringBack()}>
             {t().bringBack}
           </Button>
         </section>
       </Show>
-      <Show when={!scheduled() && !detached()}>
+      <Show when={!scheduled() && detachedId() === null}>
         <Show
           when={mount()}
           keyed

@@ -100,7 +100,8 @@ describe("MailDraftsView", () => {
     expect(html).not.toContain("data-lines");
     expect(html).toMatch(/<h1[^>]*class="sr-only"[^>]*>Drafts<\/h1>/);
     expect(html).toContain('role="list"');
-    expect(html).toContain('href="/app/mail/Box001/compose/Drf001?return=%2Fapp%2Fmail%2FBox001%3Ffolder%3DFld001"');
+    // A new message opens as a window over this list; a reply opens in its conversation (its compose link redirects).
+    expect(html).toContain('href="/app/mail/Box001?folder=Fld001&amp;draft=Drf001"');
     expect(html).toMatch(/class="mail-row-sender"[^>]*>Ada Example</);
     expect(html).toContain("+1");
     expect(html).toMatch(/class="mail-row-draft"[^>]*>Draft</);

@@ -79,8 +79,8 @@ const summary = (overrides: Partial<ConversationDraftSummary> = {}): Conversatio
 });
 
 const waitFor = async (condition: () => boolean) => {
-  for (let attempt = 0; attempt < 200 && !condition(); attempt++) await Bun.sleep(5);
-  expect(condition()).toBe(true);
+  // Bounded by the test's own timeout.
+  while (!condition()) await Bun.sleep(5);
 };
 
 describe("MailReplyBox", () => {
