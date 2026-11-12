@@ -19,9 +19,12 @@
     "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",
+    "hucre": "1.1.0",
+    "ibantools": "4.5.4",
     "imapflow": "catalog:",
     "jose": "catalog:",
     "lean-qr": "catalog:",
+    "saxes": "6.0.0",
     "solid-js": "catalog:",
     "zod": "catalog:"
   },

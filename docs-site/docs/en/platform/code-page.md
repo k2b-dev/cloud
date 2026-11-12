@@ -67,9 +67,13 @@ Only people who manage the owner and editors or readers of the Code see the
 page. Readers see runs without their calls and no actions. Every part that
 cannot load shows an error with a way to try again.
 
-Automation names use the optional reviewed `entrypoints[].title` and fall back
-to the entrypoint identifier. This also applies to switch-on dialogs. Run
-history uses the title from the run's own version.
+Automation names use the optional reviewed `entrypoints[].title`. Without a
+title, an event reads by its title and place, a page by its method and path,
+and a schedule by when it runs ("Mondays 08:00", or a one-time date and time
+with its zone). Anything else shows its entrypoint identifier. Switch-on
+dialogs, the chat version card and Administration › Code use the same names.
+A run reads by the title from its own version, else as the listed automation
+with the same entrypoint, else by its identifier.
 
 ## Refused calls
 

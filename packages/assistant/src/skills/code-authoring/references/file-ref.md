@@ -17,7 +17,8 @@ type FileRef = {
 ```
 
 A `FileRef` has no body, bytes, URL or download method. Code cannot read,
-change or create file content; it can only pass a reference on. Use `name`,
+change an existing file's content. Generation helpers create a new file from
+checked input and return a reference to it. Use `name`,
 `mediaType` and `size` to decide whether to pass it. `core.ai.generate` and
 `core.ai.decide` also accept `files: FileRef[]`; the model receives content
 through Cloud while Code still holds no bytes. The generate loop offers
@@ -29,11 +30,13 @@ through Cloud while Code still holds no bytes. The generate loop offers
 | --- | --- | --- |
 | Read | `mail.attachment.content.read({ id })` | A mail attachment, up to Mail's 100 MiB limit. `mail.attachment.read` stays metadata only; `mail.attachment.text.read` returns extracted text. |
 | Read | `files.content.read({ id })` | A file in Files, up to 50 MiB. |
+| Read | `pdf.render`, `sheet.toCsv`, `sheet.toOds`, `finance.datev`, `finance.sepa`, `chart.render` | Generate a new temporary file. Read the `core` SDK declarations. |
+| Read | `assistant.chat.file.read.v1({ chatId, path })` | One of the person's chat files, with current chat and Project access checked again when redeemed. |
 | Write | An Action with a write stream and a `file` input | The SDK types `file` as `FileRef` and returns the Action's ordinary data after the transfer. Find these in `code_sdk`; the example below uses a fictional `imports` app. |
 
 Write streams without a `file` input, such as `filesv2.content.create` and
 `filesv2.provider.save`, are not in the SDK (`code_stream`): Code cannot
-upload content of its own.
+supply bytes directly. Generated files still need a receiving Action with a `file` input.
 
 ## Rules
 
@@ -121,3 +124,26 @@ reply is its ordinary data:
   ]
 }
 ```
+
+## Generate a file
+
+Use the [generated-file template](template-generated-file.md). Each helper
+returns a FileRef. All six helpers are versioned Core Queries under
+`core.file.*.v1`, so the checker records their ordinary `read` policy and
+permissions. Persisting the output belongs to the receiving app's Action.
+Generation never marks a run as having started an effect.
+
+Inputs fit the 256 KiB capability request budget. One run can generate at most
+64 files of up to 50 MiB each within 250 MiB combined, including reservations
+for in-progress and failed generation. Temporary output lives ten minutes;
+the FileRef also ends with its run. Aliases use `pdf`, `sheet`, `finance` and
+`chart` where those names are free; an app already using a name keeps it.
+The corresponding `core.file.<helper>.<method>.v1` remains available.
+
+Chat files use the same transfer. Get the exact chat ID and attachment path
+from the current chat, call `assistant.chat.file.read.v1`, then pass its
+FileRef to the receiving Action. Chat ownership, allowed tools and current
+Project access still apply; resource-owned Code cannot borrow a person's chat.
+A chat-file stream is single-use and expires after ten minutes. A changed or
+deleted source fails visibly; inspect the destination before obtaining a
+fresh reference and retrying.
