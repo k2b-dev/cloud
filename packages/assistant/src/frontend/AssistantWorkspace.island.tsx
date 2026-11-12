@@ -848,7 +848,7 @@ export default function AssistantWorkspace(props: Props) {
       const conversation = await chat.createConversation(request, {
         activate: !background,
         beforeOpen:
-          projectId || background
+          projectId || background || place
             ? undefined
             : (created) => {
                 if (collides(created)) return;
