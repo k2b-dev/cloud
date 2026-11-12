@@ -753,11 +753,13 @@
   }
 }
 
+/* The open app: the tinted fill of a selected sidebar row without an edge, its
+   icon and name in the app's ink. The entry's own app colors (app-color.ts)
+   keep the ink at AA on the fill. */
 @utility rail-item-active {
-  border: 1px solid color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 52%, transparent);
   border-radius: var(--ui-radius-surface);
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
-  background: transparent;
+  color: var(--app-ink-light);
+  background: var(--app-selected-nav-light);
   box-shadow: none;
 }
 
@@ -775,6 +777,17 @@
 
 .layout-rail .rail-item-keys {
   display: none;
+}
+
+/* Each app's icon carries its app's color on the canvas, which
+   app-appearance.ts derives at 3:1 on every ground of the bar. Names, counts,
+   and the bar's own controls stay neutral; the open app's icon takes its ink. */
+.layout-rail .rail-item:not(.rail-item-active) > i {
+  color: var(--app-bar-icon-light, currentColor);
+}
+
+.dark .layout-rail .rail-item:not(.rail-item-active) > i {
+  color: var(--app-bar-icon-dark, currentColor);
 }
 
 /* Keyboard focus in the app bar uses Cloud's shared ring, inside the target,
@@ -899,8 +912,13 @@
   place-items: center;
   border-radius: 0.625rem;
   background: color-mix(in srgb, var(--app-icon-color) 12%, var(--k2b-surface));
-  color: color-mix(in srgb, var(--app-icon-color) 85%, var(--k2b-text));
+  /* The app's colour at 3:1 on the tile, as the app bar's icons (app-icon-style.ts). */
+  color: var(--app-tile-ink-light);
   font-size: 1.0625rem;
+}
+
+.dark .rail-editor-tile {
+  color: var(--app-tile-ink-dark);
 }
 
 .rail-editor-row__text {
@@ -1079,23 +1097,19 @@
   }
 }
 
+/* The open app keeps its fill under the pointer, as a selected sidebar row does. */
 .rail-item-active:hover {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 88%, black);
-  background: transparent;
+  color: var(--app-ink-light);
+  background: var(--app-selected-nav-light);
 }
 
-.dark .rail-item-active {
-  border-color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, transparent);
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
-  background: transparent;
-}
-
+.dark .rail-item-active,
 .dark .rail-item-active:hover {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 45%, white);
-  background: transparent;
+  color: var(--app-ink-dark);
+  background: var(--app-selected-nav-dark);
 }
 
-/* The panel button: the blue of search and help; an open panel keeps a fill. */
+/* The panel button is neutral like search and help; an open panel keeps a blue fill. */
 .rail-item-panel[aria-expanded="true"],
 .rail-item-panel[aria-expanded="true"]:hover {
   color: var(--color-blue-600);
