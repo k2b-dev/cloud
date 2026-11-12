@@ -330,7 +330,8 @@ update based on the current head remain safe to accept.
 `recoveryRequired` publishes nothing. Preserve the unconfirmed bytes and readable
 local text, stop automatic resubmission, and offer recovery before reopening.
 This also covers missing provenance and an incompatible restored revision.
-`notFound` means the application store no longer has the document. Other
+`notFound` means the authorized snapshot is null. `frozen` and `closed` retain
+the unconfirmed bytes and follow the room lifecycle close semantics. Other
 publication errors propagate; a known head conflict may be revalidated, while
 an unknown publication outcome must be reconciled before another attempt.
 
@@ -980,7 +981,8 @@ the lease is still current after persistence. Pass the returned cursor as
 `freezeCursor` to thaw or close: a stale or expired owner cannot release or
 close a later freeze. On cancellation/failure, `thaw` appends an open marker.
 `closeDocument` appends a terminal marker and closes sockets on every node
-with `1008 DOCUMENT_CLOSED`; the browser stops reconnecting. Close the room
+with `1008 DOCUMENT_CLOSED`; new joins also close when a covering snapshot
+already includes the marker. The browser stops reconnecting. Close the room
 before exposing the terminal domain transition. These methods return the
 marker cursor, or null for a missing document.
 

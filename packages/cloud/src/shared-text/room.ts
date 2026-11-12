@@ -378,8 +378,8 @@ export function createSharedTextRoom<
         if (!active() || pending.length === 0) return deliveryTail;
         const batch = pending.splice(0, pending.length);
         pendingBytes = 0;
-        // Capture batches in stream order and serialize timer/size flushes. A
-        // slower row-lock acquisition must never reorder batches or readiness.
+        // Capture batches in stream order and serialize timer/size flushes so
+        // asynchronous delivery never reorders batches or readiness.
         deliveryTail = deliveryTail
           .then(async () => {
             if (!active()) return;
@@ -401,6 +401,21 @@ export function createSharedTextRoom<
       try {
         const events = async function* () {
           const head = await documentTopic.latestCursor({ tenantId: docId });
+          // A covering snapshot may already include the terminal marker. Read
+          // its broker metadata so a fresh idle connection cannot reopen it.
+          if (head && replay.after && compareStreamCursor(head, replay.after) <= 0) {
+            for await (const tail of documentTopic.replay({
+              tenantId: docId,
+              after: documentTopic.cursorAt(documentTopic.cursorSequence(head) - 1),
+              until: head,
+              signal: abort.signal,
+            })) {
+              if (tail.data.room?.state === "closed") {
+                await fatal(ctx, ERROR_CODE.closed, ERROR_CODE.closed, publicDocId);
+                return;
+              }
+            }
+          }
           if (head) {
             let delivered = 0;
             try {

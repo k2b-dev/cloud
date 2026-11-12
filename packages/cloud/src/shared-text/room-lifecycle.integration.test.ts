@@ -290,8 +290,12 @@ testFor("nats")(
       await expect(b.thaw("doc", { freezeCursor: secondFreeze!.cursor })).rejects.toThrow();
       await b.closeDocument("doc", { freezeCursor: recovered!.cursor });
       expect(await resumed.closed).toBe("DOCUMENT_CLOSED");
+      // Persist the terminal marker too: the next join must close even when
+      // replay starts at a snapshot that already covers that marker.
+      await pipeline.flushNow("doc");
       const rejected = await peer(b);
       peers.push(Promise.resolve(rejected));
+      expect(await rejected.closed).toBe("DOCUMENT_CLOSED");
       await edit(rejected, update(" never"));
       expect(await rejected.closed).toBe("DOCUMENT_CLOSED");
       expect((await pipeline.flushNow("doc"))?.text).toBe(`${prefix}visible pending after recovered`);
