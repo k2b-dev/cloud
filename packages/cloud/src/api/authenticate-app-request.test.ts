@@ -174,6 +174,8 @@ test("signed admission errors retain their envelope and Retry-After through the 
         lastUsedAt: null,
         connectionsAllowed: false,
         oauthIssueAllowed: false,
+        installationId: key.installationId,
+        activityDue: true,
       },
       jti: "nonce",
       exp: NOW / 1000 + 30,

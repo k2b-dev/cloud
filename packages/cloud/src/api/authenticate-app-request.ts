@@ -12,6 +12,7 @@ import {
   consumeBootstrapProof,
   inspectAppProof,
 } from "../services/app-bootstrap";
+import { touchAppKey } from "../services/app-keys";
 import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
 
 type Dependencies = {
@@ -108,8 +109,9 @@ export const authenticateSignedAppRequest = async (
     if (declaredApp && declaredApp !== verified.identity.appId) return reject(403, "wrong_app", "App identity does not match the proof");
     const rate = await (dependencies.admit ?? ((id) => admission("key", id)))(verified.identity.keyId, verified.identity.appId);
     if (rate.limited) return limited(rate);
-    if (!(await consumeBootstrapProof(verified.identity.keyId, verified.jti, verified.exp, dependencies.db, true)))
+    if (!(await consumeBootstrapProof(verified.identity.keyId, verified.jti, verified.exp)))
       return reject(403, "replayed_proof", "App proof has already been used");
+    await touchAppKey(verified.key, dependencies.db);
     return {
       appId: verified.identity.appId,
       keyId: verified.identity.keyId,

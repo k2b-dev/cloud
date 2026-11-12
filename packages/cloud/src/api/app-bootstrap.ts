@@ -14,6 +14,7 @@ import { type RateLimitResult, ratelimit } from "../server/ratelimit";
 import {
   authenticateBootstrap,
   BootstrapProofError,
+  BootstrapProofUnavailableError,
   bootstrapRateLimit,
   clearRejectedBootstrapStart,
   consumeBootstrapProof,
@@ -64,7 +65,11 @@ type Dependencies = {
 const admit = async (kind: "ingress" | "key", identifier: string) => {
   // Use the installation's existing per-second security budget, in separate ingress and authenticated-key buckets.
   const limit = await bootstrapRateLimit();
-  return ratelimit({ id: `app-bootstrap-${kind}`, limit }).check(identifier);
+  try {
+    return await ratelimit({ id: `app-bootstrap-${kind}`, limit }).check(identifier);
+  } catch {
+    throw new BootstrapProofUnavailableError();
+  }
 };
 
 const ingress: MiddlewareHandler<BootstrapContext> = async (c, next) => {
@@ -97,8 +102,11 @@ export const createAppBootstrapRoutes = (dependencies: Dependencies = {}) => {
     throw new Error("Bootstrap response exceeds protocol budget");
   // The startup snapshot includes appId/sources; only the delivery contract goes on the wire.
   return new Hono<BootstrapContext>()
-    .onError(() =>
-      Response.json({ code: "bootstrap_unavailable" }, { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "1" } }),
+    .onError((error) =>
+      Response.json(
+        { code: error instanceof BootstrapProofUnavailableError ? "app_proof_unavailable" : "bootstrap_unavailable" },
+        { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "1" } },
+      ),
     )
     .post(
       BOOTSTRAP_PATH,
@@ -137,8 +145,8 @@ export const createAppBootstrapRoutes = (dependencies: Dependencies = {}) => {
           c.header("Retry-After", String(Math.max(1, Math.ceil(rate.resetIn / 1000))));
           return c.json({ code: "bootstrap_rate_limited" }, 429);
         }
-        if (!(await consumeBootstrapProof(identity.keyId, jti, exp, dependencies.db))) return c.json({ code: "replayed_proof" }, 403);
-        await touchAppKey(identity, dependencies.db);
+        if (!(await consumeBootstrapProof(identity.keyId, jti, exp))) return c.json({ code: "replayed_proof" }, 403);
+        await touchAppKey(verified.key, dependencies.db);
         const response = JSON.stringify(BootstrapResponseSchema.parse({ identity, connections: snapshot }));
         if (Buffer.byteLength(response) > BOOTSTRAP_RESPONSE_BYTES) throw new Error("Bootstrap response exceeds protocol budget");
         try {

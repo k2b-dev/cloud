@@ -1471,12 +1471,6 @@ suiteFor(
     const response = await send({ app: null });
     expect(response.status).toBe(401);
   });
-  test("ongoing runner traffic drains expired replay evidence without growing the minute maintenance budget", async () => {
-    await sql`INSERT INTO auth.app_proof_replays(key_id,jti,retain_until) VALUES(${runner.keyId}::uuid,'expired-c4',clock_timestamp()-interval '1 second')`;
-    expect((await send()).status).toBe(200);
-    const expired = await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id=${runner.keyId}::uuid AND jti='expired-c4'`;
-    expect(expired).toHaveLength(0);
-  });
   test("another app's valid signature is refused", async () => error({ app: other }, "code_runner_required", 403, 403));
   test("only the runner avoids the shared app-key bucket in production admission", async () => {
     realAdmission = true;
