@@ -21,12 +21,12 @@ You answer in the reply box. It stands open under the newest message of every co
 
 **Internal note:** choose **Internal note** in the mode arrow. The box turns yellow and shows "Only for the team. … never sees it." It has no recipients, no signature, and no attachments. **Save note** (or **Ctrl+Enter**) saves the note into the conversation; it never sends anything. Your reply draft stays saved and comes back unchanged after the note. Unsaved note text stays in this tab when you open another conversation. If the note cannot be saved, the bar turns light red, your text stays, and **Save again** tries once more.
 
-Choose **Compose** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
+Choose **New message** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
 
 - **Window head:** It shows the subject, until then "New message", and quietly where the draft stands: "Saved", "Saving …", or "Offline · kept here". Next to it are **Minimize**, **Maximize**, and **Close window**. Drag the head to move the window.
-- **Minimize** puts the window down as a bar at the bottom. Click the bar to bring it back. The list leaves room so that its last row stays reachable.
+- **Minimize** puts the window down as a bar at the bottom. Choose the bar to bring it back. The list leaves room so that its last row stays reachable.
 - **Maximize** enlarges the window over almost all of the app and dims the rest. Esc or **Restore size** makes it smaller again.
-- **Close** loses nothing: the draft waits in **Drafts**, and the notice "Draft is in “Drafts”" offers **Open**. Clicking a new message in **Drafts** opens it as a window again. A message you just started and did not change disappears when you close it.
+- **Close** loses nothing: the draft waits in **Drafts**, and the notice "Draft is in “Drafts”" offers **Open**. Choosing a new message in **Drafts** opens it as a window again. A message you just started and did not change disappears when you close it.
 - **Send** closes the window. The notice "Sending in … s" offers **Undo** while that is still possible; the window then opens again with the draft. **Send later** closes the window too, and **Change** in the notice takes the message back for editing.
 - **Send failed:** The window stays open, its bottom bar turns red and names the reason. Your text is saved. **Send again** stands where **Send** was.
 - **Offline** you keep writing; Mail keeps the text in this browser, and **Send** waits until the connection is back. While a file uploads, the head shows "Uploading · n %", and **Send** waits too.
@@ -84,7 +84,7 @@ A browser can remember an earlier rejection and not ask again. If no prompt appe
 4. Choose **Email link setup** again.
 :::
 
-An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Other Cloud apps open the same page, for example to write to a contact. When you have **Edit** access to exactly one mailbox and that mailbox has exactly one verified sender, the draft opens directly with that sender. Otherwise Cloud first shows the mailboxes where you have **Edit** access and their verified senders, and it starts with the sender you used last. If the only sender is not verified yet, the page says why. Links cannot choose a hidden sender, attach local files, or send automatically. **Back** returns to the page where you opened the link. In browsers without support for protocol handlers, you can still use **Compose** normally.
+An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Other Cloud apps open the same page, for example to write to a contact. When you have **Edit** access to exactly one mailbox and that mailbox has exactly one verified sender, the draft opens directly with that sender. Otherwise Cloud first shows the mailboxes where you have **Edit** access and their verified senders, and it starts with the sender you used last. If the only sender is not verified yet, the page says why. Links cannot choose a hidden sender, attach local files, or send automatically. **Back** returns to the page where you opened the link. In browsers without support for protocol handlers, you can still use **New message** normally.
 
 ## Choose Markdown or Plain text {icon="route"}
 

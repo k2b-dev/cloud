@@ -815,8 +815,7 @@
 }
 
 @layer utilities {
-  .mail-compose-action,
-  .mail-compose-action + .k2b-split-button__menu-trigger {
+  .mail-compose-action {
     --k2b-action-solid: color-mix(in srgb, var(--app-accent) 80%, black);
     --k2b-action-solid-hover: color-mix(in srgb, var(--app-accent) 88%, black);
   }
