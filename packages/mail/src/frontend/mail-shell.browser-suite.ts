@@ -3918,7 +3918,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               conversationId: body.origin.input.conversationId,
             });
             drafts.set("DrfNew", created);
-            return route.fulfill({ json: created });
+            // Materialize answers how it got the draft; only a draft it created is fresh, so Escape discards it.
+            return route.fulfill({ json: { ...created, creationOutcome: "created" } });
           }
           if (path === "/compose-templates") return route.fulfill({ json: [{ id: "Sig001", kind: "signature", name: "Support" }] });
           if (path === "/compose-signature-defaults") return route.fulfill({ json: [] });
