@@ -1948,7 +1948,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                     ...(permission === "admin" ? ["Sync mailbox", "Mailbox health", "Shared links"] : []),
                   ];
             expect(await head.count()).toBe(1);
-            if (permission === "assigned-only") expect(await page.getByRole("link", { name: "Compose", exact: true }).count()).toBe(0);
+            if (permission === "assigned-only") expect(await page.getByRole("link", { name: "New message", exact: true }).count()).toBe(0);
             // Only people who may write select: the tab row's checkbox and every row's checkbox.
             expect(await page.getByRole("checkbox", { name: "Select all shown conversations", exact: true }).count()).toBe(
               permission === "read" ? 0 : 1,
@@ -4147,7 +4147,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await draftApi(next);
         });
         try {
-          await page.getByRole("link", { name: "Compose" }).first().click();
+          await page.getByRole("link", { name: "New message" }).first().click();
           await readyWindow(page);
           // The window docks at the bottom end of the app and leaves the conversation where it was.
           expect(new URL(page.url()).searchParams.get("conversation")).toBe("Conv01");
@@ -4176,7 +4176,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           api = await draftApi(next);
         });
         try {
-          await page.getByRole("link", { name: "Compose" }).first().click();
+          await page.getByRole("link", { name: "New message" }).first().click();
           await readyWindow(page);
           expect(api.calls).toContain("POST /draft-seeds/materialize");
           await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");

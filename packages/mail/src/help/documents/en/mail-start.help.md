@@ -66,13 +66,13 @@ The head contains:
 
 - The search field of the mailbox. Press `/` to go to it. The filter button next to it holds **Unread**, **Flagged**, **With attachment**, the date range, and a tag. While you search, it also holds **Search in** and the place. A number on the button shows how many filters are on. **Reset filters** removes them.
 - **…** with **Automations**, **Sync mailbox**, **Mailbox health**, and **Settings** first. Mailbox details, mailing lists, remote images, shared links, email-link handling, and the choice between conversations and individual messages follow. Your access determines the entries. Readers see **About this mailbox**.
-- **Compose** as the primary action when you can send.
+- **New message** as the primary action when you can send.
 
 The tabs stand above the list and the reader: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, **Unassigned**, **Later**, **Done**, **Recent activity**, **Kept**, and saved views. The row shows as many of them as its width allows, and **More** holds the rest. **Events** stays at the end. The open view always stays visible. Folders, Scheduled, and Send problems have no view tabs.
 
 Each row has a checkbox. Check one, and the tab row becomes the bulk actions: **Done**, **Archive**, **Delete**, **Unread**, **Later**, **Assign**, **Move**, **Tags**, and **…** with junk and flag. The checkbox at the start of the tab row selects every shown conversation. Escape or **Exit selection** brings the tabs back.
 
-On a phone, open the mailbox title to reach other mailboxes and the open mailbox's folders. Use the head for search, filters, Compose, and **…**, and the tab row for views.
+On a phone, open the mailbox title to reach other mailboxes and the open mailbox's folders. Use the head for search, filters, New message, and **…**, and the tab row for views.
 
 **Mailbox details** shows everyone who can view the mailbox the same overview. People with **View** access see it as **About this mailbox**. The overview shows:
 

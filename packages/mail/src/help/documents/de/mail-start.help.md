@@ -65,13 +65,13 @@ Im Kopfbereich findest du:
 
 - Das Suchfeld des Postfachs. Mit `/` springst du hinein. Der Filter-Knopf daneben enthält **Ungelesen**, **Markiert**, **Mit Anhang**, den Zeitraum und einen Tag. Während du suchst, enthält er auch **Suchen in** und den Ort. Eine Zahl am Knopf zeigt, wie viele Filter aktiv sind. **Filter zurücksetzen** entfernt sie.
 - **…** mit **Automatisierungen**, **Postfach synchronisieren**, **Postfachstatus** und **Einstellungen** zuerst. Danach folgen Postfachdetails, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und die Wahl zwischen Unterhaltungen und einzelnen Nachrichten. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**.
-- **Verfassen** als Hauptaktion, wenn du senden kannst.
+- **Neue Nachricht** als Hauptaktion, wenn du senden kannst.
 
 Über Liste und Leser stehen die Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort**, **Nicht zugewiesen**, **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Die Zeile zeigt so viele davon, wie in ihre Breite passen, die übrigen stehen unter **Mehr**. **Ereignisse** steht am Ende. Die geöffnete Ansicht bleibt immer sichtbar. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
 
 Jede Zeile hat ein Kästchen. Hakst du eines an, wird die Tab-Zeile zu den Aktionen für die Auswahl: **Erledigt**, **Archivieren**, **Löschen**, **Ungelesen**, **Später**, **Zuweisen**, **Verschieben**, **Tags** und **…** mit Spam und Kennzeichnen. Das Kästchen am Anfang der Tab-Zeile wählt alle angezeigten Unterhaltungen. Escape oder **Auswahl beenden** bringt die Tabs zurück.
 
-Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Suche, Filter, Verfassen und **…** findest du im Kopfbereich, die Ansichten in der Tab-Zeile.
+Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Suche, Filter, Neue Nachricht und **…** findest du im Kopfbereich, die Ansichten in der Tab-Zeile.
 
 **Postfachdetails** zeigt allen, die das Postfach ansehen können, denselben Überblick. Personen mit Zugriff **Ansehen** sehen ihn als **Über dieses Postfach**. Der Überblick zeigt:
 

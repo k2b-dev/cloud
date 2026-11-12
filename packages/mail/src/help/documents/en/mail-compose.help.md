@@ -12,7 +12,7 @@ kind: task
 
 You write in the conversation itself. In a conversation, choose **Reply**, **Reply all**, or **Forward** in the floating bar below the newest message, **Reply** on a message, or **Quote selection** on a message. The bar grows into the draft at the same place, below the newest message, and the cursor stands in the text. Mail creates the shared draft before you type.
 
-Choose **Compose** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
+Choose **New message** or press **Ctrl+Alt+N** (**⌘+⌥+N** on a Mac) for a new message. It opens as a floating window over the mailbox. The list and the open conversation behind it stay usable, and you can have several new messages open at once.
 
 - **Window head:** It shows the subject, until then "New message", and quietly where the draft stands: "Saved on server", "Saving draft...", or "Offline · saved here". Next to it are **Minimize**, **Maximize**, and **Close window**. Drag the head to move the window.
 - **Minimize** puts the window down as a bar at the bottom. Click the bar to bring it back. The list leaves room so that its last row stays reachable.
@@ -76,7 +76,7 @@ A browser can remember an earlier rejection and not ask again. If no prompt appe
 4. Choose **Email link setup** again.
 :::
 
-An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Other Cloud apps open the same page, for example to write to a contact. When you have **Edit** access to exactly one mailbox and that mailbox has exactly one verified sender, the draft opens directly with that sender. Otherwise Cloud first shows the mailboxes where you have **Edit** access and their verified senders, and it starts with the sender you used last. If the only sender is not verified yet, the page says why. Links cannot choose a hidden sender, attach local files, or send automatically. **Back** returns to the page where you opened the link. In browsers without support for protocol handlers, you can still use **Compose** normally.
+An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Other Cloud apps open the same page, for example to write to a contact. When you have **Edit** access to exactly one mailbox and that mailbox has exactly one verified sender, the draft opens directly with that sender. Otherwise Cloud first shows the mailboxes where you have **Edit** access and their verified senders, and it starts with the sender you used last. If the only sender is not verified yet, the page says why. Links cannot choose a hidden sender, attach local files, or send automatically. **Back** returns to the page where you opened the link. In browsers without support for protocol handlers, you can still use **New message** normally.
 
 ## Choose Markdown or Plain text {icon="route"}
 

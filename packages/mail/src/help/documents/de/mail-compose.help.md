@@ -11,7 +11,7 @@ order: 30
 
 Du schreibst direkt in der Unterhaltung. Wähle in einer Unterhaltung **Antworten**, **Allen** oder **Weiterleiten** in der schwebenden Leiste unter der neuesten Nachricht, **Antworten** an einer Nachricht oder **Auswahl zitieren** an einer Nachricht. Die Leiste wächst an derselben Stelle zum Entwurf, unter der neuesten Nachricht, und die Schreibmarke steht im Text. Mail legt den gemeinsamen Entwurf an, bevor du tippst.
 
-Wähle **Verfassen** oder drücke **Strg+Alt+N** (**⌘+⌥+N** auf dem Mac) für eine neue Nachricht. Sie öffnet als schwebendes Fenster über dem Postfach. Liste und offene Unterhaltung dahinter bleiben bedienbar, und du kannst mehrere neue Nachrichten zugleich offen haben.
+Wähle **Neue Nachricht** oder drücke **Strg+Alt+N** (**⌘+⌥+N** auf dem Mac) für eine neue Nachricht. Sie öffnet als schwebendes Fenster über dem Postfach. Liste und offene Unterhaltung dahinter bleiben bedienbar, und du kannst mehrere neue Nachrichten zugleich offen haben.
 
 - **Kopf des Fensters:** Er zeigt den Betreff, bis dahin „Neue Nachricht“, und leise den Stand: „Auf dem Server gespeichert“, „Entwurf wird gespeichert…“ oder „Offline · hier gesichert“. Daneben stehen **Minimieren**, **Vergrößern** und **Fenster schließen**. Ziehe das Fenster am Kopf an eine andere Stelle.
 - **Minimieren** legt das Fenster als Leiste unten ab. Ein Klick auf die Leiste holt es zurück. Die Liste lässt Platz, damit ihre letzte Zeile erreichbar bleibt.
@@ -75,7 +75,7 @@ Ein Browser kann sich eine frühere Ablehnung merken und nicht erneut fragen. We
 4. Wähle erneut **E-Mail-Links einrichten**.
 :::
 
-Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausfüllen. Andere Cloud-Apps öffnen dieselbe Seite, etwa um einem Kontakt zu schreiben. Hast du Zugriff **Bearbeiten** auf genau ein Postfach und hat dieses Postfach genau eine bestätigte Absenderidentität, öffnet sich der Entwurf direkt mit dieser Absenderidentität. Sonst zeigt Cloud zuerst die Postfächer, in denen du Zugriff **Bearbeiten** hast, und ihre bestätigten Absenderidentitäten und beginnt mit der zuletzt verwendeten. Ist die einzige Absenderidentität noch nicht bestätigt, nennt die Seite den Grund. Links können keine verborgene Absenderidentität wählen, keine lokalen Dateien anhängen und nicht automatisch senden. **Zurück** führt zu der Seite, auf der du den Link geöffnet hast. In Browsern ohne Unterstützung für Protokollhandler nutzt du **Verfassen** weiterhin normal.
+Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausfüllen. Andere Cloud-Apps öffnen dieselbe Seite, etwa um einem Kontakt zu schreiben. Hast du Zugriff **Bearbeiten** auf genau ein Postfach und hat dieses Postfach genau eine bestätigte Absenderidentität, öffnet sich der Entwurf direkt mit dieser Absenderidentität. Sonst zeigt Cloud zuerst die Postfächer, in denen du Zugriff **Bearbeiten** hast, und ihre bestätigten Absenderidentitäten und beginnt mit der zuletzt verwendeten. Ist die einzige Absenderidentität noch nicht bestätigt, nennt die Seite den Grund. Links können keine verborgene Absenderidentität wählen, keine lokalen Dateien anhängen und nicht automatisch senden. **Zurück** führt zu der Seite, auf der du den Link geöffnet hast. In Browsern ohne Unterstützung für Protokollhandler nutzt du **Neue Nachricht** weiterhin normal.
 
 ## Markdown oder Nur Text wählen {icon="route"}
 
