@@ -1,61 +1,91 @@
 // Copied into the fresh consumer: every platform import resolves from its tarball.
 import { strict as assert } from "node:assert";
-import { getApp, startProcessSync } from "@k2b/cloud";
+import { getApp, sql, startProcessSync } from "@k2b/cloud";
+import { createAppBootstrapRoutes } from "@k2b/cloud/api";
+import { registerAppKey } from "@k2b/cloud/services/app-keys";
 import { initializePlatform } from "@k2b/cloud/start";
 
 await initializePlatform({ appId: "consumer-observer", source: "env" });
 
-assert.match(await Bun.file("dist/server.js").text(), /Count the shelf inventory using the Inventory application/);
-assert.match(await Bun.file("dist/server.js").text(), /Count each item once and report missing labels/);
-const sync = await startProcessSync({ application: "consumer-observer" });
-const reservation = Bun.serve({ port: 0, fetch: () => new Response() });
-const port = reservation.port;
-await reservation.stop(true);
-const baseUrl = `http://127.0.0.1:${port}`;
-const child = Bun.spawn([process.execPath, "--no-env-file", "dist/server.js"], {
-  env: { ...process.env, PORT: String(port), CONSUMER_BASE_URL: baseUrl },
-  stdout: "pipe",
-  stderr: "pipe",
+// A real enrolled identity reaches the packed app through the public bootstrap route.
+const [admin] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, admin)
+  VALUES ('packed-consumer-admin', 'local', 'user', true) RETURNING id`;
+if (!admin) throw new Error("Missing fixture administrator");
+const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+const privateKey = await crypto.subtle.exportKey("jwk", pair.privateKey);
+const publicKey = await crypto.subtle.exportKey("jwk", pair.publicKey);
+if (!privateKey.d || !publicKey.x) throw new Error("Missing fixture key");
+const enrolled = await registerAppKey({
+  actor: { id: admin.id, uid: "packed-consumer-admin", provider: "local", roles: ["admin"] },
+  appId: "inventory",
+  publicKey: publicKey.x,
+  grants: [],
 });
-const output = Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
-const deadline = setTimeout(() => child.kill("SIGKILL"), 60_000);
+if (!enrolled.ok) throw new Error(enrolled.error.message);
+const appKey = `cloud-app-key-v1.${enrolled.data.installationId}.inventory.${enrolled.data.keyId}.${privateKey.d}`;
+const core = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createAppBootstrapRoutes().fetch });
+
 try {
-  let ready = false;
-  for (let attempt = 0; attempt < 120; attempt++) {
-    if (child.exitCode !== null) throw new Error(`App exited before readiness: ${await output}`);
-    const entry = await getApp("inventory");
-    if (entry) {
-      assert.match(entry.skills?.manifestHash ?? "", /^[a-f0-9]{64}$/);
-      assert.equal(entry.baseUrl, baseUrl);
-      assert.deepEqual(entry.routes, ["/api/inventory", "/pwa/inventory"]);
-      assert.deepEqual(entry.pwa, { href: "/pwa/inventory" });
-      const response = await fetch(`${baseUrl}/api/inventory/health`).catch(() => null);
-      if (response) {
-        assert.equal(response.status, 200);
-        assert.deepEqual(await response.json(), { app: "inventory", status: "ok" });
-        ready = true;
-        break;
+  assert.match(await Bun.file("dist/server.js").text(), /Count the shelf inventory using the Inventory application/);
+  assert.match(await Bun.file("dist/server.js").text(), /Count each item once and report missing labels/);
+  const sync = await startProcessSync({ application: "consumer-observer" });
+  const reservation = Bun.serve({ port: 0, fetch: () => new Response() });
+  const port = reservation.port;
+  await reservation.stop(true);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "dist/server.js"], {
+    env: {
+      ...process.env,
+      PORT: String(port),
+      CONSUMER_BASE_URL: baseUrl,
+      CLOUD_APP_KEY: appKey,
+      CLOUD_CORE_INTERNAL_ORIGIN: core.url.origin,
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  const deadline = setTimeout(() => child.kill("SIGKILL"), 60_000);
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      if (child.exitCode !== null) throw new Error(`App exited before readiness: ${await output}`);
+      const entry = await getApp("inventory");
+      if (entry) {
+        assert.match(entry.skills?.manifestHash ?? "", /^[a-f0-9]{64}$/);
+        assert.equal(entry.baseUrl, baseUrl);
+        assert.deepEqual(entry.routes, ["/api/inventory", "/pwa/inventory"]);
+        assert.deepEqual(entry.pwa, { href: "/pwa/inventory" });
+        const response = await fetch(`${baseUrl}/api/inventory/health`).catch(() => null);
+        if (response) {
+          assert.equal(response.status, 200);
+          assert.deepEqual(await response.json(), { app: "inventory", status: "ok" });
+          ready = true;
+          break;
+        }
       }
+      await Bun.sleep(250);
     }
-    await Bun.sleep(250);
+    assert.ok(ready, "Packed app must register and serve its declared route");
+    // Without an app session the part sends the phone to Core to renew it, and back to the same page.
+    const part = await fetch(`${baseUrl}/pwa/inventory?shelf=a`, { redirect: "manual" });
+    assert.equal(part.status, 302);
+    assert.equal(part.headers.get("Location"), "/pwa/_auth/session/launch?to=%2Fpwa%2Finventory%3Fshelf%3Da");
+    assert.match(part.headers.get("Cache-Control") ?? "", /no-store/);
+    const relaunch = await fetch(`${baseUrl}/pwa/inventory?pwa_launch=1`, { redirect: "manual" });
+    assert.equal(relaunch.headers.get("Location"), "/pwa/?pwa=unavailable");
+    child.kill("SIGTERM");
+    assert.equal(await child.exited, 0, `Graceful shutdown failed: ${await output}`);
+    assert.equal(await getApp("inventory"), null, "Shutdown must remove registry entry before exiting");
+    const response = await fetch(`${baseUrl}/api/inventory/health`).catch(() => null);
+    assert.equal(response, null, "Shutdown must close the HTTP listener");
+    console.log("Packed production app registered with its mobile app part, served HTTP, exited 0 and removed its registry entry.");
+  } finally {
+    clearTimeout(deadline);
+    if (child.exitCode === null) child.kill("SIGKILL");
+    await child.exited;
+    await sync.stop();
   }
-  assert.ok(ready, "Packed app must register and serve its declared route");
-  // Without an app session the part sends the phone to Core to renew it, and back to the same page.
-  const part = await fetch(`${baseUrl}/pwa/inventory?shelf=a`, { redirect: "manual" });
-  assert.equal(part.status, 302);
-  assert.equal(part.headers.get("Location"), "/pwa/_auth/session/launch?to=%2Fpwa%2Finventory%3Fshelf%3Da");
-  assert.match(part.headers.get("Cache-Control") ?? "", /no-store/);
-  const relaunch = await fetch(`${baseUrl}/pwa/inventory?pwa_launch=1`, { redirect: "manual" });
-  assert.equal(relaunch.headers.get("Location"), "/pwa/?pwa=unavailable");
-  child.kill("SIGTERM");
-  assert.equal(await child.exited, 0, `Graceful shutdown failed: ${await output}`);
-  assert.equal(await getApp("inventory"), null, "Shutdown must remove registry entry before exiting");
-  const response = await fetch(`${baseUrl}/api/inventory/health`).catch(() => null);
-  assert.equal(response, null, "Shutdown must close the HTTP listener");
-  console.log("Packed production app registered with its mobile app part, served HTTP, exited 0 and removed its registry entry.");
 } finally {
-  clearTimeout(deadline);
-  if (child.exitCode === null) child.kill("SIGKILL");
-  await child.exited;
-  await sync.stop();
+  await core.stop(true);
 }

@@ -5,21 +5,10 @@ import { copyToClipboard } from "@k2b/stdlib/browser";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, NoticeCard, Skeleton, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { groupFingerprint, type KeyEntry, openRevokeKeyDialog, openTokenDialog } from "./keys-dialogs";
+import { groupFingerprint, type KeyEntry, openRevokeKeyDialog } from "./keys-dialogs";
 import { keysMessages } from "./keys-messages";
 import { keysState } from "./keys-state";
 
-export type TokenEntry = {
-  id: string;
-  name: string;
-  tokenPrefix: string;
-  status: "active" | "revoked";
-  expiresAt: string | null;
-  lastUsedAt: string | null;
-};
-const tokenStatus = (token: TokenEntry) =>
-  token.status === "revoked" ? "revoked" : token.expiresAt && Date.parse(token.expiresAt) <= Date.now() ? "expired" : "active";
-type Tokens = { items: TokenEntry[]; total: number; hasNext: boolean };
 /** Core's last refusal of a start with a verified proof, as the keys API reports it. */
 export type StartRejection = {
   at: string;
@@ -38,19 +27,16 @@ export type KeysProps = {
   people: Record<string, string>;
   /** "disabled" means background access is off for the whole app. */
   accountStatus: "active" | "disabled" | null;
-  tokens: Tokens | null;
   /** Fibel page on app keys, for the sentence and the openssl way. */
   docsHref: string | null;
   timeZone: string;
 };
 
-const PER_PAGE = 20;
 const keysApi = coreClient.admin.apps;
-const workloads = coreClient.admin.identity.workloads;
+const appAccounts = coreClient.admin.identity.apps;
 
 /**
- * The keys of one app: active and expired keys, the revoked ones behind a disclosure, the menu of each key, and the
- * tokens of today's host operation collapsed below. SSR provides the first state; every change reads the list again.
+ * Active, expired and revoked app keys. SSR provides the first state; every change reads the list again.
  */
 export default function Keys(props: KeysProps) {
   const locale = useLocale();
@@ -67,9 +53,6 @@ export default function Keys(props: KeysProps) {
   const [showRevoked, setShowRevoked] = createSignal(
     explainsRevoked(props.initialKeys ? { items: props.initialKeys, lastRejectedStart: props.initialRejection } : undefined),
   );
-  const [showTokens, setShowTokens] = createSignal(false);
-  const [tokenPage, setTokenPage] = createSignal(1);
-  const [tokenRevision, setTokenRevision] = createSignal(0);
   const [accountStatus, setAccountStatus] = createSignal(props.accountStatus);
 
   const keys = query.create({
@@ -88,27 +71,9 @@ export default function Keys(props: KeysProps) {
       return { items: body.items, lastRejectedStart: body.lastRejectedStart };
     },
   });
-  const tokens = query.create({
-    source: () => ({ page: tokenPage(), revision: tokenRevision() }),
-    initial: props.tokens ? { source: { page: 1, revision: 0 }, data: props.tokens } : undefined,
-    isSameSource: (a, b) => a.page === b.page && a.revision === b.revision,
-    load: async (source, { abortSignal }): Promise<Tokens> => {
-      const response = await workloads[":appId"].credentials.$get(
-        { param: { appId: props.app.id }, query: { page: String(source.page), perPage: String(PER_PAGE) } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(t().tokensFailed);
-      const body = (await response.json()) as Tokens;
-      return { items: body.items, total: body.total, hasNext: body.hasNext };
-    },
-  });
-  const refreshAfterToken = () => {
-    setTokenRevision((value) => value + 1);
-    keysState.setRevision((value) => value + 1);
-  };
   const enable = mutation.create({
     mutation: async (_: void, { abortSignal }) => {
-      const response = await workloads[":appId"].$patch(
+      const response = await appAccounts[":appId"].$patch(
         { param: { appId: props.app.id }, json: { status: "active" } },
         { init: { signal: abortSignal } },
       );
@@ -117,7 +82,6 @@ export default function Keys(props: KeysProps) {
     onSuccess: () => {
       setAccountStatus("active");
       keysState.setDisabledAccount(false);
-      setTokenRevision((value) => value + 1);
     },
   });
   onCleanup(() => enable.abort());
@@ -146,7 +110,6 @@ export default function Keys(props: KeysProps) {
       (data) => {
         if (!data) return;
         keysState.setActiveCount(data.filter((key) => key.status === "active").length);
-        // Revoking an automatic runtime token turns background access off; the keys read again says so.
         const status = data[0]?.accountStatus;
         if (status) {
           setAccountStatus(status);
@@ -340,107 +303,6 @@ export default function Keys(props: KeysProps) {
           </Show>
         </Show>
       </Show>
-      <div class="mt-3">
-        <Disclose
-          open={showTokens()}
-          label={t().tokens({ count: tokens.data()?.total ?? 0 })}
-          toggle={() => setShowTokens((open) => !open)}
-        />
-        <Show when={showTokens()}>
-          <p class="mx-2.5 mt-1 mb-2 max-w-[40rem] text-[13.5px] text-dimmed">{t().tokensText}</p>
-          <Show
-            when={!tokens.error()}
-            fallback={
-              <div class="flex flex-col items-start gap-2 px-2.5 text-[13.5px] text-secondary">
-                {t().tokensFailed}
-                <Button size="sm" variant="secondary" onClick={() => void tokens.refresh()}>
-                  {t().retry}
-                </Button>
-              </div>
-            }
-          >
-            <div class="flex flex-col gap-0.5">
-              <For each={tokens.data()?.items ?? []} fallback={<p class="mx-2.5 text-[13.5px] text-dimmed">{t().noTokens}</p>}>
-                {(token) => (
-                  <div
-                    class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 rounded-lg px-2.5 py-2.5 hover:bg-(--k2b-hover)"
-                    data-token={token.name}
-                  >
-                    <div class="min-w-0">
-                      <div class="flex min-w-0 items-center gap-2 text-sm font-medium">
-                        <span class="truncate">{token.name}</span>
-                        <StatusBadge
-                          icon={null}
-                          tone={tokenStatus(token) === "active" ? "ok" : "neutral"}
-                          label={{ active: t().active, expired: t().expired, revoked: t().revoked }[tokenStatus(token)]}
-                        />
-                      </div>
-                      <div class="mt-0.5 text-[12.5px] text-dimmed">
-                        {[
-                          token.expiresAt ? t().tokenExpires({ date: formatDate(token.expiresAt, context()) }) : t().tokenNoExpiry,
-                          token.lastUsedAt ? t().usedAt({ when: dates.formatTimeSpan(token.lastUsedAt, context()) }) : t().neverUsed,
-                        ].join(" · ")}
-                      </div>
-                    </div>
-                    <Show when={token.status !== "revoked"}>
-                      <Dropdown.Root
-                        position="bottom-right"
-                        phone="sheet"
-                        label={t().actionsFor({ name: token.name })}
-                        items={[
-                          {
-                            icon: "ti ti-key-off",
-                            label: t().revoke,
-                            variant: "danger",
-                            action: () =>
-                              void openTokenDialog(props.app, locale(), refreshAfterToken, {
-                                id: token.id,
-                                name: token.name,
-                                prefix: token.tokenPrefix,
-                              }),
-                          },
-                        ]}
-                      >
-                        <Dropdown.Trigger iconOnly label={t().actionsFor({ name: token.name })} size="xs" variant="ghost">
-                          <i class="ti ti-dots" aria-hidden="true" />
-                        </Dropdown.Trigger>
-                      </Dropdown.Root>
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </div>
-            <div class="mx-2.5 mt-1 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => void openTokenDialog(props.app, locale(), () => setTokenRevision((value) => value + 1))}
-              >
-                <i class="ti ti-plus" aria-hidden="true" />
-                {t().tokenCreate}
-              </Button>
-              <Show when={(tokens.data()?.total ?? 0) > PER_PAGE}>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={tokenPage() <= 1 || tokens.loading()}
-                  onClick={() => setTokenPage((page) => page - 1)}
-                >
-                  {t().previous}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!tokens.data()?.hasNext || tokens.loading()}
-                  onClick={() => setTokenPage((page) => page + 1)}
-                >
-                  {t().next}
-                </Button>
-              </Show>
-            </div>
-          </Show>
-        </Show>
-      </div>
     </div>
   );
 }

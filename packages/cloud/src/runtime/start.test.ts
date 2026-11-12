@@ -47,7 +47,7 @@ test("start loads only after native instances exist and never rewrites environme
     import { startPlatform } from ${JSON.stringify(start)};
     import { sql, redis, createSql, createRedis, closePlatformClients } from ${JSON.stringify(clients)};
     const before = { ...process.env };
-    const module = await startPlatform({appId: "inventory", load: async () => {
+    const module = await startPlatform({appId: "core", load: async () => {
       const pool = createSql({ max: 2 }); const cache = createRedis({ enableOfflineQueue: false });
       const nativeSql = new SQL({ url: process.env.DATABASE_URL });
       const onconnect = () => {};
@@ -80,7 +80,7 @@ test("startup applies the process pool maximum without changing owned pools or t
     import { startPlatform } from ${JSON.stringify(start)};
     import { sql, createSql, closePlatformClients } from ${JSON.stringify(clients)};
     const before = process.env.DATABASE_URL;
-    const result = await startPlatform({ appId: "inventory", load: async () => {
+    const result = await startPlatform({ appId: "core", load: async () => {
       const owned = createSql();
       const explicit = createSql({ max: 3 });
       try { return { global: sql.options.max, owned: owned.options.max, explicit: explicit.options.max, unchanged: process.env.DATABASE_URL === before }; }
@@ -100,7 +100,7 @@ test("invalid process pool limits fail before loading application code and clear
       import { startPlatform } from ${JSON.stringify(start)};
       import { hasConnections } from ${JSON.stringify(state)};
       let loaded = false, message;
-      try { await startPlatform({ appId: "inventory", load: async () => { loaded = true } }); }
+      try { await startPlatform({ appId: "core", load: async () => { loaded = true } }); }
       catch (error) { message = error.message; }
       console.log(JSON.stringify({ loaded, bound: hasConnections(), message }));
     `,
@@ -117,7 +117,7 @@ test("startup rejects URL pool options before loading application code without d
     import { startPlatform } from ${JSON.stringify(start)};
     import { hasConnections } from ${JSON.stringify(state)};
     let loaded = false, message;
-    try { await startPlatform({ appId: "inventory", load: async () => { loaded = true } }); }
+    try { await startPlatform({ appId: "core", load: async () => { loaded = true } }); }
     catch (error) { message = error.message; }
     console.log(JSON.stringify({ loaded, bound: hasConnections(), message }));
   `,
@@ -160,7 +160,7 @@ test("initialization rejects invalid identity, duplicate starts and native clien
     import { closePlatformClients } from ${JSON.stringify(clients)};
     const errors = [];
     try { await initializePlatform({ appId: "Invalid" }) } catch (error) { errors.push(error.message) }
-    await initializePlatform({ appId: "inventory" });
+    await initializePlatform({ appId: "inventory", source: "env" });
     try { await initializePlatform({ appId: "inventory" }) } catch (error) { errors.push(error.message) }
     await closePlatformClients(); console.log(JSON.stringify(errors));
   `);
@@ -170,7 +170,7 @@ test("initialization rejects invalid identity, duplicate starts and native clien
       `
       import { startPlatform } from ${JSON.stringify(start)};
       let loaded = false, message;
-      try { await startPlatform({ appId: "inventory", load: async () => { loaded = true } }) }
+      try { await startPlatform({ appId: "core", load: async () => { loaded = true } }) }
       catch (error) { message = error.message }
       console.log(JSON.stringify({loaded, message}));
     `,
@@ -252,4 +252,55 @@ test("a second concurrent start is rejected while key bootstrap is still pending
     },
   );
   expect(result).toEqual({ requests: 1, statuses: ["fulfilled", "rejected"], errors: ["Platform has already started"] });
+});
+
+test("serving apps require a key before loading application code, including forced env mode", async () => {
+  for (const source of [undefined, "env"]) {
+    const result = await run(`
+      import { startPlatform } from ${JSON.stringify(start)};
+      let loaded = false, message;
+      try { await startPlatform({ appId: "inventory", source: ${JSON.stringify(source)}, load: async () => { loaded = true; } }); }
+      catch (error) { message = error.message; }
+      console.log(JSON.stringify({ loaded, message }));
+    `);
+    expect(result.loaded).toBe(false);
+    expect(result.message).toContain("CLOUD_APP_KEY_FILE");
+    expect(result.message).toContain("/operations/app-keys");
+  }
+});
+
+test("Core and Gateway start without an app key", async () => {
+  for (const appId of ["core", "gateway"]) {
+    expect(
+      await run(`
+      import { startPlatform } from ${JSON.stringify(start)};
+      import { closePlatformClients } from ${JSON.stringify(clients)};
+      const loaded = await startPlatform({ appId: ${JSON.stringify(appId)}, load: async () => true });
+      await closePlatformClients(); console.log(JSON.stringify(loaded));
+    `),
+    ).toBe(true);
+  }
+});
+
+test("keyless data scripts initialize explicit connections without fetching Core or rewriting Bun globals", async () => {
+  const result = await run(
+    `
+    import { initializePlatform } from ${JSON.stringify(start)};
+    import { connections } from ${JSON.stringify(state)};
+    import { closePlatformClients } from ${JSON.stringify(clients)};
+    const before = { ...process.env };
+    globalThis.fetch = () => { throw new Error("Data initialization must not contact Core"); };
+    await initializePlatform({ appId: "inventory", source: "env" });
+    const { appId, database, valkey, bootstrap } = connections();
+    await closePlatformClients();
+    console.log(JSON.stringify({
+      appId, mode: bootstrap.mode,
+      database: database.url === process.env.DATABASE_URL,
+      valkey: valkey.url === process.env.REDIS_URL,
+      environment: JSON.stringify(before) === JSON.stringify(process.env),
+    }));
+  `,
+    { CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:1" },
+  );
+  expect(result).toEqual({ appId: "inventory", mode: "env", database: true, valkey: true, environment: true });
 });

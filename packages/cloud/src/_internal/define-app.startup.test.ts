@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import * as appSkills from "../ai/app-skills";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import { defineHelp } from "../server/help";
 import * as catalogStore from "../services/app-catalog-store";
 import * as helpStore from "../services/help/store";
@@ -14,7 +14,6 @@ import * as heartbeat from "./heartbeat";
 import * as processSync from "./process-sync";
 import * as registry from "./registry";
 import * as watcher from "./runtime-watcher";
-import * as workload from "./workload-credential";
 
 describe("application startup readiness", () => {
   for (const mode of [
@@ -25,7 +24,6 @@ describe("application startup readiness", () => {
     "start",
     "ready",
     "advertise",
-    "workload",
     "calendar",
     null,
     "skip",
@@ -75,14 +73,8 @@ describe("application startup readiness", () => {
         spyOn(performance, "now").mockImplementation(() => elapsed),
         // The setup mutex always acquires immediately; its fixed lease uses this clock.
         spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T00:00:00Z")),
-        spyOn(workload, "createAppWorkloadCredential").mockImplementation(() => ({
-          start: () => step("workload"),
-          refresh: async () => {},
-          stop: async () => {
-            events.push("stop-workload");
-          },
-        })),
         stubConnections(),
+        stubAppIdentity(),
         spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async (applicationId) => {
           expect(applicationId).toBe("startup-test");
           await step("links");
@@ -183,11 +175,7 @@ describe("application startup readiness", () => {
           expect(events).toContain("stop-watch");
           expect(events).toContain("unregister");
           if (failure !== "setup" && failure !== "links") expect(events).toContain("stop-notifications");
-          if (failure !== "advertise" && failure !== "workload") expect(events).not.toContain("advertise");
-          if (failure === "workload") {
-            expect(events.indexOf("stop-lifecycle")).toBeLessThan(events.indexOf("stop-workload"));
-            expect(events.indexOf("stop-workload")).toBeLessThan(events.indexOf("disconnect"));
-          }
+          if (failure !== "advertise") expect(events).not.toContain("advertise");
           expect(() => processSync.getProcessSync()).toThrow("not available");
         } else {
           const server = await started;
@@ -240,8 +228,6 @@ describe("application startup readiness", () => {
           }
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("start"));
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("ready"));
-          expect(events.indexOf("workload")).toBeLessThan(events.indexOf("start"));
-          expect(events.indexOf("register-instance")).toBeLessThan(events.indexOf("workload"));
           expect(await (await server.fetch(new Request("http://startup-test/_cloud/ready"))).json()).toEqual({
             status: "ready",
             appId: "startup-test",

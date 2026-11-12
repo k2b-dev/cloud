@@ -50,11 +50,12 @@ const setup = async (authenticated = true, state = authorityState()) => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   let authCalls = 0;
   const routes = createIdentityOAuthIssuanceRoutes({
-    recordLegacy: async () => {},
-    authenticate: (token) => {
+    authenticate: async (c, scope) => {
       authCalls += 1;
-      expect(token).toBe("broker");
-      return authenticated;
+      expect(scope).toBe("oauth:issue");
+      return authenticated
+        ? { appId: "oauth", keyId: USER_ID, serviceAccountId: USER_ID, credentialId: USER_ID, scope: "identity:invoke" }
+        : c.json({ code: "UNAUTHORIZED" }, 401);
     },
     withActiveSigner: async (_purpose, callback) =>
       callback(
@@ -74,58 +75,24 @@ const setup = async (authenticated = true, state = authorityState()) => {
 };
 
 describe("Core OAuth issuance authority", () => {
-  test("authenticates the configured broker secret before any signer or grant access", async () => {
-    const previous = process.env.CLOUD_OAUTH_BROKER_SECRET;
-    const { privateKey } = await generateKeyPair("RS256");
+  test("rejects former broker and workload bearers before signer or grant access", async () => {
     let signerCalls = 0;
     const routes = createIdentityOAuthIssuanceRoutes({
-      recordLegacy: async () => {},
-      withActiveSigner: async (_purpose, callback) => {
-        signerCalls += 1;
-        return callback({ kid: "test", key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.test" }, sql);
+      withActiveSigner: async () => {
+        signerCalls++;
+        throw new Error("Unexpected signer access");
       },
       resolve: async () => {
         throw new Error("Unauthorized request reached grant resolution");
       },
     });
-    const secret = "ab".repeat(32);
-    try {
-      for (const configured of [undefined, "", "invalid", secret]) {
-        if (configured === undefined) delete process.env.CLOUD_OAUTH_BROKER_SECRET;
-        else process.env.CLOUD_OAUTH_BROKER_SECRET = configured;
-        for (const authorization of [
-          undefined,
-          "Bearer ",
-          "Bearer invalid",
-          `Bearer ${"cd".repeat(32)}`,
-          `Basic ${secret}`,
-          ...(configured === secret ? [] : [`Bearer ${secret}`]),
-        ]) {
-          for (const path of ["/oauth/ready", "/oauth/token"]) {
-            const response = await routes.request(path, {
-              method: "POST",
-              headers: authorization ? { authorization } : {},
-              body: "not JSON",
-            });
-            expect(response.status).toBe(401);
-          }
-        }
+    for (const authorization of [undefined, "Bearer ", "Bearer invalid", `Bearer ${"ab".repeat(32)}`, "Bearer cld_old_workload_token"]) {
+      for (const path of ["/oauth/ready", "/oauth/token"]) {
+        const response = await routes.request(path, { method: "POST", headers: authorization ? { authorization } : {}, body: "not JSON" });
+        expect(response.status).toBe(401);
       }
-      expect(signerCalls).toBe(0);
-      process.env.CLOUD_OAUTH_BROKER_SECRET = secret;
-      const ready = await routes.request("/oauth/ready", { method: "POST", headers: { authorization: `Bearer ${secret}` } });
-      expect(ready.status).toBe(204);
-      expect(signerCalls).toBe(1);
-      const malformed = await routes.request("/oauth/token", {
-        method: "POST",
-        headers: { authorization: `Bearer ${secret}` },
-        body: "not JSON",
-      });
-      expect(malformed.status).toBe(400);
-    } finally {
-      if (previous === undefined) delete process.env.CLOUD_OAUTH_BROKER_SECRET;
-      else process.env.CLOUD_OAUTH_BROKER_SECRET = previous;
     }
+    expect(signerCalls).toBe(0);
   });
   test("derives the user access-token authority from current state", async () => {
     const { routes, publicKey } = await setup();
@@ -419,8 +386,13 @@ describe("Core OAuth issuance authority", () => {
     const { privateKey } = await generateKeyPair("RS256");
     let now = 1_788_220_800;
     const routes = createIdentityOAuthIssuanceRoutes({
-      recordLegacy: async () => {},
-      authenticate: () => true,
+      authenticate: async () => ({
+        appId: "oauth",
+        keyId: USER_ID,
+        serviceAccountId: USER_ID,
+        credentialId: USER_ID,
+        scope: "identity:invoke",
+      }),
       issuer: async () => "https://cloud.example.test",
       now: () => now,
       withActiveSigner: async (_purpose, callback) => {
@@ -481,8 +453,13 @@ const epochAuthorityFixture = async (notify?: (notice: OAuthNewAccessNotice) => 
       VALUES (${id}, ${id}, ARRAY['https://client.example.test/callback'], ARRAY['openid', 'offline_access'], ARRAY['cloud'])`;
   }
   const routes = createIdentityOAuthIssuanceRoutes({
-    recordLegacy: async () => {},
-    authenticate: () => true,
+    authenticate: async () => ({
+      appId: "oauth",
+      keyId: USER_ID,
+      serviceAccountId: USER_ID,
+      credentialId: USER_ID,
+      scope: "identity:invoke",
+    }),
     notifyNewAccess: async (notice) => {
       notices.push(notice);
       await notify?.(notice);
@@ -873,8 +850,13 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           ARRAY['cloud', ${clientId}], true, ${authorityNonce}::uuid, 0)
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
-        recordLegacy: async () => {},
-        authenticate: () => true,
+        authenticate: async () => ({
+          appId: "oauth",
+          keyId: USER_ID,
+          serviceAccountId: USER_ID,
+          credentialId: USER_ID,
+          scope: "identity:invoke",
+        }),
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
             callback(
@@ -965,8 +947,13 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
         VALUES (${grantId}::uuid, ${grantNonce}::uuid, ${clientId}, ARRAY['read'], ARRAY['cloud', ${clientId}])
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
-        recordLegacy: async () => {},
-        authenticate: () => true,
+        authenticate: async () => ({
+          appId: "oauth",
+          keyId: USER_ID,
+          serviceAccountId: USER_ID,
+          credentialId: USER_ID,
+          scope: "identity:invoke",
+        }),
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
             callback(
@@ -1066,8 +1053,13 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
         )
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
-        recordLegacy: async () => {},
-        authenticate: () => true,
+        authenticate: async () => ({
+          appId: "oauth",
+          keyId: USER_ID,
+          serviceAccountId: USER_ID,
+          credentialId: USER_ID,
+          scope: "identity:invoke",
+        }),
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
             callback(
@@ -1137,8 +1129,13 @@ withDatabase("Core terminal approval issuance boundary", () => {
     let issuancePid: number | undefined;
     let issuance: Promise<Response> | undefined;
     const routes = createIdentityOAuthIssuanceRoutes({
-      recordLegacy: async () => {},
-      authenticate: () => true,
+      authenticate: async () => ({
+        appId: "oauth",
+        keyId: USER_ID,
+        serviceAccountId: USER_ID,
+        credentialId: USER_ID,
+        scope: "identity:invoke",
+      }),
       withActiveSigner: async (_purpose, callback) =>
         sql.begin(async (db) => {
           await db`SET LOCAL statement_timeout='5s'`;
@@ -1245,8 +1242,13 @@ withDatabase("Core terminal approval issuance boundary", () => {
   ] as const)("rechecks terminal approval authority before issuance: %s", async (scenario) => {
     const { privateKey } = await generateKeyPair("RS256");
     const routes = createIdentityOAuthIssuanceRoutes({
-      recordLegacy: async () => {},
-      authenticate: () => true,
+      authenticate: async () => ({
+        appId: "oauth",
+        keyId: USER_ID,
+        serviceAccountId: USER_ID,
+        credentialId: USER_ID,
+        scope: "identity:invoke",
+      }),
       withActiveSigner: async (_purpose, callback) =>
         sql.begin(async (db) => {
           // Visible only to this transaction: the recheck must read settings on it, not on a second pool connection.

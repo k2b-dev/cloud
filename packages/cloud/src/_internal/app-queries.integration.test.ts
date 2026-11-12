@@ -1,6 +1,6 @@
 import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Hono } from "hono";
-import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
+import { APP_KEY_FIXTURES, enrollTestAppKey } from "../../../../scripts/fixtures/app-key-fixtures";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { APP_QUERY_REQUESTS_PER_MINUTE, type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
 import { formatAppKey } from "../app-key";
@@ -10,12 +10,10 @@ import { readResourcePrincipals } from "../capabilities/resource-readers";
 import { env } from "../config/env";
 import { defineCapabilities } from "../contracts/capabilities";
 import { redis, sql } from "../runtime/clients";
-import { registerAppKey } from "../services/app-keys";
+import { getActiveAppKey, registerAppKey } from "../services/app-keys";
 import { signAppQueryInvocation } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
-import { authenticateWorkloadCredential } from "../services/identity/workload-auth";
 import { toPgTextArray } from "../services/postgres";
-import { createApiToken } from "../services/service-account-credentials";
 import { encryptValue } from "../services/settings/crypto";
 import { createAppQueryRoutes } from "./app-queries";
 import { compileCapabilities, invokeCompiledCapability } from "./capabilities";
@@ -33,10 +31,10 @@ suiteFor(
   "nats",
   "valkey",
 )("app query live admission", () => {
-  test("current workload credential is required at authentication and provider execution", async () => {
+  test("a current app key is required at provider execution", async () => {
     const appId = `query-fixture-${crypto.randomUUID()}`;
-    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
-      VALUES ('App query fixture', 'resource_bound', ${appId}, 'cloud.app', ${appId}) RETURNING id`;
+    const enrolled = await enrollTestAppKey(sql, appId);
+    const account = { id: enrolled.serviceAccountId };
     try {
       let invoked = 0;
       const compiled = compileCapabilities(
@@ -58,12 +56,14 @@ suiteFor(
           },
         }),
       );
-      const credential = await createApiToken({ serviceAccountId: account!.id, name: "Query fixture", scopes: ["identity:invoke"] });
-      if (!credential.ok) throw new Error(credential.error.message);
-      const auth = () => authenticateWorkloadCredential({ appId, scope: "identity:invoke", token: credential.data.token });
-      expect(await authenticateWorkloadCredential({ appId, scope: "identity:invoke", token: null })).toBeNull();
-      const workload = await auth();
-      if (!workload) throw new Error("Missing workload fixture");
+      const auth = () => getActiveAppKey({ appId, keyId: enrolled.keyId });
+      const workload = {
+        appId,
+        keyId: enrolled.keyId,
+        credentialId: enrolled.keyId,
+        serviceAccountId: account.id,
+        scope: "identity:invoke" as const,
+      };
       const payload = { id: "Abc123", principals: [] };
       const signed = await withActiveIdentitySigner("invocation", (signer) =>
         signAppQueryInvocation({
@@ -93,10 +93,7 @@ suiteFor(
       await sql`UPDATE auth.service_account_credentials SET status = 'active', revoked_at = NULL, expires_at = now() - interval '1 second' WHERE id = ${workload.credentialId}::uuid`;
       expect(await auth()).toBeNull();
       expect((await call()).status).toBe(403);
-      await sql`UPDATE auth.service_account_credentials SET expires_at = NULL, scopes = '{}' WHERE id = ${workload.credentialId}::uuid`;
-      expect(await auth()).toBeNull();
-      expect((await call()).status).toBe(403);
-      await sql`UPDATE auth.service_account_credentials SET scopes = ARRAY['identity:invoke'] WHERE id = ${workload.credentialId}::uuid`;
+      await sql`UPDATE auth.service_account_credentials SET expires_at = NULL WHERE id = ${workload.credentialId}::uuid`;
       await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${account!.id}::uuid`;
       expect(await auth()).toBeNull();
       expect((await call()).status).toBe(403);
@@ -108,11 +105,10 @@ suiteFor(
       await sql`DELETE FROM auth.service_accounts WHERE id = ${account!.id}::uuid`;
     }
   });
-  test("enrolled app keys and legacy workloads have the same reader authority and live revocation", async () => {
+  test("enrolled app keys carry reader authority and enforce live revocation", async () => {
     const appId = "reader-consumer";
     const userId = "33333333-3333-4333-8333-333333333333";
     const keyDescriptor = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
-    const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
     const originalOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     await sql`INSERT INTO auth.users (id, uid, provider, profile, admin)
       VALUES (${userId}::uuid, 'reader-admin', 'local', 'user', true)`;
@@ -125,8 +121,6 @@ suiteFor(
     const [account] = await sql<{ id: string }[]>`SELECT service_account_id AS id FROM auth.service_account_credentials
       WHERE id = ${enrolled.data.keyId}::uuid`;
     if (!account) throw new Error("Missing app account");
-    const legacy = await createApiToken({ serviceAccountId: account.id, name: "Legacy reader", scopes: ["identity:invoke"] });
-    if (!legacy.ok) throw new Error(legacy.error.message);
     let invoked = 0;
     const compiled = compileCapabilities("reader-provider", {
       protocolVersion: 2,
@@ -176,16 +170,12 @@ suiteFor(
         return routes.fetch(request);
       },
     };
-    // Use Core's actual signed/legacy broker without importing its program into Cloud's typecheck.
+    // Use Core's actual signed broker without importing its program into Cloud's typecheck.
     const brokerPath = "../../../core/src/api/identity-invocation";
     const { createIdentityInvocationRoutes } = (await import(brokerPath)) as {
-      createIdentityInvocationRoutes: (dependencies: {
-        authenticateWorkload: typeof authenticateWorkloadCredential;
-        dispatchDependencies: CapabilityDispatchDependencies;
-      }) => Hono;
+      createIdentityInvocationRoutes: (dependencies: { dispatchDependencies: CapabilityDispatchDependencies }) => Hono;
     };
     const broker = createIdentityInvocationRoutes({
-      authenticateWorkload: authenticateWorkloadCredential,
       dispatchDependencies: dependencies,
     });
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/api/_internal/identity/v1", broker).fetch });
@@ -195,14 +185,12 @@ suiteFor(
     const read = (type = "item") =>
       readResourcePrincipals({ ref: { type: `reader-provider.${type}`, id: "item-1" }, principals: [{ type: "user", userId }] });
     try {
-      for (const kind of ["legacy", "app_key"] as const) {
+      {
         Object.defineProperty(env, "CLOUD_APP_KEY", {
           configurable: true,
-          value: kind === "app_key" ? formatAppKey({ ...enrolled.data, appId, seed: APP_KEY_FIXTURES[0].seed }) : undefined,
+          value: formatAppKey({ ...enrolled.data, appId, seed: APP_KEY_FIXTURES[0].seed }),
         });
-        if (kind === "legacy") process.env.CLOUD_APP_CREDENTIAL = legacy.data.token;
-        else delete process.env.CLOUD_APP_CREDENTIAL;
-        const credentialId = kind === "legacy" ? legacy.data.credential.id : enrolled.data.keyId;
+        const credentialId = enrolled.data.keyId;
         for (const type of ["item", "folder"]) {
           expect(await read(type)).toEqual({ state: "checked", readable: [{ type: "user", userId }] });
         }
@@ -224,13 +212,11 @@ suiteFor(
         }
         expect(await read()).toMatchObject({ state: "checked" });
       }
-      expect(invoked).toBe(6);
+      expect(invoked).toBe(3);
     } finally {
       await server.stop(true);
       lookup.mockRestore();
       Object.defineProperty(env, "CLOUD_APP_KEY", keyDescriptor);
-      if (originalCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
-      else process.env.CLOUD_APP_CREDENTIAL = originalCredential;
       if (originalOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
       else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalOrigin;
       clearProcessApplicationId();

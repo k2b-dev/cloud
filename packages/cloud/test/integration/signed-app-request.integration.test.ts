@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, jest, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import type { AppKey } from "@k2b/cloud/app-key";
 import { mandates } from "@k2b/cloud/services";
@@ -128,13 +129,13 @@ suiteFor(
     }
   });
 
-  test("migration grants the built-in default once and preserves operator changes on repeated setup", async () => {
+  test("migration grants no issuer by app ID and preserves explicit operator grants on repeated setup", async () => {
     expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(true);
     expect((await getActiveAppKey(thirdPartyKey))?.oauthIssueAllowed).toBe(false);
     // Recreate the pre-grant schema on this private database to exercise an existing installation.
     await sql`ALTER TABLE auth.service_account_credentials DROP COLUMN oauth_issue_allowed`.simple();
     await migrateAppBootstrap();
-    expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(true);
+    expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(false);
     expect((await getActiveAppKey(key))?.oauthIssueAllowed).toBe(false);
     expect((await getActiveAppKey(thirdPartyKey))?.oauthIssueAllowed).toBe(false);
     await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = (id = ${thirdPartyKey.keyId}::uuid)
@@ -205,9 +206,6 @@ suiteFor(
     const issuance = new Hono().route("/", createIdentityPublicRoutes()).route(
       "/api/_internal/identity/v1",
       createIdentityOAuthIssuanceRoutes({
-        authenticate: () => {
-          throw new Error("Signed issuance must not use legacy authentication");
-        },
         issuer: async () => issuer,
         now: () => NOW / 1000,
         withActiveSigner: async (purpose, use) => {
@@ -278,32 +276,39 @@ suiteFor(
       .route(
         "/api/_internal/identity/v1",
         createIdentityOAuthIssuanceRoutes({
-          authenticate: () => {
-            throw new Error("Signed OAuth must not use the legacy broker");
-          },
           withActiveSigner: async (_purpose, use) => {
             signerCalls++;
             return use({ kid: "signed-test", key: privateKey, signUntil: new Date(NOW + 60_000), issuer: "https://cloud.test" }, sql);
           },
         }),
       )
-      .route(
-        "/api/_internal/identity/v1",
-        createIdentityInvocationRoutes({
-          authenticateWorkload: async () => {
-            throw new Error("Signed invocation must not use legacy authentication");
-          },
-        }),
-      )
+      .route("/api/_internal/identity/v1", createIdentityInvocationRoutes())
       .route(
         "/api/_internal/identity/v1",
         createIdentityMandateRoutes({
-          authenticateWorkload: async () => {
-            throw new Error("Signed mandate must not use legacy authentication");
-          },
           service: { ...mandates, get: async () => null },
         }),
       );
+    const account = await getActiveAppKey(key);
+    if (!account) throw new Error("Missing app account");
+    const prefix = "0123456789abcdef01234567";
+    const secret = "ab".repeat(32);
+    const hash = `sha256:${createHash("sha256").update(secret).digest("hex")}`;
+    await sql`INSERT INTO auth.service_account_credentials (service_account_id, name, kind, token_prefix, secret_hash, scopes)
+      VALUES (${account.serviceAccountId}::uuid, 'Former app token', 'api_token', ${prefix}, ${hash}, ARRAY['identity:invoke']::text[])`;
+    try {
+      for (const [target, method] of [
+        ["/api/_internal/identity/v1/invoke", "POST"],
+        ["/api/_internal/identity/v1/mandates/44444444-4444-4444-8444-444444444444", "GET"],
+        ["/api/_internal/identity/v1/oauth/ready", "POST"],
+        ["/api/_internal/identity/v1/oauth/token", "POST"],
+      ] as const) {
+        const rejected = await routes.request(target, { method, headers: { authorization: `Bearer cld_${prefix}_${secret}` } });
+        expect(rejected.status).toBe(401);
+      }
+    } finally {
+      await sql`DELETE FROM auth.service_account_credentials WHERE token_prefix = ${prefix}`;
+    }
     const readyPath = "/api/_internal/identity/v1/oauth/ready";
     const ready = await signed(oauthKey, "", "POST", readyPath);
     expect((await routes.request(readyPath, ready.init)).status).toBe(204);

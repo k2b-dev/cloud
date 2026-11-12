@@ -57,7 +57,6 @@ export const appsPageMessages = i18n.define({
       rejectedHint: "The app may be running but cannot be reached.",
       showLogs: "Show logs",
       movedGateway: "“Observability › Gateway › Apps” is here now. Routes across all apps stay under Observability › Gateway.",
-      movedCredentials: "App credentials are now with each app under “Keys” › “Tokens for host operation”.",
       closeHint: "Close hint",
       // Level 2
       groupState: "State",
@@ -114,12 +113,12 @@ export const appsPageMessages = i18n.define({
       hintKeyRevokedText: ({ name }: { name: string }) =>
         `${name ? `“${name}” was revoked. ` : ""}The running instances keep working; the next start fails. Create a new key and replace it in the deployment.`,
       hintKeyRevokedShort: "Key revoked · next start fails",
-      hintEnvStartLead: "Still starts with its environment.",
+      hintEnvStartLead: "Connections from its environment.",
       hintEnvStartText: ({ name }: { name: string }) =>
-        `${name} takes its database, Valkey and NATS from its own environment. With a key, it fetches them from Core when it starts.`,
-      hintEnvStartShort: "Still starts with its environment",
+        `${name} uses connections from its own environment. Create and mount an app key before its next start; explicit connection values can stay.`,
+      hintEnvStartShort: "Connections from its environment",
       hintEnvStartKeyText: ({ name }: { name: string }) =>
-        `${name} still takes its database, Valkey and NATS from its own environment although it has a key. Put the key into the deployment; then it fetches them from Core when it starts.`,
+        `${name} uses connections from its own environment. Mount its app key before restarting. Explicit connection values override Core; retain them only where needed.`,
       hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
         `Start refused · ${{ revoked: "key revoked", expired: "key expired", disabled: "background access off", connections_not_permitted: "key may not fetch connections" }[reason]}`,
       hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
@@ -143,7 +142,7 @@ export const appsPageMessages = i18n.define({
       docsMigration: "Switching over (documentation)",
       keysRotation: "Rotation in progress",
       keysNoValid: "no valid key",
-      keysEnv: "No key · starts with its environment",
+      keysEnv: "No key · next start fails",
       hintErrorRateLead: ({ rate }: { rate: string }) => `Error rate ${rate}`,
       hintErrorRateText: "in the last 24 hours.",
       hintErrorRateShort: ({ rate }: { rate: string }) => `Error rate ${rate} in 24 h`,
@@ -314,7 +313,6 @@ export const appsPageMessages = i18n.define({
       showLogs: "Protokolle ansehen",
       movedGateway:
         "„Systembeobachtung › Gateway › Apps“ ist jetzt hier. Routen über alle Apps findest du weiter unter Systembeobachtung › Gateway.",
-      movedCredentials: "App-Zugangsdaten stehen jetzt bei jeder App unter „Schlüssel“ › „Tokens für Host-Betrieb“.",
       closeHint: "Hinweis schließen",
       groupState: "Zustand",
       groupOverview: "Verbindungen",
@@ -367,12 +365,12 @@ export const appsPageMessages = i18n.define({
       hintKeyRevokedText: ({ name }: { name: string }) =>
         `${name ? `„${name}“ wurde widerrufen. ` : ""}Die laufenden Instanzen arbeiten weiter, der nächste Start scheitert. Erzeuge einen neuen Schlüssel und tausche ihn im Deployment aus.`,
       hintKeyRevokedShort: "Schlüssel widerrufen · nächster Start scheitert",
-      hintEnvStartLead: "Startet noch mit Env.",
+      hintEnvStartLead: "Verbindungen aus Env.",
       hintEnvStartText: ({ name }: { name: string }) =>
-        `${name} holt Datenbank, Valkey und NATS aus der eigenen Env. Mit einem Schlüssel holt die App sie beim Start von Core.`,
-      hintEnvStartShort: "Startet noch mit Env",
+        `${name} verwendet Verbindungen aus der eigenen Env. Erzeuge und hinterlege vor dem nächsten Start einen App-Key; explizite Verbindungswerte können bleiben.`,
+      hintEnvStartShort: "Verbindungen aus Env",
       hintEnvStartKeyText: ({ name }: { name: string }) =>
-        `${name} holt Datenbank, Valkey und NATS noch aus der eigenen Env, obwohl es einen Schlüssel gibt. Hinterlege den Schlüssel im Deployment, dann holt die App sie beim Start von Core.`,
+        `${name} verwendet Verbindungen aus der eigenen Env. Hinterlege vor dem Neustart den App-Key. Explizite Verbindungswerte überschreiben Core; behalte sie nur, wo sie benötigt werden.`,
       hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
         `Start abgelehnt · ${{ revoked: "Schlüssel widerrufen", expired: "Schlüssel abgelaufen", disabled: "Hintergrundzugriff aus", connections_not_permitted: "Schlüssel darf keine Verbindungen holen" }[reason]}`,
       hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
@@ -395,7 +393,7 @@ export const appsPageMessages = i18n.define({
       docsMigration: "Umstellung (Fibel)",
       keysRotation: "Rotation läuft",
       keysNoValid: "kein gültiger Schlüssel",
-      keysEnv: "Kein Schlüssel · startet mit Env",
+      keysEnv: "Kein Schlüssel · nächster Start scheitert",
       hintErrorRateLead: ({ rate }: { rate: string }) => `Fehlerquote ${rate}`,
       hintErrorRateText: "in den letzten 24 Stunden.",
       hintErrorRateShort: ({ rate }: { rate: string }) => `Fehlerquote ${rate} in 24 h`,

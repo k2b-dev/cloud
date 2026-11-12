@@ -235,7 +235,7 @@ function AppList(props: { data: AppsViewData; t: AppsPageMessages }) {
   return (
     <div class="flex flex-col gap-3 pb-6">
       <Show when={props.data.query.moved}>
-        {(moved) => <MovedNotice text={moved() === "gateway" ? t.movedGateway : t.movedCredentials} closeLabel={t.closeHint} />}
+        <MovedNotice text={t.movedGateway} closeLabel={t.closeHint} />
       </Show>
       <Show
         when={props.data.list.state === "ok" && props.data.list}

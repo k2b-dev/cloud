@@ -95,8 +95,6 @@ test("an old link lands with a hint that closes and leaves the address clean", a
   expect(new URL(page.url()).search).toBe("");
   // The list moves up by the hint's height only once, when the person closes it.
   expect((await page.locator("[data-apps-list]").boundingBox())!.y).toBeLessThan(list!.y);
-  await open("?moved=credentials");
-  expect(await page.locator("[data-moved-notice]").innerText()).toContain("„Schlüssel“ › „Tokens für Host-Betrieb“");
 }, 20_000);
 
 test("only an app that is not running can leave the list; a failure keeps it and says so", async () => {
@@ -128,8 +126,6 @@ test("keys: the private key shows once, and closing it unsaved asks first", asyn
   expect(await keys.locator("[data-key]").count()).toBe(1);
   await keys.getByRole("button", { name: /Widerrufen \(1\)/ }).click();
   expect(await keys.locator("[data-key]").count()).toBe(2);
-  await keys.getByRole("button", { name: /Tokens für Host-Betrieb \(1\)/ }).click();
-  expect(await keys.locator('[data-token="host-override"]').isVisible()).toBe(true);
 
   // The button turns on once the browser check finds Ed25519, which both test engines have; click waits for that.
   await page.getByRole("button", { name: "Schlüssel erzeugen" }).click();
@@ -217,25 +213,23 @@ test("on a phone each level is its own page with a way back", async () => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }, 20_000);
 
-test("key states: a running app without a key says it still starts with its environment, and its way out opens Create key", async () => {
+test("key states: a running app without a key requires enrollment before its next start and opens Create key", async () => {
   await open("");
-  expect(await row("files").innerText()).toContain("Startet noch mit Env");
+  expect(await row("files").innerText()).toContain("Verbindungen aus Env");
   await open("?app=files");
   const notice = page.locator('[data-hint="envStart"]');
   expect(await notice.innerText()).toContain("Dateien holt Datenbank, Valkey und NATS aus der eigenen Env.");
   expect(await notice.getByRole("link", { name: "Umstellung (Fibel)" }).getAttribute("href")).toBe(
     "/docs/en/operations/app-keys#use-the-key-at-start",
   );
-  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("Kein Schlüssel · startet mit Env");
+  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("Kein Schlüssel · nächster Start scheitert");
   await notice.getByRole("link", { name: "Schlüssel erzeugen" }).click();
   await page.waitForSelector('body[data-ready="true"]');
   await page.locator("[data-key-create]").waitFor();
   expect(new URL(page.url()).search).toBe("?app=files&view=keys");
   // The way out opens exactly one dialog.
   expect(await page.locator("[data-key-create]").count()).toBe(1);
-  expect(await page.locator('[data-keys="files"]').innerText()).toContain(
-    "Bis dahin startet Dateien mit den Zugängen aus der eigenen Env.",
-  );
+  expect(await page.locator('[data-keys="files"]').innerText()).toContain("Erzeuge einen, bevor du Dateien startest.");
 }, 20_000);
 
 test("key states: no valid key carries the page's one filled action; rotation names the old key", async () => {

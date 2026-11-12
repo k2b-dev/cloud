@@ -54,7 +54,7 @@ continue from public material and warm caches.
 
 OAuth access-token verifiers independently cache the compatible
 `/.well-known/jwks.json` response for the same five-minute bound. Configure
-`CLOUD_OAUTH_JWKS_ORIGIN` with the private OAuth application origin. A warm
+`CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. A warm
 request verifies locally, then resolves the current client and actor in one
 PostgreSQL query. It does not query either signing-key table. An unknown `kid`
 gets one bounded refresh attempt; a removed or emergency-revoked known key can

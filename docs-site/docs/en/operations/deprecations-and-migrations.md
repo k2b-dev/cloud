@@ -101,9 +101,9 @@ These bootstrap variables are scheduled for removal in the next major step.
 
 ## Other deprecated variables
 
-- `CLOUD_IDENTITY_JWKS_ORIGIN`: replace with `CLOUD_CORE_INTERNAL_ORIGIN`.
-  The explicit legacy value still wins during this release and logs a startup
-  warning. Without either variable, JWKS resolution still uses the issuer.
+- Private JWKS transport: configure `CLOUD_CORE_INTERNAL_ORIGIN`.
+  The former override is removed. Without a private Core origin, public-key
+  verification uses the issuer.
 - `GATEWAY_INSTANCE_ID`: remove it. The gateway uses a random per-process ID.
   An explicit legacy ID is still honored during this release with a startup
   warning.

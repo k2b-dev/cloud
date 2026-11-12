@@ -11,7 +11,6 @@ import {
   CapabilityIdempotencyKeySchema,
   CapabilityLocalIdSchema,
 } from "@k2b/cloud/contracts";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential, isAppRequestProof } from "@k2b/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -54,17 +53,8 @@ const InvocationRequestSchema = z
 
 type InvocationRequest = z.output<typeof InvocationRequestSchema>;
 type InvocationBrokerDependencies = {
-  authenticateWorkload: (params: {
-    token: string | null | undefined;
-    appId: string;
-    scope: "identity:invoke";
-  }) => Promise<AuthenticatedWorkload | null>;
+  authenticate: typeof authenticateSignedAppRequest;
   dispatchDependencies?: CapabilityDispatchDependencies;
-};
-
-const bearerToken = (authorization: string | undefined): string | null => {
-  const match = authorization?.match(/^Bearer ([^\s]+)$/);
-  return match?.[1] ?? null;
 };
 
 const readRequest = async (request: Request): Promise<InvocationRequest | null> => {
@@ -103,10 +93,10 @@ const errorResponse = (c: Context, status: 400 | 401, code: "UNAUTHORIZED" | "VA
   c.json(
     {
       code,
-      message: code === "UNAUTHORIZED" ? "A valid app workload credential is required" : "Invalid invocation request",
+      message: code === "UNAUTHORIZED" ? "A valid app proof is required" : "Invalid invocation request",
     },
     status,
-    { "Cache-Control": "no-store", ...(status === 401 ? { "x-cloud-workload-auth": "required" } : {}) },
+    { "Cache-Control": "no-store" },
   );
 
 const dispatchRequest = (source: Request, input: InvocationRequest): Request => {
@@ -121,17 +111,10 @@ const dispatchRequest = (source: Request, input: InvocationRequest): Request => 
 };
 
 export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationBrokerDependencies> = {}): Hono => {
-  const authenticateWorkload = dependencies.authenticateWorkload ?? authenticateWorkloadCredential;
+  const authenticate = dependencies.authenticate ?? authenticateSignedAppRequest;
   return new Hono().route("/", createIdentityChildInvocationRoutes()).post("/invoke", async (c) => {
-    const appId = CapabilityAppIdSchema.safeParse(c.req.header("X-Cloud-App-Id"));
-    const token = bearerToken(c.req.header("Authorization"));
-    if (!appId.success || !token) return errorResponse(c, 401, "UNAUTHORIZED");
-
-    const workload = isAppRequestProof(c.req.header("Authorization"))
-      ? await authenticateSignedAppRequest(c, "identity:invoke")
-      : await authenticateWorkload({ token, appId: appId.data, scope: "identity:invoke" });
+    const workload = await authenticate(c, "identity:invoke");
     if (workload instanceof Response) return workload;
-    if (!workload) return errorResponse(c, 401, "UNAUTHORIZED");
 
     const input = await readRequest(c.req.raw);
     if (!input) return errorResponse(c, 400, "VALIDATION_FAILED");
@@ -160,7 +143,6 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
         dependencies: dependencies.dispatchDependencies,
       }),
     );
-    response.headers.delete("x-cloud-workload-auth");
     response.headers.set("Cache-Control", "no-store");
     return response;
   });

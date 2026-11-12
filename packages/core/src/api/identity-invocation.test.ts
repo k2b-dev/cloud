@@ -5,7 +5,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import type { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import { err, fail, ok } from "@k2b/stdlib";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
@@ -17,7 +17,7 @@ useUnitClients();
 const mandateId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
 const serviceAccountId = "33333333-3333-4333-8333-333333333333";
-const workloadToken = "cld_aaaaaaaaaaaaaaaaaaaaaaaa_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const appProof = "signed-app-proof-fixture";
 
 const schemaHash = "a".repeat(64);
 const inputSchema = z.toJSONSchema(z.object({ id: z.string() }).strict()) as Record<string, unknown>;
@@ -54,7 +54,7 @@ const request = (body: unknown, headers: Record<string, string> = {}) =>
   new Request("http://core.test/invoke", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${workloadToken}`,
+      Authorization: `Bearer ${appProof}`,
       "Content-Type": "application/json",
       "X-Cloud-App-Id": "mail",
       ...headers,
@@ -73,9 +73,11 @@ const invocation = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-const authenticateWorkload = async (input: { token: string | null | undefined; appId: string; scope: "identity:invoke" }) => {
-  expect(input).toEqual({ token: workloadToken, appId: "mail", scope: "identity:invoke" });
-  return { appId: "mail", serviceAccountId, credentialId: serviceAccountId, scope: "identity:invoke" as const };
+const authenticate = async (c: Context, scope: "identity:invoke" | "oauth:issue") => {
+  expect(scope).toBe("identity:invoke");
+  if (c.req.header("Authorization") !== `Bearer ${appProof}` || c.req.header("X-Cloud-App-Id") !== "mail")
+    return c.json({ code: "UNAUTHORIZED" }, 401);
+  return { appId: "mail", keyId: serviceAccountId, serviceAccountId, credentialId: serviceAccountId, scope: "identity:invoke" as const };
 };
 
 let signerKey: CryptoKey | undefined;
@@ -97,7 +99,7 @@ describe("identity invocation broker", () => {
     const targetRequests: Request[] = [];
     let signed: Record<string, unknown> | null = null;
     const routes = createIdentityInvocationRoutes({
-      authenticateWorkload,
+      authenticate,
       dispatchDependencies: {
         getCapability: async () => registryEntry,
         withActiveSigner,
@@ -160,7 +162,7 @@ describe("identity invocation broker", () => {
     const targetRequest = targetRequests[0];
     expect(targetRequest?.url).toBe("http://spaces:3000/api/_internal/capabilities/v1/queries/get");
     expect(targetRequest?.headers.get("authorization")).toBe("Bearer target-only-invocation");
-    expect(targetRequest?.headers.get("authorization")).not.toContain(workloadToken);
+    expect(targetRequest?.headers.get("authorization")).not.toContain(appProof);
     expect(targetRequest?.headers.get("x-cloud-capability-schema-hash")).toBe(schemaHash);
     expect(targetRequest?.headers.get("x-cloud-locale")).toBe("de");
   });
@@ -170,7 +172,7 @@ describe("identity invocation broker", () => {
       let checked = false;
       let dispatched = false;
       const routes = createIdentityInvocationRoutes({
-        authenticateWorkload,
+        authenticate,
         dispatchDependencies: {
           getCapability: async () => ({
             ...registryEntry,
@@ -205,7 +207,7 @@ describe("identity invocation broker", () => {
   test("rejects caller-supplied schema or authority fields", async () => {
     let dispatched = false;
     const routes = createIdentityInvocationRoutes({
-      authenticateWorkload,
+      authenticate,
       dispatchDependencies: {
         getCapability: async () => {
           dispatched = true;
@@ -228,7 +230,7 @@ describe("identity invocation broker", () => {
   test("rejects invalid credentials before dispatch", async () => {
     let dispatched = false;
     const routes = createIdentityInvocationRoutes({
-      authenticateWorkload: async () => null,
+      authenticate: async (c) => c.json({ code: "UNAUTHORIZED" }, 401),
       dispatchDependencies: {
         getCapability: async () => {
           dispatched = true;
@@ -243,7 +245,7 @@ describe("identity invocation broker", () => {
 
   test("returns bounded mandate denial instead of a token", async () => {
     const routes = createIdentityInvocationRoutes({
-      authenticateWorkload,
+      authenticate,
       dispatchDependencies: {
         getCapability: async () => registryEntry,
         withActiveSigner,
@@ -259,10 +261,9 @@ describe("identity invocation broker", () => {
   });
 
   test("rejects an unauthenticated workload without an issuance switch", async () => {
-    const routes = createIdentityInvocationRoutes({ authenticateWorkload: async () => null });
+    const routes = createIdentityInvocationRoutes({ authenticate: async (c) => c.json({ code: "UNAUTHORIZED" }, 401) });
     const rejected = await routes.request(request(invocation()));
     expect(rejected.status).toBe(401);
-    expect(rejected.headers.get("x-cloud-workload-auth")).toBe("required");
   });
 });
 
@@ -271,7 +272,7 @@ test("mandate invocation keeps its socket raised through dispatch and restores i
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   const routes = createIdentityInvocationRoutes({
-    authenticateWorkload,
+    authenticate,
     dispatchDependencies: {
       getCapability: async () => {
         entered.resolve();
@@ -309,7 +310,7 @@ test("app queries use workload identity without a mandate, while other targets a
   let appOnly = true;
   let admitted = true;
   const routes = createIdentityInvocationRoutes({
-    authenticateWorkload,
+    authenticate,
     dispatchDependencies: {
       getCapability: async () => ({
         ...registryEntry,
@@ -332,7 +333,7 @@ test("app queries use workload identity without a mandate, while other targets a
       fetch: async (url, init) => {
         forwarded++;
         expect(String(url)).toContain("/app-queries/get");
-        expect(new Headers(init?.headers).get("authorization")).not.toContain(workloadToken);
+        expect(new Headers(init?.headers).get("authorization")).not.toContain(appProof);
         return Response.json({ data: { id: "one" } });
       },
     },
@@ -355,7 +356,6 @@ test("app queries use workload identity without a mandate, while other targets a
 
 test("app-owned capability authority never accepts a legacy service-account workload token", async () => {
   const routes = createIdentityInvocationRoutes({
-    authenticateWorkload,
     dispatchDependencies: {
       getCapability: async () => {
         throw new Error("Unsigned app authority must not reach dispatch");

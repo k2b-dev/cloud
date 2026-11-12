@@ -1,7 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { authenticateSignedAppRequest } from "@k2b/cloud/api";
-import { env } from "@k2b/cloud/config";
 import {
   type AppApprovalConfig,
   AppApprovalError,
@@ -9,8 +7,7 @@ import {
   readAppApprovalConfig,
   toPgTextArray,
 } from "@k2b/cloud/services";
-import { recordLegacyAppUse } from "@k2b/cloud/services/app-migration-evidence";
-import { isAppRequestProof, withActiveIdentitySigner } from "@k2b/cloud/services/identity";
+import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import type { Context } from "hono";
@@ -387,43 +384,28 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
 };
 
 type Dependencies = {
-  recordLegacy: typeof recordLegacyAppUse;
   notifyNewAccess: CoreNotificationSender["sendOAuthNewAccess"];
-  authenticate: (token: string | null) => boolean;
+  authenticate: typeof authenticateSignedAppRequest;
   withActiveSigner: typeof withActiveIdentitySigner;
   issuer: () => Promise<string>;
   resolve: typeof resolveAuthorityState;
   now: () => number;
 };
 
-export const authenticateOAuthBroker = (token: string | null): boolean => {
-  const secret = env.CLOUD_OAUTH_BROKER_SECRET;
-  // OAuth is optional. Missing or malformed configuration disables its broker.
-  if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
-  return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
-};
-
-/** Signed OAuth calls additionally require the operator-owned oauth:issue key grant. */
+/** Every issuer, including OAuth, needs the operator-owned oauth:issue key grant. */
 export const authorizeOAuthRequest = async (
   c: Context,
-  legacyAuthenticate: Dependencies["authenticate"] = authenticateOAuthBroker,
-  recordLegacy = recordLegacyAppUse,
+  authenticate: typeof authenticateSignedAppRequest = authenticateSignedAppRequest,
 ): Promise<Response | null> => {
-  if (isAppRequestProof(c.req.header("authorization"))) {
-    const authenticated = await authenticateSignedAppRequest(c, "oauth:issue");
-    return authenticated instanceof Response ? authenticated : null;
-  }
-  if (!legacyAuthenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ code: "UNAUTHORIZED" }, 401);
-  await recordLegacy("broker-secret");
-  return null;
+  const authenticated = await authenticate(c, "oauth:issue");
+  return authenticated instanceof Response ? authenticated : null;
 };
 
 const defaultDependencies: Dependencies = {
-  recordLegacy: recordLegacyAppUse,
   notifyNewAccess: async () => {
     throw new Error("New-access notification sender is not configured");
   },
-  authenticate: authenticateOAuthBroker,
+  authenticate: authenticateSignedAppRequest,
   withActiveSigner: withActiveIdentitySigner,
   issuer: async () => publicCloudOrigin(await settings.get<string>("app.url")),
   resolve: resolveAuthorityState,
@@ -431,12 +413,6 @@ const defaultDependencies: Dependencies = {
 };
 
 class InvalidOAuthGrantAuthorityError extends Error {}
-
-export const oauthBrokerBearer = (value: string | undefined): string | null => {
-  if (!value?.startsWith("Bearer ")) return null;
-  const token = value.slice(7).trim();
-  return token || null;
-};
 
 const resolveAudiences = (state: AuthorityState, issuer: string): string[] | null => {
   const resource = state.resource;
@@ -600,7 +576,7 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
   const routes = new Hono();
   routes.post("/oauth/ready", async (c) => {
     c.header("Cache-Control", "no-store");
-    const denied = await authorizeOAuthRequest(c, dependencies.authenticate, dependencies.recordLegacy);
+    const denied = await authorizeOAuthRequest(c, dependencies.authenticate);
     if (denied) return denied;
     await dependencies.withActiveSigner("oauth", async () => undefined, { timeoutMs: 5_000 });
     return c.body(null, 204);
@@ -608,7 +584,7 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
   routes.post("/oauth/token", async (c) => {
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");
-    const denied = await authorizeOAuthRequest(c, dependencies.authenticate, dependencies.recordLegacy);
+    const denied = await authorizeOAuthRequest(c, dependencies.authenticate);
     if (denied) return denied;
 
     const contentLength = Number(c.req.header("content-length") ?? 0);

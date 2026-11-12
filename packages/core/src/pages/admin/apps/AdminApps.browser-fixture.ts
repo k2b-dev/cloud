@@ -190,22 +190,6 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
             initialRejection: rejectionFor(state, entry.id),
             people: { [ADMIN_ID]: "Alex Berger" },
             accountStatus: state === "keys-off" || state === "start-disabled" ? ("disabled" as const) : ("active" as const),
-            tokens: {
-              items: entry.neverStarted
-                ? []
-                : [
-                    {
-                      id: "55555555-5555-4555-8555-555555555555",
-                      name: "host-override",
-                      tokenPrefix: "cst_7f3k",
-                      status: "active" as const,
-                      expiresAt: "2026-12-31T23:00:00.000Z",
-                      lastUsedAt: "2026-10-27T10:00:00.000Z",
-                    },
-                  ],
-              total: entry.neverStarted ? 0 : 1,
-              hasNext: false,
-            },
             docsHref: "/docs/en/operations/app-keys",
             timeZone: "Europe/Berlin",
           },
@@ -433,8 +417,6 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
         accountStatus: "active",
       });
     if (/^\/api\/admin\/apps\/[^/]+\/keys\/[^/]+$/.test(url.pathname) && request.method === "DELETE") return Response.json(null);
-    if (/^\/api\/admin\/identity\/workloads\/[^/]+\/credentials$/.test(url.pathname) && request.method === "GET")
-      return Response.json({ items: [], page: 1, perPage: 20, total: 0, hasNext: false });
     return Response.json({ message: "Synthetic fixture: not available" }, { status: 503 });
   };
 

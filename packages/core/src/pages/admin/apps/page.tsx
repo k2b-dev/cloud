@@ -13,7 +13,6 @@ import {
   latestGatewayRouteSnapshot,
   logger,
   readAppAccess,
-  serviceAccountCredentials,
 } from "@k2b/cloud/services";
 import { appDomains } from "@k2b/cloud/services/app-domains";
 import { appKeys } from "@k2b/cloud/services/app-keys";
@@ -302,12 +301,6 @@ export default ssr<AuthContext>(async (c) => {
       }
       case "keys": {
         if (reservedKeys) return null;
-        const tokens = await serviceAccountCredentials
-          .listOverview({
-            pagination: { page: 1, perPage: 20 },
-            filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app", appId: entry.id, resourceId: entry.id },
-          })
-          .catch(() => null);
         const creators = [...new Set((keyList ?? []).map((key) => key.createdBy).filter((id): id is string => Boolean(id)))];
         const people = Object.fromEntries(
           (await Promise.all(creators.map((id) => accounts.users.get({ id }).catch(() => null))))
@@ -323,20 +316,6 @@ export default ssr<AuthContext>(async (c) => {
             initialRejection: keyRead?.lastRejectedStart ?? null,
             people,
             accountStatus: entry.keys.accountStatus,
-            tokens: tokens
-              ? {
-                  items: tokens.items.map((item) => ({
-                    id: item.id,
-                    name: item.name,
-                    tokenPrefix: item.tokenPrefix,
-                    status: item.status,
-                    expiresAt: item.expiresAt,
-                    lastUsedAt: item.lastUsedAt,
-                  })),
-                  total: tokens.total,
-                  hasNext: tokens.hasNext,
-                }
-              : null,
             docsHref: settingsDocumentationHref(documentationBase, "app-keys") ?? null,
             timeZone: dateContext.timeZone ?? "UTC",
           },

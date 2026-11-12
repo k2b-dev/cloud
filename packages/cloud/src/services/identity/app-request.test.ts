@@ -91,7 +91,7 @@ test("a configured app key takes precedence over a bearer and is never replaced 
       transport: async (request) => {
         calls++;
         expect(decodeJwt(request.headers.get("authorization")!.slice(7)).iss).toBe("mail");
-        return Response.json({ code: "UNAUTHORIZED" }, { status: 401, headers: { "x-cloud-workload-auth": "required" } });
+        return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
       },
     },
   );
@@ -99,16 +99,13 @@ test("a configured app key takes precedence over a bearer and is never replaced 
   expect(result).toMatchObject({ ok: false, error: { status: 401 } });
 });
 
-test("a configured wrong or malformed key fails before send without evaluating a legacy credential", async () => {
+test("a wrong or malformed key fails before sending", async () => {
   for (const value of ["malformed", formatAppKey({ ...key, appId: "oauth" })]) {
     Object.defineProperty(env, "CLOUD_APP_KEY", { value, configurable: true });
     let sent = false;
     await expect(
       sendAppRequest(new Request("http://core.test/invoke"), {
         appId: "mail",
-        bearer: () => {
-          throw new Error("fallback");
-        },
         transport: async () => {
           sent = true;
           return new Response();
@@ -119,45 +116,38 @@ test("a configured wrong or malformed key fails before send without evaluating a
   }
 });
 
-test("the sender sets app identity for both signed and legacy requests", async () => {
-  for (const value of [formatAppKey(key), undefined]) {
-    Object.defineProperty(env, "CLOUD_APP_KEY", { value, configurable: true });
-    const response = await sendAppRequest(new Request("http://core.test/invoke"), {
+test("a keyless process fails before sending, even with an Authorization header", async () => {
+  Object.defineProperty(env, "CLOUD_APP_KEY", { value: undefined, configurable: true });
+  let sent = false;
+  await expect(
+    sendAppRequest(new Request("http://core.test/invoke", { headers: { authorization: "Bearer retired" } }), {
       appId: "mail",
-      bearer: () => "workload-secret",
-      transport: async (request) => {
-        expect(request.headers.get("X-Cloud-App-Id")).toBe("mail");
-        if (!value) expect(request.headers.get("authorization")).toBe("Bearer workload-secret");
-        return new Response(null, { status: 204 });
+      transport: async () => {
+        sent = true;
+        return new Response();
       },
-    });
-    expect(response.status).toBe(204);
-  }
+    }),
+  ).rejects.toThrow("CLOUD_APP_KEY_FILE");
+  expect(sent).toBe(false);
 });
 
-test("invalid or conflicting app identity fails before signing, credential lookup, or transport", async () => {
+test("invalid or conflicting app identity fails before signing or transport", async () => {
   for (const value of [formatAppKey(key), undefined]) {
     Object.defineProperty(env, "CLOUD_APP_KEY", { value, configurable: true });
     for (const input of [
       { appId: "invalid id", headers: new Headers() },
       { appId: "mail", headers: new Headers({ "X-Cloud-App-Id": "chat" }) },
     ]) {
-      let credentialCalls = 0;
       let sends = 0;
       await expect(
         sendAppRequest(new Request("http://core.test/invoke", { headers: input.headers }), {
           appId: input.appId,
-          bearer: () => {
-            credentialCalls++;
-            return "workload-secret";
-          },
           transport: async () => {
             sends++;
             return new Response();
           },
         }),
       ).rejects.toThrow();
-      expect(credentialCalls).toBe(0);
       expect(sends).toBe(0);
     }
   }

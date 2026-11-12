@@ -115,10 +115,8 @@ drop unknown permission IDs without granting them and keep the application
 registered; that rule cannot change the behavior of older releases.
 
 Applications that perform reader checks declare `resources:readers` in their
-platform permissions and need an app key (or legacy `CLOUD_APP_CREDENTIAL`) plus
-`CLOUD_CORE_INTERNAL_ORIGIN`. Without a key, Core automatically delivers an
-app-bound `identity:invoke` workload credential; host-run apps may provision
-an explicit legacy override.
+platform permissions and need an enrolled app key plus
+`CLOUD_CORE_INTERNAL_ORIGIN`. All ordinary serving apps require that key.
 There is no separate operator approval toggle. Core checks the live registry
 permission and uses Valkey for the shared 1,501-request/minute app budget.
 An unavailable registry or limiter fails closed. Providers need the existing
@@ -379,7 +377,7 @@ does not isolate applications with separate database roles or infrastructure
 credentials. Install only trusted applications and protect the gateway host,
 container environment and private service network accordingly.
 
-Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
+Keep Core's identity key-encryption keys out
 of the gateway. Their absence does not make it a separate trust boundary.
 See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
 
@@ -665,12 +663,10 @@ environment fallback.
 
 | Configuration | Recipient | When required |
 | --- | --- | --- |
-| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
+| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Core and Gateway directly; ordinary apps through Core bootstrap | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | **Core only** | Core identity issuance; generate an independent 32-byte key as 64 hex characters. `CLOUD_IDENTITY_NEXT_KEY` / `CLOUD_IDENTITY_PREVIOUS_KEY` are temporary rotation inputs, also Core-only. |
-| `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Deprecated legacy authentication for OAuth without an app key. Generate an independent 32-byte secret as 64 hex characters. Prefer an enrolled `oauth` app key; retain the secret only for the parallel release. |
-| `CLOUD_CORE_INTERNAL_ORIGIN` | OAuth, background broker callers, resource-derived app discovery, and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |
-| `CLOUD_APP_CREDENTIAL` | Optional host-run app override | Core automatically issues and rotates app-bound `identity:invoke` credentials over NATS. No per-app Compose secret is needed. An explicit override wins among legacy credentials; a configured app key takes precedence. OAuth does not use this credential. See [runtime configuration](/en/docs/operations/runtime-configuration#shared-infrastructure-trust-limit) for the shared-infrastructure trust limit. |
-| `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Deprecated OAuth public-key transport override. Without it, applications use Core through `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer. Core identity keys use `CLOUD_CORE_INTERNAL_ORIGIN`; the deprecated `CLOUD_IDENTITY_JWKS_ORIGIN` override is still honored this release. Neither value grants signing authority. |
+| `CLOUD_APP_KEY_FILE` | Every ordinary application | Enrolled Ed25519 identity, mounted as a readable private file. OAuth issuance requires the explicit `oauth:issue` grant. |
+| `CLOUD_CORE_INTERNAL_ORIGIN` | Every ordinary application and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |
 | `APP_URL` | Gateway and application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
 | `GOTENBERG_URL` | Application services | Optional initial Gotenberg URL for PDF rendering; saved `gotenberg.url` takes precedence. Dev Compose sets `http://gotenberg:3000`. |
 | `ADMIN_LOGIN_TOKEN` | **Core only** | Temporary first administrator access on a fresh installation; no production default. Remove after configuring and verifying normal administrator sign-in. |
@@ -773,7 +769,7 @@ or mutate real data without approval.
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
-| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and an enrolled `oauth` app key (or matching legacy broker secret). Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
+| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and an enrolled app key with explicit `oauth:issue` grant. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
@@ -788,7 +784,7 @@ or mutate real data without approval.
 | [FAQ](/en/apps/faq) (`faq`) | Baseline | No additional external service for authored FAQ content. | Publish a test entry and verify its intended visibility on `/faq`. |
 | [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.1.0 with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Personal and group Cloud storage requires local Linux identities; [machine storage](/en/docs/identity/files-machine-storage) uses independent ownership, explicit path grants and the existing Filegate service identity without Unix provisioning. FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses notifications as app `core` and requires a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
-| [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
+| [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's app key and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
 | [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. External images additionally require outbound HTTPS from the Notebooks container to a public image address without redirects. An export reveals the server's egress address and the export time to the image host. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. BM25 ranking is optional; see [Optional BM25 search ranking](#optional-bm25-search-ranking). | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
 | [Spaces](/en/apps/spaces) (`spaces`) | Baseline | Live updates require WebSockets. Attachments use Postgres. Mail-backed invitations require Mail and an authorized sender/mailbox. Calendar weather uses the shared weather service; the Weather app UI is not required for that in-process feature. | Create a disposable item/event, verify live updates and reload; test invitations only if configured. |
 | [Venues](/en/apps/venue) (`venue`) | Baseline | No additional external service for venue records, hours, shifts and feedback. | Create a test venue and verify its public status page and intended staff-only access. |
@@ -798,7 +794,7 @@ or mutate real data without approval.
 | App ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
 | [Hosts](/en/apps/ipa-hosts) (`ipa-hosts`) | Baseline; starts the host-sync scheduler | Useful host data and mutations require FreeIPA and host/hostgroup privileges. With FreeIPA disabled, synchronization skips; enabling incomplete configuration causes sync failure. | Run a controlled sync and inspect mirrored hosts and its completion status. |
-| [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Studio PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Resource databases additionally need `assistant.rsql_url` and the secret `assistant.rsql_api_token`, configured in Studio administration. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. If databases are configured, explicitly connect a test resource and query it. |
+| [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Studio PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Resource databases additionally need `assistant.rsql_url` and the secret `assistant.rsql_api_token`, configured in Studio administration. Cross-app tools require their provider apps and current user permissions; the Assistant container never receives Core's identity KEK. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. If databases are configured, explicitly connect a test resource and query it. |
 | [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF and PDF page operations need Gotenberg; page operations require its PDF-engine and ExifTool metadata routes (8.36.0). Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
 | [Quotes](/en/apps/quotes) (`quotes`) | Baseline | Fresh quotes require outbound HTTPS to `zenquotes.io`; no provider-key setting. This app has API/widget routes, not an `/app/quotes` page. | Read `/api/quotes` or its Dashboard widget and verify quote data. |
 | [Weather](/en/apps/weather) (`weather`) | Baseline; Core owns the weather schema migration | Forecasts need outbound HTTPS to `api.brightsky.dev`. City search additionally needs Core’s secret `geo.api_key` and available geo budget; optional `weather.default_lat` / `weather.default_lon` select a default location. | Search a German city and load its forecast; verify forecast and city-search dependencies separately. |
@@ -949,28 +945,22 @@ image, to confirm that assets still load.
    token and a fresh database has no normal administrator account.
 2. Generate and store the independent deployment secrets. Set the public
    origin, private service addresses, database, Valkey and NATS connections. Give
-   only Core the identity KEK. OAuth will need its enrolled app key or the
-   matching legacy broker secret before starting.
+   only Core the identity KEK. Every ordinary app needs its enrolled key;
+   an OAuth issuer also needs the explicit `oauth:issue` grant.
 3. Start and check persistent infrastructure. Start Core and wait for schema
    setup, identity initialization and readiness before starting dependent
    apps. Start the gateway with private app reachability and keep public
    access restricted during setup.
-4. Start the selected apps. OAuth checks Core at startup. Enroll its app key
-   before starting it, or keep the legacy broker secret for this release.
-   The development and production Compose files
-   wait for Core's readiness healthcheck before starting OAuth.
-   For mandate-backed background integrations,
-   configure the owning app key, or provision a legacy `identity:invoke` credential using
-   [Background mandates](/en/docs/identity/background-mandates), inject it only
-   into that app, and recreate that app's container to apply environment changes.
-5. Open `/auth/login?method=admin` at the public origin and enter the temporary
-   admin token. Review and accept the displayed legal documents to finish
-   first sign-in. Configure a normal administrator account or FreeIPA administrator
-   group mapping, then verify that sign-in in a separate session. Remove
-   `ADMIN_LOGIN_TOKEN` from Core and recreate Core before normal operation.
-   Configure optional services through administration using their internal
-   addresses, not `localhost` from another container. FreeIPA and Files do not
-   import environment values.
+4. Open `/auth/login?method=admin` and enter the temporary admin token. Accept
+   the legal documents. Enroll keys for the complete app inventory and mount
+   each app's file before starting it. Grant OAuth issuance explicitly. See
+   [App key upgrade](/en/docs/operations/app-key-upgrade#start-a-fresh-installation).
+   Start the apps after Core is healthy; OAuth also probes Core's signer.
+5. Configure normal administrator sign-in and verify it in a separate session.
+   Remove `ADMIN_LOGIN_TOKEN` and recreate Core before normal operation.
+   Configure optional services through administration using internal addresses,
+   not `localhost` from another container. FreeIPA and Files do not import
+   environment values.
 6. Verify the selected rows' functional checks before exposing normal traffic.
    Confirm health, authorization, durable writes, and any required background
    operation separately.
@@ -2042,12 +2032,11 @@ Notebook, or application-schema upgrade checks.
    `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` for Core; Core creates its signing keys
    during startup. Do not replace a KEK protecting existing rows with a newly
    generated value.
-3. When running OAuth, supply
-   an enrolled `oauth` app key, or give the same legacy
-   `CLOUD_OAUTH_BROKER_SECRET` to Core and OAuth. OAuth needs no workload-credential
-   provisioning. Supply private Core/OAuth origins as described in
-   [Runtime configuration](/en/docs/operations/runtime-configuration), and check
-   NATS, database, cache, private-network, and clock prerequisites above.
+3. Before this release, enroll and mount app keys on the previous parallel-support
+   release and verify signed work. Every ordinary application now requires its
+   key; OAuth requires the explicit `oauth:issue` grant. Supply the private Core
+   origin and check NATS, database, cache, network and clock prerequisites. Follow
+   [App key upgrade](/en/docs/operations/app-key-upgrade) for the cutover and rollback boundary.
 4. Quiesce user writes and new background work while old workers finish accepted
    work. Close Notebook editing connections and prove that their final updates
    reached durable snapshots before stopping the old snapshot workers. For an
@@ -2086,7 +2075,7 @@ Notebook, or application-schema upgrade checks.
    [JSON metadata repairs](/en/docs/operations/repair-jsonb-containers). Those
    repairs run on startup; no blanket manual repair or database reset is needed.
    Apply each app's separate schema requirements before enabling it. Provision
-   Mail's workload credential only if its background integrations are used;
+   each application's app key before starting it;
    routines without a mandate require owner recreation. Neither is
    an OAuth startup prerequisite.
 5. For the supplied platform Compose, run the read-only
@@ -2520,8 +2509,8 @@ conversation](/en/docs/platform/chat-discussions#post-a-message-to-a-chat-conver
 ## Enroll an application before its first start
 
 An administrator can register Ed25519 public keys for stopped and third-party
-apps through `cld admin apps keys` or Core’s administrator API. Enrollment uses
-the same app-bound service account as workload credentials. Keep the current
+apps through `cld admin apps keys` or Core’s administrator API. Enrollment creates or reuses
+the app-bound service account that owns the app identity. Keep the current
 runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
 for the supported commands and recovery steps.
 

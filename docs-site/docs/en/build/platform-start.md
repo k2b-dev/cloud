@@ -130,7 +130,7 @@ an exemption.
 ## Start a custom data process
 
 Standard application entrypoints need no additional startup call. A separate
-server or data worker initializes before loading its domain module:
+server initializes before loading its domain module:
 
 ```ts
 import { startPlatform } from "@k2b/cloud/start";
@@ -143,9 +143,14 @@ export default application.default;
 ```
 
 `startPlatform<T>({ appId, load, source? }): Promise<T>` initializes connections
-and native clients, then returns `load()`'s module. For a worker with no module
-loader, `initializePlatform({ appId, source? }): Promise<void>` uses the same
-initializer. Each process initializes once; a second call throws
+and native clients, then returns `load()`'s module. Serving applications require
+an enrolled app key, including the generated entry and development preload.
+For a non-serving script, migration or data command with explicit connection
+environment values, use `initializePlatform({ appId, source: "env" })` before
+importing the data module. This can run without a key when it makes no signed
+calls. `sendAppRequest` always requires a key and names `CLOUD_APP_KEY_FILE`
+when it is missing. `APP_DIR` changes paths, not the server identity requirement.
+Desktop's separate SQLite runtime keeps its own single-process startup. Each process initializes once; a second call throws
 `Platform has already started`. Core and Gateway always use `source: "env"`, selected by their application ID,
 and refuse app keys. Explicit `source: "env"` also refuses an app key.
 Repository test subprocesses can inherit the integration initializer through

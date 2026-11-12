@@ -301,31 +301,21 @@ That reference includes every built-in app and the fresh-install startup order.
 
 Run every application on the private Cloud network.
 
-Give it:
+Give every ordinary app its enrolled `CLOUD_APP_KEY_FILE` and the direct
+`CLOUD_CORE_INTERNAL_ORIGIN`. Mount its private key as a secret readable by the
+application user. Serving without a key fails before application code loads.
+Core delivers the shared connections in memory at startup.
 
-- `DATABASE_URL`;
-- `REDIS_URL`;
-- `NATS_SERVERS` and the installation's `SYNC_NAMESPACE`;
-- the deployment-wide `APP_SECRET`;
-- the public `APP_URL` for initial setup.
+Core and Gateway keep `DATABASE_URL`, `REDIS_URL`, NATS configuration and the
+stable installation `APP_SECRET`. Core alone also receives
+`CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` and the temporary `ADMIN_LOGIN_TOKEN` for
+initial access. Configure product integrations through saved settings.
 
-Configure product integrations through saved application settings. FreeIPA,
-Filegate and Mail provider environment bootstrap is not supported. The gateway
-has a smaller environment; use its row in Deployment requirements.
-
-Core additionally requires the Core-only
-`CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`. Do not add that variable to the shared
-application environment. All other applications obtain public verification
-keys from Core and keep no shared signing secret.
-
-Apps calling Core's workload or mandate broker also need
-`CLOUD_CORE_INTERNAL_ORIGIN`. Core automatically delivers and rotates their
-app-bound `identity:invoke` credentials, including for Mail incoming automations.
-`CLOUD_APP_CREDENTIAL` is only an explicit host-run override. OAuth instead needs
-`CLOUD_CORE_INTERNAL_ORIGIN` and `CLOUD_OAUTH_BROKER_SECRET`; inject that same
-broker secret only into Core and OAuth. It requires no admin provisioning. See
-[Runtime configuration](/en/docs/operations/runtime-configuration) for
-provisioning requirements, Compose input names, and optional private JWKS origins.
+Keep explicit connection values for third-party apps that still use Bun's
+`sql` or `redis` globals. These overrides win per value, while the app key
+remains mandatory. OAuth additionally needs an explicitly granted
+`oauth:issue` key. See [Runtime configuration](/en/docs/operations/runtime-configuration)
+and the [upgrade sequence](/en/docs/operations/app-key-upgrade).
 
 Inject secrets into the appropriate container at runtime. Do not bake them into
 Dockerfile `ENV` instructions or pass them as build arguments.

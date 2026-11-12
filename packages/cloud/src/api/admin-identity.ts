@@ -3,7 +3,6 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { listApps } from "../_internal/registry";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { SaveServiceAccountAvatarSchema } from "../contracts/profile";
 import { AI_INFERENCE_SCOPE } from "../contracts/shared";
@@ -12,26 +11,12 @@ import { noTransform } from "../server/middleware/no-transform";
 import { clearServiceAccountAvatar, getServiceAccountAvatarState, updateServiceAccountAvatar } from "../services/accounts/avatar";
 import { audit } from "../services/audit";
 import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey, rewrapIdentitySigningKeys } from "../services/identity";
-import { WORKLOAD_SCOPES } from "../services/identity/workload-auth";
 import { mandateMetrics, mandates } from "../services/mandates";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { isStandaloneServiceAccountKind, STANDALONE_SERVICE_ACCOUNT_KINDS, serviceAccounts } from "../services/service-accounts";
 
-const WorkloadCredentialInputSchema = z
-  .object({
-    name: z.string().trim().min(1).max(120),
-    scopes: z
-      .array(z.enum(WORKLOAD_SCOPES))
-      .min(1)
-      .max(WORKLOAD_SCOPES.length)
-      .refine((scopes) => new Set(scopes).size === scopes.length, "Scopes must be unique"),
-    expiresAt: z.iso.datetime().nullable().optional(),
-  })
-  .strict();
-
-const WorkloadAppParamsSchema = z.object({ appId: CapabilityAppIdSchema }).strict();
-const WorkloadCredentialParamsSchema = WorkloadAppParamsSchema.extend({ credentialId: z.uuid() }).strict();
-const WorkloadCredentialListQuerySchema = z
+const AppParamsSchema = z.object({ appId: CapabilityAppIdSchema }).strict();
+const CredentialListQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
     perPage: z.coerce.number().int().min(1).max(500).default(100),
@@ -88,18 +73,11 @@ const ServiceAccountApiKeyInputSchema = z
   });
 
 type IdentityAdminDependencies = {
-  apps: () => Promise<Array<{ id: string; name: string }>>;
   status: typeof getIdentitySigningKeyStatus;
   rewrap: typeof rewrapIdentitySigningKeys;
   revoke: typeof revokeIdentitySigningKey;
-  serviceAccounts: Pick<
-    typeof serviceAccounts,
-    "getByResource" | "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus"
-  >;
-  credentials: Pick<
-    typeof serviceAccountCredentials,
-    "createResourceApiToken" | "createStandaloneApiToken" | "getOverview" | "listOverview" | "revoke"
-  >;
+  serviceAccounts: Pick<typeof serviceAccounts, "getByResource" | "createStandalone" | "listStandalone" | "get" | "setStatus">;
+  credentials: Pick<typeof serviceAccountCredentials, "createStandaloneApiToken" | "getOverview" | "listOverview" | "revoke">;
   mandates: Pick<typeof mandates, "list">;
   audit: Pick<typeof audit, "record">;
   avatars: {
@@ -110,7 +88,6 @@ type IdentityAdminDependencies = {
 };
 
 const dependencies: IdentityAdminDependencies = {
-  apps: async () => (await listApps()).map(({ id, name }) => ({ id, name })),
   status: getIdentitySigningKeyStatus,
   rewrap: rewrapIdentitySigningKeys,
   revoke: revokeIdentitySigningKey,
@@ -143,34 +120,17 @@ export const createAdminIdentityRoutes = (
       c.header("Cache-Control", "no-store");
       await next();
     })
-    .get(
-      "/workloads",
-      describeRoute({ tags: ["App credentials"], summary: "List registered applications for workload credentials" }),
-      async (c) => c.json(await service.apps()),
-    )
-    .get(
-      "/workloads/credentials",
-      describeRoute({ tags: ["App credentials"], summary: "List credential metadata across applications without secrets" }),
-      v("query", WorkloadCredentialListQuerySchema),
-      async (c) =>
-        c.json(
-          await service.credentials.listOverview({
-            pagination: c.req.valid("query"),
-            filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },
-          }),
-        ),
-    )
     .patch(
-      "/workloads/:appId",
-      describeRoute({ tags: ["App credentials"], summary: "Enable or disable app workload issuance and calls across all instances" }),
-      v("param", WorkloadAppParamsSchema),
+      "/apps/:appId",
+      describeRoute({ tags: ["App keys"], summary: "Enable or disable app-key authentication across all instances" }),
+      v("param", AppParamsSchema),
       v("json", ServiceAccountStatusInputSchema),
       async (c) =>
         respond(c, async () => {
           const { appId } = c.req.valid("param");
           const { status } = c.req.valid("json");
           const account = await service.serviceAccounts.getByResource({ appId, resourceType: "cloud.app", resourceId: appId });
-          if (!account) return fail(err.notFound("Workload service account"));
+          if (!account) return fail(err.notFound("App service account"));
           const updated = await service.serviceAccounts.setStatus({ id: account.id, status });
           if (!updated.ok) return updated;
           await service.audit.record({
@@ -181,76 +141,6 @@ export const createAdminIdentityRoutes = (
             metadata: { appId, serviceAccountId: account.id, status },
           });
           return ok({ appId, status });
-        }),
-    )
-    .post(
-      "/workloads/:appId/credentials",
-      describeRoute({ tags: ["App credentials"], summary: "Create an app-bound credential; return its token once" }),
-      v("param", WorkloadAppParamsSchema),
-      v("json", WorkloadCredentialInputSchema),
-      async (c) =>
-        respond(
-          c,
-          async () => {
-            const { appId } = c.req.valid("param");
-            const input = c.req.valid("json");
-            const actor = c.get("user");
-            const account = await service.serviceAccounts.getOrCreateResourceBound({
-              name: `${appId} workload`,
-              appId,
-              resourceType: "cloud.app",
-              resourceId: appId,
-              createdBy: actor.id,
-            });
-            if (!account.ok) return fail(account.error);
-
-            // The raw token intentionally appears only in this one create response.
-            return service.credentials.createResourceApiToken({
-              serviceAccountId: account.data.id,
-              actor,
-              name: input.name,
-              scopes: input.scopes,
-              expiresAt: input.expiresAt,
-            });
-          },
-          201,
-        ),
-    )
-    .get(
-      "/workloads/:appId/credentials",
-      describeRoute({ tags: ["App credentials"], summary: "List app credential metadata without secrets" }),
-      v("param", WorkloadAppParamsSchema),
-      v("query", WorkloadCredentialListQuerySchema),
-      async (c) => {
-        const { appId } = c.req.valid("param");
-        return c.json(
-          await service.credentials.listOverview({
-            pagination: c.req.valid("query"),
-            filter: { serviceAccountKind: "resource_bound", appId, resourceType: "cloud.app", resourceId: appId },
-          }),
-        );
-      },
-    )
-    .delete(
-      "/workloads/:appId/credentials/:credentialId",
-      describeRoute({ tags: ["App credentials"], summary: "Revoke one exact app credential" }),
-      v("param", WorkloadCredentialParamsSchema),
-      async (c) =>
-        respond(c, async () => {
-          const { appId, credentialId } = c.req.valid("param");
-          const credential = await service.credentials.getOverview({ id: credentialId });
-          if (
-            !credential ||
-            credential.owner.type !== "resource" ||
-            credential.owner.appId !== appId ||
-            credential.owner.resourceType !== "cloud.app" ||
-            credential.owner.resourceId !== appId
-          ) {
-            return fail(err.notFound("Workload credential"));
-          }
-
-          const revoked = await service.credentials.revoke({ credentialId, actor: c.get("user") });
-          return revoked.ok ? ok({ revoked: true as const }) : revoked;
         }),
     )
     // Standalone principals: service accounts with no delegated user and no
@@ -409,7 +299,7 @@ export const createAdminIdentityRoutes = (
       "/service-accounts/:id/api-keys",
       describeRoute({ tags: ["Service accounts"], summary: "List API key metadata of a standalone service account without secrets" }),
       v("param", ServiceAccountParamsSchema),
-      v("query", WorkloadCredentialListQuerySchema),
+      v("query", CredentialListQuerySchema),
       async (c) =>
         respond(c, async () => {
           const account = await service.serviceAccounts.get({ id: c.req.valid("param").id });
