@@ -476,7 +476,7 @@ describe("Mail workspace conversation open", () => {
     dom.window.history.forward();
     await until(() => shows(B), "conversation B after Forward");
 
-    dom.root.querySelector<HTMLAnchorElement>('a[aria-label="Back to conversation list"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>("a[data-mail-reader-close]")!.click();
     await until(() => heading() === null, "the closed reader");
     await settle();
     expect(selected()).toBeNull();
@@ -498,7 +498,7 @@ describe("Mail workspace conversation open", () => {
     expect(dom.root.querySelector(".mail-columns")).toBeNull();
     expect(rows()).toHaveLength(100);
 
-    dom.root.querySelector<HTMLAnchorElement>('a[aria-label="Back to conversation list"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>("a[data-mail-reader-close]")!.click();
     await until(() => heading() === null, "the closed reader");
     await settle();
     expect(dom.root.querySelector(".mail-columns")).not.toBeNull();

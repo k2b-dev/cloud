@@ -672,7 +672,7 @@ describe("Mail list actions", () => {
       detailMessages: [readerMessage],
       listItems: data.listItems.map((item) => ({ ...item, unread: false, unreadFolderIds: [] })),
     });
-    const button = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Move to Trash"]');
+    const button = dom.root.querySelector<HTMLButtonElement>('button[data-mail-toolbar-action="trash"]');
     if (!button) throw new Error("No reader Delete");
     button.click();
     expect(row("one")?.dataset.leaving).toBe("true");

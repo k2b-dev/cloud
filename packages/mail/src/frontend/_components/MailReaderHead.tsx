@@ -158,7 +158,14 @@ export default function MailReaderHead(props: {
           kind: "linked",
           label: t().linkedCount({ count: props.linked.items.length }),
           icon: "ti ti-link",
-          menu: () => props.linked.items.map((item) => ({ label: item.title, icon: item.icon, description: item.detail, href: item.href, external: true })),
+          menu: () =>
+            props.linked.items.map((item) => ({
+              label: item.title,
+              icon: item.icon,
+              description: item.detail,
+              href: item.href,
+              external: true,
+            })),
         });
     }
     return list;

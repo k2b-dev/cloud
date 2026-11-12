@@ -50,16 +50,16 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { automationLogHref } from "../automation-log-href";
 import { readApiError } from "./api-response";
+import { openMailActivityDialog } from "./MailActivityDialog";
 import MailAutomationTrace from "./MailAutomationTrace";
 import type { MailInlineDraftControls } from "./MailComposer";
-import { openMailActivityDialog } from "./MailActivityDialog";
 import MailConversationNote from "./MailConversationNote";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
 import MailInlineDraft from "./MailInlineDraft";
 import { attachmentLightboxItem } from "./MailMessageAttachments";
 import MailMessageCard from "./MailMessageCard";
 import MailReaderHead, { type MailReaderHint } from "./MailReaderHead";
-import { getMailAction, type MailActionId } from "./mail-actions";
+import type { MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
 import {
   deriveReplyIdentityId,
@@ -72,22 +72,16 @@ import {
 import { mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { initialConversationMessageId, isNearConversationEnd } from "./mail-conversation-history";
 import { createMailConversationLinks } from "./mail-conversation-links";
-import {
-  type MailRespondIntent,
-  type MailRespondRequest,
-  mailActionLabel,
-  mailConversationMenuItems,
-  openMailReplyWindow,
-} from "./mail-conversation-menu";
+import { type MailRespondIntent, type MailRespondRequest, mailConversationMenuItems, openMailReplyWindow } from "./mail-conversation-menu";
 import { createMailConversationNotes } from "./mail-conversation-notes";
 import { createMailConversationState } from "./mail-conversation-state";
 import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { describeUnavailableMailDetails } from "./mail-detail-availability";
 import { captureMailDraftMorph, playMailDraftClose, playMailDraftOpen } from "./mail-draft-morph";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
-import { describeUnavailableMailDetails } from "./mail-detail-availability";
 import { mailReaderMessages } from "./mail-reader-messages";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import { mailSummaryMessages } from "./mail-summary-messages";
@@ -341,7 +335,11 @@ export default function MailConversationReader(props: {
   const [shownAttachment, setShownAttachment] = createSignal<number | null>(null);
   const lightboxItems = createMemo(() =>
     conversationAttachments().map(({ messageId, attachment }) =>
-      attachmentLightboxItem(attachment, `/api/mail/mailboxes/${props.mailboxId}/messages/${messageId}/attachments/${attachment.id}`, locale()),
+      attachmentLightboxItem(
+        attachment,
+        `/api/mail/mailboxes/${props.mailboxId}/messages/${messageId}/attachments/${attachment.id}`,
+        locale(),
+      ),
     ),
   );
   const openAttachment = (messageId: string, attachmentId: string) => {
@@ -1308,7 +1306,6 @@ export default function MailConversationReader(props: {
       : null;
   };
 
-  const localizedActionLabel = (actionId: MailActionId): string => mailActionLabel(t(), actionId);
   const toggleCompletion = () => props.onSetCompletion(props.workStatus === "done" ? "open" : "done");
 
   const respondToLatest = (intent: MailRespondIntent, target?: Window) => {
@@ -1562,10 +1559,24 @@ export default function MailConversationReader(props: {
               : {}),
             followUp: [
               ...(props.assignment
-                ? [{ label: readerText().assign, icon: "ti ti-user-plus", disabled: props.actionPending, action: () => void props.onAssignConversation() }]
+                ? [
+                    {
+                      label: readerText().assign,
+                      icon: "ti ti-user-plus",
+                      disabled: props.actionPending,
+                      action: () => void props.onAssignConversation(),
+                    },
+                  ]
                 : []),
               ...(props.collaboration
-                ? [{ label: readerText().showLater, icon: "ti ti-clock", disabled: props.workStatus === "done", action: () => void showLater() }]
+                ? [
+                    {
+                      label: readerText().showLater,
+                      icon: "ti ti-clock",
+                      disabled: props.workStatus === "done",
+                      action: () => void showLater(),
+                    },
+                  ]
                 : []),
             ],
             organize: {
@@ -1841,11 +1852,15 @@ export default function MailConversationReader(props: {
                     />
                   )}
                 </Show>
-                <Show
-                  when={describeUnavailableMailDetails({ ...props.detailErrors, comments: null, activity: null }, locale())}
-                >
+                <Show when={describeUnavailableMailDetails({ ...props.detailErrors, comments: null, activity: null }, locale())}>
                   {(description) => (
-                    <Placeholder state="error" variant="compact" align="left" title={description()} onRetry={() => void props.onReconcile()} />
+                    <Placeholder
+                      state="error"
+                      variant="compact"
+                      align="left"
+                      title={description()}
+                      onRetry={() => void props.onReconcile()}
+                    />
                   )}
                 </Show>
                 <div class="mail-timeline" data-mail-conversation-messages>
@@ -2108,13 +2123,7 @@ export default function MailConversationReader(props: {
             </ScrollArea>
             <Show when={pendingNewMessages()}>
               {(count) => (
-                <Button
-                  size="sm"
-                  type="button"
-                  class="mail-reader-new-below"
-                  aria-live="polite"
-                  onClick={jumpToNewest}
-                >
+                <Button size="sm" type="button" class="mail-reader-new-below" aria-live="polite" onClick={jumpToNewest}>
                   {readerText().newBelow({ count: count() })}
                   <i class="ti ti-arrow-down" aria-hidden="true" />
                 </Button>

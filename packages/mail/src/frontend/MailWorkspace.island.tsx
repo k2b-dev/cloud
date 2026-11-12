@@ -23,7 +23,6 @@ import {
   IconButton,
   Kbd,
   openSpotlightSearch,
-  Placeholder,
   prompts,
   type ToastHandle,
   Tooltip,
@@ -2910,7 +2909,12 @@ function createMailboxController(props: MailboxControllerProps) {
 
   // One-time hints of the reader (Mail v5): seen hints are stored per person and mailbox, so they never come back.
   const [seenHints, setSeenHints] = createSignal<readonly string[]>(data.workspacePreference.seenHints);
-  createEffect(on(() => data.workspacePreference.seenHints, (incoming) => setSeenHints((current) => [...new Set([...current, ...incoming])])));
+  createEffect(
+    on(
+      () => data.workspacePreference.seenHints,
+      (incoming) => setSeenHints((current) => [...new Set([...current, ...incoming])]),
+    ),
+  );
   const markHintSeen = (hintId: MailWorkspaceHintId) => {
     if (seenHints().includes(hintId)) return;
     setSeenHints((current) => [...current, hintId]);

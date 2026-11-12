@@ -166,96 +166,96 @@ export default function MailConversationSummaryCard(props: {
               </Tooltip.Anchor>
             </div>
           </Show>
-      <Switch>
-        <Match when={view() === "failed"}>
-          <p class="my-2.5 max-w-[62ch]" role="alert">
-            {failureText()}
-          </p>
-          <Show when={props.state.canGenerate}>
-            <div>
-              <Button size="sm" variant="secondary" onClick={() => props.onGenerate("replace")}>
-                <i class="ti ti-refresh" aria-hidden="true" /> {t().tryAgain}
-              </Button>
-            </div>
-          </Show>
-          <p class="mt-auto pt-2.5 text-xs opacity-80">
-            {[
-              props.state.failure?.workflow ? t().byRule({ name: props.state.failure.workflow.name }) : null,
-              props.state.failure
-                ? t().attempts({ count: props.state.failure.attempts, time: formatTime(props.state.failure.lastAttemptAt, locale()) })
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        </Match>
-
-        <Match when={view() === "limited"}>
-          <p class="my-2.5 max-w-[62ch]">{limitText()}</p>
-          <Show when={props.state.canGenerate}>
-            <div>
-              <Button size="sm" variant="secondary" onClick={() => props.onGenerate("replace")}>
-                <i class="ti ti-sparkles text-[color:var(--k2b-ai-accent)]" aria-hidden="true" /> {t().summarizeThisOne}
-              </Button>
-            </div>
-          </Show>
-          <p class="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pt-2.5 text-xs opacity-80">
-            <span>{t().countsOnAllowance}</span>
-            <Show when={props.state.allowance && !props.state.allowance.unlimited && props.state.allowance.usedPercent !== null}>
-              <span class="inline-flex items-center gap-1 whitespace-nowrap">
-                <ProgressRing value={props.state.allowance?.usedPercent ?? 0} label={t().countsOnAllowance} />
-                {t().allowanceUsed({ percent: Math.round(props.state.allowance?.usedPercent ?? 0) })}
-              </span>
-            </Show>
-          </p>
-        </Match>
-
-        <Match when={view() === "text"}>
-          <Show when={props.state.newMessagesSince > 0}>
-            <p class="mt-2 flex items-center gap-1.5 text-[0.8125rem]">
-              <i class="ti ti-arrow-up" aria-hidden="true" />
-              <span>{t().newSince({ count: props.state.newMessagesSince })}</span>
+          <Switch>
+            <Match when={view() === "failed"}>
+              <p class="my-2.5 max-w-[62ch]" role="alert">
+                {failureText()}
+              </p>
               <Show when={props.state.canGenerate}>
-                <button
-                  type="button"
-                  class="underline decoration-[color:var(--k2b-ai-accent)] underline-offset-2"
-                  onClick={() => props.onGenerate("rolling")}
-                >
-                  {t().continue}
-                </button>
+                <div>
+                  <Button size="sm" variant="secondary" onClick={() => props.onGenerate("replace")}>
+                    <i class="ti ti-refresh" aria-hidden="true" /> {t().tryAgain}
+                  </Button>
+                </div>
               </Show>
-            </p>
-          </Show>
-          <Show when={props.state.status === "failed" || props.state.status === "limited"}>
-            <p class="mt-2 text-[0.8125rem]" role="status">
-              {props.state.status === "failed" ? t().updateFailed : limitText()}
-            </p>
-          </Show>
-          <div class="my-2" data-mail-conversation-summary-body>
-            <MarkdownView markdown={props.state.summary ?? ""} headingScale="compact" class="text-sm text-inherit" />
-          </div>
-          <Show when={props.state.nextStep}>
-            {(next) => (
-              <div class="flex flex-wrap items-center gap-2.5">
-                <span class="inline-flex items-center gap-1.5 text-[0.78125rem] opacity-85">
-                  <i class="ti ti-calendar-due" aria-hidden="true" /> {t().nextStep}
-                </span>
-                <b>{next().text}</b>
-                <Show when={next().due && props.onRemind}>
-                  <span class="ml-auto inline-flex gap-1.5">
-                    <Button size="sm" variant="ghost" onClick={() => props.onRemind?.(next().due!)}>
-                      <i class="ti ti-alarm" aria-hidden="true" /> {t().remind}
-                    </Button>
+              <p class="mt-auto pt-2.5 text-xs opacity-80">
+                {[
+                  props.state.failure?.workflow ? t().byRule({ name: props.state.failure.workflow.name }) : null,
+                  props.state.failure
+                    ? t().attempts({ count: props.state.failure.attempts, time: formatTime(props.state.failure.lastAttemptAt, locale()) })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            </Match>
+
+            <Match when={view() === "limited"}>
+              <p class="my-2.5 max-w-[62ch]">{limitText()}</p>
+              <Show when={props.state.canGenerate}>
+                <div>
+                  <Button size="sm" variant="secondary" onClick={() => props.onGenerate("replace")}>
+                    <i class="ti ti-sparkles text-[color:var(--k2b-ai-accent)]" aria-hidden="true" /> {t().summarizeThisOne}
+                  </Button>
+                </div>
+              </Show>
+              <p class="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pt-2.5 text-xs opacity-80">
+                <span>{t().countsOnAllowance}</span>
+                <Show when={props.state.allowance && !props.state.allowance.unlimited && props.state.allowance.usedPercent !== null}>
+                  <span class="inline-flex items-center gap-1 whitespace-nowrap">
+                    <ProgressRing value={props.state.allowance?.usedPercent ?? 0} label={t().countsOnAllowance} />
+                    {t().allowanceUsed({ percent: Math.round(props.state.allowance?.usedPercent ?? 0) })}
                   </span>
                 </Show>
+              </p>
+            </Match>
+
+            <Match when={view() === "text"}>
+              <Show when={props.state.newMessagesSince > 0}>
+                <p class="mt-2 flex items-center gap-1.5 text-[0.8125rem]">
+                  <i class="ti ti-arrow-up" aria-hidden="true" />
+                  <span>{t().newSince({ count: props.state.newMessagesSince })}</span>
+                  <Show when={props.state.canGenerate}>
+                    <button
+                      type="button"
+                      class="underline decoration-[color:var(--k2b-ai-accent)] underline-offset-2"
+                      onClick={() => props.onGenerate("rolling")}
+                    >
+                      {t().continue}
+                    </button>
+                  </Show>
+                </p>
+              </Show>
+              <Show when={props.state.status === "failed" || props.state.status === "limited"}>
+                <p class="mt-2 text-[0.8125rem]" role="status">
+                  {props.state.status === "failed" ? t().updateFailed : limitText()}
+                </p>
+              </Show>
+              <div class="my-2" data-mail-conversation-summary-body>
+                <MarkdownView markdown={props.state.summary ?? ""} headingScale="compact" class="text-sm text-inherit" />
               </div>
-            )}
-          </Show>
-          <Show when={source()}>
-            <p class="mt-auto pt-2.5 text-xs opacity-80">{source()}</p>
-          </Show>
-        </Match>
-      </Switch>
+              <Show when={props.state.nextStep}>
+                {(next) => (
+                  <div class="flex flex-wrap items-center gap-2.5">
+                    <span class="inline-flex items-center gap-1.5 text-[0.78125rem] opacity-85">
+                      <i class="ti ti-calendar-due" aria-hidden="true" /> {t().nextStep}
+                    </span>
+                    <b>{next().text}</b>
+                    <Show when={next().due && props.onRemind}>
+                      <span class="ml-auto inline-flex gap-1.5">
+                        <Button size="sm" variant="ghost" onClick={() => props.onRemind?.(next().due!)}>
+                          <i class="ti ti-alarm" aria-hidden="true" /> {t().remind}
+                        </Button>
+                      </span>
+                    </Show>
+                  </div>
+                )}
+              </Show>
+              <Show when={source()}>
+                <p class="mt-auto pt-2.5 text-xs opacity-80">{source()}</p>
+              </Show>
+            </Match>
+          </Switch>
         </div>
       </Show>
     </section>

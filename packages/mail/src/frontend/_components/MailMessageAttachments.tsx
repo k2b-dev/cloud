@@ -1,4 +1,4 @@
-import { SAVE_FILES_ICON, type SaveFileSource, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+import { SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -149,9 +149,10 @@ export default function MailMessageAttachments(props: {
     `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}`;
   const fileName = (attachment: Attachment) => attachment.filename ?? messages().attachment;
   const meta = (attachment: Attachment) =>
-    [fileKindLabel({ name: fileName(attachment), mediaType: attachment.contentType }, locale()), formatFileViewSize(attachment.sizeBytes, locale())].join(
-      " · ",
-    );
+    [
+      fileKindLabel({ name: fileName(attachment), mediaType: attachment.contentType }, locale()),
+      formatFileViewSize(attachment.sizeBytes, locale()),
+    ].join(" · ");
   // Without a conversation Lightbox, the message's attachments open in their own, so the arrow keys step through them.
   const [shown, setShown] = createSignal<number | null>(null);
   const lightboxItems = createMemo(() =>
@@ -204,7 +205,11 @@ export default function MailMessageAttachments(props: {
     const controller = new AbortController();
     packingAbort = controller;
     setPacking(true);
-    const files = props.attachments.map((attachment) => ({ name: fileName(attachment), href: baseUrl(attachment), size: attachment.sizeBytes }));
+    const files = props.attachments.map((attachment) => ({
+      name: fileName(attachment),
+      href: baseUrl(attachment),
+      size: attachment.sizeBytes,
+    }));
     try {
       const zip = await importOnDemand(() => import("./mail-attachments-zip"));
       if (!zip || controller.signal.aborted) return;
@@ -226,12 +231,23 @@ export default function MailMessageAttachments(props: {
       action: () => void saveFiles([saveSource(attachment, baseUrl(attachment))]),
     },
     ...(props.canShare
-      ? [{ label: messages().shareNamed({ name: fileName(attachment) }), icon: "ti ti-link", disabled: createLink.loading(), action: () => void shareAttachment(attachment) }]
+      ? [
+          {
+            label: messages().shareNamed({ name: fileName(attachment) }),
+            icon: "ti ti-link",
+            disabled: createLink.loading(),
+            action: () => void shareAttachment(attachment),
+          },
+        ]
       : []),
   ];
 
   return (
-    <section class="mail-attachment-tiles" aria-label={reader().attachmentCount({ count: props.attachments.length })} data-mail-message-attachments>
+    <section
+      class="mail-attachment-tiles"
+      aria-label={reader().attachmentCount({ count: props.attachments.length })}
+      data-mail-message-attachments
+    >
       <ul class="mail-attachment-tiles__list">
         <For each={props.attachments}>
           {(attachment) => (
@@ -281,6 +297,12 @@ export default function MailMessageAttachments(props: {
               <i class="ti ti-download" aria-hidden="true" />
               {reader().downloadAll({ count: props.attachments.length })}
             </Button>
+            <SaveFilesButton
+              all
+              size="sm"
+              variant="ghost"
+              files={() => props.attachments.map((attachment) => saveSource(attachment, baseUrl(attachment)))}
+            />
           </li>
         </Show>
       </ul>

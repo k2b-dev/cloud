@@ -480,7 +480,10 @@ export function mailboxData(url: URL): MailboxPageData {
   return {
     // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
     // The reader's one-time hints stay seen unless a test opts in with ?hints=1.
-    workspacePreference: { listShare: null, seenHints: url.searchParams.get("hints") === "1" ? [] : ["reader-head-moved", "toolbar-moved"] },
+    workspacePreference: {
+      listShare: null,
+      seenHints: url.searchParams.get("hints") === "1" ? [] : ["reader-head-moved", "toolbar-moved"],
+    },
     viewPreference: {
       large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
       phone: "compact",

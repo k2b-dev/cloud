@@ -45,7 +45,11 @@ export const openMailActivityDialog = (options: {
                     <span class="font-medium text-primary">{event.actorLabel}</span> {event.label}
                     <Show when={event.count > 1}> ({event.count})</Show>
                   </span>
-                  <time class="shrink-0 text-xs text-dimmed" dateTime={event.createdAt} title={dates.formatDateTime(event.createdAt, options.dateConfig)}>
+                  <time
+                    class="shrink-0 text-xs text-dimmed"
+                    dateTime={event.createdAt}
+                    title={dates.formatDateTime(event.createdAt, options.dateConfig)}
+                  >
                     {dates.formatDateTimeRelative(event.createdAt, options.dateConfig)}
                   </time>
                 </li>

@@ -71,7 +71,12 @@ export default function MailSenderPopover(props: {
   const match = () => contact.data() ?? null;
   const openHref = () => match()?.links?.find((link) => link.rel === "open")?.href;
   const canAddContact = () =>
-    props.canWrite && canCreateDirectoryContacts(directory) && directory.resolve !== null && !contact.loading() && !contact.error() && !match();
+    props.canWrite &&
+    canCreateDirectoryContacts(directory) &&
+    directory.resolve !== null &&
+    !contact.loading() &&
+    !contact.error() &&
+    !match();
 
   // The idempotency key belongs to the intent, so Retry repeats the same creation instead of adding a second contact.
   type ContactIntent = { email: string; name: string | null; book: { id: string }; idempotencyKey: string };

@@ -87,7 +87,14 @@ export default function MailConversationNote(props: {
           </span>
           <Show when={menu().length > 0}>
             <Dropdown.Root position="bottom-left" width="12rem" items={menu()}>
-              <Dropdown.Trigger iconOnly size="xs" type="button" variant="ghost" label={t().noteActions} ref={(element) => (actions = element)}>
+              <Dropdown.Trigger
+                iconOnly
+                size="xs"
+                type="button"
+                variant="ghost"
+                label={t().noteActions}
+                ref={(element) => (actions = element)}
+              >
                 <i class="ti ti-dots" aria-hidden="true" />
               </Dropdown.Trigger>
             </Dropdown.Root>

@@ -10,9 +10,9 @@ import type { AutomationActionKind } from "./mail-automation-actions";
 import { useMailCloudId } from "./mail-cloud-id";
 import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { mailReaderMessages } from "./mail-reader-messages";
 import { resolveMailMessageActionVisibility } from "./mail-message-action-visibility";
 import { buildExactSenderSearchHref, buildMailingListHref, mailRouteUrl, senderDomainFromAddress } from "./mail-navigation";
+import { mailReaderMessages } from "./mail-reader-messages";
 
 type SelectionContext = {
   selectionKey: string | null;
@@ -140,7 +140,14 @@ export function createMailMessageMenu(props: MailMessageMenuProps) {
     return [
       ...(findSenderHref() ? [{ id: "find" as const, label: t().findSender, icon: "ti ti-search", href: findSenderHref()! }] : []),
       ...(visibility.createIncomingAutomation
-        ? [{ id: "automation" as const, label: t().createSenderAutomation, icon: "ti ti-filter-plus", action: () => void openIncomingAutomation(address) }]
+        ? [
+            {
+              id: "automation" as const,
+              label: t().createSenderAutomation,
+              icon: "ti ti-filter-plus",
+              action: () => void openIncomingAutomation(address),
+            },
+          ]
         : []),
       ...(visibility.blockSender
         ? [

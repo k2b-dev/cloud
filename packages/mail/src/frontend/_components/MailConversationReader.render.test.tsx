@@ -528,7 +528,10 @@ describe("Mail conversation reader", () => {
     const positions = order.map((marker) => html.indexOf(marker));
     expect(positions.every((position) => position > 0)).toBe(true);
     expect([...positions].sort((left, right) => left - right)).toEqual(positions);
-    const tile = html.slice(html.indexOf('data-mail-note="Note01"') - 40, html.indexOf("</article>", html.indexOf('data-mail-note="Note01"')));
+    const tile = html.slice(
+      html.indexOf('data-mail-note="Note01"') - 40,
+      html.indexOf("</article>", html.indexOf('data-mail-note="Note01"')),
+    );
     expect(tile).toContain('class="mail-note"');
     expect(tile).toContain("Internal note from Tom Behrens");
     expect(tile).toContain(">internal<");
@@ -549,7 +552,10 @@ describe("Mail conversation reader keep state", () => {
   test("shows who kept the conversation, refuses Delete, and locks it for everyone but Cloud administrators", () => {
     // A mailbox manager is no Cloud administrator: the chip explains who can lift it, and no dead action is offered.
     const html = renderReader([], { keep, canAdmin: true });
-    const chip = html.slice(html.indexOf('data-mail-head-chip="kept"') - 80, html.indexOf("</span></span>", html.indexOf('data-mail-head-chip="kept"')));
+    const chip = html.slice(
+      html.indexOf('data-mail-head-chip="kept"') - 80,
+      html.indexOf("</span></span>", html.indexOf('data-mail-head-chip="kept"')),
+    );
     expect(chip).toContain("<span");
     expect(chip).toContain("Kept");
     expect(chip).toContain("Kept since");

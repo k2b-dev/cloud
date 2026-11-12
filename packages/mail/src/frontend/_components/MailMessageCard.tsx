@@ -23,12 +23,11 @@ import MailCalendarInvitation from "./MailCalendarInvitation";
 import MailMessageAttachments from "./MailMessageAttachments";
 import MailMessageBody from "./MailMessageBody";
 import MailMessageDeliveryControl from "./MailMessageDeliveryControl";
-import MailSenderPopover from "./MailSenderPopover";
 import { createMailMessageMenu, MailMessageMenuTrigger } from "./MailSenderMessageActions";
+import MailSenderPopover from "./MailSenderPopover";
 import { deriveReplyRecipients, formatMailAddress, forwardMessageBody } from "./mail-compose-derivation";
 import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailMessageMessages } from "./mail-message-messages";
-import { mailReaderMessages } from "./mail-reader-messages";
 import {
   formatMailMessageDateTime,
   inlineBodyImages,
@@ -41,6 +40,7 @@ import {
   resolveMessageBodyFormat,
   resolveMessageColors,
 } from "./mail-message-presentation";
+import { mailReaderMessages } from "./mail-reader-messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
 /** How long a reader waits for an opened message's body before it says that it waits for the mailbox. */
@@ -417,7 +417,10 @@ export default function MailMessageCard(props: {
               onClick={() => props.actions.toggle(props.message.id)}
             >
               <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
-              <span class="mail-message-row-sender" title={props.message.from.map(formatMailAddress).join(", ") || messages().unknownSender}>
+              <span
+                class="mail-message-row-sender"
+                title={props.message.from.map(formatMailAddress).join(", ") || messages().unknownSender}
+              >
                 {senderLabel()}
               </span>
               <span class="mail-message-row-preview" data-mail-message-preview>
@@ -434,10 +437,7 @@ export default function MailMessageCard(props: {
           <div class="mail-message-head">
             <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
             <div class="mail-message-head-who">
-              <Show
-                when={!outgoing() && sender()}
-                fallback={<span class="mail-message-sender">{senderLabel()}</span>}
-              >
+              <Show when={!outgoing() && sender()} fallback={<span class="mail-message-sender">{senderLabel()}</span>}>
                 <button
                   type="button"
                   class="mail-message-sender"
@@ -645,7 +645,9 @@ export default function MailMessageCard(props: {
                 attachments={listedAttachments()}
                 canShare={props.context.canAdmin}
                 archiveName={props.context.subject}
-                onOpen={props.actions.openAttachment ? (attachment) => props.actions.openAttachment?.(props.message.id, attachment.id) : undefined}
+                onOpen={
+                  props.actions.openAttachment ? (attachment) => props.actions.openAttachment?.(props.message.id, attachment.id) : undefined
+                }
               />
             </Show>
             <Show when={hasCalendarInvitation() && props.context.calendarIntegrationAvailable && !security().linksDisabled}>
