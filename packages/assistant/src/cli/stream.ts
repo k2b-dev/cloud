@@ -296,6 +296,8 @@ export const streamAssistantTurn = async (input: {
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
+    // A call still being written is not a step yet; the CLI reports it once the call exists.
+    if (block.liveArgs) return null;
     const previous = toolStatuses.get(block.callId);
     // A resumed attempt replays finished calls as running first; a settled call never goes back.
     if ((previous === "completed" || previous === "failed" || previous === "rejected") && block.status === "running") return null;
@@ -507,6 +509,10 @@ export const streamAssistantTurn = async (input: {
       return handleToolBlock(event.block);
     }
 
+    if (event.type === "block_remove") {
+      blocks.delete(event.blockId);
+      return null;
+    }
     if (event.type === "message_saved") {
       emitJsonLine({ type: "usage", messageId: event.message.id, usage: event.message.usage });
       return null;

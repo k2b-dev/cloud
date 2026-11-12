@@ -25,11 +25,12 @@ type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" |
 
 type CodeDisplayProps = {
   code: string; title?: string; language?: CodeDisplayLanguage; copy?: boolean; lineNumbers?: boolean;
-  class?: string;
+  startLine?: number; class?: string;
 };
 ```
 
-Defaults: `language="text"`, `copy=true`, `lineNumbers=true`. Set `copy={false}` or `lineNumbers={false}` independently.
+Defaults: `language="text"`, `copy=true`, `lineNumbers=true`, `startLine=1`. Set `copy={false}` or `lineNumbers={false}` independently.
+Pass `startLine` when the code is an excerpt of a longer file, such as the end of a file that is still being written: line numbers then match the whole file.
 The number column widens past 999 lines. The display is a column whose body scrolls, so a host that caps its height keeps the title and copy action in place.
 
 ## Accessibility
