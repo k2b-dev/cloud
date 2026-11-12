@@ -2817,6 +2817,16 @@ suite("mail PostgreSQL foundation", () => {
       WHERE draft_id = ${forwardedDraft.data.id}::uuid
     `;
     expect(forwardedBlob?.blob_id).toBe(attachmentBlob.id);
+    expect(
+      (
+        await discardDraft({
+          context,
+          mailboxId: mailbox.data.id,
+          draftId: forwardedDraft.data.id,
+          expectedRevision: forwardedDraft.data.revision,
+        })
+      ).ok,
+    ).toBe(true);
     const forwardWithoutAttachments = await createDraft({
       context,
       mailboxId: mailbox.data.id,
@@ -2836,7 +2846,18 @@ suite("mail PostgreSQL foundation", () => {
       },
     });
     expect(forwardWithoutAttachments.ok && forwardWithoutAttachments.data.attachments).toEqual([]);
-    const invalidAttachmentCopy = await createDraft({
+    if (!forwardWithoutAttachments.ok) throw new Error(forwardWithoutAttachments.error.message);
+    expect(
+      (
+        await discardDraft({
+          context,
+          mailboxId: mailbox.data.id,
+          draftId: forwardWithoutAttachments.data.id,
+          expectedRevision: forwardWithoutAttachments.data.revision,
+        })
+      ).ok,
+    ).toBe(true);
+    const replyWithAttachments = await createDraft({
       context,
       mailboxId: mailbox.data.id,
       input: {
@@ -2854,7 +2875,11 @@ suite("mail PostgreSQL foundation", () => {
         format: "plain",
       },
     });
-    expect(invalidAttachmentCopy.ok).toBe(false);
+    expect(replyWithAttachments.ok).toBe(true);
+    if (!replyWithAttachments.ok) throw new Error(replyWithAttachments.error.message);
+    expect(replyWithAttachments.data.attachments).toEqual([
+      expect.objectContaining({ filename: "stream-test.bin", contentHash: attachmentBlob.contentHash, byteLength: attachmentBytes.length }),
+    ]);
     const openedAttachment = await openAttachment({
       context,
       mailboxId: mailbox.data.id,
