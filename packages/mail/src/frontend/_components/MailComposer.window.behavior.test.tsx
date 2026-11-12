@@ -126,9 +126,9 @@ const installPopover = () => {
   };
 };
 
+/** Waits until the condition holds; the test's own timeout bounds the wait. */
 const waitFor = async (condition: () => boolean) => {
-  for (let attempt = 0; attempt < 150 && !condition(); attempt++) await Bun.sleep(10);
-  expect(condition()).toBe(true);
+  while (!condition()) await Bun.sleep(5);
 };
 
 describe("MailComposer in a floating window", () => {

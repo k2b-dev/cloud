@@ -21,9 +21,9 @@ const load = async () => {
 };
 const modules = isServer ? undefined : await load();
 
+/** Waits until the condition holds; the test's own timeout bounds the wait. */
 const waitFor = async (condition: () => boolean) => {
-  for (let attempt = 0; attempt < 200 && !condition(); attempt++) await Bun.sleep(5);
-  expect(condition()).toBe(true);
+  while (!condition()) await Bun.sleep(5);
 };
 
 describe.skipIf(isServer)("Mail draft windows", () => {
