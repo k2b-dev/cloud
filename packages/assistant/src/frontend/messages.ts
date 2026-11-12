@@ -191,7 +191,7 @@ export const assistantMessages = i18n.define({
       codeVersionSuperseded: ({ version, latest }: { version: number; latest: number }) =>
         `Version ${version} was replaced by version ${latest}.`,
       codeVersionChecking: "Checking…",
-      codeVersionWaiting: "Waiting for the owner check. Core keeps trying.",
+      codeVersionWaiting: "Waiting for the owner check. Cloud tries again shortly.",
       codeVersionApplying: "Switching on…",
       codeVersionUnknown: "No confirmation yet. It may still finish.",
       codeVersionCheckStatus: "Check status",
@@ -433,7 +433,7 @@ export const assistantMessages = i18n.define({
       codeVersionRuns: "Läufe",
       codeVersionSuperseded: ({ version, latest }) => `Version ${version} wurde von Version ${latest} abgelöst.`,
       codeVersionChecking: "Prüft …",
-      codeVersionWaiting: "Wartet auf die Prüfung des Besitzers. Core versucht es weiter.",
+      codeVersionWaiting: "Wartet auf die Prüfung des Besitzers. Cloud versucht es gleich noch einmal.",
       codeVersionApplying: "Schaltet ein …",
       codeVersionUnknown: "Noch keine Bestätigung. Es kann noch fertig werden.",
       codeVersionCheckStatus: "Status prüfen",

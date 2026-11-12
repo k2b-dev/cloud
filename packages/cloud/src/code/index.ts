@@ -38,6 +38,7 @@ export {
 } from "./checker-contract";
 export { CODE_DATABASE_LIMITS, CODE_DATABASE_MESSAGES, type CodeDatabaseRequest, CodeDatabaseRequestSchema } from "./database-contract";
 export * from "./event-tools";
+export { CODE_FILE_LIMITS } from "./file-generation-contract";
 export { type CodeAiToolBinding, CodeAiToolBindingSchema, CodeFileRefSchema } from "./file-ref";
 export { generateCodeSdk } from "./generator";
 export {

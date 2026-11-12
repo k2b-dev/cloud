@@ -54,6 +54,7 @@ import { codeQueryContracts } from "./code/contracts";
 import { readCodeDetails } from "./code/database";
 import { cancelCodeEventCatchup, readCodeEventCatchup, resumeCodeEventCatchup, startCodeEventCatchup } from "./code/event-catchup";
 import { listCodeRunsWithEvents, replayCodeEventDelivery } from "./code/events";
+import { generatedFileQueries } from "./code/files/capabilities";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
@@ -614,6 +615,7 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...generatedFileQueries,
     "code.event.catchup.read": {
       title: "Read Code catch-up",
       description: "Read durable catch-up admission progress for one operation. Execution outcomes appear in Code runs.",

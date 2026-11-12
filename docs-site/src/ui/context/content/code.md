@@ -30,6 +30,7 @@ type CodeDisplayProps = {
 ```
 
 Defaults: `language="text"`, `copy=true`, `lineNumbers=true`. Set `copy={false}` or `lineNumbers={false}` independently.
+The number column widens past 999 lines. The display is a column whose body scrolls, so a host that caps its height keeps the title and copy action in place.
 
 ## Accessibility
 

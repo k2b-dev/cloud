@@ -75,7 +75,12 @@ export function LayoutHelpPanel(props: LayoutHelpPanelProps) {
                 failed={props.state === "failed"}
                 onOpen={() => {}}
                 onReload={() => {}}
-                shortcuts={<HelpPanelShortcuts appName={props.app?.name} platform={props.platform} />}
+                shortcuts={
+                  <>
+                    {props.startSection}
+                    <HelpPanelShortcuts appName={props.app?.name} platform={props.platform} />
+                  </>
+                }
               />
             </div>
             <HelpPanelSearch />

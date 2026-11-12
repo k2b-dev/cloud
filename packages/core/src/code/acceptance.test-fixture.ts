@@ -1,7 +1,5 @@
 /// <reference path="../../../runner/src/workerd.d.ts" />
 import { expect } from "bun:test";
-import { mkdtemp, rmdir, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { getApp, sql } from "@k2b/cloud";
 import type { CapabilityDispatchDependencies } from "@k2b/cloud/api";
@@ -25,6 +23,7 @@ import type { Queue } from "@k2b/sync";
 import { Hono } from "hono";
 import type { JWTVerifyGetKey } from "jose";
 import { z } from "zod";
+import { getCheckerIsolate } from "../../../../scripts/fixtures/checker-isolate";
 import type { AcceptanceProvider } from "../../../../scripts/fixtures/code-acceptance-provider";
 import type { RunnerEngine, SandboxCall } from "../../../runner/src/engine";
 import { Runner } from "../../../runner/src/runner";
@@ -34,6 +33,8 @@ import { completeCodeRun, heartbeatCodeRun } from "./scheduling";
 import { type CodeRunWakeup, fetchCodeRuns, readCodeRunnerConfig } from "./scheduling-runtime";
 import { dispatchCodeSecretHttp } from "./secret-http";
 import { codeBundleHash } from "./store";
+
+const isolate = await getCheckerIsolate();
 
 /** Only repository-owned fictional source reaches this engine. C14 tests the real workerd isolation.
  * Each attempt imports a fresh checked bundle; the production Runner still owns cache, polling,
@@ -80,14 +81,6 @@ export class FixtureEngine implements RunnerEngine {
 
 /** Real parser, tsgo and bundler in the C16 seccomp launcher; no checker result is fabricated. */
 export async function acceptanceChecker() {
-  const directory = await mkdtemp(join(tmpdir(), "cloud-c25-checker-"));
-  const isolate = join(directory, "checker-isolate");
-  const child = Bun.spawn(
-    ["cc", "-O2", "-Wall", "-Wextra", "-Werror", resolve(import.meta.dir, "../../../runner/native/checker-isolate.c"), "-o", isolate],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  const [exit, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
-  expect({ exit, stderr }).toEqual({ exit: 0, stderr: "" });
   const host: CodeCheckHost = {
     isolate,
     compiler: join(
@@ -105,8 +98,7 @@ export async function acceptanceChecker() {
   return {
     check: (request: Parameters<typeof checkCode>[0], signal?: AbortSignal) => checkCode(request, host, signal),
     async close() {
-      await unlink(isolate);
-      await rmdir(directory);
+      // The shared cached launcher outlives individual checker handles.
     },
   };
 }

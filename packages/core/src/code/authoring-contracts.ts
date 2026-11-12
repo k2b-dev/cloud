@@ -248,3 +248,59 @@ export type CodeAuthoringData<K extends CodeAuthoringCommand> = z.infer<(typeof 
 export const CODE_AUTHORING_REQUEST_BYTES = CODE_CHECK_LIMITS.requestBytes;
 /** Complete conflict rows, kept separate from a formatted human diff. */
 export const CodeAuthoringConflictSchema = z.object({ latestVersionId: z.uuid().nullable(), files: z.array(CodeVersionDiffFileSchema) });
+
+/** Compact chat write result: contents remain in the server-held draft. */
+export const CodeChatDraftSummarySchema = z
+  .object({
+    version: z.literal(1),
+    draft: z
+      .object({
+        codeId: CodeIdSchema,
+        entry: z.string(),
+        baseVersionId: z.uuid().nullable(),
+        files: z.array(z.object({ path: z.string(), bytes: z.number().int().nonnegative() }).strict()),
+        tests: z.array(z.object({ path: z.string(), bytes: z.number().int().nonnegative() }).strict()),
+        expiresAt: z.iso.datetime(),
+      })
+      .strict(),
+  })
+  .strict();
+
+/**
+ * Chat check result: the CLI contract without the checked bundle, which only costs the model tokens. The bundle's hash
+ * stays in `manifest.hashes.bundle`; submit checks the same draft again and stores its own bundle.
+ */
+export const CodeChatCheckDataSchema = check.extend({
+  result: z.discriminatedUnion("ok", [CodeCheckResultSchema.options[0], CodeCheckResultSchema.options[1].omit({ bundle: true })]),
+});
+
+/** Chat-only additive inputs. HTTP and CLI continue to require their complete source contracts. */
+export const codeChatAuthoringInputs = {
+  check: codeAuthoringContracts.check.input.partial({ files: true, entry: true }).extend({ entry: source.shape.entry.unwrap().optional() }),
+  test: codeAuthoringContracts.test.input
+    .partial({ files: true, entry: true, tests: true })
+    .extend({ entry: source.shape.entry.unwrap().optional() }),
+  simulate: codeAuthoringContracts.simulate.input
+    .partial({ files: true, entry: true })
+    .extend({ entry: source.shape.entry.unwrap().optional() }),
+  submit: codeAuthoringContracts.submit.input
+    .partial({ files: true, entry: true, baseVersionId: true, tests: true })
+    .extend({ entry: source.shape.entry.unwrap().optional() }),
+  write: z
+    .object({
+      codeId: CodeIdSchema.optional(),
+      project: codeAuthoringContracts.pull.data.optional(),
+      path: CodeSourceFilesSchema.keyType,
+      content: z.string().optional(),
+      delete: z.literal(true).optional(),
+      renameTo: CodeSourceFilesSchema.keyType.optional(),
+    })
+    .strict()
+    .refine(
+      (input) =>
+        Number(input.codeId !== undefined) + Number(input.project !== undefined) === 1 &&
+        Number(input.content !== undefined) + Number(input.delete !== undefined) + Number(input.renameTo !== undefined) === 1 &&
+        (input.project === undefined || input.content !== undefined),
+      "Provide exactly one of codeId/project and one of content/delete/renameTo; project requires content.",
+    ),
+};

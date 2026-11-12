@@ -16,6 +16,8 @@ const PreviewSchema = z.object({
   codeId: z.string(),
   title: z.string(),
   ownerKind: z.enum(["person", "resource", "app"]),
+  /** For Code of an app: the app's name, which names its service account. */
+  appName: z.string().nullable().optional(),
   automations: z
     .array(
       z.object({
@@ -23,6 +25,10 @@ const PreviewSchema = z.object({
         title: z.string().optional(),
         route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
         event: z.object({ type: z.string(), title: z.string().nullable(), place: TargetSchema }).optional(),
+        /** When a schedule runs: its repeating expression, or a one-time instant and the zone it is read in. */
+        cron: z.string().optional(),
+        at: z.string().optional(),
+        timeZone: z.string().optional(),
       }),
     )
     .optional(),
