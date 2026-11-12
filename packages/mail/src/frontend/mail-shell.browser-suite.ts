@@ -4175,7 +4175,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         await draftBox(page).waitFor();
         await page.locator("[data-mail-inline-draft] .cm-content").waitFor();
       };
-      const readerReplies = (page: Page) => page.locator(".mail-reader").getByRole("button", { name: "Reply", exact: true });
+      /** Reply buttons that start a reply to the conversation; each open message keeps its own reply arrow beside its date. */
+      const readerReplies = (page: Page) =>
+        page
+          .locator(".mail-reader")
+          .getByRole("button", { name: "Reply", exact: true })
+          .and(page.locator(":not([data-mail-message-reply])"));
       /** Polls a condition that settles after a request the page sends on its own, within a deadline. */
       const eventually = async <T>(read: () => Promise<T> | T, expected: Awaited<T>, label: string, deadline = 6000) => {
         const end = performance.now() + deadline;
@@ -4203,13 +4208,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(api.calls).toContain("POST /draft-seeds/materialize");
             // Reduced motion: the state changes at once, nothing glides.
             expect(await page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getAnimations().length)).toBe(0);
-            // The draft stands above the newest message.
+            // The draft stands below the newest message (Mail v5).
             const order = await page.evaluate(() => {
               const draft = document.querySelector("[data-mail-inline-draft]")!.getBoundingClientRect();
-              const message = document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect();
-              return { draftBottom: draft.bottom, messageTop: message.top };
+              const messages = document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect();
+              return { draftTop: draft.top, messagesBottom: messages.bottom };
             });
-            expect(order.draftBottom).toBeLessThanOrEqual(order.messageTop);
+            expect(order.draftTop).toBeGreaterThanOrEqual(order.messagesBottom);
             await page.keyboard.press("Escape");
             await page.locator("[data-mail-reply-pill]").waitFor();
             expect(await draftBox(page).count()).toBe(0);
@@ -4220,7 +4225,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-      test("the pill grows into the draft: the messages glide monotonically to their layout place in 280 ms", async () => {
+      test("the pill grows into the draft below the newest message: the messages above it do not move", async () => {
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
           await draftApi(next);
         });
@@ -4228,40 +4233,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const messagesTop = () =>
             page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
           const before = await messagesTop();
-          // Pause the glide the moment it starts, before a frame passes, then step through it.
-          await page.evaluate(() => {
-            const state = window as unknown as { mailGlide?: Promise<void> };
-            state.mailGlide = new Promise<void>((resolve) => {
-              const observer = new MutationObserver(() => {
-                const glide = document.querySelector("[data-mail-conversation-messages]")?.getAnimations()[0];
-                if (!glide) return;
-                glide.pause();
-                observer.disconnect();
-                resolve();
-              });
-              observer.observe(document.body, { subtree: true, childList: true });
-            });
-          });
           await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
-          // settled: the paused animation itself is the subject; each step sets its time before reading.
-          const samples = await page.evaluate(async () => {
-            await (window as unknown as { mailGlide: Promise<void> }).mailGlide;
-            const messages = document.querySelector("[data-mail-conversation-messages]")!;
-            const glide = messages.getAnimations()[0]!;
-            const total = Number(glide.effect!.getComputedTiming().duration);
-            const tops = [0, total / 2, total - 1].map((at) => {
-              glide.currentTime = at;
-              return messages.getBoundingClientRect().top;
-            });
-            glide.finish();
-            return { total, tops, final: messages.getBoundingClientRect().top };
-          });
-          expect(samples.total).toBe(280);
-          expect(Math.abs(samples.tops[0]! - before)).toBeLessThanOrEqual(0.5);
-          expect(samples.tops[1]!).toBeGreaterThanOrEqual(samples.tops[0]!);
-          expect(samples.tops[2]!).toBeGreaterThanOrEqual(samples.tops[1]!);
-          expect(Math.abs(samples.tops[2]! - samples.final)).toBeLessThanOrEqual(1);
-          expect(samples.final).toBeGreaterThan(before);
+          await readyDraft(page);
+          await settled(page);
+          expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
         } finally {
           await close(page);
         }
@@ -4436,13 +4411,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await readyDraft(page);
           await page.locator("[data-mail-draft-fullscreen]").click();
           expect(await page.locator("[data-mail-draft-bar]").count()).toBe(0);
-          // The whole history below the draft, then scroll until the draft has left the reader.
+          // The whole history above the draft, then scroll up until the draft has left the reader.
           if (await page.locator("[data-mail-older-messages]").count()) await page.locator("[data-mail-older-messages]").click();
+          // Older messages are one line each; opened, they make the history taller than the reader.
+          const collapsed = page.locator('[data-mail-message-header][aria-expanded="false"]');
+          while ((await collapsed.count()) > 0) await collapsed.first().click();
+          await settled(page);
           await page.evaluate(() => {
             const frame = document.querySelector("[data-mail-inline-draft-frame]")!;
             let scroller: Element | null = frame.parentElement;
             while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
-            scroller?.scrollTo({ top: scroller.scrollHeight });
+            scroller?.scrollTo({ top: 0 });
           });
           const bar = page.locator("[data-mail-draft-bar]");
           await bar.waitFor();
