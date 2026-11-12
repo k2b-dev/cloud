@@ -33,6 +33,7 @@ import { recordMailWorkflowAudit } from "./automation-log-recording";
 import { loadMailAutomationLog } from "./automation-workspace";
 import { applyConversationCollaboration } from "./collaboration";
 import { createActorCommand } from "./commands";
+import { createDraft, getDraft } from "./drafts";
 import { createLocalTag, setConversationLocalTags } from "./local-tags";
 import { createMailbox } from "./mailboxes";
 import { ingestEnvelope } from "./sync-runtime";
@@ -284,6 +285,71 @@ suite("Mail conversation automation log and undo", () => {
         await next();
       })
       .route("/", automationLogRoutes);
+
+  test("an occupied review-reply box succeeds as skipped in the automation log", async () => {
+    const input = await message();
+    const [identity] = await sql<{ id: string; short_id: string }[]>`INSERT INTO mail.sender_identities
+      (short_id, mailbox_id, label, from_address, automation_policy, status, is_default)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Review sender', 'support@example.test', 'mailbox', 'verified', true) RETURNING id, short_id`;
+    const occupant = unwrap(
+      await createDraft({
+        context: users[0]!,
+        mailboxId,
+        input: {
+          intent: "reply",
+          conversationId: input.conversationId,
+          sourceMessageId: input.snapshot.preconditions.message.id,
+          senderIdentityId: identity!.id,
+          subject: "My subject",
+          body: "Keep my reply",
+          to: [],
+          cc: [],
+          bcc: [],
+          format: "markdown",
+          priority: "normal",
+          requestDeliveryReceipt: false,
+          requestReadReceipt: false,
+          quoteSource: null,
+        },
+      }),
+    );
+    const definition = unwrap(
+      await createWorkflow({
+        context: users[0]!,
+        mailboxId,
+        input: {
+          name: `Occupied reply ${suffix}`,
+          priority: 0,
+          source: `inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with: { message: "\${{ trigger.message }}", conversation: "\${{ trigger.conversation }}" }
+steps:
+  - createReplyDraft: { message: inputs.message, conversation: inputs.conversation, sender: "${identity!.short_id}", body: "Automated review", saveAs: review }
+`,
+          effectBudget: workflowEffectBudgetSchema.parse({ maxDrafts: 1, maxSends: 1, maxTargets: 1 }),
+        },
+      }),
+    );
+    unwrap(
+      await activateWorkflow({
+        context: users[0]!,
+        mailboxId,
+        workflowId: definition.id,
+        input: { expectedVersionId: definition.currentVersion.id },
+      }),
+    );
+    const runId = await run(definition, input);
+    const result = await runMailWorkflow(runId);
+    expect(result).toMatchObject({ result: { state: "succeeded" } });
+    const page = unwrap(await listAutomationLog(users[0]!, mailboxId, { day }));
+    const item = page.items.find((entry) => entry.conversation.id === input.snapshot.source.conversation!.id);
+    expect(item).toMatchObject({ outcome: "skipped", reasons: [{ kind: "reply_draft_occupied" }], effects: [] });
+    expect(unwrap(await getDraft(users[0]!, mailboxId, occupant.id)).body).toBe("Keep my reply");
+    expect(await sql`SELECT id FROM mail.outbox_submissions WHERE draft_id = ${occupant.id}::uuid`).toHaveLength(0);
+  });
 
   for (const kind of ["agent", "standalone"] as const) {
     test(`${kind} assignments keep automation audit, skip, undo and manual-change provenance`, async () => {

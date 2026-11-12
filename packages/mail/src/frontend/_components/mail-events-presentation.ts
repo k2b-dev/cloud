@@ -108,7 +108,13 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
       : { icon: "ti ti-pencil", tone: "draft", before: t.draftStartedNew, after: "", detail: null, subject: null };
   if (event.action === "draft.discarded")
     return event.conversationId
-      ? { icon: "ti ti-pencil-off", tone: "draft", before: t.draftDiscardedBefore, after: t.draftDiscardedAfter, detail: null }
+      ? {
+          icon: "ti ti-pencil-off",
+          tone: "draft",
+          before: t.draftDiscardedBefore,
+          after: t.draftDiscardedAfter,
+          detail: metadata.reason === "reply_draft_consolidation" ? t.draftConsolidatedDetail : null,
+        }
       : { icon: "ti ti-pencil-off", tone: "draft", before: t.draftDiscardedNew, after: "", detail: null, subject: null };
   if (event.action === "conversation.comment_created")
     return { icon: "ti ti-message-circle", tone: "comment", before: t.commentedBefore, after: t.commentedAfter, detail: null };

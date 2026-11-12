@@ -1411,6 +1411,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
           ),
           format: values.format === "plain" ? "plain" : "markdown",
         });
+        if (!draft.ok && draft.error.code === "DRAFT_REPLY_BOX_OCCUPIED")
+          return { state: "succeeded", output: { applied: false, skipped: "reply_draft_occupied", conversationId: publicConversationId } };
         if (!draft.ok) return resultFailure(draft.error);
         const activityId = await insertActivity({
           db: tx,
@@ -1455,6 +1457,11 @@ export const MAIL_WORKFLOW_ACTIONS = {
       attempt(async () => {
         const scope = await loadScope(ctx);
         const draft = await resolveObject(ctx, values.draft, "draft");
+        if (draft.skipped === "reply_draft_occupied")
+          return {
+            state: "succeeded",
+            output: { applied: false, skipped: "reply_draft_occupied", conversationId: draft.conversationId ?? null },
+          };
         const draftId = await internalResourceId(sql, "drafts", scope.mailboxId, asText(draft.id, "draft.id"), "Draft");
         const senderIdentityId = await internalResourceId(
           sql,

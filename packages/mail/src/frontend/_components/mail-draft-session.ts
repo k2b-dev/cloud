@@ -121,6 +121,8 @@ export const createMailDraftSession = (options: {
   const [lease, setLease] = createSignal<AcquiredDraftLease | null>(null);
   const [authenticationRequired, setAuthenticationRequired] = createSignal(false);
   const [leaseConflict, setLeaseConflict] = createSignal<MailDraftLeaseConflict | null>(null);
+  const [replyBoxOccupied, setReplyBoxOccupied] = createSignal(false);
+  const [occupiedReplyDraftId, setOccupiedReplyDraftId] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<ComposerStatus>(options.initialSeed ? "local" : "preparing");
   const [statusMessage, setStatusMessage] = createSignal(options.initialSeed ? "" : t().preparingDraft);
   const [lifecycleTransition, setLifecycleTransition] = createSignal<MailDraftLifecycleTransition | null>(null);
@@ -786,7 +788,7 @@ export const createMailDraftSession = (options: {
       // A granted lease does not mean browser recovery has finished. Never
       // persist the initial server snapshot while its local journal is loading.
       if (initializePromise && !(await initializePromise)) return null;
-      if (lifecycleTransition() || authenticationRequired() || revisionConflict()) return null;
+      if (lifecycleTransition() || authenticationRequired() || revisionConflict() || replyBoxOccupied()) return null;
       if (isShared()) {
         const current = await ensureDraft();
         const client = shared();
@@ -826,11 +828,27 @@ export const createMailDraftSession = (options: {
             waitForSignIn();
             return null;
           }
+          const failure = await readApiFailure(response, t().draftSaveFailed);
+          if (failure.code === "DRAFT_REPLY_BOX_OCCUPIED") {
+            stopScheduledSave();
+            tryWriteJournal(options.initialSeed.id, { revision: 0, content: options.content() });
+            setReplyBoxOccupied(true);
+            setOccupiedReplyDraftId(failure.draftId);
+          }
           setStatus("error");
-          setStatusMessage(await readApiError(response, t().draftSaveFailed));
+          setStatusMessage(failure.code === "DRAFT_REPLY_BOX_OCCUPIED" ? t().replyDraftOccupiedLocal : failure.message);
           return null;
         }
         currentDraft = await response.json();
+        if (currentDraft.creationOutcome === "existing" || currentDraft.creationOutcome === "suggestion_skipped") {
+          stopScheduledSave();
+          tryWriteJournal(options.initialSeed.id, { revision: 0, content: options.content() });
+          setReplyBoxOccupied(true);
+          setOccupiedReplyDraftId(currentDraft.id);
+          setStatus("error");
+          setStatusMessage(t().replyDraftOccupiedLocal);
+          return null;
+        }
         markSaved(draftEditableContent(currentDraft));
         batch(() => {
           setMaterializedLeasePending(true);
@@ -1204,7 +1222,7 @@ export const createMailDraftSession = (options: {
       stopScheduledSave();
       return;
     }
-    if (leaseConflict() || revisionConflict() || saveTimer) return;
+    if (leaseConflict() || revisionConflict() || replyBoxOccupied() || saveTimer) return;
     // Coalesce the latest input without postponing autosave forever during
     // continuous typing. The shared promise keeps at most one save in flight.
     saveTimer = setTimeout(() => {
@@ -1438,6 +1456,7 @@ export const createMailDraftSession = (options: {
     lease,
     setLease,
     materializedLeasePending,
+    occupiedReplyDraftId,
     authenticationRequired,
     // Let a pending save advance the journal revision before navigation. A storage failure leaves the editor open.
     prepareSignIn: () =>

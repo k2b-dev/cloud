@@ -3546,6 +3546,8 @@ export const draftSchema = z.object({
   lastEditedBy: draftActorRefSchema,
   lastEditedByDisplayName: z.string().min(1),
   recoveryCopyCount: z.number().int().nonnegative(),
+  consolidatedCount: z.number().int().nonnegative().optional(),
+  creationOutcome: z.enum(["created", "existing", "suggestion_skipped"]).optional(),
   revision: z.number().int().positive(),
   /** Optional while release N accepts responses from older lock-only pods. */
   editMode: z.enum(["lock", "shared"]).optional(),
@@ -3995,6 +3997,7 @@ export const automationLogReasonSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("skipped_upper_rule"), workflowId: z.string().uuid(), name: z.string() }),
   z.object({ kind: z.literal("already_assigned") }),
   z.object({ kind: z.literal("undone_before") }),
+  z.object({ kind: z.literal("reply_draft_occupied") }),
   z.object({
     kind: z.literal("manual"),
     before: z.object({ kind: z.enum(["user", "group"]), name: z.string(), byRule: z.string().nullable() }).nullable(),

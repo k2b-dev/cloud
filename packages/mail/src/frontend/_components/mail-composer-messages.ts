@@ -267,6 +267,9 @@ export const mailComposerMessages = i18n.define({
       draftPrepareFailed: "Draft could not be prepared",
       savingDraft: "Saving draft...",
       draftSaveFailed: "Draft could not be saved",
+      replyDraftOccupiedLocal:
+        "This conversation already has a reply draft. Your text remains on this device; open the existing draft to continue.",
+      openExistingReplyDraft: "Open existing reply draft",
       saveBeforeAttach: "Save the draft before attaching files.",
       attachFileFailed: ({ filename }: { filename: string }) => `Failed to attach ${filename}`,
       uploadFileFailed: ({ filename }: { filename: string }) => `Failed to upload ${filename}`,
@@ -594,6 +597,9 @@ export const mailComposerMessages = i18n.define({
       draftPrepareFailed: "Der Entwurf konnte nicht vorbereitet werden",
       savingDraft: "Entwurf wird gespeichert…",
       draftSaveFailed: "Der Entwurf konnte nicht gespeichert werden",
+      replyDraftOccupiedLocal:
+        "Diese Unterhaltung hat bereits einen Antwortentwurf. Dein Text bleibt auf diesem Gerät; öffne den vorhandenen Entwurf zum Fortsetzen.",
+      openExistingReplyDraft: "Vorhandenen Antwortentwurf öffnen",
       saveBeforeAttach: "Speichere den Entwurf, bevor du Dateien anhängst.",
       attachFileFailed: ({ filename }) => `${filename} konnte nicht angehängt werden`,
       uploadFileFailed: ({ filename }) => `${filename} konnte nicht hochgeladen werden`,
