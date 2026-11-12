@@ -1,7 +1,6 @@
 import { Button, IconButton, MarkdownView, ProgressRing, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
-import { mailReaderMessages } from "./mail-reader-messages";
 import { mailSummaryMessages } from "./mail-summary-messages";
 
 export type MailSummaryGenerateMode = "rolling" | "replace";
@@ -26,11 +25,12 @@ export default function MailConversationSummaryCard(props: {
   /** Opens the reminder for the next step's date; leaves the button out when absent. */
   onRemind?: (due: string) => void;
   generating?: boolean;
+  /** Opens the row at first, such as for printing; the person toggles it from there. */
+  defaultExpanded?: boolean;
   now?: () => number;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailSummaryMessages.resolve([locale()]).t);
-  const readerText = createMemo(() => mailReaderMessages.resolve([locale()]).t);
   const now = () => props.now?.() ?? Date.now();
   const [clock, setClock] = createSignal(now());
   const timer = setInterval(() => setClock(now()), 60_000);
@@ -103,7 +103,7 @@ export default function MailConversationSummaryCard(props: {
     </Tooltip.Anchor>
   );
 
-  const [expanded, setExpanded] = createSignal(false);
+  const [expanded, setExpanded] = createSignal(props.defaultExpanded ?? false);
   const bodyId = `mail-summary-${createUniqueId()}`;
   /** The collapsed row's one line: the text without Markdown marks, or what the summary is doing instead. */
   const line = () => {
@@ -116,6 +116,7 @@ export default function MailConversationSummaryCard(props: {
         return limitText();
       default:
         return (props.state.summary ?? "")
+          .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
           .replace(/[#*_`>[\]()~|]/g, "")
           .replace(/\s+/g, " ")
           .trim();
@@ -136,7 +137,6 @@ export default function MailConversationSummaryCard(props: {
         class="mail-summary-row__toggle"
         aria-expanded={expanded()}
         aria-controls={bodyId}
-        aria-label={expanded() ? readerText().hideSummary : readerText().showSummary}
         onClick={() => setExpanded(!expanded())}
       >
         <span class="mail-summary-row__label">

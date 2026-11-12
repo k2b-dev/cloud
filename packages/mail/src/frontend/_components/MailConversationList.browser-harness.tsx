@@ -10,9 +10,21 @@ import MailConversationList from "./MailConversationList";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
 import { MailSearchInput, MailSearchOptions, MailSearchTrigger } from "./MailWorkspaceSearch";
-import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
 import { createMailboxSearch } from "./mailbox-search";
+
+const NO_DETAIL_ERRORS = {
+  collaboration: null,
+  tags: null,
+  comments: null,
+  assignableUsers: null,
+  activity: null,
+  reminder: null,
+  keep: null,
+  reference: null,
+  summary: null,
+  drafts: null,
+};
 
 export type MailListHarnessOptions = {
   locale: "en" | "de";
@@ -32,7 +44,6 @@ export type MailListHarnessOptions = {
   /** Starts the list at this route and lets it navigate through the history, as the workspace does. */
   requestUrl?: string;
   /** The reader's toolbar; Reply by default. */
-  toolbarActions?: MailConversationToolbarActionId[];
   /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
   deletedOnServer?: boolean;
   /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
@@ -356,11 +367,18 @@ window.mountMailList = (options) => {
                     readingFormat="automatic"
                     theme="light"
                     calendarIntegrationAvailable={false}
-                    listAway={false}
-                    detailsOpen={false}
-                    toolbarActions={options.toolbarActions ?? ["reply"]}
-                    onToggleDetails={noop}
-                    onToolbarActionsChange={noop}
+                    collaboration={null}
+                    reminder={null}
+                    assignableUsers={[]}
+                    onCollaborationChange={noop}
+                    tags={[]}
+                    comments={[]}
+                    commentsCursor={null}
+                    detailErrors={NO_DETAIL_ERRORS}
+                    presence={[]}
+                    seenHints={["reader-head-moved"]}
+                    toolbarCustomized={false}
+                    onHintSeen={noop}
                     actionPending={false}
                     structurePending={false}
                     onAction={noop}

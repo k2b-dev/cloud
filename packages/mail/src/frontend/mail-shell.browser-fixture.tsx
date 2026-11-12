@@ -9,7 +9,6 @@ import type { MailActivityEvent } from "../service/collaboration";
 import type { MessageDetail } from "../service/messages";
 import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
-import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
@@ -480,7 +479,8 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
     // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
-    workspacePreference: { listShare: null, seenHints: [] },
+    // The reader's one-time hints stay seen unless a test opts in with ?hints=1.
+    workspacePreference: { listShare: null, seenHints: url.searchParams.get("hints") === "1" ? [] : ["reader-head-moved", "toolbar-moved"] },
     viewPreference: {
       large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
       phone: "compact",
@@ -805,14 +805,9 @@ export default function MailShellFixture(props: {
         dateConfig={{ locale, timeZone: "UTC" }}
         initialPreferences={{
           ...readMailWorkspacePreferences(""),
-          detailsOpen: url.searchParams.has("persist-details")
-            ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
-            : url.searchParams.get("details") === "1",
           listCollapsed: url.searchParams.get("list") === "hidden",
-          // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
-          ...(url.searchParams.has("toolbar")
-            ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
-            : {}),
+          // A person who had arranged their own toolbar before Mail v5 (`?toolbar=reply,archive`).
+          toolbarCustomized: url.searchParams.has("toolbar"),
         }}
         initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
         initialTheme={props.theme}

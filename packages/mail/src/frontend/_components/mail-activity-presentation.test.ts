@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailActivityEvent } from "../../service/collaboration";
-import { mailActivityIcon, mailActivityLabel, presentMailActivity, showMailActivityInline } from "./mail-activity-presentation";
+import { mailActivityIcon, mailActivityLabel, presentMailActivity } from "./mail-activity-presentation";
 
 const event = (metadata: Record<string, unknown> = {}): MailActivityEvent => ({
   id: crypto.randomUUID(),
@@ -62,14 +62,11 @@ describe("mail activity presentation", () => {
 
     expect(mailActivityIcon(workflowEvent)).toBe("ti-tag");
     expect(presentMailActivity([workflowEvent])[0]?.actorLabel).toBe("Workflow Invoice triage");
-    expect(showMailActivityInline(workflowEvent)).toBe(true);
   });
 
-  test("shows who started and stopped keeping a conversation in the timeline", () => {
+  test("names who started and stopped keeping a conversation", () => {
     const kept = { ...event(), action: "conversation.kept" };
     const released = { ...event(), action: "conversation.keep_released" };
-    expect(showMailActivityInline(kept)).toBe(true);
-    expect(showMailActivityInline(released)).toBe(true);
     expect(mailActivityIcon(kept)).toBe("ti-lock");
     expect(mailActivityIcon(released)).toBe("ti-lock-open");
     expect(mailActivityLabel(kept)).toBe("started keeping the conversation");
@@ -80,11 +77,5 @@ describe("mail activity presentation", () => {
       "hat aufbewahrte Nachrichten hierher verschoben, daher wird auch diese Unterhaltung aufbewahrt",
     );
     expect(mailActivityIcon(carried)).toBe("ti-lock");
-  });
-
-  test("keeps technical activity and human draft churn out of the inline timeline", () => {
-    expect(showMailActivityInline(event())).toBe(true);
-    expect(showMailActivityInline({ ...event(), action: "command.execute" })).toBe(false);
-    expect(showMailActivityInline({ ...event(), action: "draft.created" })).toBe(false);
   });
 });

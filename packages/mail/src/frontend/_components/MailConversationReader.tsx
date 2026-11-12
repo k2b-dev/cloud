@@ -502,14 +502,8 @@ export default function MailConversationReader(props: {
     });
   };
 
-  /** The person reads the newest message, or the end of the conversation: new messages then show without a jump button. */
-  const readingNewest = (): boolean => {
-    if (!historyScroller || isNearConversationEnd(historyScroller)) return true;
-    const newest = props.messages.at(-1);
-    const element = newest && historyScroller.querySelector<HTMLElement>(`[data-mail-message-id="${CSS.escape(newest.id)}"]`);
-    if (!element) return false;
-    return element.getBoundingClientRect().top - historyScroller.getBoundingClientRect().top < historyScroller.clientHeight;
-  };
+  /** The person reads at the end of the conversation, where the newest message is: new messages then show at once. */
+  const readingNewest = (): boolean => !historyScroller || isNearConversationEnd(historyScroller);
 
   const handleReaderScroll = () => {
     if (!historyScroller) return;
