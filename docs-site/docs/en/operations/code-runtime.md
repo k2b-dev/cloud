@@ -5,7 +5,7 @@ section: Operations
 order: 920
 description: Size and diagnose Code route requests in the shared runner pool.
 tags: [code, runner, limits]
-updated: 2026-11-09
+updated: 2026-11-11
 ---
 
 # Operate Code requests
@@ -183,3 +183,12 @@ Deploy Assistant's `chat.file.read.v1` capability before chat Code uses an
 attachment as a FileRef. It rechecks the person's chat and Project access at
 redemption. No new environment variables, storage bucket or public file URL
 is required.
+
+Deploy Files and Mail with their FileRef receiving Actions before using chat
+attachments with those destinations: `filesv2.file.save.v1` and
+`mail.draft.attachment.import.v1`. Mail's ordinary schema update adds the
+reservation's expected revision and one-time write claim to existing draft
+uploads; keep the existing upload cleanup running. No new service or
+configuration is needed. Files keeps its upload quota, collision, versioning
+and confirmation rules; Mail keeps its
+draft-write policy and never sends as part of attachment import.

@@ -2917,6 +2917,130 @@ const conversationStatusSetActions = {
   },
 } as const;
 
+const attachmentFileRef = z.strictObject({
+  mailboxId: ResourceShortIdSchema,
+  draftId: ResourceShortIdSchema,
+  uploadId: z.uuid(),
+  subject: z.string().max(200),
+});
+const attachmentFile = async (stream: CapabilityStream, context: CapabilityExecutionContext) => {
+  const ref = attachmentFileRef.parse(JSON.parse(stream.id));
+  const target = requireMailboxTarget(context);
+  if (!target.ok) throw target.error;
+  if (target.data !== ref.mailboxId) throw err.notFound("Draft attachment upload");
+  const scope = await resolveDraftScope(ref.mailboxId, ref.draftId, context);
+  if (!scope.ok) throw scope.error;
+  const params = {
+    context: requestContext(context),
+    mailboxId: scope.data.mailbox.id,
+    draftId: scope.data.draftId,
+    uploadId: ref.uploadId,
+  };
+  const current = await draftUploads.capabilityAttachmentUpload(params);
+  if (!current.ok) throw current.error;
+  return { ref, params, ...current.data };
+};
+const attachmentFileReceipt = (current: Awaited<ReturnType<typeof attachmentFile>>, context: CapabilityExecutionContext) => {
+  if (current.finalizedRevision === null) throw err.internal("Attachment upload has no committed receipt");
+  return {
+    data: { draftId: current.ref.draftId, uploadId: current.ref.uploadId, revision: current.finalizedRevision },
+    receipt: mailReceipt("draft.attachment.add", context.locale, {
+      file: fileSlot(current.upload.filename),
+      draft: draftSlot(current.ref.draftId, current.ref.subject, context.locale),
+    }),
+    summary: capabilitySummary(
+      mailCapabilityMessages(context.locale).addedAttachment({
+        filename: current.upload.filename,
+        subject: reviewSubject(current.ref.subject, context),
+      }),
+    ),
+    ...draftMetadata(current.ref.mailboxId, current.ref.draftId, current.ref.subject),
+  };
+};
+const attachmentFileStream = {
+  direction: "write" as const,
+  maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+  write: async (stream: CapabilityStream, body: ReadableStream<Uint8Array>, context: CapabilityExecutionContext) => {
+    try {
+      const current = await attachmentFile(stream, context);
+      if (current.upload.state === "attached") {
+        await body.cancel();
+        return attachmentFileReceipt(current, context);
+      }
+      if (current.upload.state === "cancelled") throw err.conflict("Attachment transfer was cancelled");
+      // An interrupted stream is not resumed with different bytes. Abort it and prepare a new transfer.
+      if (current.upload.receivedBytes > 0) throw err.conflict("Attachment transfer is incomplete; cancel it before starting another");
+      context.signal.throwIfAborted();
+      const claimed = await draftUploads.claimCapabilityAttachmentWrite(current.params);
+      if (!claimed.ok) {
+        const latest = await attachmentFile(stream, context);
+        if (latest.upload.state === "attached") {
+          await body.cancel();
+          return attachmentFileReceipt(latest, context);
+        }
+        throw claimed.error;
+      }
+      const reader = body.getReader();
+      const node = Readable.from(
+        (async function* () {
+          try {
+            for (;;) {
+              const chunk = await reader.read();
+              if (chunk.done) return;
+              yield chunk.value;
+            }
+          } finally {
+            await reader.cancel().catch(() => undefined);
+            reader.releaseLock();
+          }
+        })(),
+      );
+      const cancel = () => {
+        void reader.cancel().catch(() => undefined);
+        node.destroy();
+      };
+      context.signal.addEventListener("abort", cancel, { once: true });
+      try {
+        if (context.signal.aborted) cancel();
+        const saved = await draftUploads.uploadDraftAttachmentStream({
+          ...current.params,
+          expectedRevision: current.expectedRevision,
+          filename: current.upload.filename,
+          contentType: current.upload.contentType,
+          byteLength: current.upload.byteLength,
+          stream: node,
+          signal: context.signal,
+        });
+        if (!saved.ok) throw saved.error;
+        return attachmentFileReceipt(await attachmentFile(stream, context), context);
+      } finally {
+        context.signal.removeEventListener("abort", cancel);
+        node.destroy();
+        await reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+      }
+    } catch (error) {
+      await body.cancel().catch(() => undefined);
+      throw error;
+    }
+  },
+  status: async (stream: CapabilityStream, context: CapabilityExecutionContext) => {
+    const current = await attachmentFile(stream, context);
+    if (current.upload.state === "attached") return { state: "completed" as const, result: attachmentFileReceipt(current, context) };
+    return { state: current.upload.state === "cancelled" ? ("aborted" as const) : ("open" as const) };
+  },
+  abort: async (stream: CapabilityStream, context: CapabilityExecutionContext) => {
+    const current = await attachmentFile(stream, context);
+    if (current.upload.state === "attached") return;
+    const cancelled = await draftUploads.cancelDraftAttachmentUpload(current.params);
+    if (!cancelled.ok) {
+      // Finalization and cancellation serialize on the upload row. Preserve a committed receipt if finalization won.
+      if ((await attachmentFile(stream, context)).upload.state === "attached") return;
+      throw cancelled.error;
+    }
+  },
+};
+
 const actionDefinitions = {
   "draft.patch": {
     title: "Change selected draft fields",
@@ -3304,6 +3428,94 @@ const actionDefinitions = {
         }),
       );
     },
+  },
+  "draft.attachment.import.v1": {
+    title: "Attach a file to a draft",
+    description:
+      "Attach a FileRef to an editable draft using its current revision, existing attachment limits and editor lock. Never sends. Retry with the same key and inspect stream status after a lost answer.",
+    target: "mailbox",
+    input: c.DraftAttachmentImportInputSchema,
+    data: c.DraftAttachmentImportDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "required",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.DraftAttachmentImportInputSchema>, context: CapabilityExecutionContext) => {
+      const target = requireMailboxTarget(context);
+      if (!target.ok) return target;
+      const draft = await requireDraftForReview(target.data, input.draftId, context);
+      if (!draft.ok) return draft;
+      if (draft.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
+      return ok(
+        mailActionReviews["draft.attachment.import.v1"](
+          context.locale,
+          {
+            file: fileSlot(input.file.name ?? "attachment"),
+            draft: draftSlot(input.draftId, draft.data.subject, context.locale),
+          },
+          {
+            ...(await draftAudienceOptions(draft.data.mailboxId, target.data, context)),
+            preview: {
+              kind: "file",
+              name: reviewLine(input.file.name ?? "attachment", 255),
+              size: input.file.size,
+              mediaType: reviewLine(input.file.mediaType, 120),
+              place: reviewLine(draft.data.subject || mailCapabilityMessages(context.locale).noSubject),
+            },
+            links: [openLink(`${draftReadHref(target.data, input.draftId)}?revision=${input.expectedRevision}`)],
+          },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.DraftAttachmentImportInputSchema>, context: CapabilityExecutionContext) => {
+      if (input.file.size > MAX_DRAFT_ATTACHMENT_BYTES) return fail(err.badInput("Draft attachments cannot exceed 100 MiB"));
+      const target = requireMailboxTarget(context);
+      if (!target.ok) return target;
+      const scope = await resolveDraftScope(target.data, input.draftId, context);
+      if (!scope.ok) return scope;
+      if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
+      const draft = await drafts.getDraft(requestContext(context), scope.data.mailbox.id, scope.data.draftId);
+      if (!draft.ok) return draft;
+      const hex = createHash("sha256")
+        .update(
+          JSON.stringify([
+            "mail.draft.attachment.import.v1",
+            context.actor.kind === "user" ? context.actor.user.id : context.actor.serviceAccount.id,
+            context.accessSubject,
+            context.target,
+            context.idempotencyKey,
+          ]),
+        )
+        .digest("hex");
+      const uploadId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+      const created = await draftUploads.createDraftAttachmentUpload({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        draftId: scope.data.draftId,
+        input: { filename: input.file.name ?? "attachment", contentType: input.file.mediaType, byteLength: input.file.size },
+        capability: { uploadId, expectedRevision: input.expectedRevision },
+      });
+      if (!created.ok) return created;
+      return ok({
+        data: { draftId: input.draftId, uploadId: created.data.id },
+        stream: {
+          id: JSON.stringify({
+            mailboxId: target.data,
+            draftId: input.draftId,
+            uploadId: created.data.id,
+            subject: reviewLine(draft.data.subject, 200),
+          }),
+          direction: "write" as const,
+          name: created.data.filename,
+          mediaType: input.file.mediaType,
+          size: created.data.byteLength,
+          expiresAt: new Date(
+            created.data.state === "attached" ? Date.now() + 24 * 3600_000 : new Date(created.data.createdAt).getTime() + 24 * 3600_000,
+          ).toISOString(),
+        },
+      });
+    },
+    stream: attachmentFileStream,
   },
   "draft.attachment.add": {
     title: "Add draft attachment",

@@ -3,6 +3,8 @@ import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { invalidateSettingsCache } from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 
+import { installDatabaseRetentionSettingTrigger } from "./code-unused-databases";
+
 export const migrate = async (db: typeof sql = sql): Promise<void> => {
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.settings.migrations', 0))`;
@@ -18,6 +20,7 @@ export const migrate = async (db: typeof sql = sql): Promise<void> => {
     )
   `.simple();
     await tx`ALTER TABLE settings.entries ADD COLUMN IF NOT EXISTS updated_by UUID`;
+    await installDatabaseRetentionSettingTrigger(tx);
     console.log("  ✓ settings.entries table");
     await tx`CREATE TABLE IF NOT EXISTS settings.migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
     const applied =

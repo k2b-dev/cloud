@@ -352,3 +352,16 @@ test("administrator detail shows database size, owner capacity and the shared ex
   expect(renderedText(html, " ")).toContain("Owner reserved capacity: 200.00 MB of 1,000.00 MB");
   expect(html).toContain("/api/code/authoring/database/c_rechn/export");
 });
+
+test("unused databases show a bounded page with deadline, access and incarnation-bound controls", () => {
+  const html = render({ sec: "databases" });
+  const text = renderedText(html);
+  for (const label of ["Ungenutzte Datenbanken", "Ungenutzt seit", "Löschdatum", "Letzter Zugriff", "Größe", "Lea Muster", "4 MB"])
+    expect(text).toContain(label);
+  expect(html).toContain("CodeUnusedDatabases.island.tsx");
+  expect(html).toContain("/api/code/authoring/database/c_rueck/export");
+  expect(text).toContain("Jetzt löschen");
+  expect(html).toContain("code_c_rueck_fixture");
+  expect(renderedText(render({ sec: "databases" }, "empty"))).toContain("Keine ungenutzten Datenbanken");
+  expect(renderedText(render({ sec: "databases" }, "fail"))).toContain("Erneut versuchen");
+});

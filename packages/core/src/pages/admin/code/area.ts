@@ -10,6 +10,7 @@ export const CODE_AREA_SECTIONS = [
   "effective",
   "history",
   "cleanup",
+  "databases",
   "limits",
   "runners",
 ] as const;
@@ -59,6 +60,7 @@ export const parseCodeAreaQuery = (query: Record<string, string | undefined>): C
       ...(UUID.test(id) ? { id } : {}),
       ...(query.tab !== "decided" && query.after && APPROVAL_AFTER.test(query.after) ? { after: query.after } : {}),
     };
+  if (sec === "databases") return { sec, ...(CODE_ID.test(query.after ?? "") ? { after: query.after } : {}) };
   if (sec === "cleanup") return { sec, ...(query.after && UUID.test(query.after) ? { after: query.after } : {}) };
   if (sec === "code") {
     const status = STATUSES.find((value) => value === query.status);
@@ -82,7 +84,12 @@ export const codeAreaLevel = (query: CodeAreaQuery): "area" | "section" | "detai
 
 /** Sections whose content fills the list and detail columns together. */
 export const isWideCodeSection = (section: CodeAreaSection | undefined): boolean =>
-  section === "policy" || section === "history" || section === "cleanup" || section === "limits" || section === "runners";
+  section === "databases" ||
+  section === "policy" ||
+  section === "history" ||
+  section === "cleanup" ||
+  section === "limits" ||
+  section === "runners";
 
 /** Rows grouped as the policy table shows them. */
 export const CODE_POLICY_ROW_GROUPS: readonly { key: "grpRead" | "grpSilent" | "grpAsk" | "grpAiNet"; rows: CodePolicyRow[] }[] = [
@@ -111,6 +118,7 @@ export const CODE_LIMIT_KEYS = [
   "core.code.calls_per_second",
   "core.code.database_bytes",
   "core.code.database_owner_bytes",
+  "core.code.database_unused_days",
   "core.code.rsql_url",
   "core.code.rsql_api_token",
   "core.code.rsql_allowed_targets",

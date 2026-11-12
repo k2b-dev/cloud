@@ -5,7 +5,7 @@ section: Platform services
 order: 967
 description: Mount the shared Code page at a resource so its administrators see automations, targets, refused calls, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
-updated: 2026-11-09
+updated: 2026-11-11
 ---
 
 # Show a resource's Code page
@@ -267,3 +267,23 @@ status for Code and administrator details. Pass `codeId`, the authorized
 `database` usage object.
 It inherits the UI locale. `canExport` controls presentation only; the export
 service checks permission again.
+
+When an inactive Code's latest and selected versions no longer declare
+`database`, its owner and editors see “This database will be deleted on …”.
+The default grace period is 30 days. **Export SQLite database** saves a copy;
+**Delete now** asks for confirmation and is available to editors and Cloud
+administrators. A refused or uncertain request leaves a reload action to check
+the current state. Reactivation or a database declaration ends the deadline.
+
+The deletion date stays visible for at least the seven-day reminder period.
+Shortening or re-enabling retention recalculates it with that same advance
+notice; the Code page and administrator list show the same stored date.
+
+The authorized `database.unused` snapshot contains `since`, nullable `deleteAt`
+(null when automatic deletion is disabled), `namespace` and `canDelete`.
+`CodeDatabaseStatus` shows this notice and `CodeDatabaseDelete` supplies the
+confirmed control on administrator lists. Both inherit the UI locale.
+`POST /api/code/authoring/database/delete` takes `{ codeId, namespace, since }`
+and binds confirmation to that exact database incarnation and unused period.
+The service rechecks editor or administrator permission and refuses a changed
+or in-use database with `409`. Repeating an accepted request is idempotent.

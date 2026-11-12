@@ -5,7 +5,7 @@ section: Platform services
 order: 568
 description: Understand Code ownership, immutable versions, Query access and run retention.
 tags: [code, capabilities, data, permissions]
-updated: 2026-11-09
+updated: 2026-11-11
 ---
 
 # Code data model
@@ -16,7 +16,8 @@ state so people can identify a policy pause.
 A Code has one owner and a fixed `codeId`, such as `c_8hw2`. Saving a new
 version preserves that identity. Core stores Code, its versions and its runs
 in the Postgres schema `code`. Its optional RSQL namespace is keyed by that
-Code identity, so all versions share one lazy database. The first `db` call
+Code identity, so all versions share one lazy database. An unused database can be deleted after its visible grace
+period; a later first call creates a fresh incarnation (see [Code storage](/en/docs/operations/code-storage#database-lifecycle)). The first `db` call
 creates it; reading Code details does not. See [Database](/en/docs/platform/code-sdk#database).
 
 ## Owners and access
@@ -64,6 +65,10 @@ Its stable machine name is `code:<resource-type>:<resource-id>` or
 [Code account handles](/en/docs/identity/code-service-account-handles). Creating
 the account or activating Code grants no target permissions. Target managers
 use normal sharing to grant View or Edit.
+
+Unused database mappings persist their deletion date, its visible start and the
+retention-setting generation. Setting writes or resets advance that generation;
+recalculation preserves at least the reminder period before automatic deletion.
 
 ## Immutable versions
 

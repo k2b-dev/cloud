@@ -69,6 +69,7 @@ export const CODE_TABLES = {
   secretBindings: "code.secret_bindings",
   codes: "code.codes",
   databases: "code.databases",
+  databaseDeletions: "code.database_deletions",
   shares: "code.shares",
   versions: "code.versions",
   runs: "code.runs",
@@ -98,6 +99,15 @@ export const CodeSchema = z
         state: z.enum(["unused", "ready", "unavailable"]),
         owner: z.object({ reserved: z.number().nonnegative(), limit: z.number().positive() }).strict().optional(),
         canExport: z.boolean().optional(),
+        unused: z
+          .object({
+            since: z.iso.datetime(),
+            deleteAt: z.iso.datetime().nullable(),
+            namespace: z.string(),
+            canDelete: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
