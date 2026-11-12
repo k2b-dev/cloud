@@ -8,6 +8,7 @@ import { renderToString } from "solid-js/web";
 import type { ConversationDraftSummary } from "../../contracts";
 import type { ConversationComment, MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
+import type { LocalTag } from "../../service/local-tags";
 import type { MessageDetail } from "../../service/messages";
 import type { ConversationPresenceParticipant } from "../../service/presence";
 
@@ -82,7 +83,7 @@ const renderReader = (
     keep?: ConversationKeep | null;
     canAdmin?: boolean;
     canWrite?: boolean;
-    tags?: Array<{ id: string; name: string; color: string }>;
+    tags?: LocalTag[];
     comments?: ConversationComment[];
     presence?: ConversationPresenceParticipant[];
     readingFormat?: "automatic" | "html" | "plain";
@@ -575,7 +576,7 @@ describe("Mail conversation reader keep state", () => {
     const html = renderReader([], {
       workStatus: "waiting",
       canWrite: false,
-      tags: [{ id: "Tag001", name: "Offer", color: "#0f766e" }],
+      tags: [{ id: "Tag001", mailboxId: "Box001", name: "Offer", color: "#0f766e", revision: 1, createdAt: now, updatedAt: now }],
     });
     const chips = html.slice(html.indexOf("data-mail-reader-chips"));
     const ids = [...chips.matchAll(/data-mail-head-chip="([^"]+)"/g)].map((match) => match[1]);

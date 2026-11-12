@@ -136,10 +136,7 @@ describe("Mail attachment preview", () => {
       // Each tile's "…" saves that one attachment.
       expect(labels).toContain("Actions for Summer_party.md");
       const tileMenu = dom.root.querySelector('[data-mail-attachment="Att001"]')!;
-      expect([...tileMenu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual([
-        "Download",
-        "Save to…",
-      ]);
+      expect([...tileMenu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual(["Download", "Save to…"]);
       dom.root.querySelector<HTMLButtonElement>('button[aria-label="Save all to…"]')!.click();
       let dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog[open]");
       for (let attempt = 0; attempt < 100 && !dialog; attempt += 1) {

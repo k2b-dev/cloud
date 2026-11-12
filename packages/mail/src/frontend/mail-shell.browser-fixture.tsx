@@ -103,6 +103,28 @@ const traceFixture = (kind: string | null) => {
 };
 const summaryRule = { id: "Wf001", name: "Lange Mails zusammenfassen" };
 /** `?summary=` picks the summary state the reader shows; without it the conversation has a person's short text. */
+/** `notes=1`: an invented internal note before the message, and a deleted one. */
+const notesFixture = (conversationId: string): MailboxPageData["comments"] => {
+  const note = (id: string, minutes: number, body: string | null) => {
+    const at = new Date(Date.parse(MAIL_SHELL_NOW) - minutes * 60_000).toISOString();
+    return {
+      id,
+      conversationId,
+      body,
+      author: { kind: "user" as const, id: "user-2", displayName: "Nora Example", avatarHash: null },
+      referencedMessageId: null,
+      revision: 1,
+      canEdit: true,
+      canDelete: true,
+      editedAt: null,
+      deletedAt: body === null ? at : null,
+      createdAt: at,
+      updatedAt: at,
+    };
+  };
+  return [note("Note01", 20, "Invented note: the customer called, the offer goes out on Friday."), note("Note02", 10, null)];
+};
+
 /** `photos=N`: the message carries an invented programme PDF and N invented photos. */
 const photosFixture = (count: string | null): MessageDetail["attachments"] => {
   const photos = Number(count ?? 0);
@@ -689,8 +711,9 @@ export function mailboxData(url: URL): MailboxPageData {
       ? {
           conversationId: selectedConversationId,
           assignees: url.searchParams.has("team") && selectedConversationId === "Conv01" ? [teamUsers[1]!] : [],
-          // ?work=done opens a conversation that is already done.
-          workStatus: url.searchParams.get("work") === "done" ? "done" : "needs_action",
+          // ?work=done opens a conversation that is already done, ?work=waiting one that waits for a reply.
+          workStatus:
+            url.searchParams.get("work") === "done" ? "done" : url.searchParams.get("work") === "waiting" ? "waiting" : "needs_action",
           snoozedUntil: null,
           revision: 1,
         }
@@ -699,7 +722,7 @@ export function mailboxData(url: URL): MailboxPageData {
     conversationLocalTags: selectedConversationId
       ? { conversationId: selectedConversationId, conversationRevision: 1, tags: localTags.slice(0, 1) }
       : null,
-    comments: [],
+    comments: selectedConversationId && url.searchParams.get("notes") === "1" ? notesFixture(selectedConversationId) : [],
     commentsCursor: null,
     assignableUsers: url.searchParams.has("team") ? teamUsers : [],
     activity: [],
@@ -789,7 +812,6 @@ export default function MailShellFixture(props: {
   source: string;
   locale?: "en" | "de";
   theme: "light" | "dark";
-  workspaceCookieHeader?: string | null;
   /** `?notice=1` until the fixture server stored the person's click on "Got it". */
   focusNoticeOpen?: boolean;
 }) {

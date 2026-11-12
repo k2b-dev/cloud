@@ -378,6 +378,13 @@ export default function MailMessageCard(props: {
     );
 
   const [senderAnchor, setSenderAnchor] = createSignal<HTMLElement | null>(null);
+  let article!: HTMLElement;
+  /** The open head and the one-line row are different elements; the focus moves along from one to the other. */
+  const toggle = () => {
+    const focused = article.contains(document.activeElement);
+    props.actions.toggle(props.message.id);
+    if (focused) queueMicrotask(() => article.querySelector<HTMLElement>("[data-mail-message-header]")?.focus());
+  };
   const sender = () => props.message.from[0] ?? null;
   const senderName = () => (outgoing() ? messages().you : sender()?.name || sender()?.address || messages().unknownSender);
   const attachmentCount = () => listedAttachments().length;
@@ -398,6 +405,7 @@ export default function MailMessageCard(props: {
 
   return (
     <article
+      ref={article}
       class="mail-message group min-w-0 scroll-mt-3"
       data-mail-message-id={props.message.id}
       data-mail-direction={outgoing() ? "outgoing" : "incoming"}
@@ -409,13 +417,7 @@ export default function MailMessageCard(props: {
           when={props.expanded}
           fallback={
             // An older message is one line: who, the start of the text, its attachments and when. A click opens it.
-            <button
-              type="button"
-              class="mail-message-row"
-              aria-expanded="false"
-              data-mail-message-header
-              onClick={() => props.actions.toggle(props.message.id)}
-            >
+            <button type="button" class="mail-message-row" aria-expanded="false" data-mail-message-header onClick={toggle}>
               <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
               <span
                 class="mail-message-row-sender"
@@ -470,7 +472,7 @@ export default function MailMessageCard(props: {
               aria-expanded="true"
               aria-label={reader().collapseMessage}
               data-mail-message-header
-              onClick={() => props.actions.toggle(props.message.id)}
+              onClick={toggle}
             >
               {paperclip()}
               {date()}

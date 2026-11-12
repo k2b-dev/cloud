@@ -166,6 +166,8 @@ export default function MailSenderPopover(props: {
 
   const detail = () => {
     const current = match();
+    // A failed lookup replaces the contact rows; the address from the message still names who wrote.
+    if (contact.error()) return props.sender.address;
     if (!current) return undefined;
     return [current.companyName, current.jobTitle].filter(Boolean).join(" · ") || current.bookName;
   };
