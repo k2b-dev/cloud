@@ -253,6 +253,7 @@ describe("MailComposer signature choice", () => {
       else Reflect.deleteProperty(globalThis, key);
     }
     dom.cleanup();
+    setSystemTime();
   });
 
   const mount = async (
@@ -298,6 +299,34 @@ describe("MailComposer signature choice", () => {
     expect(option).toBeDefined();
     option!.click();
   };
+
+  test("an occupied seed offers the existing draft and keeps local text without saving over it", async () => {
+    setSystemTime(new Date(now));
+    const fixtureFetch = globalThis.fetch;
+    const writes: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        if (request.method === "PUT" || path.endsWith("/materialize")) writes.push(path);
+        if (path.endsWith("/materialize"))
+          return Response.json({ code: "DRAFT_REPLY_BOX_OCCUPIED", message: "Occupied", draftId: "Other1" }, { status: 409 });
+        return fixtureFetch(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await mount("en", initialDraft, undefined, initialSeed, () => Bun.sleep(0));
+    const editor = dom.root.querySelector<HTMLElement>(".cm-content")!;
+    const view = EditorView.findFromDOM(editor)!;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "Local recovery text" } });
+    await waitFor(() => Boolean(dom.root.querySelector('a[href*="Other1"]')));
+    const link = dom.root.querySelector<HTMLAnchorElement>('a[href*="Other1"]')!;
+    expect(link.textContent).toBe("Open existing reply draft");
+    expect(dom.root.textContent).toContain("Your text remains on this device");
+    expect(view.state.doc.toString()).toBe("Local recovery text");
+    expect(writes).toEqual(["/api/mail/mailboxes/Box001/draft-seeds/materialize"]);
+    expect(localStorage.getItem(`cloud:user:Usr001:mail:cloud:mail:draft:Box001:${initialSeed.id}`)).toContain("Local recovery text");
+  });
 
   test("the page composer distinguishes device storage from confirmed server storage during autosave", async () => {
     delegateEvents(["click", "input"]);
@@ -901,6 +930,7 @@ describe("MailComposer robustness", () => {
   let lease: Promise<void>;
   let leaves: string[];
   let opened: string[];
+  let hostControls: import("./MailComposer").MailInlineDraftControls | undefined;
 
   beforeEach(() => {
     dom = createDomTestHarness();
@@ -963,11 +993,13 @@ describe("MailComposer robustness", () => {
       else Reflect.deleteProperty(globalThis, key);
     }
     dom.cleanup();
+    setSystemTime();
   });
 
   const mount = async (
     options: {
       host?: boolean;
+      fresh?: boolean;
       popout?: boolean;
       draft?: MailDraft;
       seed?: MailDraftSeed;
@@ -996,10 +1028,12 @@ describe("MailComposer robustness", () => {
             host={
               options.host
                 ? {
-                    fresh: false,
+                    fresh: options.fresh ?? false,
                     fullscreen: () => false,
                     toggleFullscreen: () => undefined,
-                    register: () => undefined,
+                    register: (controls) => {
+                      hostControls = controls;
+                    },
                     messageLabel: () => null,
                     leave: (outcome) => leaves.push(outcome),
                     openDraft: (draftId) => opened.push(draftId),
@@ -1025,6 +1059,14 @@ describe("MailComposer robustness", () => {
   const sendShortcut = (target: Element) =>
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
   const sent = () => requests.some((request) => request.endsWith("/commands"));
+
+  test("saving an unchanged fresh draft before a mode switch preserves it", async () => {
+    await mount({ host: true, fresh: true });
+    expect(hostControls).toBeDefined();
+    await hostControls!.collapse({ preserveDraft: true });
+    expect(leaves).toEqual(["closed"]);
+    expect(requests.some((request) => request.endsWith("/discard"))).toBe(false);
+  });
 
   test.each(["bernd", "bernd@firma"])("unfinished recipient text %p blocks Send, stays, and takes the focus", async (typed) => {
     await mount({ host: true });

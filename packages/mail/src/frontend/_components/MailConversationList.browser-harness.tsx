@@ -9,7 +9,8 @@ import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
-import { MailSearchInput, MailSearchOptions, MailSearchTrigger } from "./MailWorkspaceSearch";
+import { MailSearchFilter } from "./MailWorkspaceHead";
+import { MailSearchInput } from "./MailWorkspaceSearch";
 import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
 import { createMailboxSearch } from "./mailbox-search";
@@ -37,8 +38,8 @@ export type MailListHarnessOptions = {
   deletedOnServer?: boolean;
   /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
   plainText?: string;
-  /** Draws the columns view (F2) of a shared or a personal mailbox. */
-  columns?: "shared" | "personal";
+  /** A shared mailbox: rows show who is responsible. */
+  shared?: boolean;
 };
 
 declare global {
@@ -55,6 +56,8 @@ declare global {
     setMailChecked: (ids: string[]) => void;
     mailItems: () => MailListItem[];
     mailNavigations: string[];
+    /** Row actions the list asked for, such as the star's flag, by conversation. */
+    mailItemActions: string[];
     folderHintDismissed: boolean;
   }
 }
@@ -80,14 +83,27 @@ function HarnessHead(props: { requestUrl: string; onOpenHref: (href: string, rep
   });
   return (
     <AppWorkspace.Head
-      views={search.opened() ? <MailSearchInput search={search} mailboxName="Example Club" /> : "Inbox"}
-      filters={search.opened() ? <MailSearchOptions search={search} count={0} /> : undefined}
-      actions={!search.opened() ? <MailSearchTrigger search={search} /> : undefined}
+      views={
+        <MailSearchInput search={search} mailboxName="Example Club">
+          <MailSearchFilter
+            requestUrl={props.requestUrl}
+            search={resolveMailSearchRoute(new URL(props.requestUrl, location.origin))}
+            folders={[]}
+            folderId={null}
+            localTags={[]}
+            quickSearch={search}
+            onOpenHref={(href) => props.onOpenHref(href)}
+            onEditSearch={(state, source) => search.edit(state, source)}
+            hint={{ open: false, onDismiss: () => {} }}
+          />
+        </MailSearchInput>
+      }
     />
   );
 }
 
 window.mailNavigations = [];
+window.mailItemActions = [];
 window.folderHintDismissed = false;
 
 const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unknown as Mailbox;
@@ -243,7 +259,7 @@ window.mountMailList = (options) => {
                 open
                 defaultSize={options.listSize ?? 430}
                 minSize={300}
-                // The workspace's wide columns list fills the main area; a listSize above the pane's 620 stands in for it.
+                // A listSize above the pane's 620 stands in for a wide list, as without an open conversation.
                 maxSize={Math.max(620, options.listSize ?? 0)}
               >
                 <MailConversationList
@@ -285,7 +301,6 @@ window.mountMailList = (options) => {
                   listMode="conversations"
                   loading={loading()}
                   liveDegraded={false}
-                  onCollapse={noop}
                   onOpenHealth={noop}
                   onOpenDeliverySettings={noop}
                   onNavigate={(nav) => {
@@ -300,13 +315,14 @@ window.mountMailList = (options) => {
                     history.pushState(null, "", href);
                     open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
-                  onToggleSelectionMode={noop}
                   onToggleSelection={noop}
                   onClearSelection={noop}
                   onAddTags={noop}
                   onAssign={noop}
                   onBulkAction={noop}
-                  onItemAction={noop}
+                  onItemAction={(item, actionId) => {
+                    window.mailItemActions.push(`${item.conversationId}:${actionId}`);
+                  }}
                   onManageTags={noop}
                   onRespondItem={noop}
                   onSetItemCompletion={noop}
@@ -316,14 +332,7 @@ window.mountMailList = (options) => {
                   onOpenHref={openHref}
                   onLoadMore={() => false}
                   onRefresh={async () => {}}
-                  columns={
-                    options.columns
-                      ? {
-                          shared: options.columns === "shared",
-                          assignees: (ids) => ids.map((id) => ({ id, name: id.replace("user-", "") })),
-                        }
-                      : undefined
-                  }
+                  assignees={options.shared ? (ids) => ids.map((id) => ({ id, name: id.replace("user-", "") })) : undefined}
                 />
               </AppWorkspace.MainPane>
               <div id="reader" class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]">
@@ -356,7 +365,6 @@ window.mountMailList = (options) => {
                     readingFormat="automatic"
                     theme="light"
                     calendarIntegrationAvailable={false}
-                    listAway={false}
                     detailsOpen={false}
                     toolbarActions={options.toolbarActions ?? ["reply"]}
                     onToggleDetails={noop}

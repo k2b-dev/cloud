@@ -85,6 +85,10 @@ describe("human adoption from retained shared draft edits", () => {
       expect(localizeMailError({ code: "DRAFT_SUGGESTION_CONFLICT", status: 409, message: "fallback" }, locale).message).toBe(
         draftAdoptionMessages.resolve([locale]).t.mergeConflict,
       );
+      const occupied = localizeMailError({ code: "DRAFT_REPLY_BOX_OCCUPIED", status: 409, draftId: "Draft1", message: "fallback" }, locale);
+      expect(occupied.message).toBe(draftAdoptionMessages.resolve([locale]).t.replyOccupied({ draftId: "Draft1" }));
+      expect(occupied.message).toContain("Draft1");
+      expect(occupied.status).toBe(409);
     }
   });
 });

@@ -8,10 +8,8 @@ import type { DraftFolderItem, DraftFolderPage, DraftLeaseErrorCode } from "../.
 import { MailApiError, readApiFailure } from "./api-response";
 import MailDraftRow from "./MailDraftRow";
 import { mailDraftHref } from "./mail-compose-route";
-import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { createRetryToasts } from "./mail-feedback";
-import { mailTimeColumnSamples, mailTimeColumnSizer } from "./mail-view-mode";
 
 /** An open composer holds the draft. The contracts module carries Zod, so the mailbox island imports only its types. */
 const LEASE_HELD = "DRAFT_LEASE_HELD" satisfies DraftLeaseErrorCode;
@@ -34,15 +32,12 @@ export default function MailDraftsView(props: {
   error: string | null;
   dateConfig: DateContext;
   loading: boolean;
-  /** The person's view: one line per draft in columns, as for conversations, or three-line rows. */
-  columns: boolean;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
   /** Reloads the folder after a delete. */
   onRefresh: () => Promise<void>;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
   const listHref = (cursor: string | null) => {
     const target = new URL(props.returnHref, "http://mail.local");
     if (cursor) target.searchParams.set("cursor", cursor);
@@ -56,9 +51,6 @@ export default function MailDraftsView(props: {
     target.searchParams.set("draft", item.id);
     return `${target.pathname}${target.search}`;
   };
-  const timeColumnSizer = createMemo(() =>
-    props.columns ? mailTimeColumnSizer(mailTimeColumnSamples(props.dateConfig, new Date())) : undefined,
-  );
 
   const [pendingId, setPendingId] = createSignal<string | null>(null);
   const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
@@ -152,11 +144,7 @@ export default function MailDraftsView(props: {
   };
 
   return (
-    <section
-      class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[var(--ui-surface)]"
-      style={{ "--mail-time-samples": timeColumnSizer() }}
-      aria-busy={props.loading}
-    >
+    <section class="mail-list-column flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[var(--ui-surface)]" aria-busy={props.loading}>
       <h1 ref={heading} tabIndex={-1} class="sr-only">
         {props.title}
       </h1>
@@ -165,7 +153,7 @@ export default function MailDraftsView(props: {
           {t().deletingDraft}
         </span>
       </Show>
-      <ScrollArea class="mail-columns-area flex-1 pb-2" inset>
+      <ScrollArea class="flex-1 pb-2" inset>
         <Show
           when={!props.error}
           fallback={<Placeholder state="error" variant="panel" title={t().draftsUnavailable} description={props.error!} />}
@@ -174,20 +162,8 @@ export default function MailDraftsView(props: {
             when={items().length > 0}
             fallback={<Placeholder icon="ti ti-file-pencil" variant="panel" title={t().noDrafts} description={t().noDraftsDescription} />}
           >
-            <Show when={props.columns}>
-              <div class="mail-columns-head mail-columns-personal" aria-hidden="true">
-                <span />
-                <span class="mail-columns-head-cells">
-                  <span>{t().columnTo}</span>
-                  <span>{listText().columnSubject}</span>
-                  <span class="mail-columns-head-participants">{t().columnStartedBy}</span>
-                  <span class="mail-columns-head-time">{listText().columnTime}</span>
-                </span>
-              </div>
-            </Show>
             <div
               class="flex flex-col gap-0.5"
-              classList={{ "mail-columns mail-columns-personal": props.columns }}
               ref={list}
               role="list"
               aria-label={t().draftListLabel({ title: props.title })}
@@ -198,7 +174,6 @@ export default function MailDraftsView(props: {
                   <MailDraftRow
                     item={item}
                     href={props.canWrite ? draftHref(item) : null}
-                    columns={props.columns}
                     dateConfig={props.dateConfig}
                     pending={pendingId() === item.id}
                     leaving={leaving().has(item.id)}

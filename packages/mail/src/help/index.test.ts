@@ -230,7 +230,7 @@ describe("mailHelp", () => {
 
     const expectedContent = new Map([
       ["mail-start", "Mail organizes email around **mailboxes**"],
-      ["mail-work", "Open the magnifier in the head or press `/` to **Search mailbox**"],
+      ["mail-work", "Type in the search field at the top of the mailbox, or press `/` to go to it"],
       ["mail-compose", "Your own tabs, separate compose windows, and devices share that reservation"],
       ["mail-collaboration", "Internal comments are visible to people who can read the mailbox"],
       ["mail-security", "Mail keeps uncertain signals quiet"],
@@ -461,8 +461,8 @@ describe("mailHelp", () => {
     const automation = mailHelp.getMarkdown("mail-automation");
     const work = mailHelp.getMarkdown("mail-work");
 
-    expect(start).toContain("**… → Choose list view** switches between conversations and individual messages");
-    expect(start).toContain("The menu also contains mailbox details, synchronization, health, automations");
+    expect(start).toContain("**…** with **Automations**, **Sync mailbox**, **Mailbox health**, and **Settings** first");
+    expect(start).toContain("the choice between conversations and individual messages follow");
     expect(start).not.toContain("- **Automations** for");
     expect(admin).toContain("Open **… → Automations**");
     expect(automation).toContain("Open **… → Automations**");

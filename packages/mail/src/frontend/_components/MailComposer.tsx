@@ -97,7 +97,7 @@ const intentIcon = (intent: DraftIntent): string =>
 
 /** What the host may start through the composer's own safe paths. */
 export type MailInlineDraftControls = {
-  collapse: () => Promise<void>;
+  collapse: (options?: { preserveDraft?: boolean }) => Promise<void>;
   /** The same Send as the draft's own button, with every review and guard. */
   send: () => void;
   /** Moves the caret back into the text, at its end. */
@@ -1455,9 +1455,9 @@ export default function MailComposer(props: {
     serializeMailDraftContent(content()) === initialSerializedContent &&
     (draft()?.attachments.length ?? 0) === 0 &&
     uploads().length === 0;
-  const collapse = async () => {
+  const collapse = async (options?: { preserveDraft?: boolean }) => {
     if (composerTransition.active() !== null) return;
-    if (untouched() && editable()) return void (await discardDraft(true));
+    if (!options?.preserveDraft && untouched() && editable()) return void (await discardDraft(true));
     await leaveComposer();
   };
   props.host?.register({
@@ -1916,7 +1916,24 @@ export default function MailComposer(props: {
             role="status"
           >
             <span class="min-w-0 flex-1">{collaborationStatus()}</span>
-            <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+            <Show when={draftSession.occupiedReplyDraftId()}>
+              {(id) => (
+                <ButtonLink
+                  variant="secondary"
+                  size="sm"
+                  href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
+                >
+                  {t().openExistingReplyDraft}
+                </ButtonLink>
+              )}
+            </Show>
+            <Show
+              when={
+                !draftSession.occupiedReplyDraftId() &&
+                !isShared() &&
+                (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
+              }
+            >
               <Button
                 variant="secondary"
                 size="sm"
@@ -2378,7 +2395,24 @@ export default function MailComposer(props: {
               {readonlyActionLabel()}
             </Button>
           </Show>
-          <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+          <Show when={draftSession.occupiedReplyDraftId()}>
+            {(id) => (
+              <ButtonLink
+                variant="secondary"
+                size="sm"
+                href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
+              >
+                {t().openExistingReplyDraft}
+              </ButtonLink>
+            )}
+          </Show>
+          <Show
+            when={
+              !draftSession.occupiedReplyDraftId() &&
+              !isShared() &&
+              (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
+            }
+          >
             <Button
               variant="secondary"
               size="sm"
@@ -2433,7 +2467,24 @@ export default function MailComposer(props: {
           <span class="min-w-0 flex-1" classList={{ "basis-full": status() === "error" }}>
             {collaborationStatus()}
           </span>
-          <Show when={!isShared() && (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))}>
+          <Show when={draftSession.occupiedReplyDraftId()}>
+            {(id) => (
+              <ButtonLink
+                variant="secondary"
+                size="sm"
+                href={mailDraftHref(props.mailboxId, id(), props.returnHref, { popout: props.popout })}
+              >
+                {t().openExistingReplyDraft}
+              </ButtonLink>
+            )}
+          </Show>
+          <Show
+            when={
+              !draftSession.occupiedReplyDraftId() &&
+              !isShared() &&
+              (status() === "error" || (draftSession.revisionConflict() && !draft()?.conversationId))
+            }
+          >
             <Button
               variant="secondary"
               size="sm"
