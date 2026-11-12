@@ -19,6 +19,8 @@ export type CodeDatabaseRequest = z.infer<typeof CodeDatabaseRequestSchema>;
 export const CODE_DATABASE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   code_db_unavailable: "The Code database service is unavailable. Ask an administrator to configure RSQL in Core settings.",
   code_db_busy: "A Code database is being initialized or deleted. Try again shortly.",
+  code_db_owner_full:
+    "This owner has reached the total reserved database capacity. Delete unused Code or ask an administrator to raise the owner limit.",
   code_db_full: "This Code has reached its database storage limit. Remove data or ask an administrator to raise the limit.",
   code_db_undeclared: "This version has no checked database evidence. Import db from @sdk and check and submit the Code again.",
   code_db_invalid: "Use a database statement with bound scalar parameters, or a nonempty atomic batch.",

@@ -16,6 +16,7 @@ const structured: Readonly<Record<string, { file: string; command: string }>> = 
     "core.code.calls_per_second",
     "core.code.wall_clock_ms",
     "core.code.database_bytes",
+    "core.code.database_owner_bytes",
     "core.code.rsql_url",
     "core.code.rsql_api_token",
     "core.code.rsql_allowed_targets",

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
+import { codeAuthoringContracts } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 
 const tools = createCodeAuthoringChatTools();
@@ -53,4 +54,60 @@ test("stable read/write/check names accept lasting Code and reject Studio overlo
     ["code_write", { project, path: "../escape.ts", content: "invalid" }],
   ] as const)
     expect(schema(name).safeParse(input).success).toBe(false);
+});
+
+test("draft writes accept one target and one edit in a provider object schema", () => {
+  const base = { codeId: "c_1234", path: "code.ts" };
+  for (const edit of [{ content: "" }, { delete: true }, { renameTo: "lib.ts" }])
+    expect(schema("code_write").safeParse({ ...base, ...edit }).success).toBe(true);
+  for (const input of [
+    { ...base },
+    { ...base, delete: false },
+    { ...base, content: "", delete: true },
+    { ...base, content: "", renameTo: "lib.ts" },
+    { ...base, delete: true, renameTo: "lib.ts" },
+    { ...base, content: "", project },
+    { path: "code.ts", content: "" },
+    { project, path: "code.ts", delete: true },
+    { project, path: "code.ts", renameTo: "lib.ts" },
+    { ...base, renameTo: "../escape.ts" },
+  ])
+    expect(schema("code_write").safeParse(input).success).toBe(false);
+});
+
+test("chat commands can consume the draft while shared HTTP/CLI contracts still require files", () => {
+  for (const name of ["code_check", "code_test", "code_submit"]) {
+    const parsed = schema(name).parse({ codeId: "c_1234" });
+    expect(parsed).not.toHaveProperty("entry");
+  }
+  for (const command of ["check", "test", "submit", "simulate"] as const)
+    expect(codeAuthoringContracts[command].input.safeParse({ codeId: "c_1234" }).success).toBe(false);
+  const fixture = { version: 1, name: "Monday", now: 1793448000000, seed: 42, mocks: [], runs: [{ entrypoint: "monday" }] };
+  expect(schema("code_simulate").safeParse({ codeId: "c_1234", fixture }).success).toBe(true);
+  for (const name of ["code_check", "code_test", "code_submit", "code_simulate"])
+    expect(
+      schema(name).safeParse({
+        codeId: "c_1234",
+        files: project.files,
+        entry: "other.ts",
+        ...(name === "code_simulate" ? { fixture } : {}),
+      }).success,
+    ).toBe(true);
+});
+
+test("a passing chat check leaves the checked bundle on the server; its hash stays in the manifest", () => {
+  const check = tools.find((tool) => tool.def.name === "code_check");
+  if (!check) throw new Error("Missing tool code_check");
+  const hash = "a".repeat(64);
+  const manifest = {
+    version: 1,
+    permissions: [],
+    ai: false,
+    entrypoints: [{ kind: "schedule", entrypoint: "monday", cron: "0 8 * * 1", file: "code.ts", line: 1 }],
+    hashes: { source: hash, sdk: hash, bundle: hash },
+  };
+  const result = { ok: true, diagnostics: [], manifest, permissions: [] };
+  const answer = (value: object) => ({ version: 1, result: value, manifest: null, permissions: [] });
+  expect(check.def.outputSchema.safeParse(answer(result)).success).toBe(true);
+  expect(check.def.outputSchema.safeParse(answer({ ...result, bundle: "export {}" })).success).toBe(false);
 });

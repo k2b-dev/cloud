@@ -13,6 +13,7 @@ import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences"
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityTable } from "./capability-result";
 import { CapabilityTablePreview } from "./capability-table";
+import { CodeStepBody, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -913,8 +914,8 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
         tone={failed() ? "danger" : "neutral"}
         busy={props.busy && props.block.status === "running"}
         bodyInset={false}
-        renderBody={() => (
-          <div class="flex min-w-0 flex-col gap-2">
+        renderBody={() => {
+          const inputOutput = () => (
             <div
               class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
               tabIndex={0}
@@ -924,12 +925,19 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
               <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
               <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
             </div>
-            {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
-            <Show when={image()}>
-              {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}
-            </Show>
-          </div>
-        )}
+          );
+          return (
+            <div class="flex min-w-0 flex-col gap-2">
+              <Show when={hasCodeStepView(props.block.name)} fallback={inputOutput()}>
+                <CodeStepBody block={props.block} raw={inputOutput} />
+              </Show>
+              {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
+              <Show when={image()}>
+                {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}
+              </Show>
+            </div>
+          );
+        }}
       />
       {/* Each request a website approval let through is a step of its own, with its full URL. */}
       <Show when={websiteReceipts(props.block).length > 0}>

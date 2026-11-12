@@ -715,7 +715,21 @@
 .assistant-code-version__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 0.375rem;
+}
+/*
+ * Progress and the result of switching on, in one slot after the actions. It is always there, one line high, so its
+ * text never pushes the buttons; where the row is too narrow it takes its own line below them.
+ */
+.assistant-code-version__status {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: 1lh;
+  /* Its first line sits level with a small button; more lines grow downward and never move the buttons. */
+  padding-block-start: calc((1.75rem - 1lh) / 2);
+  padding-inline-start: 0.25rem;
+  font-size: 0.78125rem;
 }
 .assistant-code-version__line {
   display: flex;
