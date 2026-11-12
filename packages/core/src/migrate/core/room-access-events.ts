@@ -7,6 +7,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   const idleSeconds = await sharedWorkstationIdleSeconds();
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.room-access.migrate', 0))`;
+    // Keep deadline replacement indexed without giving the generic outbox busy-key
+    // probe a full-key index that scans an entire hot-key backlog.
+    await tx`CREATE INDEX IF NOT EXISTS idx_room_access_deadline_key ON events.outbox (app_id, kind, ordering_key)
+      WHERE ordering_key LIKE 'identity.deadline.%'`.simple();
     await tx`CREATE OR REPLACE FUNCTION auth.publish_room_identity(subject jsonb) RETURNS void LANGUAGE plpgsql AS $$
       DECLARE key text := 'identity.access:' || COALESCE(subject->>'sid', subject->>'userId', subject->>'serviceAccountId', '*');
       BEGIN
@@ -91,11 +95,11 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
           IF TG_OP <> 'DELETE' AND NEW.revoked_at IS NULL THEN deadline := NEW.expires_at; END IF;
           event_key := 'identity.deadline.session:' || COALESCE(NEW.sid, OLD.sid)::text;
           IF TG_OP = 'DELETE' OR NEW.revoked_at IS NOT NULL THEN
-            DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live'
+            DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key LIKE 'identity.deadline.%'
               AND ordering_key = 'identity.deadline.idle:' || COALESCE(NEW.sid, OLD.sid)::text;
           END IF;
         END IF;
-        DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key = event_key;
+        DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key LIKE 'identity.deadline.%' AND ordering_key = event_key;
         IF deadline IS NOT NULL THEN
           event_id := gen_random_uuid();
           PERFORM events.enqueue(event_id, 'core', 'live', event_key,
@@ -122,7 +126,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     }
     await tx`CREATE OR REPLACE FUNCTION auth.reschedule_room_idle_deadlines(timeout_seconds integer) RETURNS void LANGUAGE plpgsql AS $$
       BEGIN
-        DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key LIKE 'identity.deadline.idle:%';
+        DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key LIKE 'identity.deadline.%' AND ordering_key LIKE 'identity.deadline.idle:%';
         INSERT INTO events.outbox(id, app_id, kind, ordering_key, payload, attempts, next_attempt_at)
           SELECT gen_random_uuid(), 'core', 'live', 'identity.deadline.idle:' || sid::text,
             jsonb_build_object('v', 1, 'k', 'identity.access', 'd', jsonb_build_object('type', 'identity.access.changed', 'userId', user_id, 'sid', sid)),

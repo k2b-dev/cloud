@@ -96,7 +96,7 @@ export const subscribeAppAccessChanged = (appId: string, changed: () => void, su
 export const scheduleSessionIdleAccessChanged = async (tx: SQL, sid: string, timeoutSeconds: number): Promise<void> => {
   const key = `identity.deadline.idle:${sid}`;
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
-  await tx`DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key = ${key}`;
+  await tx`DELETE FROM events.outbox WHERE app_id = 'core' AND kind = 'live' AND ordering_key LIKE 'identity.deadline.%' AND ordering_key = ${key}`;
   // Derive the absolute deadline from the family, not a remaining duration read
   // earlier by authentication: a delayed request must not extend the idle limit.
   const [family] = await tx<

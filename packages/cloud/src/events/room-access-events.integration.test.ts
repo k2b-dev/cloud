@@ -5,7 +5,8 @@ import { migrate as auth } from "../../../core/src/migrate/core/auth";
 import { migrate as events } from "../../../core/src/migrate/core/events";
 import { migrate } from "../../../core/src/migrate/core/room-access-events";
 import { migrate as settings } from "../../../core/src/migrate/core/settings";
-import { resetChangedSettings } from "../services/settings/store";
+import { sharedWorkstationIdleSeconds } from "../services/session/shared-workstation";
+import { lockSettingChanges, resetChangedSettings, writeKey } from "../services/settings/store";
 import { scheduleSessionIdleAccessChanged } from "./app-access";
 import { liveOutbox } from "./live-delivery";
 
@@ -222,6 +223,34 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
     expect(rows).toHaveLength(1);
     expect(rows[0]!.anchored).toBe(true);
     expect(rows[0]!.payload.d).toMatchObject({ userId: user, sid });
+  });
+  test("input racing a policy change schedules from the committed policy", async () => {
+    await clear();
+    const key = "user.session.shared_workstation_idle_minutes";
+    const policyLocked = Promise.withResolvers<void>();
+    const releasePolicy = Promise.withResolvers<void>();
+    const writer = sql.begin(async (tx) => {
+      await lockSettingChanges(tx, key);
+      policyLocked.resolve();
+      await releasePolicy.promise;
+      await writeKey(key, 20, tx, { replaceUnreadable: true });
+    });
+    await policyLocked.promise;
+    const inputStarted = Promise.withResolvers<void>();
+    const input = sql.begin(async (tx) => {
+      inputStarted.resolve();
+      const timeoutSeconds = await sharedWorkstationIdleSeconds(tx);
+      await tx`UPDATE auth.session_families SET last_input_at = clock_timestamp() WHERE sid = ${sid}::uuid`;
+      await scheduleSessionIdleAccessChanged(tx, sid, timeoutSeconds);
+      return timeoutSeconds;
+    });
+    await inputStarted.promise;
+    releasePolicy.resolve();
+    await writer;
+    expect(await input).toBe(1_200);
+    const [row] = await sql<{ anchored: boolean }[]>`SELECT o.next_attempt_at = sf.last_input_at + interval '20 minutes' AS anchored
+      FROM events.outbox o JOIN auth.session_families sf ON o.ordering_key = 'identity.deadline.idle:' || sf.sid::text WHERE sf.sid = ${sid}::uuid`;
+    expect(row?.anchored).toBe(true);
   });
   test("concurrent input updates retain one idle deadline; deleting a family cancels it", async () => {
     await clear();

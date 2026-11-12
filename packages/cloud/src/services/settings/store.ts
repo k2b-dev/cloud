@@ -265,7 +265,11 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
 
 /** Serialize a setting and every value it discards, including missing rows. */
 export const lockSettingChanges = async (tx: SqlClient, key: string): Promise<void> => {
-  const owners = SETTINGS.filter((def) => def.resetOnChange?.length && (def.key === key || def.resetOnChange.includes(key)));
+  const owners = SETTINGS.filter(
+    (def) =>
+      (def.key === key && key === "user.session.shared_workstation_idle_minutes") ||
+      (def.resetOnChange?.length && (def.key === key || def.resetOnChange.includes(key))),
+  );
   for (const owner of owners.sort((a, b) => a.key.localeCompare(b.key)))
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`settings.change:${owner.key}`}, 0))`;
 };
