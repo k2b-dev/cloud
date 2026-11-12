@@ -27,6 +27,8 @@ number of open Code-version approvals for the signed-in Cloud administrator.
 | Operations › Limits | Registered Code execution and storage settings | [Code policy operations](/en/docs/operations/code-policy) |
 | Operations › Runners | Instances, free slots, queue length, longest wait | [Code runner](/en/docs/operations/code-runner) |
 
+Guests cannot create Code or submit versions; authoring requires a Cloud member with the usual owner or editor rights.
+
 ## Approve or reject a version
 
 A version lands under **Approvals** when one of its classifications resolves

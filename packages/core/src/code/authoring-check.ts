@@ -2,17 +2,17 @@ import { listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
 import { CODE_CHECK_LIMITS, type CodeCheckRequest, type CodeSdkOptions, generateCodeSdk } from "@k2b/cloud/code";
 import type { CapabilityManifest, CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
-import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
+import { type CodeContext, CodeDataError, requireCodePermission } from "./access";
 import { isCodeAiOperation } from "./policy-contracts";
 import { createRunnerCodeCheckHost } from "./runner-jobs";
-import { readCode } from "./store";
+import { codeAuthor, readCode } from "./store";
 
 /** The live catalog under this caller's authority and the SDK mode of this Code; editor rights required. */
 export async function loadCodeSdkCatalog(
   codeId: string,
   context: CodeContext,
 ): Promise<{ manifests: CapabilityManifest[]; options: CodeSdkOptions }> {
-  codePerson(context, true);
+  codeAuthor(context);
   const { code } = await readCode(codeId, context);
   await requireCodePermission(code, context, true);
   const manifests: CapabilityManifest[] = [];

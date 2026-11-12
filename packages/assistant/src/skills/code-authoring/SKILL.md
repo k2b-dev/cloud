@@ -12,6 +12,8 @@ above through `load_tools` if they are missing. Their JSON results are the
 same contracts as `cld code`; keep them intact. Cloud shows Code under the
 name **feat/code**: a person who says feat/code means Code.
 
+Guests cannot create Code or submit versions; if a guest asks, kindly explain that Code authoring is available to Cloud members and suggest asking a member for help.
+
 ## Workflow
 
 1. **Choose the owner.** Omit `owner` in `code_init({title})` for personal Code:
