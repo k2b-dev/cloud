@@ -32,8 +32,8 @@ const mailNotifications = createMailNotificationService(app.notifications);
 const stopMailRuntimes = (): Promise<void> =>
   stopRuntimeResources([
     stopMailDraftConnections,
-    stopDraftDocumentSnapshots,
     stopDraftDocumentLogPolicy,
+    stopDraftDocumentSnapshots,
     stopDraftDocumentPruning,
     stopConversationViewCountCache,
     () => stopConversationSummaryRuntime(),
@@ -88,7 +88,7 @@ const result = await app.start({
 });
 // After startup: the platform has provisioned every resource declared so far,
 // so a draft log it cannot prepare leaves only shared drafts unsupported.
-startDraftDocumentLogPolicy();
+startDraftDocumentLogPolicy((signal) => draftDocumentSnapshots.reconcile({ signal }));
 export default { ...result, websocket };
 
 export type { ApiType } from "./api";

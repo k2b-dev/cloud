@@ -425,13 +425,23 @@ Hydration preserves original bases and waits for replay before resending.
 Keep incompatible stored input available for recovery outside the new editor.
 
 `onUnsentChange` and `hasUnsentChanges()` describe transport acknowledgements.
-An echo does not prove that a database snapshot covers local input. Do not
-delete durable local storage on echo or overwrite its original base with a
-newer replay cursor. `onSnapshot({ docId, generation, state, cursor })` reports
+An echo does not prove that a database snapshot covers local input. Keep
+device input until the application's declared durable store covers its exact
+bytes; do not overwrite its original base with a newer replay cursor.
+`onSnapshot({ docId, generation, state, cursor })` reports
 only validated server snapshot bytes, excluding unsnapshotted local edits.
 Compare those bytes with stored input before clearing covered storage. The
 provider does not read or delete IndexedDB records. Storage callbacks own
 visible error reporting and recovery if persistence fails.
+
+An application may treat the retained log as its durable store only when it
+rejects new input at capacity and retains accepted events until committed
+snapshot coverage. Its transport must emit acknowledgements only after the
+JetStream publish acknowledgement. In that case, validated retained updates
+covering all pending input can establish durability before SQL persistence.
+This stronger transport contract is application-owned; an arbitrary echo or
+replay-ready message does not provide it. The standard browser document
+wrapper continues to use snapshot receipts.
 
 ## Snapshots
 
@@ -723,8 +733,8 @@ substitute a newly read server head for the base of older offline input. An
 unknown base remains null and requires conservative history validation. `session.acknowledgeSnapshot({ identity, state, durability:
 "durable" })` removes stored input only when the supplied snapshot covers
 all its structs and deletions. The application must establish that these
-exact bytes were committed to its durable store; a socket echo or completed
-replay does not establish durability.
+exact bytes were committed to its declared durable store; a socket echo or
+completed replay alone does not establish durability.
 
 Observe `session.signal` and expose storage failures with retry and a way to
 copy pending text. Call `close()` on disposal. `forget()` explicitly removes
@@ -807,7 +817,7 @@ installed Sync topic can still expire or evict uncovered updates.
 ## Connect a collaboration room
 
 `createSharedTextRoom({ protocol, adapter, log, awarenessTopic, snapshots,
-logger?, maxLength?, validateState? })` owns join, catch-up, live delivery,
+logger?, maxLength?, validateState?, deliveryBudget? })` owns join, catch-up, live delivery,
 trusted awareness, resync and snapshot queueing. Import it and
 `createSharedTextRoomContext` from `@k2b/cloud/shared-text`. Create one room
 per document kind, then one context and connection per socket:
@@ -816,6 +826,7 @@ per document kind, then one context and connection per socket:
 const context = createSharedTextRoomContext(socket, credential, messages);
 const connection = room.connect(context);
 // Forward each text frame to connection.receive(frame).
+// connection.settled() waits for frames already queued, for ingress accounting.
 // Await connection.close() when the socket ends; await room.drain() on shutdown.
 ```
 
@@ -878,7 +889,8 @@ transactional outbox for these sources:
 Notebooks supplies its existing `workspace.invalidated`, `note.updated` and
 `note.deleted` events for grants, locks, restores, moves and deletion. Mail's
 existing live topic carries access hints for mailbox grants, assigned-only
-grants, conversation assignments and mailbox soft or hard deletion; changes
+grants, conversation assignments and moves, mailbox soft or hard deletion,
+draft lifecycle/generation changes, sender changes and template changes; changes
 to the referenced grant also produce Core's identity invalidation. Mail's
 current schema has no separate restricted-member relation or persistent
 mailbox lock: an application adding either must publish the same access hint.
@@ -896,12 +908,20 @@ latest waiting state without overtaking edits. Sync delivery flushes after
 are limited to 256,000 characters; sync frames use the declared protocol
 limit plus 1,000 characters of framing. Applications supply their document
 length/validation budget and the retained log and awareness topic budgets.
+An optional process-wide `deliveryBudget` supplies `claim(bytes)` and
+`release(bytes)` for queued outbound batches. A failed claim closes the
+connection with backpressure; every claimed batch releases its reservation
+after delivery or cancellation.
 
 Backpressure closes with 1013; gaps and cursor mismatches request resync and
 close with 1012. Transient stream/storage failures also use 1012, internal
 errors use 1011, and access failures use 1008. Error codes remain stable;
 applications supply localized messages. Dirty documents queue a snapshot every
-8 seconds and on leave/shutdown, using the existing ordered snapshot pipeline.
+8 seconds by default and on leave/shutdown, using the existing ordered snapshot pipeline.
+An application can supply synchronous, SQL-free
+`snapshots.markDirty({ docId, targetCursor })` to own its debounce instead;
+`snapshots.queue` still runs on leave. Mail uses three seconds of quiet with
+a thirty-second maximum delay.
 A failed final enqueue makes drain retry instead of discarding accepted work.
 
 ### Scale and flush before a durable action
@@ -912,6 +932,12 @@ Any pod can accept a reconnect. Snapshot jobs retain their existing partitioned
 ordering; synchronous flush and background writers additionally share one
 per-document distributed lease. Stores must still fence generation and
 non-newer cursors atomically, including during rolling upgrades.
+Each connection advances its disposable authorized replay base as retained
+updates arrive, so pruning covered history does not require SQL on delivery.
+Generation changes require a fresh editor. A known tenant-head conflict
+revalidates the same Yjs input for at most thirty seconds; an unknown publish
+outcome is never blindly retried. `StoreFullError` produces
+`STORAGE_EXHAUSTED`, preserving rejected input for retry.
 
 Call the snapshot pipeline's `flushNow(docId, { signal?, restoreRevision?,
 targetCursor? })` before an action that needs committed text. It captures the

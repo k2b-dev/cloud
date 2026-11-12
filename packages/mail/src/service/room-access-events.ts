@@ -5,9 +5,10 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
   await tx`CREATE OR REPLACE FUNCTION mail.enqueue_room_access_changed() RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE target uuid;
     BEGIN
-      target := COALESCE(NEW.mailbox_id, OLD.mailbox_id);
-      PERFORM events.enqueue(gen_random_uuid(), 'mail', 'live', target::text,
-        jsonb_build_object('v', 1, 'k', target::text, 'a', true), 'room.access:' || target::text);
+      FOR target IN SELECT DISTINCT value FROM unnest(ARRAY[NEW.mailbox_id, OLD.mailbox_id]) value WHERE value IS NOT NULL LOOP
+        PERFORM events.enqueue(gen_random_uuid(), 'mail', 'live', target::text,
+          jsonb_build_object('v', 1, 'k', target::text, 'a', true), 'room.access:' || target::text);
+      END LOOP;
       RETURN NULL;
     END $$`.simple();
   for (const table of ["mailbox_access", "mailbox_assigned_access"]) {
@@ -17,15 +18,18 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
   await tx`CREATE OR REPLACE FUNCTION mail.enqueue_assignee_room_access_changed() RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE target uuid;
     BEGIN
-      SELECT mailbox_id INTO target FROM mail.conversations WHERE id = COALESCE(NEW.conversation_id, OLD.conversation_id);
-      IF target IS NOT NULL THEN
+      FOR target IN SELECT DISTINCT mailbox_id FROM mail.conversations WHERE id IN (NEW.conversation_id, OLD.conversation_id) LOOP
         PERFORM events.enqueue(gen_random_uuid(), 'mail', 'live', target::text,
           jsonb_build_object('v', 1, 'k', target::text, 'a', true), 'room.access:' || target::text);
-      END IF;
+      END LOOP;
       RETURN NULL;
     END $$`.simple();
   await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER INSERT OR UPDATE OR DELETE ON mail.conversation_assignees
     FOR EACH ROW EXECUTE FUNCTION mail.enqueue_assignee_room_access_changed()`.simple();
+  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF conversation_id, message_id OR DELETE ON mail.conversation_messages
+    FOR EACH ROW EXECUTE FUNCTION mail.enqueue_assignee_room_access_changed()`.simple();
+  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF mailbox_id OR DELETE ON mail.conversations
+    FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
   await tx`CREATE OR REPLACE FUNCTION mail.enqueue_mailbox_room_access_changed() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
       PERFORM events.enqueue(gen_random_uuid(), 'mail', 'live', COALESCE(NEW.id, OLD.id)::text,
@@ -34,7 +38,8 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
     END $$`.simple();
   await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF deleted_at, sync_enabled OR DELETE ON mail.mailboxes
     FOR EACH ROW EXECUTE FUNCTION mail.enqueue_mailbox_room_access_changed()`.simple();
-  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF state, edit_mode, doc_generation, doc_frozen_cursor, doc_history_complete OR DELETE ON mail.drafts
+  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF state, edit_mode, doc_generation, doc_frozen_cursor, doc_history_complete,
+    conversation_id, source_message_id, derived_from_message_id, mailbox_id OR DELETE ON mail.drafts
     FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
   await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OR DELETE ON mail.sender_identities
     FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();

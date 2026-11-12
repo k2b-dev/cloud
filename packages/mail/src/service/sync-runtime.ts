@@ -4132,7 +4132,6 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       },
     });
     mailSchedulerWorker = await mailScheduler().process();
-    await draftDocumentSnapshots.reconcile();
     await submitDueWork();
   },
   stop: async () => {

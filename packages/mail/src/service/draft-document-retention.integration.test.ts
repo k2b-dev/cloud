@@ -22,7 +22,12 @@ import {
   replayDraftDocument,
   withDraftDocumentCommit,
 } from "./draft-document-log";
-import { migrateDraftDocumentLogPolicy, sharedDraftsSupported } from "./draft-document-log-policy";
+import {
+  migrateDraftDocumentLogPolicy,
+  sharedDraftsSupported,
+  startDraftDocumentLogPolicy,
+  stopDraftDocumentLogPolicy,
+} from "./draft-document-log-policy";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
 import { applyDraftTableAction } from "./draft-table-actions";
 import { persistDraftDocument, restoreDraftRecoveryCopy, updateDraft } from "./drafts";
@@ -566,17 +571,41 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     expect(outbox?.draft_snapshot.body).toBe("Exact after restart");
     await retire(target, idle);
   });
+  test("startup snapshot recovery follows log preparation and shutdown cancels it", async () => {
+    const prepared = Promise.withResolvers<AbortSignal>();
+    startDraftDocumentLogPolicy(async (signal) => {
+      expect(await sharedDraftsSupported()).toBe(true);
+      prepared.resolve(signal);
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    });
+    try {
+      const signal = await prepared.promise;
+      expect(signal.aborted).toBe(false);
+      await stopDraftDocumentLogPolicy();
+      expect(signal.aborted).toBe(true);
+    } finally {
+      await stopDraftDocumentLogPolicy();
+    }
+  });
+
   test("a log the platform cannot prepare leaves shared drafts unsupported", async () => {
     await drainDraftDocumentPruning();
     const original = mailDraftDocumentLog.topic;
     // A fresh process sees drift the platform does not change (sync-budget tests cover the broker side).
     const drifted = spyOn(mailDraftDocumentLog, "topic").mockImplementation(() => ({
       ...original(),
-      ready: () => Promise.reject(new ResourceDriftError(stream, [{ field: "max_msgs", declared: -1, actual: 2_000_000_000 }])),
+      ready: () =>
+        Promise.reject(new ResourceDriftError(mailDraftDocumentLog.id, [{ field: "max_msgs", declared: -1, actual: 2_000_000_000 }])),
     }));
     try {
       expect(await migrateDraftDocumentLogPolicy()).toBe(false);
       expect(await sharedDraftsSupported()).toBe(false);
+      let reconciled = false;
+      startDraftDocumentLogPolicy(async () => {
+        reconciled = true;
+      });
+      await stopDraftDocumentLogPolicy();
+      expect(reconciled).toBe(false);
     } finally {
       drifted.mockRestore();
       expect(await migrateDraftDocumentLogPolicy()).toBe(true);

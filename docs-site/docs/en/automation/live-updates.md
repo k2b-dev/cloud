@@ -111,6 +111,15 @@ keys in the same transaction.
 `publish()` writes the access change as a row of its own before the data, so
 data above 32 KiB, which becomes a resync, does not lose it.
 
+Other server transports can follow the same hints with
+`inventoryLive.accessChanges({ after, signal })`. Capture `after` with
+`cursor()` before authorizing the connection, then subscribe from it. The
+iterator yields `{ key, cursor }` for access changes only; hints require a
+fresh permission check and never grant access. Abort `signal` on disconnect.
+Replicas share their existing process hub, so this adds no per-socket broker
+follower. A failed iterator must close the affected transport rather than
+leave its cached authorization active. See [Collaboration rooms](/en/docs/data/shared-text-documents#connect-a-collaboration-room).
+
 ### Write from a database trigger
 
 A trigger writes an update with Core's `events.enqueue()`, in the transaction

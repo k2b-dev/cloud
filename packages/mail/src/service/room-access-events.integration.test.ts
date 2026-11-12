@@ -16,6 +16,10 @@ suiteFor("database", "nats")("Mail room access invalidations", () => {
     "draft sent",
     "draft discarded",
     "draft retired",
+    "draft conversation changed",
+    "conversation deletion",
+    "message moved",
+    "message unlinked",
     "sender changed",
     "template changed",
   ])
@@ -30,6 +34,14 @@ suiteFor("database", "nats")("Mail room access invalidations", () => {
           await tx`INSERT INTO auth.access(id, user_id, permission) VALUES (${access}::uuid, ${user}::uuid, 'write')`;
           await tx`INSERT INTO mail.mailboxes(id, short_id, name) VALUES (${mailbox}::uuid, ${testShortId()}, 'Room source')`;
           await tx`INSERT INTO mail.conversations(id, short_id, mailbox_id, latest_message_at) VALUES (${conversation}::uuid, ${testShortId()}, ${mailbox}::uuid, '2026-11-12T12:00:00Z')`;
+          const targetConversation = crypto.randomUUID(),
+            message = crypto.randomUUID();
+          await tx`INSERT INTO mail.conversations(id, short_id, mailbox_id, latest_message_at) VALUES (${targetConversation}::uuid, ${testShortId()}, ${mailbox}::uuid, '2026-11-12T12:00:00Z')`;
+          if (source.startsWith("message") || source === "draft conversation changed") {
+            await tx`INSERT INTO mail.message_contents(id, short_id, mailbox_id, message_id, internal_date, size_bytes, content_hash, hydration_status)
+              VALUES (${message}::uuid, ${testShortId()}, ${mailbox}::uuid, ${`<${message}@example.test>`}, '2026-11-12T12:00:00Z', 1, ${"a".repeat(64)}, 'complete')`;
+            await tx`INSERT INTO mail.conversation_messages(conversation_id, message_id, position) VALUES (${conversation}::uuid, ${message}::uuid, 0)`;
+          }
           const sender = crypto.randomUUID(),
             draft = crypto.randomUUID(),
             template = crypto.randomUUID();
@@ -52,6 +64,13 @@ suiteFor("database", "nats")("Mail room access invalidations", () => {
           if (source === "draft sent") await tx`UPDATE mail.drafts SET state = 'sent' WHERE id = ${draft}::uuid`;
           if (source === "draft discarded") await tx`UPDATE mail.drafts SET state = 'discarded' WHERE id = ${draft}::uuid`;
           if (source === "draft retired") await tx`UPDATE mail.drafts SET doc_generation = doc_generation + 1 WHERE id = ${draft}::uuid`;
+          if (source === "draft conversation changed")
+            await tx`UPDATE mail.drafts SET intent = 'reply', source_message_id = ${message}::uuid,
+              conversation_id = ${targetConversation}::uuid WHERE id = ${draft}::uuid`;
+          if (source === "conversation deletion") await tx`DELETE FROM mail.conversations WHERE id = ${conversation}::uuid`;
+          if (source === "message moved")
+            await tx`UPDATE mail.conversation_messages SET conversation_id = ${targetConversation}::uuid WHERE message_id = ${message}::uuid`;
+          if (source === "message unlinked") await tx`DELETE FROM mail.conversation_messages WHERE message_id = ${message}::uuid`;
           if (source === "sender changed") await tx`UPDATE mail.sender_identities SET status = 'unverified' WHERE id = ${sender}::uuid`;
           if (source === "template changed") await tx`UPDATE mail.compose_templates SET archived_at = now() WHERE id = ${template}::uuid`;
           const hints = () =>

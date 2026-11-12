@@ -19,9 +19,6 @@ import { type MailDraftDocumentMessage, mailDraftDocumentMessageSchema } from ".
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
-import { createActorCommand } from "../service/commands";
-import { reviewDraftComposeSafety } from "../service/compose-safety";
-import { pruneDraftDocumentLog } from "../service/draft-document-log";
 import {
   draftDocumentSnapshotStore,
   draftDocumentSnapshots,
@@ -29,13 +26,7 @@ import {
   stopDraftDocumentSnapshots,
 } from "../service/draft-document-snapshots";
 import * as draftDocumentService from "../service/draft-documents";
-import {
-  acceptDraftDocumentUpdate,
-  lockDraftDocumentInTransaction,
-  mailDraftDocumentLog,
-  readDraftDocument,
-} from "../service/draft-documents";
-import { recoverDraftDocumentRest } from "../service/drafts";
+import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
 import { mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
@@ -317,6 +308,58 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       ON CONFLICT DO NOTHING`;
     mailLive.wake();
   });
+
+  for (const change of ["assignment removed", "draft moved"])
+    test(`assigned-only editor joins its conversation and closes when ${change}`, async () => {
+      await draft();
+      if (!activeSession || otherContext.actor.kind !== "user") throw new Error("Second session fixture missing");
+      const previous = activeSession;
+      const other = otherContext.actor.user;
+      const [grant] = await sql<{ access_id: string }[]>`DELETE FROM mail.mailbox_access
+        WHERE mailbox_id = ${mailboxId}::uuid AND access_id IN (SELECT id FROM auth.access WHERE user_id = ${other.id}::uuid)
+        RETURNING access_id`;
+      if (!grant) throw new Error("Missing fixture grant");
+      const conversation = crypto.randomUUID(),
+        targetConversation = crypto.randomUUID(),
+        source = crypto.randomUUID();
+      try {
+        await sql`INSERT INTO mail.mailbox_assigned_access(mailbox_id, access_id) VALUES (${mailboxId}::uuid, ${grant.access_id}::uuid)`;
+        await sql`INSERT INTO mail.conversations(id, short_id, mailbox_id, latest_message_at)
+          VALUES (${conversation}::uuid, ${newShortId()}, ${mailboxId}::uuid, '2026-11-12T12:00:00Z')`;
+        await sql`INSERT INTO mail.conversations(id, short_id, mailbox_id, latest_message_at)
+          VALUES (${targetConversation}::uuid, ${newShortId()}, ${mailboxId}::uuid, '2026-11-12T12:00:00Z')`;
+        await sql`INSERT INTO mail.message_contents(id, short_id, mailbox_id, subject, internal_date, content_hash)
+          VALUES (${source}::uuid, ${newShortId()}, ${mailboxId}::uuid, 'Assigned draft', '2026-11-12T12:00:00Z', ${(change === "draft moved" ? "b" : "a").repeat(64)})`;
+        await sql`INSERT INTO mail.conversation_messages(conversation_id, message_id, position) VALUES (${conversation}::uuid, ${source}::uuid, 0)`;
+        await sql`UPDATE mail.drafts SET intent = 'reply', conversation_id = ${conversation}::uuid,
+          source_message_id = ${source}::uuid WHERE id = ${currentDraft.id}::uuid`;
+        requestContext = otherContext;
+        activeSession = { ...previous, user: other, data: { ...previous.data, userId: other.id } };
+        const denied = await connect(`session_token=${token}`, other.id);
+        denied.send({ type: "replayRequest", payload: { docId: currentDraft.short_id, generation: null, fromCursor: null } });
+        expect(await denied.wait((packet) => packet.type === "error")).toMatchObject({
+          type: "error",
+          payload: { code: "ACCESS_DENIED" },
+        });
+        await sql`INSERT INTO mail.conversation_assignees(conversation_id, user_id) VALUES (${conversation}::uuid, ${other.id}::uuid)`;
+        const allowed = await connect(`session_token=${token}`, other.id);
+        await allowed.ready();
+        if (change === "assignment removed")
+          await sql`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${conversation}::uuid`;
+        else await sql`UPDATE mail.drafts SET conversation_id = ${targetConversation}::uuid WHERE id = ${currentDraft.id}::uuid`;
+        mailLive.wake();
+        expect(await allowed.wait((packet) => packet.type === "error")).toMatchObject({
+          type: "error",
+          payload: { code: "ACCESS_DENIED" },
+        });
+      } finally {
+        activeSession = previous;
+        requestContext = context;
+        await stopMailDraftConnections();
+        await sql`DELETE FROM mail.mailbox_assigned_access WHERE mailbox_id = ${mailboxId}::uuid AND access_id = ${grant.access_id}::uuid`;
+        await sql`INSERT INTO mail.mailbox_access(mailbox_id, access_id) VALUES (${mailboxId}::uuid, ${grant.access_id}::uuid)`;
+      }
+    });
   const persistedBody = async (client: Awaited<ReturnType<typeof connect>>, body: string) => {
     await client.wait((packet) => packet.type === "syncPush" && !packet.payload.snapshot);
     await flushDraftDocumentSnapshot(currentDraft.id);
