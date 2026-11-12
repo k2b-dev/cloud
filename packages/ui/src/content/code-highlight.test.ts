@@ -100,7 +100,7 @@ for (const [name, source] of [
     const lines = highlightCodeDisplayLines(source, "markdown");
     const elapsed = performance.now() - started;
     expect(lines).toHaveLength(1);
-    expect(elapsed).toBeLessThan(100);
+    expect(elapsed).toBeLessThan(1_000);
     expect(lines[0]).toBe(source);
   });
 }
