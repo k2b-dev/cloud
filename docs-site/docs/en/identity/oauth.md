@@ -583,6 +583,9 @@ At startup, idempotently upsert your existing clients before accepting
 protocol requests. This also reconciles clients written during an upgrade.
 The registry stores only the client ID, owning issuer, service-account
 binding, status and display name; private client policy stays with the issuer.
+Display names in this registry, terminal approvals and access notices accept
+at most 120 characters. The built-in issuer truncates longer legacy client
+names at these boundaries while preserving the private client name.
 
 ### Reserve, sign and finalize
 
@@ -663,12 +666,15 @@ approval audit events identify the client by its public client ID.
 After committing a new browser-confirmed family, send an app-signed
 `POST /api/_internal/identity/v1/oauth/new-access` with
 `OAuthIssuerNewAccessNotice`: `familyId`, `userId`, `clientId`, `clientName`
-and UTC `createdAt`. Core renders the existing **New access** notification
+and UTC `createdAt`. The client must have an active registry entry owned by
+the calling issuer. Core renders the existing **New access** notification
 with idempotency key `oauth-new-access:<familyId>`. Only the built-in issuer's
 `cloud-cli` client receives the command-line wording. Keep retry state in
 the issuer, mark delivery only after success, and suppress this additional
 notice for terminal-confirmed access. The built-in issuer retries a bounded
-page every minute and retains pending notices through family expiry.
+page every minute, newest first so older failures do not block newer notices.
+Retries stop at family expiry, when cleanup removes the family even if its
+notice was never delivered.
 
 Continue with [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

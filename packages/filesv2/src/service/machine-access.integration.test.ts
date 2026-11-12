@@ -162,13 +162,11 @@ suite("Files machine storage through actual API tokens", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
     // Use real Core schemas and public services; no stand-in authentication or grant resolver.
-    for (const name of ["auth", "rail-preferences", "rail-shortcuts", "settings", "audit", "logging"]) {
+    for (const name of ["auth", "rail-preferences", "rail-shortcuts", "settings", "audit", "logging", "app-approval", "oauth-clients"]) {
       const path = `../../../core/src/migrate/core/${name}.ts`;
       const module = await import(path);
       await module.migrate();
     }
-    const { migrate: migrateOAuth } = await import("../../../oauth/src/migrate");
-    await migrateOAuth();
     await migrate();
     const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
     setSystemTime(clock!.now);

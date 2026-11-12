@@ -63,6 +63,11 @@ const signer: NonNullable<Parameters<typeof createIdentityOAuthIssuanceRoutes>[0
 const setup = (overrides: Parameters<typeof createIdentityOAuthIssuanceRoutes>[0] = {}) =>
   createIdentityOAuthIssuanceRoutes({
     authorize,
+    ownsClient: async (clientId, appId) => {
+      expect(clientId).toBe("cloud-cli");
+      expect(appId).toBe("third-party-issuer");
+      return true;
+    },
     issuer: async () => issuer,
     withActiveSigner: signer,
     resolve: async ({ appId, request: input }) => {
@@ -173,6 +178,28 @@ describe("Core closed OAuth issuer contract", () => {
     });
     expect((await request(routes, {}, "/oauth/ready")).status).toBe(204);
   });
+  test("rejects a notice for a client outside the calling issuer before delivery", async () => {
+    let deliveries = 0;
+    const routes = setup({
+      ownsClient: async (clientId, appId) => {
+        expect(clientId).toBe("another-client");
+        expect(appId).toBe("third-party-issuer");
+        return false;
+      },
+      notifyNewAccess: async () => {
+        deliveries += 1;
+      },
+    });
+    const notice = {
+      familyId: USER_ID,
+      userId: USER_ID,
+      clientId: "another-client",
+      clientName: "Other client",
+      createdAt: new Date(NOW).toISOString(),
+    };
+    expect((await request(routes, notice, "/oauth/new-access")).status).toBe(403);
+    expect(deliveries).toBe(0);
+  });
   test("delegates notice delivery without delaying or coupling token issuance", async () => {
     const notices: unknown[] = [];
     const routes = setup({
@@ -190,6 +217,7 @@ describe("Core closed OAuth issuer contract", () => {
       createdAt: new Date(NOW).toISOString(),
     };
     expect((await request(routes, notice, "/oauth/new-access")).status).toBe(204);
+    expect((await request(routes, { ...notice, clientName: "L".repeat(200) }, "/oauth/new-access")).status).toBe(400);
     expect(notices).toEqual([
       { familyId: USER_ID, userId: USER_ID, kind: "app", clientName: "Third-party client", createdAt: new Date(NOW).toISOString() },
     ]);
@@ -264,6 +292,48 @@ databaseSuite()("Core platform facts for OAuth issuers", () => {
     } finally {
       if (saved) await sql`UPDATE settings.entries SET value=${saved.value} WHERE key='user.category.login.enabled'`;
       else await sql`DELETE FROM settings.entries WHERE key='user.category.login.enabled'`;
+    }
+  });
+  test("allows user tokens for a client also bound to a service account", async () => {
+    await sql`UPDATE auth.oauth_clients SET service_account_id=${serviceId}::uuid WHERE client_id=${clientId}`;
+    try {
+      const response = await request(liveRoutes(), liveStatement());
+      expect(response.status).toBe(200);
+      const { tokens } = await response.json();
+      expect(decodeJwt(tokens[0])).toMatchObject({ principal_type: "user", sub: userId });
+    } finally {
+      await sql`UPDATE auth.oauth_clients SET service_account_id=NULL WHERE client_id=${clientId}`;
+    }
+  });
+  test("notices require the calling issuer's active client registry entry", async () => {
+    const notices: unknown[] = [];
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authorize,
+      notifyNewAccess: async (notice) => {
+        notices.push(notice);
+      },
+    });
+    const notice = {
+      familyId: USER_ID,
+      userId,
+      clientId,
+      clientName: "Owned client",
+      createdAt: new Date(NOW).toISOString(),
+    };
+    expect((await request(routes, { ...notice, clientId: "unknown" }, "/oauth/new-access")).status).toBe(403);
+    try {
+      await sql`UPDATE auth.oauth_clients SET issuer_app_id='another-issuer' WHERE client_id=${clientId}`;
+      expect((await request(routes, notice, "/oauth/new-access")).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET issuer_app_id='third-party-issuer',status='disabled' WHERE client_id=${clientId}`;
+      expect((await request(routes, notice, "/oauth/new-access")).status).toBe(403);
+      await sql`UPDATE auth.oauth_clients SET status='deleted' WHERE client_id=${clientId}`;
+      expect((await request(routes, notice, "/oauth/new-access")).status).toBe(403);
+      expect(notices).toEqual([]);
+      await sql`UPDATE auth.oauth_clients SET status='active' WHERE client_id=${clientId}`;
+      expect((await request(routes, notice, "/oauth/new-access")).status).toBe(204);
+      expect(notices).toHaveLength(1);
+    } finally {
+      await sql`UPDATE auth.oauth_clients SET issuer_app_id='third-party-issuer',status='active' WHERE client_id=${clientId}`;
     }
   });
   test("checks live service status, shape and exact registry binding", async () => {

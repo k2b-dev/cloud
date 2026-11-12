@@ -26,7 +26,9 @@ in the same transaction as private client mutations, including automatic
 cleanup. Removal retains a `deleted` tombstone; no issuer can register that
 ID again. The built-in OAuth schema is no longer a platform runtime dependency.
 
-Roll Core first, then OAuth. Core backfills once; OAuth reconciles its existing
+Roll Core first, then OAuth back-to-back. OAuth token issuance and terminal
+approvals are unavailable between these updates because Core rejects the old
+request bodies with HTTP 400. Core backfills once; OAuth reconciles its existing
 clients before serving requests. No client-write freeze is needed. Complete
 replacement of old issuer replicas before relying on transactional registry
 updates. Access-notice retry ownership moves from Core to the issuer while

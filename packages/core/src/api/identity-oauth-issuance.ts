@@ -139,12 +139,7 @@ const resolveAuthorityState = async ({
   }
   const [client] = await db<{ service_account_id: string | null }[]>`SELECT service_account_id FROM auth.oauth_clients
     WHERE client_id=${request.clientId} AND issuer_app_id=${appId} AND status='active' FOR SHARE`;
-  if (
-    !client ||
-    (state.serviceAccount && client.service_account_id !== state.serviceAccount.id) ||
-    (state.user && client.service_account_id !== null)
-  )
-    return null;
+  if (!client || (state.serviceAccount && client.service_account_id !== state.serviceAccount.id)) return null;
   if (state.notAfter && state.notAfter.getTime() <= Date.now()) return null;
   if (request.terminalLoginId !== null) {
     if (!state.user || !state.notAfter) return null;
@@ -186,6 +181,7 @@ const resolveAuthorityState = async ({
 type Dependencies = {
   recordLegacy: typeof recordLegacyAppUse;
   notifyNewAccess: CoreNotificationSender["sendOAuthNewAccess"];
+  ownsClient: (clientId: string, appId: string) => Promise<boolean>;
   authenticate: (token: string | null) => boolean;
   authorize: (c: Context) => Promise<Response | null>;
   withActiveSigner: typeof withActiveIdentitySigner;
@@ -222,6 +218,11 @@ const defaultDependencies: Dependencies = {
   recordLegacy: recordLegacyAppUse,
   notifyNewAccess: async () => {
     throw new Error("New-access notification sender is not configured");
+  },
+  ownsClient: async (clientId, appId) => {
+    const [client] = await sql`SELECT client_id FROM auth.oauth_clients
+      WHERE client_id=${clientId} AND issuer_app_id=${appId} AND status='active'`;
+    return !!client;
   },
   authenticate: authenticateOAuthBroker,
   authorize: authorizeOAuthRequest,
@@ -382,6 +383,7 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
     const appId = c.get("oauthIssuerAppId");
     if (typeof appId !== "string") return c.json({ message: "Forbidden" }, 403);
     const { clientId, ...notice } = parsed.data;
+    if (!(await dependencies.ownsClient(clientId, appId))) return c.json({ message: "Forbidden" }, 403);
     await dependencies.notifyNewAccess({ ...notice, kind: appId === "oauth" && clientId === "cloud-cli" ? "command_line" : "app" });
     return c.body(null, 204);
   });

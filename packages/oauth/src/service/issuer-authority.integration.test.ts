@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { connections, sql } from "@k2b/cloud";
+import { OAuthNewAccessNoticeSchema } from "@k2b/cloud/contracts";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../../../core/src/migrate/core/app-approval";
@@ -8,7 +9,7 @@ import { migrate as migrateRegistry } from "../../../core/src/migrate/core/oauth
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { migrate } from "../migrate";
 import { notifyPendingOAuthNewAccess } from "./access-notices";
-import { registerAll } from "./clients";
+import { registerAll, update } from "./clients";
 import { finalizeOAuthAuthority, InvalidIssuerAuthorityError, releaseOAuthAuthority, stageOAuthAuthority } from "./issuer-authority";
 import * as refreshTokens from "./refresh-tokens";
 
@@ -206,12 +207,76 @@ databaseSuite()("OAuth issuer owns policy, reservations and notices", () => {
       await sql`DELETE FROM auth.oauth_clients WHERE client_id=${otherId}`;
     }
   });
-  test("notice maintenance retries failed deliveries, retains ended access, skips reservations and respects cancellation", async () => {
+  test("legacy 200-character names register, edit and notify with a bounded display name", async () => {
+    const f = await fixture();
+    const legacyName = "L".repeat(200);
+    await sql`UPDATE oauth.clients SET name=${legacyName} WHERE client_id=${f.clientId}`;
+    await registerAll();
+    expect((await sql`SELECT name FROM auth.oauth_clients WHERE client_id=${f.clientId}`)[0].name).toBe(legacyName.slice(0, 120));
+    const edited = await update({
+      id: f.clientUuid,
+      data: { description: "Edited legacy client" },
+      actor: { id: f.userId, uid: f.userId, provider: "local", roles: ["admin"] },
+    });
+    expect(edited.ok).toBe(true);
+    expect((await sql`SELECT name FROM oauth.clients WHERE client_id=${f.clientId}`)[0].name).toBe(legacyName);
+    expect((await sql`SELECT name FROM auth.oauth_clients WHERE client_id=${f.clientId}`)[0].name).toBe(legacyName.slice(0, 120));
+    const familyId = crypto.randomUUID();
+    await sql`INSERT INTO oauth.refresh_token_families(id,client_id,user_id,auth_epoch,status,scopes,audiences,expires_at,notified_at)
+      VALUES (${familyId}::uuid,${f.clientId},${f.userId}::uuid,7,'active',ARRAY['openid'],ARRAY['cloud'],now()+interval '1 hour',NULL)`;
+    const names: string[] = [];
+    await notifyPendingOAuthNewAccess({
+      familyId,
+      notify: async (notice) => {
+        names.push(OAuthNewAccessNoticeSchema.parse(notice).clientName);
+      },
+    });
+    expect(names).toEqual([legacyName.slice(0, 120)]);
+  });
+  test("newer pending notices are reached despite a full page of older failures", async () => {
+    const f = await fixture();
+    const newest = crypto.randomUUID();
+    await sql`INSERT INTO oauth.refresh_token_families(id,client_id,user_id,auth_epoch,status,scopes,audiences,expires_at,notified_at,created_at)
+      SELECT gen_random_uuid(),${f.clientId},${f.userId}::uuid,7,'active',ARRAY['openid'],ARRAY['cloud'],now()+interval '1 hour',NULL,
+        now()-n*interval '1 minute' FROM generate_series(1,100) n`;
+    await sql`INSERT INTO oauth.refresh_token_families(id,client_id,user_id,auth_epoch,status,scopes,audiences,expires_at,notified_at,created_at)
+      VALUES (${newest}::uuid,${f.clientId},${f.userId}::uuid,7,'active',ARRAY['openid'],ARRAY['cloud'],now()+interval '1 hour',NULL,now())`;
+    const attempted: string[] = [];
+    await expect(
+      notifyPendingOAuthNewAccess({
+        notify: async (notice) => {
+          attempted.push(notice.familyId);
+          if (notice.familyId !== newest) throw new Error("Permanent delivery failure");
+        },
+      }),
+    ).rejects.toThrow("remain pending");
+    expect(attempted).toHaveLength(100);
+    expect(attempted[0]).toBe(newest);
+    expect((await sql`SELECT notified_at FROM oauth.refresh_token_families WHERE id=${newest}::uuid`)[0].notified_at).toBeInstanceOf(Date);
+  });
+  test("expired pending notices stop retrying and cleanup removes their families", async () => {
+    const f = await fixture();
+    const familyId = crypto.randomUUID();
+    await sql`INSERT INTO oauth.refresh_token_families(id,client_id,user_id,auth_epoch,status,scopes,audiences,expires_at,notified_at)
+      VALUES (${familyId}::uuid,${f.clientId},${f.userId}::uuid,7,'active',ARRAY['openid'],ARRAY['cloud'],now()-interval '1 minute',NULL)`;
+    let attempts = 0;
+    await notifyPendingOAuthNewAccess({
+      familyId,
+      notify: async () => {
+        attempts += 1;
+        throw new Error("Permanent delivery failure");
+      },
+    });
+    expect(attempts).toBe(0);
+    await refreshTokens.cleanup();
+    expect(await sql`SELECT id FROM oauth.refresh_token_families WHERE id=${familyId}::uuid`).toHaveLength(0);
+  });
+  test("notice maintenance retries failed deliveries, retains unexpired revoked access, skips reservations and respects cancellation", async () => {
     const f = await fixture();
     const pending = crypto.randomUUID(),
       reserved = crypto.randomUUID();
     await sql`INSERT INTO oauth.refresh_token_families(id,client_id,user_id,auth_epoch,status,scopes,audiences,expires_at,notified_at)
-      VALUES (${pending}::uuid,${f.clientId},${f.userId}::uuid,7,'revoked',ARRAY['openid'],ARRAY['cloud'],now()-interval '1 minute',NULL),
+      VALUES (${pending}::uuid,${f.clientId},${f.userId}::uuid,7,'revoked',ARRAY['openid'],ARRAY['cloud'],now()+interval '1 hour',NULL),
         (${reserved}::uuid,${f.clientId},${f.userId}::uuid,7,'reserved',ARRAY['openid'],ARRAY['cloud'],now()+interval '1 hour',now())`;
     const notices: string[] = [];
     await notifyPendingOAuthNewAccess({

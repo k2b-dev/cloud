@@ -15,7 +15,12 @@ import type {
 } from "@/contracts";
 
 const registerClient = (tx: typeof sql, client: Pick<OAuthClient, "clientId" | "serviceAccountId" | "name">) =>
-  oauthClients.upsert(tx, { clientId: client.clientId, serviceAccountId: client.serviceAccountId, name: client.name, status: "active" });
+  oauthClients.upsert(tx, {
+    clientId: client.clientId,
+    serviceAccountId: client.serviceAccountId,
+    name: client.name.slice(0, 120),
+    status: "active",
+  });
 
 /** Reconcile clients changed by the previous issuer while Core was rolling forward. */
 export const registerAll = async (): Promise<void> => {

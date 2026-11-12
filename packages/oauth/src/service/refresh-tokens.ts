@@ -439,8 +439,8 @@ export const cleanup = async (): Promise<number> => {
   }
   const result = await sql`
     DELETE FROM oauth.refresh_token_families
-    WHERE notified_at IS NOT NULL AND (expires_at < now()
-      OR (status = 'revoked' AND revoked_at < now() - INTERVAL '1 day'))
+    WHERE expires_at <= now()
+      OR (notified_at IS NOT NULL AND status = 'revoked' AND revoked_at < now() - INTERVAL '1 day')
   `;
   return result.count + reservations.count;
 };

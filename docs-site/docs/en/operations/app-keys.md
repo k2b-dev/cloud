@@ -195,10 +195,13 @@ existing short lifetime. See [background mandates](/en/docs/identity/background-
 
 Update Core first. Its migration creates `auth.oauth_clients` and backfills
 existing built-in clients once when `oauth.clients` exists. It also preserves
-terminal approval display statements and grant deadlines. Then update all
-OAuth replicas. Before serving requests, the updated issuer upserts its
-clients in bounded pages, including clients created after Core's backfill,
-and marks registrations for clients deleted during that interval as `deleted`.
+terminal approval display statements and grant deadlines. OAuth token issuance
+and terminal approvals are unavailable between the Core and OAuth updates:
+Core rejects the old request bodies with HTTP 400. Roll out both updates
+back-to-back, replacing all OAuth replicas. Before serving requests, the
+updated issuer upserts its clients in bounded pages, including clients
+created after Core's backfill, and marks registrations for clients deleted
+during that interval as `deleted`.
 These tombstones prevent client ID reuse by every issuer. Client writes and
 registry writes then share the issuer's transaction. This upgrade needs no
 client-write freeze.
@@ -211,9 +214,10 @@ issuance requests may fail; start those sign-ins again. A lost signing
 response burns its reservation and has no recovery endpoint.
 
 The issuer retries access notices from its own maintenance; Core no longer
-probes optional OAuth tables. Pending notices remain with their family until
-delivery succeeds. Core may run with another trusted issuer or with no OAuth
-application installed.
+probes optional OAuth tables. Pending notices retry newest first until
+delivery succeeds or the family expires; cleanup removes expired families
+even when delivery keeps failing. Core may run with another trusted issuer
+or with no OAuth application installed.
 
 ## Create keys in Administration
 
