@@ -29,6 +29,7 @@ import { closeReusableImapSessions } from "./connectors/imap-smtp";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
 import { databaseErrorCode, databaseErrorConstraint, databaseErrorFacts, isPermanentDataError } from "./database-errors";
+import { draftDocumentSnapshots } from "./draft-document-snapshots";
 import {
   enqueueDraftImports,
   enqueueDraftProjectionSnapshot,
@@ -4121,7 +4122,17 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
         await reconcileMailStorageUsage();
       },
     });
+    await mailScheduler().create({
+      id: "mail:draft-document-reconcile",
+      cron: "13 * * * *",
+      misfire: "latest",
+      meta: { appId: "mail", family: "mail:drafts", label: "Mail draft document recovery" },
+      process: async (ctx) => {
+        await draftDocumentSnapshots.reconcile({ signal: ctx.signal, heartbeat: () => ctx.heartbeat() });
+      },
+    });
     mailSchedulerWorker = await mailScheduler().process();
+    await draftDocumentSnapshots.reconcile();
     await submitDueWork();
   },
   stop: async () => {

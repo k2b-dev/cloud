@@ -470,7 +470,7 @@ export async function openMailDraftDocumentClient(options: {
       if (draftSnapshotCovers(bytes, Y.encodeStateAsUpdate(doc))) {
         state.dirty = false;
         state.changes = 0;
-        if (!state.terminal) {
+        if (!state.terminal && !storageFailure) {
           state.message = t().saved;
           state.error = false;
         }
@@ -496,6 +496,10 @@ export async function openMailDraftDocumentClient(options: {
       }
     };
     doc.on("update", project);
+    const acknowledgeLogState = () =>
+      queueMicrotask(() => {
+        if (!disposed && state.ready && !state.terminal && !provider.hasUnsentChanges()) acknowledge(Y.encodeStateAsUpdate(doc));
+      });
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
     const fatal = (error: SharedTextProviderError) => {
@@ -534,7 +538,13 @@ export async function openMailDraftDocumentClient(options: {
       transport: {
         url: socketUrl.href,
         encode: (packet) => packet,
-        decode: (packet) => decodeMailDraftDocumentMessage(packet, options.draft.id),
+        decode: (packet) => {
+          const decoded = decodeMailDraftDocumentMessage(packet, options.draft.id);
+          // Received document input is already retained by JetStream. Defer until
+          // the provider has validated/applied it and reconciled local echoes.
+          if (decoded?.type === "syncPush") acknowledgeLogState();
+          return decoded;
+        },
         closeError: (code, reason) =>
           [1008, 1009, 4401, 4403].includes(code) ? { code: "ACCESS_DENIED", message: reason || t().permission } : null,
       },
@@ -547,6 +557,7 @@ export async function openMailDraftDocumentClient(options: {
       },
       onReady: () => {
         state.ready = true;
+        acknowledgeLogState();
         if (transportError && !state.terminal) {
           transportError = false;
           state.error = false;
@@ -555,7 +566,13 @@ export async function openMailDraftDocumentClient(options: {
         if (!state.dirty && !state.error) state.message = t().saved;
         emit();
       },
-      onUnsentChange: emit,
+      onUnsentChange: () => {
+        emit();
+        // The room echoes only JetStream-acknowledged input. Once every local
+        // update is covered, the complete visible state is durable in the log;
+        // waiting for a SQL snapshot would reintroduce persistence per edit.
+        acknowledgeLogState();
+      },
       onRetainedColumn: () => {
         state.message = t().retainedColumn;
         emit();

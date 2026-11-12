@@ -1,12 +1,12 @@
 import { afterEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import type { Sync, Topic, TopicEvent } from "@k2b/sync";
-import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
+import { ConflictError, CursorMismatchError, RetentionGapError, StoreFullError } from "@k2b/sync";
 import * as Y from "yjs";
 import { z } from "zod";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { toBase64 } from "./events";
 import { sharedText } from "./log";
-import { createSharedTextRoom, createSharedTextRoomContext, type SharedTextRoomMessages } from "./room";
+import { createSharedTextRoom, createSharedTextRoomContext, isSharedTextStorageExhausted, type SharedTextRoomMessages } from "./room";
 import type { SharedTextEvent } from "./types";
 
 const NOW = new Date("2026-11-12T12:00:00Z");
@@ -55,12 +55,18 @@ const fixture = () => {
     snapshots = 0;
   let failure: Error | undefined;
   let head: string | null = null;
+  let sequence = 0,
+    conflicts = 0;
   const entries: TopicEvent<SharedTextEvent>[] = [];
   const topic = {
     cursorAt: (sequence: number) => `s6t.room.${sequence}`,
     latestCursor: async () => head,
     publish: async (input: { data: SharedTextEvent; tenantId?: string }) => {
-      const sequence = entries.length + 1;
+      if (conflicts > 0) {
+        conflicts--;
+        throw new ConflictError("concurrent publish");
+      }
+      sequence++;
       head = `s6t.room.${sequence}`;
       const entry = {
         data: input.data,
@@ -172,6 +178,13 @@ const fixture = () => {
     closed,
     invalidations,
     entries,
+    prune() {
+      entries.length = 0;
+      head = null;
+    },
+    contend() {
+      conflicts = 3;
+    },
     sql: () => sql,
     snapshots: () => snapshots,
     holdAuthentication: (wait: Promise<void>) => {
@@ -274,4 +287,50 @@ test("an identity invalidation during join cannot be lost before access subscrip
     released.resolve();
     await f.connection.close();
   }
+});
+
+test("an active room retains its authorized state when covered broker history is pruned", async () => {
+  const f = fixture();
+  const doc = new Y.Doc();
+  doc.clientID = 42;
+  try {
+    await f.join();
+    await waitFor(() => f.sent.some((m) => m.type === "ready"));
+    doc.getText("codemirror").insert(0, "first");
+    await f.request("edit", { payload: toBase64(Y.encodeStateAsUpdate(doc)), baseCursor: "s6t.room.0", restoreRevision: "0" });
+    await waitFor(() => f.ctx.snapshot?.cursor === "s6t.room.1");
+    f.prune();
+    const before = Y.encodeStateVector(doc);
+    doc.getText("codemirror").insert(5, " second");
+    await f.request("edit", { payload: toBase64(Y.encodeStateAsUpdate(doc, before)), baseCursor: "s6t.room.1", restoreRevision: "0" });
+    await waitFor(() => f.entries.length === 1);
+    expect(f.entries[0]?.cursor).toBe("s6t.room.2");
+    expect(f.closed).toEqual([]);
+    expect(f.sql()).toBe(3);
+  } finally {
+    doc.destroy();
+    await f.connection.close();
+  }
+});
+test("concurrent editor CAS conflicts retry the same identities without reconnect or SQL", async () => {
+  const f = fixture();
+  const doc = new Y.Doc();
+  doc.clientID = 42;
+  try {
+    await f.join();
+    await waitFor(() => f.sent.some((m) => m.type === "ready"));
+    f.contend();
+    doc.getText("codemirror").insert(0, "once");
+    await f.request("edit", { payload: toBase64(Y.encodeStateAsUpdate(doc)), baseCursor: "s6t.room.0", restoreRevision: "0" });
+    await waitFor(() => f.entries.length === 1);
+    expect(f.closed).toEqual([]);
+    expect(f.sql()).toBe(3);
+  } finally {
+    doc.destroy();
+    await f.connection.close();
+  }
+});
+test("a full retained log exposes the recoverable storage error", () => {
+  expect(isSharedTextStorageExhausted(new StoreFullError("retained log full"))).toBe(true);
+  expect(isSharedTextStorageExhausted(new Error("unrelated failure"))).toBe(false);
 });

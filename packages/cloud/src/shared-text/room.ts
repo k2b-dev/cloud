@@ -1,9 +1,19 @@
-import { ConflictError, CursorMismatchError, RetentionGapError, type Topic, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
+import {
+  ConflictError,
+  CursorMismatchError,
+  RetentionGapError,
+  StoreFullError,
+  type Topic,
+  type TopicEvent,
+  type TopicLiveEvent,
+} from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
+import * as Y from "yjs";
 import type { z } from "zod";
 import { logger } from "../services/logging";
 import { createTrustedTextAwareness, InvalidSharedTextAwarenessError } from "./awareness";
-import { maxStreamCursor } from "./cursor";
+import { compareStreamCursor, maxStreamCursor } from "./cursor";
+import { createDoc } from "./documents";
 import { fromBase64, isValidSharedTextUpdate as isValidYjsUpdate, sharedTextNodeId as NODE_ID, toBase64 } from "./events";
 import type { sharedText } from "./log";
 import { createSharedTextRoomSchemas, SHARED_TEXT_ROOM_ERROR_CODE as ERROR_CODE, type SharedTextRoomProtocol } from "./room-protocol";
@@ -136,6 +146,7 @@ type PushUpdate = {
   restoreRevision?: string;
 };
 export const isSharedTextStorageExhausted = (error: unknown): boolean =>
+  error instanceof StoreFullError ||
   /insufficient (storage )?resources|resource limits exceeded/i.test(error instanceof Error ? error.message : String(error));
 
 /** Stateless document sessions: retained broker history owns fan-out and admission, the app owns durable snapshots. */
@@ -148,10 +159,15 @@ export function createSharedTextRoom<
   adapter: SharedTextRoomAdapter<User, Messages, Context>;
   log: ReturnType<typeof sharedText.define>;
   awarenessTopic(): Pick<Topic<SharedTextEvent & { kind: "awareness" }>, "live" | "publish">;
-  snapshots: { queue(input: { docId: string; targetCursor: string; reason: string }): Promise<void> };
+  snapshots: {
+    queue(input: { docId: string; targetCursor: string; reason: string }): Promise<void>;
+    /** Optional application debounce; synchronous and SQL-free. queue still runs on leave. */
+    markDirty?(input: { docId: string; targetCursor: string }): void;
+  };
   logger?: ReturnType<typeof logger>;
   maxLength?: number;
   validateState?: (state: Uint8Array) => boolean | Promise<boolean>;
+  deliveryBudget?: { claim(bytes: number): boolean; release(bytes: number): void };
 }) {
   const { adapter } = config;
   const log = config.logger ?? logger("shared-text-room");
@@ -243,7 +259,8 @@ export function createSharedTextRoom<
   const markDirty = (ctx: Context, cursor: string) => {
     ctx.lastPublishedCursor = maxStreamCursor(ctx.lastPublishedCursor, cursor);
     ctx.dirty = true;
-    startSnapshotScheduler(ctx);
+    if (config.snapshots.markDirty) config.snapshots.markDirty({ docId: ctx.docId!, targetCursor: ctx.lastPublishedCursor! });
+    else startSnapshotScheduler(ctx);
   };
 
   const toPushUpdate = (event: TopicEvent<SharedTextEvent> | TopicLiveEvent<SharedTextEvent>): PushUpdate => ({
@@ -254,6 +271,28 @@ export function createSharedTextRoom<
     ...(event.data.history?.retained ? { retainedColumn: true } : {}),
     ...(event.data.restoreRevision !== undefined ? { restoreRevision: event.data.restoreRevision } : {}),
   });
+  const advanceSnapshot = (ctx: Context, event: TopicEvent<SharedTextEvent>) => {
+    if (
+      event.data.kind !== "sync" ||
+      !ctx.snapshot ||
+      (event.data.restoreRevision !== undefined && event.data.restoreRevision !== ctx.restoreRevision)
+    )
+      return;
+    let base = ctx.snapshot.state;
+    if (!base) {
+      const doc = createDoc(ctx.snapshot);
+      try {
+        base = Y.encodeStateAsUpdate(doc);
+      } finally {
+        doc.destroy();
+      }
+    }
+    ctx.snapshot = {
+      ...ctx.snapshot,
+      state: Y.mergeUpdates([base, fromBase64(event.data.payload)]),
+      cursor: maxStreamCursor(ctx.snapshot.cursor, event.cursor),
+    };
+  };
 
   /**
    * Stream failures are never terminal for the editor, but only a cursor the
@@ -325,6 +364,7 @@ export function createSharedTextRoom<
       const documentTopic = createYjsTopic();
       const pending: PushUpdate[] = [];
       let pendingBytes = 0;
+      let reservedBytes = 0;
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       let stopped = false;
       let deliveryTail = Promise.resolve();
@@ -341,9 +381,11 @@ export function createSharedTextRoom<
         }
         if (!active() || pending.length === 0) return deliveryTail;
         const batch = pending.splice(0, pending.length);
+        const reservation = reservedBytes;
+        reservedBytes = 0;
         pendingBytes = 0;
-        // Capture batches in stream order and serialize timer/size flushes. A
-        // slower row-lock acquisition must never reorder batches or readiness.
+        // Capture batches in stream order and serialize timer/size flushes so
+        // readiness never overtakes an earlier batch.
         deliveryTail = deliveryTail
           .then(async () => {
             if (!active()) return;
@@ -352,7 +394,8 @@ export function createSharedTextRoom<
             });
             if (!delivered) stopped = true;
           })
-          .catch(fail);
+          .catch(fail)
+          .finally(() => config.deliveryBudget?.release(reservation));
         return deliveryTail;
       };
 
@@ -371,11 +414,18 @@ export function createSharedTextRoom<
             try {
               for await (const event of documentTopic.replay({
                 tenantId: docId,
-                after: replay.after ?? documentTopic.cursorAt(0),
+                // The provider may already hold more than the SQL snapshot.
+                // Rebuild the room base too, without redelivering that prefix.
+                after:
+                  ctx.snapshot?.cursor && replay.after && compareStreamCursor(ctx.snapshot.cursor, replay.after) >= 0
+                    ? replay.after
+                    : (ctx.snapshot?.cursor ?? documentTopic.cursorAt(0)),
                 until: head,
                 signal: abort.signal,
               })) {
                 delivered++;
+                advanceSnapshot(ctx, event);
+                if (replay.after && compareStreamCursor(event.cursor, replay.after) <= 0) continue;
                 yield event;
               }
             } catch (error) {
@@ -400,8 +450,22 @@ export function createSharedTextRoom<
         };
         for await (const event of events()) {
           if (!active() || ctx.phase !== "joined" || ctx.docId !== docId) break;
+          if (event.data.restoreRevision !== undefined && event.data.restoreRevision !== ctx.restoreRevision) {
+            await requireReopen(ctx, publicDocId);
+            break;
+          }
+          // Keep the authorized in-memory base current before covered history is
+          // pruned. This is broker fan-out, never another SQL load per delivery.
+          advanceSnapshot(ctx, event);
           ctx.lastPublishedCursor = maxStreamCursor(ctx.lastPublishedCursor, event.cursor);
+          if (event.data.kind !== "sync") continue;
           const update = toPushUpdate(event);
+          const reservation = JSON.stringify(update).length * 2;
+          if (config.deliveryBudget && !config.deliveryBudget.claim(reservation)) {
+            await fatal(ctx, ERROR_CODE.backpressure, ctx.messages.tooManyMessages, publicDocId);
+            break;
+          }
+          reservedBytes += reservation;
           pending.push(update);
           pendingBytes += update.payload.length;
           if (pending.length >= NOTIFY_BATCH_SIZE || pendingBytes >= NOTIFY_BATCH_MAX_BYTES) {
@@ -419,6 +483,7 @@ export function createSharedTextRoom<
         // from finally (including a timer batch queued before the mismatch).
         stopped = true;
         pending.length = 0;
+        config.deliveryBudget?.release(reservedBytes);
         await deliveryTail;
         if (ctx.streamAbort === abort) {
           ctx.streamAbort = null;
@@ -564,18 +629,31 @@ export function createSharedTextRoom<
         throw new Error("Room admission never persists snapshots");
       },
     });
-    const publication = documents.accept(docId, {
-      update: fromBase64(payload.payload),
-      baseCursor: payload.baseCursor ?? null,
-      restoreRevision: payload.restoreRevision,
-      originNodeId: NODE_ID,
-      originPeerId: ctx.peerId,
-      actor: adapter.actor(ctx.user!),
-      signal: ctx.streamAbort?.signal,
-      maxLength: config.maxLength,
-      validateState: config.validateState,
-      validate: async () => ctx.phase === "joined" && ctx.docId === docId && ensureWritableDocument(ctx, payload.docId),
-    });
+    const publication = (async () => {
+      const deadline = AbortSignal.timeout(30_000);
+      const signal = ctx.streamAbort ? AbortSignal.any([ctx.streamAbort.signal, deadline]) : deadline;
+      for (;;) {
+        signal.throwIfAborted();
+        try {
+          return await documents.accept(docId, {
+            update: fromBase64(payload.payload),
+            baseCursor: payload.baseCursor ?? null,
+            restoreRevision: payload.restoreRevision,
+            originNodeId: NODE_ID,
+            originPeerId: ctx.peerId,
+            actor: adapter.actor(ctx.user!),
+            signal,
+            maxLength: config.maxLength,
+            validateState: config.validateState,
+            validate: async () => ctx.phase === "joined" && ctx.docId === docId && ensureWritableDocument(ctx, payload.docId),
+          });
+        } catch (error) {
+          if (!(error instanceof ConflictError)) throw error;
+          // A concurrent editor advanced the tenant head. Rebuild and validate
+          // these same Yjs identities; never turn ordinary contention into a reconnect.
+        }
+      }
+    })();
     ctx.acceptTask = publication.then((result) => {
       if (result.status === "accepted") markDirty(ctx, result.cursor);
     });
@@ -817,6 +895,8 @@ export function createSharedTextRoom<
     else activeConnections.add(close);
     return {
       close,
+      /** Settlement of input already queued, for transport byte accounting. */
+      settled: () => processing,
       async receive(data: unknown) {
         if (stopping || closing || ctx.phase === "closing") return;
         if (typeof data !== "string") {

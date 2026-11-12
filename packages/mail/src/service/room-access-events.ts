@@ -32,6 +32,12 @@ export const migrateRoomAccessEvents = async (tx: typeof sql): Promise<void> => 
         jsonb_build_object('v', 1, 'k', COALESCE(NEW.id, OLD.id)::text, 'a', true), 'room.access:' || COALESCE(NEW.id, OLD.id)::text);
       RETURN NULL;
     END $$`.simple();
-  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF deleted_at OR DELETE ON mail.mailboxes
+  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF deleted_at, sync_enabled OR DELETE ON mail.mailboxes
     FOR EACH ROW EXECUTE FUNCTION mail.enqueue_mailbox_room_access_changed()`.simple();
+  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OF state, edit_mode, doc_generation, doc_frozen_cursor, doc_history_complete OR DELETE ON mail.drafts
+    FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
+  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OR DELETE ON mail.sender_identities
+    FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
+  await tx`CREATE OR REPLACE TRIGGER room_access_changed AFTER UPDATE OR DELETE ON mail.compose_templates
+    FOR EACH ROW EXECUTE FUNCTION mail.enqueue_room_access_changed()`.simple();
 };

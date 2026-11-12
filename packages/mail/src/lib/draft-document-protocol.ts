@@ -85,6 +85,7 @@ export const MAIL_DRAFT_DOCUMENT_TERMINAL_CODES = [
   "DOCUMENT_NOT_FOUND",
   "INVALID_PAYLOAD",
   "DRAFT_DOCUMENT_STREAM_FULL",
+  "STORAGE_EXHAUSTED",
 ] as const;
 
 export const mailDraftDocumentMessages = i18n.define({
