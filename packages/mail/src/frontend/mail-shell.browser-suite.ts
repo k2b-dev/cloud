@@ -3483,16 +3483,22 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("only the pill shows Reply; a message's right-click and … still reply to that message", async () => {
+        test("Reply stands in the pill and once on each open message; a message's right-click and … reply to that message", async () => {
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`);
           try {
             await page.waitForFunction(
               () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
             );
-            // Never two Replies side by side: the reader shows Reply, Reply all, and Forward only in the pill.
+            // Mail v5: besides the pill, each open message has one reply arrow beside its date; nothing else replies.
+            expect(await page.locator('[data-mail-message-id="Msg001"] [data-mail-message-reply]').count()).toBe(1);
             const visible = await page.locator(".mail-reader").evaluate((reader) =>
               Array.from(reader.querySelectorAll<HTMLElement>("button, a"))
-                .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-mail-reply-pill]"))
+                .filter(
+                  (element) =>
+                    element.getClientRects().length > 0 &&
+                    !element.closest("[data-mail-reply-pill]") &&
+                    !element.hasAttribute("data-mail-message-reply"),
+                )
                 .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "")
                 .filter((name) => /^(Reply|Reply all|Forward)(,|$)/.test(name)),
             );
