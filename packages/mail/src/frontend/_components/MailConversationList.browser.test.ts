@@ -1410,6 +1410,7 @@ describe("Mail rows by the list's own width (F2)", () => {
     const suggestion = page.locator(`${row("Cv0002")} [data-mail-row-draft]`);
     expect((await suggestion.textContent())?.trim()).toBe("Suggestion");
     expect(await suggestion.getAttribute("aria-label")).toBe("Suggestion from Gustav");
+    // settled: colors only; the harness pauses the page clock after mounting, so nothing transitions.
     const colors = await page.evaluate(() => {
       const probe = document.body.appendChild(document.createElement("i"));
       probe.style.color = "var(--k2b-ai-accent)";

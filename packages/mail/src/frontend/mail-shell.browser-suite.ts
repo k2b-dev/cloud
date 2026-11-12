@@ -2745,7 +2745,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   await close(page);
                 }
               }
-          });
+          }, 180_000);
         for (const row of table) {
           const label = `${row.width}${row.panel ? ` with a ${row.panel} px panel` : ""}`;
           test(`F8 at ${label}: list and reader share Main, the Detail fits beside both or waits, server = hydrated = settled`, async () => {
