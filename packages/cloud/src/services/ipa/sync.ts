@@ -19,8 +19,9 @@ type LocalIpaRow = DbRow & { uid: string; mail: string | null };
 
 const log = logger("auth:ipa:sync");
 
-/** The database time before a FreeIPA read. An observation never lifts a lock recorded after it started. */
-const observationStart = async (): Promise<Date> => (await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`)[0]!.now;
+/** Preserve database microseconds: a Date can reorder this read before a lock from the same millisecond. */
+const observationStart = async (): Promise<string> =>
+  (await sql<{ now: string }[]>`SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS now`)[0]!.now;
 
 /**
  * Records that FreeIPA locks an account (nsaccountlock); true when the lock is new. `locked_at` is the latest lock
@@ -43,10 +44,10 @@ const recordIpaLock = async (db: typeof sql, userId: string): Promise<boolean> =
 };
 
 /** True when a lock of the account was observed after `observedAt`: a transition based on that older read must wait. */
-const lockedSince = async (db: typeof sql, userId: string, observedAt: Date): Promise<boolean> => {
+const lockedSince = async (db: typeof sql, userId: string, observedAt: string): Promise<boolean> => {
   await db`SELECT id FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE`;
   const [row] = await db<{ locked: boolean }[]>`
-    SELECT EXISTS (SELECT 1 FROM auth.user_ipa_data WHERE user_id = ${userId}::uuid AND locked_at >= ${observedAt}) AS locked
+    SELECT EXISTS (SELECT 1 FROM auth.user_ipa_data WHERE user_id = ${userId}::uuid AND locked_at >= ${observedAt}::timestamptz) AS locked
   `;
   return row?.locked === true;
 };
@@ -72,7 +73,7 @@ const upsertUserIpaData = async (
     sshPublicKeys: string[];
     sshFingerprints: string[];
     locked: boolean;
-    observedAt: Date;
+    observedAt: string;
   },
 ): Promise<boolean> => {
   await mirrorIpaPosix(db, params);
@@ -112,7 +113,7 @@ const upsertUserIpaData = async (
       ssh_public_keys = EXCLUDED.ssh_public_keys,
       ssh_fingerprints = EXCLUDED.ssh_fingerprints,
       locked_at = CASE
-        WHEN ${params.locked} OR auth.user_ipa_data.locked_at >= ${params.observedAt} THEN auth.user_ipa_data.locked_at
+        WHEN ${params.locked} OR auth.user_ipa_data.locked_at >= ${params.observedAt}::timestamptz THEN auth.user_ipa_data.locked_at
         ELSE NULL
       END
   `;
@@ -771,7 +772,7 @@ const reconcileOutOfScopeUser = async (params: {
   previousProfile: "user" | "guest";
   reason: "ipa_expired_demoted" | "ipa_expired_deleted" | "sync_out_of_scope_demoted" | "sync_out_of_scope_deleted";
   meta?: Record<string, unknown>;
-  observedAt: Date;
+  observedAt: string;
 }): Promise<void> => {
   const transitionPolicy = parseIpaAccountTransitionPolicy(await settings.get<string | null>("freeipa.account_transition_policy"));
 
