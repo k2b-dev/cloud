@@ -8,6 +8,7 @@ import {
   CapabilityManifestSchema,
 } from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
+import { filesCapabilities } from "../packages/filesv2/src/capabilities";
 import { gridsCapabilities } from "../packages/grids/src/capabilities";
 import { mailCapabilities } from "../packages/mail/src/capabilities";
 import { notebooksCapabilities } from "../packages/notebooks/src/capabilities";
@@ -169,6 +170,8 @@ describe("Capability v2 provider conformance", () => {
       "mail.conversation.summary.write",
       "mail.delivery.cancel",
       "mail.draft.attachment.add",
+      // A retry must reuse the durable reservation and cannot attach a second copy.
+      "mail.draft.attachment.import.v1",
       "mail.draft.attachment.remove",
       "mail.draft.create",
       "mail.draft.discard",
@@ -214,6 +217,23 @@ describe("Capability v2 provider conformance", () => {
       "venue.assignment.signup_free",
       "weather.location.create",
       "weather.location.delete",
+    ]);
+    // Files was not a frozen v2 provider. Inventory its write-stream adapters and existing mutations explicitly too.
+    // Their required keys preserve upload/versioning receipts when an answer is lost, including file.save.v1.
+    expect(
+      compileCapabilityManifest("filesv2", filesCapabilities)
+        .actions.filter((action) => action.idempotency === "required")
+        .map((action) => action.localId),
+    ).toEqual([
+      "content.create",
+      "entry.copy",
+      "entry.move",
+      "entry.rename",
+      "entry.trash",
+      "file.save.v1",
+      "folder.create",
+      "provider.save",
+      "trash.restore",
     ]);
   });
 });

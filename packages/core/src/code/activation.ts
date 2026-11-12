@@ -115,6 +115,7 @@ async function authorizeActivation(
   person: { id: string; roles: readonly string[] },
   context: CodeContext,
   db: SQL = sql,
+  readOwner: typeof readCodeOwner = readCodeOwner,
 ): Promise<Code> {
   const code = await findCode(codeId, db);
   if (!code || code.state === "deleting") throw new CodeDataError("NOT_FOUND", "Code not found.");
@@ -124,7 +125,7 @@ async function authorizeActivation(
       ? code.owner.userId !== person.id
       : !(person.roles.includes("admin") && canRepairAppAccess(context.authority))
   )
-    await requireCodePermission(code, context, true, db);
+    await requireCodePermission(code, context, true, db, readOwner);
   if (code.owner.kind === "person" && code.owner.userId !== person.id)
     throw new CodeDataError("FORBIDDEN", "Only the personal owner can activate personal Code.");
   return code;
@@ -141,14 +142,29 @@ const previewAllowed = (context: CodeContext, code: Code): CodeActivationPreview
     ? { allowed: true }
     : { allowed: false, reason: "credential" };
 };
-/** Preview version and approval state without asking any target application about rights. */
+/** The own place is a name on the card: a slower owner app only leaves it unnamed, it never delays the card beyond this. */
+export const CODE_PREVIEW_PLACE_TIMEOUT_MS = 1_000;
+export type CodeActivationPreviewDependencies = { readOwner: typeof readCodeOwner; placeTimeoutMs: number };
+
+/**
+ * Preview version and approval state without asking any target application about rights. Only the owner's reader is
+ * asked, at most once and under the viewing person's own authority, to name the Code's own place.
+ */
 export async function previewCodeActivation(
   raw: z.input<typeof codeActivationContracts.preview.input>,
   context: CodeContext,
+  overrides?: Partial<CodeActivationPreviewDependencies>,
 ): Promise<CodeActivationPreview> {
+  const deps: CodeActivationPreviewDependencies = { readOwner: readCodeOwner, placeTimeoutMs: CODE_PREVIEW_PLACE_TIMEOUT_MS, ...overrides };
   const input = codeActivationContracts.preview.input.parse(raw);
   const person = codePerson(context, true);
-  const code = await authorizeActivation(input.codeId, person, context);
+  // Authorization and the place share one answer of the owner's reader, so it is never asked twice.
+  const asked: { owner?: ReturnType<typeof readCodeOwner> } = {};
+  const readOwnerOnce: typeof readCodeOwner = (owner, ctx) => {
+    asked.owner ??= deps.readOwner(owner, ctx);
+    return asked.owner;
+  };
+  const code = await authorizeActivation(input.codeId, person, context, sql, readOwnerOnce);
   const [version] = await sql<
     { number: number; manifest: unknown }[]
   >`SELECT number,manifest FROM code.versions WHERE id=${input.versionId}::uuid AND code_id=${code.id}`;
@@ -183,7 +199,7 @@ export async function previewCodeActivation(
     latest: numbers?.latest ?? version.number,
     allowed,
   };
-  const place = null;
+  const place = await previewPlace(code, context, catalog, asked.owner, deps);
   const page = await previewPage(code, catalog);
   if (code.activeVersionId === input.versionId) {
     const [activation] = await sql<{ activating_person: string | null; updated_at: Date }[]>`
@@ -225,6 +241,41 @@ export async function previewCodeActivation(
       )
     : undefined;
   return { ...base, activated: null, readiness, place, page, ...(targets ? { targets, operationLabels } : {}) };
+}
+/**
+ * A resource Code's own place, named by its owner's reader under this person's own rights; the authorization's answer
+ * when it already asked. A person who may not read the place, a failing reader or one slower than the budget leave it
+ * unnamed, as a target is: type and ID, never an error. The title the Code account stores is never used here, because
+ * it was read under someone else's rights.
+ */
+async function previewPlace(
+  code: Code,
+  context: CodeContext,
+  catalog: ReturnType<typeof catalogCache>,
+  earlier: ReturnType<typeof readCodeOwner> | undefined,
+  deps: CodeActivationPreviewDependencies,
+): Promise<CodeActivationPreview["place"]> {
+  if (code.owner.kind !== "resource") return null;
+  const { ref } = code.owner;
+  try {
+    let owner: Awaited<ReturnType<typeof readCodeOwner>>;
+    if (earlier) owner = await earlier;
+    else {
+      const timeout = AbortSignal.timeout(deps.placeTimeoutMs);
+      const signal = context.signal ? AbortSignal.any([context.signal, timeout]) : timeout;
+      // The race ends the wait even for a reader that does not stop on its signal; a request that already ended asks nobody.
+      const stopped = new Promise<null>((resolve) => {
+        if (signal.aborted) resolve(null);
+        else signal.addEventListener("abort", () => resolve(null), { once: true });
+      });
+      owner = signal.aborted ? null : await Promise.race([deps.readOwner(code.owner, { ...context, signal }), stopped]);
+    }
+    if (!owner) return null;
+    const target = await describeTarget(ref, { ref, title: owner.title }, catalog);
+    return { title: owner.title, typeTitle: target.typeTitle, href: target.href };
+  } catch {
+    return null;
+  }
 }
 /** The name of the app whose Code this is, as the registry names it; its service account is named after it. */
 async function previewAppName(appId: string, catalog: ReturnType<typeof catalogCache>): Promise<string | null> {
