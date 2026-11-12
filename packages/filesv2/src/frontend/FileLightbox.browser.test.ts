@@ -248,13 +248,27 @@ describe("Files in the Lightbox", () => {
       await tab.locator(".k2b-lightbox__video video").waitFor();
       await tab.waitForFunction(() => (document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")?.readyState ?? 0) >= 1);
       expect(session.media.some((request) => request.range !== null)).toBe(true);
-      // → seeks in the video instead of stepping to the next file, in every engine and wherever the focus is.
-      expect(await tab.evaluate(() => document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")!.currentTime)).toBe(0);
+      // → seeks in the video instead of stepping to the next file, in every engine and wherever the focus is. The player
+      // starts at 0.001 s on purpose (`#t=0.001` in VideoPlayer), so Safari shows the first frame without a poster; the
+      // three-second clip ends before five seconds, so → reaches its end.
+      const video = () =>
+        tab.evaluate(() => {
+          const element = document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")!;
+          return { time: element.currentTime, duration: element.duration };
+        });
+      const start = await video();
       await tab.keyboard.press("ArrowRight");
-      await tab.waitForFunction(() => document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")!.currentTime > 0);
+      const forward = Math.min(start.duration, start.time + 5) - 0.1;
+      await tab.waitForFunction(
+        (target) => document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")!.currentTime >= target,
+        forward,
+      );
       expect(await nameShown(tab)).toBe("Clip.webm");
       await tab.keyboard.press("ArrowLeft");
-      await tab.waitForFunction(() => document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")!.currentTime === 0);
+      await tab.waitForFunction(
+        (target) => document.querySelector<HTMLVideoElement>(".k2b-lightbox__video video")!.currentTime < target,
+        start.time + 1,
+      );
       expect(await nameShown(tab)).toBe("Clip.webm");
     } finally {
       await tab.context().close();
